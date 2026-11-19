@@ -234,6 +234,36 @@ pub(crate) fn push(line: &mut Line<'static>, text: impl AsRef<str>, style: Style
     }
 }
 
+/// Appends styled runs to `line`, clipped so the line stays within `width`
+/// with an ellipsis where anything was cut, as [`push`] clips one.
+pub(crate) fn push_runs(line: &mut Line<'static>, runs: &[(String, Style)], width: usize) {
+    let room = width.saturating_sub(line_width(line));
+    let total: usize = runs.iter().map(|(text, _)| str_width(text)).sum();
+    let mut left = if total <= room {
+        room
+    } else {
+        room.saturating_sub(1)
+    };
+    let mut last = None;
+    for (text, style) in runs {
+        let shown = clip_to_width(text, left);
+        if !shown.is_empty() {
+            line.spans.push(Span::styled(shown.to_owned(), *style));
+        }
+        left -= str_width(shown);
+        last = Some(*style);
+        if shown.len() < text.len() {
+            break;
+        }
+    }
+    if total > room
+        && room > 0
+        && let Some(style) = last
+    {
+        line.spans.push(Span::styled("…", style));
+    }
+}
+
 /// A path on this machine as the person would write it: their home
 /// directory as `~`.
 pub(crate) fn tilde(path: &str) -> String {

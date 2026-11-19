@@ -895,15 +895,23 @@ impl AskUi {
                 // line beside the path says where its change starts, so the
                 // hunks' starts are not drawn. A patch of several files names
                 // each file where its lines start.
-                let lines: Vec<(char, Style, String)> = patch
+                // Each line's code is coloured as its file is.
+                let code = crate::code::noted(ui_view::highlight_edit(path, patch));
+                let lines: Vec<(char, Style, crate::code::Runs)> = patch
                     .iter()
-                    .filter_map(|line| match line {
-                        EditLine::Line(line) => Some(match line.kind {
-                            LineKind::Added => ('+', theme.diff_added(), line.text.clone()),
-                            LineKind::Removed => ('-', theme.diff_removed(), line.text.clone()),
-                            LineKind::Context => (' ', theme.diff_context(), line.text.clone()),
-                        }),
-                        EditLine::File(file) => Some((' ', theme.code(), file_words(file))),
+                    .zip(code)
+                    .filter_map(|(line, runs)| match line {
+                        EditLine::Line(line) => {
+                            let (mark, style) = match line.kind {
+                                LineKind::Added => ('+', theme.diff_added()),
+                                LineKind::Removed => ('-', theme.diff_removed()),
+                                LineKind::Context => (' ', theme.diff_context()),
+                            };
+                            Some((mark, style, crate::code::diff_runs(&runs, style, theme)))
+                        }
+                        EditLine::File(file) => {
+                            Some((' ', theme.code(), vec![(file_words(file), theme.code())]))
+                        }
                         EditLine::Hunk { .. } => None,
                     })
                     .collect();
@@ -943,12 +951,8 @@ impl AskUi {
                 for (mark, style, body) in lines.iter().skip(scroll).take(take) {
                     let (mark, style) = (*mark, *style);
                     let mut row = Line::default();
-                    push(
-                        &mut row,
-                        format!("{mark} {}", text::ellipsize(body, width.saturating_sub(2))),
-                        style,
-                        width,
-                    );
+                    push(&mut row, format!("{mark} "), style, width);
+                    text::push_runs(&mut row, body, width);
                     text::fill(&mut row, style, width);
                     out.lines.push(row);
                 }

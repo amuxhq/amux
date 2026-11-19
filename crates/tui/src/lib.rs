@@ -10,8 +10,8 @@
 pub mod app;
 pub mod chat;
 pub mod clipboard;
+pub(crate) mod code;
 pub mod editor;
-pub mod highlight;
 pub mod home;
 mod hosts;
 pub(crate) mod markdown;

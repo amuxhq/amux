@@ -36,7 +36,6 @@ tempfile = { workspace = true }
 prost = { workspace = true }
 pulldown-cmark = { workspace = true }
 qrcode = { workspace = true }
-syntect = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

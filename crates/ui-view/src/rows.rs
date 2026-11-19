@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ui_state::{Fold, Held, ItemBody, Key, PhaseView, SessionState};
 use wire::{
@@ -411,7 +411,7 @@ pub enum ExploreVerb {
     WebSearch,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FileRow {
     pub path: String,
     pub change: FileChangeView,
@@ -421,7 +421,7 @@ pub struct FileRow {
     pub line: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum FileChangeView {
     Edited,
     Created {
@@ -1664,7 +1664,7 @@ pub(crate) fn counts(lines: &[EditLine]) -> (u32, u32) {
 /// One line of a patch, numbered on the side it belongs to (the new file
 /// for context and added lines, the old for removed ones) when the provider
 /// said where its hunk starts.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PatchLine {
     pub number: Option<u32>,
     pub kind: LineKind,
@@ -1675,7 +1675,7 @@ pub struct PatchLine {
 /// where a hunk starts, by its first line in the old file and the new, or a
 /// line of the patch. A file's own header lines are not carried. Each
 /// client decides whether to draw a hunk's start.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum EditLine {
     /// In a patch of several files, where each file's lines start: the
     /// file, named from the agent's folder, and what happens to it (added,

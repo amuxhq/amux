@@ -20,7 +20,6 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use crate::chat::selection::Join;
-use crate::highlight;
 use crate::text::{clip_to_width, str_width};
 use crate::theme::Theme;
 
@@ -73,16 +72,24 @@ pub(crate) fn streaming_source(source: &str) -> &str {
 
 /// The source drawn as rows of spans, wrapped at `width`.
 pub(crate) fn markdown_rows(source: &str, width: usize, theme: Theme) -> Vec<Vec<Span<'static>>> {
-    markdown_lines(source, width, theme)
+    markdown_lines(source, false, width, theme)
         .iter()
         .map(|line| line.spans.clone())
         .collect()
 }
 
-/// The source drawn as lines with their links, wrapped at `width`. Kept for
-/// the next frame by content, width and theme, so a message is parsed again
-/// only while it changes.
-pub(crate) fn markdown_lines(source: &str, width: usize, theme: Theme) -> Rc<Vec<MdLine>> {
+/// The source drawn as lines with their links, wrapped at `width`.
+/// `streaming` is for a message still being written, whose last code block
+/// may still be open. Kept for the next frame by content, width and theme
+/// once every code block in it is coloured as far as it will be, so a
+/// message is parsed again only while it changes or its code is still
+/// being coloured.
+pub(crate) fn markdown_lines(
+    source: &str,
+    streaming: bool,
+    width: usize,
+    theme: Theme,
+) -> Rc<Vec<MdLine>> {
     type Kept = HashMap<(u64, usize, bool), (Theme, Rc<Vec<MdLine>>)>;
     thread_local! {
         static KEPT: RefCell<Kept> = RefCell::new(HashMap::new());
@@ -93,9 +100,7 @@ pub(crate) fn markdown_lines(source: &str, width: usize, theme: Theme) -> Rc<Vec
         source.hash(&mut hasher);
         hasher.finish()
     };
-    // Drawn before the grammars arrived, code is plain: draw it again once
-    // they have.
-    let key = (hash, width, highlight::ready());
+    let key = (hash, width, streaming);
     if let Some(lines) = KEPT.with(|kept| {
         kept.borrow()
             .get(&key)
@@ -104,7 +109,11 @@ pub(crate) fn markdown_lines(source: &str, width: usize, theme: Theme) -> Rc<Vec
     }) {
         return lines;
     }
-    let lines = Rc::new(render(source, width, theme));
+    let (lines, settled) = render(source, streaming, width, theme);
+    let lines = Rc::new(lines);
+    if !settled {
+        return lines;
+    }
     KEPT.with(|kept| {
         let mut kept = kept.borrow_mut();
         if kept.len() > 512 {
@@ -115,11 +124,15 @@ pub(crate) fn markdown_lines(source: &str, width: usize, theme: Theme) -> Rc<Vec
     lines
 }
 
-fn render(source: &str, width: usize, theme: Theme) -> Vec<MdLine> {
+/// The source's lines, and whether every code block in them is settled.
+fn render(source: &str, streaming: bool, width: usize, theme: Theme) -> (Vec<MdLine>, bool) {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
     let mut drawer = Drawer::new(width, theme);
-    for event in Parser::new_ext(source, options) {
+    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+        if let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) = &event {
+            drawer.open_block = streaming && still_open(source, range);
+        }
         drawer.event(event);
     }
     drawer.flush();
@@ -130,7 +143,34 @@ fn render(source: &str, width: usize, theme: Theme) -> Vec<MdLine> {
     {
         out.pop();
     }
-    out
+    (out, drawer.settled)
+}
+
+/// Whether the fenced block at `range` of a message still streaming is the
+/// one still being written: it runs to the end of what has arrived and its
+/// closing fence has not. An unclosed fence that a quote or list item ends
+/// before the source does is finished; nothing more will join it.
+fn still_open(source: &str, range: std::ops::Range<usize>) -> bool {
+    if range.end < source.trim_end().len() {
+        return false;
+    }
+    let block = &source[range];
+    let mut lines = block.lines();
+    let Some(opening) = lines.next() else {
+        return false;
+    };
+    let opening = opening.trim_start();
+    let Some(mark) = opening.chars().next().filter(|c| matches!(c, '`' | '~')) else {
+        return false;
+    };
+    let length = opening.chars().take_while(|c| *c == mark).count();
+    let closed = lines.last().is_some_and(|last| {
+        // A fence inside a quote carries the quote's markers.
+        let last = last.trim_start_matches(|c: char| c == '>' || c.is_whitespace());
+        let run = last.chars().take_while(|c| *c == mark).count();
+        run >= length && last[run..].trim().is_empty()
+    });
+    !closed
 }
 
 /// What encloses the text being drawn, outermost first.
@@ -167,7 +207,13 @@ struct Drawer {
     /// The item's task is done: its words recede.
     done: bool,
     link: Option<String>,
-    code: Option<(String, String)>,
+    /// The code block being gathered: its fence's info string, its code,
+    /// and whether it is the block still being written.
+    code: Option<(String, String, bool)>,
+    /// The next code block to start is the one still being written.
+    open_block: bool,
+    /// Every code block drawn so far is coloured as far as it will be.
+    settled: bool,
     table: Option<Table>,
     /// Nothing has been drawn since the current list item began.
     fresh_item: bool,
@@ -190,6 +236,8 @@ impl Drawer {
             done: false,
             link: None,
             code: None,
+            open_block: false,
+            settled: true,
             table: None,
             fresh_item: false,
             last_blank: true,
@@ -230,7 +278,7 @@ impl Drawer {
     }
 
     fn event(&mut self, event: Event<'_>) {
-        if let Some((_, code)) = &mut self.code {
+        if let Some((_, code, _)) = &mut self.code {
             match event {
                 Event::Text(text) => {
                     code.push_str(&text);
@@ -314,7 +362,11 @@ impl Drawer {
                     CodeBlockKind::Fenced(language) => language.into_string(),
                     CodeBlockKind::Indented => String::new(),
                 };
-                self.code = Some((language, String::new()));
+                self.code = Some((
+                    language,
+                    String::new(),
+                    std::mem::take(&mut self.open_block),
+                ));
             }
             Tag::List(first) => {
                 self.flush();
@@ -391,8 +443,8 @@ impl Drawer {
                 }
             }
             TagEnd::CodeBlock => {
-                if let Some((language, code)) = self.code.take() {
-                    self.code_block(&language, &code);
+                if let Some((language, code, open)) = self.code.take() {
+                    self.code_block(&language, &code, open);
                 }
             }
             TagEnd::List(_) => {
@@ -580,23 +632,11 @@ impl Drawer {
 
     /// A code block: no fences and no box, two columns in from the text,
     /// coloured by kind of token; long lines keep their spacing and wrap.
-    fn code_block(&mut self, language: &str, code: &str) {
-        let theme = self.theme;
+    /// `open` is for the block still being written.
+    fn code_block(&mut self, language: &str, code: &str, open: bool) {
         let code = &crate::text::expand_tabs(code);
-        let lines: Vec<Vec<(String, Style)>> = match highlight::highlight(code, language) {
-            Some(tokens) => tokens
-                .iter()
-                .map(|line| {
-                    line.iter()
-                        .map(|(text, kind)| (text.clone(), theme.syntax(*kind)))
-                        .collect()
-                })
-                .collect(),
-            None => code
-                .lines()
-                .map(|line| vec![(line.to_owned(), theme.text())])
-                .collect(),
-        };
+        let (lines, settled) = crate::code::block(code, language, open, self.theme);
+        self.settled &= settled;
         let (first, rest) = self.prefixes();
         let indent = Span::raw("  ");
         let room = self.width.saturating_sub(spans_width(&rest) + 2).max(1);
@@ -1101,4 +1141,106 @@ fn hard_wrap(line: &[(String, Style)], width: usize) -> Vec<Vec<Span<'static>>> 
         }
     }
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    fn open_blocks(source: &str) -> Vec<bool> {
+        let options =
+            Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
+        Parser::new_ext(source, options)
+            .into_offset_iter()
+            .filter_map(|(event, range)| match event {
+                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
+                    Some(still_open(source, range))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn only_a_last_fence_not_closed_yet_is_still_being_written() {
+        for (source, open) in [
+            ("Here:\n\n```rust\nfn a() {}\nfn b", vec![true]),
+            ("```rust\nfn a() {}\n", vec![true]),
+            ("```rust\n", vec![true]),
+            ("```rust\nfn a() {}\n```", vec![false]),
+            ("```rust\nfn a() {}\n```\n\n", vec![false]),
+            ("```rust\nfn a() {}\n``", vec![true]),
+            ("~~~\nx\n~~~", vec![false]),
+            // A shorter fence inside a longer one does not close it.
+            ("````md\n```\n", vec![true]),
+            ("```a\nx\n```\n\nThen:\n\n```b\ny", vec![false, true]),
+            ("- item\n\n  ```sh\n  ls\n  ```", vec![false]),
+            ("> ```sh\n> ls\n> ```", vec![false]),
+            // A quote's fence the quote has ended is finished.
+            ("> ```sh\n> ls\n\nafter", vec![false]),
+        ] {
+            assert_eq!(open_blocks(source), open, "{source:?}");
+        }
+    }
+
+    fn styles_of(lines: &[MdLine], text: &str) -> Vec<Style> {
+        lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .filter(|span| span.content == text)
+            .map(|span| span.style)
+            .collect()
+    }
+
+    #[test]
+    fn a_streaming_message_streams_only_its_open_block() {
+        ui_view::preload_highlighting();
+        let theme = Theme::default();
+        let keyword = theme.syntax(ui_view::TokenKind::Keyword);
+        let plain = theme.syntax(ui_view::TokenKind::Plain);
+        // Words no other test streams, so the highlighter has no pass of
+        // this block from before.
+        let source = "Closed:\n\n```rust\nstruct Closed;\n```\n\nOpen:\n\n```rust\nstruct Open;\nenum Partial";
+
+        // The closed block is highlighted whole at once; the open one is
+        // plain until its background pass comes back.
+        let (first, settled) = render(source, true, 80, theme);
+        assert!(!settled);
+        assert_eq!(styles_of(&first, "struct"), vec![keyword]);
+        assert_eq!(styles_of(&first, "struct Open;"), vec![plain]);
+        assert_eq!(styles_of(&first, "enum Partial"), vec![plain]);
+        crate::code::begin_frame();
+        let again = markdown_lines(source, true, 80, theme);
+        assert!(
+            crate::code::drew_unsettled(),
+            "the frame asks to be drawn again"
+        );
+        assert!(
+            !Rc::ptr_eq(&again, &markdown_lines(source, true, 80, theme)),
+            "an unsettled message is not kept"
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let passed = loop {
+            let (lines, settled) = render(source, true, 80, theme);
+            if settled {
+                break lines;
+            }
+            assert!(Instant::now() < deadline, "the streaming pass came back");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(styles_of(&passed, "struct"), vec![keyword, keyword]);
+        // The last line, not complete yet, waits for the block to grow.
+        assert_eq!(styles_of(&passed, "enum Partial"), vec![plain]);
+        let kept = markdown_lines(source, true, 80, theme);
+        assert!(Rc::ptr_eq(&kept, &markdown_lines(source, true, 80, theme)));
+
+        // Finished, the same words are highlighted whole.
+        let (done, settled) = render(source, false, 80, theme);
+        assert!(settled);
+        assert_eq!(styles_of(&done, "struct"), vec![keyword, keyword]);
+        assert!(styles_of(&done, "enum Partial").is_empty());
+    }
 }

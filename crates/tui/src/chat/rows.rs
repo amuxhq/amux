@@ -184,35 +184,39 @@ pub(crate) fn detail(
 /// A link on a drawn line: its columns and where it goes.
 pub(crate) type Link = (usize, usize, String);
 
+/// A drawn markdown line, its links, and where its copied words start,
+/// how it continues the line before, and whether it is a code line.
+pub(crate) type LinkedLine = (Line<'static>, Vec<Link>, (usize, Join, bool));
+
 /// Markdown drawn at the text's indent, each line with the links on it by
-/// column, for a feed that opens them on a click.
+/// column, for a feed that opens them on a click, and where the line starts
+/// its words and how it continues the one before when copied. `streaming`
+/// is for words still being written.
 pub(crate) fn markdown_linked(
     source: &str,
+    streaming: bool,
     width: usize,
     theme: Theme,
-) -> Vec<(Line<'static>, Vec<Link>)> {
-    crate::markdown::markdown_lines(source, width.saturating_sub(INDENT).max(1), theme)
-        .iter()
-        .map(|line| {
-            let mut spans = vec![Span::raw(" ".repeat(INDENT))];
-            spans.extend(line.spans.iter().cloned());
-            let links = line
-                .links
-                .iter()
-                .map(|(from, to, url)| (INDENT + from, INDENT + to, url.clone()))
-                .collect();
-            (Line::from(spans), links)
-        })
-        .collect()
-}
-
-/// Where [`markdown_linked`]'s lines start their words and how each
-/// continues the one before, line for line.
-pub(crate) fn markdown_copy(source: &str, width: usize, theme: Theme) -> Vec<(usize, Join, bool)> {
-    crate::markdown::markdown_lines(source, width.saturating_sub(INDENT).max(1), theme)
-        .iter()
-        .map(|line| (INDENT + line.copy_from, line.join, line.exact))
-        .collect()
+) -> Vec<LinkedLine> {
+    crate::markdown::markdown_lines(
+        source,
+        streaming,
+        width.saturating_sub(INDENT).max(1),
+        theme,
+    )
+    .iter()
+    .map(|line| {
+        let mut spans = vec![Span::raw(" ".repeat(INDENT))];
+        spans.extend(line.spans.iter().cloned());
+        let links = line
+            .links
+            .iter()
+            .map(|(from, to, url)| (INDENT + from, INDENT + to, url.clone()))
+            .collect();
+        let copied = (INDENT + line.copy_from, line.join, line.exact);
+        (Line::from(spans), links, copied)
+    })
+    .collect()
 }
 
 /// An attachment's chip, from its reference alone.
@@ -592,9 +596,11 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
 }
 
 /// A landed edit's patch under its row: numbered lines in the diff
-/// colours, then how much more there is and the key that opens it.
+/// colours, their code coloured as the file at `path` is, then how much
+/// more there is and the key that opens it.
 pub(crate) fn patch_lines(
     patch: &PatchHead,
+    path: &str,
     open: bool,
     leader: char,
     width: usize,
@@ -606,8 +612,9 @@ pub(crate) fn patch_lines(
         .filter_map(|line| line.number)
         .max()
         .map_or(0, |n| n.to_string().len());
+    let code = crate::code::noted(ui_view::highlight_patch(path, &patch.lines));
     let mut lines = Vec::new();
-    for line in &patch.lines {
+    for (line, runs) in patch.lines.iter().zip(code) {
         let (sign, style) = match line.kind {
             LineKind::Added => ("+", theme.diff_added()),
             LineKind::Removed => ("-", theme.diff_removed()),
@@ -621,7 +628,12 @@ pub(crate) fn patch_lines(
         if digits > 0 {
             push(&mut out, format!("{number} │ "), theme.muted(), width);
         }
-        push(&mut out, format!("{sign}{}", line.text), style, width);
+        push(&mut out, sign, style, width);
+        text::push_runs(
+            &mut out,
+            &crate::code::diff_runs(&runs, style, theme),
+            width,
+        );
         lines.push(out);
     }
     if patch.more > 0 {

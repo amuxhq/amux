@@ -12,9 +12,6 @@ yanked = "deny"
 # Each entry says why the advisory does not reach amux. One that does is
 # fixed by updating or replacing the crate, never listed here.
 ignore = [
-    # Unmaintained, with no known flaw. syntect decodes its own bundled
-    # syntax definitions with bincode.
-    { id = "RUSTSEC-2025-0141", reason = "bincode reads only syntect's bundled syntaxes" },
     # Unmaintained, with no known flaw. fontdue reads the fonts the test
     # screenshot renderer ships with; nothing shipped renders a font.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser reads only the test renderer's own fonts" },

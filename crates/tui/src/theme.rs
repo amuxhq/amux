@@ -475,8 +475,8 @@ impl Theme {
     /// the terminal's own when it reported them, and every one has been
     /// lifted to read on the background. Names and punctuation stay in the
     /// reading ink and comments recede, so the colour is on what differs.
-    pub(crate) fn syntax(self, kind: crate::highlight::TokenKind) -> Style {
-        use crate::highlight::TokenKind;
+    pub(crate) fn syntax(self, kind: ui_view::TokenKind) -> Style {
+        use ui_view::TokenKind;
         let token = match kind {
             TokenKind::Plain => self.tokens.text,
             TokenKind::Keyword => self.tokens.focus,

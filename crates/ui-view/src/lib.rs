@@ -10,6 +10,7 @@
 //! edges.
 
 mod ask;
+mod code;
 mod composer;
 mod fleet;
 mod form;
@@ -31,6 +32,10 @@ pub use ask::{
 };
 /// The character that marks an attachment's place in text.
 pub use attachments::PLACEHOLDER;
+pub use code::{
+    CodeRun, HighlightedCode, TokenKind, highlight_block, highlight_edit, highlight_patch,
+    preload_highlighting,
+};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,

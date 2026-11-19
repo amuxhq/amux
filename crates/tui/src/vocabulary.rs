@@ -90,9 +90,9 @@ for the measurements."#;
 /// Every component, in catalogue order.
 pub fn components(theme: Theme) -> Vec<Component> {
     TIMES_IN_UTC.store(true, std::sync::atomic::Ordering::Relaxed);
-    // A fenced block is drawn plain until the grammars finish loading in the
-    // background, so a reference waits for them.
-    crate::highlight::preload();
+    // A fenced block is drawn plain until its grammar is built in the
+    // background, so a reference waits for every grammar.
+    ui_view::preload_highlighting();
     let w = usize::from(WIDTH);
     let mut out = Vec::new();
     let mut add = |name, shows, lines: Vec<Line<'static>>| {

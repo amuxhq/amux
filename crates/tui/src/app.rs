@@ -664,9 +664,10 @@ impl App {
         if let Some(renew) = self.desk_next_tick() {
             at(renew);
         }
-        // Code drawn plain while the grammars load is drawn again once
-        // they arrive.
-        if crate::highlight::loading() {
+        // Code drawn before it was coloured as far as it will be (a grammar
+        // still building, a streaming block's lines not yet passed over) is
+        // drawn again soon, within the streaming highlighter's interval.
+        if crate::code::drew_unsettled() {
             at(Instant::now() + Duration::from_millis(50));
         }
         next
@@ -1986,6 +1987,7 @@ impl App {
     /// Paints the screen and asks for an older page when the reader is
     /// within one of the oldest held row.
     pub fn draw(&mut self, paint: &mut Paint<'_>) {
+        crate::code::begin_frame();
         self.keep_layout();
         let area = paint.area();
         let theme = self.theme();

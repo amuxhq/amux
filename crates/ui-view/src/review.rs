@@ -2,7 +2,7 @@
 //! with the person's comments placed on their lines.
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wire::{Diff, ReviewComment};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
@@ -57,7 +57,7 @@ pub struct DiffLine {
     pub comments: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum LineKind {
     Context,
     Added,

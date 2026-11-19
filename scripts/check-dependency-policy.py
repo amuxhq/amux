@@ -72,7 +72,9 @@ ALLOWED_LOCAL = {
     # phone bridge share, from which the Swift mirrors are generated. Those
     # hold the wire's own enums (a refusal reason) rather than copies.
     "ui-state": {"wire"},
-    "ui-view": {"attachments", "preview", "ui-state", "wire"},
+    # highlight: each client colours the code it parses out of a chat
+    # itself, through the view layer's highlighting functions.
+    "ui-view": {"attachments", "highlight", "preview", "ui-state", "wire"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
     # The browser extension's WebAssembly: the pure client crates, with no
     # runtime, socket or driver, since the extension does its own I/O.

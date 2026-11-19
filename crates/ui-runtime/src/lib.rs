@@ -11,7 +11,6 @@ mod drafts;
 mod dump;
 mod fleet;
 pub mod inputs;
-pub mod review;
 mod session;
 pub mod trace;
 

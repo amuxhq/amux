@@ -1032,9 +1032,25 @@ impl Session {
         self.inner.agent.get_diff(base, false).await
     }
 
-    /// The agent's diff against `base` and its patch, for a review page.
+    /// The agent's diff against `base` and the patch it names, for a review
+    /// page. The diff comes back exactly as the host froze it, so a review
+    /// sent with it names the same patch the page showed; the patch is read
+    /// through this node's copy of the agent's files.
     pub async fn review(&self, base: wire::DiffBase) -> Result<(wire::Diff, String), RpcError> {
-        crate::review::reviewed(&self.inner.client, &self.inner.agent, base).await
+        let diff = self.inner.agent.get_diff(base, true).await?;
+        let patch = match &diff.patch {
+            Some(blob) => {
+                let bytes = self
+                    .inner
+                    .client
+                    .sessions()
+                    .get_blob(self.inner.agent.id(), &blob.hash)
+                    .await?;
+                String::from_utf8_lossy(&bytes).into_owned()
+            }
+            None => String::new(),
+        };
+        Ok((diff, patch))
     }
 
     /// Stores bytes to attach to a prompt.

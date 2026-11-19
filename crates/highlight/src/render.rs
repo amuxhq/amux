@@ -76,29 +76,79 @@ pub(crate) fn plain(code: &str) -> Vec<Line> {
     lines.finish(code)
 }
 
-/// A unified diff coloured by its lines' prefixes. A `---` line followed
-/// by a `+++` line names a file's two sides, so both are headers rather
-/// than a removed and an added line.
+/// A unified diff coloured by its lines' prefixes. A file's header lines
+/// come only outside a hunk: inside one, its `@@` header's counts say how
+/// many lines are the hunk's, so a removed `-- comment` and an added `++ x`
+/// are a removed and an added line even though they read `--- ` and
+/// `+++ `. Outside a counted hunk (before the first, after one's lines run
+/// out, or in a hunk written without counts, as agents often write them),
+/// a `---` line followed by a `+++` line names a file's two sides, so both
+/// are headers.
 pub(crate) fn diff(code: &str) -> Vec<Line> {
     let mut lines = Builder::new();
     let source: Vec<&str> = code.split_inclusive('\n').collect();
+    // Lines each side of the counted hunk still holds.
+    let (mut old_left, mut new_left) = (0u32, 0u32);
     let mut header_follows = false;
     for (at, line) in source.iter().enumerate() {
-        let header = std::mem::take(&mut header_follows)
-            || (line.starts_with("--- ")
-                && source
-                    .get(at + 1)
-                    .is_some_and(|next| next.starts_with("+++ ")));
-        header_follows = header && line.starts_with("--- ");
-        let kind = match line.as_bytes().first() {
-            _ if header => TokenKind::Plain,
-            Some(b'+') => TokenKind::Inserted,
-            Some(b'-') => TokenKind::Deleted,
-            _ => TokenKind::Plain,
+        // No line of a hunk starts `@@` (each starts with its sign or a
+        // space), so a hunk header starts a hunk even where the one before
+        // claimed more lines than it had.
+        let kind = if let Some(header) = line.strip_prefix("@@") {
+            (old_left, new_left) = hunk_counts(header).unwrap_or((0, 0));
+            header_follows = false;
+            TokenKind::Plain
+        } else if old_left > 0 || new_left > 0 {
+            match line.as_bytes().first() {
+                // A marker that the line before has no newline is no line
+                // of either side.
+                Some(b'\\') => TokenKind::Plain,
+                Some(b'+') => {
+                    new_left -= new_left.min(1);
+                    TokenKind::Inserted
+                }
+                Some(b'-') => {
+                    old_left -= old_left.min(1);
+                    TokenKind::Deleted
+                }
+                _ => {
+                    old_left -= old_left.min(1);
+                    new_left -= new_left.min(1);
+                    TokenKind::Plain
+                }
+            }
+        } else {
+            let header = std::mem::take(&mut header_follows)
+                || (line.starts_with("--- ")
+                    && source
+                        .get(at + 1)
+                        .is_some_and(|next| next.starts_with("+++ ")));
+            header_follows = header && line.starts_with("--- ");
+            match line.as_bytes().first() {
+                _ if header => TokenKind::Plain,
+                Some(b'+') => TokenKind::Inserted,
+                Some(b'-') => TokenKind::Deleted,
+                _ => TokenKind::Plain,
+            }
         };
         lines.push(line, kind);
     }
     lines.finish(code)
+}
+
+/// The old and new line counts of a hunk header after its `@@`: `-3,2
+/// +3,4 @@`, a count left out being one. None for a header without both
+/// ranges.
+fn hunk_counts(header: &str) -> Option<(u32, u32)> {
+    let count = |sign: char| {
+        let range = header
+            .split_whitespace()
+            .find_map(|part| part.strip_prefix(sign))?;
+        let mut parts = range.split(',');
+        parts.next()?.parse::<u32>().ok()?;
+        parts.next().map_or(Some(1), |count| count.parse().ok())
+    };
+    Some((count('-')?, count('+')?))
 }
 
 thread_local! {
@@ -210,6 +260,35 @@ mod tests {
                 vec![("+++ b/y", Plain)],
                 vec![("@@ -1 +1 @@", Plain)],
                 vec![("-y", Deleted)],
+            ]
+        );
+        // Inside a counted hunk, a removed `-- ` and an added `++ ` line are
+        // lines of the hunk, not a file's headers; once the hunk's lines
+        // run out, headers are read again.
+        let code = "--- a/q.sql\n+++ b/q.sql\n@@ -1,2 +1,2 @@\n--- old note\n+++ new note\n select 1;\n\\ No newline at end of file\n--- a/r.sql\n+++ b/r.sql\n";
+        assert_eq!(
+            runs(&diff(code)),
+            vec![
+                vec![("--- a/q.sql", Plain)],
+                vec![("+++ b/q.sql", Plain)],
+                vec![("@@ -1,2 +1,2 @@", Plain)],
+                vec![("--- old note", Deleted)],
+                vec![("+++ new note", Inserted)],
+                vec![(" select 1;", Plain)],
+                vec![("\\ No newline at end of file", Plain)],
+                vec![("--- a/r.sql", Plain)],
+                vec![("+++ b/r.sql", Plain)],
+            ]
+        );
+        // A hunk written without counts gives no way to tell, so the pair
+        // reads as headers there.
+        assert_eq!(
+            runs(&diff("@@\n--- a\n+++ b\n-x\n")),
+            vec![
+                vec![("@@", Plain)],
+                vec![("--- a", Plain)],
+                vec![("+++ b", Plain)],
+                vec![("-x", Deleted)],
             ]
         );
         // Lines an agent writes without headers or hunks are still added

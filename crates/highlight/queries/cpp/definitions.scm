@@ -46,6 +46,24 @@
     (function_definition declarator: (function_declarator declarator: (_) @name)) @definition.method)
   (#set! suffix "()"))
 
+; A constructor defined outside its class (`Store::Store(int)`, or
+; `Box<T>::Box()` under a template) is the function named as its class is.
+; A destructor or any other method defined there is a function, as
+; `Store::put` is: only a constructor has a kind of its own.
+((function_definition
+  declarator: (function_declarator
+    declarator: [
+      (qualified_identifier
+        scope: [(namespace_identifier) @class (template_type name: (type_identifier) @class)]
+        name: (identifier) @constructor)
+      (qualified_identifier
+        name: (qualified_identifier
+          scope: [(namespace_identifier) @class (template_type name: (type_identifier) @class)]
+          name: (identifier) @constructor))
+    ] @name)) @definition.constructor
+  (#eq? @class @constructor)
+  (#set! suffix "()"))
+
 ((function_definition
   declarator: [
     (function_declarator declarator: (_) @name)

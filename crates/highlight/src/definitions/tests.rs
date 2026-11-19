@@ -267,6 +267,21 @@ Module namespace blobs 5-52
             (2, ""),
         ],
     );
+    // A constructor defined outside its class is a constructor, under a
+    // namespace or a template too; a destructor defined there is a
+    // function, as any other method defined there is.
+    check(
+        Language::Cpp,
+        "Store::Store(int size) {}\nStore::~Store() {}\nblobs::Store::Store() {}\ntemplate <class T>\nBox<T>::Box() {}\nStore::Other() {}\n",
+        "\
+Constructor Store::Store() 1-1
+Function Store::~Store() 2-2
+Constructor blobs::Store::Store() 3-3
+Constructor Box<T>::Box() 4-5
+Function Store::Other() 6-6
+",
+        &[(5, "Box<T>::Box()")],
+    );
 }
 
 #[test]

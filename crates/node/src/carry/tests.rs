@@ -19,6 +19,7 @@ use tonic::transport::{Endpoint, Server};
 
 use super::*;
 use crate::api::{Entrance, Entry, Surface};
+use crate::link::link_log::{CarriedCall, CarriedOutcome};
 
 /// A message is its bytes: the probe needs no schema.
 #[derive(Clone, Copy, Default)]
@@ -544,4 +545,77 @@ async fn a_call_arriving_on_a_link_for_a_third_host_is_answered_here() {
         .unwrap();
     let answer = String::from_utf8(answer.into_inner()).unwrap();
     assert!(answer.starts_with("answered-by=near "), "{answer}");
+}
+
+/// What this thread logs, for a test on a current-thread runtime.
+fn logged() -> (Arc<Mutex<Vec<u8>>>, tracing::subscriber::DefaultGuard) {
+    #[derive(Clone)]
+    struct Into(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Into {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let writer = Into(log.clone());
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (log, tracing::subscriber::set_default(subscriber))
+}
+
+fn carried_lines(log: &Mutex<Vec<u8>>) -> Vec<CarriedCall> {
+    String::from_utf8_lossy(&log.lock().unwrap())
+        .lines()
+        .filter_map(CarriedCall::parse)
+        .map(|(host, call)| {
+            assert_eq!(host, OWN);
+            call
+        })
+        .collect()
+}
+
+/// Every carried call leaves one line when it ends, a call its caller let
+/// go of before any answer began included.
+#[tokio::test]
+async fn every_carried_call_leaves_one_line_when_it_ends() {
+    let (log, _logging) = logged();
+    let far = Far::new();
+    let entrance = near(reaching(&far));
+    let desk = wire::authority(&far.id);
+    who(&entrance, Some(desk.clone())).await.unwrap();
+    who(&entrance, None).await.unwrap();
+    let mut grpc = client(&entrance, Some(desk)).await;
+    let hanging = grpc.unary(
+        tonic::Request::new(Vec::new()),
+        PathAndQuery::from_static("/probe.Probe/Hang"),
+        Raw,
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), hanging)
+            .await
+            .is_err()
+    );
+    let lines = carried_lines(&log);
+    let ended: Vec<_> = lines
+        .iter()
+        .map(|call| (call.method.as_str(), call.outcome, call.code))
+        .collect();
+    assert_eq!(
+        ended,
+        [
+            ("/probe.Probe/Who", CarriedOutcome::Answered, 0),
+            (
+                "/probe.Probe/Hang",
+                CarriedOutcome::Dropped,
+                tonic::Code::Cancelled as i32
+            ),
+        ]
+    );
+    assert!(lines.iter().all(|call| call.peer == far.id));
 }

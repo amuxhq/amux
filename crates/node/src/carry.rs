@@ -214,7 +214,8 @@ fn lapsed(name: &str) -> String {
     )
 }
 
-/// The link log's line for one carried call, written once, when it ends.
+/// The link log's line for one carried call, written once, when it ends:
+/// at the latest when it is dropped, which is a caller letting go of it.
 struct Line {
     own: HostId,
     peer: HostId,
@@ -236,6 +237,12 @@ impl Line {
             ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
         }
         .write(self.own);
+    }
+}
+
+impl Drop for Line {
+    fn drop(&mut self) {
+        self.end(CarriedOutcome::Dropped, tonic::Code::Cancelled);
     }
 }
 
@@ -302,13 +309,11 @@ impl http_body::Body for Carried {
 
 impl Drop for Carried {
     fn drop(&mut self) {
-        // A body nobody read to its end: a refusal whose headers said all
-        // of it, or a caller that let go of a call still running.
-        match self.answered {
-            Some(code) => self.line.end(CarriedOutcome::Answered, code),
-            None => self
-                .line
-                .end(CarriedOutcome::Dropped, tonic::Code::Cancelled),
+        // A body nobody read to its end whose headers held the owner's
+        // whole answer was answered; any other was let go of, as the line
+        // says when it drops.
+        if let Some(code) = self.answered {
+            self.line.end(CarriedOutcome::Answered, code);
         }
     }
 }

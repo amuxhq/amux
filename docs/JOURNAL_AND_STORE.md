@@ -416,7 +416,7 @@ The runtime's interface is `store::Sqlite`, in
 
 Each call is one transaction, and SQL does the work: an item is one upsert
 that keeps a held key's order, a replica's item is written only over an older
-revision, and a pool's bytes are one sum. Every write to `agents` and `items`
+revision, and a pool's bytes are a running total triggers keep. Every write to `agents` and `items`
 but one is an `INSERT ... ON CONFLICT DO UPDATE` that names the columns its
 writer owns, and a commit's writes must stay so, because the daemon's
 crash-injection tests fail a commit with a `BEFORE INSERT` trigger, which a
@@ -669,6 +669,21 @@ fleet (`AgentRemoved`) and deletes their
 directories, which takes their blobs with them. A row costs the bytes of the
 envelope's variable fields, 4 bytes for its kind and a fixed 48 bytes a row,
 counted in the store's SQL.
+
+A sweep starts from each pool's bytes, and summing them reads every page of
+`items`, which on a store of tens of megabytes takes about a hundred
+milliseconds cold. So the store keeps them as running totals instead: as it
+opens, it counts each origin host's bytes once into a `TEMP` table and puts
+`TEMP` triggers on `items` that add and subtract every row written or
+deleted (`keep_pool_totals` in
+[`crates/store/src/rows.rs`](../crates/store/src/rows.rs)). Being temporary,
+they live on the store's one connection and never reach the file, so no
+migration carries them and every open counts afresh. They hold only while
+that connection is the only one writing `items`, and only while items are
+written by upserts and deletes: an `INSERT OR REPLACE` removes the row it
+replaces without firing the delete trigger. A persisted table of totals was
+rejected: it would be a schema promise, kept by every later build, for a
+number one read at open rebuilds.
 
 **Own rows** (`Sqlite::sweep_own`, in
 [`crates/store/src/retention.rs`](../crates/store/src/retention.rs)), against

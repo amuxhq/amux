@@ -840,6 +840,41 @@ fn a_draft_is_taken_any_time_and_sent_only_once_the_chat_is_current() {
     assert!(view.editor.is_empty());
 }
 
+/// An agent whose account needs signing in says how above a composer that
+/// still sends: someone who signed in elsewhere tries again by sending, and
+/// the provider's next good answer clears the notice.
+#[test]
+fn a_signed_out_agent_says_how_to_sign_in_and_still_sends() {
+    let (_, state, at) = fixtures::frames(Kind::ClaudeSdk, "recorded_sign_in_problem")
+        .pop()
+        .expect("the recording has frames");
+    assert!(
+        ui_view::sign_in(&state).is_some(),
+        "the recording ends needing a sign-in"
+    );
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    typed(&mut view, &state, "check the links");
+    let (buffer, _) = draw(&mut view, &state, at, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("Claude needs you to sign in"), "{screen}");
+    assert!(screen.contains("/login"), "{screen}");
+    assert!(
+        screen.contains("Signed in elsewhere? Send a message to try again."),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("check the links"),
+        "the draft is not shown: {screen}"
+    );
+    assert_eq!(
+        view.key(&state, key(KeyCode::Enter), theme()),
+        vec![ChatEffect::Prompt {
+            text: "check the links".into(),
+            attachments: vec![]
+        }]
+    );
+}
+
 #[test]
 fn an_exited_entry_offers_resume_with_the_draft() {
     let mut state = chat(replies(1, 3));
@@ -2682,6 +2717,49 @@ fn a_known_ground_tints_the_highlight_instead_of_marking_it() {
     // terminal's own ground.
     assert_eq!(buffer[(0, planner)].bg, ratatui::style::Color::Reset);
     assert_eq!(buffer[(W / 2, 0)].bg, ratatui::style::Color::Reset);
+}
+
+/// "+ New Agent" is the list's first row, so the blank line above it is the
+/// one under the top line: highlighted, its tint still gets half a line on
+/// both sides, as every other highlighted row does.
+#[test]
+fn a_highlighted_first_row_is_tinted_above_as_below() {
+    let fleet = home_fleet();
+    let mut home = new_home();
+    let colors = crate::theme::TerminalColors {
+        background: (21, 21, 21),
+        foreground: (208, 208, 208),
+        ansi: [(128, 128, 128); 16],
+    };
+    let tinted = Theme::from_terminal(colors, crate::theme::ColorMode::TrueColor);
+    let draw = |home: &mut crate::home::Home| {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                home.draw(frame, area, &fleet, &HashMap::new(), None, now(), tinted);
+            })
+            .unwrap();
+        text(terminal.backend().buffer())
+    };
+    draw(&mut home);
+    home.key(&fleet, key(KeyCode::Home));
+    let screen = draw(&mut home);
+    let new_agent = row_of(&screen, "New Agent") as usize;
+    let lines: Vec<&str> = screen.lines().collect();
+    assert!(
+        lines[new_agent - 1].trim().starts_with('▄')
+            && lines[new_agent + 1].trim().starts_with('▀'),
+        "the highlight has an edge on both sides:\n{screen}"
+    );
+    home.key(&fleet, key(KeyCode::Down));
+    let screen = draw(&mut home);
+    let lines: Vec<&str> = screen.lines().collect();
+    assert!(
+        !lines[new_agent - 1].contains('▄'),
+        "the edge goes with the highlight:\n{screen}"
+    );
 }
 
 /// A new Claude agent runs the kind its host publishes, whatever this

@@ -187,6 +187,29 @@ fn a_client_session_the_manifest_names_that_cannot_be_read_fails_the_stage() {
     }
 }
 
+/// The core's checkpoint is its own state as the build that wrote it laid
+/// it out, so a report from another build may carry one this build cannot
+/// decode: the core stage says so, and the agents still replay.
+#[test]
+fn a_core_checkpoint_this_build_cannot_decode_leaves_the_agents_replaying() {
+    let dumped = support::healthy();
+    let scratch = tempfile::tempdir().unwrap();
+    copy_dir(dumped.path(), scratch.path());
+    std::fs::write(scratch.path().join("core/checkpoint"), b"\xff\xff\xff\xff").unwrap();
+    let bundle = Bundle::open(scratch.path()).expect("the bundle opens");
+    let verdicts = bundle.replay_all().expect("the bundle replays");
+    assert!(
+        matches!(verdicts[0].verdict, Verdict::Holds(_)),
+        "{}",
+        verdicts[0]
+    );
+    assert_eq!(verdicts[1].stage, Stage::Core);
+    let Verdict::Unreadable(why) = &verdicts[1].verdict else {
+        panic!("{}", verdicts[1]);
+    };
+    assert!(why.contains("does not decode with this build"), "{why}");
+}
+
 /// The manifest names where a session's files are; a name that leads out
 /// of the bundle is not read, even where a file is there to read.
 #[test]

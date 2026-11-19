@@ -6085,6 +6085,18 @@
         }
       }
     },
+    "Signed in elsewhere? Send a message to try again." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/SignInWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in elsewhere? Send a message to try again."
+          }
+        }
+      }
+    },
     "Signed out" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AccountRegistry.swift.",
       "extractionState" : "manual",
@@ -10197,6 +10209,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t read the changes"
+          }
+        }
+      }
+    },
+    "this app could not read the host’s diff" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this app could not read the host’s diff"
+          }
+        }
+      }
+    },
+    "the host’s patch is missing the files it lists" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the host’s patch is missing the files it lists"
           }
         }
       }

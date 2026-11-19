@@ -808,6 +808,15 @@ public struct ChatStanding: View {
 
     @ViewBuilder
     private var composerStack: some View {
+        // A sign-in problem stands above a composer that still sends:
+        // sending is how someone who signed in elsewhere tries again. A
+        // provider subagent takes no messages, so it has no notice.
+        if let signIn = model.frame?.signIn, model.frame?.composer.mode.nativeStop == nil {
+            let kind = model.frame?.kind
+            FootCard(
+                kind: "sign-in", title: ChatWords.needsSignIn(kind),
+                detail: ChatWords.signInDetail(signIn, kind: kind, host: subject.host))
+        }
         if showing != .plus {
             ChatDock(
                 model: model, children: children, host: subject.host, expanded: dockExpanded,
@@ -822,13 +831,6 @@ public struct ChatStanding: View {
             NativeComposer(
                 model: model, stop: stop, activity: model.frame?.composer.activity,
                 activitySubject: activitySubject)
-        } else if let signIn = model.frame?.signIn {
-            let kind = model.frame?.kind
-            FootCard(
-                kind: "sign-in", title: ChatWords.needsSignIn(kind),
-                detail: [ChatWords.signIn(signIn), signIn.message, ChatWords.signInSteps(kind, host: subject.host)]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: "\n"))
         } else {
             ComposerBox(
                 model: model, placeholder: placeholder, activity: model.frame?.composer.activity,

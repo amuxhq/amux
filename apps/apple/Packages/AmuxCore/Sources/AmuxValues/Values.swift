@@ -1819,7 +1819,7 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
     public var git: Git?
-    /// Only a problem; it replaces the composer with a foot card.
+    /// Only a problem; a notice above the composer, which still sends.
     public var signIn: SignInView?
 
     public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?) {
@@ -2963,12 +2963,16 @@ public struct ExperimentView: Codable, Hashable, Sendable {
     public var description: String
     /// Whether the machine's settings switch it on.
     public var enabled: Bool
+    /// amux runs it otherwise than `enabled` says, and is restarting to
+    /// apply the switch: show it as being applied, neither on nor off.
+    public var applying: Bool
 
-    public init(name: String, version: String, description: String, enabled: Bool) {
+    public init(name: String, version: String, description: String, enabled: Bool, applying: Bool) {
         self.name = name
         self.version = version
         self.description = description
         self.enabled = enabled
+        self.applying = applying
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2976,6 +2980,7 @@ public struct ExperimentView: Codable, Hashable, Sendable {
         case version
         case description
         case enabled
+        case applying
     }
 }
 
@@ -4447,7 +4452,8 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     /// A report is sent on its own when something goes wrong.
     public var autoReports: Bool
     /// Every experiment the machine's build implements, in the order they
-    /// are listed. A switch takes effect when amux next starts.
+    /// are listed. amux restarts itself to apply a switch, and says it is
+    /// being applied until it has.
     public var experiments: [ExperimentView]
     /// Whether amux starts at login; None on an install without a
     /// supervisor, which has nothing to start.

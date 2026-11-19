@@ -299,6 +299,9 @@ private struct Footer: View {
                 if let stop = chat.frame?.composer.mode.nativeStop {
                     NativeBar(chat: chat, stop: stop)
                 } else {
+                    if let signIn = chat.frame?.signIn {
+                        SignInNotice(signIn: signIn, kind: chat.frame?.kind, host: host)
+                    }
                     if let frame = chat.frame, !frame.queue.isEmpty {
                         QueueList(chat: chat, queue: frame.queue)
                     }

@@ -276,6 +276,24 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.signInSteps(.codex, host: "desk"), "Run codex login on desk.")
     }
 
+    /// The notice stands above a composer that still sends, so it ends
+    /// saying that sending is how to try again.
+    func testTheSignInNoticeEndsSayingSendingTriesAgain() {
+        let failed = SignInView(state: .failed, account: "ada@example.com", message: "OAuth token has expired.")
+        XCTAssertEqual(
+            ChatWords.signInDetail(failed, kind: .claudeSdk, host: "desk"),
+            """
+            Sign-in failed · ada@example.com
+            OAuth token has expired.
+            Run claude and sign in with /login on desk.
+            Signed in elsewhere? Send a message to try again.
+            """)
+        let signedOut = SignInView(state: .signedOut, account: "", message: "")
+        XCTAssertEqual(
+            ChatWords.signInDetail(signedOut, kind: .codex, host: "desk"),
+            "Signed out\nRun codex login on desk.\nSigned in elsewhere? Send a message to try again.")
+    }
+
     func testAQueuedPromptSaysWhetherItWasSteered() {
         let queued = QueuedRow(
             inputId: [1], text: [], steered: false, canWithdraw: true, canSendNow: true,

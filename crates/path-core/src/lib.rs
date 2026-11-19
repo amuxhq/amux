@@ -43,7 +43,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
-use std::time::Instant;
 
 pub use daemon_core::payload::{ForwardRefusal, Source};
 pub use daemon_core::{Check, DumpReason, LinkId, StepBudget, Violation};
@@ -296,7 +295,7 @@ impl Paths {
     /// One input in, outputs appended. Ends by checking the invariants; a
     /// violation appends [`Output::Dump`], as does a step over its budget.
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
-        let started = Instant::now();
+        let started = daemon_core::StepStart::now();
         self.switched = None;
         match input {
             Input::Candidate { addr, source } => self.candidate(addr, source, out),
@@ -350,7 +349,7 @@ impl Paths {
         self.arm(out);
         let checked = self.check_step_invariants();
         out.extend(
-            daemon_core::finish_step(started, self.budget, 0, checked)
+            daemon_core::finish_step(started, self.budget, 0, None, checked)
                 .map(|reason| Output::Dump { reason }),
         );
     }

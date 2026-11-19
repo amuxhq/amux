@@ -350,14 +350,18 @@ suspensions:
   whether its own host or another forwarded it: the host finds no process
   to relay the input to, and asks the core for a resume that goes ahead
   only if the row is still suspended when its turn comes, after any exit it
-  waits out. A prompt is the new incarnation's first input and is answered
-  as taken; any other input goes to the new process once it connects. Input
-  typed to an agent stopped in the meantime starts nothing and is refused as
-  exited. Input the agent refuses as exiting waits for the exit when the
-  agent is leaving of its own accord, as it does when it suspends, and then
-  wakes it if the exit left it suspended or is refused as exited; input to
-  an agent the daemon is stopping is answered as exiting at once, not
-  after the stop's deadline;
+  waits out. The row reads suspended from the journal's last step, while
+  the process is still finishing and may already have stopped reading
+  input, so a process whose row carries its exit's cause is one the
+  resume waits out rather than refusing as running. A prompt is the new
+  incarnation's first input and is answered as taken; any other input
+  goes to the new process once it connects. Input typed to an agent
+  stopped in the meantime starts nothing and is refused as exited. Input
+  the agent refuses as exiting waits for the exit when the agent is
+  leaving of its own accord, as it does when it suspends, and then wakes
+  it if the exit left it suspended or is refused as exited; input to an
+  agent the daemon is stopping is answered as exiting at once, not after
+  the stop's deadline;
 - stopping or closing it marks it exited with cause `STOPPED` (closed, for a
   close), and its children follow as for any exit; deleting it removes it;
 - it is no awake member of its workspace while it has no process, and a
@@ -496,9 +500,10 @@ version integer, and a frame a reader does not know is ignored.
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
+| `read_git` | daemon → agent | `ReadGit {}`: read the folder's [git facts](#git-facts) again, as at a turn end; a draining or exiting agent ignores it |
 | `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent whenever the list changes and when the daemon connects: always to an agent it found running (even with none, which settles a spawn the last daemon took and never answered), and to one it has just started only if it has any; a one-shot agent waits for each incarnation's last report |
 | `dump` | agent → daemon | `DumpPart` holding the agent's record, answering a dump request |
-| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant, record }`: the agent's core asked for a report (the invariant it broke, or none for a step over its budget), with its record built then. The daemon writes the one report, with that record for this agent, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
+| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant, record }`: the agent's core asked for a report (the invariant it broke, or none for a step over its budget), with its record built then. The daemon writes the one report, with that record for this agent, after a limit of its own per kind; a step over its budget is sent with no record, and the daemon counts it and writes no report; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
 Within one step the order is fixed: blobs the step refers to are written
@@ -726,10 +731,23 @@ go, which ends whatever the server left in its group.
 
 The snapshot carries the agent folder's branch, base branch and change
 totals, which the fleet row shows. The agent process reads them with the
-[`git-facts`](../crates/git-facts/src/lib.rs) crate at start and again each
-time a turn ends, off its event loop and one read at a time, and feeds each
-result to the interpreter as an event; the snapshot changes only when the
-facts do. A folder outside a repository, or a machine without git, has none.
+[`git-facts`](../crates/git-facts/src/lib.rs) crate at start, again each
+time a turn ends, and whenever the daemon sends `read_git`, off its event
+loop and one read at a time, and feeds each result to the interpreter as an
+event; the snapshot changes only when the facts do.
+
+Several agents can work in one checkout, and the totals compare the whole
+folder with HEAD, so one agent's commit, or a person's, changes what every
+other agent's row counts. The daemon therefore sends `read_git` to every
+other agent of its host with a live process whose folder is the same as, or
+inside or around, the folder of an agent whose turn just ended; judging the
+checkout by path costs no git, and a folder it wrongly includes costs only
+a read that finds nothing new. When the daemon answers a `GetDiff` against
+HEAD, or against the row's base branch, and the diff's totals differ from
+the row's `uncommitted` or `on_branch`, it writes the diff's totals onto the
+row at once and sends the agent `read_git`, so the agent's next snapshot
+does not put the old totals back. An agent without a live process, such as
+a stopped or suspended one, is corrected only by a diff. A folder outside a repository, or a machine without git, has none.
 The base is the branch the agent's worktree was made from when its host
 made one (the spec's `base_branch`), else the repository's default branch:
 what `origin/HEAD` names, else the configured default, else `main` or

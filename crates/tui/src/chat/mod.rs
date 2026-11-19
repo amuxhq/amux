@@ -865,10 +865,6 @@ impl ChatView {
             let action = self.ask.box_key(&card, key);
             return self.ask_effects(state, &card, action);
         }
-        // Signing in happens elsewhere; the draft waits behind the box.
-        if ui_view::sign_in(state).is_some() {
-            return vec![];
-        }
         // A provider subagent takes no messages: there is no field to type
         // in, and Enter sends nothing.
         if matches!(state.composer(), Composer::Native { .. }) {
@@ -892,7 +888,6 @@ impl ChatView {
     fn offered_commands(&self, state: &SessionState) -> Vec<ui_view::CommandMatch> {
         let text = self.editor.text();
         if !self.composer_has_keys(state)
-            || ui_view::sign_in(state).is_some()
             || self.editor.cursor_chars() != text.chars().count()
             || self.menu.closed(text)
         {
@@ -2703,6 +2698,16 @@ impl ChatView {
         // brings earlier ones in; one line says how many more wait, on the
         // side they are on, so the block's height never changes as it moves.
         const QUEUED_SHOWN: usize = 3;
+        // The agent's account needs signing in: above everything that rests
+        // on the composer, a notice says how. The composer still sends,
+        // since sending is how someone who signed in elsewhere tries again;
+        // a provider subagent's takes no messages, so it is left alone.
+        if let Some(sign_in) = &sign_in
+            && !matches!(state.composer(), Composer::Native { .. })
+        {
+            bottom.extend(sign_in_notice(state.kind(), &host, sign_in, width, theme));
+            bottom.push(Line::default());
+        }
         let entries = self.queue_entries(state, &host);
         if let Some(selected) = self.tray {
             if entries.is_empty() {
@@ -2904,18 +2909,6 @@ impl ChatView {
                     }
                     None => keys(&[&[("enter", "choose")], stop, more].concat()),
                 });
-            }
-            // The agent's account needs signing in: the box says how, as an
-            // ask would, and keeps the draft for afterwards. An ask the
-            // agent exited with leaves the composer to say it exited.
-            _ if let Some(sign_in) = &sign_in => {
-                let (lines, mode) =
-                    sign_in_box(state.kind(), &host, sign_in, &summary, width, theme);
-                if let Some(cols) = mode {
-                    ask_mode = Some((bottom.len() + lines.len() - 1, cols));
-                }
-                bottom.extend(lines);
-                hint = Hint::Keys(keys(&[(&format!("ctrl+{}", self.leader), "more")]));
             }
             _ if let Composer::Native { stop } = state.composer() => {
                 bottom.extend(native_box(state.kind(), &stop, &summary, width, theme));
@@ -3833,23 +3826,6 @@ fn ends_with_exit(state: &SessionState) -> bool {
     })
 }
 
-/// The sign-in box in the composer's place, framed with the composer's
-/// edge, and the columns of the mode's words on that edge.
-fn sign_in_box(
-    kind: wire::Kind,
-    host: &str,
-    sign_in: &ui_view::SignInView,
-    controls: &ui_view::ControlsSummary,
-    width: usize,
-    theme: Theme,
-) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
-    const MARGIN: usize = 2;
-    let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
-    let body = sign_in_lines(kind, host, sign_in, inner, theme);
-    let (lines, mode, _) = framed(body, theme.attention(), &ROUNDED, controls, width, theme);
-    (lines, mode)
-}
-
 /// Who runs a provider subagent, by its kind.
 fn provider_name(kind: wire::Kind) -> &'static str {
     match kind {
@@ -3924,34 +3900,45 @@ pub(crate) fn native_composer_lines(
     lines
 }
 
-/// The sign-in box alone, its edge naming `model`, as the component
-/// catalogue draws it.
+/// The sign-in notice over an empty composer, as the component catalogue
+/// draws it.
 #[cfg(feature = "fixtures")]
 pub(crate) fn sign_in_composer_lines(
     kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
-    model: &str,
+    name: &str,
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let edge = ui_view::ControlsSummary {
-        model: Some(model.to_owned()),
-        ..Default::default()
-    };
-    sign_in_box(kind, host, sign_in, &edge, width, theme).0
+    let mut lines = sign_in_notice(kind, host, sign_in, width, theme);
+    lines.push(Line::default());
+    lines.extend(composer_lines(
+        &Editor::default(),
+        &Composer::Send,
+        name,
+        host,
+        Reach::Online(wire::RouteKind::Direct),
+        width,
+        theme,
+    ));
+    lines
 }
 
-/// The box for an agent whose account needs signing in: who, the account
-/// and what went wrong, then how to sign in. Nothing here can do it for
-/// you, so there are no choices.
-fn sign_in_lines(
+/// The notice for an agent whose account needs signing in: who, the
+/// account and what went wrong, how to sign in, and that sending tries
+/// again. Nothing here can sign in for you, so there are no choices; the
+/// provider's next good answer takes the notice away.
+fn sign_in_notice(
     kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
+    // The notice's words line up with the composer's text below it.
+    const INDENT: usize = 4;
+    let inner = width.saturating_sub(INDENT + 2).max(1);
     let (who, steps): (&str, Vec<(&str, bool)>) = match kind {
         wire::Kind::Codex => (
             "Codex",
@@ -3968,8 +3955,12 @@ fn sign_in_lines(
             ],
         ),
     };
+    let indented = || Line::from(" ".repeat(INDENT));
     let mut lines = Vec::new();
-    let mut head = Line::from(Span::styled("● ", theme.attention()));
+    let mut head = Line::from(vec![
+        Span::raw(" ".repeat(INDENT - 2)),
+        Span::styled("● ", theme.attention()),
+    ]);
     push(
         &mut head,
         format!("{who} needs you to sign in"),
@@ -3977,12 +3968,11 @@ fn sign_in_lines(
         width,
     );
     lines.push(head);
-    lines.push(Line::default());
     let what = match sign_in.state {
         wire::SignInState::Failed => "Sign-in failed",
         _ => "Signed out",
     };
-    let mut status = Line::default();
+    let mut status = indented();
     push(&mut status, what, theme.muted(), width);
     if !sign_in.account.is_empty() {
         push(
@@ -3993,16 +3983,15 @@ fn sign_in_lines(
         );
     }
     lines.push(status);
-    for part in text::wrap(&sign_in.message, width.max(1)) {
+    for part in text::wrap(&sign_in.message, inner) {
         if part.is_empty() {
             continue;
         }
-        let mut line = Line::default();
+        let mut line = indented();
         push(&mut line, part, theme.faint(), width);
         lines.push(line);
     }
-    lines.push(Line::default());
-    let mut how = Line::default();
+    let mut how = indented();
     for (words, code) in steps {
         push(
             &mut how,
@@ -4013,6 +4002,14 @@ fn sign_in_lines(
     }
     push(&mut how, format!("{host}."), theme.text(), width);
     lines.push(how);
+    let mut retry = indented();
+    push(
+        &mut retry,
+        "Signed in elsewhere? Send a message to try again.",
+        theme.muted(),
+        width,
+    );
+    lines.push(retry);
     lines
 }
 

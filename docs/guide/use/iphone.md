@@ -84,6 +84,9 @@ can always reply in your own words instead.
 Open an agent's changes from its chat to read every file it touched. Select a
 line, or a range of lines, and comment on it with **Add to Review**. Your
 comments go back into the composer as one review, ready to send to the agent.
+The count on the chat is of the agent's whole folder; if the folder changed
+since the agent last finished a turn, opening its changes brings the count up
+to date.
 
 ## Computers
 

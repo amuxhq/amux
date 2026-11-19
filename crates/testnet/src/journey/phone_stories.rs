@@ -1146,6 +1146,7 @@ fn send_while_away(journey: &mut PhoneJourney) -> Proved {
 
 const LIMIT: &str = "5-hour limit reached · resets ";
 const SIGN_IN: &str = "Run claude and sign in with /login on desk.";
+const RETRY: &str = "Signed in elsewhere? Send a message to try again.";
 
 fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     journey.launch(Launch::plain())?;
@@ -1175,17 +1176,19 @@ fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     reflected_once(&past, "Try again.")?;
     let control = negative_control(reflected_once(&past, "Try again. (a wrong prompt)"))?;
 
-    // A refused credential takes the composer's place: Claude must be
-    // signed in again on the host it runs on.
+    // A refused credential puts a notice over the composer: Claude must be
+    // signed in again on the host it runs on. The composer still sends, and
+    // sending is the retry once Claude is signed in elsewhere.
     leave_chat(journey)?;
     let expired = open_agent(journey, "expired")?;
     send(journey, "Check the links.")?;
     let asked = |drawn: &Drawn| {
         drawn.label("chat.foot.sign-in") == "Claude needs you to sign in"
             && drawn.value("chat.foot.sign-in").contains(SIGN_IN)
-            && !drawn.has("chat.field")
+            && drawn.value("chat.foot.sign-in").contains(RETRY)
+            && drawn.has("chat.field")
     };
-    journey.wait(asked, "signing in in the composer's place")?;
+    journey.wait(asked, "the sign-in notice over the composer")?;
     let refused = journey.wait_chat("desk", "expired", |chat| phase(chat) == "IDLE", "refused")?;
     reflected_once(&refused, "Check the links.")?;
     let row = format!("home.row.{expired}");
@@ -1194,12 +1197,25 @@ fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     journey.tap(&row)?;
     journey.wait(asked, "the chat again")?;
     journey.screen("sign-in", &["chat.row.turn-end"])?;
+    send(journey, "Try them again.")?;
+    journey.wait(
+        |drawn| labelled(drawn, "Links checked.") && !drawn.has("chat.foot.sign-in"),
+        "the answer that clears the notice",
+    )?;
+    let retried = journey.wait_chat(
+        "desk",
+        "expired",
+        |chat| phase(chat) == "IDLE" && prompts(chat, "Try them again.").len() == 1,
+        "retried",
+    )?;
+    reflected_once(&retried, "Try them again.")?;
     Ok(vec![
         "at its usage limit the strip over the composer named the 5-hour window and when it resets".to_owned(),
         "a prompt still went past the limit and was answered; the desk holds it once".to_owned(),
         control,
-        "refused its credential, Claude's chat put signing in in the composer's place, naming desk to sign in on".to_owned(),
+        "refused its credential, Claude's chat put a sign-in notice over a composer that still sends, naming desk to sign in on".to_owned(),
         "the desk holds the refused turn's prompt once".to_owned(),
+        "signed in again, a message sent from that composer was answered, the answer took the notice away, and the desk holds it once".to_owned(),
     ])
 }
 

@@ -3221,8 +3221,8 @@ impl ::prost::Name for ToolServer {
         "type.googleapis.com/amux.v1.ToolServer".into()
     }
 }
-/// Session strip: sign-in state; a problem replaces the composer with a foot
-/// card.
+/// Session strip: sign-in state; a problem shows as a notice above the
+/// composer, which still sends: sending is how to try again.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SignIn {
     #[prost(enumeration = "SignInState", tag = "1")]
@@ -9373,9 +9373,16 @@ pub struct Experiment {
     #[prost(string, tag = "3")]
     pub description: ::prost::alloc::string::String,
     /// Whether the config switches it on. The daemon reads the switch when it
-    /// starts, so a change takes effect at its next start.
+    /// starts, and restarts itself to apply a change.
     #[prost(bool, tag = "4")]
     pub enabled: bool,
+    /// The daemon runs it otherwise than the config now says: the switch, or
+    /// while it is on its own settings, moved since the daemon started, and the
+    /// daemon restarts to apply that once its work under way settles. A client
+    /// shows the switch as being applied. False from builds before it, which
+    /// applied a change at their next start.
+    #[prost(bool, tag = "5")]
+    pub applying: bool,
 }
 impl ::prost::Name for Experiment {
     const NAME: &'static str = "Experiment";
@@ -9409,7 +9416,8 @@ pub struct UpdateSettingsRequest {
     #[prost(bool, optional, tag = "8")]
     pub auto_reports: ::core::option::Option<bool>,
     /// The whole new list of experiments switched on; absent leaves it as it
-    /// is. Takes effect when the daemon next starts.
+    /// is. The daemon restarts itself to apply it, as `applying` shows until
+    /// it has.
     #[prost(message, optional, tag = "9")]
     pub experiments: ::core::option::Option<ExperimentList>,
 }
@@ -14604,7 +14612,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -14662,6 +14670,11 @@ pub mod ctl_frame {
         /// itself. Answered by `reply` keyed by the input's id, as `input` is.
         #[prost(message, tag = "12")]
         ChildInput(super::ChildInput),
+        /// Daemon to agent: the folder may have changed since the agent last
+        /// read its git facts, so read them again. An agent from before this
+        /// frame ignores it and reads them at its next turn end as ever.
+        #[prost(message, tag = "13")]
+        ReadGit(super::ReadGit),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -14737,7 +14750,9 @@ pub struct DumpAsked {
     /// it, by kind, size and aliased id, without content. What the daemon
     /// writes as the bundle's record of the agent, even when the agent has
     /// exited by the time the bundle is written; empty when it could not be
-    /// built, and then the daemon asks the agent for its part.
+    /// built, and then the daemon asks the agent for its part. Empty too for
+    /// a step over its budget, which the daemon counts and writes no bundle
+    /// of.
     #[prost(bytes = "vec", tag = "5")]
     pub record: ::prost::alloc::vec::Vec<u8>,
 }
@@ -14791,6 +14806,22 @@ impl ::prost::Name for Nudge {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Nudge".into()
+    }
+}
+/// Sent when something outside the agent's own turns showed its git facts
+/// may be stale: another agent in the same checkout ended a turn, or a diff
+/// of the folder disagreed with the agent's row. The facts reach the row the
+/// usual way, on the agent's next snapshot.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadGit {}
+impl ::prost::Name for ReadGit {
+    const NAME: &'static str = "ReadGit";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ReadGit".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ReadGit".into()
     }
 }
 /// The live agents directly below the agent, on every host its daemon knows

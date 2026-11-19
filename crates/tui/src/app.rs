@@ -1288,8 +1288,21 @@ impl App {
             self.spawn(async move {
                 Some(
                     match ui_runtime::review::review(client.as_ref(), &agent_id, base).await {
-                        Ok((_, patch)) if patch.trim().is_empty() => {
-                            AppEvent::Notice("no changes to review".into(), Tone::Info)
+                        // The host's list of changed files is its word on
+                        // whether anything changed; an empty patch beside
+                        // a list was not read whole, and is no reason to
+                        // say nothing changed.
+                        Ok((diff, patch)) if patch.trim().is_empty() => {
+                            if diff.files.is_empty() {
+                                AppEvent::Notice("no changes to review".into(), Tone::Info)
+                            } else {
+                                AppEvent::Notice(
+                                    "could not read the changes: the host's patch is missing \
+                                     the files it lists"
+                                        .into(),
+                                    Tone::Warn,
+                                )
+                            }
                         }
                         Ok((diff, patch)) => AppEvent::Review {
                             agent_id,

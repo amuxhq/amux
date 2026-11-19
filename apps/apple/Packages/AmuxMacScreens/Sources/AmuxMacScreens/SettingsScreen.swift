@@ -149,12 +149,26 @@ private struct SettingsForm: View {
                 }
 
                 if !settings.experiments.isEmpty {
-                    SettingsGroup("Experiments", footer: "Takes effect when amux restarts.") {
+                    SettingsGroup(
+                        "Experiments",
+                        footer: settings.applyingExperiments
+                            ? "amux restarts to apply the change. Agents keep running." : nil
+                    ) {
                         ForEach(settings.experiments, id: \.name) { experiment in
                             SettingRow(experiment.name.capitalizedFirst, note: experiment.description) {
-                                Toggle(experiment.name.capitalizedFirst, isOn: change(experiment.enabled) { on in
-                                    .with(experiments: settings.switching(experiment.name, on: on))
-                                })
+                                if experiment.applying {
+                                    // amux restarts to run what the switch now
+                                    // says; until it has, neither on nor off is
+                                    // true.
+                                    HStack(spacing: 6) {
+                                        ProgressView().controlSize(.small)
+                                        Text("Applying…").foregroundStyle(Palette.textSecondary)
+                                    }
+                                } else {
+                                    Toggle(experiment.name.capitalizedFirst, isOn: change(experiment.enabled) { on in
+                                        .with(experiments: settings.switching(experiment.name, on: on))
+                                    })
+                                }
                             }
                         }
                     }
@@ -386,6 +400,12 @@ extension MachineSettings {
     /// whole list a change sends.
     func switching(_ name: String, on: Bool) -> [String] {
         experiments.filter { $0.name == name ? on : $0.enabled }.map(\.name)
+    }
+
+    /// amux is restarting to apply an experiment switch: until it has, the
+    /// settings are worth reading again.
+    public var applyingExperiments: Bool {
+        experiments.contains(where: \.applying)
     }
 }
 

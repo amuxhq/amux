@@ -2,15 +2,21 @@
 //! with the changed files; it builds the patch and stores it as the agent's
 //! blob only when asked. The branch comparison runs from where the branch
 //! left its base to the working tree, and an exited agent's folder is
-//! compared as it is now.
+//! compared as it is now. A diff that disagrees with the totals on the
+//! agent's row corrects the row, and one agent's turn end has the others in
+//! its checkout read their folders' facts again.
 
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use node::{BlobError, PATCH_MIME};
 use support::synthetic::*;
 use support::*;
-use wire::{DiffBase, DiffFile, DiffFileChange, ErrorCode, GetDiffRequest, Lifecycle, diff_base};
+use wire::{
+    ChangeTotals, DiffBase, DiffFile, DiffFileChange, ErrorCode, GetDiffRequest, Lifecycle,
+    diff_base,
+};
 
 use crate::support;
 
@@ -269,6 +275,203 @@ async fn a_comparison_git_cannot_make_says_why() {
         .await
         .unwrap_err();
     assert_eq!(no_base.to_wire().code, ErrorCode::InvalidArgument as i32);
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+fn totals(files: u32, added: u32, removed: u32) -> ChangeTotals {
+    ChangeTotals {
+        files,
+        added,
+        removed,
+    }
+}
+
+/// A turn's end, its snapshot carrying `git` as the agent's read at that
+/// end found the folder.
+fn turn_ended_with(git: Option<wire::Git>) -> wire::Step {
+    let mut step = snapshot(wire::Phase::Idle, &[], 4_000);
+    step.snapshot.as_mut().unwrap().git = git;
+    step.turn_end = Some(wire::TurnEnd {
+        turn_id: 1,
+        outcome: wire::TurnOutcome::Completed as i32,
+        ..wire::TurnEnd::default()
+    });
+    step
+}
+
+/// What the agent's row says of its folder now.
+async fn row_git(runtime: &node::ProfileRuntime, agent: &SyntheticAgent) -> Option<wire::Git> {
+    runtime.agent(agent.id).await.unwrap().git
+}
+
+/// The row's totals are the agent's own read at its last turn end, and a
+/// commit made after it, by a person or another agent in the checkout,
+/// leaves them stale. A diff that shows them wrong corrects the row at once,
+/// for whichever comparison it made, and asks the agent to read its facts
+/// again so its next snapshot agrees.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_diff_that_disagrees_with_the_row_corrects_it() {
+    let install = Install::new();
+    repository(&install.work);
+    let mut agent = SyntheticAgent::new(&install, "coder", SEGMENTS);
+    agent.register(&install);
+    agent.go_live();
+    let daemon = install.start("boot-1", quiet_launch()).await;
+    let runtime = runtime(&daemon, &install);
+
+    let read_at_turn_end = wire::Git {
+        branch: Some("feature".into()),
+        base_branch: Some("main".into()),
+        uncommitted: Some(totals(2, 2, 0)),
+        on_branch: Some(totals(2, 3, 0)),
+        checkout: None,
+    };
+    agent.append(&turn_ended_with(Some(read_at_turn_end.clone())));
+    agent.nudge().await;
+    until("the turn end's facts on the row", || async {
+        let git = row_git(&runtime, &agent).await;
+        (git.as_ref() == Some(&read_at_turn_end))
+            .then_some(())
+            .ok_or_else(|| format!("{git:?}"))
+    })
+    .await
+    .unwrap();
+
+    // Someone else commits everything the agent's row counts.
+    git(&install.work, &["add", "-A"]);
+    git(&install.work, &["commit", "-q", "-m", "someone else's"]);
+
+    let tree = runtime
+        .get_diff(request(&agent, working_tree(), true))
+        .await
+        .unwrap();
+    assert!(tree.files.is_empty(), "{tree:#?}");
+    let git_now = row_git(&runtime, &agent).await.unwrap();
+    assert_eq!(
+        git_now.uncommitted,
+        Some(totals(0, 0, 0)),
+        "the row agrees with the diff once it is answered"
+    );
+    assert_eq!(
+        git_now.on_branch,
+        Some(totals(2, 3, 0)),
+        "a comparison the diff did not make is left as it was"
+    );
+
+    let branch = runtime
+        .get_diff(request(
+            &agent,
+            diff_base::Base::Branch("main".into()),
+            false,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(branch.files.len(), 2, "{branch:#?}");
+    // The branch now holds both commits: kept.txt gained two lines on it
+    // and new.txt one, the same totals counted another way.
+    assert_eq!(
+        row_git(&runtime, &agent).await.unwrap().on_branch,
+        Some(totals(2, 3, 0)),
+        "a diff that agrees changes nothing"
+    );
+    until(
+        "the disagreeing diff to ask the agent to read again",
+        || async {
+            let asked = agent.git_reads_asked();
+            (asked == 1).then_some(()).ok_or_else(|| format!("{asked}"))
+        },
+    )
+    .await
+    .unwrap();
+
+    let other = runtime
+        .get_diff(request(
+            &agent,
+            diff_base::Base::Branch("feature".into()),
+            false,
+        ))
+        .await
+        .unwrap();
+    assert!(other.files.is_empty());
+    assert_eq!(
+        row_git(&runtime, &agent).await.unwrap(),
+        wire::Git {
+            uncommitted: Some(totals(0, 0, 0)),
+            ..read_at_turn_end
+        },
+        "a branch other than the row's base is not a comparison the row counts"
+    );
+    assert_eq!(agent.git_reads_asked(), 1);
+
+    agent.die().await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Agents sharing a checkout all count it against HEAD, so one agent's turn
+/// end, which may have committed or reverted, has every other live agent
+/// whose folder is the same, or one inside the other, read its facts again.
+/// An agent in another folder is left alone, and so is the one whose turn
+/// ended: it reads at its own turn end.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_end_has_the_others_in_its_checkout_read_their_facts_again() {
+    let install = Install::new();
+    repository(&install.work);
+    let inside = install.work.join("crates");
+    std::fs::create_dir_all(&inside).unwrap();
+    let elsewhere = install.path("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let mut ending = SyntheticAgent::new(&install, "ending", SEGMENTS);
+    let mut beside = SyntheticAgent::new(&install, "beside", SEGMENTS);
+    let mut nested = SyntheticAgent::new(&install, "nested", SEGMENTS).in_folder(inside);
+    let mut apart = SyntheticAgent::new(&install, "apart", SEGMENTS).in_folder(elsewhere);
+    let agents = [&mut ending, &mut beside, &mut nested, &mut apart];
+    for agent in agents {
+        agent.register(&install);
+        agent.go_live();
+    }
+    let daemon = install.start("boot-1", quiet_launch()).await;
+    let runtime = runtime(&daemon, &install);
+    // An idle snapshot from each, ingested only after its Hello on the same
+    // connection: once every row shows it, the daemon knows each is live.
+    for agent in [&mut ending, &mut beside, &mut nested, &mut apart] {
+        agent.append(&snapshot(wire::Phase::Idle, &[], 2_000));
+        agent.nudge().await;
+    }
+    for agent in [&ending, &beside, &nested, &apart] {
+        until("each agent's idle snapshot", || async {
+            let phase = runtime.agent(agent.id).await.unwrap().phase;
+            (phase == wire::Phase::Idle as i32)
+                .then_some(())
+                .ok_or_else(|| format!("{phase}"))
+        })
+        .await
+        .unwrap();
+    }
+    assert_eq!(beside.git_reads_asked(), 0, "nothing has ended yet");
+
+    ending.append(&turn_ended_with(None));
+    ending.nudge().await;
+    until("the agents in the checkout to be asked", || async {
+        let asked = (beside.git_reads_asked(), nested.git_reads_asked());
+        (asked == (1, 1))
+            .then_some(())
+            .ok_or_else(|| format!("{asked:?}"))
+    })
+    .await
+    .unwrap();
+    holds_for(
+        "the agent elsewhere and the one that ended to be left alone",
+        Duration::from_millis(300),
+        || async { apart.git_reads_asked() == 0 && ending.git_reads_asked() == 0 },
+    )
+    .await
+    .unwrap();
+
+    for agent in [&mut ending, &mut beside, &mut nested, &mut apart] {
+        agent.die().await;
+    }
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

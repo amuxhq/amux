@@ -530,6 +530,63 @@ fn finishing_walks_the_skipped_steps_too() {
     );
 }
 
+/// An experiment switched while the daemon runs reads as being applied,
+/// not as on, until the restarted daemon runs it; then simply on. A switch
+/// while it applies still asks for what the person pressed.
+#[test]
+fn an_experiment_being_applied_says_so_until_the_daemon_runs_it() {
+    let mut scene = scenes::settings_applying();
+    let drawn = settings_text(&mut scene.screen, 110, 40);
+    let suspension = drawn
+        .lines()
+        .find(|line| line.contains("Suspension"))
+        .unwrap_or_else(|| panic!("no Suspension row: {drawn}"));
+    assert!(suspension.contains("applying…"), "{suspension}");
+    assert!(
+        drawn.contains("amux restarts to apply it. Agents keep running."),
+        "{drawn}"
+    );
+    let workspaces = drawn
+        .lines()
+        .find(|line| line.contains("Workspaces"))
+        .unwrap();
+    assert!(workspaces.trim_end().ends_with("on"), "{workspaces}");
+
+    // Pressed again before the restart: back to what runs.
+    let focused = drawn
+        .lines()
+        .find(|line| line.contains('›'))
+        .unwrap_or_default();
+    assert!(focused.contains("Suspension"), "{focused}");
+    assert_eq!(
+        scene.screen.key(key(KeyCode::Enter)),
+        [SettingsEffect::Update(Box::new(
+            wire::UpdateSettingsRequest {
+                experiments: Some(wire::ExperimentList {
+                    names: vec!["workspaces".to_owned()],
+                }),
+                ..Default::default()
+            }
+        ))]
+    );
+
+    let mut applied = scene.screen.settings().clone();
+    for experiment in &mut applied.experiments {
+        experiment.applying = false;
+    }
+    scene.screen.settings_changed(applied);
+    let drawn = settings_text(&mut scene.screen, 110, 40);
+    let suspension = drawn
+        .lines()
+        .find(|line| line.contains("Suspension"))
+        .unwrap();
+    assert!(suspension.trim_end().ends_with("on"), "{suspension}");
+    assert!(
+        !drawn.contains("applying") && !drawn.contains("restarts"),
+        "{drawn}"
+    );
+}
+
 #[test]
 fn every_setting_changes_at_once() {
     let mut page = scenes::settings_page(true).screen;
@@ -549,10 +606,11 @@ fn every_setting_changes_at_once() {
         "Workspaces",
         "Suspension",
         "Suspend idle agents",
-        "Takes effect when amux restarts.",
     ] {
         assert!(drawn.contains(words), "{words}: {drawn}");
     }
+    assert!(!drawn.contains("applying"), "{drawn}");
+    assert!(!drawn.contains("restarts"), "{drawn}");
     let update = |request: wire::UpdateSettingsRequest| SettingsEffect::Update(Box::new(request));
     page.key(key(KeyCode::Down));
     assert_eq!(

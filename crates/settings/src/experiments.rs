@@ -16,8 +16,8 @@
 //! builds running different versions, or none, never read each other's
 //! shapes.
 //!
-//! The switch is read when the daemon starts; a change takes effect at the
-//! next start.
+//! The switch is read when the daemon starts, and the daemon restarts
+//! itself to apply a change (`node::Daemon::restart_wanted`).
 
 pub mod suspension;
 
@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 /// One experiment this build implements.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct Experiment {
     /// What a person switches on: lowercase letters only, so a store table's
     /// name (`exp_<name>_<n>_...`) says whose it is unambiguously.
@@ -41,6 +41,27 @@ pub struct Experiment {
     /// module reads them: what `amux config` gets and sets under
     /// `experiments.<name>.<key>`.
     pub keys: &'static [ExperimentKey],
+    /// Its settings as its module reads them from its table, each by key
+    /// in words that are equal exactly when the settings are: what a daemon
+    /// runs it with. A value the module cannot use reads as the default it
+    /// uses instead, and a key it does not read is not there, so neither
+    /// changes what a daemon runs.
+    pub in_effect: fn(Option<&toml::Table>) -> Vec<(&'static str, String)>,
+}
+
+// An experiment is its version: a build implements each once.
+impl PartialEq for Experiment {
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version
+    }
+}
+
+impl Eq for Experiment {}
+
+impl std::hash::Hash for Experiment {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.version.hash(state);
+    }
 }
 
 /// One setting of an experiment's own table. The experiment's module owns
@@ -86,6 +107,7 @@ pub const WORKSPACES: Experiment = Experiment {
     version: wire::experimental::WORKSPACE.version(),
     description: "Run each agent in a workspace that amux makes, starts and stops with its agents.",
     keys: &[],
+    in_effect: |_| Vec::new(),
 };
 
 /// Idle agents without a parent stop their provider and resume on the next
@@ -95,6 +117,7 @@ pub const SUSPENSION: Experiment = Experiment {
     version: wire::experimental::SUSPENSION.version(),
     description: "Suspend idle agents and resume them when a message arrives.",
     keys: suspension::KEYS,
+    in_effect: suspension::in_effect,
 };
 
 /// Every experiment this build implements, in the order settings screens
@@ -181,6 +204,13 @@ impl ExperimentSettings {
         )
     }
 
+    /// The experiments switched on that this build implements, each with
+    /// its settings as its module reads them: what a daemon started now
+    /// would run.
+    pub fn in_effect(&self) -> InEffect {
+        InEffect::of(&self.enabled(), self)
+    }
+
     /// Names in `enabled` this build implements no experiment by, each once.
     pub fn unknown_names(&self) -> Vec<&str> {
         let mut unknown: Vec<&str> = Vec::new();
@@ -244,10 +274,108 @@ impl Enabled {
     }
 }
 
+/// The experiments a daemon runs, each with its settings as its module
+/// reads them. Two are equal exactly when a daemon would run the same: the
+/// daemon restarts when the config's differs from the one it started with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InEffect(Vec<(&'static Experiment, Vec<(&'static str, String)>)>);
+
+impl InEffect {
+    /// `enabled`, each with the settings `settings` gives it.
+    pub fn of(enabled: &Enabled, settings: &ExperimentSettings) -> InEffect {
+        InEffect(
+            enabled
+                .iter()
+                .map(|experiment| {
+                    (
+                        experiment,
+                        (experiment.in_effect)(settings.table(experiment)),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// The experiments on.
+    pub fn enabled(&self) -> Enabled {
+        Enabled(self.0.iter().map(|(experiment, _)| *experiment).collect())
+    }
+
+    /// The settings `experiment` runs with; none when it is off.
+    pub fn of_experiment(&self, experiment: &Experiment) -> Option<&[(&'static str, String)]> {
+        self.0
+            .iter()
+            .find(|(on, _)| *on == experiment)
+            .map(|(_, settings)| settings.as_slice())
+    }
+
+    /// Each setting of each experiment on, as `suspension.after = 30m`.
+    pub fn describe(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .flat_map(|(experiment, settings)| {
+                settings
+                    .iter()
+                    .map(|(key, value)| format!("{}.{key} = {value}", experiment.name))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::InstallationConfig;
+
+    /// What a daemon runs is what each module reads: the same delay written
+    /// another way, a value the module cannot use and a key it does not
+    /// read change nothing, and an experiment that is off runs with nothing.
+    #[test]
+    fn what_runs_is_what_each_module_reads() {
+        let in_effect = |text: &str| {
+            InstallationConfig::from_toml(text)
+                .unwrap()
+                .experiments
+                .in_effect()
+        };
+        let on = "[experiments]\nenabled = [\"suspension\"]\n";
+        let default = in_effect(on);
+        assert_eq!(default.describe(), ["suspension.after = 30m"]);
+        assert_eq!(
+            in_effect(&format!("{on}[experiments.suspension]\nafter = \"30m\"\n")),
+            default
+        );
+        assert_eq!(
+            in_effect(&format!(
+                "{on}[experiments.suspension]\nafter = \"1800s\"\n"
+            )),
+            default,
+            "the same delay"
+        );
+        assert_eq!(
+            in_effect(&format!("{on}[experiments.suspension]\nafter = \"soon\"\n")),
+            default,
+            "unusable: the default"
+        );
+        assert_eq!(
+            in_effect(&format!("{on}[experiments.suspension]\nbefore = \"1h\"\n")),
+            default,
+            "a key it does not read"
+        );
+        let longer = in_effect(&format!("{on}[experiments.suspension]\nafter = \"45m\"\n"));
+        assert_ne!(longer, default);
+        assert_eq!(longer.describe(), ["suspension.after = 45m"]);
+        assert_eq!(
+            in_effect(&format!(
+                "{on}[experiments.suspension]\nafter = \"1500ms\"\n"
+            ))
+            .describe(),
+            ["suspension.after = 1500ms"]
+        );
+        let off = in_effect("[experiments.suspension]\nafter = \"45m\"\n");
+        assert_eq!(off, in_effect(""), "off runs with nothing");
+        assert_eq!(off.of_experiment(&SUSPENSION), None);
+    }
 
     #[test]
     fn every_experiment_is_named_and_versioned_so_its_traces_are_found_by_name() {

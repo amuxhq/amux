@@ -354,8 +354,12 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
 - **Wider access** (Codex): what it wants and why, `Allow for this turn`, `Allow for this session`, `No`.
 - **What this client cannot answer** (an ask from an agent this build cannot read): the reason, and `Open Claude's
   terminal` where that terminal can be attached here.
-- **Sign-in**: when the agent's account needs signing in again, the box says so with the provider's message and
-  where to do it (`Run claude and sign in with /login on desk`); nothing here can sign in, so it offers no choice.
+
+When the agent's account needs signing in again, a notice above the composer says so with the provider's message,
+where to do it (`Run claude and sign in with /login on desk`) and `Signed in elsewhere? Send a message to try
+again.` It is not an ask and takes nothing over: nothing here can sign in, so the composer keeps sending, a send
+is the retry, and the provider's next good answer clears the notice ([INTERPRETERS.md](INTERPRETERS.md) says
+when a running provider sees a credential signed in elsewhere).
 
 After an answer the box shows one sending line; if the connection dropped before a reply, `r` resends and `d`
 discards. Answered, an ask becomes a step in the feed: `Answered 2 questions` with each question and `→ the
@@ -688,7 +692,7 @@ only with all of its callers:
 |---|---|---|
 | Behaviour: keys, effects, layout, paging, asks, the queue, home, the review page | `crates/tui/src/tests.rs` | `just test-tui` |
 | Setting up and the settings screen: each step's effects and words, the QR code at each size, renewing the pairing window, home's `Finish setting up`, the new-agent folders | `crates/tui/src/tests/onboarding.rs` | `just test-tui` |
-| Component goldens, text and style classes: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in box, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
+| Component goldens, text and style classes: every row kind as the feed draws it, each ask in its box, the queue, the composer's states and the row above it, the sign-in notice, the review page | `crates/tui/tests/golden.rs`, `crates/tui/tests/golden/` | `just test-tui`; rewrite with `UPDATE_GOLDENS=1 just test-tui` |
 | Against served hosts: drafts across leaving a chat and the client closing, chats on agents a far host deleted or stopped linking | `crates/tui/tests/served.rs` | `just test-tui` |
 | PNG renderings of the components | [`crates/shot`](../crates/shot/README.md) | `just shot -- render --out DIR` |
 | The storybook: exactly the terminal stories of `tests/stories.json`, in its order, each drawing at every size in both palettes | `crates/shot/src/stories.rs` | `just test-crate shot` |

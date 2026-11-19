@@ -15,6 +15,7 @@ mod config;
 mod connect;
 mod pairing;
 mod profiles;
+mod relaunch;
 mod relay;
 mod server;
 mod setup;
@@ -398,7 +399,9 @@ fn main() -> ExitCode {
             report(
                 pipe.map_err(anyhow::Error::from)
                     .and_then(|pipe| Ok((pipe, connect::load_config(cli.config.as_deref())?)))
-                    .and_then(|(pipe, config)| server::run_daemon(&config, pipe)),
+                    .and_then(|(pipe, config)| {
+                        server::run_daemon(&config, cli.config.as_deref(), pipe)
+                    }),
             )
         }
         Command::Relay => report(relay::run(cli.config.as_deref())),

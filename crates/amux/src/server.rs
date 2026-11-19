@@ -90,12 +90,35 @@ fn launch(config: &InstallationConfig) -> Result<Launch> {
     })
 }
 
+/// How long a supervised daemon that asked its supervisor to restart it
+/// waits to be stopped before it exits by itself.
+const RESTART_PATIENCE: Duration = Duration::from_secs(10);
+
+/// How a running daemon ends.
+enum Ended {
+    /// Asked to stop, or its supervisor went: it shuts down and exits.
+    Stop,
+    /// It restarts itself to run the experiments the config switches on:
+    /// it shuts down, then starts again in place.
+    Relaunch,
+}
+
 /// Runs the daemon in the foreground until it is asked to stop: by a
 /// client's shutdown call, SIGTERM or SIGINT, or its supervisor's end of the
-/// pipe closing.
-pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>) -> Result<()> {
+/// pipe closing. `named` is the config file named on the command line or
+/// in the environment, as the daemon was started with it. It restarts itself when the experiments the config
+/// switches on are no longer the ones it runs: under a supervisor by asking
+/// it to, as the supervisor restarts it onto an installed update; without
+/// one by shutting down and starting again in place ([`crate::relaunch`]).
+pub fn run_daemon(
+    config: &InstallationConfig,
+    named: Option<&Path>,
+    pipe: Option<node::InheritedPipe>,
+) -> Result<()> {
     let log = daemon_log(config);
     log_to(&log)?;
+    #[cfg(unix)]
+    crate::relaunch::reap_inherited();
     for key in &config.ignored {
         tracing::warn!(key, "ignoring an unknown config key");
     }
@@ -105,7 +128,7 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(async {
+    let ended = runtime.block_on(async {
         let options = StartOptions {
             data_dir: config.root.clone(),
             boot_id: None,
@@ -129,27 +152,122 @@ pub fn run_daemon(config: &InstallationConfig, pipe: Option<node::InheritedPipe>
             .await
             .context("starting the daemon")?;
         let supervisor = daemon.take_supervisor();
+        let supervised = supervisor.is_some();
         tracing::info!(
             version = node::version(),
             root = %config.root.display(),
             front_door = %config.front_door().display(),
             generation = daemon.generation().counter,
             experiments = ?config.experiments.enabled().versions(),
+            experiment_settings = ?config.experiments.in_effect().describe(),
             "serving"
         );
-        tokio::select! {
-            () = daemon.shutdown_requested() => tracing::info!("a client asked the daemon to stop"),
-            // Never resolves: each change of the machine's interfaces moves
-            // every profile's links onto the paths that work now.
-            () = daemon.follow_interfaces() => {}
-            () = terminated() => tracing::info!("signalled to stop"),
-            // The supervisor is gone: exit, so whoever starts a supervisor
-            // again gets a fresh daemon under it.
-            () = supervisor_gone(supervisor) => tracing::info!("the supervisor went away"),
+        // The waits borrow the daemon, so they end before it shuts down.
+        let ended = {
+        let gone = supervisor_gone(supervisor);
+        let signalled = terminated();
+        let restart = async {
+            // The next start reads the config as this one did: one it would
+            // refuse, a named file gone among them, holds the restart.
+            let said = std::sync::atomic::AtomicBool::new(false);
+            daemon
+                .restart_wanted(|| match connect::read_config(named) {
+                    Ok(_) => true,
+                    Err(error) => {
+                        if !said.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            tracing::warn!(
+                                error = format!("{error:#}"),
+                                "the config would not read at a start; restarting once it does"
+                            );
+                        }
+                        false
+                    }
+                })
+                .await
+        };
+        tokio::pin!(gone, signalled, restart);
+        let mut asked: Option<tokio::time::Instant> = None;
+        loop {
+            tokio::select! {
+                () = daemon.shutdown_requested() => {
+                    tracing::info!("a client asked the daemon to stop");
+                    break Ended::Stop;
+                }
+                // Never resolves: each change of the machine's interfaces
+                // moves every profile's links onto the paths that work now.
+                () = daemon.follow_interfaces() => {}
+                () = &mut signalled => {
+                    tracing::info!("signalled to stop");
+                    break Ended::Stop;
+                }
+                // The supervisor is gone: exit, so whoever starts a
+                // supervisor again gets a fresh daemon under it.
+                () = &mut gone => {
+                    tracing::info!("the supervisor went away");
+                    break Ended::Stop;
+                }
+                wanted = &mut restart, if asked.is_none() => {
+                    tracing::info!(
+                        running = ?wanted.running,
+                        wanted = ?wanted.wanted,
+                        settings = ?wanted.settings,
+                        settled = wanted.settled,
+                        "restarting to run the experiments switched on, with their settings"
+                    );
+                    if !wanted.settled {
+                        tracing::warn!(
+                            within = ?node::RESTART_SETTLE_WITHIN,
+                            "work under way did not settle in time; restarting anyway"
+                        );
+                    }
+                    if !supervised {
+                        break Ended::Relaunch;
+                    }
+                    // The supervisor stops this daemon and starts it again,
+                    // as it does onto an update; the stop is the signal.
+                    match node::supervisor::ask(
+                        &config.root,
+                        node::supervisor::Request::Restart,
+                        PATIENCE,
+                    )
+                    .await
+                    {
+                        Ok(answer) if answer == node::supervisor::RESTARTING => {
+                            asked = Some(tokio::time::Instant::now() + RESTART_PATIENCE);
+                        }
+                        // An older supervisor, or none answering: exiting
+                        // is a restart too, after its backoff.
+                        answer => {
+                            tracing::warn!(
+                                ?answer,
+                                "the supervisor did not restart the daemon; exiting for it to start a new one"
+                            );
+                            break Ended::Stop;
+                        }
+                    }
+                }
+                () = tokio::time::sleep_until(asked.unwrap_or_else(tokio::time::Instant::now)),
+                    if asked.is_some() =>
+                {
+                    tracing::warn!("the supervisor did not stop the daemon; exiting for it to start a new one");
+                    break Ended::Stop;
+                }
+            }
         }
+        };
         daemon.shutdown().await.context("shutting down")?;
-        Ok(())
-    })
+        Ok::<_, anyhow::Error>(ended)
+    });
+    // Every task and socket of this run goes with the runtime; the
+    // installation lock went with the shutdown.
+    runtime.shutdown_timeout(Duration::from_secs(5));
+    match ended? {
+        Ended::Stop => Ok(()),
+        Ended::Relaunch => {
+            tracing::info!("starting again in place");
+            Err(crate::relaunch::relaunch()).context("starting the daemon again")
+        }
+    }
 }
 
 /// Whether the daemon sends product analytics, and where: only a published

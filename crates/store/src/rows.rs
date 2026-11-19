@@ -31,8 +31,85 @@ const ITEM_COLUMNS: &str =
 /// What one held row costs against a retention budget: the byte lengths
 /// (not character counts) of its variable fields, 4 bytes for its kind and
 /// a fixed 48 for the other integers and the index entries beside them.
-const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
-    + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) + 4 + 48)";
+/// `{row}` stands for the row the columns are read from: nothing in a query
+/// over `items`, `NEW.` or `OLD.` in the triggers that keep the pools'
+/// totals (see [`keep_pool_totals`]); [`item_bytes`] fills it in.
+const ITEM_BYTES: &str = "(length(CAST({row}key AS BLOB)) + length(CAST({row}text AS BLOB)) \
+    + length({row}body) + IFNULL(length({row}attachments), 0) \
+    + IFNULL(length({row}input_id), 0) + 4 + 48)";
+
+/// [`ITEM_BYTES`] over the columns of `row` (`""`, `"NEW."` or `"OLD."`).
+fn item_bytes(row: &str) -> String {
+    ITEM_BYTES.replace("{row}", row)
+}
+
+/// Keeps the pools' totals on `conn` from here on: a table of running sums
+/// of [`ITEM_BYTES`], one per origin host, seeded with a full count of
+/// `items`, and triggers on `items` that move them with every row written
+/// or deleted. Retention reads its pools every sweep, and summing every row
+/// each time reads the whole table, every page of it; the totals make that
+/// a read of a row per host. They are kept per host rather than as own and
+/// replica so that they hold whichever host the store takes as its own: an
+/// explored store loading a dump takes the dump's.
+///
+/// The table and triggers are `TEMP`: they live on this connection only and
+/// nothing of them reaches the file, so the schema stays the migrations' and
+/// a store opened by any build counts its own totals. That holds only
+/// because this connection is the store's one writer (the installation lock
+/// keeps it so); a write to `items` on any other connection would leave the
+/// totals wrong until the store opens again. The temp table takes part in
+/// each transaction like any other, so a write that rolls back takes its
+/// totals' change back with it.
+///
+/// Every write to `items` fires one of the triggers: an upsert's insert
+/// fires the insert trigger, its `DO UPDATE` the update trigger, and a
+/// `DO UPDATE ... WHERE` that declines fires neither. An
+/// `INSERT OR REPLACE` would not: the row it replaces is deleted without
+/// firing the delete trigger unless `recursive_triggers` is on, which it is
+/// not, so the totals would keep the replaced row. Items are written with
+/// upserts and never so.
+pub(crate) fn keep_pool_totals(conn: &Connection) -> rusqlite::Result<()> {
+    // One pass in table order: a GROUP BY would sort every row first.
+    let mut totals: std::collections::HashMap<Vec<u8>, i64> = std::collections::HashMap::new();
+    {
+        let mut rows = conn.prepare(&format!(
+            "SELECT origin_host, {} FROM main.items",
+            item_bytes("")
+        ))?;
+        let mut rows = rows.query([])?;
+        while let Some(row) = rows.next()? {
+            *totals.entry(row.get(0)?).or_default() += row.get::<_, i64>(1)?;
+        }
+    }
+    // A trigger's body may not qualify a table, and an unqualified name
+    // looks in `temp` first; no main table is called `item_pools`.
+    conn.execute_batch(&format!(
+        "CREATE TEMP TABLE item_pools (
+             origin_host BLOB PRIMARY KEY,
+             bytes INTEGER NOT NULL
+         );
+         CREATE TEMP TRIGGER item_pools_insert AFTER INSERT ON main.items BEGIN
+             INSERT INTO item_pools (origin_host, bytes) VALUES (NEW.origin_host, {new})
+             ON CONFLICT (origin_host) DO UPDATE SET bytes = bytes + excluded.bytes;
+         END;
+         CREATE TEMP TRIGGER item_pools_update AFTER UPDATE ON main.items BEGIN
+             UPDATE item_pools SET bytes = bytes - {old} WHERE origin_host = OLD.origin_host;
+             INSERT INTO item_pools (origin_host, bytes) VALUES (NEW.origin_host, {new})
+             ON CONFLICT (origin_host) DO UPDATE SET bytes = bytes + excluded.bytes;
+         END;
+         CREATE TEMP TRIGGER item_pools_delete AFTER DELETE ON main.items BEGIN
+             UPDATE item_pools SET bytes = bytes - {old} WHERE origin_host = OLD.origin_host;
+         END;",
+        new = item_bytes("NEW."),
+        old = item_bytes("OLD."),
+    ))?;
+    let mut seed =
+        conn.prepare("INSERT INTO temp.item_pools (origin_host, bytes) VALUES (?1, ?2)")?;
+    for (host, bytes) in totals {
+        seed.execute(params![host, bytes])?;
+    }
+    Ok(())
+}
 
 /// The columns the registry owns: what an own row's daemon or a replica's
 /// inventory says about the agent itself.
@@ -998,12 +1075,28 @@ impl Rows<'_> {
         Ok(())
     }
 
-    /// The bytes own rows (or replica rows) hold, by [`ITEM_BYTES`].
+    /// The bytes own rows (or replica rows) hold, by [`ITEM_BYTES`]: from
+    /// the running totals [`keep_pool_totals`] keeps, not a sum over `items`.
     pub(crate) fn pool_bytes(&self, own: bool) -> Result<u64, StoreError> {
         let bytes: i64 = self
             .conn
+            .prepare_cached(
+                "SELECT IFNULL(SUM(bytes), 0) FROM temp.item_pools \
+                 WHERE (origin_host = ?1) = ?2",
+            )?
+            .query_row(params![self.own_host, own], |row| row.get(0))?;
+        Ok(bytes as u64)
+    }
+
+    /// The bytes own rows (or replica rows) hold, summed over every row of
+    /// `items`: what [`Rows::pool_bytes`] must always equal.
+    #[cfg(test)]
+    pub(crate) fn pool_bytes_counted(&self, own: bool) -> Result<u64, StoreError> {
+        let bytes: i64 = self
+            .conn
             .prepare_cached(&format!(
-                "SELECT IFNULL(SUM({ITEM_BYTES}), 0) FROM items WHERE (origin_host = ?1) = ?2"
+                "SELECT IFNULL(SUM({}), 0) FROM items WHERE (origin_host = ?1) = ?2",
+                item_bytes("")
             ))?
             .query_row(params![self.own_host, own], |row| row.get(0))?;
         Ok(bytes as u64)
@@ -1014,8 +1107,9 @@ impl Rows<'_> {
         let (bytes, rows): (i64, i64) = self
             .conn
             .prepare_cached(&format!(
-                "SELECT IFNULL(SUM({ITEM_BYTES}), 0), COUNT(*) FROM items \
-                 WHERE origin_host = ?1 AND agent_id = ?2"
+                "SELECT IFNULL(SUM({}), 0), COUNT(*) FROM items \
+                 WHERE origin_host = ?1 AND agent_id = ?2",
+                item_bytes("")
             ))?
             .query_row(params![agent.host, agent.agent], |row| {
                 Ok((row.get(0)?, row.get(1)?))
@@ -1031,8 +1125,9 @@ impl Rows<'_> {
         limit: u32,
     ) -> Result<Vec<(u64, u64)>, StoreError> {
         let mut statement = self.conn.prepare_cached(&format!(
-            "SELECT position, {ITEM_BYTES} FROM items WHERE origin_host = ?1 AND agent_id = ?2 \
-             ORDER BY position LIMIT ?3"
+            "SELECT position, {} FROM items WHERE origin_host = ?1 AND agent_id = ?2 \
+             ORDER BY position LIMIT ?3",
+            item_bytes("")
         ))?;
         let rows = statement
             .query_map(params![agent.host, agent.agent, limit], |row| {

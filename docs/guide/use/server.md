@@ -116,6 +116,10 @@ Two lines matter:
 - `Restart=on-failure`, not `always`. Otherwise `amux server stop` can never
   stop amux, because the service manager starts it straight back up.
 
+Switching an [experiment](terminal.md#settings) restarts amux in place: it
+stops cleanly and starts again as the same process, so your service manager
+sees nothing happen and your agents keep running.
+
 Without a supervisor, amux doesn't update itself. To update, run the install
 script again, which installs the latest stable release, and restart the
 service ([Updates and channels](updates.md)).

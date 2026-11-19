@@ -5,7 +5,7 @@ chat.prose.render |  | rendered | 183,134,189,20
 chat.row.prose | Last night's backup finished with no errors. | final | 16,176,370,20
 chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.field | Message backups |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44

@@ -6,7 +6,7 @@ chat.row.run | Ran 1 command | folded | 16,164,370,44
 chat.row.prose | The deploy check passed. | final | 16,210,370,20
 chat.prose.render |  | rendered | 16,210,370,20
 chat.row.turn-end | <volatile>
-chat.field | Message decision-sdk |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44

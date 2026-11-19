@@ -1,17 +1,16 @@
 shell |  | agents | 0,62,402,778
 chat |  | helper | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Say hello. |  | 16,158,370,40
-chat.row.prose | Ready when you are. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
+chat.row.prompt | Say hello. |  | 16,124,370,40
+chat.prose.render |  | rendered | 303,134,69,20
+chat.row.prose | Ready when you are. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.row.boundary | Ended · stopped |  | 16,267,370,34
-chat.row.boundary | Resumed |  | 16,301,370,34
-chat.row.prompt | Welcome back. |  | 16,335,370,40
-chat.row.prose | Ready when you are. | final | 16,387,370,20
-chat.prose.render |  | rendered | 16,387,370,20
+chat.row.prompt | Welcome back. |  | 16,233,370,40
+chat.prose.render |  | rendered | 259,243,113,20
+chat.row.prose | Ready when you are. | final | 16,285,370,20
+chat.prose.render |  | rendered | 16,285,370,20
 chat.row.turn-end | <volatile>
-chat.field | Message helper |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
@@ -23,15 +22,12 @@ chat.title | helper | helper | 76,66,165,36
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | Say hello. |  | 16,158,370,40
- | Ready when you are. |  | 16,210,370,20
- | Worked <t> |  | 16,237,62,16
- | Ended · stopped |  | 16,267,370,34
- | Resumed |  | 16,301,370,34
- | Welcome back. |  | 16,335,370,40
- | Ready when you are. |  | 16,387,370,20
- | Worked <t> |  | 16,415,62,16
+ | Say hello. |  | 16,124,370,40
+ | Ready when you are. |  | 16,176,370,20
+ | Worked <t> |  | 16,203,62,16
+ | Welcome back. |  | 16,233,370,40
+ | Ready when you are. |  | 16,285,370,20
+ | Worked <t> |  | 16,313,62,16
 BackButton | Agents |  | 16,62,44,44
  | helper, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

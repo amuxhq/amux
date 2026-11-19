@@ -4,7 +4,7 @@ chat.attachment | Pasted text · 12 lines |  | 28,682,172,26
 chat.attachment.remove | Remove |  | 164,673,44,44
 chat.attachment | Review · 1 comment |  | 28,714,173,26
 chat.attachment.remove | Remove |  | 165,705,44,44
-chat.field | Message reviewer | Please check against | 28,750,346,24
+chat.field | Reply | Please check against | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44

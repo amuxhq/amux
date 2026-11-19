@@ -7,7 +7,7 @@ chat.attachment | Review · 1 comment |  | 216,192,156,26
 chat.row.prose | I read the review. | final | 16,240,370,20
 chat.prose.render |  | rendered | 16,240,370,20
 chat.row.turn-end | Worked <t> |  | 16,267,62,16
-chat.field | Message reviewer |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44

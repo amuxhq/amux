@@ -1222,15 +1222,10 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
         journey.tap("new-agent.provider")?;
         journey.choose("Claude")?;
     }
-    let drawn = journey.wait(
+    journey.wait(
         |drawn| !drawn.value("new-agent.directory").is_empty(),
         "a directory chosen",
     )?;
-    // Unnamed, an agent is called after the directory it starts in.
-    let named = Path::new(drawn.value("new-agent.directory"))
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
     journey.tap("new-agent.start")?;
     let created = journey.wait_inventory(
         "desk",
@@ -1242,6 +1237,12 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
         .next()
         .cloned()
         .unwrap_or_default();
+    // Unnamed, an agent is given a word-pair name by its host, so the story
+    // reads the one it was given.
+    let named = listed(&created, &id)
+        .and_then(|agent| agent["name"].as_str())
+        .unwrap_or_default()
+        .to_owned();
     lifecycle(&created, &id, &named, LIVE)?;
     journey.wait_for(&["chat.field"])?;
     send(journey, HELLO)?;
@@ -1294,7 +1295,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     open_settled(journey, &id)?;
     journey.tap(&row)?;
     journey.wait(
-        |drawn| drawn.has("chat.field") && labelled(drawn, "Exited") && replies(drawn, READY) == 1,
+        |drawn| drawn.has("chat.field") && labelled(drawn, "Settled") && replies(drawn, READY) == 1,
         "the settled chat",
     )?;
     journey.screen("exited-and-resumable", &[])?;
@@ -1357,7 +1358,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     open_settled(journey, &id)?;
     journey.tap(&row)?;
     journey.wait(
-        |drawn| labelled(drawn, "Exited"),
+        |drawn| labelled(drawn, "Settled"),
         "the chat saying it exited again",
     )?;
     journey.tap("chat.more")?;

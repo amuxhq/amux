@@ -1,27 +1,26 @@
 shell |  | agents | 0,62,402,778
-chat |  | work | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Say hello. |  | 16,158,370,40
-chat.row.prose | Ready when you are. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
+chat |  | Fake session title | 0,116,402,724
+chat.row.prompt | Say hello. |  | 16,124,370,40
+chat.prose.render |  | rendered | 303,134,69,20
+chat.row.prose | Ready when you are. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.field | Message work |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
 chat.header | /p/t/a/n/d/work · desk | live | 76,66,165,36
-chat.title | work | work | 76,66,165,36
+chat.title | Fake session title | Fake session title | 76,66,165,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | Say hello. |  | 16,158,370,40
- | Ready when you are. |  | 16,210,370,20
- | Worked <t> |  | 16,237,62,16
+ | Say hello. |  | 16,124,370,40
+ | Ready when you are. |  | 16,176,370,20
+ | Worked <t> |  | 16,203,62,16
 BackButton | Agents |  | 16,62,44,44
- | work, /p/t/a/n/d/work · desk |  | 76,66,165,36
+ | Fake session title, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36
  | Back |  | 16,73,44,23

@@ -2,7 +2,7 @@ shell |  | agents | 0,62,402,778
 chat |  | reviewer | 0,116,402,724
 chat.attachment | Pasted text · 12 lines |  | 28,714,172,26
 chat.attachment.remove | Remove |  | 164,705,44,44
-chat.field | Message reviewer | Please check against | 28,750,346,24
+chat.field | Reply | Please check against | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44

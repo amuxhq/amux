@@ -589,10 +589,11 @@ impl ProfileRuntime {
 
     /// Puts the bytes of every file a message carries into the recipient's
     /// own blobs, from the sending agent's: copied when it runs on this
-    /// host, fetched from its host otherwise. The recipient then reads each
-    /// file at a path on its own host, exactly as a person's attachment. A
-    /// message from a person carries files already stored with the
-    /// recipient.
+    /// host, fetched from its host's peer service otherwise, since only
+    /// the host an agent runs on holds its files. The recipient then reads
+    /// each file at a path on its own host, exactly as a person's
+    /// attachment. A message from a person carries files already stored
+    /// with the recipient.
     async fn bring_attachments(
         &self,
         recipient: AgentId,
@@ -617,11 +618,11 @@ impl ProfileRuntime {
             if blobs.join(crate::blobs::hex(&blob.hash)).is_file() {
                 continue;
             }
-            let request = wire::GetBlobRequest {
-                agent_id: sender_agent.to_vec(),
-                hash: blob.hash.clone(),
-            };
             let bytes = if sender_host == self.host().as_bytes() {
+                let request = wire::GetBlobRequest {
+                    agent_id: sender_agent.to_vec(),
+                    hash: blob.hash.clone(),
+                };
                 self.get_blob(request)
                     .await
                     .map_err(|error| failed(error.to_string()))?
@@ -629,10 +630,9 @@ impl ProfileRuntime {
             } else {
                 let host = Uuid::from_slice(sender_host)
                     .map_err(|_| failed("its sender names no host".to_owned()))?;
-                self.on_peer(host, request)
+                self.peer_blob(host, sender_agent, &blob.hash)
                     .await
-                    .map_err(|error| failed(error.to_string()))?
-                    .bytes
+                    .map_err(failed)?
             };
             use sha2::Digest as _;
             if sha2::Sha256::digest(&bytes)[..] != blob.hash[..] {

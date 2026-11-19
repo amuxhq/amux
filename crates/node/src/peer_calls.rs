@@ -1,7 +1,8 @@
 //! The unary calls a daemon makes of a paired daemon for itself, on that
 //! host's peer service: a page of history older than its copy of an agent
-//! holds, and a child's report to its parent there. The follows are
-//! streams, opened by the driver's origin tasks.
+//! holds, a child's report to its parent there, and a file one of that
+//! host's agents sent in a message. The follows are streams, opened by the
+//! driver's origin tasks.
 //!
 //! None carries a caller header: the caller is this daemon, as the link's
 //! handshake authenticated it, and a call that names a person or an agent
@@ -11,7 +12,7 @@
 use daemon_core::payload::{Answer, PeerFailure, PeerReply, PeerRequest};
 use tonic::{Code, Status};
 use wire::ErrorCode;
-use wire::amux::staging::PeerServiceListItemsRequest;
+use wire::amux::staging::{PeerServiceGetBlobRequest, PeerServiceListItemsRequest};
 
 use crate::HostId;
 use crate::reach::{ANSWER_PATIENCE, Unreached};
@@ -59,6 +60,51 @@ impl ProfileRuntime {
             Ok(Ok(reply)) => Answer::Reply(Box::new(reply)),
             Ok(Err(status)) => Answer::Failed(failure(&status)),
             Err(_) => Answer::Failed(PeerFailure::Uncertain),
+        }
+    }
+
+    /// The bytes of the file `hash` names in one of `host`'s agents'
+    /// directories, as that host's peer service gives them. The caller
+    /// checks them against the hash.
+    pub(crate) async fn peer_blob(
+        &self,
+        host: HostId,
+        agent_id: &[u8],
+        hash: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        let name = || self.host_name(host);
+        let uncertain = || {
+            format!(
+                "{} stopped answering; the call may or may not have arrived",
+                name()
+            )
+        };
+        let mut client = match self.reach(host).await {
+            Ok(channel) => crate::link::peer_client(channel),
+            Err(Unreached::Lapsed) => {
+                let name = name();
+                return Err(format!(
+                    "{name} can be reached only through the relay, and this account's \
+                     subscription has lapsed to the free plan, which carries no calls between \
+                     hosts; renew it to reach {name}"
+                ));
+            }
+            Err(Unreached::Revoked) => {
+                return Err(format!("{} no longer trusts this machine", name()));
+            }
+            Err(Unreached::Unreachable) => return Err(format!("{} cannot be reached", name())),
+        };
+        let request = PeerServiceGetBlobRequest {
+            agent_id: agent_id.to_vec(),
+            hash: hash.to_vec(),
+        };
+        match tokio::time::timeout(ANSWER_PATIENCE, client.peer.get_blob(request)).await {
+            Ok(Ok(blob)) => Ok(blob.into_inner().bytes),
+            Ok(Err(status)) => Err(match failure(&status) {
+                PeerFailure::Refused(error) => error.message,
+                _ => uncertain(),
+            }),
+            Err(_) => Err(uncertain()),
         }
     }
 }

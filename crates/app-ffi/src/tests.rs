@@ -1671,8 +1671,11 @@ fn an_attached_app_hears_the_profile_list_again_after_the_daemon_restarts() {
     // Made by another client once the daemon is back, so only a stream
     // opened again after the restart can tell the app.
     tokio.block_on(async {
-        let other = client::GrpcInstallation::connect(&door).await.unwrap();
-        client::Installation::create_profile(&other, wire::CreateProfileRequest { label: None })
+        let other = client::next::Installation::connect(&door, client::next::Surface::Terminal)
+            .await
+            .unwrap();
+        other
+            .create_profile(wire::CreateProfileRequest { label: None })
             .await
             .unwrap();
     });

@@ -98,7 +98,7 @@ struct Shared {
     phone: Phone,
     /// The profiles, managed the same way whether the installation is
     /// hosted here or is a daemon this app attached to.
-    installation: Arc<dyn client::Installation>,
+    installation: client::next::Installation,
     outbox: Arc<Outbox>,
 }
 
@@ -208,7 +208,7 @@ impl Shared {
         let outbox = self.outbox.clone();
         self.act(async move {
             let answer = act.await;
-            outbox.post_profiles(installation.as_ref()).await;
+            outbox.post_profiles(&installation).await;
             answer
         })
     }
@@ -312,7 +312,7 @@ impl Outbox {
 
     /// Posts the profile list as it stands now; a list that cannot be read
     /// is left for the profile stream to post.
-    async fn post_profiles(&self, installation: &dyn client::Installation) {
+    async fn post_profiles(&self, installation: &client::next::Installation) {
         if let Ok(profiles) = installation.list_profiles().await {
             self.post_listed(&profiles);
         }
@@ -494,11 +494,12 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
     let phone = Phone::attached().map_err(|error| error.to_string())?;
     let door = front_door.to_owned();
     let installation = phone
-        .wait(async move { client::GrpcInstallation::connect(&door).await })
+        .wait(async move {
+            client::next::Installation::connect(&door, client::next::Surface::Mac).await
+        })
         .ok_or("the runtime has stopped")?
-        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?
-        .naming("mac");
-    serve(phone, Arc::new(installation), tail)
+        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?;
+    serve(phone, installation, tail)
 }
 
 /// How soon a stream from the daemon is opened again after it ends,
@@ -536,7 +537,7 @@ where
 /// again whenever the installation's profile stream says it moved.
 fn serve(
     phone: Phone,
-    installation: Arc<dyn client::Installation>,
+    installation: client::next::Installation,
     tail: u32,
 ) -> Result<Box<AmuxRuntime>, String> {
     let outbox = Arc::new(Outbox {
@@ -605,7 +606,6 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
         Some(embedded) => embedded.clock(),
         None => Arc::new(client::SystemClock),
     };
-    let embedded = shared.embedded().cloned();
     let outbox = shared.outbox.clone();
     let fleet = outbox.fleets.fetch_add(1, Ordering::SeqCst) + 1;
     let app = shared
@@ -626,17 +626,12 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 .iter()
                 .find(|listed| listed.id == profile.as_bytes())
                 .ok_or_else(|| format!("the installation hosts no profile {profile}"))?;
-            // The phone calls its hosted node in memory; the Mac dials the
-            // profile's socket, as the Mac app.
-            let client = match embedded {
-                Some(embedded) => embedded.node(profile).map_err(|error| error.to_string())?,
-                None => client::next::Client::connect(
-                    std::path::Path::new(&described.socket_path),
-                    client::next::Surface::Mac,
-                )
+            // The phone's installation opens its hosted node in memory; the
+            // Mac's dials the profile's socket, as the Mac app.
+            let client = installation
+                .open_profile(described)
                 .await
-                .map_err(|error| error.to_string())?,
-            };
+                .map_err(|error| error.to_string())?;
             let host = client
                 .admin()
                 .get_device_identity()
@@ -1459,7 +1454,7 @@ unsafe fn profile_act_on_profiles<T, F, Fut>(
 ) -> u64
 where
     T: Serialize + Send + 'static,
-    F: FnOnce(Arc<dyn client::Installation>, ProfileId) -> Fut,
+    F: FnOnce(client::next::Installation, ProfileId) -> Fut,
     Fut: Future<Output = Answered<T>> + Send + 'static,
 {
     guard(0, || {
@@ -1619,6 +1614,7 @@ pub unsafe extern "C" fn amux_runtime_sign_out(
                 installation
                     .open_profile(described)
                     .await?
+                    .admin()
                     .sign_out()
                     .await?;
                 let listed = installation.list_profiles().await?;

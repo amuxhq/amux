@@ -598,7 +598,7 @@ async fn listed(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
 }
 
 // The profile calls the app makes, through the installation's front door
-// in process, as a desktop client makes them over the daemon's socket.
+// in memory, as a desktop client makes them over the daemon's socket.
 
 async fn profiles(embedded: &EmbeddedRuntime) -> Vec<ProfileView> {
     let installation = embedded.installation().unwrap();
@@ -647,7 +647,13 @@ async fn bind(
 }
 
 async fn sign_out(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
-    embedded.client(profile).unwrap().sign_out().await.unwrap();
+    embedded
+        .node(profile)
+        .unwrap()
+        .admin()
+        .sign_out()
+        .await
+        .unwrap();
     listed(embedded, profile).await
 }
 
@@ -1111,8 +1117,8 @@ async fn a_phone_paired_with_a_signed_in_desk_takes_its_offered_account() {
     .unwrap();
     eventually(&app, "the desk online", || desk_online(&app)).await;
 
-    let client = embedded.client(phone).unwrap();
-    let mut offers = client.subscribe_sign_in_offers().await.unwrap();
+    let admin = embedded.node(phone).unwrap().admin();
+    let mut offers = admin.subscribe_sign_in_offers().await.unwrap();
     net.admin("desk")
         .await
         .unwrap()
@@ -1134,7 +1140,7 @@ async fn a_phone_paired_with_a_signed_in_desk_takes_its_offered_account() {
     assert_eq!(offer.host_name, "desk");
     assert_eq!(offer.email, "ada@example.com");
 
-    let profile = client
+    let profile = admin
         .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
             host_id: offer.host_id,
             accept: true,

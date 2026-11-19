@@ -18,11 +18,13 @@ them is on [the iPhone page](IOS.md).
 ## The dependency rule
 
 Nothing in `app-runtime` reaches the daemon. It talks to its runtime only
-through `client::Client`, the same trait the terminal uses, which has two
-implementations: `GrpcClient` over a profile's local socket, and `InProcess`,
-the profile's client service called directly. Profiles are managed through
-`client::Installation` the same way: `GrpcInstallation` over the daemon's
-front door, `InProcessInstallation` over the embedded one. A desktop app
+through the client library's `Client`, the same one the terminal uses: the
+generated stubs over a profile's local socket on a desktop, and over the
+profile's routes called in memory on the phone, where the node's router
+carries a call addressed to another host to it just as the daemon behind a
+socket does. Profiles are managed through the library's `Installation` the
+same way: over the daemon's front door socket, or over the embedded front
+door's service called in memory. A desktop app
 attaches to the daemon on its machine (`amux_runtime_attach`): the same
 library, with `Phone` started without an installation (`Phone::attached`),
 so there are no cores to step and the step only hands over what the

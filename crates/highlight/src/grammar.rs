@@ -18,7 +18,8 @@ use tree_sitter_language::LanguageFn;
 
 use crate::{Language, TokenKind};
 
-/// A grammar's slot in [`GRAMMARS`].
+/// A grammar's slot in [`GRAMMARS`]. The public languages, and the
+/// grammars only another one injects (Markdown's inline text).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GrammarId {
     Rust,
@@ -37,6 +38,8 @@ pub(crate) enum GrammarId {
     Java,
     Html,
     Css,
+    Markdown,
+    MarkdownInline,
 }
 
 impl GrammarId {
@@ -58,6 +61,7 @@ impl GrammarId {
             Language::Java => GrammarId::Java,
             Language::Html => GrammarId::Html,
             Language::Css => GrammarId::Css,
+            Language::Markdown => GrammarId::Markdown,
             Language::Diff => return None,
         })
     }
@@ -92,7 +96,7 @@ pub(crate) struct Grammar {
     pub(crate) kinds: &'static [(&'static str, TokenKind)],
 }
 
-pub(crate) static GRAMMARS: [Grammar; 16] = [
+pub(crate) static GRAMMARS: [Grammar; 18] = [
     Grammar {
         id: GrammarId::Rust,
         name: "rust",
@@ -299,6 +303,29 @@ pub(crate) static GRAMMARS: [Grammar; 16] = [
         // Property names, as against the values they are given.
         kinds: &[("property", TokenKind::Type)],
     },
+    Grammar {
+        id: GrammarId::Markdown,
+        name: "markdown",
+        language: tree_sitter_md::LANGUAGE,
+        highlights: &[tree_sitter_md::HIGHLIGHT_QUERY_BLOCK],
+        // The block grammar leaves a paragraph's text to the inline one,
+        // for code spans and links. A fence's code is drawn plain between
+        // its literal-coloured fences.
+        injections: include_str!("../queries/markdown/injections.scm"),
+        locals: &[],
+        injects: &[GrammarId::MarkdownInline],
+        kinds: &[],
+    },
+    Grammar {
+        id: GrammarId::MarkdownInline,
+        name: "markdown_inline",
+        language: tree_sitter_md::INLINE_LANGUAGE,
+        highlights: &[tree_sitter_md::HIGHLIGHT_QUERY_INLINE],
+        injections: "",
+        locals: &[],
+        injects: &[],
+        kinds: &[],
+    },
 ];
 
 /// The capture names the crate colours, and the kind each becomes. A
@@ -309,7 +336,7 @@ pub(crate) static GRAMMARS: [Grammar; 16] = [
 /// are the string's. Every configuration recognises the same names in the
 /// same order, because a highlight event carries only the name's index and
 /// injected text is reported in the host's events.
-const NAMES: [(&str, TokenKind); 22] = [
+const NAMES: [(&str, TokenKind); 25] = [
     ("keyword", TokenKind::Keyword),
     ("tag", TokenKind::Keyword),
     // The words of CSS's at-rules.
@@ -331,11 +358,15 @@ const NAMES: [(&str, TokenKind); 22] = [
     ("attribute", TokenKind::Type),
     ("function", TokenKind::Function),
     ("comment", TokenKind::Comment),
+    // Markdown's headings and literals.
+    ("text.title", TokenKind::Keyword),
+    ("text.literal", TokenKind::String),
     // Recognised so the grammars above can colour them; plain otherwise.
     ("property", TokenKind::Plain),
     // An interpolation inside a string is code, not the string: its plain
     // capture stops the string's colour reaching in.
     ("embedded", TokenKind::Plain),
+    ("none", TokenKind::Plain),
     // An `=` inside a TOML pair, which the grammar captures whole as its
     // key, is not part of the key.
     ("operator", TokenKind::Plain),
@@ -449,6 +480,11 @@ mod tests {
         );
         assert_eq!(injected(GrammarId::Html, "css"), Some(GrammarId::Css));
         assert_eq!(injected(GrammarId::Rust, "rust"), Some(GrammarId::Rust));
+        assert_eq!(
+            injected(GrammarId::Markdown, "markdown_inline"),
+            Some(GrammarId::MarkdownInline)
+        );
+        assert_eq!(injected(GrammarId::Markdown, "yaml"), None);
         assert_eq!(injected(GrammarId::Python, "python"), None);
     }
 }

@@ -380,3 +380,24 @@ fn css() {
         ],
     );
 }
+
+#[test]
+fn markdown() {
+    let code = "# Title\n\nSome `code` and [a link](https://x.y).\n\n```rust\nfn x() {}\n```\n";
+    assert_kinds(
+        Language::Markdown,
+        code,
+        &[
+            ("Title", Keyword),
+            ("`code`", String),
+            ("```rust", String),
+            ("```", String),
+        ],
+    );
+    // A fence's code is drawn plain.
+    let runs = coloured(Language::Markdown, code);
+    assert!(
+        !runs.iter().any(|(text, _)| text.contains("fn x")),
+        "{runs:?}"
+    );
+}

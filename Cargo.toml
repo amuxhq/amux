@@ -188,6 +188,7 @@ tree-sitter-swift = "0.7.4"
 tree-sitter-toml-ng = "0.7.0"
 tree-sitter-typescript = "0.23.2"
 tree-sitter-yaml = "0.7.2"
+tree-sitter-md = "0.5.4"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
 rusqlite = { version = "0.41.1", default-features = false, features = ["hooks", "cache"] }

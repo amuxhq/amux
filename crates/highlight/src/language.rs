@@ -24,13 +24,14 @@ pub enum Language {
     Java,
     Html,
     Css,
+    Markdown,
     /// A unified diff: added and removed lines, no grammar.
     Diff,
 }
 
 impl Language {
     /// Every language, in a fixed order.
-    pub const ALL: [Language; 17] = [
+    pub const ALL: [Language; 18] = [
         Language::Rust,
         Language::Swift,
         Language::TypeScript,
@@ -47,6 +48,7 @@ impl Language {
         Language::Java,
         Language::Html,
         Language::Css,
+        Language::Markdown,
         Language::Diff,
     ];
 
@@ -70,6 +72,7 @@ impl Language {
             Language::Java => "java",
             Language::Html => "html",
             Language::Css => "css",
+            Language::Markdown => "markdown",
             Language::Diff => "diff",
         }
     }
@@ -105,6 +108,7 @@ impl Language {
             "java" => Language::Java,
             "html" | "htm" | "xhtml" => Language::Html,
             "css" => Language::Css,
+            "markdown" | "md" => Language::Markdown,
             "diff" | "patch" | "udiff" => Language::Diff,
             _ => return None,
         })
@@ -145,6 +149,7 @@ impl Language {
             "java" => Language::Java,
             "html" | "htm" | "xhtml" => Language::Html,
             "css" => Language::Css,
+            "md" | "markdown" => Language::Markdown,
             "diff" | "patch" => Language::Diff,
             _ => return None,
         })
@@ -226,6 +231,8 @@ mod tests {
             ("java", Java),
             ("html", Html),
             ("css", Css),
+            ("md", Markdown),
+            ("markdown", Markdown),
             ("diff", Diff),
             ("patch", Diff),
         ] {
@@ -268,6 +275,7 @@ mod tests {
             ("Main.java", Java),
             ("docs/index.html", Html),
             ("site/style.css", Css),
+            ("README.md", Markdown),
             ("fix.patch", Diff),
             ("SHOUTING.RS", Rust),
             ("windows\\path\\main.go", Go),

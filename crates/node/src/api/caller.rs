@@ -125,9 +125,32 @@ impl Caller {
         let (peer, header) = link_call(request)?;
         Self::on_link(peer, header)
     }
+
+    /// The caller of a host-service call, as the layer of the entry it
+    /// arrived on settled it. Handlers take it from here and nowhere else,
+    /// so every entry's rule for who is calling lives in one place. A call
+    /// that reached a handler without one was mounted without its entry's
+    /// layer, which is a bug in this node, not something a caller did.
+    pub(crate) fn of<T>(request: &Request<T>) -> Result<Self, Status> {
+        request
+            .extensions()
+            .get::<Self>()
+            .cloned()
+            .ok_or_else(|| Status::internal("no caller was settled for this call"))
+    }
 }
 
 impl PairedDaemon {
+    /// The paired daemon a peer-service call is from, as the link's layer
+    /// settled it: see [`Caller::of`].
+    pub(crate) fn of<T>(request: &Request<T>) -> Result<Self, Status> {
+        request
+            .extensions()
+            .get::<Self>()
+            .copied()
+            .ok_or_else(|| Status::internal("no paired daemon was settled for this call"))
+    }
+
     /// The paired daemon a peer-service call that arrived on a link from
     /// `peer` is from. A call with a caller header was carried for a person
     /// or an agent, and the peer service answers none.

@@ -416,7 +416,12 @@ impl Compiled {
                 continue;
             };
             let pattern = found_match.pattern_index;
-            for name in names(node, name) {
+            let blank = |name: &Node| {
+                self.rules
+                    .blank
+                    .is_some_and(|blank| &code[name.byte_range()] == blank)
+            };
+            for name in names(node, name).into_iter().filter(|name| !blank(name)) {
                 match seen.get(&(node.id(), name.id())) {
                     Some(&at) if matched[at].pattern == pattern => {
                         let held = &mut matched[at].conformances;

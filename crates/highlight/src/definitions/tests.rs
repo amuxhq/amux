@@ -88,6 +88,15 @@ Module mod tests 61-69
             (2, ""),
         ],
     );
+    // `const _` names nothing: it is there for what it checks.
+    check(
+        Language::Rust,
+        "const _: () = assert!(LIMIT > 0);\nconst LIMIT: usize = 4;\n",
+        "\
+Constant const LIMIT 2-2
+",
+        &[(1, "")],
+    );
 }
 
 #[test]
@@ -156,6 +165,16 @@ Constant const a 5-7
 Constant const b 5-7
 ",
         &[(3, "var one"), (6, "const a")],
+    );
+    // The blank identifier binds nothing, so it is no definition, beside
+    // another name or alone.
+    check(
+        Language::Go,
+        "package p\n\nvar matcher, _ = regexp.Compile(p)\n\nvar _ = check()\n\nfunc _() {}\n",
+        "\
+Static var matcher 3-3
+",
+        &[(5, "")],
     );
 }
 
@@ -605,3 +624,4 @@ fn kinds_keep_their_numbers() {
         assert_eq!(kind as u32, number, "{kind:?}");
     }
 }
+

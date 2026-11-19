@@ -117,18 +117,24 @@ pub(crate) struct DefinitionRules {
     /// Nodes that belong to the definition straight below them: its doc
     /// comment, attributes and decorators.
     pub(crate) leading: &'static [&'static str],
+    /// The name that binds nothing, where the language has one: Go's and
+    /// Rust's `_`. A name spelled so is no definition (`var matcher, _ =
+    /// ...` defines only `matcher`), since nothing can refer to it.
+    pub(crate) blank: Option<&'static str>,
 }
 
 static RUST: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/rust/definitions.scm"),
     wrappers: &[],
     leading: &["attribute_item", "line_comment", "block_comment"],
+    blank: Some("_"),
 };
 
 static SWIFT: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/swift/definitions.scm"),
     wrappers: &[],
     leading: &["comment", "multiline_comment"],
+    blank: None,
 };
 
 /// TypeScript's, which TSX shares: TSX only adds JSX's nodes, and no
@@ -141,42 +147,49 @@ static TYPESCRIPT: DefinitionRules = DefinitionRules {
         "ambient_declaration",
     ],
     leading: &["comment", "decorator"],
+    blank: None,
 };
 
 static JAVASCRIPT: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/javascript/definitions.scm"),
     wrappers: &["export_statement", "lexical_declaration"],
     leading: &["comment", "decorator"],
+    blank: None,
 };
 
 static PYTHON: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/python/definitions.scm"),
     wrappers: &["decorated_definition"],
     leading: &["comment"],
+    blank: None,
 };
 
 static GO: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/go/definitions.scm"),
     wrappers: &["type_declaration", "const_declaration", "var_declaration"],
     leading: &["comment"],
+    blank: Some("_"),
 };
 
 static C: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/c/definitions.scm"),
     wrappers: &[],
     leading: &["comment"],
+    blank: None,
 };
 
 static CPP: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/cpp/definitions.scm"),
     wrappers: &["template_declaration"],
     leading: &["comment"],
+    blank: None,
 };
 
 static JAVA: DefinitionRules = DefinitionRules {
     query: include_str!("../queries/java/definitions.scm"),
     wrappers: &[],
     leading: &["line_comment", "block_comment"],
+    blank: None,
 };
 
 pub(crate) static GRAMMARS: [Grammar; 18] = [

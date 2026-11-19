@@ -467,3 +467,48 @@ async fn a_branch_counts_the_commits_no_other_ref_holds() {
     git(dir, &["switch", "-q", "--detach"]);
     assert_eq!(own_commits(dir).await.unwrap(), None, "detached");
 }
+
+/// Git trusts a file whose size and times match its index entry, except an
+/// entry written in the same second as the index itself, whose content it
+/// reads again ("racily clean"). That check compares with the index file's
+/// own modification time, so the temporary copy must keep it: a fresh time
+/// would make git trust an edit it never saw.
+#[tokio::test]
+async fn an_edit_in_the_same_second_as_the_index_write_is_seen() {
+    let repo = repository();
+    let dir = repo.path();
+    // A change time moves on every write and cannot be set back; only the
+    // modification time decides here, as on a file system with coarse
+    // change times.
+    git(dir, &["config", "core.trustctime", "false"]);
+    let then = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    let touch = |path: &Path| {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(then)
+            .unwrap();
+    };
+    std::fs::write(dir.join("same.txt"), "aaaa\n").unwrap();
+    touch(&dir.join("same.txt"));
+    git(dir, &["add", "same.txt"]);
+    git(dir, &["commit", "-q", "-m", "same"]);
+    // The index written in the same second as the file, then an edit of
+    // the same size within that second.
+    touch(&dir.join(".git/index"));
+    std::fs::write(dir.join("same.txt"), "bbbb\n").unwrap();
+    touch(&dir.join("same.txt"));
+
+    let found = facts(dir, None).await.unwrap().unwrap();
+    assert_eq!(found.uncommitted, totals(1, 1, 1), "the edit is seen");
+    // Adding the untracked files rewrites the copy; git then marks the
+    // racy entry so the rewrite does not hide it.
+    write(dir, "untracked.txt", 1);
+    let found = facts(dir, None).await.unwrap().unwrap();
+    assert_eq!(found.uncommitted, totals(2, 2, 1));
+    assert_eq!(
+        git(dir, &["status", "--porcelain", "--", "same.txt"]),
+        "M same.txt"
+    );
+}

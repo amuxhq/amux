@@ -509,12 +509,20 @@ impl<'a> Scratch<'a> {
             .await?,
         );
         // The bytes, not the file: a copy would carry the index's own
-        // permissions with it.
+        // permissions with it. The modification time comes too: git reads
+        // again any entry written in the same second as the index file, and
+        // judges that by the file's time, so a fresh time would hide an
+        // edit made in that second.
         match std::fs::File::open(&own) {
             Ok(mut from) => {
                 let mut to =
                     std::fs::File::create_new(dir.path().join(INDEX)).map_err(GitError::Scratch)?;
                 std::io::copy(&mut from, &mut to).map_err(GitError::Scratch)?;
+                let written = from
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .map_err(GitError::Scratch)?;
+                to.set_modified(written).map_err(GitError::Scratch)?;
             }
             // A repository nothing was ever added to has no index yet.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

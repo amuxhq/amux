@@ -83,6 +83,27 @@ final class CodeHighlightingTests: XCTestCase {
         XCTAssertEqual(highlighting.kept(request)?.lines, [[piece("fn", .keyword)]])
     }
 
+    /// Two views show different code. Settling the first's does not draw
+    /// the second again: on an approval card showing several files, one
+    /// file settling must not colour every other file again.
+    func testSettlingOneRequestLeavesAViewReadingAnotherAlone() async {
+        let highlighting = Scripted(settleAt: 1).highlighting
+        let settled = CodeHighlighting.Request.block(code: "fn", info: "rust", streaming: false)
+        let other = CodeHighlighting.Request.block(code: "let", info: "swift", streaming: false)
+        let redrawn = Mutex(false)
+        _ = withObservationTracking {
+            highlighting.kept(other)
+        } onChange: {
+            redrawn.withLock { $0 = true }
+        }
+        await highlighting.follow(settled) { _ in }
+        XCTAssertNotNil(highlighting.kept(settled))
+        XCTAssertFalse(redrawn.withLock { $0 }, "a view reading other code was drawn again")
+        // Its own answer still reaches it.
+        await highlighting.follow(other) { _ in }
+        XCTAssertTrue(redrawn.withLock { $0 }, "the view was not told its own code settled")
+    }
+
     func testAnUnsettledAnswerIsNotKept() async {
         let scripted = Scripted(settleAt: 2)
         let highlighting = scripted.highlighting

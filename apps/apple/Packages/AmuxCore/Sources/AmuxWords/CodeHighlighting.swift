@@ -21,9 +21,11 @@ import SwiftUI
 /// bridge again.
 ///
 /// A view draws `kept(request) ?? the answer follow last handed it`. The
-/// kept answers are observed: a view that drew a block plain is drawn
-/// again the moment any view showing the same code settles it, so no view
-/// can be left plain by having asked a moment before another answered.
+/// kept answers are observed request by request: a view that drew a block
+/// plain is drawn again the moment any view showing the same code settles
+/// it, so no view can be left plain by having asked a moment before
+/// another answered, and settling one block leaves every view showing
+/// other code alone.
 /// What a view holds itself is only what its own ``follow(_:_:)`` handed
 /// it, which covers the unsettled answers that are never kept and the
 /// moment the kept ones are let go.
@@ -76,10 +78,11 @@ public struct CodeHighlighting: Sendable, Equatable {
 
     /// The settled answer kept for `request`, without asking. Read in a
     /// view's body, it is observed: the view is drawn again when an answer
-    /// for `request` is kept, by whichever view asked for it.
+    /// for `request` is kept, by whichever view asked for it, and not when
+    /// one is kept for other code.
     @MainActor
     public func kept(_ request: Request) -> HighlightedCode? {
-        kept?.held[request]
+        kept?.answer(request)
     }
 
     /// Asks for `request`'s colours away from the main thread and hands
@@ -95,7 +98,7 @@ public struct CodeHighlighting: Sendable, Equatable {
         while !Task.isCancelled {
             // Asked before every crossing: another view showing the same
             // code may have settled it while this one waited.
-            if let held = kept.held[request] {
+            if let held = kept.answer(request) {
                 draw(held)
                 return
             }
@@ -112,23 +115,45 @@ public struct CodeHighlighting: Sendable, Equatable {
         }
     }
 
-    /// Settled answers by what they answer, observed by the views that
-    /// read them. Started again when full, as the shared view's own
-    /// keeping is: what is on screen is asked for again within a frame,
-    /// and nothing here is worth an eviction order. A view whose answer is
-    /// let go draws what its own follow handed it until then.
+    /// Settled answers by what they answer, each observed apart by the
+    /// views that read it. Observed as one dictionary, keeping any answer
+    /// would draw again every code view on screen, and an approval card
+    /// showing several files would colour each file again for every one
+    /// that settled. So what is observed is the request, not the storage:
+    /// a view that read a request before its answer came is told when it
+    /// comes, and starting the storage again leaves nobody watching
+    /// something gone.
+    ///
+    /// Started again when full, as the shared view's own keeping is: what
+    /// is on screen is asked for again within a frame, and nothing here is
+    /// worth an eviction order. Letting answers go tells no view: one
+    /// drawing a dropped answer draws on the same colours, from what its
+    /// own follow handed it, the next time it is drawn.
     @MainActor
-    @Observable
-    final class Kept {
+    final class Kept: Observable {
         static let limit = 256
-        private(set) var held: [Request: HighlightedCode] = [:]
+        private var held: [Request: HighlightedCode] = [:]
+        private let registrar = ObservationRegistrar()
 
         nonisolated init() {}
 
+        /// The answer kept for `request`, observed as that request's.
+        func answer(_ request: Request) -> HighlightedCode? {
+            registrar.access(self, keyPath: \.[request])
+            return held[request]
+        }
+
         func keep(_ code: HighlightedCode, for request: Request) {
             if held.count >= Self.limit { held.removeAll(keepingCapacity: true) }
-            held[request] = code
+            registrar.withMutation(of: self, keyPath: \.[request]) {
+                held[request] = code
+            }
         }
+
+        /// What a request's observers are keyed by: a key path names the
+        /// request it was formed with, so two views reading the same code
+        /// watch the same thing and views reading other code do not.
+        private subscript(request: Request) -> HighlightedCode? { held[request] }
     }
 }
 

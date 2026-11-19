@@ -347,6 +347,24 @@ fn compile(grammar: GrammarId) -> Result<Option<Compiled>, String> {
     }))
 }
 
+/// What a query's matches say about one definition: a definition node
+/// and the name it gives it. A declaration that names several things at
+/// once (`var one, two int`) is one node with a definition for each name.
+struct Matched<'tree> {
+    /// The pattern that matched, which decides between two that capture
+    /// the same definition: the first listed wins.
+    pattern: usize,
+    node: Node<'tree>,
+    kind: DefinitionKind,
+    name: Node<'tree>,
+    trait_name: Option<Node<'tree>>,
+    receiver: Option<Node<'tree>>,
+    /// What a Swift extension conforms to. A pattern repeating a capture
+    /// can match once for each run of it, so every match of the pattern
+    /// adds its conformances here.
+    conformances: Vec<Node<'tree>>,
+}
+
 /// A definition found, before nesting is worked out.
 struct Found {
     /// The pattern that found it, which decides between two definitions
@@ -355,16 +373,18 @@ struct Found {
     /// The bytes the definition spans, with its leading comments and
     /// attributes and any node it alone wraps.
     bytes: std::ops::Range<usize>,
+    /// Where its name starts, which orders the definitions of one
+    /// declaration as the code does.
+    name_at: usize,
     definition: Definition,
 }
 
 impl Compiled {
     fn find(&self, root: Node, code: &str) -> Vec<Definition> {
-        let mut found: Vec<Found> = Vec::new();
-        // Each node captured, and where in `found` its definition is: the
-        // patterns are listed most specific first, and of two that capture
-        // a node, the first decides what it is.
-        let mut seen: HashMap<usize, usize> = HashMap::new();
+        let mut matched: Vec<Matched> = Vec::new();
+        // Each definition matched, by its node and name, and where in
+        // `matched` it is.
+        let mut seen: HashMap<(usize, usize), usize> = HashMap::new();
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&self.query, root, code.as_bytes());
         while let Some(found_match) = matches.next() {
@@ -386,7 +406,7 @@ impl Compiled {
                 } else if index == self.receiver {
                     receiver = Some(capture.node);
                 } else if index == self.conformance {
-                    conformances.push(text(capture.node, code));
+                    conformances.push(capture.node);
                 }
             }
             let Some((node, kind)) = node.zip(kind) else {
@@ -395,67 +415,124 @@ impl Compiled {
             let Some(name) = name.or_else(|| node.child_by_field_name("name")) else {
                 continue;
             };
-            let mut name = text(name, code);
-            if let Some(trait_name) = trait_name {
-                name = format!("{} for {name}", text(trait_name, code));
-            }
-            if let Some(receiver) = receiver {
-                name = format!("({}).{name}", text(receiver, code));
-            }
-            if !conformances.is_empty() {
-                name = format!("{name}: {}", conformances.join(", "));
-            }
-            let Label { keyword, suffix } = &self.labels[found_match.pattern_index];
-            let label = match keyword {
-                Some(keyword) => format!("{keyword} {name}"),
-                None => name.clone(),
-            } + suffix.as_deref().unwrap_or("");
-            let id = node.id();
-            let (first, node) = self.extent(node, code);
-            let lines = LineRange::new(line(first.start_position().row), line(last_row(node)));
-            let definition = Found {
-                pattern: found_match.pattern_index,
-                bytes: first.start_byte()..node.end_byte(),
-                definition: Definition {
-                    kind,
-                    name,
-                    label,
-                    lines,
-                    parent: None,
-                },
-            };
-            match seen.get(&id) {
-                Some(&at) if found[at].pattern <= definition.pattern => {}
-                Some(&at) => found[at] = definition,
-                None => {
-                    seen.insert(id, found.len());
-                    found.push(definition);
+            let pattern = found_match.pattern_index;
+            for name in names(node, name) {
+                match seen.get(&(node.id(), name.id())) {
+                    Some(&at) if matched[at].pattern == pattern => {
+                        let held = &mut matched[at].conformances;
+                        for conformance in &conformances {
+                            if !held.iter().any(|known| known.id() == conformance.id()) {
+                                held.push(*conformance);
+                            }
+                        }
+                    }
+                    Some(&at) if matched[at].pattern < pattern => {}
+                    found => {
+                        let definition = Matched {
+                            pattern,
+                            node,
+                            kind,
+                            name,
+                            trait_name,
+                            receiver,
+                            conformances: conformances.clone(),
+                        };
+                        match found {
+                            Some(&at) => matched[at] = definition,
+                            None => {
+                                seen.insert((node.id(), name.id()), matched.len());
+                                matched.push(definition);
+                            }
+                        }
+                    }
                 }
             }
         }
+        let mut found: Vec<Found> = matched
+            .into_iter()
+            .map(|matched| self.definition(matched, code))
+            .collect();
         // Outer before inner where two start together, so a stack of what
-        // is open gives each definition its parent.
+        // is open gives each definition its parent; the definitions of one
+        // declaration in the order the code names them.
         found.sort_by(|a, b| {
             a.bytes
                 .start
                 .cmp(&b.bytes.start)
                 .then(b.bytes.end.cmp(&a.bytes.end))
                 .then(a.pattern.cmp(&b.pattern))
+                .then(a.name_at.cmp(&b.name_at))
         });
-        found.dedup_by(|later, earlier| later.bytes == earlier.bytes);
-        let mut open: Vec<(usize, usize)> = Vec::new();
+        // Two nodes can reach over the same bytes once grown to what wraps
+        // them; the same name over the same bytes is one definition.
+        found.dedup_by(|later, earlier| {
+            later.bytes == earlier.bytes && later.definition.name == earlier.definition.name
+        });
+        let mut open: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
         let mut definitions = Vec::with_capacity(found.len());
         for (index, found) in found.into_iter().enumerate() {
-            while open.last().is_some_and(|(_, end)| *end < found.bytes.end) {
+            // A definition over the same bytes as the one open is its
+            // sibling, another name the same declaration gives.
+            while open
+                .last()
+                .is_some_and(|(_, bytes)| bytes.end < found.bytes.end || *bytes == found.bytes)
+            {
                 open.pop();
             }
             definitions.push(Definition {
                 parent: open.last().map(|(parent, _)| *parent),
                 ..found.definition
             });
-            open.push((index, found.bytes.end));
+            open.push((index, found.bytes));
         }
         definitions
+    }
+
+    /// A matched definition's name, label and lines.
+    fn definition(&self, matched: Matched, code: &str) -> Found {
+        let Matched {
+            pattern,
+            node,
+            kind,
+            name: name_node,
+            trait_name,
+            receiver,
+            mut conformances,
+        } = matched;
+        let mut name = text(name_node, code);
+        if let Some(trait_name) = trait_name {
+            name = format!("{} for {name}", text(trait_name, code));
+        }
+        if let Some(receiver) = receiver {
+            name = format!("({}).{name}", text(receiver, code));
+        }
+        if !conformances.is_empty() {
+            conformances.sort_by_key(Node::start_byte);
+            let conformances: Vec<String> = conformances
+                .into_iter()
+                .map(|conformance| text(conformance, code))
+                .collect();
+            name = format!("{name}: {}", conformances.join(", "));
+        }
+        let Label { keyword, suffix } = &self.labels[pattern];
+        let label = match keyword {
+            Some(keyword) => format!("{keyword} {name}"),
+            None => name.clone(),
+        } + suffix.as_deref().unwrap_or("");
+        let (first, node) = self.extent(node, code);
+        let lines = LineRange::new(line(first.start_position().row), line(last_row(node)));
+        Found {
+            pattern,
+            bytes: first.start_byte()..node.end_byte(),
+            name_at: name_node.start_byte(),
+            definition: Definition {
+                kind,
+                name,
+                label,
+                lines,
+                parent: None,
+            },
+        }
     }
 
     /// Where a definition starts and ends: the node, grown to a node that
@@ -478,6 +555,59 @@ impl Compiled {
             start = previous;
         }
         (start, node)
+    }
+}
+
+/// Every name a definition node gives, from the one a pattern matched: a
+/// declaration of several names (`var one, two int`, Java's `static final
+/// int ONE = 1, TWO = 2`) holds each in a field that repeats, so the others
+/// are found down the same fields from the definition node, in the order
+/// the code gives them. Asking the query for each instead does not serve:
+/// tree-sitter does not report a match for every child a pattern could
+/// take (Go's `const a, b = 1, 2` gives only `a`). A predicate on the name
+/// is checked only on the name matched, so a pattern that picks names by
+/// their spelling must not capture a declaration of several.
+fn names<'tree>(node: Node<'tree>, name: Node<'tree>) -> Vec<Node<'tree>> {
+    // The fields from the definition node down to the name, with the kind
+    // of node each holds there. A field can hold other things besides (a
+    // comma between the names; in Swift, a function's return type), so
+    // only nodes of the same kind are taken.
+    let mut fields = Vec::new();
+    let mut at = name;
+    while at.id() != node.id() {
+        let Some(parent) = at.parent() else {
+            return vec![name];
+        };
+        let field = (0..parent.child_count() as u32)
+            .find(|&index| {
+                parent
+                    .child(index)
+                    .is_some_and(|child| child.id() == at.id())
+            })
+            .and_then(|index| parent.field_name_for_child(index));
+        let Some(field) = field else {
+            return vec![name];
+        };
+        fields.push((field, at.kind_id()));
+        at = parent;
+    }
+    let mut found = vec![node];
+    let mut cursor = node.walk();
+    for (field, kind) in fields.into_iter().rev() {
+        found = found
+            .iter()
+            .flat_map(|parent| {
+                parent
+                    .children_by_field_name(field, &mut cursor)
+                    .filter(|child| child.kind_id() == kind)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+    }
+    if found.iter().any(|found| found.id() == name.id()) {
+        found
+    } else {
+        vec![name]
     }
 }
 

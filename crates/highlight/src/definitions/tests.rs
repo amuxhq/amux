@@ -144,6 +144,19 @@ Method func (Store).Read 41-44
             (3, ""),
         ],
     );
+    // A declaration of several names gives a definition for each, side by
+    // side.
+    check(
+        Language::Go,
+        "package p\n\nvar one, two int\n\nconst (\n\ta, b = 1, 2\n)\n",
+        "\
+Static var one 3-3
+Static var two 3-3
+Constant const a 5-7
+Constant const b 5-7
+",
+        &[(3, "var one"), (6, "const a")],
+    );
 }
 
 #[test]
@@ -176,6 +189,19 @@ Function func openStore 50-52
             (1, ""),
         ],
     );
+    // Every conformance, in the order the code lists them; and each name a
+    // declaration of several gives.
+    check(
+        Language::Swift,
+        "extension Store: First, Second, Third {\n    func a() {}\n}\nlet one = 1, two = 2\n",
+        "\
+Impl extension Store: First, Second, Third 1-3
+  Method func a 2-2
+Constant let one 4-4
+Constant let two 4-4
+",
+        &[(2, "extension Store: First, Second, Third › func a")],
+    );
 }
 
 #[test]
@@ -199,6 +225,16 @@ Function store_put() 40-46
             (16, "typedef struct store"),
             (7, ""),
         ],
+    );
+    // Each constant of a declaration of several.
+    check(
+        Language::C,
+        "const int low = 1, high = 2;\n",
+        "\
+Constant low 1-1
+Constant high 1-1
+",
+        &[],
     );
 }
 
@@ -260,6 +296,17 @@ Class record Blob 52-56
             (15, "class Store › toString()"),
             (3, ""),
         ],
+    );
+    // Each constant of a declaration of several.
+    check(
+        Language::Java,
+        "class Limits {\n    static final int ONE=1, TWO=2;\n}\n",
+        "\
+Class class Limits 1-3
+  Constant ONE 2-2
+  Constant TWO 2-2
+",
+        &[(2, "class Limits › ONE")],
     );
 }
 

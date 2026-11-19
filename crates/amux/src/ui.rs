@@ -2,11 +2,10 @@
 //! attach`, which opens one agent's chat in it or in the agent's own
 //! interface, whose fleet chord opens the client over it.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{Result, anyhow};
 use settings::{ChatInSetting, InstallationConfig, ThemeSetting, UiSettings};
 use tui::{
     AttachFn, AttachReturn, TerminalColors, Theme, TuiConfig, detect_color_mode,
@@ -69,8 +68,8 @@ pub async fn attach(
     asked: Option<ChatInSetting>,
 ) -> Result<()> {
     let profile = crate::connect::profile(config, profile).await?;
-    let mut client = crate::connect::client_of(&profile).await?;
-    let agent = crate::verbs::resolve(&mut client, agent).await?;
+    let client = crate::connect::client_of(&profile).await?;
+    let agent = crate::verbs::resolve(&client, agent).await?;
     let mut attacher = Attacher::new(&profile, config.keybinds.leader.clone())?;
     let desk = desk(config, &profile, "", false).await;
     if asked.unwrap_or(config.ui.chat_in) == ChatInSetting::Native {
@@ -98,10 +97,7 @@ async fn open(
     initial_chat: Option<Vec<u8>>,
     desk: Option<tui::DeskConfig>,
 ) -> Result<()> {
-    let socket = Path::new(&profile.socket_path);
-    let node = client::next::Client::connect(socket, client::next::Surface::Terminal)
-        .await
-        .with_context(|| format!("connecting to {}", socket.display()))?;
+    let node = crate::connect::client_of(profile).await?;
     // Asked before the alternate screen is entered, because the answers
     // arrive on stdin and nothing else may be reading it yet.
     let terminal = match config.ui.theme {

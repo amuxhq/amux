@@ -66,8 +66,8 @@ async fn survive_daemon() {
     let chats = client(&desk.socket).await;
     for (name, id) in &agents {
         until(&format!("{name} is mid-turn"), || {
-            let mut chats = chats.clone();
-            async move { says(&chat(&mut chats, id).await, "started", 1) }
+            let chats = chats.clone();
+            async move { says(&chat(&chats, id).await, "started", 1) }
         })
         .await
         .unwrap();
@@ -148,10 +148,10 @@ async fn survive_daemon() {
     );
 
     // Every finished turn is in the store.
-    let mut chats = client(&desk.socket).await;
+    let chats = client(&desk.socket).await;
     let mut before = BTreeMap::new();
     for (name, id) in &agents {
-        let found = chat(&mut chats, id).await;
+        let found = chat(&chats, id).await;
         for said in ["first task", "started", "finished"] {
             assert_eq!(
                 count(&found, said),
@@ -170,12 +170,12 @@ async fn survive_daemon() {
     }
     for (name, id) in &agents {
         until(&format!("{name} finishes its second turn"), || {
-            let mut chats = chats.clone();
-            async move { says(&chat(&mut chats, id).await, "finished", 2) }
+            let chats = chats.clone();
+            async move { says(&chat(&chats, id).await, "finished", 2) }
         })
         .await
         .unwrap();
-        let after = chat(&mut chats, id).await;
+        let after = chat(&chats, id).await;
         for item in &before[name] {
             assert!(after.contains(item), "{name}: {item:?} survives the resume");
         }

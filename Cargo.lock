@@ -120,6 +120,7 @@ dependencies = [
  "clap",
  "client",
  "crossterm",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",

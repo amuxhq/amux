@@ -10,12 +10,13 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+use futures_util::StreamExt as _;
 use node::release::{self, Manifest, Release};
 use provider_fakes::Step;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tonic::transport::{Channel as GrpcChannel, Endpoint};
 use wire::installation_service_client::InstallationServiceClient;
-use wire::{SubscribeSessionRequest, session_event};
+use wire::session_event;
 
 /// What every test daemon runs with: a scripted local network instead of
 /// real mDNS, which would have macOS ask for Local Network access once per
@@ -135,8 +136,9 @@ pub async fn grpc_channel(path: &Path) -> std::io::Result<GrpcChannel> {
         .map_err(std::io::Error::other)
 }
 
-/// The first profile's client service, through the front door at `socket`.
-pub async fn client(socket: &Path) -> wire::ClientStubs {
+/// A client of the first profile's node, through the front door at
+/// `socket`.
+pub async fn client(socket: &Path) -> client::next::Client {
     let door = grpc_channel(socket).await.expect("a daemon answers");
     let profile = InstallationServiceClient::new(door)
         .list_profiles(wire::ListProfilesRequest {})
@@ -147,7 +149,10 @@ pub async fn client(socket: &Path) -> wire::ClientStubs {
         .into_iter()
         .next()
         .expect("a profile");
-    wire::client_stubs(grpc_channel(Path::new(&profile.socket_path)).await.unwrap())
+    let socket = Path::new(&profile.socket_path);
+    client::next::Client::connect(socket, client::next::Surface::Terminal)
+        .await
+        .unwrap()
 }
 
 pub use patience::{Stuck, until_within};
@@ -179,24 +184,19 @@ pub fn says(chat: &[(String, String)], text: &str, n: usize) -> Result<(), Strin
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-pub async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, String)> {
+pub async fn chat(client: &client::next::Client, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
-        .sessions
-        .subscribe_session(SubscribeSessionRequest {
-            agent_id: agent.to_vec(),
-            from: Some(wire::subscribe_session_request::From::Tail(1000)),
-        })
+        .sessions()
+        .subscribe(agent, 1000)
         .await
-        .expect("the chat opens")
-        .into_inner();
+        .expect("the chat opens");
     let mut items: BTreeMap<u64, (String, String)> = BTreeMap::new();
     let mut order: BTreeMap<String, u64> = BTreeMap::new();
-    while let Some(event) = tokio::time::timeout(PATIENCE, stream.message())
+    while let Some(event) = tokio::time::timeout(PATIENCE, stream.next())
         .await
         .expect("the chat catches up")
-        .expect("the chat streams")
     {
-        match event.event.and_then(|event| event.of) {
+        match event.expect("the chat streams").of {
             Some(session_event::Of::Item(item)) => {
                 if let Some(old) = order.insert(item.key.clone(), item.order) {
                     items.remove(&old);

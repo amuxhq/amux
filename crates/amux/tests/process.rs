@@ -15,13 +15,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
+use futures_util::StreamExt as _;
 use patience::{PATIENCE, holds_for, until, until_within};
 use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::AsyncBufReadExt as _;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use wire::installation_service_client::InstallationServiceClient;
-use wire::{SubscribeSessionRequest, session_event};
+use wire::session_event;
 /// How long agents outlive their daemon. Long enough to restart a daemon
 /// under them in a test, short enough to wait out when a test wants them
 /// gone.
@@ -178,8 +179,8 @@ impl Install {
         channel(&self.socket).await.ok()
     }
 
-    /// The first profile's client service.
-    async fn client(&self) -> wire::ClientStubs {
+    /// A client of the first profile's node.
+    async fn client(&self) -> client::next::Client {
         let door = self.front_door().await.expect("a daemon answers");
         let profile = InstallationServiceClient::new(door)
             .list_profiles(wire::ListProfilesRequest {})
@@ -190,7 +191,10 @@ impl Install {
             .into_iter()
             .next()
             .expect("a profile");
-        wire::client_stubs(channel(Path::new(&profile.socket_path)).await.unwrap())
+        let socket = Path::new(&profile.socket_path);
+        client::next::Client::connect(socket, client::next::Surface::Terminal)
+            .await
+            .unwrap()
     }
 
     fn agent_dir(&self, id: &[u8]) -> PathBuf {
@@ -239,24 +243,19 @@ async fn channel(path: &Path) -> std::io::Result<Channel> {
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-async fn chat(client: &mut wire::ClientStubs, agent: &[u8]) -> Vec<(String, String)> {
+async fn chat(client: &client::next::Client, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
-        .sessions
-        .subscribe_session(SubscribeSessionRequest {
-            agent_id: agent.to_vec(),
-            from: Some(wire::subscribe_session_request::From::Tail(1000)),
-        })
+        .sessions()
+        .subscribe(agent, 1000)
         .await
-        .expect("the chat opens")
-        .into_inner();
+        .expect("the chat opens");
     let mut items: BTreeMap<u64, (String, String)> = BTreeMap::new();
     let mut order: BTreeMap<String, u64> = BTreeMap::new();
-    while let Some(event) = tokio::time::timeout(PATIENCE, stream.message())
+    while let Some(event) = tokio::time::timeout(PATIENCE, stream.next())
         .await
         .expect("the chat catches up")
-        .expect("the chat streams")
     {
-        match event.event.and_then(|event| event.of) {
+        match event.expect("the chat streams").of {
             Some(session_event::Of::Item(item)) => {
                 if let Some(old) = order.insert(item.key.clone(), item.order) {
                     items.remove(&old);
@@ -374,9 +373,9 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     let client = install.client().await;
     for agent in [&sdk, &codex] {
         until("both agents are mid-turn", || {
-            let mut client = client.clone();
+            let client = client.clone();
             async move {
-                let chat = chat(&mut client, agent).await;
+                let chat = chat(&client, agent).await;
                 texts(&chat)
                     .contains(&"started")
                     .then_some(())
@@ -408,10 +407,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
 
     // A new daemon adopts them and ingests what they wrote meanwhile.
     install.run_daemon().await;
-    let mut client = install.client().await;
+    let client = install.client().await;
     let before: BTreeMap<&str, Vec<(String, String)>> = [
-        ("sdk", chat(&mut client, &sdk).await),
-        ("codex", chat(&mut client, &codex).await),
+        ("sdk", chat(&client, &sdk).await),
+        ("codex", chat(&client, &codex).await),
     ]
     .into();
     for (name, chat) in &before {
@@ -436,10 +435,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     assert!(line_of(&install.ok(&["ls"]).await, "sdk").contains("settled"));
     install.ok(&["resume", "sdk", "second", "task"]).await;
     until("the resumed agent finishes its second turn", || {
-        let mut client = client.clone();
+        let client = client.clone();
         let sdk = &sdk;
         async move {
-            let chat = chat(&mut client, sdk).await;
+            let chat = chat(&client, sdk).await;
             (count(&chat, "finished") == 2)
                 .then_some(())
                 .ok_or_else(|| format!("chat: {chat:?}"))
@@ -447,7 +446,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     })
     .await
     .unwrap();
-    let after = chat(&mut client, &sdk).await;
+    let after = chat(&client, &sdk).await;
     for item in &before["sdk"] {
         assert!(after.contains(item), "{item:?} survives the resume");
     }
@@ -469,11 +468,11 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     .await
     .unwrap();
     install.run_daemon().await;
-    let mut client = install.client().await;
+    let client = install.client().await;
     assert!(
         line_of(&install.ok(&["ls"]).await, "codex").contains("exited: while the daemon was away")
     );
-    let found = chat(&mut client, &codex).await;
+    let found = chat(&client, &codex).await;
     for item in &before["codex"] {
         assert!(
             found.contains(item),
@@ -482,10 +481,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     }
     install.ok(&["resume", "codex", "second", "task"]).await;
     until("the resumed codex agent finishes its second turn", || {
-        let mut client = client.clone();
+        let client = client.clone();
         let codex = &codex;
         async move {
-            let chat = chat(&mut client, codex).await;
+            let chat = chat(&client, codex).await;
             (count(&chat, "finished") == 2)
                 .then_some(())
                 .ok_or_else(|| format!("chat: {chat:?}"))
@@ -493,7 +492,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     })
     .await
     .unwrap();
-    let after = chat(&mut client, &codex).await;
+    let after = chat(&client, &codex).await;
     for item in &before["codex"] {
         assert!(after.contains(item), "{item:?} survives the resume");
     }
@@ -571,10 +570,10 @@ async fn the_cli_verbs_work_against_a_started_daemon() {
             .contains("Sent")
     );
     until("the prompt and its answer are in the chat", || {
-        let mut client = client.clone();
+        let client = client.clone();
         let helper = &helper;
         async move {
-            let chat = chat(&mut client, helper).await;
+            let chat = chat(&client, helper).await;
             (count(&chat, "hello there") == 1 && count(&chat, "finished") == 1)
                 .then_some(())
                 .ok_or_else(|| format!("chat: {chat:?}"))

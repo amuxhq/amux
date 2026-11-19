@@ -22,6 +22,7 @@ bytes = { workspace = true }
 client = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
+futures-util = { workspace = true }
 hyper-util = { workspace = true }
 node = { workspace = true }
 semver = { workspace = true }

@@ -162,9 +162,15 @@ async fn profile_channel(profile: &wire::Profile) -> Result<Channel> {
         .with_context(|| format!("connecting to {}", socket.display()))
 }
 
-/// The client services of a profile the front door described.
-pub async fn client_of(profile: &wire::Profile) -> Result<wire::ClientStubs> {
-    Ok(wire::client_stubs(profile_channel(profile).await?))
+/// A client of the node of a profile the front door described: its reads,
+/// and acts addressed through it to the host that owns what they act on.
+/// Its calls name the terminal, which is what a call naming no client
+/// counts as, so the command line and the terminal client count as one.
+pub async fn client_of(profile: &wire::Profile) -> Result<client::next::Client> {
+    let socket = Path::new(&profile.socket_path);
+    client::next::Client::connect(socket, client::next::Surface::Terminal)
+        .await
+        .with_context(|| format!("connecting to {}", socket.display()))
 }
 
 /// The administration of a profile the front door described: its pairing,
@@ -173,10 +179,10 @@ pub async fn admin_of(profile: &wire::Profile) -> Result<crate::pairing::Admin> 
     Ok(crate::pairing::Admin::new(profile_channel(profile).await?))
 }
 
-/// The client services of the selected profile.
+/// A client of the selected profile's node.
 pub async fn client(
     config: &InstallationConfig,
     profile: Option<&str>,
-) -> Result<wire::ClientStubs> {
+) -> Result<client::next::Client> {
     client_of(&self::profile(config, profile).await?).await
 }

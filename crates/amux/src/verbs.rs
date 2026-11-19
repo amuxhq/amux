@@ -1,34 +1,34 @@
-//! The agent verbs: each is one call on the selected profile's client
-//! service, and `ls` one read of the inventory to its CaughtUp.
+//! The agent verbs: each is one call on the agent's host, addressed to it
+//! through the selected profile's node, and `ls` one read of the node's
+//! inventory to its CaughtUp.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
+use futures_util::StreamExt as _;
 use settings::ChatInSetting;
 use uuid::Uuid;
+use wire::amux::staging::{CreateAgentRequest, create_agent_request};
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, FileAgentRequest, Filing, HostEntry,
-    Input, Kind, Lifecycle, Phase, PromptInput, PromptSubmission, Refusal, RenameAgentRequest,
-    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, claude_pty_input, claude_sdk_input,
-    codex_input, create_agent_request, inventory_event, send_input_response,
+    DumpRequest, Filing, HostEntry, Input, Kind, Lifecycle, Phase, PromptInput, PromptSubmission,
+    Refusal, claude_pty_input, claude_sdk_input, codex_input, inventory_event, send_input_response,
 };
 
-type Client = wire::ClientStubs;
+type Client = client::next::Client;
 
 /// Every host entry and agent row, read to the inventory's CaughtUp.
-pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
+pub async fn inventory(client: &Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {
     let mut stream = client
-        .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .inventory()
+        .subscribe()
         .await
-        .map_err(crate::plain)?
-        .into_inner();
+        .map_err(crate::refused)?;
     let mut hosts = BTreeMap::new();
     let mut agents = BTreeMap::new();
-    while let Some(response) = stream.message().await.map_err(crate::plain)? {
-        match response.event.and_then(|event| event.of) {
+    while let Some(event) = stream.next().await {
+        match event.map_err(crate::refused)?.of {
             Some(inventory_event::Of::Host(host)) => {
                 hosts.insert(host.host_id().to_vec(), host);
             }
@@ -57,15 +57,12 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
 
 /// The agent a reference names: any form the daemon resolves (its id, the
 /// short id `amux ls` prints, its name, or `name@host`).
-pub async fn resolve(client: &mut Client, reference: &str) -> Result<Agent> {
+pub async fn resolve(client: &Client, reference: &str) -> Result<Agent> {
     client
-        .agents
-        .resolve_agent(ResolveAgentRequest {
-            name: reference.to_owned(),
-        })
+        .inventory()
+        .resolve_agent(reference)
         .await
-        .map_err(crate::plain)
-        .and_then(|answer| crate::held(answer.into_inner().agent))
+        .map_err(crate::refused)
 }
 
 fn short_id(id: &[u8]) -> String {
@@ -138,7 +135,7 @@ fn state(agent: &Agent) -> String {
 }
 
 /// `amux ls`: every agent, children beneath their parent.
-pub async fn ls(client: &mut Client) -> Result<()> {
+pub async fn ls(client: &Client) -> Result<()> {
     let (hosts, agents) = inventory(client).await?;
     print!("{}", ls_table(&hosts, &agents));
     Ok(())
@@ -259,7 +256,7 @@ fn kind_for(agent: CliAgent, named: Option<ChatInSetting>, published: Kind) -> K
 }
 
 /// The Claude kind this host publishes for a new agent.
-async fn published_claude_kind(client: &mut Client, host: &[u8]) -> Result<Kind> {
+async fn published_claude_kind(client: &Client, host: &[u8]) -> Result<Kind> {
     let (hosts, _) = inventory(client).await?;
     Ok(hosts
         .iter()
@@ -312,10 +309,10 @@ pub struct Create {
     pub args: Vec<String>,
 }
 
-/// `amux new`: an agent as the terminal app starts one. What is not given
-/// is left to the host, which starts it on the person's remembered picks and
-/// otherwise on the provider's own settings.
-pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<()> {
+/// `amux new`: an agent as the terminal app starts one, made on `host`.
+/// What is not given is left to the host, which starts it on the person's
+/// remembered picks and otherwise on the provider's own settings.
+pub async fn create(client: &Client, host: &[u8], create: Create) -> Result<()> {
     let cwd = match create.cwd {
         Some(cwd) => std::path::absolute(cwd)?,
         None => std::env::current_dir()?,
@@ -351,8 +348,9 @@ pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<
         }
     };
     let agent = client
-        .agents
-        .create_agent(CreateAgentRequest {
+        .host(host)
+        .agents()
+        .create(CreateAgentRequest {
             agent_id: Uuid::new_v4().as_bytes().to_vec(),
             name: create.name,
             initial_prompt: create.prompt.as_deref().map(submission),
@@ -362,10 +360,7 @@ pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<
             ..CreateAgentRequest::default()
         })
         .await
-        .map_err(crate::plain)?
-        .into_inner()
-        .agent;
-    let agent = crate::held(agent)?;
+        .map_err(crate::refused)?;
     // The agent works in the worktree, so its folder is where the worktree
     // is, or will be once the host has made it.
     let place = if create.worktree {
@@ -382,17 +377,13 @@ pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<
     Ok(())
 }
 
-pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()> {
+pub async fn send(client: &Client, reference: &str, text: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let response = client
-        .sessions
-        .send_input(SendInputRequest {
-            agent_id: agent.agent_id.clone(),
-            input: Some(prompt(agent.kind, text)),
-        })
+        .agent(&agent)
+        .send_input(prompt(agent.kind, text))
         .await
-        .map_err(crate::plain)?
-        .into_inner();
+        .map_err(crate::refused)?;
     match response.of {
         Some(send_input_response::Of::Accepted(_)) => {
             println!("Sent to {}.", agent.name);
@@ -435,65 +426,46 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
     }
 }
 
-pub async fn settle(client: &mut Client, reference: &str) -> Result<()> {
+pub async fn settle(client: &Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
-        .agents
-        .file_agent(FileAgentRequest {
-            agent_id: agent.agent_id.clone(),
-            filing: Filing::Closed as i32,
-        })
+        .agent(&agent)
+        .set_filing(Filing::Closed)
         .await
-        .map_err(crate::plain)?;
+        .map_err(crate::refused)?;
     println!("Settled {}.", agent.name);
     Ok(())
 }
 
-pub async fn delete(client: &mut Client, reference: &str, discard_changes: bool) -> Result<()> {
+pub async fn delete(client: &Client, reference: &str, discard_changes: bool) -> Result<()> {
     let agent = resolve(client, reference).await?;
     client
-        .agents
-        .delete_agent(DeleteAgentRequest {
-            agent_id: agent.agent_id.clone(),
-            discard_workspace_changes: discard_changes,
-        })
+        .agent(&agent)
+        .delete(discard_changes)
         .await
-        .map_err(crate::plain)?;
+        .map_err(crate::refused)?;
     println!("Deleted {}.", agent.name);
     Ok(())
 }
 
-pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) -> Result<()> {
+pub async fn resume(client: &Client, reference: &str, text: Option<&str>) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let resumed = client
-        .agents
-        .resume_agent(ResumeAgentRequest {
-            agent_id: agent.agent_id.clone(),
-            initial_prompt: text.map(submission),
-            if_suspended: false,
-        })
+        .agent(&agent)
+        .resume(text.map(submission), false)
         .await
-        .map_err(crate::plain)?
-        .into_inner()
-        .agent;
-    let resumed = crate::held(resumed)?;
+        .map_err(crate::refused)?;
     println!("Resumed {}: {}", resumed.name, state(&resumed));
     Ok(())
 }
 
-pub async fn rename(client: &mut Client, reference: &str, name: &str) -> Result<()> {
+pub async fn rename(client: &Client, reference: &str, name: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
     let renamed = client
-        .agents
-        .rename_agent(RenameAgentRequest {
-            agent_id: agent.agent_id.clone(),
-            name: name.to_owned(),
-        })
+        .agent(&agent)
+        .rename(name)
         .await
-        .map_err(crate::plain)?
-        .into_inner()
-        .agent;
-    let renamed = crate::held(renamed)?;
+        .map_err(crate::refused)?;
     println!("Renamed {} to {}.", agent.name, renamed.name);
     Ok(())
 }

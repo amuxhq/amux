@@ -170,21 +170,12 @@ impl Attacher {
     /// the process.
     async fn wake(&self, agent: &Agent, dir: &Path) -> io::Result<Attached> {
         match crate::connect::client_of(&self.profile).await {
-            Ok(mut client) => {
-                let resumed = client
-                    .agents
-                    .resume_agent(wire::ResumeAgentRequest {
-                        agent_id: agent.agent_id.clone(),
-                        initial_prompt: None,
-                        if_suspended: true,
-                    })
-                    .await;
-                if let Err(status) = resumed {
-                    tracing::debug!(%status, "waking a suspended agent to attach to it");
+            Ok(client) => {
+                let resumed = client.agent(agent).resume(None, true).await;
+                if let Err(error) = resumed {
+                    tracing::debug!(%error, "waking a suspended agent to attach to it");
                     let now = match Uuid::from_slice(&agent.agent_id) {
-                        Ok(id) => crate::verbs::resolve(&mut client, &id.to_string())
-                            .await
-                            .ok(),
+                        Ok(id) => crate::verbs::resolve(&client, &id.to_string()).await.ok(),
                         Err(_) => None,
                     };
                     if let Some(now) = now

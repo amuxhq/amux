@@ -14,10 +14,7 @@ use provider_fakes::{Ask, Step, Tool, ToolClass};
 use support::desk::{Desk, LONG_GRACE_SECS, say};
 use support::term::Term;
 use support::{chat, client, says, until};
-use wire::{
-    CodexInput, Decision, Input, Phase, ResolveAgentRequest, SendInputRequest, codex_input,
-    send_input_response,
-};
+use wire::{CodexInput, Decision, Input, Phase, codex_input, send_input_response};
 
 use crate::support;
 
@@ -67,22 +64,20 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
         .run(&["new", "codex", "--name", "coder", "--cwd", &work])
         .await;
     let coder = support::created_id(&created);
-    let mut chats = client(&desk.socket).await;
-    let phase = |chats: &mut wire::ClientStubs| {
-        let mut chats = chats.clone();
+    let chats = client(&desk.socket).await;
+    let phase = |chats: &client::next::Client| {
+        let chats = chats.clone();
         async move {
             chats
-                .agents
-                .resolve_agent(ResolveAgentRequest {
-                    name: "coder".into(),
-                })
+                .inventory()
+                .resolve_agent("coder")
                 .await
-                .map(|answer| answer.into_inner().agent.unwrap().phase)
+                .map(|agent| agent.phase)
                 .map_err(|error| error.to_string())
         }
     };
     until("the agent to wait for its first prompt", || {
-        let phase = phase(&mut chats);
+        let phase = phase(&chats);
         async move {
             let phase = phase.await?;
             (phase == Phase::Idle as i32)
@@ -100,9 +95,9 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     say("the app: a prompt");
     app.type_keys(b"hello from the app\r").await;
     until("the app's prompt in amux's chat", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let coder = &coder;
-        async move { says(&chat(&mut chats, coder).await, "hello from the app", 1) }
+        async move { says(&chat(&chats, coder).await, "hello from the app", 1) }
     })
     .await
     .unwrap();
@@ -114,7 +109,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     .await;
     let request = drawn_approval(&app).unwrap();
     until("amux to need the person", || {
-        let phase = phase(&mut chats);
+        let phase = phase(&chats);
         async move {
             let phase = phase.await?;
             (phase == Phase::NeedsYou as i32)
@@ -124,32 +119,29 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     })
     .await
     .unwrap();
+    let row = chats.inventory().resolve_agent("coder").await.unwrap();
     let answered = chats
-        .sessions
-        .send_input(SendInputRequest {
-            agent_id: coder.clone(),
-            input: Some(Input::new(
-                b"approve-1".to_vec(),
-                CodexInput {
-                    of: Some(codex_input::Of::Answer(wire::CodexAnswer {
-                        ask_key: request.clone(),
-                        of: Some(wire::codex_answer::Of::Approve(Decision::Approve as i32)),
-                    })),
-                },
-            )),
-        })
+        .agent(&row)
+        .send_input(Input::new(
+            b"approve-1".to_vec(),
+            CodexInput {
+                of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+                    ask_key: request.clone(),
+                    of: Some(wire::codex_answer::Of::Approve(Decision::Approve as i32)),
+                })),
+            },
+        ))
         .await
-        .unwrap()
-        .into_inner();
+        .unwrap();
     assert!(
         matches!(answered.of, Some(send_input_response::Of::Accepted(_))),
         "{answered:?}"
     );
     app.shows(&format!("resolved {request}")).await;
     until("the approved command's turn to finish", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let coder = &coder;
-        async move { says(&chat(&mut chats, coder).await, "ran it for the app", 1) }
+        async move { says(&chat(&chats, coder).await, "ran it for the app", 1) }
     })
     .await
     .unwrap();
@@ -157,7 +149,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     say("the app: another prompt, its approval answered in the app");
     app.type_keys(b"once more\r").await;
     until("amux to be asked again", || {
-        let phase = phase(&mut chats);
+        let phase = phase(&chats);
         async move {
             let phase = phase.await?;
             (phase == Phase::NeedsYou as i32)
@@ -175,11 +167,11 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
     app.type_keys(b"y\r").await;
     app.shows(&format!("resolved {second}")).await;
     until("amux's ask to close and the turn to finish", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let coder = &coder;
-        let phase = phase(&mut chats);
+        let phase = phase(&chats);
         async move {
-            says(&chat(&mut chats, coder).await, "ran it again", 1)?;
+            says(&chat(&chats, coder).await, "ran it again", 1)?;
             let phase = phase.await?;
             (phase == Phase::Idle as i32)
                 .then_some(())

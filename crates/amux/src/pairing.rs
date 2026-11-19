@@ -369,7 +369,7 @@ pub async fn cancel(mut admin: Admin) -> Result<()> {
 /// pairing through.
 pub async fn pair(
     admin: Admin,
-    client: &mut wire::ClientStubs,
+    client: &client::next::Client,
     target: Target,
     free: bool,
 ) -> Result<()> {
@@ -611,7 +611,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 
 /// The trusted hosts and the hosts that could be paired: found nearby, or
 /// announced by the relay or a paired host.
-pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs, free: bool) -> Result<()> {
+pub async fn hosts(mut admin: Admin, client: &client::next::Client, free: bool) -> Result<()> {
     let trusted = admin
         .list_peers(wire::ListPeersRequest {})
         .await

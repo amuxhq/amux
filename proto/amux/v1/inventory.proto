@@ -241,3 +241,11 @@ enum Provider {
   PROVIDER_CLAUDE = 1;
   PROVIDER_CODEX = 2;
 }
+
+// A folder holding a repository on a host, as the host lists them for a
+// new agent to start in.
+message RepositoryEntry {
+  string path = 1;
+  string name = 2;
+  optional int64 last_used_ms = 3;
+}

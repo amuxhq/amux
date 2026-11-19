@@ -13,7 +13,8 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | File | Holds |
 | --- | --- |
 | [`agent_service.proto`](../proto/amux/v1/agent_service.proto) | `AgentService` and its requests: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories |
-| [`session_service.proto`](../proto/amux/v1/session_service.proto) | `SessionService` and its requests: one agent's conversation, `Input` and `SendInputResponse`, the composer's draft |
+| [`session_service.proto`](../proto/amux/v1/session_service.proto) | `SessionService` and its requests: one agent's conversation, its input, the composer's draft |
+| [`session.proto`](../proto/amux/v1/session.proto) | What a conversation is streamed and driven with: `SessionEvent`, `Input` and `SendInputResponse`, the composer's `Draft` |
 | [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
 | [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
 | [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |

@@ -5,7 +5,7 @@ package amux.dump;
 import "amux/v1/chat.proto";
 import "amux/v1/records.proto";
 import "amux/v1/inventory.proto";
-import "amux/v1/session_service.proto";
+import "amux/v1/session.proto";
 
 // A client's session as its dump carries it: the session model's state and
 // every message its driver saw. Read back only by the build that wrote it (a

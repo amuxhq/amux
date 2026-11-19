@@ -6,7 +6,7 @@ import "amux/v1/claude.proto";
 import "amux/v1/codex.proto";
 import "amux/v1/inventory.proto";
 import "amux/v1/records.proto";
-import "amux/v1/session_service.proto";
+import "amux/v1/session.proto";
 
 // Agents: the fleet's hosts and agents, their lifecycle, the messages they
 // send each other, and what an agent holds (its blobs, its working tree's
@@ -238,10 +238,4 @@ message ListRepositoriesResponse {
   repeated RepositoryEntry recent = 1;
   // The host's repository list, as its person chose it.
   repeated RepositoryEntry repositories = 2;
-}
-
-message RepositoryEntry {
-  string path = 1;
-  string name = 2;
-  optional int64 last_used_ms = 3;
 }

@@ -187,9 +187,7 @@ impl<'a> Fences<'a> {
             // Before any code, the block's code ends with its opening line.
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
                 let text = &self.source[range.clone()];
-                let opening = text
-                    .find('\n')
-                    .map_or(range.end, |at| range.start + at + 1);
+                let opening = text.find('\n').map_or(range.end, |at| range.start + at + 1);
                 let text = text.trim_start();
                 let mark = text.chars().next().unwrap_or('`');
                 let fence = &text[..text.len() - text.trim_start_matches(mark).len()];

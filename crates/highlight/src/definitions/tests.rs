@@ -635,4 +635,3 @@ fn kinds_keep_their_numbers() {
         assert_eq!(kind as u32, number, "{kind:?}");
     }
 }
-

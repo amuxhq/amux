@@ -8,10 +8,13 @@
 //! before that ask existed reads one it does not know and refuses it in
 //! words.
 //!
-//! The one ask today is a spawn: the `CreateAgentRequest` the daemon takes,
-//! as the tool server would have sent it there. The agent process hands it
-//! to its daemon and the answer back, so it knows of every child it asked
-//! for from before the daemon does.
+//! The one ask today is a spawn: the child the tool server wants, with the
+//! host it is to run on named by id (the tool server resolved the name a
+//! model gave), or none for the agent's own host. The agent process makes
+//! the create, addressed to that host, through its daemon, which passes a
+//! call for another host on to it, and hands the answer back. So it knows
+//! of every child it asked for from before any daemon does, wherever the
+//! child runs.
 //!
 //! Nothing richer is needed: an ask has one answer, and the tool server
 //! turns any refusal into words for the model anyway, so no status code

@@ -2278,6 +2278,10 @@ impl Daemon {
     /// the parent hears of it now: its host lists it only later, and a
     /// one-shot parent whose turn ends in between would exit without
     /// waiting for it.
+    #[expect(
+        dead_code,
+        reason = "disabled while the family stories show the agent process alone holds a far child"
+    )]
     pub(crate) fn forwarded_agent(&mut self, child: &Agent, out: &mut Vec<Output>) {
         let Some(parent) = &child.parent else {
             return;
@@ -2862,6 +2866,7 @@ mod tests {
     /// parent whose turn ends between the two would otherwise exit without
     /// waiting for it.
     #[test]
+    #[ignore = "the rule is disabled: the agent process holds a far child itself"]
     fn a_parent_hears_of_a_far_child_when_the_create_it_forwarded_is_answered() {
         const FAR: HostId = HostId(*b"far-host-0000000");
         let mut rig = rig();

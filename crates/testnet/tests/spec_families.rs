@@ -13,18 +13,16 @@
 
 use std::sync::Arc;
 
+use client::RpcError;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
 use store::AgentRow;
 use testnet::{AgentDecl, Net, PATIENCE, Topology, observe, until};
-use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
-use wire::agent_service_server::AgentService as _;
-use wire::session_service_server::SessionService as _;
+use wire::amux::staging;
 use wire::{
-    AgentRef, ClaudeSdkInput, CreateAgentRequest, InventoryEvent, Kind, Lifecycle, Phase,
-    claude_sdk_input,
+    AgentRef, ClaudeSdkInput, ErrorCode, InventoryEvent, Lifecycle, Phase, claude_sdk_input,
 };
 
 fn text(text: &str) -> Step {
@@ -69,23 +67,36 @@ fn question() -> Step {
     })
 }
 
-fn sending(envelope: wire::Envelope) -> Request<wire::SendMessageRequest> {
-    Request::new(wire::SendMessageRequest {
-        envelope: Some(envelope),
-    })
+/// A message's 16-byte id, readable as `label` in what a host keeps.
+fn message_id(label: &str) -> Vec<u8> {
+    assert!(label.len() <= 16, "{label:?} is longer than an id");
+    let mut id = label.as_bytes().to_vec();
+    id.resize(16, b'.');
+    id
 }
 
-/// A message as an agent's tool server submits it.
-fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::Envelope {
-    wire::Envelope {
-        id: id.to_vec(),
-        to: Some(to.clone()),
-        context: None,
-        from: None,
-        body: Some(wire::envelope::Body::Message(wire::MessageBody {
-            text: text.into(),
-            attachments: Vec::new(),
-        })),
+/// `from`'s message `text` to `to` under the id `label` names, as its tool
+/// server sends it: addressed to the recipient's host, which takes the
+/// sender from the caller.
+async fn send_as(
+    net: &Net,
+    from: &str,
+    label: &str,
+    to: &AgentRef,
+    text: &str,
+) -> Result<Vec<u8>, RpcError> {
+    net.tools(from)
+        .await
+        .unwrap()
+        .agent(to)
+        .send_message(message_id(label), None, words(text))
+        .await
+}
+
+fn words(text: &str) -> wire::MessageBody {
+    wire::MessageBody {
+        text: text.into(),
+        attachments: Vec::new(),
     }
 }
 
@@ -239,8 +250,12 @@ fn short(net: &Net, host_id: &[u8]) -> String {
         .unwrap_or_else(|| observe::short(host_id))
 }
 
-fn wire_error(status: &tonic::Status) -> wire::Error {
-    wire::Error::decode(status.details()).expect("a wire error in the status")
+/// What the host that answered said, when it refused.
+fn refusal(error: RpcError) -> wire::Error {
+    match error {
+        RpcError::Refused(error) => error,
+        RpcError::Transport(lost) => panic!("no answer: {lost}"),
+    }
 }
 
 fn three_hosts() -> Topology {
@@ -253,15 +268,15 @@ fn three_hosts() -> Topology {
         .link("server", "phone")
 }
 
-/// A spawn names its host as the person does: resolved among this host
-/// and the trusted ones, exactly and then ignoring case. No match is
-/// NOT_FOUND naming the hosts there are; two are ambiguous, with both as
-/// candidates. A match elsewhere forwards the create to that host with the
-/// parent as host and id and a directory there; with no directory it is
+/// A spawn names its host as the person does: the name resolved among
+/// this host and the trusted ones, exactly and then ignoring case. No match
+/// is NOT_FOUND naming the hosts there are; two are ambiguous, with both as
+/// candidates. The create is addressed to the host found, which takes the
+/// calling agent as parent and needs a directory there; with none it is
 /// refused in words naming that host. The parent's host and a third host
 /// list the child under its own host in the parent's family.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
+async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there() {
     let mut net = Net::start(
         Topology::new()
             .host("desk")
@@ -274,16 +289,24 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
     )
     .await
     .unwrap();
-    let tools = net.tools("lead").unwrap();
-    let request = |host: &str| CreateAgentRequest {
-        host: Some(wire::HostRef::named(host)),
-        agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
-        ..CreateAgentRequest::default()
+    let tools = net.tools("lead").await.unwrap();
+    let request = || staging::CreateAgentRequest {
+        agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+            Default::default(),
+        )),
+        ..staging::CreateAgentRequest::default()
+    };
+    let resolved = |name: &'static str| {
+        let tools = tools.clone();
+        async move { tools.inventory().resolve_host(name).await }
     };
 
     // An attachment arm this host's build does not know decodes as no arm.
+    let desk = resolved("desk").await.unwrap();
     let unreadable = tools
-        .create_agent(Request::new(CreateAgentRequest {
+        .host(desk.host_id())
+        .agents()
+        .create(staging::CreateAgentRequest {
             initial_prompt: Some(wire::PromptSubmission {
                 input_id: b"first".to_vec(),
                 prompt: Some(wire::PromptInput {
@@ -291,33 +314,25 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
                     attachments: vec![wire::Attachment { of: None }],
                 }),
             }),
-            ..request("desk")
-        }))
+            ..request()
+        })
         .await
         .unwrap_err();
-    assert_eq!(unreadable.code(), Code::FailedPrecondition);
+    assert_eq!(unreadable.code(), Some(ErrorCode::FailedPrecondition));
     assert_eq!(
-        wire_error(&unreadable).message,
+        refusal(unreadable).message,
         "one of its attachments is of a kind this host can't read; the host needs updating"
     );
 
-    let refused = tools
-        .create_agent(Request::new(request("attic")))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::NotFound);
-    let error = wire_error(&refused);
+    let error = refusal(resolved("attic").await.unwrap_err());
+    assert_eq!(error.code(), ErrorCode::NotFound);
     for name in ["desk", "box", "BOX"] {
         assert!(error.message.contains(name), "{}", error.message);
     }
     println!("spawn on \"attic\": NOT_FOUND ({})", error.message);
 
-    let refused = tools
-        .create_agent(Request::new(request("Box")))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::FailedPrecondition);
-    let error = wire_error(&refused);
+    let error = refusal(resolved("Box").await.unwrap_err());
+    assert_eq!(error.code(), ErrorCode::FailedPrecondition);
     assert_eq!(error.message, "2 trusted hosts answer to Box");
     println!("spawn on \"Box\": FAILED_PRECONDITION ({})", error.message);
 
@@ -342,7 +357,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         "a directory on the child's host"
     );
     println!(
-        "spawn on \"box\": forwarded; helper lives on box with parent lead@desk in {}",
+        "spawn on \"box\": carried; helper lives on box with parent lead@desk in {}",
         own.cwd
     );
 
@@ -377,12 +392,16 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
 
     // The spawn names no directory on box: refused, naming box and asking
     // for a folder there, and nothing starts.
-    let refused = tools
-        .create_agent(Request::new(request("box")))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::InvalidArgument);
-    let error = wire_error(&refused);
+    let at_box = resolved("box").await.unwrap();
+    let error = refusal(
+        tools
+            .host(at_box.host_id())
+            .agents()
+            .create(request())
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(error.code(), ErrorCode::InvalidArgument);
     assert!(
         error.message.contains("box") && error.message.contains("folder"),
         "{}",
@@ -405,15 +424,19 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         .unwrap();
     assert_eq!(local.host_id, net.host("desk").unwrap().host_id.as_bytes());
     assert_eq!(local.cwd, lead_cwd);
-    let named = tools
-        .create_agent(Request::new(request("DESK")))
+    let named = resolved("DESK").await.unwrap();
+    assert_eq!(
+        named.host_id(),
+        net.host("desk").unwrap().host_id.as_bytes()
+    );
+    let made = tools
+        .host(named.host_id())
+        .agents()
+        .create(request())
         .await
-        .unwrap()
-        .into_inner()
-        .agent
         .unwrap();
-    assert_eq!(named.host_id, net.host("desk").unwrap().host_id.as_bytes());
-    assert_eq!(named.cwd, lead_cwd);
+    assert_eq!(made.host_id, net.host("desk").unwrap().host_id.as_bytes());
+    assert_eq!(made.cwd, lead_cwd);
     println!("spawn on \"desk\" or \"DESK\" naming no directory: the child starts in {lead_cwd}");
 
     net.shutdown().await.unwrap();
@@ -454,18 +477,22 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     .await
     .unwrap();
 
-    let stop = |caller: &str| {
-        let tools = net.tools(caller).unwrap();
-        let request = wire::SendInputRequest {
-            agent_id: helper.id.as_bytes().to_vec(),
-            input: Some(interrupt()),
-        };
-        async move { tools.send_input(Request::new(request)).await }
+    let stop = |caller: &'static str| {
+        let net = &net;
+        let helper = &helper;
+        async move {
+            net.tools(caller)
+                .await
+                .unwrap()
+                .agent(helper)
+                .send_input(interrupt())
+                .await
+        }
     };
     let refused = stop("other").await.unwrap_err();
-    assert_eq!(refused.code(), Code::PermissionDenied);
+    assert_eq!(refused.code(), Some(ErrorCode::PermissionDenied));
     println!("other stops helper: PERMISSION_DENIED (not its child)");
-    let verdict = stop("lead").await.unwrap().into_inner();
+    let verdict = stop("lead").await.unwrap();
     assert!(
         matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
         "{verdict:?}"
@@ -484,21 +511,20 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     .unwrap();
 
     let to = helper.parent();
-    let refused = net
-        .tools("other")
-        .unwrap()
-        .send_message(sending(message(b"from-other", &to, "Still there?")))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::FailedPrecondition);
+    let refused = refusal(
+        send_as(&net, "other", "from-other", &to, "Still there?")
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(refused.code(), ErrorCode::FailedPrecondition);
     // The one-shot child finished its turn, so it settled itself: an agent
     // that is not its parent no longer wakes it.
     assert!(
-        refused.message().contains("is settled"),
+        refused.message.contains("is settled"),
         "{}",
-        refused.message()
+        refused.message
     );
-    println!("other sends to settled helper: {}", refused.message());
+    println!("other sends to settled helper: {}", refused.message);
 
     net.next_start(
         "helper",
@@ -508,15 +534,13 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
         },
     )
     .unwrap();
-    net.tools("lead")
-        .unwrap()
-        .send_message(sending(message(b"from-lead", &to, "Run it again.")))
+    send_as(&net, "lead", "from-lead", &to, "Run it again.")
         .await
         .expect("the parent's send resumes its child");
     let resumed = row(&net, "server", "helper").await.unwrap();
     assert_eq!(resumed.incarnation, 2);
-    assert_eq!(with_input(&net, "helper", b"from-lead").await, 1);
-    assert_eq!(with_input(&net, "helper", b"from-other").await, 0);
+    assert_eq!(with_input(&net, "helper", &message_id("from-lead")).await, 1);
+    assert_eq!(with_input(&net, "helper", &message_id("from-other")).await, 0);
     println!("lead sends to exited helper: resumed as incarnation 2 with the message");
     net.shutdown().await.unwrap();
 }
@@ -607,15 +631,14 @@ async fn concurrent_duplicate_sends_across_hosts_yield_one_item() {
     .await
     .unwrap();
     let to = net.agent("reviewer").unwrap().parent();
-    let message = message(b"twice", &to, "Please review the survey.");
-    let tools = net.tools("lead").unwrap();
+    let reviewer = net.tools("lead").await.unwrap().agent(&to);
     let (first, second) = tokio::join!(
-        tools.send_message(sending(message.clone())),
-        tools.send_message(sending(message)),
+        reviewer.send_message(message_id("twice"), None, words("Please review the survey.")),
+        reviewer.send_message(message_id("twice"), None, words("Please review the survey.")),
     );
     first.expect("the first send");
     second.expect("the duplicate is answered as sent");
-    assert_eq!(with_input(&net, "reviewer", b"twice").await, 1);
+    assert_eq!(with_input(&net, "reviewer", &message_id("twice")).await, 1);
     assert_eq!(
         taken(&net, "reviewer", "Please review the survey.").await,
         1,
@@ -714,20 +737,18 @@ async fn cross_host_family_journey() {
     )
     .unwrap();
     let verdict = net
-        .client("phone")
-        .unwrap()
-        .send_input(Request::new(wire::SendInputRequest {
-            agent_id: helper.id.as_bytes().to_vec(),
-            input: Some(answer),
-        }))
+        .person("phone")
         .await
         .unwrap()
-        .into_inner();
+        .agent(&helper)
+        .send_input(answer)
+        .await
+        .unwrap();
     assert!(
         matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
         "{verdict:?}"
     );
-    say("3. phone answers \"unit\" in helper's chat: forwarded to server, accepted".into());
+    say("3. phone answers \"unit\" in helper's chat: carried to server, accepted".into());
 
     // One finished message under a link fault.
     until("helper's finished row", || {
@@ -821,15 +842,15 @@ async fn cross_host_family_journey() {
         },
     )
     .unwrap();
-    net.tools("lead")
-        .unwrap()
-        .send_message(sending(message(
-            b"follow-up",
-            &helper.parent(),
-            "Add the flaky test to the report.",
-        )))
-        .await
-        .expect("lead's send resumes helper");
+    send_as(
+        &net,
+        "lead",
+        "follow-up",
+        &helper.parent(),
+        "Add the flaky test to the report.",
+    )
+    .await
+    .expect("lead's send resumes helper");
     assert_eq!(row(&net, "server", "helper").await.unwrap().incarnation, 2);
     until("helper's second finished message", || {
         let net = &net;
@@ -1266,6 +1287,17 @@ async fn a_spawn_on_a_host_that_runs_no_agents_is_refused_in_plain_words() {
     );
 }
 
+/// A person on the desk puts `bytes` in `agent`'s directory as notes.txt.
+async fn put_notes(net: &Net, agent: &str, bytes: &[u8]) -> wire::BlobRef {
+    net.person("desk")
+        .await
+        .unwrap()
+        .agent(net.agent(agent).unwrap())
+        .put_blob("notes.txt", "text/plain", bytes.to_vec())
+        .await
+        .unwrap()
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -1293,21 +1325,7 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
     .unwrap();
     net.settle("scribe").await.unwrap();
     let bytes = b"release notes: ship on friday\n".to_vec();
-    let put = |agent: Uuid| wire::PutBlobRequest {
-        agent_id: agent.as_bytes().to_vec(),
-        name: "notes.txt".into(),
-        mime: "text/plain".into(),
-        bytes: bytes.clone(),
-    };
-    let blob = net
-        .client("desk")
-        .unwrap()
-        .put_blob(Request::new(put(net.agent("scribe").unwrap().id)))
-        .await
-        .unwrap()
-        .into_inner()
-        .blob
-        .unwrap();
+    let blob = put_notes(&net, "scribe", &bytes).await;
     let hash = hex(&blob.hash);
     let sender_path = net.agent_dir("scribe").unwrap().join("blobs").join(&hash);
     let element = format!(
@@ -1333,11 +1351,7 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
     .await
     .unwrap();
     net.settle("lead").await.unwrap();
-    net.client("desk")
-        .unwrap()
-        .put_blob(Request::new(put(net.agent("lead").unwrap().id)))
-        .await
-        .unwrap();
+    put_notes(&net, "lead", &bytes).await;
     net.spawn_child(
         "lead",
         child(

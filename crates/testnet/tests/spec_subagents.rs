@@ -2,12 +2,12 @@
 //! tool and Codex's child threads start inside an agent on one host, read,
 //! answered and stopped from clients of that host and of a paired one.
 //!
-//! The clients are the phone's own runtime (`app-runtime`), each over the
-//! client seam of one host's daemon as the phone and the Mac reach theirs:
-//! its fleet, the chats it opens and the rows and cards those draw. A
-//! client of the laptop reads the desk's agents through the laptop's
-//! replicas and reaches them through the laptop's routing, so every answer
-//! and stop from it crosses the link as `ChildInput` would from any peer.
+//! The clients are the phone's own runtime (`app-runtime`), each on one
+//! host's node called in memory, as the phone calls its own: its fleet, the
+//! chats it opens and the rows and cards those draw. A client of the laptop
+//! reads the desk's agents through the laptop's replicas and addresses
+//! every answer and stop to the desk, which the laptop carries there
+//! unread for the desk to answer as a person's on the laptop.
 //!
 //! Each story reads top to bottom as the promises it holds, each printed as
 //! it is shown, so a run's output is the evidence.
@@ -17,7 +17,7 @@
 use std::sync::Arc;
 
 use app_runtime::{AppRuntime, Chat, DEFAULT_TAIL, Wake};
-use client::{InProcess, SystemClock};
+use client::SystemClock;
 use provider_fakes::script::{Ask, Step, Subagent, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, PATIENCE, Topology};
 use tokio::sync::mpsc;
@@ -130,10 +130,6 @@ struct Client {
 impl Client {
     /// Opens the runtime on `host`'s daemon, on home.
     async fn connect(net: &Net, host: &str, name: &'static str) -> Client {
-        let client: Arc<dyn client::Client> = Arc::new(
-            InProcess::new(net.client(host).unwrap())
-                .with_admin(Arc::new(net.profile_admin(host).unwrap())),
-        );
         let (sender, wakes) = mpsc::unbounded_channel();
         let wake = Arc::new(move |wake: Wake| {
             let _ = sender.send(wake);
@@ -143,7 +139,7 @@ impl Client {
             net.entrance(host).unwrap(),
             client::next::Surface::Phone,
         );
-        let runtime = AppRuntime::open(client, node, Arc::new(SystemClock), local, wake)
+        let runtime = AppRuntime::open(node, Arc::new(SystemClock), local, wake)
             .await
             .unwrap();
         runtime.fleet_opening();

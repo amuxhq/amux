@@ -124,7 +124,7 @@ The same network as JSON, as `testnet serve` reads it:
 | `agents[].kind` | `claude_pty`, `claude_sdk` (the default) or `codex`: which fake runs and which interpreter reads it. |
 | `agents[].script` or `script_file` | What the fake plays, inline or from a file relative to the topology file; not both. |
 | `agents[].prompt` | The first prompt, sent at creation. |
-| `agents[].parent` | An agent declared earlier, on any host. |
+| `agents[].parent` | An agent declared earlier, on any host. The child is made as the parent's spawn tool makes one, by asking the parent's agent process: no client names a parent. |
 | `agents[].cwd` | Its working directory; none is the host's work directory, and a relative path a folder below it. |
 | `agents[].repository` | One of its host's repositories to work in, instead of `cwd`. |
 | `agents[].branch` | The branch its `cwd` folder is on: the net makes that folder a git repository on this branch, so its fleet row has a branch. Needs a relative `cwd`; agents sharing a folder share its branch. |
@@ -427,8 +427,9 @@ origin's revisions.
 
 **Resources** answer questions about the net: `host(name)` (its data directory, front door and installation
 config), `runtime(name)`, `agent_dir(name)`, `journal_end(name)`, `provider_input(name)` (every line the stdio
-fakes read), `client(host)` and `tools(name)` (the client service as a person or an agent reaches it), and
-`relay()`.
+fakes read), `person(host)` (a client of the host as a person there reaches it: its node called in memory, as the
+phone calls its own, or a process host's profile socket), `tools(name)` (a client on the agent's own tools socket,
+every call made as that agent), and `relay()`.
 
 A test ends with `net.shutdown().await`, which stops every agent and shuts every daemon down cleanly. Dropping a
 net kills what it can and is for panics.

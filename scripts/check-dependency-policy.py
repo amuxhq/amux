@@ -151,9 +151,11 @@ SUPPORT_ALLOWED_LOCAL = {
     # supervised hosts, and draws the terminal client's screens through shot.
     # Its simulated mode holds every daemon and agent core in one process,
     # the agents on the test kind's interpreter. Each host's daemon starts
-    # from its own config file, read as the amux binary reads it.
+    # from its own config file, read as the amux binary reads it. It acts
+    # on hosts through the client library, as a person's client and an
+    # agent's tools do.
     "testnet": {
-        "agent-dir", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "patience",
         "provider-fakes", "release", "settings", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance

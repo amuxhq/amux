@@ -2712,6 +2712,48 @@ fn a_first_prompt_is_drawn_while_claude_starts_and_written_once() {
     );
 }
 
+/// A prompt that wakes a suspended agent opens its next incarnation as a
+/// new agent's first prompt opens its first: queued behind nothing, drawn
+/// under the resumed rule by the incarnation's first event, and written
+/// once Claude can take it.
+#[test]
+fn a_prompt_that_wakes_claude_is_drawn_at_once_and_written_once() {
+    let mut state = started();
+    ClaudeSdk::step(
+        &mut state,
+        Event::Exiting(wire::IncarnationEnd {
+            cause: wire::ExitCause::Suspended as i32,
+            detail: None,
+        }),
+    );
+    let wake = wire::AgentSpec {
+        incarnation: 2,
+        ..first_prompt_spec()
+    };
+    let (mut state, first_frame) = ClaudeSdk::reincarnate(state, &wake);
+    let drawn = ClaudeSdk::step(&mut state, Event::Tick { at_ms: 1 });
+    assert_drawn_at_once(&first_frame, &drawn.step);
+    assert_eq!(boundaries(&drawn), [wire::BoundaryKind::Resumed]);
+    let boundary = drawn.step.items[0].key.clone();
+
+    let ran = ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "system", "subtype": "init", "uuid": "i2", "session_id": "s"})),
+    );
+    let written = ran
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect, Effect::UserMessage { .. }))
+        .count();
+    assert_eq!(written, 1, "{:?}", ran.effects);
+    assert!(
+        ran.step.items.iter().all(|item| item.input_id != b"first"
+            && (!item.key.starts_with("boundary:") || item.key == boundary)),
+        "{:?}",
+        ran.step.items
+    );
+}
+
 // --- what Claude holds, for suspension --------------------------------------
 //
 // The frames below are cut from live recordings of Claude Code 2.1.325

@@ -566,9 +566,15 @@ pub struct State {
     seq: u64,
     next_ask: u64,
     next_boundary: u64,
-    /// The first prompt was drawn before Claude started, under the started
-    /// boundary, so the session's start writes none.
-    started_drawn: bool,
+    /// The spec's incarnation: a later one's session is a resume. A
+    /// checkpoint from before it was kept reads 0, as a first.
+    #[serde(default)]
+    incarnation: u32,
+    /// The boundary drawn above a first prompt drawn before Claude
+    /// started: the session's start fills it in rather than drawing a
+    /// second.
+    #[serde(default)]
+    early_boundary: Option<crate::shared::EarlyBoundary>,
     tasks: Option<Vec<Task>>,
     context_tokens: Option<u64>,
     /// Claude's background jobs; the shared part publishes them.
@@ -709,7 +715,8 @@ impl State {
             seq: 0,
             next_ask: 0,
             next_boundary: 0,
-            started_drawn: false,
+            incarnation: spec.incarnation,
+            early_boundary: None,
             tasks: None,
             context_tokens: None,
             jobs: Jobs::default(),
@@ -1296,20 +1303,53 @@ impl State {
         }
     }
 
-    fn boundary(&mut self, emit: &mut Emit, kind: BoundaryKind, exit: wire::IncarnationEnd) {
+    fn boundary(
+        &mut self,
+        emit: &mut Emit,
+        kind: BoundaryKind,
+        exit: wire::IncarnationEnd,
+    ) -> String {
         self.next_boundary += 1;
         let key = format!("boundary:{}", self.next_boundary);
-        self.shared.item(emit, boundary_item(key, kind, exit));
+        self.shared
+            .item(emit, boundary_item(key.clone(), kind, exit));
+        key
     }
 
-    /// Draws the first prompt while Claude is still starting. Claude's own
-    /// record of it comes only after it is typed and adds no second row.
+    /// A session's start: the boundary a first prompt drawn ahead of it
+    /// already placed above itself is filled in, else one is drawn.
+    fn start_boundary(&mut self, emit: &mut Emit, kind: BoundaryKind) {
+        let exit = wire::IncarnationEnd::default();
+        match self.early_boundary.take() {
+            Some(early) => {
+                if let Some(key) = early.refill(kind) {
+                    self.shared.item(emit, boundary_item(key, kind, exit));
+                }
+            }
+            None => {
+                self.boundary(emit, kind, exit);
+            }
+        }
+    }
+
+    /// Draws the incarnation's first prompt while Claude is still starting,
+    /// under the boundary its session's start will fill in: a later
+    /// incarnation's session is a resume. Claude's own record of the
+    /// prompt comes only after it is typed and adds no second row.
     fn draw_opening(&mut self, emit: &mut Emit) {
         let Some(entry) = self.shared.opening_to_draw() else {
             return;
         };
-        self.boundary(emit, BoundaryKind::Started, wire::IncarnationEnd::default());
-        self.started_drawn = true;
+        let kind = if self.incarnation > 1 {
+            BoundaryKind::Resumed
+        } else {
+            BoundaryKind::Started
+        };
+        let key = self.boundary(emit, kind, wire::IncarnationEnd::default());
+        self.early_boundary = Some(crate::shared::EarlyBoundary {
+            key,
+            kind: kind as i32,
+        });
         self.shared.item(
             emit,
             ItemDraft {
@@ -1695,6 +1735,7 @@ impl Interpreter for ClaudePty {
 
     fn reincarnate(mut state: State, spec: &AgentSpec) -> (State, Step) {
         state.shared.reincarnate(spec);
+        state.incarnation = spec.incarnation;
         state.jobs.clear();
         // The launch fact of the new process is its first, not a relaunch:
         // the session it resumes is a resume, not a restart.

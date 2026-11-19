@@ -474,9 +474,7 @@ impl State {
                 self.tasks = Some(Vec::new());
             }
         }
-        if !(kind == BoundaryKind::Started && std::mem::take(&mut self.started_drawn)) {
-            self.boundary(emit, kind, wire::IncarnationEnd::default());
-        }
+        self.start_boundary(emit, kind);
     }
 
     /// A hook a subagent raised: a call it is about to make (and what it

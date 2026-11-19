@@ -1203,11 +1203,7 @@ impl State {
             // or on its own; a thread started anywhere else is a child's.
             if response.is_some() && *known == id {
                 self.shared.provider_started();
-                self.boundary(
-                    emit,
-                    wire::BoundaryKind::Resumed,
-                    wire::IncarnationEnd::default(),
-                );
+                self.start_boundary(emit, wire::BoundaryKind::Resumed);
                 self.release_held(emit);
             }
             return;
@@ -1221,9 +1217,7 @@ impl State {
         } else {
             wire::BoundaryKind::Started
         };
-        if !(kind == wire::BoundaryKind::Started && std::mem::take(&mut self.started_drawn)) {
-            self.boundary(emit, kind, wire::IncarnationEnd::default());
-        }
+        self.start_boundary(emit, kind);
         self.release_held(emit);
     }
 

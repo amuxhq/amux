@@ -164,8 +164,8 @@ settings are always the kind's own. A create with no arm set names no
 interpreter and fails with `INVALID_ARGUMENT`. `initial_prompt` is a prompt with its attachments and the client's
 input id; with nothing ahead of it, it is the agent's first turn, drawn at once
 and written to the provider when the provider takes input. A resume takes the
-same, queued for the new incarnation: the exited chat's composer sends its
-draft that way.
+same, as the new incarnation's first turn: the exited chat's composer sends its
+draft that way, and a prompt to a suspended agent wakes it the same way.
 
 ## Subscribe
 

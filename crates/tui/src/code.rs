@@ -100,12 +100,12 @@ mod tests {
             text: text.into(),
         };
         let patch = PatchHead {
-            lines: vec![
+            hunks: vec![vec![
                 line(1, LineKind::Context, "fn ready() -> bool {"),
                 line(2, LineKind::Removed, "    false"),
                 line(2, LineKind::Added, "    true"),
                 line(3, LineKind::Context, "}"),
-            ],
+            ]],
             more: 0,
         };
         let lines = crate::chat::rows::patch_lines(&patch, "src/ready.rs", true, 'b', 80, theme);

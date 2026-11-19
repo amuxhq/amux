@@ -379,8 +379,7 @@ pub(crate) fn segment_rows(
 /// its rule and the sign.
 pub(crate) fn patch_gutter(patch: &ui_view::PatchHead) -> usize {
     let digits = patch
-        .lines
-        .iter()
+        .lines()
         .filter_map(|line| line.number)
         .max()
         .map_or(0, |n| n.to_string().len());
@@ -607,14 +606,13 @@ pub(crate) fn patch_lines(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let digits = patch
-        .lines
-        .iter()
+        .lines()
         .filter_map(|line| line.number)
         .max()
         .map_or(0, |n| n.to_string().len());
-    let code = crate::code::noted(ui_view::highlight_patch(path, &patch.lines));
+    let code = crate::code::noted(ui_view::highlight_patch(path, patch));
     let mut lines = Vec::new();
-    for (line, runs) in patch.lines.iter().zip(code) {
+    for (line, runs) in patch.lines().zip(code) {
         let (sign, style) = match line.kind {
             LineKind::Added => ("+", theme.diff_added()),
             LineKind::Removed => ("-", theme.diff_removed()),

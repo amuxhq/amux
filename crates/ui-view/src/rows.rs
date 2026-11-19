@@ -1688,12 +1688,25 @@ pub enum EditLine {
     Line(PatchLine),
 }
 
-/// The head of a landed file change: its first file's first lines, and
-/// how many lines of that file's patch follow them.
+/// The head of a landed file change: its first file's first lines, hunk
+/// by hunk, and how many lines of that file's patch follow them.
+///
+/// The lines of one hunk are neighbours in the file and the lines of two
+/// are not, so the hunks are kept apart in the data itself: whatever reads
+/// the head as code (the highlighting, a comment one hunk leaves open)
+/// cannot run one hunk into the next, whether or not a client draws where
+/// each starts.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct PatchHead {
-    pub lines: Vec<PatchLine>,
+    pub hunks: Vec<Vec<PatchLine>>,
     pub more: usize,
+}
+
+impl PatchHead {
+    /// Every line of the head, hunk after hunk.
+    pub fn lines(&self) -> impl Iterator<Item = &PatchLine> {
+        self.hunks.iter().flatten()
+    }
 }
 
 /// The first `max` lines of the patch a landed file change made, for a
@@ -1701,7 +1714,7 @@ pub struct PatchHead {
 /// not landed, or carries no patch.
 pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHead> {
     let held = state.transcript().get(key)?;
-    let lines = match &held.body {
+    let hunks = match &held.body {
         ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) => {
             if !succeeded(tool.state) {
                 return None;
@@ -1714,51 +1727,70 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
             }
             match &work.of {
                 Some(wire::work::Of::FileChange(change)) => {
-                    patch_lines(change_lines(change.changes.first()?))
+                    hunks_of(change_lines(change.changes.first()?))
                 }
                 _ => return None,
             }
         }
         _ => return None,
     };
-    if lines.is_empty() {
+    let total: usize = hunks.iter().map(Vec::len).sum();
+    if total == 0 {
         return None;
     }
-    let more = lines.len().saturating_sub(max);
+    let mut left = max;
+    let hunks = hunks
+        .into_iter()
+        .map_while(|mut hunk| {
+            if left == 0 {
+                return None;
+            }
+            hunk.truncate(left);
+            left -= hunk.len();
+            Some(hunk)
+        })
+        .filter(|hunk| !hunk.is_empty())
+        .collect();
     Some(PatchHead {
-        lines: lines.into_iter().take(max).collect(),
-        more,
+        hunks,
+        more: total.saturating_sub(max),
     })
 }
 
-/// The lines of a parsed patch, without where its hunks start.
-fn patch_lines(lines: Vec<EditLine>) -> Vec<PatchLine> {
-    lines
-        .into_iter()
-        .filter_map(|line| match line {
-            EditLine::Line(line) => Some(line),
-            EditLine::File(_) | EditLine::Hunk { .. } => None,
-        })
-        .collect()
+/// A parsed patch's lines split where each hunk starts.
+fn hunks_of(lines: Vec<EditLine>) -> Vec<Vec<PatchLine>> {
+    let mut hunks = vec![Vec::new()];
+    for line in lines {
+        match line {
+            EditLine::Line(line) => hunks.last_mut().expect("one hunk at least").push(line),
+            EditLine::File(_) | EditLine::Hunk { .. } => hunks.push(Vec::new()),
+        }
+    }
+    hunks.retain(|hunk| !hunk.is_empty());
+    hunks
 }
 
-fn claude_patch(tool: &ToolCall) -> Option<Vec<PatchLine>> {
+fn claude_patch(tool: &ToolCall) -> Option<Vec<Vec<PatchLine>>> {
     let (_, Some(tool_input::Of::Edit(edit))) = read_input(tool) else {
         return None;
     };
     if !tool.patch.is_empty() {
-        let mut lines = Vec::new();
-        for hunk in &tool.patch {
-            let (mut old, mut new) = (Some(hunk.old_start), Some(hunk.new_start));
-            for line in &hunk.lines {
-                lines.push(numbered(line, &mut old, &mut new));
-            }
-        }
-        return Some(lines);
+        return Some(
+            tool.patch
+                .iter()
+                .map(|hunk| {
+                    let (mut old, mut new) = (Some(hunk.old_start), Some(hunk.new_start));
+                    hunk.lines
+                        .iter()
+                        .map(|line| numbered(line, &mut old, &mut new))
+                        .collect()
+                })
+                .collect(),
+        );
     }
     if edit.write {
         let content = edit.replacements.first().map_or("", |write| &write.new);
-        return Some(
+        return Some(vec![
             content
                 .lines()
                 .enumerate()
@@ -1768,31 +1800,39 @@ fn claude_patch(tool: &ToolCall) -> Option<Vec<PatchLine>> {
                     text: text.to_owned(),
                 })
                 .collect(),
-        );
+        ]);
     }
-    Some(patch_lines(replaced_lines(edit)))
+    // Each replacement is a place of its own in the file.
+    Some(edit.replacements.iter().map(replacement_lines).collect())
 }
 
 /// What a Claude edit replaces and writes, as unnumbered patch lines: each
 /// replaced text removed, then its replacement added. There is no file to
 /// number them against.
 pub(crate) fn replaced_lines(edit: &wire::EditInput) -> Vec<EditLine> {
-    let mut lines = Vec::new();
-    for replacement in &edit.replacements {
-        for (text, kind) in [
-            (&replacement.old, LineKind::Removed),
-            (&replacement.new, LineKind::Added),
-        ] {
-            lines.extend(text.lines().map(|text| {
-                EditLine::Line(PatchLine {
-                    number: None,
-                    kind,
-                    text: text.to_owned(),
-                })
-            }));
-        }
-    }
-    lines
+    edit.replacements
+        .iter()
+        .flat_map(replacement_lines)
+        .map(EditLine::Line)
+        .collect()
+}
+
+/// One replacement's lines: the replaced text removed, then its
+/// replacement added.
+fn replacement_lines(replacement: &wire::Replacement) -> Vec<PatchLine> {
+    [
+        (&replacement.old, LineKind::Removed),
+        (&replacement.new, LineKind::Added),
+    ]
+    .into_iter()
+    .flat_map(|(text, kind)| {
+        text.lines().map(move |text| PatchLine {
+            number: None,
+            kind,
+            text: text.to_owned(),
+        })
+    })
+    .collect()
 }
 
 /// One patch line, numbered from the running old and new positions.

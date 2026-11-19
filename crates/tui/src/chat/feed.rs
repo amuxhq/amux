@@ -1830,7 +1830,7 @@ fn step(
             .enumerate()
         {
             let code_from = patch
-                .filter(|patch| at < patch.lines.len())
+                .filter(|patch| at < patch.lines().count())
                 .map(patch_gutter);
             let mut railed = Line::default();
             pad_to(&mut railed, EDGE);

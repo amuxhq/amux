@@ -16,7 +16,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::review::LineKind;
-use crate::rows::{EditLine, PatchLine};
+use crate::rows::{EditLine, PatchHead};
 
 /// What a run of code is, as far as colouring it goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -94,14 +94,11 @@ pub fn highlight_edit(path: &str, lines: &[EditLine]) -> HighlightedCode {
     )
 }
 
-/// A landed edit's patch lines, all of one file, one result line for each;
-/// coloured as [`highlight_edit`] colours a card's.
-pub fn highlight_patch(path: &str, lines: &[PatchLine]) -> HighlightedCode {
-    edit(
-        Highlighter::shared(),
-        path,
-        lines.iter().map(|line| Piece::Line(line.kind, &line.text)),
-    )
+/// A landed edit's patch head, all of one file, one result line for each
+/// of its lines, hunk after hunk; each hunk is coloured as a fragment of
+/// its own, as [`highlight_edit`] colours a card's.
+pub fn highlight_patch(path: &str, patch: &PatchHead) -> HighlightedCode {
+    patch_code(Highlighter::shared(), path, patch)
 }
 
 /// Builds every grammar on the calling thread, for a client that wants
@@ -126,6 +123,27 @@ pub(crate) fn block(
         lines: highlighted.lines.iter().map(|line| runs(line)).collect(),
         settled: highlighted.settled,
     }
+}
+
+pub(crate) fn patch_code(
+    highlighter: &Highlighter,
+    path: &str,
+    patch: &PatchHead,
+) -> HighlightedCode {
+    let mut out = HighlightedCode {
+        lines: Vec::new(),
+        settled: true,
+    };
+    for hunk in &patch.hunks {
+        let code = edit(
+            highlighter,
+            path,
+            hunk.iter().map(|line| Piece::Line(line.kind, &line.text)),
+        );
+        out.lines.extend(code.lines);
+        out.settled &= code.settled;
+    }
+    out
 }
 
 /// One line of an edit as the highlighting reads it.
@@ -266,7 +284,7 @@ mod tests {
     use highlight::Job;
 
     use super::*;
-    use crate::rows::{FileChangeView, FileRow};
+    use crate::rows::{FileChangeView, FileRow, PatchLine};
 
     /// Background work held until the test runs it, so what a caller sees
     /// before and after each job is fixed.
@@ -435,6 +453,47 @@ mod tests {
         assert!(has(&code, 3, "struct", TokenKind::Keyword));
         assert!(has(&code, 5, "def", TokenKind::Keyword));
         assert_eq!(kinds(&code)[7], vec![("def plain", TokenKind::Plain)]);
+    }
+
+    /// A landed edit's hunks are fragments of their own: the block comment
+    /// the first leaves open does not run into the second, which is
+    /// elsewhere in the file.
+    #[test]
+    fn a_patchs_hunks_are_coloured_apart() {
+        let queue = Queue::default();
+        let highlighter = queue.highlighter();
+        highlighter.prepare(Language::Rust);
+        let line = |number, kind, text: &str| PatchLine {
+            number: Some(number),
+            kind,
+            text: text.to_owned(),
+        };
+        let patch = PatchHead {
+            hunks: vec![
+                vec![
+                    line(3, LineKind::Context, "fn a() {}"),
+                    line(4, LineKind::Added, "/* opened here"),
+                ],
+                vec![line(40, LineKind::Added, "fn far() {}")],
+            ],
+            more: 0,
+        };
+        let code = patch_code(&highlighter, "src/lib.rs", &patch);
+        assert!(code.settled);
+        assert_eq!(code.lines.len(), 3, "one result line for each patch line");
+        assert!(has(&code, 1, "/* opened here", TokenKind::Comment));
+        assert!(
+            has(&code, 2, "fn", TokenKind::Keyword),
+            "{:?}",
+            kinds(&code)
+        );
+        // Read as one fragment, the second hunk would be inside the comment.
+        let joined = PatchHead {
+            hunks: vec![patch.lines().cloned().collect()],
+            more: 0,
+        };
+        let joined = patch_code(&highlighter, "src/lib.rs", &joined);
+        assert!(!has(&joined, 2, "fn", TokenKind::Keyword));
     }
 
     #[test]

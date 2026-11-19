@@ -864,7 +864,7 @@ fn facts(row: &Row) -> RowFacts {
             text: text.into(),
         };
         facts.patch = Some(PatchHead {
-            lines: vec![
+            hunks: vec![vec![
                 line(
                     41,
                     LineKind::Context,
@@ -874,7 +874,7 @@ fn facts(row: &Row) -> RowFacts {
                 line(42, LineKind::Added, "        if self.dirty {"),
                 line(43, LineKind::Added, "            self.paint_all(frame);"),
                 line(44, LineKind::Added, "        }"),
-            ],
+            ]],
             more: 10,
         });
     }

@@ -2155,14 +2155,29 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
                 ToolState::Succeeded,
             ),
             tool_item(4, "Edit", edit.clone(), patch, ToolState::Succeeded),
-            tool_item(5, "Edit", edit, json!({}), ToolState::Running),
+            tool_item(5, "Edit", edit.clone(), json!({}), ToolState::Running),
+            tool_item(
+                6,
+                "Edit",
+                edit,
+                json!({"structuredPatch": [
+                    {"oldStart": 2, "newStart": 2, "lines": ["+/* opened"]},
+                    {"oldStart": 40, "newStart": 41, "lines": ["+fn far() {}"]},
+                ]}),
+                ToolState::Succeeded,
+            ),
         ],
         true,
     );
+    let hunks = patch_head(&state, &"k6".to_owned(), 10).unwrap().hunks;
+    assert_eq!(
+        hunks.iter().map(Vec::len).collect::<Vec<_>>(),
+        vec![1, 1],
+        "each hunk of the patch is its own"
+    );
     let head = patch_head(&state, &"k4".to_owned(), 3).expect("the landed edit has a head");
     let seen: Vec<(Option<u32>, LineKind, &str)> = head
-        .lines
-        .iter()
+        .lines()
         .map(|line| (line.number, line.kind, line.text.as_str()))
         .collect();
     assert_eq!(
@@ -2208,11 +2223,8 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     };
     page(&mut codex, vec![change(ToolState::Succeeded)], true);
     let head = patch_head(&codex, &"change".to_owned(), 10).unwrap();
-    let seen: Vec<(Option<u32>, LineKind)> = head
-        .lines
-        .iter()
-        .map(|line| (line.number, line.kind))
-        .collect();
+    let seen: Vec<(Option<u32>, LineKind)> =
+        head.lines().map(|line| (line.number, line.kind)).collect();
     assert_eq!(
         seen,
         vec![
@@ -2255,8 +2267,7 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
     page(&mut codex, vec![change], true);
     let head = patch_head(&codex, &"change".to_owned(), 10).unwrap();
     let seen: Vec<(Option<u32>, LineKind, &str)> = head
-        .lines
-        .iter()
+        .lines()
         .map(|line| (line.number, line.kind, line.text.as_str()))
         .collect();
     assert_eq!(
@@ -2269,6 +2280,11 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
             (Some(10), LineKind::Added, "b"),
         ]
     );
+    // The two hunks stay apart, and a head cut short counts what it left.
+    let sizes = |head: &PatchHead| head.hunks.iter().map(Vec::len).collect::<Vec<_>>();
+    assert_eq!(sizes(&head), vec![3, 2]);
+    let short = patch_head(&codex, &"change".to_owned(), 4).unwrap();
+    assert_eq!((sizes(&short), short.more), (vec![3, 1], 1));
 }
 
 fn sdk_item(order: u64, revision: u64, kind: wire::claude_item::Kind, text: &str) -> Item {

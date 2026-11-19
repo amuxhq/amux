@@ -29,6 +29,7 @@ mod peer_server;
 mod peer_service;
 mod push;
 mod registry;
+mod replication_calls;
 mod resumption;
 mod settings;
 mod single_daemon;

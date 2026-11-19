@@ -385,9 +385,9 @@ pub fn text(text: &str) -> Step {
 }
 
 /// What this process logs: everything at the level the daemon logs at by
-/// default, and the driver's debug lines, which tests count. Installed
-/// once for the whole binary: a subscriber set per test would race the
-/// others' callsites.
+/// default, and the driver's and the link channels' debug lines, which
+/// tests count. Installed once for the whole binary: a subscriber set per
+/// test would race the others' callsites.
 pub fn captured_log() -> &'static Arc<std::sync::Mutex<Vec<u8>>> {
     static LOG: std::sync::OnceLock<Arc<std::sync::Mutex<Vec<u8>>>> = std::sync::OnceLock::new();
     LOG.get_or_init(|| {
@@ -398,7 +398,8 @@ pub fn captured_log() -> &'static Arc<std::sync::Mutex<Vec<u8>>> {
         let writer = log.clone();
         let filter = tracing_subscriber::filter::Targets::new()
             .with_default(tracing::Level::INFO)
-            .with_target("node::driver", tracing::Level::DEBUG);
+            .with_target("node::driver", tracing::Level::DEBUG)
+            .with_target("node::link::channels", tracing::Level::DEBUG);
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::fmt::layer()

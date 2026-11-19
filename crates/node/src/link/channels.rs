@@ -881,6 +881,10 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 
     fn call(&mut self, request: http::Request<tonic::body::Body>) -> Self::Future {
+        // A call a daemon makes of a paired one passes through no client's
+        // handler and, unlike a carried call, writes no link log line: this
+        // is where a debug log shows what it asks of its peers.
+        tracing::debug!(method = %request.uri().path(), "a call to a paired host");
         let response = self.0.call(request);
         Box::pin(async move { response.await.map_err(Into::into) })
     }

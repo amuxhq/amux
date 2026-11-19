@@ -15,12 +15,15 @@
 //! and the answers back in order, carry the parent's inventory to the
 //! child's host, run every job at once, and fire a timer the core armed
 //! for now at once and one armed for later when the model chooses to wait.
-//! What the world does is the environment too: a person creates the child,
-//! stops or deletes the parent; a process exits unasked; the child's turn
-//! ends; the parent's process accepts a message written to it, writing its
-//! acceptance to its journal; the link goes down and comes back; the
-//! child's host unpairs from the parent's; and a daemon crashes and starts
-//! again, adopting the processes still running.
+//! What the world does is the environment too: the parent's create of the
+//! child reaches the child's host, carried there unread from the parent's
+//! as a call on that host whose caller is the parent, at any point, since
+//! a call already on its way may land after the parent was stopped or the
+//! link went; a person stops or deletes the parent; a process exits
+//! unasked; the child's turn ends; the parent's process accepts a message
+//! written to it, writing its acceptance to its journal; the link goes down
+//! and comes back; the child's host unpairs from the parent's; and a daemon
+//! crashes and starts again, adopting the processes still running.
 //!
 //! Under the suspension experiment the parent's process may also suspend
 //! while nothing is written to it, exiting with its journal saying so, and
@@ -58,7 +61,8 @@ const PARENT: AgentId = AgentId(*b"parent-000000000");
 const CHILD: AgentId = AgentId(*b"child-0000000000");
 /// Each agent's journal fits one segment.
 const SEGMENT_BYTES: u64 = 1 << 20;
-/// The person's calls: creating the child, stopping and deleting the
+/// The calls the hosts' cores are handed: the parent's create of the
+/// child on the child's host, and the person's stop and delete of the
 /// parent.
 const CREATE: CallId = CallId(1);
 const STOP: CallId = CallId(2);
@@ -301,8 +305,9 @@ pub struct State {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
-    /// A person creates the child on its host, under the parent; its
-    /// process starts and says Hello.
+    /// The parent's create of the child arrives on the child's host, which
+    /// makes the calling parent the child's; its process starts and says
+    /// Hello.
     Spawn,
     /// A person stops the parent.
     Stop,
@@ -526,7 +531,7 @@ impl Machine for FamilyDeliveries {
         if world {
             out.push(Action::Rest);
         }
-        // A create refused leaves no child, and the person may try again.
+        // A create refused leaves no child, and the parent may ask again.
         if world && !s.seen.child_created {
             out.push(Action::Spawn);
         }

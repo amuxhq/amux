@@ -1858,11 +1858,7 @@ impl Transition<'_> {
                 | PeerRequest::SubscribeInventory
         );
         let silent = match request {
-            PeerRequest::FileAgent(_) => Some(PeerReply::Agent(wire::Agent::default())),
-            PeerRequest::DeleteAgent(_) | PeerRequest::DeliverReport(_) => Some(PeerReply::Done),
-            PeerRequest::SendMessage(_) => {
-                Some(PeerReply::SendMessage(wire::SendMessageResponse::default()))
-            }
+            PeerRequest::DeliverReport(_) => Some(PeerReply::Done),
             _ => None,
         };
         self.w.outgoing.insert(
@@ -1892,19 +1888,13 @@ impl Transition<'_> {
     }
 
     /// A paired host's call to host `h` as node's peer edge hands it to
-    /// the core: a message as [`peer_message`] makes it, a child's report
-    /// as the message from the child [`report_envelope`] spells, a create
-    /// as [`peer_create`] does.
+    /// the core: a child's report as the message from the child
+    /// [`report_envelope`] spells. A call a person or an agent makes of
+    /// another host never passes through a core on its way: the calling
+    /// host's router carries it unread, so the net makes it on the host it
+    /// is for.
     fn served_by_the_shell(&self, h: usize, input: Input) -> Input {
         match input {
-            Input::PeerCall {
-                call,
-                request: PeerRequest::SendMessage(envelope),
-                ..
-            } => Input::ClientCall {
-                call,
-                request: peer_message(envelope),
-            },
             Input::PeerCall {
                 from,
                 call,
@@ -1912,18 +1902,6 @@ impl Transition<'_> {
             } => Input::ClientCall {
                 call,
                 request: peer_message(report_envelope(&from.0, &self.plan.hosts[h].id.0, report)),
-            },
-            Input::PeerCall {
-                from,
-                call,
-                request: PeerRequest::CreateAgent(create),
-            } => match peer_create(create.clone(), self.w.now_ms) {
-                Some(request) => Input::ClientCall { call, request },
-                None => Input::PeerCall {
-                    from,
-                    call,
-                    request: PeerRequest::CreateAgent(create),
-                },
             },
             other => other,
         }
@@ -2658,35 +2636,6 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
         Output::Checkpoint { .. } => Output::Checkpoint { state: Vec::new() },
         other => other,
     }
-}
-
-/// A create a paired host forwarded, as node's peer edge hands it to the
-/// core through the client service: its spec built as a client's create's
-/// is, with the parent and the first prompt the request names. None when
-/// the request names no agent id.
-fn peer_create(request: wire::CreateAgentRequest, now_ms: u64) -> Option<ClientRequest> {
-    let agent = AgentId::from_slice(&request.agent_id)?;
-    let mut spec = super::agent_spec(
-        agent,
-        &request.cwd,
-        request.parent,
-        None,
-        super::AGENT_GRACE_MS,
-        now_ms,
-    );
-    spec.bootstrap = request.initial_prompt.map(|prompt| wire::Bootstrap {
-        of: Some(wire::bootstrap::Of::Prompt(prompt)),
-    });
-    Some(ClientRequest::CreateAgent(Box::new(daemon_core::Create {
-        agent,
-        cwd: request.cwd,
-        given: request.name,
-        branches: BTreeSet::new(),
-        new_workspace: request.new_workspace,
-        workspace: None,
-        recent: None,
-        spec,
-    })))
 }
 
 /// A message a paired host sent, as node's peer edge hands it to the

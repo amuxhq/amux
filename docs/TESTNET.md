@@ -48,6 +48,7 @@ unchanged on either:
 | A host | a production daemon runtime on loopback | its daemon core over an in-memory store |
 | An agent | an `amux agent` process on a fake provider | its agent core over the test kind's interpreter, playing the script or a recorded headless Claude journal |
 | Links, jobs, timers, processes | real sockets, files, tasks and the driven clock | values in memory, moved one delivery at a time |
+| A person's or an agent's call on another host, such as a far child's create | carried unread over the link by the calling host's router | made on the host it is for while the link between the two is up, and failed before it leaves otherwise |
 | Who picks what happens next | the operating system's scheduler | a seed: each step makes the delivery the seed picks among those waiting |
 | A wait that cannot come true | fails at its deadline | fails at once, when nothing is left to deliver without the story acting |
 | A failure is reported as | the assertion and the net's trace | the seed, the assertion and the trace of deliveries, with the command that reruns that seed |

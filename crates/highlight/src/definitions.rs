@@ -578,7 +578,7 @@ fn names<'tree>(node: Node<'tree>, name: Node<'tree>) -> Vec<Node<'tree>> {
         let Some(parent) = at.parent() else {
             return vec![name];
         };
-        let field = (0..parent.child_count() as u32)
+        let field = (0..parent.child_count())
             .find(|&index| {
                 parent
                     .child(index)

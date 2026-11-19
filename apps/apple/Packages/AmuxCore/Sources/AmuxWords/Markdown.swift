@@ -59,9 +59,21 @@ public struct MarkdownDocument: Equatable, Sendable {
         self.blocks = blocks
     }
 
+    /// The source's lines, ending at `\n`, `\r\n` or a lone `\r`, as
+    /// markdown reads them. Past here the three are alike, so a Windows
+    /// line's `\r` is never part of a heading, a table row or a
+    /// fenced block's code, and a code block's text has only `\n` between
+    /// its lines, which is how ``CodeText/lines(_:)`` and the shared view's
+    /// highlighting both split it.
+    nonisolated static func lines(_ source: String) -> [String] {
+        source.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+    }
+
     public nonisolated static func parse(_ source: String) -> MarkdownDocument {
         var blocks: [MarkdownBlock] = []
-        var lines = ArraySlice(source.components(separatedBy: "\n"))
+        var lines = ArraySlice(Self.lines(source))
         var counter = 0
 
         func next() -> Int { counter += 1; return counter }

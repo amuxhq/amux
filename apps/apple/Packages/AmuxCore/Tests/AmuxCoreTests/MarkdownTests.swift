@@ -31,6 +31,24 @@ final class MarkdownTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    /// An agent on Windows writes `\r\n`, and an old Mac file a lone `\r`.
+    /// Both end a line as `\n` does: nothing keeps the `\r`, so a heading
+    /// reads as written and a code block's lines are the ones the shared
+    /// view colours (`CodeHighlightingTests`).
+    func testWindowsAndOldMacLineEndingsEndALine() {
+        let parsed = blocks("## Why\r\n\r\n```rust\r\nlet x = 1;\r\nlet y = 2;\r\n```\r\nDone.\rAgain.")
+        guard parsed.count == 3,
+              case .heading(_, let heading) = parsed[0],
+              case .code(let language, let text, let closed) = parsed[1],
+              case .paragraph(let paragraph) = parsed[2]
+        else { return XCTFail("expected a heading, code and a paragraph: \(parsed)") }
+        XCTAssertEqual(String(heading.characters), "Why")
+        XCTAssertFalse(String(paragraph.characters).contains("\r"), "\(paragraph)")
+        XCTAssertEqual(language, "rust")
+        XCTAssertEqual(text, "let x = 1;\nlet y = 2;")
+        XCTAssertTrue(closed)
+    }
+
     /// The block a streaming message is still writing is the one whose fence
     /// has not closed; it is coloured as it streams, and every other block
     /// is finished. Only the last block can be open: an unclosed fence runs

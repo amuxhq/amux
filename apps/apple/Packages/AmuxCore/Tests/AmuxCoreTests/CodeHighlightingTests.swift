@@ -148,6 +148,23 @@ final class CodeHighlightingTests: XCTestCase {
         XCTAssertNil(plain?.foregroundColor, "a kind given no colour takes the text's own")
     }
 
+    /// A block from an agent writing Windows line endings is coloured line
+    /// for line: the lines drawn are split by the same rule as the lines
+    /// the shared view answered, so every one reads as its answer.
+    func testABlockWithWindowsLineEndingsIsColouredThroughTheBridge() async throws {
+        let source = "```rust\r\nfn a() {}\r\nfn b() {}\r\n```\r\n"
+        guard case .code(let language, let text, _) = try XCTUnwrap(MarkdownDocument.parse(source).blocks.first)
+        else { return XCTFail("expected code") }
+        let request = CodeHighlighting.Request.block(code: text, info: language ?? "", streaming: false)
+        var drawn: HighlightedCode?
+        await CodeHighlighting.bridge.follow(request) { drawn = $0 }
+        let runs = try XCTUnwrap(drawn).runs(CodeText.lines(text))
+        XCTAssertEqual(runs.count, 2)
+        for line in runs {
+            XCTAssertEqual(line.first, piece("fn", .keyword), "a line drew plain: \(runs)")
+        }
+    }
+
     /// Through the real bridge: the shared view's answer decodes into the
     /// generated values, plain while the grammar builds and coloured once
     /// it has, for a fenced block and for an edit card's patch.

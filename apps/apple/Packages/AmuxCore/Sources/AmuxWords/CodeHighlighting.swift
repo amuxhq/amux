@@ -193,6 +193,12 @@ public enum CodeText {
     /// A fenced block's code as the lines it is drawn in, one for each line
     /// break and one after the last. The shared view answers no line for an
     /// empty last one, which draws as nothing either way.
+    ///
+    /// These are the shared view's own lines because the code has no other
+    /// line ending: the markdown parser turns every `\r\n` and lone `\r`
+    /// into `\n` as the text comes in (``MarkdownDocument/parse(_:)``).
+    /// Code split here with its `\r` still on would keep it on each line,
+    /// which the shared view drops, and no line would read as its answer.
     public static func lines(_ code: String) -> [String] {
         code.components(separatedBy: "\n")
     }

@@ -1,3 +1,4 @@
+import AmuxValues
 import SwiftUI
 
 /// The app's visual language, as values.
@@ -28,14 +29,17 @@ public struct Design: Sendable, Equatable {
 
     /// What a change added and what it took away.
     ///
-    /// The only colours in the design that are not the accent or a neutral
-    /// grey, and the exception is deliberate: green and red are a
+    /// With code's own (``Syntax``), the only colours in the design that are
+    /// not the accent or a neutral grey, and the exception is deliberate: green and red are a
     /// convention about what changed, while the accent is this app's one word
     /// for "something is waiting for you". A diff is not that, so it must not
     /// borrow the word. Both are muted well below a signal green and red so
     /// that a page of them still reads as text.
     public let added: Ramp
     public let removed: Ramp
+
+    /// Code's colours, by kind of token.
+    public let syntax: Syntax
 
     public let faces: Faces
     public let metrics: Metrics
@@ -45,7 +49,8 @@ public struct Design: Sendable, Equatable {
     public init(
         name: String, ground: Ramp, raised: Ramp, sunken: Ramp, hairline: Ramp, ink: Ramp,
         inkMuted: Ramp, inkFaint: Ramp, accent: Ramp, onAccent: Ramp, added: Ramp,
-        removed: Ramp, faces: Faces, metrics: Metrics, type: Typography, surfaces: Surfaces
+        removed: Ramp, syntax: Syntax, faces: Faces, metrics: Metrics, type: Typography,
+        surfaces: Surfaces
     ) {
         self.name = name
         self.ground = ground
@@ -59,10 +64,58 @@ public struct Design: Sendable, Equatable {
         self.onAccent = onAccent
         self.added = added
         self.removed = removed
+        self.syntax = syntax
         self.faces = faces
         self.metrics = metrics
         self.type = type
         self.surfaces = surfaces
+    }
+
+    /// The colours code is drawn in, the second exception to the neutral
+    /// ramp. Code is read by its tokens, and every editor and terminal an
+    /// agent's code comes from colours them, so a block drawn in one ink
+    /// reads as a wall. They are kept quiet so a page of code does not
+    /// out-shout the accent: dark, desaturated hues on light and pale ones
+    /// on dark, none of them the accent's azure (code is never waiting for
+    /// anyone) nor the green and red of a change, which an edit card lays
+    /// under its lines. Each holds 4.5:1 or more on the code well and on
+    /// both of an edit card's tints, in both appearances.
+    public struct Syntax: Sendable, Equatable {
+        public let keyword: Ramp
+        public let string: Ramp
+        /// Numbers and other literal constants.
+        public let number: Ramp
+        public let type: Ramp
+        public let function: Ramp
+        public let comment: Ramp
+
+        public init(
+            keyword: Ramp, string: Ramp, number: Ramp, type: Ramp, function: Ramp, comment: Ramp
+        ) {
+            self.keyword = keyword
+            self.string = string
+            self.number = number
+            self.type = type
+            self.function = function
+            self.comment = comment
+        }
+    }
+
+    /// The colour a kind of token is drawn in: names and punctuation in
+    /// the reading ink, and a block written as a diff in a change's green
+    /// and red.
+    public func ink(_ kind: TokenKind) -> Ramp {
+        switch kind {
+        case .plain: ink
+        case .keyword: syntax.keyword
+        case .string: syntax.string
+        case .number: syntax.number
+        case .type: syntax.type
+        case .function: syntax.function
+        case .comment: syntax.comment
+        case .inserted: added
+        case .deleted: removed
+        }
     }
 
     public struct Metrics: Sendable, Equatable {
@@ -162,6 +215,15 @@ public struct Design: Sendable, Equatable {
         // the same red the design was signed off in.
         added: Ramp(0x29854F, 0x70C78C),
         removed: Ramp(0xA8333D, 0xE68080),
+        // Violet, brick, ochre, teal, indigo and a grey that recedes, each
+        // set to read on the well and under an edit's tints.
+        syntax: Syntax(
+            keyword: Ramp(0x873A9A, 0xD49CE6),
+            string: Ramp(0x964220, 0xE89F7A),
+            number: Ramp(0x755600, 0xD9B65C),
+            type: Ramp(0x1A636C, 0x72C3CC),
+            function: Ramp(0x4A4FA3, 0xA8ACF2),
+            comment: Ramp(0x5A5A61, 0x9B9BA2)),
         faces: .instrument,
         metrics: Metrics(
             cardRadius: 16, controlRadius: 12, floatRadius: 26,
@@ -180,6 +242,8 @@ public struct Design: Sendable, Equatable {
             ("hairline", hairline), ("ink", ink), ("inkMuted", inkMuted),
             ("inkFaint", inkFaint), ("accent", accent), ("onAccent", onAccent),
             ("added", added), ("removed", removed),
+            ("keyword", syntax.keyword), ("string", syntax.string), ("number", syntax.number),
+            ("type", syntax.type), ("function", syntax.function), ("comment", syntax.comment),
         ]
     }
 

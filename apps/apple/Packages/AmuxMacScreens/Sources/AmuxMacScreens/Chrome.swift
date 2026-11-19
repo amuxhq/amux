@@ -1,3 +1,4 @@
+import AmuxValues
 import AppKit
 import SwiftUI
 
@@ -35,6 +36,10 @@ enum Metrics {
 ///   and red otherwise appear only in diffs, muted.
 /// - A repository's tile takes one of eight tints that none of these
 ///   states use, so identity never reads as state.
+/// - Code takes its tokens' colours (`syntax`), held dark and desaturated
+///   on light and pale on dark so a page of code stays quieter than the
+///   states. None of them is amux's blue, the person's coral, or the green
+///   and red an edit card lays under its lines.
 enum Palette {
     static let rail = Color(nsColor: dynamic(light: 0xE8EAF0, dark: 0x101116))
     static let sidebar = Color(nsColor: dynamic(light: 0xF3F4F8, dark: 0x16171D))
@@ -58,6 +63,32 @@ enum Palette {
     static let caution = Color(nsColor: dynamic(light: 0xB7791F, dark: 0xF0B44C))
     static let added = Color(nsColor: dynamic(light: 0x1F8A4C, dark: 0x5CC98A))
     static let removed = Color(nsColor: dynamic(light: 0xC23B3B, dark: 0xF07878))
+
+    /// The colour a kind of code token is drawn in, or nil for the text's
+    /// own: names and punctuation read in the ink around them, and a block
+    /// written as a diff in a change's green and red. Violet, rose, ochre,
+    /// teal, indigo and a grey that recedes, each holding 4.5:1 or more on
+    /// a code well and under an edit card's tints, in both appearances.
+    static func syntax(_ kind: TokenKind) -> Color? {
+        switch kind {
+        case .plain: nil
+        case .keyword: syntaxKeyword
+        case .string: syntaxString
+        case .number: syntaxNumber
+        case .type: syntaxType
+        case .function: syntaxFunction
+        case .comment: syntaxComment
+        case .inserted: added
+        case .deleted: removed
+        }
+    }
+
+    private static let syntaxKeyword = Color(nsColor: dynamic(light: 0x8636B5, dark: 0xC89BF5))
+    private static let syntaxString = Color(nsColor: dynamic(light: 0xA3306E, dark: 0xEE8DC0))
+    private static let syntaxNumber = Color(nsColor: dynamic(light: 0x7E5D00, dark: 0xE0BA5E))
+    private static let syntaxType = Color(nsColor: dynamic(light: 0x136F78, dark: 0x62C7D0))
+    private static let syntaxFunction = Color(nsColor: dynamic(light: 0x4D4FB8, dark: 0xA8ABFA))
+    private static let syntaxComment = Color(nsColor: dynamic(light: 0x63646F, dark: 0x9798A3))
 
     /// The repository tints, by the index every client agrees on: indigo,
     /// violet, magenta, gold, green, teal, sky, lime. No grey: a grey tile

@@ -1,5 +1,6 @@
 import AmuxApp
 import AmuxValues
+import AmuxWords
 import Foundation
 
 extension Bridge {
@@ -72,4 +73,25 @@ extension Bridge {
 
     /// The most an attachment may hold, in bytes; the hosts refuse more.
     public static var attachmentLimit: Int { Int(amux_attachment_limit()) }
+}
+
+extension CodeHighlighting {
+    /// Code coloured by the shared view, through the bridge: what the app
+    /// puts in every screen's environment.
+    public static let bridge = CodeHighlighting { request in
+        switch request {
+        case .block(let code, let info, let streaming):
+            code.withCString { code in
+                info.withCString { info in
+                    Bridge.read(HighlightedCode.self, amux_highlight_block(code, info, streaming))
+                }
+            }
+        case .edit(let path, let lines):
+            path.withCString { path in
+                Bridge.json(lines).withCString { lines in
+                    Bridge.read(HighlightedCode.self, amux_highlight_edit(path, lines))
+                }
+            }
+        }
+    }
 }

@@ -7,9 +7,15 @@ let package = Package(
     products: [
         .library(name: "AmuxDesign", targets: ["AmuxDesign"]),
     ],
+    dependencies: [
+        // For the kinds of token code is coloured by, which the design
+        // gives each a colour.
+        .package(path: "../AmuxCore"),
+    ],
     targets: [
         .target(
             name: "AmuxDesign",
+            dependencies: [.product(name: "AmuxValues", package: "AmuxCore")],
             resources: [.copy("Resources/Fonts")]
         ),
         .testTarget(

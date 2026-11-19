@@ -1,3 +1,4 @@
+import AmuxValues
 import AmuxWords
 import SwiftUI
 
@@ -13,7 +14,7 @@ struct ProseView: View {
         let document = Parsed.document(source)
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(document.blocks.enumerated()), id: \.offset) { _, block in
-                Block(block: block)
+                Block(block: block, streaming: streaming)
             }
         }
         .font(.ui(.prose))
@@ -43,6 +44,9 @@ private enum Parsed {
 
 private struct Block: View {
     let block: MarkdownBlock
+    /// Whether the text is still arriving, so a code block it ends inside
+    /// is the one still being written.
+    let streaming: Bool
 
     var body: some View {
         switch block {
@@ -64,8 +68,8 @@ private struct Block: View {
                     .padding(.leading, CGFloat(item.depth) * 18)
                 }
             }
-        case .code(let language, let text):
-            CodeBlock(language: language, text: text)
+        case .code(let language, let text, let closed):
+            CodeBlock(language: language, text: text, streaming: streaming && !closed)
         case .quote(let lines):
             HStack(spacing: 10) {
                 Rectangle().fill(Palette.line).frame(width: 3)
@@ -110,12 +114,30 @@ enum Inline {
 }
 
 /// Code that keeps its whitespace, in a well, with its language and a copy
-/// button showing under the pointer.
+/// button showing under the pointer. Its tokens take their colours as the
+/// shared view colours them; it draws what it has at once, plain until the
+/// first colours come back, and its task asks again while they are
+/// unsettled.
 private struct CodeBlock: View {
+    @Environment(\.codeHighlighting) private var highlighting
     let language: String?
     let text: String
+    /// The block still being written: the open fence of text still
+    /// arriving.
+    let streaming: Bool
     @State private var hovering = false
     @State private var copied = false
+    @State private var answer: HighlightedCode?
+
+    private var request: CodeHighlighting.Request {
+        .block(code: text, info: language ?? "", streaming: streaming)
+    }
+
+    private var code: AttributedString {
+        let lines = CodeText.lines(text)
+        let runs = (highlighting.kept(request) ?? answer)?.runs(lines) ?? HighlightedCode.plain(lines)
+        return CodeText.attributed(lines: runs, Palette.syntax)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -131,7 +153,7 @@ private struct CodeBlock: View {
                 Rectangle().fill(Palette.line).frame(height: 1)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(text)
+                Text(code)
                     .font(.mono(.callout))
                     .lineSpacing(3)
                     .fixedSize()
@@ -151,6 +173,7 @@ private struct CodeBlock: View {
             hovering = inside
             if !inside { copied = false }
         }
+        .task(id: request) { await highlighting.follow(request) { answer = $0 } }
     }
 
     private var copy: some View {

@@ -221,6 +221,12 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   itself `mac` to the daemon, which counts the app opening and each step as
   the Mac's.
 
+- Code colouring: chat code blocks and edit cards take their runs from the
+  shared view through the bridge, as the phone's do (`CodeHighlighting` in
+  `AmuxWords`), drawn in the palette's `syntax` colours. The app puts the
+  bridge's into the window's environment; the storybook, which links no
+  bridge, draws code plain.
+
 Screens, navigation and layout are the desktop's own; nothing from
 `AmuxFeatures` or `AmuxShell` is linked. The words are shared: rows and chats
 say what the phone says through `AmuxWords`, and the app's model draws from

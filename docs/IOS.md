@@ -185,6 +185,21 @@ thread. A chat is a `ChatModel` over an open `Chat`:
 A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.
 
+Code is coloured by the shared view's highlighting, the terminal's own:
+fenced blocks in the agent's markdown and the patch on an edit card. The
+phone parses markdown itself (`AmuxWords`), so each block asks the bridge
+for its runs (`CodeHighlighting`, read from the environment, which the app
+and the catalogue set to the bridge's) away from the main thread, and draws
+them in the design's `syntax` colours (`Design.ink(_:)`). Only the open fence
+of a message still streaming is asked for as streaming, which the shared
+view colours at a bounded rate. An answer that is not settled yet (a grammar
+building on first use, a streaming pass under way) is drawn as it is and
+asked for again 50 ms later; settled answers are kept by content, so a
+block scrolled back into view draws coloured at once, and while a newer
+answer is on its way the last one keeps colouring the lines that still read
+the same. `SyntaxContrastTests` holds every token colour to 4.5:1 on the
+code well and under an edit card's green and red.
+
 ## Accounts and profiles
 
 App startup does not require an account. The phone is one installation of

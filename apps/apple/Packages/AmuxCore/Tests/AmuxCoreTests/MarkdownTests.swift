@@ -20,7 +20,7 @@ final class MarkdownTests: XCTestCase {
     }
 
     func testFencedCodeKeepsItsLinesAndItsLanguage() {
-        guard case .code(let language, let text) = blocks("""
+        guard case .code(let language, let text, let closed) = blocks("""
             ```rust
             let x = 1;
                 let y = 2;
@@ -28,10 +28,39 @@ final class MarkdownTests: XCTestCase {
             """)[0] else { return XCTFail("expected code") }
         XCTAssertEqual(language, "rust")
         XCTAssertEqual(text, "let x = 1;\n    let y = 2;")
+        XCTAssertTrue(closed)
+    }
+
+    /// The block a streaming message is still writing is the one whose fence
+    /// has not closed; it is coloured as it streams, and every other block
+    /// is finished. Only the last block can be open: an unclosed fence runs
+    /// to the end of the source.
+    func testOnlyAFenceTheSourceEndsInsideIsOpen() {
+        for (source, open) in [
+            ("Here:\n\n```rust\nfn a() {}\nfn b", [true]),
+            ("```rust\nfn a() {}\n", [true]),
+            ("```rust\n", [true]),
+            ("```rust\nfn a() {}\n```", [false]),
+            ("```rust\nfn a() {}\n```\n\n", [false]),
+            ("~~~\nx\n~~~", [false]),
+            ("```a\nx\n```\n\nThen:\n\n```b\ny", [false, true]),
+        ] {
+            let found = blocks(source).compactMap { block -> Bool? in
+                guard case .code(_, _, let closed) = block else { return nil }
+                return !closed
+            }
+            XCTAssertEqual(found, open, source)
+        }
+        guard case .code(_, let text, _) = blocks("```rust\nfn a() {}\n")[0] else {
+            return XCTFail("expected code")
+        }
+        // The empty line after the last newline stays: it says the line
+        // before it is complete, which a streaming block colours.
+        XCTAssertEqual(text, "fn a() {}\n")
     }
 
     func testAFenceWithNoLanguageSaysSoRatherThanGuessing() {
-        guard case .code(let language, _) = blocks("```\nplain\n```")[0] else {
+        guard case .code(let language, _, _) = blocks("```\nplain\n```")[0] else {
             return XCTFail("expected code")
         }
         XCTAssertNil(language)

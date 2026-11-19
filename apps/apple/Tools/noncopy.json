@@ -357,7 +357,13 @@
       {"literal": "\"accent\"", "context": "(\"inkFaint\", inkFaint), (\"accent\", accent), (\"onAccent\", onAccent),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
       {"literal": "\"onAccent\"", "context": "(\"inkFaint\", inkFaint), (\"accent\", accent), (\"onAccent\", onAccent),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
       {"literal": "\"added\"", "context": "(\"added\", added), (\"removed\", removed),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
-      {"literal": "\"removed\"", "context": "(\"added\", added), (\"removed\", removed),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1}
+      {"literal": "\"removed\"", "context": "(\"added\", added), (\"removed\", removed),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
+      {"literal": "\"keyword\"", "context": "(\"keyword\", syntax.keyword), (\"string\", syntax.string), (\"number\", syntax.number),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
+      {"literal": "\"string\"", "context": "(\"keyword\", syntax.keyword), (\"string\", syntax.string), (\"number\", syntax.number),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
+      {"literal": "\"number\"", "context": "(\"keyword\", syntax.keyword), (\"string\", syntax.string), (\"number\", syntax.number),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
+      {"literal": "\"type\"", "context": "(\"type\", syntax.type), (\"function\", syntax.function), (\"comment\", syntax.comment),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
+      {"literal": "\"function\"", "context": "(\"type\", syntax.type), (\"function\", syntax.function), (\"comment\", syntax.comment),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1},
+      {"literal": "\"comment\"", "context": "(\"type\", syntax.type), (\"function\", syntax.function), (\"comment\", syntax.comment),", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Packages/AmuxDesign/Sources/AmuxDesign/Faces.swift": [
       {"literal": "\"Instrument Sans\"", "context": "display: \"Instrument Sans\", body: \"Instrument Sans\", mono: \"Geist Mono\")", "reason": "Font, token or design preview identifier, preserved verbatim.", "count": 2},
@@ -1254,8 +1260,8 @@
       {"literal": "\"ask.note\"", "context": ".identified(\"ask.note\", value: note)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.choice.\\(index)\"", "context": "id: \"ask.choice.\\(index)\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.note.back\"", "context": ".identified(\"ask.note.back\", label: String(localized: \"Back\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"+\"", "context": "case .added: \"+\" + line.text", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"-\"", "context": "case .removed: \"-\" + line.text", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"+\"", "context": "case .added: \"+\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"-\"", "context": "case .removed: \"-\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"true\"", "context": "case .toggle: return on ? \"true\" : \"false\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"false\"", "context": "case .toggle: return on ? \"true\" : \"false\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"ask.field.\\(entry.name)\"", "context": ".identified(\"ask.field.\\(entry.name)\", value: entry.reading)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 4},

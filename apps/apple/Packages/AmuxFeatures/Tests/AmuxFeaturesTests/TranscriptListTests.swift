@@ -265,7 +265,7 @@ private func environment(
     CellEnvironment(
         design: .app, photographed: photographed, reducesMotion: reducesMotion, reducesTransparency: true,
         reportsElements: false, reportedPrefix: nil,
-        reportsGeometry: false, dynamicTypeSize: typeSize)
+        reportsGeometry: false, dynamicTypeSize: typeSize, codeHighlighting: .plain)
 }
 
 private func row(_ id: String, _ order: UInt64, collapsed: Bool = false) -> Row {

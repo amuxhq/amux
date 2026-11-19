@@ -117,6 +117,10 @@ enum ComponentCatalog {
                 steered: false))),
             row("prose", height: 330, readiness: true, r("s1", 4, .prose(
                 text: [.text(F.markdown)], streaming: false, workingNote: false))),
+            row("prose-code", height: 520, readiness: true, r("s3", 4, .prose(
+                text: [.text(F.codeMarkdown)], streaming: false, workingNote: false))),
+            row("prose-code-streaming", height: 220, readiness: true, r("s4", 4, .prose(
+                text: [.text(F.streamingCode)], streaming: true, workingNote: false))),
             row("prose-working-note", height: 120, readiness: true, r("s2", 5, .prose(
                 text: [.text("Checking which crates read the table first.")], streaming: true,
                 workingNote: true))),
@@ -1183,6 +1187,40 @@ enum CatalogFixtures {
         ```
         """
 
+    /// Code in the languages agents write most, each token kind on show,
+    /// and a diff fence coloured by its signs.
+    static let codeMarkdown = """
+        The guard now names the host:
+
+        ```swift
+        // Refuse a pairing the host did not offer.
+        func refuse(_ code: Int) throws -> String {
+            guard code > 0 else { throw PairingError.unknown }
+            return "no such host: \\(code)"
+        }
+        ```
+
+        ```ts
+        export const retry = (tries: number): Promise<void> => wait(250 * tries)
+        ```
+
+        ```diff
+        -      Code::NotFound => "no such host",
+        +      _ => "could not pair, check the code",
+        ```
+        """
+
+    /// A reply still arriving inside its code block: the lines it has
+    /// finished are coloured as they stream, the one being written is not.
+    static let streamingCode = """
+        Here is the loop:
+
+        ```python
+        for host in hosts:
+            if host.reachable:
+                pair(host, retries=3
+        """
+
     /// A plan as the shared view hands it: the title lifted from its
     /// opening heading, and the rest.
     static let planTitle = "Collapse the pairing failures onto one message"
@@ -1444,6 +1482,7 @@ struct ComponentExampleView: View {
         .frame(width: example.canvas.width, height: example.canvas.height)
         .clipped()
         .environment(\.design, Design.app)
+        .environment(\.codeHighlighting, .bridge)
         .environment(\.photographed, true)
         .environment(\.reducesMotion, true)
         .environment(\.reducesTransparency, reducesTransparency)

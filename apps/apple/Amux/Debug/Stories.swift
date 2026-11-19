@@ -334,12 +334,14 @@ struct StoryApp: View {
 
     var body: some View {
         shell.environment(\.design, Design.app)
+            .environment(\.codeHighlighting, .bridge)
     }
 
     /// The settings sheet alone, as it is drawn over the app: a capture
     /// leaves out what the app presents.
     var settings: some View {
         shell.settings.environment(\.design, Design.app)
+            .environment(\.codeHighlighting, .bridge)
     }
 
     private var shell: Shell {

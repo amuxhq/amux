@@ -76,7 +76,7 @@ struct AskCardView: View {
                 Text("−\(removed)").foregroundStyle(Palette.removed)
             }
             .font(.ui(.meta))
-            Patch(lines: lines)
+            Patch(path: path, lines: lines)
         case .tool(_, _, let arguments):
             if !arguments.isEmpty { Mono(text: arguments, lines: 12) }
         case .question(let questions):
@@ -293,21 +293,34 @@ private struct Mono: View {
     }
 }
 
-/// An edit's lines, added and removed in their colours.
+/// An edit's lines, added and removed in their colours, their code coloured
+/// as the file at `path` reads, each side of a change read apart, as the
+/// shared view colours it.
 private struct Patch: View {
+    @Environment(\.codeHighlighting) private var highlighting
+    /// The edit's file, which names the language of lines before any file
+    /// line of their own.
+    let path: String
     let lines: [EditLine]
+    @State private var answer: HighlightedCode?
 
     var body: some View {
+        let request = CodeHighlighting.Request.edit(path: path, lines: lines)
+        let texts = lines.map { line in
+            if case .line(let patch) = line { return patch.text }
+            return ""
+        }
+        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     switch line {
                     case .file(let file):
                         Text(file.path).font(.ui(.caption, weight: .semibold)).padding(.vertical, 4)
                     case .hunk:
                         Rectangle().fill(Palette.line).frame(height: 1).padding(.vertical, 4)
                     case .line(let patch):
-                        PatchText(kind: patch.kind, text: patch.text)
+                        PatchText(kind: patch.kind, text: patch.text, runs: runs[index])
                     }
                 }
             }
@@ -315,6 +328,7 @@ private struct Patch: View {
         }
         .frame(maxHeight: 220)
         .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+        .task(id: request) { await highlighting.follow(request) { answer = $0 } }
     }
 }
 
@@ -322,11 +336,16 @@ private struct Patch: View {
 struct PatchText: View {
     let kind: LineKind
     let text: String
+    /// The text's code coloured, when it has been; plain otherwise.
+    var runs: [CodeRun]?
 
     var body: some View {
         HStack(spacing: 0) {
             Text(sign).frame(width: 16).foregroundStyle(signTint)
-            Text(text).lineLimit(1)
+            Group {
+                if let runs { Text(CodeText.attributed(runs, Palette.syntax)) } else { Text(text) }
+            }
+            .lineLimit(1)
             Spacer(minLength: 0)
         }
         .font(.mono(.small))

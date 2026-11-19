@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxDesign
 import AmuxPush
+import AmuxWords
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -34,6 +35,7 @@ struct AmuxApp: App {
     @ViewBuilder private var hostedRoot: some View {
         if Self.drawsItsOwnRoot {
             RootView().readingAssistiveSettings()
+                .environment(\.codeHighlighting, .bridge)
         } else {
             Color.clear
         }

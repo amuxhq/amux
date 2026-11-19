@@ -450,7 +450,7 @@ private struct AskBodyView: View {
             if !purpose.isEmpty { why(purpose) }
         case .edit(let path, _, let added, let removed, let lines, let reason, _, _):
             SubjectBox(text: path, lines: 2, counts: (added, removed), truncation: .middle)
-            if !lines.isEmpty { DiffPreview(lines: lines, whole: wholeDiff) }
+            if !lines.isEmpty { DiffPreview(path: path, lines: lines, whole: wholeDiff) }
             if lines.count > DiffPreview.lines {
                 link(wholeDiff ? String(localized: "Show less") : String(localized: "Show the whole diff"),
                      id: "ask.diff", value: wholeDiff ? "open" : "folded") { wholeDiff.toggle() }
@@ -882,19 +882,34 @@ private struct AskBodyView: View {
 }
 
 /// A short diff inline, green and red, with the whole of it one tap away.
-/// Where each hunk starts reads as its first line in the new file.
+/// Where each hunk starts reads as its first line in the new file. Its code
+/// is coloured as the file at `path` reads, each side of a change read
+/// apart, as the shared view colours it.
 struct DiffPreview: View {
     @Environment(\.design) private var design
+    @Environment(\.codeHighlighting) private var highlighting
     static let lines = 12
+    /// How strongly a changed line's green or red lies under it: enough to
+    /// read as a change, light enough that its code's colours still read.
+    static let wash = 0.18
+    /// The edit's file, which names the language of lines before any
+    /// file line of their own.
+    let path: String
     let lines: [EditLine]
     let whole: Bool
+    @State private var answer: HighlightedCode?
 
     var body: some View {
+        // The whole patch is asked for, folded or not, so opening it asks
+        // for nothing new.
+        let request = CodeHighlighting.Request.edit(path: path, lines: lines)
+        let texts = lines.map(Self.code)
+        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
         let shown = whole ? Array(lines.prefix(400)) : Array(lines.prefix(Self.lines))
         ScrollView(.horizontal) {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
-                    Text(text(line))
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, line in
+                    Text(text(line, runs[index]))
                         .designFont(.monoSmall, design)
                         .foregroundStyle(ink(line))
                         .padding(.horizontal, 8)
@@ -910,18 +925,27 @@ struct DiffPreview: View {
                 .fill(design.sunken.color)
         }
         .clipShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous))
+        .task(id: request) { await highlighting.follow(request) { answer = $0 } }
     }
 
-    private func text(_ line: EditLine) -> String {
+    /// A line's code as the colouring reads it; a file's and a hunk's
+    /// start have none.
+    private static func code(_ line: EditLine) -> String {
+        if case .line(let line) = line { return line.text }
+        return ""
+    }
+
+    private func text(_ line: EditLine, _ runs: [CodeRun]) -> AttributedString {
         switch line {
-        case .file(let file): ChatWords.fileHeader(file)
-        case .hunk(_, let newStart): String(localized: "Line \(newStart)")
+        case .file(let file): return AttributedString(ChatWords.fileHeader(file))
+        case .hunk(_, let newStart): return AttributedString(String(localized: "Line \(newStart)"))
         case .line(let line):
-            switch line.kind {
-            case .added: "+" + line.text
-            case .removed: "-" + line.text
-            case .context: " " + line.text
+            let sign = switch line.kind {
+            case .added: "+"
+            case .removed: "-"
+            case .context: " "
             }
+            return AttributedString(sign) + CodeText.attributed(runs) { design.ink($0).color }
         }
     }
 
@@ -934,8 +958,8 @@ struct DiffPreview: View {
     private func wash(_ line: EditLine) -> Color {
         guard case .line(let line) = line else { return .clear }
         switch line.kind {
-        case .added: return design.added.color.opacity(0.18)
-        case .removed: return design.removed.color.opacity(0.18)
+        case .added: return design.added.color.opacity(Self.wash)
+        case .removed: return design.removed.color.opacity(Self.wash)
         case .context: return .clear
         }
     }

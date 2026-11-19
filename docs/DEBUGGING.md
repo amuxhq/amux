@@ -437,7 +437,7 @@ the repository.
 **A relay's or the supervisor's report** (a `relay-…` or `supervisor-…` JSON file) restores the core at the window's
 start, steps it through every input, and names the first input after which one of the core's own invariants broke
 (`relay.forwards_only_paid_pairs`, `supervisor.no_startable_binary` and the rest), or says that it held and ended in
-the state the report ends with. A step over its budget is the replaying machine's timing and is not judged.
+the state the report ends with. A step over its budget is the replaying machine's timing and is not judged. The core's checkpoint is its own state as the build that wrote it laid it out, read by no other build: a report from another build whose checkpoint does not decode says so on the daemon core's line, and its agents and chats still replay.
 
 ```text
 == relay-1793660261139-3f2a9c1d.json ==

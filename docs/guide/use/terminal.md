@@ -133,6 +133,12 @@ you move out of it if it's long. Click the count to open it again, or press
 Backspace just below it to remove the whole quote. Once sent, your message
 renders as markdown, like the agent's replies.
 
+Code blocks in the agent's replies, and the diff it asks permission to make,
+are coloured as an editor colours them when they're in a common language:
+Rust, Swift, TypeScript, JavaScript, Python, Go, C, C++, Java, shell, HTML,
+CSS, JSON, YAML, TOML and Markdown. Code in any other language shows in one
+colour.
+
 Attachments in the chat are underlined: click one to open it, or focus its
 message with the leader and `j` or `k` and press the leader then `o`. Pictures,
 PDFs and plain text open in their usual app, and anything else is shown in its

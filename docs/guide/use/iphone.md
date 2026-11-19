@@ -52,6 +52,10 @@ Tap an agent to open its chat.
   Images in the chat show a preview, and tapping an image or file opens it.
 - **Agent settings:** the model chip under the message box changes the
   agent's model, effort, permission or mode, wherever that agent allows it.
+- **Code:** code blocks in the agent's replies are coloured as an editor
+  colours them when they're in a common language: Rust, Swift, TypeScript,
+  JavaScript, Python, Go, C, C++, Java, shell, HTML, CSS, JSON, YAML, TOML
+  and Markdown. Code in any other language shows in one colour.
 - **Reading back:** scroll up and an arrow above the message box takes you back
   to the newest message. It says **New activity** once something has arrived.
 - **The overview:** shows the agent's tasks, its background jobs and the
@@ -72,10 +76,11 @@ can send it.
 ## Answering
 
 When an agent needs you, its question appears as a card at the bottom of the
-chat. A permission shows the command or the diff, with choices worded as what
-will happen, such as **Allow once** or **Always allow**. A plan offers to start
-building or to send it back with a note. Questions come one at a time, and you
-can always reply in your own words instead.
+chat. A permission shows the command or the diff, its code coloured as in the
+chat, with choices worded as what will happen, such as **Allow once** or
+**Always allow**. A plan offers to start building or to send it back with a
+note. Questions come one at a time, and you can always reply in your own
+words instead.
 
 ## Reviewing changes
 

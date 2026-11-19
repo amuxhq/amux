@@ -1294,6 +1294,7 @@ private struct CodeBlock: View {
                     .designFont(.mono, design)
                     .foregroundStyle(design.ink.color)
                     .textSelection(.enabled)
+                    .fixedSize()
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
             }

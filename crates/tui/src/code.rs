@@ -14,7 +14,7 @@
 use std::cell::{Cell, RefCell};
 
 use ratatui::style::Style;
-use ui_view::{CodeRun, EditLine, HighlightedCode, Highlighter, PatchHead, TokenKind};
+use ui_view::{CodeRun, EditLine, HighlightedCode, Highlighter, PatchHead};
 
 use crate::theme::Theme;
 
@@ -101,7 +101,7 @@ pub(crate) fn diff_runs(runs: &[CodeRun], line: Style, theme: Theme) -> Runs {
 #[cfg(test)]
 mod tests {
     use ratatui::text::Line;
-    use ui_view::{LineKind, PatchHead, PatchLine};
+    use ui_view::{LineKind, PatchHead, PatchLine, TokenKind};
 
     use super::*;
 

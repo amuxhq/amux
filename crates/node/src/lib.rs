@@ -11,6 +11,7 @@
 //! shutdown that marks the installation clean.
 
 mod activation;
+mod api;
 mod auth;
 mod awake;
 mod blobs;

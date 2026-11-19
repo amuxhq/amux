@@ -465,7 +465,7 @@ fn pane_with_a_file() -> (SessionState, ChatView, (u16, u16)) {
             .wants_changes(&state)
             .expect("the pane wants its files")
             .0,
-        diff: working_tree_diff(),
+        changes: working_tree_changes(),
     });
     let (buffer, _) = draw(&mut view, &state, 0, 110, TALL, theme());
     let drawn: Vec<String> = text(&buffer).lines().map(str::to_owned).collect();

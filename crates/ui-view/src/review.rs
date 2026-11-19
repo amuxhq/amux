@@ -3,7 +3,35 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use wire::{Diff, ReviewComment};
+use ui_state::SessionState;
+use wire::{Diff, DiffBase, ReviewComment, diff_base};
+
+use crate::overview::{Comparison, FileStatus, lists_changes};
+
+/// The base the review page's diff is asked against: HEAD for the
+/// uncommitted work, the base branch the agent's row names for everything
+/// on the branch, and HEAD when it names none. The page is built on the
+/// diff call's patch, which takes an explicit base, unlike the overview's
+/// list of changed files; None for a provider subagent, whose changes are
+/// its parent's to review.
+pub fn review_base(state: &SessionState, comparison: Comparison) -> Option<DiffBase> {
+    if !lists_changes(state) {
+        return None;
+    }
+    let branch = match comparison {
+        Comparison::Uncommitted => None,
+        Comparison::OnBranch => state
+            .agent()
+            .git
+            .as_ref()
+            .and_then(|git| git.base_branch.clone()),
+    };
+    let base = match branch {
+        Some(branch) => diff_base::Base::Branch(branch),
+        None => diff_base::Base::Head(wire::Empty {}),
+    };
+    Some(DiffBase { base: Some(base) })
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct ReviewDoc {
@@ -26,15 +54,6 @@ pub struct ReviewFile {
     pub hunks: Vec<Hunk>,
     /// Comments on the file as a whole.
     pub comments: Vec<String>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
-pub enum FileStatus {
-    #[default]
-    Modified,
-    Added,
-    Deleted,
-    Renamed,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]

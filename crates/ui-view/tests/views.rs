@@ -2749,28 +2749,40 @@ fn rows_hold_their_order_while_an_agent_streams() {
 
 #[test]
 fn changed_files_group_by_folder_with_root_files_first() {
-    let file = |path: &str, added, removed, change: wire::DiffFileChange| wire::DiffFile {
+    use wire::amux::staging::{ChangedFile as Changed, FileStatus as Status, GetChangesResponse};
+    let file = |path: &str, added, removed, status: Status| Changed {
         path: path.into(),
         added,
         removed,
-        change: change as i32,
-        binary: false,
-    };
-    let diff = wire::Diff {
-        files: vec![
-            file("src/b.rs", 3, 1, wire::DiffFileChange::Changed),
-            file("README.md", 2, 0, wire::DiffFileChange::Changed),
-            file("docs/x/y.md", 0, 9, wire::DiffFileChange::Deleted),
-            file("src/a.rs", 5, 0, wire::DiffFileChange::Created),
-            file("Cargo.toml", 1, 1, wire::DiffFileChange::Changed),
-        ],
+        status: status as i32,
+        language: "rust".into(),
         ..Default::default()
     };
-    let changes = changes(&diff);
+    let answer = GetChangesResponse {
+        base_branch: "origin/main".into(),
+        base_commit: "abc".into(),
+        files: vec![
+            file("src/b.rs", 3, 1, Status::Changed),
+            file("README.md", 2, 0, Status::Changed),
+            file("docs/x/y.md", 0, 9, Status::Deleted),
+            file("src/a.rs", 5, 0, Status::Created),
+            file("Cargo.toml", 1, 1, Status::Changed),
+            Changed {
+                old_path: Some("src/old.rs".into()),
+                ..file("src/new.rs", 0, 0, Status::Renamed)
+            },
+        ],
+    };
+    let changes = changes(&answer);
+    assert_eq!(
+        changes.base.as_deref(),
+        Some("origin/main"),
+        "the base the host used"
+    );
     assert_eq!(
         changes.totals,
         ChangeTotals {
-            files: 5,
+            files: 6,
             added: 11,
             removed: 11
         }
@@ -2788,12 +2800,18 @@ fn changed_files_group_by_folder_with_root_files_first() {
         vec![
             ("", vec!["Cargo.toml", "README.md"]),
             ("docs/x/", vec!["y.md"]),
-            ("src/", vec!["a.rs", "b.rs"]),
+            ("src/", vec!["a.rs", "b.rs", "new.rs"]),
         ]
     );
     let a = &changes.folders[2].files[0];
     assert_eq!((a.path.as_str(), a.status), ("src/a.rs", FileStatus::Added));
+    assert_eq!(a.language, "rust", "the language the host named");
     assert_eq!(changes.folders[1].files[0].status, FileStatus::Deleted);
+    let renamed = &changes.folders[2].files[2];
+    assert_eq!(
+        (renamed.status, renamed.old_path.as_deref()),
+        (FileStatus::Renamed, Some("src/old.rs"))
+    );
 }
 
 #[test]
@@ -2801,17 +2819,49 @@ fn the_overview_holds_the_changes_it_is_given() {
     let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     assert_eq!(overview(&state, None).changes, None);
-    let diff = wire::Diff::default();
+    let clean = wire::amux::staging::GetChangesResponse::default();
     assert_eq!(
-        overview(&state, Some(&diff)).changes,
+        overview(&state, Some(&clean)).changes,
         Some(Changes::default()),
         "a fetched clean tree is no changes, not unknown"
     );
     assert!(
-        diff_base(&state, Comparison::OnBranch).is_none(),
+        !Comparison::OnBranch.offered(&state),
         "no base branch, nothing to compare the branch with"
     );
-    assert!(diff_base(&state, Comparison::Uncommitted).is_some());
+    assert!(Comparison::Uncommitted.offered(&state));
+}
+
+/// The overview asks the agent's host for HEAD when it counts the
+/// uncommitted work, and for nothing on the branch, so the base is the
+/// host's to pick. The review page, still built on the diff's patch, names
+/// a base itself: the row's base branch, else HEAD.
+#[test]
+fn the_overview_leaves_the_branchs_base_to_the_host() {
+    use wire::amux::staging::get_changes_request::Base;
+    assert!(matches!(
+        Comparison::Uncommitted.base(),
+        Some(Base::Head(_))
+    ));
+    assert_eq!(Comparison::OnBranch.base(), None);
+
+    let mut row = agent(Kind::Codex, Phase::Working);
+    row.git = Some(wire::Git {
+        branch: Some("fix".into()),
+        base_branch: Some("main".into()),
+        ..Default::default()
+    });
+    let state = SessionState::new(row, CAP);
+    assert!(Comparison::OnBranch.offered(&state));
+    let branch = |base: Option<wire::DiffBase>| base.and_then(|base| base.base);
+    assert_eq!(
+        branch(review_base(&state, Comparison::OnBranch)),
+        Some(wire::diff_base::Base::Branch("main".into()))
+    );
+    assert!(matches!(
+        branch(review_base(&state, Comparison::Uncommitted)),
+        Some(wire::diff_base::Base::Head(_))
+    ));
 }
 
 /// A prompt on its way stays where it was first drawn: at the feed's end

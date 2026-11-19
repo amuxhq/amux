@@ -721,6 +721,21 @@ public enum ChatWords {
         }
     }
 
+    /// A changed file's row under its folder: its name, and where it came
+    /// from when it was renamed ("old/path.rs → name.rs"), so the row's head
+    /// is what a narrow row cuts.
+    public static func changedFile(_ file: ChangedFile) -> String {
+        guard file.status == .renamed, let old = file.oldPath else { return file.name }
+        return "\(old) \u{2192} \(file.name)"
+    }
+
+    /// A changed file as a whole path, renamed from where it was:
+    /// "src/new.rs, renamed from src/old.rs".
+    public static func changedPath(_ file: ChangedFile) -> String {
+        guard file.status == .renamed, let old = file.oldPath else { return file.path }
+        return String(localized: "\(file.path), renamed from \(old)")
+    }
+
     /// A file's counts with a zero side left out: "+20", "−12", "+25 −8".
     public static func counts(added: UInt32, removed: UInt32) -> String {
         [added > 0 ? "+\(added)" : nil, removed > 0 ? "\u{2212}\(removed)" : nil]

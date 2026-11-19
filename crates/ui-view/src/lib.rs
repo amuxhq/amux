@@ -54,12 +54,12 @@ pub use form::{
 pub use highlight::{HeldJobs, Highlighter};
 pub use onboarding::{OnboardingView, SetupStep, next_step, onboarding_view, step_open};
 pub use overview::{
-    ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, JobStop, Overview, ServerView,
-    TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,
-    overview, usage_windows,
+    ChangeTotals, ChangedFile, Changes, Comparison, FileStatus, Folder, JobRow, JobStop, Overview,
+    ServerView, TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes,
+    lists_changes, overview, usage_windows,
 };
 pub use repository::{REPOSITORY_TINTS, Repository};
-pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
+pub use review::{DiffLine, Hunk, LineKind, ReviewDoc, ReviewFile, review_base, review_doc};
 pub use rows::{
     AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView,
     ExploreVerb, FileChangeView, FilePatch, FileRow, Granted, HunkStart, OUTPUT_HEAD_LINES,

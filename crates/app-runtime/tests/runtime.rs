@@ -762,6 +762,20 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
         Some(changes.totals),
         "the overview keeps what it fetched"
     );
+    assert_eq!(
+        changes.base, None,
+        "the uncommitted work has no base branch"
+    );
+    let on_branch = chat
+        .open_overview(Comparison::OnBranch)
+        .await
+        .unwrap()
+        .changes
+        .expect("the files were fetched");
+    // On its base branch with no upstream, the host's rule counts the
+    // uncommitted work alone, from HEAD, and reports no base branch.
+    assert_eq!(on_branch.totals, changes.totals, "{on_branch:?}");
+    assert_eq!(on_branch.base, None, "{on_branch:?}");
     until(&mut host, &chat, "the agent's branch", |chat| {
         chat.frame()
             .git

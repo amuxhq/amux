@@ -372,7 +372,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
 | `queue_rows(state)`, `sends_to_feed(state)`, `prompts_underway(state, in_feed)`, `refused_prompts(state)` | Queued prompts (withdraw, send now); whether a new prompt lands at the feed's end or in the queue; this client's prompts on their way, each where it was first drawn, sending or may not have arrived; the prompts the agent refused, with why. |
-| `overview(state, diff)`, `changes(diff)`, `diff_base(state, comparison)` | The `Overview`: tasks, background jobs (each with its `JobStop`: unavailable on terminal Claude or for a job with no key, offered with its key, stopping, or refused with the provider's words), failed tool servers, usage near a limit, and the changed files by folder (root files first) from a `Diff` fetched without a patch; the base a comparison asks `GetDiff` for. |
+| `overview(state, changed)`, `changes(changed)`, `Comparison::base()`, `lists_changes(state)` | The `Overview`: tasks, background jobs (each with its `JobStop`: unavailable on terminal Claude or for a job with no key, offered with its key, stopping, or refused with the provider's words), failed tool servers, usage near a limit, and the changed files by folder (root files first, renames with their old path) as the agent's host answered `GetChanges`, with the base it used; what a comparison asks for: HEAD, or nothing for the host's own rule on the branch. |
 | `context(state)`, `sign_in(state)` | Context use (near full from 80%) and a sign-in problem. |
 | `settings(state)`, `setting_input(kind, change)` | What the agent offers to change (models, efforts, permissions, modes, commands), each choice named and its current one marked; how each setting changes (`Changeable`: a pick, the agent's own cycle, typing its own command, or not offered); and the input a pick sends. |
 | `controls(state)` | The `ControlsSummary` beside the composer: the running model by its one name, the effort in force, and the permission and mode only while they are not the agent's normal ones. |
@@ -492,7 +492,7 @@ if the runtime's source for that agent is current, or after the delta if it is c
   messages, and the Stop `stop` offers, which sends `StopJob { key }` to the subagent's own id. Its asks are
   answered as any ask is, to its id; the daemon passes answers and stops to the process that runs it and refuses
   the rest. Nothing keyed on a folder, a terminal or a composer applies to it: `settings` offers nothing to pick
-  and no command, `diff_base` is None (its files are its parent's), the runtime fetches no catalogue and keeps no
+  and no command, `lists_changes` is false (its files are its parent's), the runtime fetches no catalogue and keeps no
   draft for it, terminal attach refuses it, and its fleet card says `native`, so no client offers it a resume, a
   delete, a pin or a terminal. Its overview leaves out its own job, which the composer stops.
 

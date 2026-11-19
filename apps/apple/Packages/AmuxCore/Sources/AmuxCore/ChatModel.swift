@@ -610,8 +610,17 @@ public final class ChatModel {
         totals(comparison).flatMap { $0.files > 0 || $0.added + $0.removed > 0 ? $0 : nil }
     }
 
-    /// The branch everything on the agent's branch is counted against.
+    /// The branch everything on the agent's branch is counted against, as
+    /// the agent's row names it: what the review page compares with.
     public var base: String? { frame?.git?.baseBranch }
+
+    /// The branch the overview's list of everything on the branch was
+    /// counted against, as the agent's host reported it; the row's base
+    /// until the host has listed the branch. The host picks it, and can
+    /// differ from the row, as by counting from the branch's upstream when
+    /// the agent works on its base branch.
+    public var listedBase: String? { hostBase ?? base }
+    private var hostBase: String?
 
     /// The comparisons there are: everything on the branch only once its
     /// base is known.
@@ -654,9 +663,12 @@ public final class ChatModel {
         listed = asked
         listing = Task { [weak self] in
             guard let self, case .success(let overview) = await self.source.openOverview(asked.comparison),
-                  self.comparison == asked.comparison, self.overview != overview
+                  self.comparison == asked.comparison
             else { return }
-            self.overview = overview
+            if asked.comparison == .onBranch, let reported = overview.changes?.base, self.hostBase != reported {
+                self.hostBase = reported
+            }
+            if self.overview != overview { self.overview = overview }
         }
     }
 

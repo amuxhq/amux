@@ -1464,14 +1464,21 @@ public struct ChangedFile: Codable, Hashable, Sendable {
     public var removed: UInt32
     public var status: FileStatus
     public var binary: Bool
+    /// The language its code is highlighted as, as the agent's host named
+    /// it ("rust", "tsx"); empty when none is known for it.
+    public var language: String
+    /// Where a renamed file was at the base, from the repository's root.
+    public var oldPath: String?
 
-    public init(path: String, name: String, added: UInt32, removed: UInt32, status: FileStatus, binary: Bool) {
+    public init(path: String, name: String, added: UInt32, removed: UInt32, status: FileStatus, binary: Bool, language: String, oldPath: String?) {
         self.path = path
         self.name = name
         self.added = added
         self.removed = removed
         self.status = status
         self.binary = binary
+        self.language = language
+        self.oldPath = oldPath
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1481,6 +1488,8 @@ public struct ChangedFile: Codable, Hashable, Sendable {
         case removed
         case status
         case binary
+        case language
+        case oldPath = "old_path"
     }
 }
 
@@ -1490,15 +1499,23 @@ public struct Changes: Codable, Hashable, Sendable {
     /// Files at the root first, under the folder "", then each folder by
     /// path.
     public var folders: [Folder]
+    /// The branch the agent's host compared against, as it reported it:
+    /// none for the uncommitted work alone, or when it found no base
+    /// branch. It can differ from the base the agent's row names, as when
+    /// an agent works on its base branch and the host counts from its
+    /// upstream.
+    public var base: String?
 
-    public init(totals: ChangeTotals, folders: [Folder]) {
+    public init(totals: ChangeTotals, folders: [Folder], base: String?) {
         self.totals = totals
         self.folders = folders
+        self.base = base
     }
 
     private enum CodingKeys: String, CodingKey {
         case totals
         case folders
+        case base
     }
 }
 
@@ -3220,6 +3237,7 @@ public enum FileStatus: String, Codable, Hashable, Sendable, CaseIterable {
     case modified = "Modified"
     case added = "Added"
     case deleted = "Deleted"
+    /// Moved from its old path, with or without changes.
     case renamed = "Renamed"
 }
 

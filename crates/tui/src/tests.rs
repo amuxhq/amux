@@ -1576,6 +1576,33 @@ fn working_tree_diff() -> wire::Diff {
     }
 }
 
+/// [`working_tree_diff`]'s files as the agent's host lists them for an
+/// overview.
+fn working_tree_changes() -> wire::amux::staging::GetChangesResponse {
+    use wire::amux::staging::{ChangedFile, FileStatus};
+    wire::amux::staging::GetChangesResponse {
+        base_commit: "3f2a1c9e0000".into(),
+        files: vec![
+            ChangedFile {
+                path: "src/lib.rs".into(),
+                added: 2,
+                removed: 1,
+                status: FileStatus::Changed as i32,
+                language: "rust".into(),
+                ..Default::default()
+            },
+            ChangedFile {
+                path: "notes.md".into(),
+                added: 1,
+                status: FileStatus::Created as i32,
+                language: "markdown".into(),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
 fn review_screen(view: &mut ChatView, state: &SessionState) -> (String, ratatui::buffer::Buffer) {
     let (buffer, _) = draw(view, state, 0, W, H, theme());
     (text(&buffer), buffer)
@@ -3700,7 +3727,7 @@ fn the_header_counts_the_comparison_chosen() {
 /// shows: once per comparison, and again when the row's totals move.
 #[test]
 fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
-    use wire::diff_base::Base;
+    use wire::amux::staging::get_changes_request::Base;
 
     use crate::chat::Comparison;
     let mut state = chat_in_git(replies(1, 2), Some("main"));
@@ -3710,14 +3737,30 @@ fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
     view.open_pane();
     let (key, base) = view.wants_changes(&state).expect("asked on opening");
     assert_eq!(key.comparison, Comparison::Uncommitted);
-    assert!(matches!(base.base, Some(Base::Head(_))));
+    assert!(
+        matches!(base, Some(Base::Head(_))),
+        "the uncommitted work alone"
+    );
     assert!(view.wants_changes(&state).is_none(), "asked once");
 
     assert!(view.switch_comparison(&state));
     let (key, base) = view.wants_changes(&state).expect("asked for the branch");
     assert_eq!(key.comparison, Comparison::OnBranch);
-    assert_eq!(base.base, Some(Base::Branch("main".into())));
-    assert!(view.wants_changes(&state).is_none());
+    assert_eq!(base, None, "the host's own rule picks the branch's base");
+    assert!(view.wants_changes(&state).is_none(), "asked once");
+
+    // The host's answer names the base it used, and the header names that
+    // one, not the row's.
+    let changes = wire::amux::staging::GetChangesResponse {
+        base_branch: "origin/main".into(),
+        ..working_tree_changes()
+    };
+    view.changes_fetched(key, changes);
+    let header = feed(&mut view, &state).0.lines().nth(1).unwrap().to_owned();
+    assert!(
+        header.contains("[Diff vs origin/main +120 −30]"),
+        "{header}"
+    );
 
     // A turn end moves the branch's totals: the list is asked for again.
     let mut agent = state.agent().clone();
@@ -3730,6 +3773,12 @@ fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
     }
     state.update(Msg::Entry(agent));
     assert!(view.wants_changes(&state).is_some());
+
+    // Back to the uncommitted work: asked again, once, since the list
+    // shown is always the chosen comparison's.
+    assert!(view.switch_comparison(&state));
+    assert!(view.wants_changes(&state).is_some());
+    assert!(view.wants_changes(&state).is_none());
 }
 
 /// The overview lists each running background job with its command and
@@ -3779,7 +3828,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
     state.update(snapshot(Phase::Idle, body, vec![]));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     view.open_pane();
-    let file = |path: &str| wire::DiffFile {
+    let file = |path: &str| wire::amux::staging::ChangedFile {
         path: path.into(),
         added: 1,
         ..Default::default()
@@ -3789,8 +3838,17 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             comparison: Comparison::Uncommitted,
             totals: None,
         },
-        wire::Diff {
-            files: vec![file("src/b.rs"), file("README.md"), file("src/a.rs")],
+        wire::amux::staging::GetChangesResponse {
+            files: vec![
+                file("src/b.rs"),
+                file("README.md"),
+                file("src/a.rs"),
+                wire::amux::staging::ChangedFile {
+                    old_path: Some("lib/c.rs".into()),
+                    status: wire::amux::staging::FileStatus::Renamed as i32,
+                    ..file("src/c.rs")
+                },
+            ],
             ..Default::default()
         },
     );
@@ -3810,6 +3868,8 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
     // Root files first, then each folder with its files by name.
     assert!(at("README.md") < at("src/"));
     assert!(at("src/") < at("a.rs") && at("a.rs") < at("b.rs"));
+    // A renamed file names where it came from.
+    assert!(at("b.rs") < at("lib/c.rs \u{2192} c.rs"), "{screen}");
     assert!(pane[at("5-hour limit")].ends_with("91% used"), "{screen}");
     assert_eq!(pane[at("5-hour limit") + 1], "near");
     assert!(

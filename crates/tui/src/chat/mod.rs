@@ -36,6 +36,7 @@ use ui_view::{
     Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
 };
 use wire::Attachment;
+use wire::amux::staging::{GetChangesResponse, get_changes_request};
 
 use self::ask::{AskAction, AskUi};
 use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};
@@ -274,11 +275,11 @@ enum HeaderControl {
 /// Where each header control was drawn: its columns, and what it does.
 type HeaderSpots = Vec<((usize, usize), HeaderControl)>;
 
-/// The changed files of one comparison, fetched without a patch.
+/// The changed files of one comparison, as the agent's host answered.
 #[derive(Debug)]
 pub struct Fetched {
     pub key: FetchKey,
-    pub diff: wire::Diff,
+    pub changes: GetChangesResponse,
 }
 
 /// What a fetch of the changed files answers: a comparison, as of the
@@ -2048,12 +2049,12 @@ impl ChatView {
     /// shown, while they still answer it.
     fn overview(&self, state: &SessionState) -> ui_view::Overview {
         let key = self.fetch_key(state);
-        let diff = self
+        let changed = self
             .changes
             .as_ref()
             .filter(|fetched| fetched.key.comparison == key.comparison)
-            .map(|fetched| &fetched.diff);
-        overview(state, diff)
+            .map(|fetched| &fetched.changes);
+        overview(state, changed)
     }
 
     /// The fetch the overview needs now: the comparison shown, as of the
@@ -2065,28 +2066,58 @@ impl ChatView {
         }
     }
 
-    /// The comparison's changed files to fetch, without a patch: while the
-    /// overview shows, once for each comparison and again whenever the
-    /// row's totals for it move. Never on every frame.
-    pub fn wants_changes(&mut self, state: &SessionState) -> Option<(FetchKey, wire::DiffBase)> {
-        if !self.pane_open || !matches!(state.composer(), Composer::Send | Composer::Resume) {
+    /// The comparison's changed files to ask the agent's host for, with
+    /// the base to ask for: while the overview shows, once for each
+    /// comparison and again whenever the row's totals for it move. Never on
+    /// every frame.
+    pub fn wants_changes(
+        &mut self,
+        state: &SessionState,
+    ) -> Option<(FetchKey, Option<get_changes_request::Base>)> {
+        if !self.pane_open
+            || !matches!(state.composer(), Composer::Send | Composer::Resume)
+            || !ui_view::lists_changes(state)
+        {
             return None;
         }
         let key = self.fetch_key(state);
         if self.changes_asked.as_ref() == Some(&key) {
             return None;
         }
-        let base = ui_view::diff_base(state, key.comparison)?;
         self.changes_asked = Some(key.clone());
+        let base = key.comparison.base();
         Some((key, base))
     }
 
     /// Takes in a fetch of the changed files, unless the person has moved
     /// to another comparison since it was asked for.
-    pub fn changes_fetched(&mut self, key: FetchKey, diff: wire::Diff) {
+    pub fn changes_fetched(&mut self, key: FetchKey, changes: GetChangesResponse) {
         if key.comparison == self.comparison {
-            self.changes = Some(Fetched { key, diff });
+            self.changes = Some(Fetched { key, changes });
         }
+    }
+
+    /// The branch the changes are counted against, for the header to name:
+    /// none for the uncommitted work. On the branch it is the base the
+    /// agent's host reported for the last list fetched, since the host
+    /// picks it, as from the branch's upstream when the agent works on its
+    /// base branch; until one is fetched, the base the row names.
+    fn compared_with<'a>(&'a self, state: &'a SessionState) -> Option<&'a str> {
+        if self.comparison == Comparison::Uncommitted {
+            return None;
+        }
+        self.changes
+            .as_ref()
+            .filter(|fetched| fetched.key.comparison == Comparison::OnBranch)
+            .map(|fetched| fetched.changes.base_branch.as_str())
+            .filter(|base| !base.is_empty())
+            .or_else(|| {
+                state
+                    .agent()
+                    .git
+                    .as_ref()
+                    .and_then(|git| git.base_branch.as_deref())
+            })
     }
 
     /// Switches the comparison the header and the overview count against:
@@ -2097,7 +2128,7 @@ impl ChatView {
             Comparison::Uncommitted => Comparison::OnBranch,
             Comparison::OnBranch => Comparison::Uncommitted,
         };
-        if ui_view::diff_base(state, next).is_none() {
+        if !next.offered(state) {
             return false;
         }
         self.comparison = next;
@@ -3579,7 +3610,13 @@ impl ChatView {
         // are the parent's to review: it has no [Diff] of its own.
         let diff = (!state.native()).then(|| {
             (
-                diff_spans(state, self.comparison, diff_hovered, theme),
+                diff_spans(
+                    state,
+                    self.comparison,
+                    self.compared_with(state),
+                    diff_hovered,
+                    theme,
+                ),
                 HeaderControl::Diff,
             )
         });
@@ -3665,17 +3702,10 @@ fn change_totals(state: &SessionState, comparison: Comparison) -> Option<wire::C
 fn diff_spans(
     state: &SessionState,
     comparison: Comparison,
+    against: Option<&str>,
     hovered: bool,
     theme: Theme,
 ) -> Vec<Span<'static>> {
-    let against = match comparison {
-        Comparison::Uncommitted => None,
-        Comparison::OnBranch => state
-            .agent()
-            .git
-            .as_ref()
-            .and_then(|git| git.base_branch.as_deref()),
-    };
     let control = if hovered {
         theme.emphasis()
     } else {

@@ -13,6 +13,7 @@ use ui_view::{
     AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
     ToolRows,
 };
+use wire::amux::staging::GetChangesResponse;
 use wire::{BlobRef, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
@@ -35,7 +36,7 @@ pub struct Chat {
     watcher: OnceLock<JoinHandle<()>>,
     clock: Arc<dyn client::Clock>,
     /// The changed files the overview last fetched.
-    changed_files: Mutex<Option<wire::Diff>>,
+    changed_files: Mutex<Option<GetChangesResponse>>,
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
@@ -270,17 +271,18 @@ impl Chat {
         ui_view::overview(&self.session.state(), files.as_ref())
     }
 
-    /// Fetches the files changed for `comparison`, without a patch, and
-    /// answers the overview with them. A branch with no known base has no
-    /// changes to list.
+    /// Asks the agent's host which files changed for `comparison`, and
+    /// answers the overview with them: the uncommitted work against HEAD,
+    /// or everything on the branch from the base the host's own rule picks.
+    /// A provider subagent, which has no folder of its own, lists none.
     pub async fn open_overview(
         &self,
         comparison: Comparison,
     ) -> Result<Overview, client::RpcError> {
-        let base = ui_view::diff_base(&self.session.state(), comparison);
-        let files = match base {
-            Some(base) => Some(self.session.changed_files(base).await?),
-            None => None,
+        let files = if ui_view::lists_changes(&self.session.state()) {
+            Some(self.session.changes(comparison.base()).await?)
+        } else {
+            None
         };
         *self.changed_files.lock().unwrap() = files;
         Ok(self.overview())
@@ -619,9 +621,10 @@ impl Chat {
     /// review. A branch with no known base is reviewed as its uncommitted
     /// work.
     pub async fn review(&self, comparison: Comparison) -> Result<FrozenReview, client::RpcError> {
-        let base = ui_view::diff_base(&self.session.state(), comparison)
-            .or_else(|| ui_view::diff_base(&self.session.state(), Comparison::Uncommitted))
-            .expect("the working tree is always a base");
+        let base =
+            ui_view::review_base(&self.session.state(), comparison).unwrap_or(wire::DiffBase {
+                base: Some(wire::diff_base::Base::Head(wire::Empty {})),
+            });
         let (diff, patch) = self.session.review(base).await?;
         Ok(FrozenReview { diff, patch })
     }

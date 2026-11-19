@@ -266,7 +266,7 @@ row or the row failed.
 | `jobs` | Each background job still running: its command, when it started, the step that started it, and its own stop where the kind has one (behind a confirm; `Stopping…`; the provider's refusal). A provider subagent's own job is left out: its composer stops it. | partial | partial | partial |
 | `failed_servers` | Only tool servers that failed to start or need signing in | none | full | full |
 | `usage_near_limit` | Nothing while fine; a warning near a limit; a foot card when blocked | none | full | full |
-| `changes` | The changed files by folder, root files first, once fetched with `GetDiff` and no patch (`changes(diff)`) | full | full | full |
+| `changes` | The changed files by folder, root files first, renames with their old path, once the agent's host answers `GetChanges` (`changes(answer)`), with the base branch the host compared against | full | full | full |
 
 Beside it, read from the same state:
 
@@ -276,8 +276,10 @@ Beside it, read from the same state:
 | `controls(state)`: the model's name, the effort in force, a permission or mode other than the normal one | Composer facts and the settings view | partial | full | full |
 | `sign_in(state)` | A foot card in place of the composer when there is a problem | partial: as an API error | full | full |
 
-`diff_base(state, comparison)` names what the changed files are counted against: the uncommitted work, or
-everything on the branch since it left its base branch.
+`Comparison::base()` names what the changed files are counted against: the uncommitted work against HEAD, or
+nothing, so the agent's host picks the base for everything on the branch by its own rule.
+`Comparison::offered(state)` offers the branch once the row names a base branch. The review page, still built on
+`GetDiff`'s patch, asks with `review_base(state, comparison)`.
 
 `settings(state)` is the settings view, read from the agent's catalogue: the offered models with their efforts,
 the permissions (how much the agent may do without asking), the modes (how it works: Codex's default and plan;

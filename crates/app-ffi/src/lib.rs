@@ -3142,9 +3142,9 @@ pub unsafe extern "C" fn amux_session_discard(chat: *const AmuxChat, input_id: *
     let _ = unsafe { read(chat, |chat| chat.discard(&id)) };
 }
 
-/// Fetches the files changed for `comparison` (a JSON `Comparison`), with
-/// no patch, as the overview opens; the ticket answers `{"Ok": Overview}` or
-/// `{"Err": ..}`.
+/// Asks the agent's host which files changed for `comparison` (a JSON
+/// `Comparison`), as the overview opens; the ticket answers
+/// `{"Ok": Overview}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `comparison` is a C string.

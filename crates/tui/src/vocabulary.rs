@@ -2459,15 +2459,17 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         on_branch: Some(totals(6, 120, 30)),
         remote: None,
     };
-    let file = |path: &str, added, removed, change: wire::DiffFileChange| wire::DiffFile {
+    use wire::amux::staging::FileStatus::{Changed, Created, Deleted};
+    use wire::amux::staging::{ChangedFile, FileStatus, GetChangesResponse};
+    let file = |path: &str, added, removed, status: FileStatus| ChangedFile {
         path: path.into(),
         added,
         removed,
-        change: change as i32,
-        binary: false,
+        status: status as i32,
+        language: "rust".into(),
+        ..Default::default()
     };
-    use wire::DiffFileChange::{Changed, Created, Deleted};
-    let uncommitted = wire::Diff {
+    let uncommitted = GetChangesResponse {
         files: vec![
             file("crates/ui-view/src/overview.rs", 30, 4, Changed),
             file("README.md", 2, 0, Changed),
@@ -2476,7 +2478,8 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         ],
         ..Default::default()
     };
-    let on_branch = wire::Diff {
+    let on_branch = GetChangesResponse {
+        base_branch: "main".into(),
         files: vec![
             file("crates/ui-view/src/overview.rs", 64, 10, Changed),
             file("README.md", 2, 0, Changed),
@@ -2635,25 +2638,26 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         })));
         state
     };
-    let scene = |state: &SessionState, comparison: Comparison, diff: Option<&wire::Diff>| {
-        let mut view = ChatView::new(b"agent".to_vec(), now, false);
-        view.pane_open = true;
-        view.comparison = comparison;
-        if let Some(diff) = diff {
-            view.changes_fetched(
-                FetchKey {
-                    comparison,
-                    totals: None,
-                },
-                diff.clone(),
-            );
-        }
-        ChatScene {
-            view,
-            state: state.clone(),
-            now,
-        }
-    };
+    let scene =
+        |state: &SessionState, comparison: Comparison, diff: Option<&GetChangesResponse>| {
+            let mut view = ChatView::new(b"agent".to_vec(), now, false);
+            view.pane_open = true;
+            view.comparison = comparison;
+            if let Some(diff) = diff {
+                view.changes_fetched(
+                    FetchKey {
+                        comparison,
+                        totals: None,
+                    },
+                    diff.clone(),
+                );
+            }
+            ChatScene {
+                view,
+                state: state.clone(),
+                now,
+            }
+        };
 
     let claude_working = wire::ClaudeSnapshot {
         model: Some("opus".into()),

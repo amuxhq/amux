@@ -21,6 +21,7 @@ use ui_state::{
     BlobStatus, Connection, InputId, InputOutcome, Key, Msg, Outcome, Refusal, SessionState,
 };
 use ui_view::SessionLine;
+use wire::amux::staging::{GetChangesResponse, get_changes_request};
 use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
 use wire::{
     Agent, BlobRef, DumpRequest, HostEntry, Input, PromptSubmission, SendInputResponse,
@@ -1027,9 +1028,14 @@ impl Session {
         }
     }
 
-    /// The files changed against `base`, without a patch, for an overview.
-    pub async fn changed_files(&self, base: wire::DiffBase) -> Result<wire::Diff, RpcError> {
-        self.inner.agent.get_diff(base, false).await
+    /// What changed in the agent's working tree, as its host compares it
+    /// with `base`: HEAD, a branch, or none for the host's own rule. For an
+    /// overview's list of changed files.
+    pub async fn changes(
+        &self,
+        base: Option<get_changes_request::Base>,
+    ) -> Result<GetChangesResponse, RpcError> {
+        self.inner.agent.changes(base).await
     }
 
     /// The agent's diff against `base` and the patch it names, for a review

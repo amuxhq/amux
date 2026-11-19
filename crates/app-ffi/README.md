@@ -232,7 +232,7 @@ instead, a pick from the settings view, withdrawing, steering or resending a
 prompt, interrupting, stopping a job, switching back, resuming with the
 exited composer's draft and paging older rows; `ChatAct` says what each
 answers), `amux_session_put_blob`, `amux_session_open_overview` (the changed files for
-a `Comparison`, fetched without a patch as the overview opens),
+a `Comparison`, as the agent's host lists them when the overview opens),
 `amux_session_review` (the diff for a `Comparison` and its patch, frozen for
 the review page), `amux_profile_host_catalogue` (what a provider offers on a
 host with no agent running, for the new-agent screen),

@@ -254,7 +254,7 @@ pub enum AppEvent {
     Changes {
         agent_id: Vec<u8>,
         key: crate::chat::FetchKey,
-        diff: Diff,
+        changes: wire::amux::staging::GetChangesResponse,
     },
     /// What deleting an agent takes with it, as its host previewed it, or
     /// why it could not be asked, for home's delete confirmation.
@@ -846,14 +846,14 @@ impl App {
             AppEvent::Changes {
                 agent_id,
                 key,
-                diff,
+                changes,
             } => {
                 if let Some(chat) = self
                     .chat
                     .as_mut()
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
-                    chat.view.changes_fetched(key, diff);
+                    chat.view.changes_fetched(key, changes);
                 }
             }
             AppEvent::HostOffer {
@@ -1271,7 +1271,7 @@ impl App {
         let writable = matches!(state.composer(), Composer::Send | Composer::Resume);
         let agent_id = chat.view.agent_id.clone();
         // The page reads the changes the header counts.
-        let base = ui_view::diff_base(&state, chat.view.comparison);
+        let base = ui_view::review_base(&state, chat.view.comparison);
         let native = matches!(state.composer(), Composer::Native { .. });
         drop(state);
         // A subagent works in its parent's folder: the changes are the
@@ -1803,11 +1803,11 @@ impl App {
             let session = chat.session.clone();
             let agent_id = chat.view.agent_id.clone();
             self.spawn(async move {
-                let diff = session.changed_files(base).await.ok()?;
+                let changes = session.changes(base).await.ok()?;
                 Some(AppEvent::Changes {
                     agent_id,
                     key,
-                    diff,
+                    changes,
                 })
             });
         }

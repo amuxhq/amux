@@ -1248,7 +1248,9 @@ final class ChatModelTests: XCTestCase {
         source.files = Changes(
             totals: ChangeTotals(files: 1, added: 2, removed: 0),
             folders: [Folder(path: "", files: [ChangedFile(
-                path: "README.md", name: "README.md", added: 2, removed: 0, status: .modified, binary: false)])])
+                path: "README.md", name: "README.md", added: 2, removed: 0, status: .modified, binary: false,
+                language: "markdown", oldPath: nil)])],
+            base: nil)
         let model = ChatModel(source: source)
         model.showOverview(true)
         await model.listing?.value
@@ -1270,9 +1272,15 @@ final class ChatModelTests: XCTestCase {
         await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted, .uncommitted])
 
+        // On the branch the overview names the base the host reported, which
+        // need not be the row's.
+        XCTAssertEqual(model.listedBase, "main", "the row's base until the host has listed the branch")
+        source.files?.base = "origin/main"
         model.compare(.onBranch)
         await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted, .uncommitted, .onBranch])
+        XCTAssertEqual(model.listedBase, "origin/main")
+        XCTAssertEqual(model.base, "main", "the review still compares with the row's base")
 
         // Off screen, nothing is listed.
         model.showOverview(false)

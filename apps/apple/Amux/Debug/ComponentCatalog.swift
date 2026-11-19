@@ -1085,17 +1085,18 @@ enum CatalogFixtures {
         totals: ChangeTotals(files: 5, added: 56, removed: 20),
         folders: [
             Folder(path: "", files: [
-                ChangedFile(path: "README.md", name: "README.md", added: 2, removed: 0, status: .modified, binary: false),
+                ChangedFile(path: "README.md", name: "README.md", added: 2, removed: 0, status: .modified, binary: false, language: "", oldPath: nil),
             ]),
             Folder(path: "crates/amux-ui/src/", files: [
-                ChangedFile(path: "crates/amux-ui/src/errors.rs", name: "errors.rs", added: 20, removed: 0, status: .added, binary: false),
-                ChangedFile(path: "crates/amux-ui/src/pairing.rs", name: "pairing.rs", added: 25, removed: 8, status: .modified, binary: false),
-                ChangedFile(path: "crates/amux-ui/src/strip.rs", name: "strip.rs", added: 0, removed: 12, status: .deleted, binary: false),
+                ChangedFile(path: "crates/amux-ui/src/errors.rs", name: "errors.rs", added: 20, removed: 0, status: .added, binary: false, language: "", oldPath: nil),
+                ChangedFile(path: "crates/amux-ui/src/pairing.rs", name: "pairing.rs", added: 25, removed: 8, status: .modified, binary: false, language: "", oldPath: nil),
+                ChangedFile(path: "crates/amux-ui/src/strip.rs", name: "strip.rs", added: 0, removed: 12, status: .deleted, binary: false, language: "", oldPath: nil),
             ]),
             Folder(path: "docs/", files: [
-                ChangedFile(path: "docs/PAIRING.md", name: "PAIRING.md", added: 9, removed: 0, status: .added, binary: false),
+                ChangedFile(path: "docs/PAIRING.md", name: "PAIRING.md", added: 9, removed: 0, status: .added, binary: false, language: "", oldPath: nil),
             ]),
-        ])
+        ],
+        base: nil)
 
     /// A busy chat's surroundings: two jobs, five changed files, a tool
     /// server that needs signing in and three usage windows.

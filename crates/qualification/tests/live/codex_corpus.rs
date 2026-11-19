@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use ui_state::{ItemBody, OpenAsk};
 use wire::codex_item::Kind as Codex;
 use wire::{
-    AgentRef, CodexCreateConfig, CodexInput, Kind, MessageBody, PromptInput, PutBlobRequest,
-    ResolveAgentRequest, codex_answer, codex_ask, codex_input, work,
+    AgentRef, CodexCreateConfig, CodexInput, Kind, MessageBody, PromptInput, codex_answer,
+    codex_ask, codex_input, work,
 };
 
 use super::asks::{Answer, settled};
@@ -165,37 +165,26 @@ impl Install {
     ) -> Result<(), String> {
         let host_id = self
             .client
-            .agents
-            .clone()
-            .resolve_agent(ResolveAgentRequest {
-                name: scenario.agent(),
-            })
+            .inventory()
+            .resolve_agent(&scenario.agent())
             .await
-            .map_err(|status| status.to_string())?
-            .into_inner()
-            .agent
-            .ok_or("the answer held no agent")?
+            .map_err(|error| error.to_string())?
             .host_id;
         self.client
-            .agents
-            .clone()
-            .send_message(wire::SendMessageRequest {
-                envelope: Some(wire::Envelope {
-                    id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                    to: Some(AgentRef {
-                        host_id,
-                        agent_id: agent.to_vec(),
-                    }),
-                    context: None,
-                    from: None,
-                    body: Some(wire::envelope::Body::Message(MessageBody {
-                        text: text.into(),
-                        attachments: Vec::new(),
-                    })),
-                }),
+            .agent(&AgentRef {
+                host_id,
+                agent_id: agent.to_vec(),
             })
+            .send_message(
+                uuid::Uuid::new_v4().as_bytes().to_vec(),
+                None,
+                MessageBody {
+                    text: text.into(),
+                    attachments: Vec::new(),
+                },
+            )
             .await
-            .map_err(|status| status.to_string())?;
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 
@@ -565,20 +554,10 @@ impl Install {
             Err(verdict) => return Ok(verdict),
         };
         let blob = self
-            .client
-            .agents
-            .clone()
-            .put_blob(PutBlobRequest {
-                agent_id: agent.clone(),
-                name: "square.png".into(),
-                mime: "image/png".into(),
-                bytes: SQUARE_PNG.to_vec(),
-            })
+            .agent(&agent)
+            .put_blob("square.png", "image/png", SQUARE_PNG.to_vec())
             .await
-            .map_err(|status| format!("the image upload: {status}"))?
-            .into_inner()
-            .blob
-            .unwrap();
+            .map_err(|error| format!("the image upload: {error}"))?;
         self.input(
             &agent,
             wire::KindInput::Codex(CodexInput {

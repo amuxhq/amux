@@ -7,8 +7,7 @@
 
 use prost::Message as _;
 use wire::{
-    CodexCreateConfig, CodexInput, GetBlobRequest, GetCatalogueRequest, Kind, codex_input,
-    inventory_event,
+    CodexCreateConfig, CodexInput, Kind, codex_input, inventory_event,
 };
 
 use super::asks::settled;
@@ -125,15 +124,10 @@ impl Install {
     ) -> Result<(Vec<u8>, wire::Catalogue), String> {
         let blob = self
             .client
-            .agents
-            .clone()
-            .get_catalogue(GetCatalogueRequest {
-                host_id,
-                provider: provider as i32,
-            })
+            .host(&host_id)
+            .catalogue(provider)
             .await
-            .map_err(|status| format!("the host's catalogue: {status}"))?
-            .into_inner();
+            .map_err(|error| format!("the host's catalogue: {error}"))?;
         let catalogue = wire::Catalogue::decode(blob.bytes.as_slice())
             .map_err(|error| format!("the host's catalogue does not decode: {error}"))?;
         Ok((blob.hash, catalogue))
@@ -145,15 +139,13 @@ impl Install {
         agent_id: Vec<u8>,
         hash: Vec<u8>,
     ) -> Result<wire::Catalogue, String> {
-        let blob = self
+        let bytes = self
             .client
-            .agents
-            .clone()
-            .get_blob(GetBlobRequest { agent_id, hash })
+            .sessions()
+            .get_blob(&agent_id, &hash)
             .await
-            .map_err(|status| format!("the catalogue: {status}"))?
-            .into_inner();
-        wire::Catalogue::decode(blob.bytes.as_slice())
+            .map_err(|error| format!("the catalogue: {error}"))?;
+        wire::Catalogue::decode(bytes.as_slice())
             .map_err(|error| format!("the catalogue does not decode: {error}"))
     }
 
@@ -254,20 +246,19 @@ impl Install {
 
     /// This host's entry in the fleet list, as the inventory opens with it.
     async fn host_entry(&self) -> Result<wire::HostEntry, String> {
+        use futures_util::StreamExt as _;
         let mut inventory = self
             .client
-            .agents
-            .clone()
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .inventory()
+            .subscribe()
             .await
-            .map_err(|status| status.to_string())?
-            .into_inner();
-        let event = tokio::time::timeout(READY, inventory.message())
+            .map_err(|error| error.to_string())?;
+        let event = tokio::time::timeout(READY, inventory.next())
             .await
             .map_err(|_| "the inventory said nothing".to_owned())?
-            .map_err(|status| status.to_string())?
-            .ok_or("the inventory ended")?;
-        match event.event.and_then(|event| event.of) {
+            .ok_or("the inventory ended")?
+            .map_err(|error| error.to_string())?;
+        match event.of {
             Some(inventory_event::Of::Host(entry)) => Ok(entry),
             other => Err(format!("the inventory opens with {other:?}, not this host")),
         }

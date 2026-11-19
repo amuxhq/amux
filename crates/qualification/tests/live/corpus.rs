@@ -14,8 +14,8 @@
 use ui_state::{ItemBody, OpenAsk};
 use wire::claude_item::Kind as Claude;
 use wire::{
-    ClaudeSdkInput, Input, Kind, PromptInput, PutBlobRequest, SendInputRequest, claude_answer,
-    claude_sdk_input, send_input_response,
+    ClaudeSdkInput, Input, Kind, PromptInput, claude_answer, claude_sdk_input,
+    send_input_response,
 };
 
 use super::asks::{Answer, questions, settled};
@@ -171,16 +171,10 @@ impl Install {
     ) -> Result<Vec<u8>, String> {
         let id = uuid::Uuid::new_v4().as_bytes().to_vec();
         let response = self
-            .client
-            .sessions
-            .clone()
-            .send_input(SendInputRequest {
-                agent_id: agent.to_vec(),
-                input: Some(Input::new(id.clone(), of)),
-            })
+            .agent(agent)
+            .send_input(Input::new(id.clone(), of))
             .await
-            .map_err(|status| status.to_string())?
-            .into_inner();
+            .map_err(|error| error.to_string())?;
         match response.of {
             Some(send_input_response::Of::Accepted(_)) => Ok(id),
             other => Err(format!("the input was not accepted: {other:?}")),
@@ -937,20 +931,10 @@ impl Install {
             Err(verdict) => return Ok(verdict),
         };
         let blob = self
-            .client
-            .agents
-            .clone()
-            .put_blob(PutBlobRequest {
-                agent_id: agent.clone(),
-                name: "square.png".into(),
-                mime: "image/png".into(),
-                bytes: SQUARE_PNG.to_vec(),
-            })
+            .agent(&agent)
+            .put_blob("square.png", "image/png", SQUARE_PNG.to_vec())
             .await
-            .map_err(|status| format!("the image upload: {status}"))?
-            .into_inner()
-            .blob
-            .unwrap();
+            .map_err(|error| format!("the image upload: {error}"))?;
         self.send_input(
             &agent,
             sdk(claude_sdk_input::Of::Prompt(PromptInput {

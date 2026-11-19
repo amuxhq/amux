@@ -47,10 +47,12 @@
   (#set! suffix "()"))
 
 ; A constructor defined outside its class (`Store::Store(int)`, or
-; `Box<T>::Box()` under a template) is the function named as its class is.
-; A destructor or any other method defined there is a function, as
+; `Box<T>::Box()` under a template) is the function named as its class is
+; and given no return type: `int n::n()` is a function `n` in namespace
+; `n`. A destructor or any other method defined there is a function, as
 ; `Store::put` is: only a constructor has a kind of its own.
 ((function_definition
+  !type
   declarator: (function_declarator
     declarator: [
       (qualified_identifier

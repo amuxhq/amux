@@ -301,6 +301,17 @@ Function Store::Other() 6-6
 ",
         &[(5, "Box<T>::Box()")],
     );
+    // A function with a return type is no constructor, though its
+    // namespace shares its name.
+    check(
+        Language::Cpp,
+        "namespace n { int n(); }\nint n::n() { return 0; }\n",
+        "\
+Module namespace n 1-1
+Function n::n() 2-2
+",
+        &[(2, "n::n()")],
+    );
 }
 
 #[test]

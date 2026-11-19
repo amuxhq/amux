@@ -8,7 +8,7 @@ use std::path::Path;
 /// git, there are none.
 pub(crate) async fn read(cwd: &Path, base: Option<&str>) -> Option<wire::Git> {
     match git_facts::facts(cwd, base).await {
-        Ok(read) => read.map(to_wire),
+        Ok(read) => read.map(|facts| to_wire(cwd, facts)),
         Err(error) => {
             // Without git the row shows no branch; nothing else depends on
             // it.
@@ -18,7 +18,7 @@ pub(crate) async fn read(cwd: &Path, base: Option<&str>) -> Option<wire::Git> {
     }
 }
 
-fn to_wire(facts: git_facts::GitFacts) -> wire::Git {
+fn to_wire(cwd: &Path, facts: git_facts::GitFacts) -> wire::Git {
     let totals = |totals: Option<git_facts::ChangeTotals>| {
         totals.map(|totals| wire::ChangeTotals {
             files: totals.files,
@@ -26,11 +26,19 @@ fn to_wire(facts: git_facts::GitFacts) -> wire::Git {
             removed: totals.removed,
         })
     };
+    let text = |path: std::path::PathBuf| path.to_string_lossy().into_owned();
+    // The working tree the folder is in, so a client matches the agent to
+    // the folders its host offers by root, not by guessing from paths.
+    let checkout = git_facts::working_tree(cwd).map(|(root, main)| wire::Checkout {
+        root: text(root),
+        main: main.map(text),
+        remote: facts.remote,
+    });
     wire::Git {
+        checkout: checkout.map(Box::new),
         branch: facts.branch,
         base_branch: facts.base_branch,
         uncommitted: totals(facts.uncommitted),
         on_branch: totals(facts.on_branch),
-        remote: facts.remote,
     }
 }

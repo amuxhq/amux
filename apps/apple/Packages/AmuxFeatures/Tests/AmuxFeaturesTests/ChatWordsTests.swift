@@ -28,7 +28,7 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(
             ChatWords.compaction(before: nil, after: nil, automatic: true, idle: true),
             "Compacted while idle")
-        XCTAssertEqual(ChatWords.turnEnd(durationMs: 102_000, failed: false), "Worked 1m 42s")
+        XCTAssertEqual(ChatWords.turnEnd(durationMs: 102_000, failed: false), "Worked for 1m 42s")
         XCTAssertEqual(ChatWords.thinking(open: false, durationMs: 8_000), "Thought for 8s")
     }
 

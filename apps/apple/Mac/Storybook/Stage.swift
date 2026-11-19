@@ -1,3 +1,4 @@
+import AmuxMacScreens
 import AmuxMacStories
 import AppKit
 import SwiftUI
@@ -12,7 +13,7 @@ enum StorySize: String, CaseIterable, Codable {
     var points: CGSize {
         switch self {
         case .regular: CGSize(width: 900, height: 640)
-        case .smallest: CGSize(width: 680, height: 560)
+        case .smallest: MainWindowSize.least
         case .large: CGSize(width: 1280, height: 860)
         }
     }
@@ -55,7 +56,7 @@ final class StageWindow: NSWindow {
             // A sheet has no title bar of its own; it hangs from its window's.
             case .sheet: [.borderless]
             }
-        title = story.window == .settings ? "Settings" : "Amux"
+        title = story.window == .settings ? "Settings" : "amux"
         let host = NSHostingController(rootView: story.view())
         host.sceneBridgingOptions = [.toolbars, .title]
         // The main window's least size comes from its content, as the app's

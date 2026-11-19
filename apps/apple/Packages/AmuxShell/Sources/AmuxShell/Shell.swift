@@ -808,6 +808,7 @@ private struct NewAgentPage: View {
                 // so pointing at one asks it what it has.
                 case .point(let host): stores.point(at: host)
                 case .search: stores.searchDirectories()
+                case .pin(let directory, let on): stores.pin(directory, on)
                 // Starting is the one thing on this screen that leaves the
                 // phone. Leaving is what the confirmation below does, when the
                 // machine says the agent exists — a screen that left on the

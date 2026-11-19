@@ -160,6 +160,11 @@ public final class StoreBundle {
         newAgent.remember(fleet.rows)
         if let machine = newAgent.machine {
             newAgent.machineStarts(claude: hosts.host(machine)?.claudeKind)
+            // The host's entry carries its folders: a pin, or an agent made
+            // somewhere new, moves them.
+            if delta.hosts != nil, !newAgent.searchesTheMachine {
+                listDirectories(on: machine, matching: "", quietly: true)
+            }
         }
         saw?(fleet.machines.filter(\.trusted).count, fleet.needYou)
         applied += 1
@@ -421,13 +426,29 @@ public final class StoreBundle {
         }
     }
 
+    /// Pins a folder among the chosen host's repositories, or unpins it.
+    public func pin(_ directory: Directory, _ on: Bool) {
+        guard let host = newAgent.machine, let profile else { return }
+        newAgent.pinned(directory, on)
+        Task {
+            if case .failure(let failure) = await profile.pinFolder(
+                directory.path, on: host, pinned: on)
+            {
+                newAgent.pinRefused(failure.description)
+                listDirectories(on: host, matching: "")
+            }
+        }
+    }
+
     public func searchDirectories() {
         guard newAgent.searchesTheMachine, let host = newAgent.machine else { return }
         listDirectories(on: host, matching: newAgent.query)
     }
 
-    private func listDirectories(on host: HostId, matching query: String) {
-        let asked = newAgent.asking()
+    /// Lists the host's folders. Quietly keeps what is shown until the
+    /// answer, for a list moved under a chooser already open.
+    private func listDirectories(on host: HostId, matching query: String, quietly: Bool = false) {
+        let asked = quietly ? newAgent.askingQuietly() : newAgent.asking()
         guard let profile else {
             newAgent.listed(.failure(RuntimeFailure("nothing is running")), asked: asked)
             return

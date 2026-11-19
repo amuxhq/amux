@@ -173,7 +173,7 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
         Ok(ExitCause::ProviderExited) => "the provider exited",
         // Both read as the person sees them: the agent ended while no
         // daemon was there, whether it drained or was found dead.
-        Ok(ExitCause::DaemonLost | ExitCause::EndedWhileAway) => "while the daemon was away",
+        Ok(ExitCause::DaemonLost | ExitCause::EndedWhileAway) => "while amux was stopped",
         Ok(ExitCause::Orphaned) => "orphaned while waiting for you",
         Ok(ExitCause::CouldNotStart) => "could not start",
         Ok(ExitCause::DirectoryFailed) => "its directory failed",

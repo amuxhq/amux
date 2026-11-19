@@ -16,8 +16,8 @@ use crate::theme::Theme;
 /// no route.
 pub fn route(reach: Reach, local: bool) -> &'static str {
     match reach {
-        Reach::Online(RouteKind::Direct) => "direct",
-        Reach::Online(RouteKind::Relay) => "relay",
+        Reach::Online(RouteKind::Direct) => "on this network",
+        Reach::Online(RouteKind::Relay) => "over the internet",
         Reach::Online(RouteKind::Ssh) => "ssh",
         Reach::Online(RouteKind::Unspecified) if local => "local",
         Reach::Online(RouteKind::Unspecified) => "online",
@@ -34,8 +34,8 @@ pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> Stri
     let reach = ui_view::reach(fleet, local_host, entry.host_id());
     let mut parts = vec![format!("·{}", route(reach, entry.host_id() == local_host))];
     match reach {
-        Reach::Offline(Offline::Revoked) => parts.push("no longer trusts this machine".into()),
-        Reach::Offline(Offline::SignedOut) => parts.push("this machine is signed out".into()),
+        Reach::Offline(Offline::Revoked) => parts.push("unpaired this computer".into()),
+        Reach::Offline(Offline::SignedOut) => parts.push("this computer is signed out".into()),
         // Why it is away comes before any old error from dialing it
         // directly, which is not the reason.
         Reach::Away => parts.push(crate::chat::FREE_PLAN_AWAY.into()),
@@ -83,7 +83,7 @@ fn candidate_words(entry: &HostEntry, name: &str) -> String {
         return format!("through {} · {pair}", through.name);
     }
     if candidate.relay_only() {
-        return format!("on your account · Pro pairs it through the relay · {pair}");
+        return format!("on your account · Pro pairs it over the internet · {pair}");
     }
     pair
 }
@@ -110,7 +110,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         .iter()
         .map(|entry| {
             if entry.name().is_empty() {
-                "unnamed host".to_owned()
+                "unnamed device".to_owned()
             } else {
                 entry.name().to_owned()
             }
@@ -124,7 +124,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         + 3;
     let mut rows = vec![Line::default()];
     if hosts.is_empty() {
-        rows.push(Line::from(Span::styled("No hosts known", theme.muted())));
+        rows.push(Line::from(Span::styled("No devices known", theme.muted())));
     }
     for (entry, name) in hosts.iter().zip(names) {
         let trusted = entry.trusted().is_some();
@@ -133,7 +133,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         line.spans.push(Span::styled(name.clone(), ink));
         pad_to(&mut line, column);
         let words = if entry.host_id() == local_host {
-            "this machine".to_owned()
+            "this computer".to_owned()
         } else if trusted {
             caption(fleet, entry, local_host)
                 .trim_start_matches('·')
@@ -153,7 +153,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
     }
     rows.push(Line::default());
     rows.push(Line::from(vec![
-        Span::styled("Pair another machine with ", theme.faint()),
+        Span::styled("Pair another computer with ", theme.faint()),
         Span::styled("amux pair", theme.code()),
     ]));
     rows.push(Line::from(vec![

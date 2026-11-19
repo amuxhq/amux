@@ -4,8 +4,9 @@ use std::path::Path;
 use std::process::Command;
 
 use git_facts::{
-    Change, ChangeTotals, Comparison, FileChange, GitError, GitFacts, Worktree, WorktreeError,
-    add_worktree, compare, facts, own_commits, repository as repository_of,
+    Change, ChangeTotals, Checkout, Comparison, FileChange, GitError, GitFacts, Worktree,
+    WorktreeError, add_worktree, checkout, compare, facts, origin, own_commits,
+    repository as repository_of,
 };
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -314,6 +315,47 @@ async fn a_comparison_lists_each_file_and_builds_a_patch_only_when_asked() {
 }
 
 #[tokio::test]
+async fn a_checkout_is_its_working_trees_root_and_a_worktree_names_its_clone() {
+    let repo = repository();
+    let dir = repo.path().canonicalize().unwrap();
+    git(
+        &dir,
+        &["remote", "add", "origin", "git@github.com:amuxhq/amux.git"],
+    );
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    let remote = Some("github.com/amuxhq/amux".to_owned());
+
+    // A folder inside the clone is in the clone's working tree.
+    assert_eq!(
+        checkout(&dir.join("sub")),
+        Some(Checkout {
+            root: dir.clone(),
+            main: None,
+            remote: remote.clone(),
+        })
+    );
+
+    let home = tempfile::tempdir().unwrap();
+    let destination = home.path().join("quiet-otter");
+    add_worktree(&dir, &destination, "quiet-otter")
+        .await
+        .unwrap();
+    let destination = destination.canonicalize().unwrap();
+    assert_eq!(
+        checkout(&destination),
+        Some(Checkout {
+            root: destination.clone(),
+            main: Some(dir.clone()),
+            remote,
+        }),
+        "a linked worktree names the clone it was made from"
+    );
+
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(checkout(outside.path()), None);
+}
+
+#[tokio::test]
 async fn a_worktree_branches_from_what_the_folder_has_checked_out() {
     let repo = repository();
     let dir = repo.path();
@@ -466,4 +508,20 @@ async fn a_branch_counts_the_commits_no_other_ref_holds() {
     assert_eq!(own_commits(dir).await.unwrap(), Some(0), "tagged");
     git(dir, &["switch", "-q", "--detach"]);
     assert_eq!(own_commits(dir).await.unwrap(), None, "detached");
+}
+
+#[test]
+fn a_folders_origin_names_its_repository_as_facts_do() {
+    let dir = repository();
+    assert_eq!(origin(dir.path()), None);
+    git(
+        dir.path(),
+        &["remote", "add", "origin", "git@github.com:amuxhq/amux.git"],
+    );
+    assert_eq!(
+        origin(dir.path()).as_deref(),
+        Some("github.com/amuxhq/amux")
+    );
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(origin(outside.path()), None);
 }

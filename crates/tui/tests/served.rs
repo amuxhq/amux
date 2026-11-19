@@ -358,11 +358,11 @@ impl client::Client for SlowClearing {
     ) -> Result<wire::GetCatalogueResponse, client::RpcError> {
         self.inner.get_catalogue(request).await
     }
-    async fn list_repositories(
+    async fn pin_folder(
         &self,
-        request: wire::ListRepositoriesRequest,
-    ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
-        self.inner.list_repositories(request).await
+        request: wire::PinFolderRequest,
+    ) -> Result<wire::PinFolderResponse, client::RpcError> {
+        self.inner.pin_folder(request).await
     }
     async fn dump(
         &self,
@@ -673,7 +673,7 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
     terminal.draw(|frame| app.draw(frame)).unwrap();
     let screen = screen_text(terminal.backend().buffer());
     assert!(
-        screen.contains("another machine"),
+        screen.contains("another computer"),
         "the chat says the terminal is elsewhere:\n{screen}"
     );
     assert!(

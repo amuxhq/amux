@@ -1063,6 +1063,11 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
 
     runtime.rename(agent.id, "beta").await.unwrap();
     let git = wire::Git {
+        checkout: Some(Box::new(wire::Checkout {
+            root: "/work/app".into(),
+            main: None,
+            remote: Some("github.com/amuxhq/amux".into()),
+        })),
         branch: Some("beta".into()),
         base_branch: Some("main".into()),
         uncommitted: Some(wire::ChangeTotals {
@@ -1075,7 +1080,6 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
             added: 40,
             removed: 9,
         }),
-        remote: Some("github.com/amuxhq/amux".into()),
     };
     let mut working = snapshot(Phase::Working, &[], 5_000);
     let envelope = working.snapshot.as_mut().unwrap();

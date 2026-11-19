@@ -395,11 +395,11 @@ impl SettingsScreen {
 
     fn label(&self, row: Row) -> String {
         match row {
-            Row::Name => "This machine's name".to_owned(),
+            Row::Name => "This computer's name".to_owned(),
             Row::StartAtLogin => "Start amux when you log in".to_owned(),
             Row::KeepAwake => format!("Keep this {} awake while it's plugged in", self.machine),
             Row::Repository(at) => text::tilde(&self.settings.repositories[at]),
-            Row::AddRepository => "+ Add a folder…".to_owned(),
+            Row::AddRepository => "+ Add a repository…".to_owned(),
             Row::ChatIn => "Chat with agents in".to_owned(),
             Row::CopyOnSelect => "Copy text when you select it".to_owned(),
             Row::Telemetry => "Send usage counts".to_owned(),
@@ -448,7 +448,7 @@ impl SettingsScreen {
     /// The section a row opens, when it is the first of one.
     fn heading(row: Row, previous: Option<Row>) -> Option<&'static str> {
         let section = |row: Row| match row {
-            Row::Name | Row::StartAtLogin | Row::KeepAwake => "This machine",
+            Row::Name | Row::StartAtLogin | Row::KeepAwake => "This computer",
             Row::Repository(_) | Row::AddRepository => "Repositories",
             Row::ChatIn | Row::CopyOnSelect => "Chats",
             Row::Telemetry | Row::AutoReports => "Help improve amux",
@@ -472,7 +472,7 @@ impl SettingsScreen {
         match self.focused() {
             Row::Repository(_) => vec![("x", "remove", key(KeyCode::Char('x'))), back],
             Row::Name => vec![("enter", "rename", key(KeyCode::Enter)), back],
-            Row::AddRepository => vec![("enter", "add a folder", key(KeyCode::Enter)), back],
+            Row::AddRepository => vec![("enter", "add a repository", key(KeyCode::Enter)), back],
             Row::Account if account_signed_in => {
                 vec![("enter", "sign out", key(KeyCode::Enter)), back]
             }

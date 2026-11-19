@@ -1390,6 +1390,7 @@ impl CoreThread {
     fn shell_work(&mut self, runtime: &Arc<ProfileRuntime>, work: ShellWork) {
         match work {
             ShellWork::Wrote => runtime.wrote(),
+            ShellWork::RecentDirectory => runtime.refresh_folders(),
             ShellWork::Sourcing { agent, open } => runtime.sourcing(agent, open),
             ShellWork::Hosts { entries } => runtime.hosts_published(entries),
             ShellWork::ReplicaDropped { agent } => runtime.replica_dropped(&agent),

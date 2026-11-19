@@ -203,6 +203,35 @@ impl HostSettings {
         )
     }
 
+    /// Pins `path` at the end of the repository list, or unpins it, and
+    /// answers the settings it leaves; None when the list already says so.
+    pub(crate) fn pin(
+        &self,
+        path: &str,
+        pinned: bool,
+    ) -> Result<Option<InstallationConfig>, SettingsError> {
+        let path = PathBuf::from(repository(path, self.home())?);
+        let held = self.current().repositories;
+        let listed = held.contains(&path);
+        if listed == pinned {
+            return Ok(None);
+        }
+        let mut paths: Vec<PathBuf> = held.into_iter().filter(|held| *held != path).collect();
+        if pinned {
+            paths.push(path);
+        }
+        let request = UpdateSettingsRequest {
+            repositories: Some(wire::RepositoryList {
+                paths: paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+            }),
+            ..UpdateSettingsRequest::default()
+        };
+        self.update(&request).map(Some)
+    }
+
     /// Keeps a person's pick as what later agents of its kind start with.
     /// Answers None when the settings already say so.
     pub(crate) fn remember(
@@ -517,6 +546,38 @@ mod tests {
         assert!(
             matches!(refused, Err(SettingsError::Invalid(_))),
             "{refused:?}"
+        );
+    }
+
+    #[test]
+    fn a_pin_adds_a_folder_at_the_end_once_and_an_unpin_takes_it_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        let (app, lib) = (dir.path().join("src/app"), dir.path().join("src/lib"));
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: Some(dir.path().to_owned()),
+        });
+        let (app, lib) = (app.canonicalize().unwrap(), lib.canonicalize().unwrap());
+        let pinned = settings.pin("~/src/app", true).unwrap().unwrap();
+        assert_eq!(pinned.repositories, std::slice::from_ref(&app));
+        let pinned = settings.pin(lib.to_str().unwrap(), true).unwrap().unwrap();
+        assert_eq!(pinned.repositories, [app.clone(), lib.clone()]);
+        assert!(
+            settings.pin("~/src/app", true).unwrap().is_none(),
+            "a folder already pinned changes nothing"
+        );
+        let unpinned = settings.pin("~/src/app", false).unwrap().unwrap();
+        assert_eq!(unpinned.repositories, [lib]);
+        assert_eq!(
+            InstallationConfig::from_file(&path).unwrap().repositories,
+            unpinned.repositories,
+            "the file says it"
         );
     }
 

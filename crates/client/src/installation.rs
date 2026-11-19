@@ -48,7 +48,7 @@ pub trait Installation: Send + Sync + 'static {
         request: wire::AnswerOnboardingRequest,
     ) -> Result<wire::Onboarding, RpcError>;
     /// Folders worth offering as repositories.
-    async fn suggest_repositories(&self) -> Result<Vec<wire::RepositoryEntry>, RpcError>;
+    async fn suggest_repositories(&self) -> Result<Vec<wire::Folder>, RpcError>;
     /// A one-time link that signs the browser in and opens a page of the
     /// profile's account service.
     async fn web_sign_in_link(
@@ -163,11 +163,11 @@ macro_rules! installation_impl {
                 held($call!(self, answer_onboarding, request).await?.into_inner().onboarding)
             }
 
-            async fn suggest_repositories(&self) -> Result<Vec<wire::RepositoryEntry>, RpcError> {
+            async fn suggest_repositories(&self) -> Result<Vec<wire::Folder>, RpcError> {
                 Ok($call!(self, suggest_repositories, wire::SuggestRepositoriesRequest {})
                     .await?
                     .into_inner()
-                    .suggestions)
+                    .folders)
             }
 
             async fn web_sign_in_link(

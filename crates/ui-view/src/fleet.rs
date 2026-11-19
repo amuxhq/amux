@@ -377,8 +377,8 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
         branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
         cwd: agent.cwd.clone(),
-        repository: Repository::of(
-            agent.git.as_ref().and_then(|git| git.remote.as_deref()),
+        repository: Repository::of_checkout(
+            agent.git.as_ref().and_then(|git| git.checkout.as_deref()),
             &agent.cwd,
         ),
         phase_since_ms: agent.phase_since_ms,

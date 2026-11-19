@@ -4,13 +4,13 @@
 //! repository on another machine — because they share a remote.
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// How many tints a repository's tile can take. Each client draws them in
 /// its own palette; the index is what they agree on.
 pub const REPOSITORY_TINTS: u8 = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct Repository {
     /// What its checkouts share: the remote, else the folder's path.
     pub key: String,
@@ -24,6 +24,19 @@ pub struct Repository {
 }
 
 impl Repository {
+    /// From the checkout a folder is in: its remote, else its main clone's
+    /// root (or its own), so a worktree and a subfolder mark as the clone
+    /// they belong to; outside Git, from `path` itself.
+    pub fn of_checkout(checkout: Option<&wire::Checkout>, path: &str) -> Option<Self> {
+        match checkout {
+            Some(checkout) => Self::of(
+                checkout.remote.as_deref(),
+                checkout.main.as_deref().unwrap_or(&checkout.root),
+            ),
+            None => Self::of(None, path),
+        }
+    }
+
     /// From the agent's remote, else its folder. None when neither names
     /// anything a tile can show.
     pub fn of(remote: Option<&str>, cwd: &str) -> Option<Self> {

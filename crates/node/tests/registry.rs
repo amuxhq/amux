@@ -1472,30 +1472,22 @@ fn exit(code: i32) -> provider_fakes::script::Step {
     provider_fakes::script::Step::Exit { code }
 }
 
-fn names(entries: &[wire::RepositoryEntry]) -> Vec<&str> {
-    entries.iter().map(|entry| entry.name.as_str()).collect()
-}
-
-fn listing(
-    query: Option<&str>,
-    limit: u32,
-    host: Option<uuid::Uuid>,
-) -> tonic::Request<wire::ListRepositoriesRequest> {
-    tonic::Request::new(wire::ListRepositoriesRequest {
-        query: query.map(str::to_owned),
-        limit,
-        host_id: host.map(|host| host.as_bytes().to_vec()),
-    })
+/// The folders an entry offers, by name and why.
+fn offered(entry: Option<wire::HostEntry>) -> Vec<(String, wire::FolderKind)> {
+    entry
+        .map(|entry| entry.folders)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|folder| (folder.name.clone(), folder.kind()))
+        .collect()
 }
 
 /// Where a host offers to start an agent: its repositories, in the order its
 /// person chose them, then the directories its agents ran in, newest first
-/// and still after the agents are deleted. A paired host naming it gets the
-/// same answer through it; once it no longer trusts that host, nothing.
+/// and still after the agents are deleted. A paired host sees the same list
+/// on the host's entry.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_host_lists_its_repositories_and_where_its_agents_ran_for_trusted_hosts() {
-    use wire::agent_service_server::AgentService as _;
-
+async fn a_host_offers_its_repositories_and_where_its_agents_ran_to_paired_hosts() {
     let desk = Install::new();
     let code = desk.path("code");
     for repository in ["site", "amux", "amux-review"] {
@@ -1510,7 +1502,7 @@ async fn a_host_lists_its_repositories_and_where_its_agents_ran_for_trusted_host
         code.join("amux"),
         desk.path("missing"),
         code.join("amux-review"),
-        // A repository an agent also ran in is listed once, among the chosen ones.
+        // A repository an agent also ran in is offered once, as pinned.
         newer.clone(),
     ];
     let desk_daemon = desk.start("boot-1", launch).await;
@@ -1521,59 +1513,48 @@ async fn a_host_lists_its_repositories_and_where_its_agents_ran_for_trusted_host
             .await
             .unwrap(),
     );
-    // A forced delay: the listing orders recent folders by the agents'
-    // creation times, which the clock stamps in milliseconds.
-    tokio::time::sleep(Duration::from_millis(5)).await;
     desk_runtime
         .spawn(create(&newer, "second", None), None)
         .await
         .unwrap();
     desk_runtime.delete(first).await.unwrap();
 
-    let person = node::ClientApi::new(&desk_runtime, None);
-    let local = person
-        .list_repositories(listing(None, 50, None))
-        .await
-        .unwrap()
-        .into_inner();
-    println!("local listing: {local:#?}");
-    assert_eq!(
-        names(&local.repositories),
-        ["site", "amux", "amux-review", "newer"],
-        "as chosen, gone ones left out"
-    );
+    let pinned = wire::FolderKind::Pinned;
+    let expected: Vec<(String, wire::FolderKind)> = [
+        ("site", pinned),
+        ("amux", pinned),
+        ("amux-review", pinned),
+        ("newer", pinned),
+        // A deleted agent's folder too.
+        ("older", wire::FolderKind::Recent),
+    ]
+    .into_iter()
+    .map(|(name, kind)| (name.to_owned(), kind))
+    .collect();
+    let offers = |entry: Option<wire::HostEntry>| {
+        let offered = offered(entry);
+        std::future::ready(if offered == expected {
+            Ok(())
+        } else {
+            Err(format!("{offered:?}"))
+        })
+    };
+    until("the desk's entry to offer its folders", || {
+        offers(Some(desk_runtime.host_entry()))
+    })
+    .await
+    .unwrap();
+    let older_path = older.canonicalize().unwrap();
     assert!(
-        local
-            .repositories
+        desk_runtime
+            .host_entry()
+            .folders
             .iter()
-            .all(|entry| entry.last_used_ms.is_none())
-    );
-    assert_eq!(
-        names(&local.recent),
-        ["older"],
-        "deleted agents' folders too, repositories once"
-    );
-    assert_eq!(
-        local.recent[0].path,
-        older.canonicalize().unwrap().to_str().unwrap()
+            .any(|folder| folder.path == older_path.to_str().unwrap()
+                && folder.last_used_ms.is_some()),
+        "a recent folder says when, by its canonical path"
     );
 
-    let found = person
-        .list_repositories(listing(Some("REVIEW"), 50, Some(desk_runtime.host())))
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(found.recent.is_empty());
-    assert_eq!(names(&found.repositories), ["amux-review"]);
-    let capped = person
-        .list_repositories(listing(None, 3, None))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(names(&capped.repositories), ["site", "amux", "amux-review"]);
-    assert!(capped.recent.is_empty(), "the limit counts both lists");
-
-    // A paired laptop asks the desk by its host id.
     let laptop = Install::new();
     let laptop_daemon = laptop
         .start("boot-1", laptop.launch("idle", Vec::new()))
@@ -1584,61 +1565,11 @@ async fn a_host_lists_its_repositories_and_where_its_agents_ran_for_trusted_host
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
     assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
-    let from_laptop = node::ClientApi::new(&laptop_runtime, None);
-    let forwarded = from_laptop
-        .list_repositories(listing(None, 50, Some(desk_runtime.host())))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(
-        forwarded, local,
-        "the desk answers the laptop as it answers its own clients"
-    );
-    let own = from_laptop
-        .list_repositories(listing(None, 50, Some(laptop_runtime.host())))
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(own.recent.is_empty() && own.repositories.is_empty());
-    let stranger = from_laptop
-        .list_repositories(listing(None, 50, Some(uuid::Uuid::new_v4())))
-        .await
-        .unwrap_err();
-    assert_eq!(
-        stranger.code(),
-        tonic::Code::FailedPrecondition,
-        "{stranger:?}"
-    );
-
-    // The desk stops trusting the laptop: its listing is refused.
-    desk_edge
-        .unpair(wire::HostRef {
-            of: Some(wire::host_ref::Of::HostId(
-                laptop_runtime.host().as_bytes().to_vec(),
-            )),
-        })
-        .await
-        .unwrap();
-    // A call that crosses the link while the desk is closing it comes back
-    // uncertain rather than refused; ask again until the desk's answer.
-    let deadline = tokio::time::Instant::now() + PATIENCE;
-    let untrusted = loop {
-        let refused = from_laptop
-            .list_repositories(listing(None, 50, Some(desk_runtime.host())))
-            .await
-            .expect_err("a host that stopped trusting the caller answers nothing");
-        if refused.code() != tonic::Code::Aborted || tokio::time::Instant::now() > deadline {
-            break refused;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    };
-    assert!(
-        matches!(
-            untrusted.code(),
-            tonic::Code::FailedPrecondition | tonic::Code::Unauthenticated
-        ),
-        "a host that stopped trusting the caller answers nothing: {untrusted:?}"
-    );
+    until("the laptop to see the desk's folders", || {
+        offers(laptop_runtime.host_entry_of(desk_runtime.host()))
+    })
+    .await
+    .unwrap();
 
     drop(link);
     kill_all(&desk_runtime).await;

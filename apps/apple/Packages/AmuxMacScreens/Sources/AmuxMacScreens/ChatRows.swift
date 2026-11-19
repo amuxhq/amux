@@ -5,7 +5,7 @@ import SwiftUI
 /// One chat row, drawn from its value with the words every client says.
 ///
 /// The person's prompts sit in a bubble on the right and the agent's prose
-/// takes the reading width, as in the references. Work sits on one grid: a
+/// takes the reading width, as Mac chat apps set them. Work sits on one grid: a
 /// glyph, then the verb, the subject in mono and the meta, joined to the
 /// rows around it by a rail, so a turn's work reads as one run.
 struct ChatRow: View {
@@ -73,7 +73,7 @@ struct ChatRow: View {
     private func groupLine(_ group: SubagentGroup, rail: RailJoin) -> some View {
         let standing = groupState.map(ChatWords.subagentGroupStanding)
         return GridLine(
-            glyph: standing == .needsYou ? "hand" : "bot", failed: standing == .failed, you: standing == .needsYou,
+            glyph: standing == .needsYou ? "shield" : "bot", failed: standing == .failed, you: standing == .needsYou,
             working: standing == .running, rail: rail,
             verb: ChatWords.subagentGroup(groupState?.agents ?? UInt32(group.agents.count)),
             metaText: groupState.map(Self.groupMeta), opens: true, open: group.open, toggle: toggleGroup)
@@ -84,7 +84,7 @@ struct ChatRow: View {
         ChatWords.subagentGroupParts(state).enumerated().reduce(Text("")) { text, item in
             let part = Text("\(item.element.count) \(item.element.standing.words)")
                 .foregroundStyle(ink(item.element.standing))
-            return item.offset == 0 ? text + part : text + Text(" · ").foregroundStyle(.tertiary) + part
+            return item.offset == 0 ? text + part : text + Text(" · ").foregroundStyle(Palette.textTertiary) + part
         }
     }
 
@@ -92,7 +92,7 @@ struct ChatRow: View {
         switch standing {
         case .needsYou: AnyShapeStyle(Palette.you)
         case .failed: AnyShapeStyle(Palette.failure)
-        case .running, .idle, .done, .stopped: AnyShapeStyle(.tertiary)
+        case .running, .idle, .done, .stopped: AnyShapeStyle(Palette.textTertiary)
         }
     }
 
@@ -111,7 +111,7 @@ struct ChatRow: View {
         let verb = continued ? "Continued" : "Subagent"
         if row.opens != nil {
             GridLine(
-                glyph: standing == .needsYou ? "hand" : "bot", failed: standing == .failed,
+                glyph: standing == .needsYou ? "shield" : "bot", failed: standing == .failed,
                 you: standing == .needsYou, working: standing.live, rail: rail, verb: verb,
                 subject: description.isEmpty ? opened?.name ?? "" : ChatWords.firstLine(description),
                 proseSubject: true, metaText: Text(standing.words).foregroundStyle(Self.ink(standing)),
@@ -131,8 +131,10 @@ struct ChatRow: View {
 
     private func runLine(_ words: String, open: Bool, rail: RailJoin) -> some View {
         GridLine(
-            glyph: open ? "chevron-down" : "chevron-right", rail: rail, verb: words, quiet: true, opens: true,
-            open: open, chevron: false, toggle: toggleRun)
+            glyph: "layers", rail: rail, verb: words, quiet: true, opens: true, open: open, toggle: toggleRun)
+        // A folded run's summary is not the step at work, even when its
+        // first row is.
+        .environment(\.liveStep, nil)
     }
 
     @ViewBuilder private var kind: some View {
@@ -160,8 +162,8 @@ struct ChatRow: View {
         case .child(let action, let name, let host, let kind, let state, let result):
             let verb =
                 switch (action, state) {
-                case (.start, .failed): "Could not start"
-                case (.stop, .failed): "Could not stop"
+                case (.start, .failed): "Couldn’t start"
+                case (.stop, .failed): "Couldn’t stop"
                 case (.start, _):
                     ChatWords.verb(state, row, wants: "Wants to start", doing: "Starting", done: "Started")
                 case (.stop, _):
@@ -173,7 +175,7 @@ struct ChatRow: View {
                 // opens its chat, and the line says how it stands now.
                 let standing = AgentStanding(opened.phase)
                 GridLine(
-                    glyph: standing == .needsYou ? "hand" : glyph(state, "user-plus"),
+                    glyph: standing == .needsYou ? "shield" : glyph(state, "user-plus"),
                     accented: accented(state), failed: state == .failed, you: standing == .needsYou,
                     rail: rail, verb: verb, subject: host.isEmpty ? who : "\(who) on \(host)",
                     metaText: Text(
@@ -217,7 +219,7 @@ struct ChatRow: View {
             }
         case .explore(let verb, let subject, let state, let result):
             GridLine(
-                glyph: glyph(state, "search"), accented: accented(state), failed: state == .failed,
+                glyph: glyph(state, verb.symbol), accented: accented(state), failed: state == .failed,
                 rail: rail, verb: ChatWords.explore(verb), subject: subject,
                 meta: ChatWords.meta([ChatWords.state(state, decided: row.decision != nil) ?? ""], row, note: false),
                 headTruncation: true, quote: denial, detail: expanded && !result.isEmpty ? result : nil,
@@ -259,7 +261,7 @@ struct ChatRow: View {
         case .turnEnd(let failed, let durationMs):
             Text(ChatWords.turnEnd(durationMs: durationMs, failed: failed))
                 .font(.ui(.meta))
-                .foregroundStyle(failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(Palette.textTertiary))
                 .padding(.bottom, 18)
         case .stopped:
             GridLine(glyph: "circle-stop", rail: rail, verb: "You stopped it", quiet: true)
@@ -295,7 +297,7 @@ struct ChatRow: View {
                 prose: true, opens: !rationale.isEmpty, open: expanded, toggle: toggle)
         case .unrecognized(let what, let summary):
             GridLine(
-                glyph: "file-question", rail: rail, verb: "Unreadable", subject: what,
+                glyph: "file-question", rail: rail, verb: "Can’t show", subject: what,
                 note: summary.isEmpty ? nil : ChatWords.firstLine(summary))
         case .hidden:
             EmptyView()
@@ -351,7 +353,7 @@ struct ChatRow: View {
                 ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
                     let answered = index < answers.count ? ChatWords.answer(answers[index]) : ""
                     GridLine(
-                        glyph: resolution == .open ? "hand" : "circle-help",
+                        glyph: resolution == .open ? "shield" : "circle-help",
                         accented: resolution == .open,
                         rail: index == questions.count - 1 && reply == nil
                             ? rail : RailJoin(continues: true, nested: rail.nested),
@@ -394,8 +396,8 @@ struct ChatRow: View {
 
     private func glyph(_ phase: CallPhase, _ done: String) -> String {
         switch phase {
-        case .denied, .asking: "hand"
-        case .cancelled: "ban"
+        case .asking: "shield"
+        case .denied, .cancelled: "ban"
         case .pending, .running, .succeeded, .failed: done
         }
     }
@@ -475,6 +477,7 @@ struct GridLine: View {
     var toggle: () -> Void = {}
 
     @State private var hovering = false
+    @Environment(\.liveStep) private var live
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -483,10 +486,10 @@ struct GridLine: View {
                 line
                 if let note {
                     Text(note).font(codeNote ? .mono(.meta) : .ui(.meta))
-                        .foregroundStyle(.secondary).lineLimit(3)
+                        .foregroundStyle(Palette.textSecondary).lineLimit(3)
                 }
                 if let quote {
-                    Text("“\(quote)”").font(.ui(.meta)).italic().foregroundStyle(.secondary)
+                    Text("“\(quote)”").font(.ui(.meta)).italic().foregroundStyle(Palette.textSecondary)
                 }
                 if !output.isEmpty { outputBlock }
                 if let detail { detailBlock(detail) }
@@ -497,49 +500,45 @@ struct GridLine: View {
         .contentShape(Rectangle())
         .onTapGesture { if opens { toggle() } }
         .onHover { hovering = opens && $0 }
-        .help(onward && opens ? "Open its chat" : "")
+        .help(onward && opens ? "Open chat" : "")
     }
 
     private var ink: AnyShapeStyle {
         if failed { return AnyShapeStyle(Palette.failure) }
         if you { return AnyShapeStyle(Palette.you) }
         if accented { return AnyShapeStyle(Palette.accent) }
-        return AnyShapeStyle(.secondary)
+        return AnyShapeStyle(Palette.textSecondary)
     }
 
     /// The glyph, with the rail running down from it to the next row.
     private var mark: some View {
         Group {
-            if working {
-                Working(size: 11)
+            if working || live != nil {
+                // A dot reads as a bullet, which sits on the lowercase
+                // middle rather than the capitals'.
+                Working(size: Self.cell).offset(y: 1.5)
             } else {
-                Icon(glyph, size: 13).foregroundStyle(ink)
+                Icon(glyph, size: 14).foregroundStyle(ink)
             }
         }
             .frame(width: Self.cell, height: 18)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(alignment: .top) {
-                if rail.continues {
-                    Rectangle()
-                        .fill(Palette.line)
-                        .frame(width: 1)
-                        .padding(.top, 20)
-                }
-            }
     }
 
     private var line: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if !verb.isEmpty {
                 Text(verb)
-                    .foregroundStyle(quiet ? AnyShapeStyle(.tertiary) : (failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(.secondary)))
+                    .foregroundStyle(failed ? AnyShapeStyle(Palette.failure) : AnyShapeStyle(Palette.textSecondary))
                     .lineLimit(1)
                     .layoutPriority(1)
             }
             if !subject.isEmpty {
+                // Quieter than the agent's prose, so a turn's answer is the
+                // brightest thing in it; the step at work is lit.
                 Text(subject)
-                    .font(proseSubject ? .ui(.body) : .mono(.meta))
-                    .foregroundStyle(.primary)
+                    .font(proseSubject ? .ui(.prose) : .mono(.callout))
+                    .foregroundStyle(live != nil ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.textSecondary))
                     .lineLimit(1)
                     .truncationMode(headTruncation ? .head : .tail)
             }
@@ -547,17 +546,23 @@ struct GridLine: View {
                 Text("+\(change.0)").foregroundStyle(Palette.added).monospacedDigit()
                 if change.1 > 0 { Text("−\(change.1)").foregroundStyle(Palette.removed).monospacedDigit() }
             }
-            if let metaText {
+            if let live {
+                LiveTime(activity: live).foregroundStyle(Palette.textTertiary)
+            } else if let metaText {
                 metaText.lineLimit(1)
             } else if !meta.isEmpty {
-                Text(meta).foregroundStyle(.tertiary).lineLimit(1)
+                Text(meta).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             if opens, chevron {
-                Icon(onward || !open ? "chevron-right" : "chevron-down", size: 11)
-                    .foregroundStyle(hovering ? .secondary : .tertiary)
+                Icon("chevron-right", size: 12)
+                    .foregroundStyle(hovering ? Palette.textSecondary : Palette.textTertiary)
+                    .rotationEffect(.degrees(!onward && open ? 90 : 0))
+                    // On the words' capitals' middle, not hung from its
+                    // own foot on their baseline.
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5.25 }
             }
         }
-        .font(.ui(.body))
+        .font(.ui(.prose))
         .frame(minHeight: 18)
     }
 
@@ -565,40 +570,42 @@ struct GridLine: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(output.joined(separator: "\n"))
                 .font(.mono(.small))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .textSelection(.enabled)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
             if more > 0 || trimmed {
                 Text(more > 0 ? "… \(more) more lines" : "…")
                     .font(.ui(.caption))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Palette.textTertiary)
                     .padding(.top, 2)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.inset))
+        .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.line))
     }
 
     @ViewBuilder private func detailBlock(_ text: String) -> some View {
         if prose {
             Text(text)
                 .font(.ui(.body))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .lineLimit(detailLines)
                 .textSelection(.enabled)
         } else {
             Text(text)
                 .font(.mono(.small))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .lineLimit(detailLines)
                 .textSelection(.enabled)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+                .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.inset))
+                .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.line))
         }
     }
 }
@@ -610,18 +617,17 @@ struct PromptBubble: View {
 
     var body: some View {
         HStack {
-            Spacer(minLength: 80)
+            Spacer(minLength: Metrics.reading / 5)
             VStack(alignment: .trailing, spacing: 4) {
                 Text(text)
                     .font(.ui(.bubble))
+                    .lineSpacing(6)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).fill(Palette.raised))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).strokeBorder(Palette.line.opacity(0.5)))
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.well))
                 if steered {
-                    Text("steered").font(.ui(.caption)).foregroundStyle(.tertiary)
+                    Text("steered").font(.ui(.caption)).foregroundStyle(Palette.textTertiary)
                 }
             }
         }
@@ -636,9 +642,22 @@ struct Rule: View {
     var body: some View {
         HStack(spacing: 10) {
             Rectangle().fill(Palette.line).frame(height: 1)
-            Text(label).font(.ui(.caption)).foregroundStyle(.tertiary).fixedSize()
+            Text(label).font(.ui(.caption)).foregroundStyle(Palette.textTertiary).fixedSize()
             Rectangle().fill(Palette.line).frame(height: 1)
         }
         .padding(.vertical, 12)
+    }
+}
+
+extension ExploreVerb {
+    /// What a step of this kind is drawn with: reading a file looks
+    /// different from searching for one, and both from the web.
+    var symbol: String {
+        switch self {
+        case .read: "file-text"
+        case .search: "search"
+        case .list: "folder"
+        case .fetch, .webSearch: "globe"
+        }
     }
 }

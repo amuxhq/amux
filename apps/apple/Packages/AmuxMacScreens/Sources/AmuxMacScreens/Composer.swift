@@ -4,8 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Where the person writes to the agent: a field that grows with what is
-/// typed, Return to send and Shift-Return for a new line. Under it, as in
-/// the references: attaching files, the permission the agent works under
+/// typed, Return to send and Shift-Return for a new line. Under it:
+/// attaching files, the permission the agent works under
 /// and the model it thinks with, each a menu that changes the agent, then
 /// stop or send. Files dropped on it are attached.
 struct Composer: View {
@@ -16,10 +16,12 @@ struct Composer: View {
 
     @FocusState private var focused: Bool
     @State private var dropping = false
+    /// The model picker is open over the composer.
+    @State private var pickingModel = false
 
     var body: some View {
         ComposerShell(
-            placeholder: placeholder, text: draft, lines: 1...12, focused: $focused, highlighted: dropping,
+            placeholder: placeholder, text: draft, lines: 2...12, focused: $focused, highlighted: dropping,
             submit: submit
         ) {
             if !chat.slashMatches.isEmpty {
@@ -36,24 +38,24 @@ struct Composer: View {
             }
         } controls: {
             Button(action: pickFiles) {
-                Icon("plus", size: 16)
-                    .foregroundStyle(.secondary)
+                Icon("paperclip", size: 16, optical: false)
+                    .foregroundStyle(Palette.textSecondary)
                     .frame(width: Metrics.control, height: Metrics.control)
                     .contentShape(Rectangle())
             }
             .buttonStyle(HoverButtonStyle())
             .help("Attach files")
-            permission
             Spacer(minLength: 8)
             model
+            permission
         } action: {
-            // One button where the references have one: Stop while the agent
+            // One button for both: Stop while the agent
             // works and nothing is typed, else Send (which queues while it
             // works). ⌘. stops either way.
             let stopping = working && !typed
             RoundButton(
                 face: stopping ? .stop : (chat.canResume ? .resume : .send), enabled: stopping || ready,
-                help: stopping ? "Stop (⌘.)" : (chat.canResume ? "Resume" : (working ? "Queue (Return)" : "Send (Return)"))
+                help: stopping ? "Stop (⌘.)" : (chat.canResume ? "Resume" : (working ? "Queue (↩)" : "Send (↩)"))
             ) {
                 if stopping { chat.interrupt() } else { submit() }
             }
@@ -79,8 +81,8 @@ struct Composer: View {
     @ViewBuilder private var permission: some View {
         if let settings = chat.settings, let current = settings.permissions.first(where: \.current) {
             let label = ChipLabel(
-                icon: current.neverAsks ? "circle-alert" : "hand", text: ChatWords.permission(current),
-                tint: current.neverAsks ? Palette.caution : .secondary, menu: settings.changeable.permission == .pick)
+                icon: current.neverAsks ? "shield-alert" : "lock", text: ChatWords.permission(current),
+                tint: current.neverAsks ? Palette.caution : Palette.textSecondary, menu: settings.changeable.permission == .pick)
             if settings.changeable.permission == .pick {
                 Menu {
                     ForEach(settings.permissions.filter(\.settable), id: \.value) { choice in
@@ -107,51 +109,27 @@ struct Composer: View {
         }
     }
 
-    /// The model and effort: "Opus 5.5 High ⌄", a menu of what the agent
-    /// offers.
+    /// The model and effort: "Opus 5.5 High ⌄", opening the picker of
+    /// what the agent offers.
     @ViewBuilder private var model: some View {
         if let chip = ChatWords.chip(chat.frame?.controls ?? empty, context: chat.frame?.context) {
-            let text = [chip.model, chip.detail].filter { !$0.isEmpty }.joined(separator: " ")
             let settings = chat.settings
             let picks = settings.map { $0.changeable.model == .pick || $0.changeable.effort == .pick } ?? false
-            let label = ChipLabel(icon: nil, text: text, tint: .secondary, menu: picks)
-            if let settings, picks {
-                Menu {
-                    if settings.changeable.model == .pick {
-                        Section("Model") {
-                            ForEach(settings.models, id: \.value) { choice in
-                                Toggle(
-                                    choice.displayName,
-                                    isOn: Binding(get: { choice.current }, set: { _ in chat.change(.model(choice.value)) }))
-                            }
-                        }
+            let label = ChipLabel(
+                icon: chat.frame.map { FleetRowView.providerGlyph($0.kind) }, text: chip.model,
+                detail: chip.detail.isEmpty ? nil : chip.detail, tint: .primary, menu: picks)
+            if settings != nil, picks {
+                Button { pickingModel.toggle() } label: { label }
+                    .buttonStyle(HoverButtonStyle())
+                    .fixedSize()
+                    .popover(isPresented: $pickingModel, arrowEdge: .top) {
+                        ModelPicker(
+                            provider: nil, settings: chat.settings,
+                            chooseModel: { chat.change(.model($0)) },
+                            chooseEffort: { chat.change(.effort($0)) },
+                            chooseMode: { chat.change(.mode($0)) })
                     }
-                    if settings.changeable.effort == .pick, !settings.efforts.isEmpty {
-                        Section("Effort") {
-                            ForEach(settings.efforts, id: \.value) { choice in
-                                Toggle(
-                                    choice.value.capitalized,
-                                    isOn: Binding(get: { choice.current }, set: { _ in chat.change(.effort(choice.value)) }))
-                            }
-                        }
-                    }
-                    if settings.changeable.mode == .pick, !settings.modes.isEmpty {
-                        Section("Mode") {
-                            ForEach(settings.modes, id: \.value) { choice in
-                                Toggle(
-                                    ChatWords.mode(choice),
-                                    isOn: Binding(get: { choice.current }, set: { _ in chat.change(.mode(choice.value)) }))
-                            }
-                        }
-                    }
-                } label: {
-                    label
-                }
-                .menuStyle(.button)
-                .buttonStyle(HoverButtonStyle())
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Model and effort")
+                    .help("Model and effort")
             } else {
                 label
             }
@@ -178,7 +156,7 @@ struct Composer: View {
 
     private var placeholder: String {
         ChatWords.placeholder(
-            chat.frame?.composer.mode, host: host, reach: reach ?? .online(.direct), working: working)
+            chat.frame?.composer.mode, host: host, reach: reach ?? .online(.direct), working: working, device: .mac)
     }
 
     private func submit() {
@@ -237,7 +215,7 @@ struct Composer: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(ChatWords.command(match.command)).font(.mono(.callout))
-                        Text(match.command.description).font(.ui(.meta)).foregroundStyle(.secondary)
+                        Text(match.command.description).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                             .lineLimit(1)
                         Spacer()
                     }
@@ -269,6 +247,7 @@ struct ComposerShell<Above: View, Controls: View, Action: View>: View {
     @ViewBuilder let above: Above
     @ViewBuilder let controls: Controls
     @ViewBuilder let action: Action
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -276,11 +255,12 @@ struct ComposerShell<Above: View, Controls: View, Action: View>: View {
             TextField(placeholder, text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.ui(.prose))
+                .lineSpacing(6)
                 .lineLimit(lines)
                 .focused(focused)
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
-                .padding(.bottom, 8)
+                .padding(.bottom, 10)
                 .onKeyPress(.return, phases: .down) { press in
                     if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
                         text += "\n"
@@ -289,9 +269,9 @@ struct ComposerShell<Above: View, Controls: View, Action: View>: View {
                     submit()
                     return .handled
                 }
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 controls
-                action
+                action.padding(.leading, 4)
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
@@ -300,8 +280,10 @@ struct ComposerShell<Above: View, Controls: View, Action: View>: View {
         .overlay(
             RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)
                 .strokeBorder(
-                    highlighted ? Palette.accent : (focused.wrappedValue ? Color.primary.opacity(0.14) : Palette.line)))
-        .elevation(.raised)
+                    highlighted ? Palette.accent : (focused.wrappedValue ? Color.primary.opacity(0.16) : Palette.line)))
+        // On white a hairline alone leaves it flat; on black a shadow
+        // would not show.
+        .shadow(color: .black.opacity(scheme == .light ? 0.06 : 0), radius: 10, y: 3)
     }
 }
 
@@ -325,22 +307,38 @@ struct RoundButton: View {
             Group {
                 switch face {
                 case .stop:
-                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    // A third of the disc, as the phone's stop is.
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .frame(width: 9, height: 9)
                 case .starting:
                     ProgressView().controlSize(.small)
                 case .send, .resume:
-                    Icon(face == .resume ? "play" : "arrow-up", size: 15)
+                    Icon(face == .resume ? "play" : "arrow-up", size: 13, optical: false)
                 }
             }
-            .foregroundStyle(enabled ? Color(nsColor: .textBackgroundColor) : Color.secondary)
-            .frame(width: Metrics.control, height: Metrics.control)
-            .background(Circle().fill(enabled ? Color.primary : Color.primary.opacity(0.1)))
+            // Ready: blue, the window's one coloured control. Stopping: the
+            // text's ink, as the phone draws it — stopping is ordinary, not
+            // an alarm. Not ready: a grey disc, there but not asking.
+            .foregroundStyle(glyph)
+            .frame(width: Metrics.send, height: Metrics.send)
+            .background(Circle().fill(fill))
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
+        // Not ready is drawn as such, not dimmed again by disabling.
+        .allowsHitTesting(enabled)
+        .accessibilityAddTraits(enabled ? [] : .isStaticText)
         .help(help)
+    }
+
+    private var fill: Color {
+        guard enabled else { return Color.primary.opacity(0.12) }
+        return face == .stop ? Palette.text : Palette.accent
+    }
+
+    private var glyph: Color {
+        guard enabled else { return Palette.textSecondary }
+        return face == .stop ? Palette.content : .white
     }
 }
 
@@ -349,16 +347,19 @@ struct RoundButton: View {
 struct ChipLabel: View {
     let icon: String?
     let text: String?
-    var tint: Color = .secondary
+    /// Said after the text, quieter: the effort after the model.
+    var detail: String?
+    var tint: Color = Palette.textSecondary
     var menu = true
 
     var body: some View {
         HStack(spacing: 5) {
-            if let icon { Icon(icon, size: 13) }
+            if let icon { Icon(icon, size: 13, brand: true) }
             if let text { Text(text).lineLimit(1) }
-            if menu { Icon("chevron-down", size: 11).opacity(0.7) }
+            if let detail { Text(detail).foregroundStyle(Palette.textSecondary).lineLimit(1) }
+            if menu { Icon("chevron-down", size: 11).foregroundStyle(Palette.textTertiary) }
         }
-        .font(.ui(.callout))
+        .font(.ui(.body))
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
         .frame(height: Metrics.control)
@@ -373,10 +374,10 @@ private struct Chip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Icon("paperclip", size: 12).foregroundStyle(.secondary)
+            Icon("paperclip", size: 12).foregroundStyle(Palette.textSecondary)
             Text(text).lineLimit(1)
             Button(action: remove) {
-                Icon("x", size: 11).foregroundStyle(.secondary)
+                Icon("x", size: 11).foregroundStyle(Palette.textSecondary)
             }
             .buttonStyle(.plain)
             .help("Remove")

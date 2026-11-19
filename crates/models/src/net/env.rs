@@ -2767,7 +2767,7 @@ fn peer_request(request: &PeerRequest) -> &'static str {
         PeerRequest::GetBlob(_) => "GetBlob",
         PeerRequest::GetDiff(_) => "GetDiff",
         PeerRequest::GetCatalogue(_) => "GetCatalogue",
-        PeerRequest::ListRepositories(_) => "ListRepositories",
+        PeerRequest::PinFolder(_) => "PinFolder",
     }
 }
 

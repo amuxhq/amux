@@ -263,11 +263,6 @@ pub enum AppEvent {
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
-    /// The folders a host offers a new agent: its repositories, then recent.
-    Folders {
-        host: Vec<u8>,
-        answer: wire::ListRepositoriesResponse,
-    },
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
@@ -339,9 +334,6 @@ pub struct App {
     home_held: Option<i64>,
     /// Onboarding and settings, when the installation is served.
     desk: Option<desk::Desk>,
-    /// The folders each host last offered, and the hosts asked now.
-    host_folders: HashMap<Vec<u8>, wire::ListRepositoriesResponse>,
-    folders_asked: HashSet<Vec<u8>>,
     events: mpsc::UnboundedSender<AppEvent>,
     pub receiver: mpsc::UnboundedReceiver<AppEvent>,
 }
@@ -366,7 +358,7 @@ fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str>
         // Its parent's provider runs it inside the parent's own process.
         Some("a subagent has no terminal of its own")
     } else if agent.host_id != config.local_host {
-        Some("its terminal is on another machine")
+        Some("its terminal is on another computer")
     } else if agent.kind() == wire::Kind::ClaudeSdk {
         Some("headless Claude has no terminal")
     } else {
@@ -561,8 +553,6 @@ impl App {
             offers_asked: HashSet::new(),
             servers_told: tool_servers::Told::default(),
             desk: None,
-            host_folders: HashMap::new(),
-            folders_asked: HashSet::new(),
             events,
             receiver,
         }
@@ -768,11 +758,6 @@ impl App {
                     .changes_checked(&agent, compared.as_ref().map_err(Clone::clone));
             }
             AppEvent::Desk(event) => self.desk_event(event),
-            AppEvent::Folders { host, answer } => {
-                self.folders_asked.remove(&host);
-                self.home.take_folders(&host, &answer);
-                self.host_folders.insert(host, answer);
-            }
             AppEvent::Restore {
                 agent_id,
                 text,
@@ -1784,14 +1769,15 @@ impl App {
             .host()
             .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "its host".to_owned());
+            .unwrap_or_else(|| "its computer".to_owned());
         let not_found = ended
             .as_ref()
             .is_some_and(|error| error.code() == Some(wire::ErrorCode::NotFound));
         let (why, deleted) = match ended {
-            _ if !linked && (dropped || not_found) => {
-                (format!("{host} is no longer linked to this machine"), false)
-            }
+            _ if !linked && (dropped || not_found) => (
+                format!("{host} is no longer linked to this computer"),
+                false,
+            ),
             _ if dropped || not_found => (format!("{} was deleted", state.agent().name), true),
             Some(error) => (error.to_string(), false),
             None => return None,
@@ -1851,39 +1837,29 @@ impl App {
         }
     }
 
-    /// While a new agent is being set up: the folders its host offers,
-    /// from what it said last time at once and asked again, so a repository
-    /// added since shows.
+    /// While a new agent is being set up: the folders its host offers, as
+    /// its entry in the inventory says them now, so a repository pinned
+    /// since shows.
     fn ask_folders(&mut self) {
         let Some(setup) = self.home.open_setup() else {
             return;
         };
-        if !setup.wants_folders() {
-            return;
-        }
         let host = setup.host.clone();
-        if let Some(answer) = self.host_folders.get(&host) {
-            // Offered at once; asked again, as repositories may have changed.
-            let answer = answer.clone();
-            self.home.take_folders(&host, &answer);
+        let folders: Vec<String> = self
+            .fleet
+            .state()
+            .host(&host)
+            .map(|entry| {
+                entry
+                    .folders
+                    .iter()
+                    .map(|folder| folder.path.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !setup.holds_folders(&host, &folders) {
+            self.home.take_folders(&host, &folders);
         }
-        if !self.folders_asked.insert(host.clone()) {
-            return;
-        }
-        let client = self.client.clone();
-        self.spawn(async move {
-            let answer = client
-                .list_repositories(wire::ListRepositoriesRequest {
-                    query: None,
-                    // As many as the host offers; it caps the answer.
-                    limit: u32::MAX,
-                    host_id: Some(host.clone()),
-                })
-                .await
-                // A host that cannot say leaves the folder to be typed.
-                .unwrap_or_default();
-            Some(AppEvent::Folders { host, answer })
-        });
     }
 
     /// While a new agent is being set up: what its host offers for each
@@ -1928,7 +1904,7 @@ impl App {
             .host(&host)
             .map(|entry| entry.name().to_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "this machine".to_owned());
+            .unwrap_or_else(|| "this computer".to_owned());
         drop(fleet);
         for (provider, chosen) in asks {
             let client = self.client.clone();
@@ -2100,9 +2076,9 @@ impl App {
                     ..wire::DumpRequest::default()
                 })
                 .await
-                .map_err(|error| format!("the daemon could not dump: {error}"))?;
+                .map_err(|error| format!("amux could not dump: {error}"))?;
             if response.report_path.is_empty() {
-                return Err("the daemon wrote its dump on another machine".to_owned());
+                return Err("amux wrote its dump on another computer".to_owned());
             }
             let bundle = std::path::PathBuf::from(response.report_path);
             for part in &parts {
@@ -2232,7 +2208,7 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
     vec![
         entry("amux", "s", "home", 's'),
         entry("amux", "n", "new agent", 'n'),
-        entry("amux", "h", "hosts", 'h'),
+        entry("amux", "h", "devices", 'h'),
         entry("amux", ",", "settings", ','),
         entry("amux", "d", "detach", 'd'),
         entry("amux", "b", "bug report", 'b'),
@@ -2336,14 +2312,14 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
     let chords: [(&str, &str); 16] = [
         ("s", "home"),
         ("n", "new agent, starting from this chat's settings"),
-        ("h", "hosts"),
+        ("h", "devices"),
         (",", "settings"),
         ("d", "detach: leave to the shell; agents keep running"),
         ("b", "report a problem: mark the screen, write a note"),
         ("r", "review changes; comments go in the draft"),
         ("c", "count changes: uncommitted or on this branch"),
         ("t", "tool steps: collapse, show all or hide"),
-        ("a", "attach to the agent's own terminal (this machine)"),
+        ("a", "attach to the agent's own terminal (this computer)"),
         (
             "x",
             "settle the agent (a message resumes it); asks before cutting work short",

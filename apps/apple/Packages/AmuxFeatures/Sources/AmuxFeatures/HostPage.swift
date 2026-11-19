@@ -48,7 +48,7 @@ public struct HostPage: View {
                 } else {
                     // Revoked here or elsewhere: the machine has left the list
                     // this page was opened from.
-                    Explain(String(localized: "This host is no longer paired with this phone."))
+                    Explain(String(localized: "This computer is no longer paired with this phone."))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, design.metrics.gutter)
                         .padding(.top, 8)
@@ -113,19 +113,19 @@ public struct HostPage: View {
             Surface {
                 Button { confirming = true } label: {
                     FieldRow(
-                        label: String(localized: "Revoke This Host"), chevron: false,
+                        label: String(localized: "Unpair This Computer"), chevron: false,
                         tint: design.removed.color)
                 }
                 .buttonStyle(.amuxRow)
-                .accessibilityLabel(String(localized: "Revoke \(view.name)"))
-                .identified("host.revoke", label: String(localized: "Revoke \(view.name)"))
+                .accessibilityLabel(String(localized: "Unpair \(view.name)"))
+                .identified("host.revoke", label: String(localized: "Unpair \(view.name)"))
                 // On the row, not the page: the system draws the dialog as a
                 // popover pointing at the view that holds it.
                 .confirmationDialog(
-                    String(localized: "Revoke \(view.name)?"), isPresented: $confirming,
+                    String(localized: "Unpair \(view.name)?"), isPresented: $confirming,
                     titleVisibility: .visible
                 ) {
-                    Button(String(localized: "Revoke"), role: .destructive) { actions(.revoke(host)) }
+                    Button(String(localized: "Unpair"), role: .destructive) { actions(.revoke(host)) }
                         .accessibilityIdentifier("host.revoke.confirm")
                 } message: {
                     Text("This phone stops reaching it and its agents leave this phone’s list. Only pairing again brings it back.")
@@ -153,7 +153,7 @@ public struct HostPage: View {
         // The relay can see it and this account cannot open a tunnel to it;
         // the page offers the subscription that would, under this.
         case .away:
-            return String(localized: "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription.")
+            return String(localized: "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro.")
         case .offline:
             if view.reach == .offline(.revoked) { return nil }
             if let id = view.id, model.foundButUnreachable.contains(id) {
@@ -237,13 +237,13 @@ public struct HostPage: View {
     static func reach(_ view: HostView) -> String {
         switch view.group {
         case .onThisNetwork: return String(localized: "Reachable on this network, direct")
-        case .throughTheRelay: return String(localized: "Reachable through the relay")
+        case .throughTheRelay: return String(localized: "Reachable over the internet")
         // The daemon lists a host away only when the relay refused to
         // connect to it because the free plan relays nothing between hosts.
         case .away: return String(localized: "Away on the free plan")
         case .offline:
             switch view.reach {
-            case .offline(.revoked): return String(localized: "Offline · it no longer trusts this phone")
+            case .offline(.revoked): return String(localized: "Offline · it unpaired this phone")
             case .offline(.signedOut): return String(localized: "Offline while this phone is signed out")
             default: return String(localized: "Offline")
             }

@@ -234,7 +234,7 @@ final class Setup {
         step = nil
         if let agent {
             let name = app.agents.first { $0.agent == agent }?.name ?? ""
-            app.show(agent, saying: name.isEmpty ? "There it is." : "There it is: \(name)")
+            app.show(agent, saying: name.isEmpty ? "Here’s your first agent." : "Here’s your first agent: \(name)")
         }
     }
 
@@ -513,7 +513,7 @@ final class Setup {
         }
     }
 
-    /// Not Now on a paired machine's offer: the browser sign-in is offered
+    /// Use Another Account on a paired machine’s offer: the browser sign-in is offered
     /// instead.
     func declineOffer() {
         guard let offer = offers.first, !accepting else { return }
@@ -532,7 +532,7 @@ final class Setup {
             // Repositories already chosen stay; they are not asked about again.
             let chosen = Set(app.settings?.repositories ?? [])
             choices.repositories = suggested.filter { !chosen.contains($0.path) }
-                .map { SetupRepository(path: $0.path, ticked: true) }
+                .map { SetupRepository(path: $0.path, ticked: true, repository: $0.repository) }
         }
     }
 

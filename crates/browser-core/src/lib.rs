@@ -117,11 +117,12 @@ enum Request {
     Verdict {
         message: String,
     },
-    /// A `ListRepositoriesRequest` for this host.
-    ListRepositories,
-    /// The folders a `ListRepositoriesResponse` offers.
-    Repositories {
-        message: String,
+    /// The folders this host's entry offers to start an agent in, in its
+    /// order.
+    Folders {
+        fleet: u32,
+        #[serde(rename = "localHost")]
+        local_host: String,
     },
     /// A `CreateAgentRequest` for a Claude agent on this host in `cwd`,
     /// of the kind the host publishes, with no first prompt: the review's
@@ -319,19 +320,18 @@ fn answer(request: Request) -> Result<Value, String> {
                 None => json!({ "accepted": false }),
             }
         }
-        Request::ListRepositories => encoded(&wire::ListRepositoriesRequest {
-            query: None,
-            limit: 50,
-            host_id: None,
-        }),
-        Request::Repositories { message } => {
-            let response: wire::ListRepositoriesResponse = decode(&message)?;
-            let entry =
-                |entry: wire::RepositoryEntry| json!({ "path": entry.path, "name": entry.name });
-            json!({
-                "recent": response.recent.into_iter().map(entry).collect::<Vec<_>>(),
-                "repositories": response.repositories.into_iter().map(entry).collect::<Vec<_>>(),
-            })
+        Request::Folders { fleet, local_host } => {
+            let local_host = unhex(&local_host)?;
+            with_fleet(fleet, |state| {
+                let folders = state
+                    .host(&local_host)
+                    .map_or(&[][..], |host| &host.folders);
+                folders
+                    .iter()
+                    .map(|folder| json!({ "path": folder.path, "name": folder.name }))
+                    .collect::<Vec<_>>()
+            })?
+            .into()
         }
         Request::CreateAgent {
             fleet,

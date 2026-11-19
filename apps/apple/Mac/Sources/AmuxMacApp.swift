@@ -23,9 +23,9 @@ struct AmuxMacApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Amux") {
+        WindowGroup("amux") {
             AppWindow(model: model)
-                .frame(minWidth: 680, minHeight: 560)
+                .frame(minWidth: MainWindowSize.least.width, minHeight: MainWindowSize.least.height)
         }
         .windowResizability(.contentMinSize)
         .commands { AppCommands(model: model) }
@@ -93,13 +93,13 @@ private struct AppCommands: Commands {
         CommandGroup(before: .toolbar) {
             Button(model.place.sidebar ? "Hide Sidebar" : "Show Sidebar") { model.place.sidebar.toggle() }
                 .keyboardShortcut("s", modifiers: [.control, .command])
-            Button(model.changesShown ? "Hide Changes" : "Show Changes") { model.place.changes.toggle() }
+            Button(model.changesShown ? "Hide Tools" : "Show Tools") { model.place.changes.toggle() }
                 .keyboardShortcut("i", modifiers: [.option, .command])
-                .disabled(!ready || model.place.agent.flatMap { model.stores?.fleet.row($0) }.map { $0.native } ?? true)
+                .disabled(!ready || model.place.agent.flatMap { model.row($0) }.map { $0.native } ?? true)
             Divider()
             Button("Agents") { model.place.surface = .agents }
                 .keyboardShortcut("1")
-            Button("Hosts") { model.place.surface = .hosts }
+            Button("Devices") { model.place.surface = .hosts }
                 .keyboardShortcut("2")
             Divider()
         }
@@ -114,11 +114,11 @@ private struct AppCommands: Commands {
         CommandMenu("Agent") {
             Button("Open in Terminal") { if let agent = model.place.agent { model.openTerminal(agent) } }
                 .keyboardShortcut("t", modifiers: [.shift, .command])
-                .disabled(!ready || model.place.agent.flatMap { model.stores?.fleet.row($0) }.map { $0.native } ?? true)
+                .disabled(!ready || model.place.agent.flatMap { model.row($0) }.map { $0.native } ?? true)
         }
     }
 
     private var ready: Bool { model.stores != nil && model.setup?.content == nil }
 
-    private func exists(_ agent: AgentKey) -> Bool { model.stores?.fleet.row(agent) != nil }
+    private func exists(_ agent: AgentKey) -> Bool { model.row(agent) != nil }
 }

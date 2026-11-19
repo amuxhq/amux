@@ -103,16 +103,32 @@ enum Capture {
     /// picture taken stands.
     private static func settled(_ window: NSWindow) async -> CGImage? {
         try? await Task.sleep(for: .milliseconds(400))
+        overlayScrollers(in: window.contentView)
         let deadline = ContinuousClock.now + .seconds(3)
         var last = image(of: window)
         var held = 0
         while held < 5, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(100))
+            overlayScrollers(in: window.contentView)
             guard let now = image(of: window) else { continue }
             held = same(last, now) ? held + 1 : 0
             last = now
         }
         return last
+    }
+
+    /// Scroll bars as a trackpad Mac at rest draws them, which is not at
+    /// all, whatever the machine running the captures has plugged in, so
+    /// captures from different machines compare. Overlay scrollers alone
+    /// still flash as a view first appears.
+    private static func overlayScrollers(in view: NSView?) {
+        guard let view else { return }
+        if let scroll = view as? NSScrollView {
+            scroll.scrollerStyle = .overlay
+            scroll.verticalScroller?.alphaValue = 0
+            scroll.horizontalScroller?.alphaValue = 0
+        }
+        view.subviews.forEach(overlayScrollers)
     }
 
     private static func image(of window: NSWindow) -> CGImage? {

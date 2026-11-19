@@ -23,7 +23,7 @@ async fn desk_with_file(install: &Install, text: &str) -> (node::Daemon, std::pa
         file: Some(file.clone()),
         initial,
         login: None,
-        home: None,
+        home: options.settings.home.take(),
     };
     options.edge.host_name = "desk".to_owned();
     (node::start(options, None).await.unwrap(), file)
@@ -84,17 +84,12 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     let entry = runtime.host_entry();
     assert_eq!(entry.claude_kind(), wire::Kind::ClaudePty);
     assert_eq!(entry.host.unwrap().name, "study");
-    let listed = node::ClientApi::new(&runtime, None)
-        .list_repositories(Request::new(wire::ListRepositoriesRequest {
-            query: None,
-            limit: 10,
-            host_id: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(listed.repositories.len(), 1);
-    assert_eq!(listed.repositories[0].name, "app");
+    until(
+        "the desk's entry to offer its repository",
+        pinned_app(&runtime),
+    )
+    .await
+    .unwrap();
 
     // A profile opened after the change starts with it too.
     let created = door
@@ -110,16 +105,12 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         .profile(uuid::Uuid::from_slice(&created.id).unwrap())
         .expect("the new profile runs");
     assert_eq!(spare.host_entry().claude_kind(), wire::Kind::ClaudePty);
-    let listed = node::ClientApi::new(&spare, None)
-        .list_repositories(Request::new(wire::ListRepositoriesRequest {
-            query: None,
-            limit: 10,
-            host_id: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(listed.repositories.len(), 1, "{listed:?}");
+    until(
+        "the new profile's entry to offer it too",
+        pinned_app(&spare),
+    )
+    .await
+    .unwrap();
     drop(spare);
 
     let refused = door
@@ -169,7 +160,7 @@ async fn an_experiment_switched_takes_effect_at_the_next_start() {
             file: Some(file.clone()),
             initial: config,
             login: None,
-            home: None,
+            home: options.settings.home.take(),
         };
         async move { node::start(options, None).await.unwrap() }
     };
@@ -296,6 +287,86 @@ async fn a_paired_host_learns_the_claude_kind_a_host_publishes() {
     laptop_daemon.shutdown().await.unwrap();
 }
 
+/// A paired laptop pins a folder on the desk: the desk keeps it among its
+/// repositories, in its config file, and its entry in the laptop's inventory
+/// lists it as pinned, with its working tree; unpinned, it goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_paired_host_pins_a_folder_and_sees_the_desks_entry_say_it() {
+    let desk = Install::new();
+    let (desk_daemon, file) = desk_with_file(&desk, "").await;
+    let desk_runtime = runtime(&desk_daemon, &desk);
+    let app = desk.work.join("app");
+    std::fs::create_dir_all(app.join(".git")).unwrap();
+    let app = app.canonicalize().unwrap();
+    let laptop = Install::new();
+    let laptop_daemon = laptop.start("boot-1", quiet_launch()).await;
+    let laptop_runtime = runtime(&laptop_daemon, &laptop);
+    let (desk_edge, laptop_edge) = (desk_runtime.edge().unwrap(), laptop_runtime.edge().unwrap());
+    let desk_host = desk_runtime.host();
+    desk_edge.trust(&laptop_edge).await.unwrap();
+    laptop_edge.trust(&desk_edge).await.unwrap();
+    let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
+    assert!(wait_for_route(&laptop_edge, desk_host, PATIENCE).await);
+
+    let from_laptop = node::ClientApi::new(&laptop_runtime, None);
+    let pin = |pinned: bool| wire::PinFolderRequest {
+        host_id: Some(desk_host.as_bytes().to_vec()),
+        path: app.to_str().unwrap().to_owned(),
+        pinned,
+    };
+    from_laptop
+        .pin_folder(Request::new(pin(true)))
+        .await
+        .unwrap();
+    let pinned = |want: bool| {
+        let laptop_runtime = laptop_runtime.clone();
+        let app = app.clone();
+        move || {
+            let folder = laptop_runtime.host_entry_of(desk_host).and_then(|entry| {
+                entry
+                    .folders
+                    .into_iter()
+                    .find(|folder| folder.path == app.to_str().unwrap())
+            });
+            async move {
+                match folder {
+                    Some(folder) if want && folder.kind() == wire::FolderKind::Pinned => Ok(folder),
+                    None if !want => Ok(wire::Folder::default()),
+                    other => Err(format!("{other:?}")),
+                }
+            }
+        }
+    };
+    let folder = until("the laptop to see the desk's pin", pinned(true))
+        .await
+        .unwrap();
+    assert_eq!(folder.name, "app");
+    assert_eq!(
+        folder.checkout.map(|checkout| checkout.root),
+        Some(app.to_str().unwrap().to_owned()),
+        "a folder in Git says its working tree"
+    );
+    assert_eq!(
+        settings::InstallationConfig::from_file(&file)
+            .unwrap()
+            .repositories,
+        std::slice::from_ref(&app),
+        "the desk keeps the pin in its config file"
+    );
+
+    from_laptop
+        .pin_folder(Request::new(pin(false)))
+        .await
+        .unwrap();
+    until("the laptop to see the desk's unpin", pinned(false))
+        .await
+        .unwrap();
+
+    drop((desk_edge, laptop_edge, desk_runtime, laptop_runtime));
+    desk_daemon.shutdown().await.unwrap();
+    laptop_daemon.shutdown().await.unwrap();
+}
+
 /// Under `keep_awake` the daemon keeps the machine awake while one of its
 /// agents works and lets it sleep once none does; turning the setting off
 /// lets it sleep at once.
@@ -310,7 +381,7 @@ async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
         file: Some(file.clone()),
         initial: settings::InstallationConfig::from_file(&file).unwrap(),
         login: None,
-        home: None,
+        home: options.settings.home.take(),
     };
     let daemon = node::start(options, None).await.unwrap();
     let runtime = runtime(&daemon, &install);
@@ -362,6 +433,26 @@ async fn the_daemon_keeps_the_machine_awake_while_an_agent_works() {
     let _ = runtime.kill_agent(id).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
+}
+
+/// Waits on the runtime's own entry to offer one pinned folder, "app".
+fn pinned_app(
+    runtime: &std::sync::Arc<node::ProfileRuntime>,
+) -> impl Fn() -> std::future::Ready<Result<(), String>> + '_ {
+    move || {
+        let pinned: Vec<String> = runtime
+            .host_entry()
+            .folders
+            .into_iter()
+            .filter(|folder| folder.kind() == wire::FolderKind::Pinned)
+            .map(|folder| folder.name)
+            .collect();
+        std::future::ready(if pinned == ["app"] {
+            Ok(())
+        } else {
+            Err(format!("{pinned:?}"))
+        })
+    }
 }
 
 /// Switches the experiments to `names` through the front door, answering

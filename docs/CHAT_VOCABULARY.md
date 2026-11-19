@@ -109,10 +109,10 @@ subagent on request (headless Claude and Codex; never terminal Claude). An ask t
 | Compaction | `Compaction { tokens_before, tokens_after, automatic, idle }` | A rule: "Compacted · 148k → 22k"; "Compacted while idle · 248k → 31k" for one amux ran while the agent sat idle. | full | full | partial: a compacted boundary, no counts |
 | Error | `Error { error_kind, message, attempts, gave_up }` | What failed and what to do. While the provider retries, the retry shows on the activity line instead. | full | full | full: typed error kind and will-retry |
 | Model switched | `ModelSwitch { from, to, reason }` | A notice: "Switched to Sonnet · reason". | none | full: refusal fallback | full: reroute with reason |
-| Session boundaries | `Boundary { kind, cause }` | A rule where the chat above no longer holds: cleared, or lost its daemon. A start, resume, restart, fork or exit carries the same conversation on and is not drawn; how an exited agent ended is the composer's to say. Claude's compacted boundary sits beside its compaction row and is not drawn; Codex's is drawn as that row, without counts. | full | full | full |
+| Session boundaries | `Boundary { kind, cause }` | A rule where the chat above no longer holds: cleared, or amux stopped. A start, resume, restart, fork or exit carries the same conversation on and is not drawn; how an exited agent ended is the composer's to say. Claude's compacted boundary sits beside its compaction row and is not drawn; Codex's is drawn as that row, without counts. | full | full | full |
 | Automatic review | `AutoReview { status, status_word, risk, rationale, subject }` | "Auto-approved · low risk", opening to the reviewer's rationale; a status amux has no words for shows the reviewer's own word. | n/a | n/a | partial |
 
-![Session boundaries drawn as rules across the chat: cleared, and lost its daemon.](figures/vocabulary/row_boundary.light.png)
+![Session boundaries drawn as rules across the chat: cleared, and amux stopped.](figures/vocabulary/row_boundary.light.png)
 
 ## The activity line
 

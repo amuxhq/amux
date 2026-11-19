@@ -176,7 +176,7 @@ impl Daemon {
             | PeerRequest::GetBlob(_)
             | PeerRequest::GetDiff(_)
             | PeerRequest::GetCatalogue(_)
-            | PeerRequest::ListRepositories(_) => {
+            | PeerRequest::PinFolder(_) => {
                 tracing::warn!(peer = %crate::hex(&from.0), "a peer call the core does not serve");
                 Err(CallError::NotServed)
             }

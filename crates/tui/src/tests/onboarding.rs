@@ -75,7 +75,7 @@ fn a_first_run_opens_the_pairing_window() {
     );
     let mut scene = scenes::pair();
     let drawn = screen(&mut scene, 110, 34);
-    assert!(drawn.contains("This machine is called desk."), "{drawn}");
+    assert!(drawn.contains("This computer is called desk."), "{drawn}");
     assert!(
         drawn.contains("Scan with your iPhone's camera to pair."),
         "{drawn}"
@@ -186,13 +186,16 @@ fn a_pairing_made_before_the_window_opened_is_not_this_one() {
 fn the_machine_is_renamed_from_the_pairing_screen() {
     let mut scene = scenes::pair_rename();
     let drawn = screen(&mut scene, 110, 34);
-    assert!(drawn.contains("This machine is called ▎ studio"), "{drawn}");
+    assert!(
+        drawn.contains("This computer is called ▎ studio"),
+        "{drawn}"
+    );
     assert!(drawn.contains("enter save"), "{drawn}");
     assert_eq!(
         press(&mut scene, KeyCode::Enter),
         [SetupEffect::Rename("studio".into())]
     );
-    assert!(screen(&mut scene, 110, 34).contains("This machine is called studio."));
+    assert!(screen(&mut scene, 110, 34).contains("This computer is called studio."));
 }
 
 #[test]
@@ -386,7 +389,7 @@ fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_bef
     let mut scene = scenes::repositories();
     let drawn = screen(&mut scene, 110, 34);
     assert!(drawn.contains("[ ] "), "one is unticked: {drawn}");
-    assert!(drawn.contains("+ Add a folder…"), "{drawn}");
+    assert!(drawn.contains("+ Add a repository…"), "{drawn}");
     let mut chosen = scenes::settings();
     chosen.repositories = vec!["/srv/kept".into()];
     scene.onboarding.settings_changed(chosen);
@@ -589,11 +592,11 @@ fn every_setting_changes_at_once() {
     let mut page = scenes::settings_page(true).screen;
     let drawn = settings_text(&mut page, 110, 40);
     for words in [
-        "This machine's name",
+        "This computer's name",
         "desk",
         "Start amux when you log in",
         "Keep this Mac awake while it's plugged in",
-        "+ Add a folder…",
+        "+ Add a repository…",
         "amux's chat",
         "Send usage counts",
         "Send reports automatically",
@@ -765,24 +768,20 @@ fn home_offers_to_finish_setting_up_and_takes_the_settings_key() {
 }
 
 #[test]
-fn the_picker_offers_the_hosts_repositories_then_its_recent_folders() {
+fn the_picker_offers_the_hosts_folders_in_its_order() {
     let mut setup =
         crate::setup::Setup::defaults(settings::ChatInSetting::Amux, "/src/here", b"desk");
-    assert!(setup.wants_folders());
-    let entry = |path: &str| wire::RepositoryEntry {
-        path: path.into(),
-        ..Default::default()
-    };
-    let answer = wire::ListRepositoriesResponse {
-        recent: vec![entry("/src/recent"), entry("/src/app")],
-        repositories: vec![entry("/src/app"), entry("/src/lib")],
-    };
-    setup.take_folders(b"desk", &answer);
-    assert!(!setup.wants_folders());
+    // As the host's entry lists them: repositories, then recent folders.
+    let offered: Vec<String> = ["/src/app", "/src/lib", "/src/recent"]
+        .map(String::from)
+        .to_vec();
+    assert!(!setup.holds_folders(b"desk", &offered));
+    setup.take_folders(b"desk", &offered);
+    assert!(setup.holds_folders(b"desk", &offered));
     assert_eq!(
         setup.folder_choices(),
         ["/src/here", "/src/app", "/src/lib", "/src/recent"],
-        "the folder the client started in, then the repositories, then recent ones"
+        "the folder the client started in, then the host's folders"
     );
     // A folder the host lists keeps its place among the others.
     setup.pick(crate::setup::Item::Folder, "/src/lib");
@@ -792,8 +791,8 @@ fn the_picker_offers_the_hosts_repositories_then_its_recent_folders() {
     );
     // On another host the folder is the first that host offers.
     setup.pick(crate::setup::Item::Host, "6c6170746f70");
-    assert!(setup.wants_folders());
-    setup.take_folders(b"laptop", &answer);
+    assert!(!setup.holds_folders(b"laptop", &offered));
+    setup.take_folders(b"laptop", &offered);
     assert_eq!(setup.folder, "/src/app");
 }
 

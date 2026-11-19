@@ -26,7 +26,7 @@ use wire::{
 };
 
 use crate::ids::{AgentId, CallId, JobId, TimerId};
-use crate::io::{Job, Output, ParentSays};
+use crate::io::{Job, Output, ParentSays, ShellWork};
 use crate::payload::{CallError, JobResult, Response, Status};
 use crate::serve::{inventory, to_wire};
 use crate::{Daemon, codec};
@@ -750,7 +750,7 @@ impl Daemon {
         let cwd = create.cwd.clone();
         let row = self.new_row(&create, &name, &cwd);
         self.put_own_row(&row, out)?;
-        self.remember_directory(&create);
+        self.remember_directory(&create, out);
         if self.workspaces_on()
             && let Some(resolved) = &create.workspace
         {
@@ -833,7 +833,7 @@ impl Daemon {
         if let Err(error) = self.put_own_row(&row, out) {
             return self.finish(agent, Err(error.into()), out);
         }
-        self.remember_directory(&create);
+        self.remember_directory(&create, out);
         // The caller hears of the agent now, its workspace still being made;
         // whatever comes of the making is on the row.
         let caller = self
@@ -981,13 +981,14 @@ impl Daemon {
     /// Keeps the directory an agent was made in among the recent ones. A
     /// failed write is logged: an agent that was made is not a failed
     /// create for want of history.
-    fn remember_directory(&mut self, create: &Create) {
+    fn remember_directory(&mut self, create: &Create, out: &mut Vec<Output>) {
         let Some(path) = &create.recent else {
             return;
         };
         let at_ms = self.timers.now_ms as i64;
-        if let Err(error) = self.store.record_recent_directory(path, at_ms) {
-            tracing::warn!(%error, "cannot keep the recent directory");
+        match self.store.record_recent_directory(path, at_ms) {
+            Ok(()) => out.push(Output::Shell(ShellWork::RecentDirectory)),
+            Err(error) => tracing::warn!(%error, "cannot keep the recent directory"),
         }
     }
 
@@ -1038,7 +1039,7 @@ impl Daemon {
         if let Err(error) = self.put_own_row(&row, out) {
             return self.finish(agent, Err(error.into()), out);
         }
-        self.remember_directory(&create);
+        self.remember_directory(&create, out);
         let doing = self.spawn_incarnation(create, name, path, Some(base_branch), out);
         if let Some(lane) = self.families.lanes.get_mut(&agent)
             && let Some(operation) = lane.current.as_mut()

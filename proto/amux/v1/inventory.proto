@@ -49,6 +49,37 @@ message HostEntry {
   // from that stream, whose handshake proves who sent it, and keeps it with
   // its trust in the host; it is not on `Host`, which neighbors repeat.
   optional PushKey push_key = 7;
+  // Where this host offers to start an agent, said on its own entry and
+  // repeated as it said them: the folders its person pinned, in their
+  // order, then the ones its agents started in, newest first, then the ones
+  // Claude Code and Codex ran in lately outside amux. Each path once, at
+  // most a few dozen. Clients search it themselves.
+  repeated Folder folders = 8;
+}
+
+// A folder a host offers to start an agent in.
+message Folder {
+  // Absolute and canonical, on the host that offers it.
+  string path = 1;
+  // Its last component, as a picker names it.
+  string name = 2;
+  FolderKind kind = 3;
+  // When an agent, or Claude Code or Codex outside amux, last started
+  // there; absent for a pinned folder nothing started in yet.
+  optional int64 last_used_ms = 4;
+  // The working tree the folder is in; absent outside Git.
+  optional Checkout checkout = 5;
+}
+
+// Why a host offers a folder. UNSPECIFIED is never sent.
+enum FolderKind {
+  FOLDER_KIND_UNSPECIFIED = 0;
+  // Its person pinned it: the repositories in its settings.
+  FOLDER_KIND_PINNED = 1;
+  // An agent started there lately.
+  FOLDER_KIND_RECENT = 2;
+  // Claude Code or Codex ran there lately, outside amux.
+  FOLDER_KIND_HISTORY = 3;
 }
 
 // A public key notifications are sealed to.

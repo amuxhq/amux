@@ -1144,10 +1144,10 @@ mod tests {
                 unanswered()
             }
 
-            async fn list_repositories(
+            async fn pin_folder(
                 &self,
-                _: Request<wire::ListRepositoriesRequest>,
-            ) -> Answer<wire::ListRepositoriesResponse> {
+                _: Request<wire::PinFolderRequest>,
+            ) -> Answer<wire::PinFolderResponse> {
                 unanswered()
             }
         }

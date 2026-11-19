@@ -68,7 +68,7 @@ public struct ChatSubject: Equatable, Sendable {
         switch reach {
         case .online:
             return PlaceNames.place(host: host.isEmpty ? nil : host, directory: directory)
-        case .offline(.revoked): return String(localized: "\(host) · no longer trusts this phone")
+        case .offline(.revoked): return String(localized: "\(host) · unpaired this phone")
         case .offline(.signedOut): return String(localized: "\(host) · this phone is signed out")
         case .away: return String(localized: "\(host) · away on the free plan")
         case .offline(.plain): return String(localized: "\(host) · away")
@@ -546,11 +546,11 @@ public struct ChatScreen: View {
     private var awayNotice: String {
         switch subject.reach {
         case .offline(.revoked):
-            String(localized: "\(subject.host) no longer trusts this phone. Pair again to see this chat.")
+            String(localized: "\(subject.host) unpaired this phone. Pair again to see this chat.")
         case .offline(.signedOut):
             String(localized: "This phone is signed out, so \(subject.host) is out of reach. This chat fills in when you sign in again.")
         case .away:
-            String(localized: "\(subject.host) is away because the free plan does not relay between hosts. This chat fills in once it can be reached.")
+            String(localized: "\(subject.host) is away because reaching it from another network needs Pro. This chat fills in once it can be reached.")
         case .online, .offline(.plain):
             String(localized: "\(subject.host) is away. This chat fills in when it is back.")
         }

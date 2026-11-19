@@ -1,7 +1,7 @@
-  ╭─ studio no longer trusts this machine ───────────────────────────────────────────────────────╮
+  ╭─ studio unpaired this computer ──────────────────────────────────────────────────────────────╮
   │ › Message fixer                                                                              │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 --- styles
-..mmm????????????????????????????????????mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
+..mmm?????????????????????????????mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..
 ..mmmmmmmmmmmmmmmmm..............................................................................m..
 ..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm..

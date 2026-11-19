@@ -379,6 +379,7 @@ fn agent(agent: Agent) -> Agent {
 fn host(host: HostEntry) -> HostEntry {
     use host_entry::Standing;
     HostEntry {
+        folders: Vec::new(),
         host: host.host.map(|held| wire::Host {
             host_id: held.host_id,
             ..Default::default()

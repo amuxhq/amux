@@ -325,7 +325,7 @@ async fn a_diff_that_disagrees_with_the_row_corrects_it() {
         base_branch: Some("main".into()),
         uncommitted: Some(totals(2, 2, 0)),
         on_branch: Some(totals(2, 3, 0)),
-        remote: None,
+        checkout: None,
     };
     agent.append(&turn_ended_with(Some(read_at_turn_end.clone())));
     agent.nudge().await;

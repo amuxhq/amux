@@ -134,6 +134,7 @@ pub(crate) struct Installation {
     analytics: std::sync::OnceLock<Arc<dyn analytics::Sink>>,
     /// Where profiles keep a person's model and effort picks.
     pick_keeper: std::sync::OnceLock<crate::spec::PickKeeper>,
+    pins: std::sync::OnceLock<crate::repositories::Pins>,
     /// Logins refused only because their profile held data, by the token
     /// they were staged with, until bound again with adopt or forgotten.
     staged_logins: Mutex<Vec<(String, std::time::Instant, crate::edge::account::Login)>>,
@@ -224,6 +225,9 @@ impl Installation {
                 runtime.offers().remembered_changed(&launch);
             }
             runtime.set_launch(launch);
+            if repositories.is_some() {
+                runtime.refresh_folders();
+            }
             if let (Some(name), Some(edge)) = (&renamed, runtime.edge()) {
                 edge.rename(name);
             }
@@ -364,6 +368,7 @@ impl Installation {
             workspaces,
             onboarding: self.onboarding.clone(),
             remember_pick: self.pick_keeper.get().cloned().unwrap_or_default(),
+            pins: self.pins.get().cloned().unwrap_or_default(),
         }))
     }
 
@@ -691,6 +696,7 @@ pub async fn start(
         shutdown: watch::Sender::new(false),
         staged_logins: Mutex::new(Vec::new()),
         pick_keeper: std::sync::OnceLock::new(),
+        pins: std::sync::OnceLock::new(),
         analytics: std::sync::OnceLock::new(),
     });
     let keeper = Arc::downgrade(&installation);
@@ -706,6 +712,19 @@ pub async fn start(
                 Err(error) => tracing::warn!(%error, "keeping a new agent default"),
             }
         }));
+    let pinner = Arc::downgrade(&installation);
+    let _ = installation.pins.set(crate::repositories::Pins::new(
+        installation.settings.home().map(std::path::Path::to_owned),
+        move |path, pinned| {
+            let Some(installation) = pinner.upgrade() else {
+                return Ok(());
+            };
+            if let Some(config) = installation.settings.pin(path, pinned)? {
+                installation.apply(&config);
+            }
+            Ok(())
+        },
+    ));
     let uploader = installation.start_analytics(telemetry);
 
     let listed = profiles::list(&installation.data_dir).map_err(StartError::Profiles)?;

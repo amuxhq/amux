@@ -109,7 +109,7 @@ holds one event. The tables name what a response holds.
 | `GetBlob` | the bytes | Bytes out |
 | `GetDiff` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
 | `GetCatalogue` | a catalogue and its hash | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
-| `ListRepositories` | the repositories | Repositories a host offers to spawn agents in |
+| `PinFolder` | nothing | Pins a folder among a host's repositories, or unpins it |
 
 `service SessionService` in [`session_service.proto`](../proto/amux/v1/session_service.proto):
 
@@ -674,6 +674,19 @@ holds (its own and its paired hosts'), then `CaughtUp`, then changes as they
 happen (`HostEntry`, `HostRemoved`, `Agent`, `AgentRemoved`). A paired host's
 stream of it carries only the answering host's own entry and agents.
 
+A host's own entry says where it offers to start an agent, as `folders`:
+the folders its person pinned (its `repositories` setting) in their order,
+then those its agents started in, newest first, then those Claude Code and
+Codex ran in lately outside amux, each path once and at most 50, each with
+its `kind`. A folder in Git carries its `Checkout`: the working tree's
+`root`, the `main` clone's root when it is a linked worktree, and the origin
+`remote`. An agent row's `git.checkout` is the same shape, so a client
+matches an agent to a folder by `root` and groups checkouts of one
+repository by `remote`, else by `main` (or `root`) on that host. A client
+searches the list itself; `PinFolder` changes the pinned part, and the
+host's entry says it. The host works the list out again when the setting
+changes, when an agent starts somewhere, and every ten minutes.
+
 A reader that falls more than the inventory ring's capacity behind is sent
 `Lagged`, and the stream closes. The reader subscribes again at once, with no
 backoff, since nothing is wrong with the connection, and reconciles against
@@ -814,7 +827,8 @@ messages, the `ctl.sock` frames and the journal's records) only adds:
 
 Every call has its own `FooRequest` and `FooResponse`, so either can grow.
 
-`just proto-compat`, which CI runs, lints the schemas with buf's `STANDARD`
+`just proto-compat` (run by hand for now: neither CI nor `just premerge`
+runs it while `amux.v1` takes a round of breaking changes) lints the schemas with buf's `STANDARD`
 rules and checks them against the newest release tag at or after 0.9.0 with
 its `PACKAGE` rules, which `buf.yaml` changes in one way: a field or enum value
 may go if its number stays `reserved`. `just proto-compat <ref>` checks against

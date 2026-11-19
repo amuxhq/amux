@@ -624,6 +624,7 @@ impl Daemon {
                 }
                 self.claude_kind_said(host, entry.claude_kind);
                 self.providers_said(host, entry.providers);
+                self.folders_said(host, entry.folders);
                 self.push_key_said(host, entry.push_key, out);
                 return;
             }

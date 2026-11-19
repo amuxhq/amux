@@ -12,13 +12,13 @@ public enum Surface: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .agents: "Agents"
-        case .hosts: "Hosts"
+        case .hosts: "Devices"
         }
     }
 
     var symbol: String {
         switch self {
-        case .agents: "messages-square"
+        case .agents: "agents"
         case .hosts: "server"
         }
     }
@@ -41,6 +41,8 @@ public struct Place: Equatable, Sendable {
     }
     /// The sidebar lists the settled agents rather than the rest.
     public var settled: Bool
+    /// The sidebar shows the agents at work, at its foot.
+    public var working: Bool
     /// The host open on the hosts surface, by its id's bytes.
     public var host: [UInt8]?
     public var sidebar: Bool
@@ -52,12 +54,13 @@ public struct Place: Equatable, Sendable {
     private var travelling = false
 
     public init(
-        surface: Surface = .agents, agent: AgentKey? = nil, settled: Bool = false, host: [UInt8]? = nil,
-        sidebar: Bool = true, changes: Bool = false
+        surface: Surface = .agents, agent: AgentKey? = nil, settled: Bool = false, working: Bool = false,
+        host: [UInt8]? = nil, sidebar: Bool = true, changes: Bool = false
     ) {
         self.surface = surface
         self.agent = agent
         self.settled = settled
+        self.working = working
         self.host = host
         self.sidebar = sidebar
         self.changes = changes

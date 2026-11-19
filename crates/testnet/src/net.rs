@@ -1408,6 +1408,35 @@ impl Net {
         Ok(ClientApi::new(&self.runtime(host)?, None))
     }
 
+    /// The services `host`'s profile serves the phone in memory, behind the
+    /// same router and carrier as its socket, administration included: a
+    /// client built on it reaches every host `host` can, as the phone's.
+    pub fn entrance(
+        &self,
+        host: &str,
+    ) -> Result<
+        tower::util::BoxCloneService<
+            tonic::codegen::http::Request<tonic::body::Body>,
+            tonic::codegen::http::Response<tonic::body::Body>,
+            std::convert::Infallible,
+        >,
+        NetError,
+    > {
+        self.in_process(host, "this")?;
+        let entry = self
+            .hosts
+            .get(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?;
+        let daemon = entry
+            .daemon
+            .as_ref()
+            .ok_or_else(|| NetError::Down(host.to_owned()))?;
+        let registry = daemon.lock().unwrap().registry();
+        registry
+            .routes(entry.info.profile)
+            .map_err(|refusal| NetError::Down(format!("{host}: {refusal}")))
+    }
+
     /// The administration of `host`'s profile, called in process as the
     /// phone calls it.
     pub fn profile_admin(&self, host: &str) -> Result<node::ProfileAdmin, NetError> {

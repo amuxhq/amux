@@ -227,14 +227,17 @@ impl Registry {
     /// The services a hosted profile serves the phone in memory: what an
     /// embedder that serves no sockets calls its node through, with the
     /// same stubs a socket's client uses. A call addressed to another
-    /// host's id is carried to it, as on a socket.
+    /// host's id is carried to it, as on a socket. The profile's
+    /// administration is among them, as on the profile's socket: the phone
+    /// is a person at this node.
     pub fn routes(&self, id: ProfileId) -> Result<Entrance, ProfileRefusal> {
         let runtime = Arc::downgrade(&self.runtime(id)?);
-        let routes = crate::api::routes(&runtime, crate::api::Entry::Phone).routes();
+        let mut routes = crate::api::routes(&runtime, crate::api::Entry::Phone);
+        routes.add_service(crate::ProfileAdmin::new(self.clone(), id).server());
         Ok(crate::api::entrance(
             &runtime,
             crate::api::Entry::Phone,
-            routes,
+            routes.routes(),
         ))
     }
 

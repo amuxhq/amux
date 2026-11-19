@@ -13,6 +13,7 @@ mod dump;
 mod forwarded_send;
 mod front_door;
 mod host_catalogue;
+mod host_service;
 mod hosts;
 mod local_services;
 mod messaging;

@@ -851,6 +851,7 @@ impl Daemon {
             },
         );
         self.member_created(agent, &planned, out);
+        self.current_before_launch(agent, out);
         if let Some(caller) = caller {
             let outcome = self.row_outcome(agent);
             self.reply(agent, caller, outcome, out);
@@ -1058,7 +1059,25 @@ impl Daemon {
     ) -> Result<Doing, Refusal> {
         let agent = create.agent;
         let spec = first_spec(create, name, cwd, base_branch);
-        self.launch(agent, spec, out)
+        let doing = self.launch(agent, spec, out)?;
+        if matches!(doing, Doing::AwaitLaunch { .. }) {
+            self.current_before_launch(agent, out);
+        }
+        Ok(doing)
+    }
+
+    /// A new agent whose first process waits for its workspace has written
+    /// nothing yet, so its chat is current as it stands: it is caught up at
+    /// once, its composer sends, and what is sent waits in the lane until
+    /// the process takes input. Making a workspace can take seconds (a
+    /// fetch, a checkout, a copy of build output), and a chat that waited
+    /// for the process's Hello said it was catching up all that while. The
+    /// Hello announces it again once the journal is read.
+    fn current_before_launch(&mut self, agent: AgentId, out: &mut Vec<Output>) {
+        let key = self.own_key(agent);
+        if let Err(error) = self.announce_caught_up(&key, out) {
+            tracing::warn!(agent = %crate::hex(&agent.0), %error, "announcing a new agent caught up failed");
+        }
     }
 
     /// Asks the driver for the agent's first process now: its workspace

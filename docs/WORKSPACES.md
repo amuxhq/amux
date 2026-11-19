@@ -101,7 +101,12 @@ never carried over.
 
 While the workspace is made, messages wait in the agent's lane (without the
 five seconds a live row's process otherwise has to connect), and so does a
-stop or a delete. A workspace that cannot be made ends the agent as
+stop or a delete. The agent's chat is caught up from the moment its row is
+written, rather than at its process's Hello as for an agent launched at once:
+nothing is in its journal yet, so a client takes a message straight away
+instead of saying it is catching up for the seconds a fetch, a checkout and
+a copy of build output take. The same holds for a new agent whose launch
+waits for its workspace's claim. A workspace that cannot be made ends the agent as
 `EXIT_CAUSE_COULD_NOT_START` with the reason, and a restarted daemon that
 finds a row still `creating` ends it the same way. So the restart the daemon
 makes to apply an experiment switch waits for every workspace job under way,

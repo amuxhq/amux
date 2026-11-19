@@ -150,6 +150,15 @@ impl Rig {
             .unwrap()
     }
 
+    /// Whether a chat opened on the agent now reads it as current.
+    fn caught_up(&self, agent: AgentId) -> bool {
+        self.daemon
+            .store
+            .markers()
+            .get(&AgentKey::new(OWN, agent.0))
+            == Some(&store::Marker::CaughtUp)
+    }
+
     fn entry(&self, agent: AgentId) -> wire::experimental::AgentWorkspace {
         entry_of(&self.row(agent).expect("its row")).expect("its workspace on the row")
     }
@@ -249,6 +258,9 @@ fn a_create_in_a_new_workspace_answers_with_its_row_and_starts_once_made_and_cla
         spawned(&out, LEAD).is_none(),
         "nothing starts before it is made"
     );
+    // Nothing is written before the process starts, so its chat is
+    // current already and takes a message at once.
+    assert!(rig.caught_up(LEAD), "caught up while its workspace is made");
     let (make, job) = rig.job(&out, |job| matches!(job, WorkspaceJob::Make { .. }));
     assert_eq!(
         job,
@@ -432,6 +444,10 @@ fn an_agent_in_an_existing_folder_launches_at_once_and_deleting_the_last_member_
     let (_, out) = rig.call(request);
     let (_, workspace) = spawned(&out, MATE).expect("a worktree needs no claim");
     assert_eq!(workspace, Some(git.clone()));
+    assert!(
+        !rig.caught_up(MATE),
+        "a process started at once is caught up by its Hello"
+    );
     assert_eq!(
         rig.entry(MATE).kind,
         wire::experimental::WorkspaceKind::Git as i32
@@ -458,6 +474,32 @@ fn an_agent_in_an_existing_folder_launches_at_once_and_deleting_the_last_member_
         "{out:#?}"
     );
     assert!(rig.row(MATE).is_none());
+}
+
+#[test]
+fn an_agent_waiting_for_its_workspaces_claim_is_caught_up_before_it_starts() {
+    let mut rig = rig();
+    let tree = wt_tree("/trees/shop/held");
+    let mut request = create(MATE, Some("mate"), false, &tree.id);
+    if let ClientRequest::CreateAgent(create) = &mut request {
+        create.workspace = Some(Resolved {
+            workspace: tree.clone(),
+            made_here: false,
+        });
+    }
+    let (_, out) = rig.call(request);
+    assert!(spawned(&out, MATE).is_none(), "a wt tree is claimed first");
+    let (claim, _) = rig.job(&out, |job| matches!(job, WorkspaceJob::TakeClaim { .. }));
+    assert!(rig.caught_up(MATE), "caught up while the claim waits");
+
+    let out = rig.done(
+        claim,
+        WorkspaceDone::Claimed {
+            workspace: tree.clone(),
+            result: Ok(()),
+        },
+    );
+    assert!(spawned(&out, MATE).is_some(), "{out:#?}");
 }
 
 /// Two agents created in a worktree this host made, both exited.

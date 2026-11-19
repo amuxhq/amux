@@ -7,22 +7,26 @@
 
 ((class_declaration name: (identifier) @name) @definition.class (#set! keyword "class"))
 
-(class_body
-  (method_definition "get" name: (_) @name) @definition.method
+; Members count only in a declared class's body: the methods of a class
+; expression (`() => class { run() {} }`) would otherwise sit under the
+; constant or function the expression is in, which holds no class.
+(class_declaration
+  body: (class_body (method_definition "get" name: (_) @name) @definition.method)
   (#set! keyword "get"))
-(class_body
-  (method_definition "set" name: (_) @name) @definition.method
+(class_declaration
+  body: (class_body (method_definition "set" name: (_) @name) @definition.method)
   (#set! keyword "set"))
-(class_body
-  (method_definition name: (property_identifier) @name) @definition.constructor
+(class_declaration
+  body: (class_body (method_definition name: (property_identifier) @name) @definition.constructor)
   (#eq? @name "constructor"))
-(class_body
-  [
-    (method_definition name: (_) @name)
-    (field_definition
-      property: (_) @name
-      value: [(arrow_function) (function_expression)])
-  ] @definition.method
+(class_declaration
+  body: (class_body
+    [
+      (method_definition name: (_) @name)
+      (field_definition
+        property: (_) @name
+        value: [(arrow_function) (function_expression)])
+    ] @definition.method)
   (#set! suffix "()"))
 
 ((function_declaration name: (identifier) @name) @definition.function (#set! keyword "function"))

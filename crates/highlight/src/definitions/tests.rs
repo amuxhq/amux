@@ -335,6 +335,16 @@ Function function* names 45-47
             (5, ""),
         ],
     );
+    // A class expression's methods are not a declared class's, so nothing
+    // sits under the constant that holds it.
+    check(
+        Language::JavaScript,
+        "const factory = () => class {\n    run() {}\n};\n",
+        "\
+Function const factory 1-3
+",
+        &[(2, "const factory")],
+    );
 }
 
 #[test]
@@ -367,6 +377,18 @@ Function const load 47-49
             (1, ""),
         ],
     );
+    // A class expression's methods are not a declared class's, so nothing
+    // sits under the constant or method that holds it.
+    check(
+        Language::TypeScript,
+        "const factory = () => class {\n    run(): void {}\n};\nclass Outer {\n    make() {\n        return class { inner() {} };\n    }\n}\n",
+        "\
+Function const factory 1-3
+Class class Outer 4-8
+  Method make() 5-7
+",
+        &[(2, "const factory"), (6, "class Outer › make()")],
+    );
 }
 
 #[test]
@@ -387,6 +409,14 @@ Class class Panel 19-23
             (17, "const Badge"),
             (2, ""),
         ],
+    );
+    check(
+        Language::Tsx,
+        "const factory = () => class {\n    run() { return <div />; }\n};\n",
+        "\
+Function const factory 1-3
+",
+        &[(2, "const factory")],
     );
 }
 

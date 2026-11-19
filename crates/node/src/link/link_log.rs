@@ -1,9 +1,11 @@
 //! The link log: one INFO line for each link a host's links go through,
 //! coming up, going down or moving to another path, naming the peer, the
 //! path, whether the link resumed a session and how its early data fared,
-//! and one line each time the host's network changes under all of them.
-//! Daemons and the phone write it to their logs; stories and journeys read
-//! it back with [`LinkEvent::parse`] to say which path carried a link.
+//! one line each time the host's network changes under all of them, and one
+//! line for each call a node carried to another host for one of its
+//! clients, which passes through no state machine and so is seen nowhere
+//! else. Daemons and the phone write it to their logs; stories and journeys
+//! read it back with [`LinkEvent::parse`] to say which path carried a link.
 
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
@@ -18,6 +20,8 @@ pub const TARGET: &str = "amux::link";
 const MESSAGE: &str = "link";
 /// The message a network change's line carries.
 const REBIND: &str = "rebind";
+/// The message a carried call's line carries.
+const CARRIED: &str = "carried";
 
 /// What happened to the link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -189,6 +193,86 @@ impl Rebind {
     }
 }
 
+/// The line written when a call this node carried to another host for one
+/// of its clients ended: the method, the host, how it ended and how long it
+/// ran, from the call arriving here to its last byte or its failure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CarriedCall {
+    pub peer: HostId,
+    /// The call's path, `/package.Service/Method`.
+    pub method: String,
+    pub outcome: CarriedOutcome,
+    /// The gRPC status code the caller was given, as gRPC numbers it.
+    pub code: i32,
+    pub ms: u64,
+}
+
+/// How a carried call ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CarriedOutcome {
+    /// The host answered, with the status in the line's code.
+    Answered,
+    /// It never left: no link, not trusted, or no channel in time.
+    Unreachable,
+    /// It never left: only the relay reaches the host and the plan lapsed.
+    PaymentRequired,
+    /// It never left: the host no longer trusts this one.
+    Revoked,
+    /// It left, and no answer began in time or the link failed under it.
+    Aborted,
+    /// The caller let go of it before it ended.
+    Dropped,
+}
+
+impl CarriedCall {
+    /// Writes the line for a call `host` carried.
+    pub fn write(&self, host: HostId) {
+        tracing::info!(
+            target: TARGET,
+            %host,
+            peer = %self.peer,
+            method = %self.method,
+            outcome = %self.outcome,
+            code = self.code,
+            ms = self.ms,
+            "{CARRIED}"
+        );
+    }
+
+    /// Reads a line back as a log holds it: the host that carried the call,
+    /// and the call. Anything else in the log reads as None.
+    pub fn parse(line: &str) -> Option<(HostId, Self)> {
+        let (_, fields) = line.split_once(&format!("{TARGET}: {CARRIED} "))?;
+        let mut host = None;
+        let (mut peer, mut method, mut outcome, mut code, mut ms) = (None, None, None, None, None);
+        for field in fields.split_whitespace() {
+            let Some((key, value)) = field.split_once('=') else {
+                continue;
+            };
+            let value = value.trim_matches('"');
+            match key {
+                "host" => host = Some(value.parse().ok()?),
+                "peer" => peer = Some(value.parse().ok()?),
+                "method" => method = Some(value.to_owned()),
+                "outcome" => outcome = Some(value.parse().ok()?),
+                "code" => code = Some(value.parse().ok()?),
+                "ms" => ms = Some(value.parse().ok()?),
+                _ => {}
+            }
+        }
+        Some((
+            host?,
+            Self {
+                peer: peer?,
+                method: method?,
+                outcome: outcome?,
+                code: code?,
+                ms: ms?,
+            },
+        ))
+    }
+}
+
 /// The catch-up's milliseconds as the line spells them: a number, or
 /// `none`.
 struct CatchUp(Option<u32>);
@@ -249,6 +333,14 @@ spelled!(PathKind {
     ViaDaemon => "via_daemon",
 });
 spelled!(EarlyData { None => "none", Accepted => "accepted", Rejected => "rejected" });
+spelled!(CarriedOutcome {
+    Answered => "answered",
+    Unreachable => "unreachable",
+    PaymentRequired => "payment_required",
+    Revoked => "revoked",
+    Aborted => "aborted",
+    Dropped => "dropped",
+});
 
 #[cfg(test)]
 mod tests {
@@ -300,6 +392,27 @@ mod tests {
         assert_eq!(Rebind::parse(&line), Some((host, rebind)));
         assert_eq!(LinkEvent::parse(&line), None);
         assert_eq!(Rebind::parse(&line.replace(" rebound=true", "")), None);
+    }
+
+    #[test]
+    fn a_carried_call_reads_back_and_never_as_a_link() {
+        let host = HostId::from_u128(1);
+        let call = CarriedCall {
+            peer: HostId::from_u128(2),
+            method: "/amux.v1.HostService/ListRepositories".to_owned(),
+            outcome: CarriedOutcome::PaymentRequired,
+            code: 7,
+            ms: 12,
+        };
+        let line = format!(
+            "2026-11-19T09:00:00.000000Z  INFO amux::link: carried host={host} peer={} \
+             method=/amux.v1.HostService/ListRepositories outcome=payment_required code=7 ms=12",
+            call.peer
+        );
+        assert_eq!(CarriedCall::parse(&line), Some((host, call)));
+        assert_eq!(LinkEvent::parse(&line), None);
+        assert_eq!(Rebind::parse(&line), None);
+        assert_eq!(CarriedCall::parse(&line.replace(" ms=12", "")), None);
     }
 
     #[test]

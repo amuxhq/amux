@@ -137,7 +137,8 @@ Code blocks in the agent's replies, and the diff it asks permission to make,
 are coloured as an editor colours them when they're in a common language:
 Rust, Swift, TypeScript, JavaScript, Python, Go, C, C++, Java, shell, HTML,
 CSS, JSON, YAML, TOML and Markdown. Code in any other language shows in one
-colour.
+colour. In a terminal limited to 16 colours, a diff's added and removed lines
+stay in the diff's own green and red, so they still read as changes.
 
 Attachments in the chat are underlined: click one to open it, or focus its
 message with the leader and `j` or `k` and press the leader then `o`. Pictures,

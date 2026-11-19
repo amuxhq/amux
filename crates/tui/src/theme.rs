@@ -524,11 +524,13 @@ impl Theme {
     /// In sixteen colours a tint is a saturated face, and a token's face is
     /// the terminal's own slot, which repair does not swap: the terminal's
     /// green string on its green tint would not read. There every token on
-    /// a diff line keeps the line's ink.
+    /// a tinted line, an added or removed one, keeps the line's ink. An
+    /// unchanged line has no tint, so its tokens sit on the ground as a
+    /// code block's do and keep their colours.
     pub(crate) fn syntax_on_diff(self, line: Style, kind: ui_view::TokenKind) -> Style {
         match kind {
             ui_view::TokenKind::Plain => line,
-            _ if self.mode == ColorMode::Ansi => line,
+            _ if self.mode == ColorMode::Ansi && line.bg.is_some() => line,
             kind => line.patch(self.syntax(kind)),
         }
     }
@@ -1581,7 +1583,8 @@ mod tests {
     /// in every palette amux can draw with, so a palette change that would
     /// leave a keyword or a comment unreadable on a tint fails here. In
     /// sixteen colours code on a tint keeps the line's own ink, which the
-    /// diff's own checks hold; on the ground there the faces are the
+    /// diff's own checks hold, while an unchanged line, which has no tint,
+    /// keeps its code's colours; on the ground there the faces are the
     /// terminal's own slots, measured only by their conventional values.
     #[test]
     fn code_reads_on_every_surface_it_is_drawn_on() {
@@ -1616,6 +1619,15 @@ mod tests {
                         ratio >= floor,
                         "{name} {mode:?}: {kind:?} on the {:?} tint is only {ratio:.2}:1, floor {floor}",
                         style.bg
+                    );
+                }
+                // An unchanged line has no tint, so in every mode its
+                // tokens take their colours as they do on the ground.
+                if kind != ui_view::TokenKind::Plain {
+                    assert_eq!(
+                        theme.syntax_on_diff(theme.diff_context(), kind),
+                        theme.diff_context().patch(theme.syntax(kind)),
+                        "{name} {mode:?}: {kind:?} on an unchanged line"
                     );
                 }
                 let mut tokens = theme.tokens;

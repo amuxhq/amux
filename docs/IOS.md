@@ -190,7 +190,8 @@ fenced blocks in the agent's markdown and the patch on an edit card. The
 phone parses markdown itself (`AmuxWords`), so each block asks the bridge
 for its runs (`CodeHighlighting`, read from the environment, which the app
 and the catalogue set to the bridge's) away from the main thread, and draws
-them in the design's `syntax` colours (`Design.ink(_:)`). Only the open fence
+them in the design's `syntax` colours (`Design.ink(_:)`, in `AmuxFeatures`:
+the design package holds the colours and no bridge values). Only the open fence
 of a message still streaming is asked for as streaming, which the shared
 view colours at a bounded rate. An answer that is not settled yet (a grammar
 building on first use, a streaming pass under way) is drawn as it is and

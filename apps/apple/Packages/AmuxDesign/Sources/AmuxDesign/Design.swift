@@ -1,4 +1,3 @@
-import AmuxValues
 import SwiftUI
 
 /// The app's visual language, as values.
@@ -98,23 +97,6 @@ public struct Design: Sendable, Equatable {
             self.type = type
             self.function = function
             self.comment = comment
-        }
-    }
-
-    /// The colour a kind of token is drawn in: names and punctuation in
-    /// the reading ink, and a block written as a diff in a change's green
-    /// and red.
-    public func ink(_ kind: TokenKind) -> Ramp {
-        switch kind {
-        case .plain: ink
-        case .keyword: syntax.keyword
-        case .string: syntax.string
-        case .number: syntax.number
-        case .type: syntax.type
-        case .function: syntax.function
-        case .comment: syntax.comment
-        case .inserted: added
-        case .deleted: removed
         }
     }
 

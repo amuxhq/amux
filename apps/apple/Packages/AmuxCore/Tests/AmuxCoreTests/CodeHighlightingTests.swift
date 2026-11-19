@@ -166,14 +166,20 @@ final class CodeHighlightingTests: XCTestCase {
     }
 
     /// Through the real bridge: the shared view's answer decodes into the
-    /// generated values, plain while the grammar builds and coloured once
-    /// it has, for a fenced block and for an edit card's patch.
+    /// generated values and ends settled and coloured, for a fenced block
+    /// and for an edit card's patch. Any answer before that is unsettled
+    /// and plain, as while the grammar is built; whether there is one
+    /// depends on whether an earlier test in this process built the
+    /// grammar first, so every answer handed is held to that rule rather
+    /// than one being expected. The building itself is shown step by step
+    /// by the shared view's own tests, which hold the background work.
     func testTheBridgeColoursABlockAndAnEdit() async {
         let block = CodeHighlighting.Request.block(
             code: "fn main() {}\n", info: "rust", streaming: false)
-        var drawn: HighlightedCode?
-        await CodeHighlighting.bridge.follow(block) { drawn = $0 }
-        let code = drawn ?? CodeHighlighting.bridge.kept(block)
+        var answers: [HighlightedCode?] = []
+        await CodeHighlighting.bridge.follow(block) { answers.append($0) }
+        Self.assertPlainUntilSettled(answers)
+        let code = answers.last ?? nil
         XCTAssertEqual(code?.settled, true)
         XCTAssertEqual(code?.lines.first?.first, piece("fn", .keyword))
 
@@ -181,11 +187,26 @@ final class CodeHighlightingTests: XCTestCase {
             .hunk(oldStart: 3, newStart: 3),
             .line(PatchLine(kind: .added, text: "n = 1", number: 3)),
         ])
-        var patch: HighlightedCode?
-        await CodeHighlighting.bridge.follow(edit) { patch = $0 }
-        let lines = (patch ?? CodeHighlighting.bridge.kept(edit))?.lines
+        var patches: [HighlightedCode?] = []
+        await CodeHighlighting.bridge.follow(edit) { patches.append($0) }
+        Self.assertPlainUntilSettled(patches)
+        XCTAssertEqual(patches.last??.settled, true)
+        let lines = (patches.last ?? nil)?.lines
         XCTAssertEqual(lines?.count, 2)
         XCTAssertEqual(lines?.first, [], "a hunk's start is drawn in the client's own words")
         XCTAssertTrue(lines?.last?.contains(piece("1", .number)) ?? false, "\(String(describing: lines))")
+    }
+
+    /// Every answer but the last is unsettled with nothing coloured, and
+    /// the last is the one settled answer.
+    private static func assertPlainUntilSettled(
+        _ answers: [HighlightedCode?], file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertFalse(answers.isEmpty, "no answer was handed", file: file, line: line)
+        for answer in answers.dropLast() {
+            XCTAssertEqual(answer?.settled, false, "a settled answer was not the last", file: file, line: line)
+            let kinds = Set(answer?.lines.flatMap { $0.map(\.kind) } ?? [])
+            XCTAssertTrue(kinds.isSubset(of: [.plain]), "coloured before settling: \(kinds)", file: file, line: line)
+        }
     }
 }

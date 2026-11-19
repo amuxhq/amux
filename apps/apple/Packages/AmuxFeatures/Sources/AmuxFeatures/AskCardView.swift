@@ -448,10 +448,11 @@ private struct AskBodyView: View {
                            cwd.isEmpty ? "" : String(localized: "in \(cwd)")]
                 .filter { !$0.isEmpty }.joined(separator: " · ")
             if !purpose.isEmpty { why(purpose) }
-        case .edit(let path, _, let added, let removed, let lines, let reason, _, _):
+        case .edit(let path, _, let added, let removed, let patch, let reason, _, _):
             SubjectBox(text: path, lines: 2, counts: (added, removed), truncation: .middle)
-            if !lines.isEmpty { DiffPreview(path: path, lines: lines, whole: wholeDiff) }
-            if lines.count > DiffPreview.lines {
+            let rows = DiffPreview.count(patch)
+            if rows > 0 { DiffPreview(path: path, patch: patch, whole: wholeDiff) }
+            if rows > DiffPreview.lines {
                 link(wholeDiff ? String(localized: "Show less") : String(localized: "Show the whole diff"),
                      id: "ask.diff", value: wholeDiff ? "open" : "folded") { wholeDiff.toggle() }
             }
@@ -882,39 +883,70 @@ private struct AskBodyView: View {
 }
 
 /// A short diff inline, green and red, with the whole of it one tap away.
-/// Where each hunk starts reads as its first line in the new file. Its code
-/// is coloured as the file at `path` reads, each side of a change read
-/// apart, as the shared view colours it.
+/// Where each hunk starts reads as its first line in the new file. Each
+/// file's code is coloured as that file reads, hunk by hunk and each side
+/// of a change read apart, as the shared view colours it.
 struct DiffPreview: View {
     @Environment(\.design) private var design
-    @Environment(\.codeHighlighting) private var highlighting
     static let lines = 12
     /// How strongly a changed line's green or red lies under it: enough to
     /// read as a change, light enough that its code's colours still read.
     static let wash = 0.18
-    /// The edit's file, which names the language of lines before any
-    /// file line of their own.
+    /// The most an opened diff draws.
+    static let most = 400
+    /// The edit's file, which names the language of the patch of a
+    /// one-file edit, whose part carries no file of its own.
     let path: String
-    let lines: [EditLine]
+    let patch: [FilePatch]
     let whole: Bool
-    @State private var answer: HighlightedCode?
+
+    /// One drawn row of a file's part: its header in a patch of several
+    /// files, where a hunk starts, a break before a hunk the provider gave
+    /// no start for, or a line, by its place among the file's lines.
+    enum Row: Hashable {
+        case file(FileRow)
+        case start(newLine: UInt32)
+        case gap
+        case line(Int)
+    }
+
+    /// A file's part as rows, its hunks drawn exactly as the shared view
+    /// handed them.
+    static func rows(_ file: FilePatch) -> [Row] {
+        var rows: [Row] = file.file.map { [.file($0)] } ?? []
+        var index = 0
+        for (number, hunk) in file.hunks.enumerated() {
+            if let start = hunk.start {
+                rows.append(.start(newLine: start.new))
+            } else if number > 0 {
+                rows.append(.gap)
+            }
+            for _ in hunk.lines {
+                rows.append(.line(index))
+                index += 1
+            }
+        }
+        return rows
+    }
+
+    /// How many rows the whole patch draws, which decides whether it folds.
+    static func count(_ patch: [FilePatch]) -> Int {
+        patch.reduce(0) { $0 + rows($1).count }
+    }
 
     var body: some View {
-        // The whole patch is asked for, folded or not, so opening it asks
-        // for nothing new.
-        let request = CodeHighlighting.Request.edit(path: path, lines: lines)
-        let texts = lines.map(Self.code)
-        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
-        let shown = whole ? Array(lines.prefix(400)) : Array(lines.prefix(Self.lines))
+        // The rows each file has room for: the first `limit` of the patch.
+        let shares = patch.reduce(into: (left: whole ? Self.most : Self.lines, rows: [[Row]]())) { out, file in
+            let rows = Array(Self.rows(file).prefix(out.left))
+            out.left -= rows.count
+            out.rows.append(rows)
+        }.rows
         ScrollView(.horizontal) {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { index, line in
-                    Text(text(line, runs[index]))
-                        .designFont(.monoSmall, design)
-                        .foregroundStyle(ink(line))
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(wash(line))
+                ForEach(Array(patch.enumerated()), id: \.offset) { index, file in
+                    // Every file's part is asked for, shown or folded away,
+                    // so opening the diff asks for nothing new.
+                    FileDiff(path: file.file?.path ?? path, hunks: file.hunks, rows: shares[index])
                 }
             }
             .padding(.vertical, 6)
@@ -925,41 +957,65 @@ struct DiffPreview: View {
                 .fill(design.sunken.color)
         }
         .clipShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous))
+    }
+}
+
+/// One file's rows of a ``DiffPreview``, its code coloured as the file at
+/// `path` reads.
+private struct FileDiff: View {
+    @Environment(\.design) private var design
+    @Environment(\.codeHighlighting) private var highlighting
+    let path: String
+    let hunks: [PatchHunk]
+    let rows: [DiffPreview.Row]
+    @State private var answer: HighlightedCode?
+
+    var body: some View {
+        let request = CodeHighlighting.Request.patch(path: path, hunks: hunks)
+        let lines = hunks.flatMap(\.lines)
+        let texts = lines.map(\.text)
+        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                Text(text(row, lines, runs))
+                    .designFont(.monoSmall, design)
+                    .foregroundStyle(ink(row))
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(wash(row, lines))
+            }
+        }
         .task(id: request) { await highlighting.follow(request) { answer = $0 } }
     }
 
-    /// A line's code as the colouring reads it; a file's and a hunk's
-    /// start have none.
-    private static func code(_ line: EditLine) -> String {
-        if case .line(let line) = line { return line.text }
-        return ""
-    }
-
-    private func text(_ line: EditLine, _ runs: [CodeRun]) -> AttributedString {
-        switch line {
+    private func text(_ row: DiffPreview.Row, _ lines: [PatchLine], _ runs: [[CodeRun]]) -> AttributedString {
+        switch row {
         case .file(let file): return AttributedString(ChatWords.fileHeader(file))
-        case .hunk(_, let newStart): return AttributedString(String(localized: "Line \(newStart)"))
-        case .line(let line):
-            let sign = switch line.kind {
+        case .start(let newLine): return AttributedString(String(localized: "Line \(newLine)"))
+        case .gap: return AttributedString("⋯")
+        case .line(let index):
+            let sign = switch lines[index].kind {
             case .added: "+"
             case .removed: "-"
             case .context: " "
             }
-            return AttributedString(sign) + CodeText.attributed(runs) { design.ink($0).color }
+            return AttributedString(sign) + CodeText.attributed(runs[index]) { design.ink($0).color }
         }
     }
 
-    private func ink(_ line: EditLine) -> Color {
-        if case .hunk = line { return design.inkFaint.color }
-        if case .file = line { return design.inkMuted.color }
-        return design.ink.color
+    private func ink(_ row: DiffPreview.Row) -> Color {
+        switch row {
+        case .start, .gap: design.inkFaint.color
+        case .file: design.inkMuted.color
+        case .line: design.ink.color
+        }
     }
 
-    private func wash(_ line: EditLine) -> Color {
-        guard case .line(let line) = line else { return .clear }
-        switch line.kind {
-        case .added: return design.added.color.opacity(Self.wash)
-        case .removed: return design.removed.color.opacity(Self.wash)
+    private func wash(_ row: DiffPreview.Row, _ lines: [PatchLine]) -> Color {
+        guard case .line(let index) = row else { return .clear }
+        switch lines[index].kind {
+        case .added: return design.added.color.opacity(DiffPreview.wash)
+        case .removed: return design.removed.color.opacity(DiffPreview.wash)
         case .context: return .clear
         }
     }

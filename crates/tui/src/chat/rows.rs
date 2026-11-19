@@ -610,7 +610,7 @@ pub(crate) fn patch_lines(
         .filter_map(|line| line.number)
         .max()
         .map_or(0, |n| n.to_string().len());
-    let code = crate::code::patch(path, patch);
+    let code = crate::code::patch(path, &patch.hunks);
     let mut lines = Vec::new();
     for (line, runs) in patch.lines().zip(code) {
         let (sign, style) = match line.kind {

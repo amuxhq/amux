@@ -991,29 +991,29 @@ pub unsafe extern "C" fn amux_highlight_block(
     })
 }
 
-/// An edit ask's patch lines coloured as the file at `path` is, from its
-/// lines as the ask card carries them (`[EditLine]` as JSON). Answers a
-/// `HighlightedCode` as JSON with one line for each patch line, a file's
-/// and a hunk's start answering an empty line, the client drawing its own
-/// words for them; null when the lines do not parse. Settles and frees as
+/// A file's change coloured as the file at `path` is, from its hunks as
+/// an edit ask's card carries them (a `FilePatch`'s `[PatchHunk]` as JSON),
+/// each hunk coloured as a fragment of its own. Answers a `HighlightedCode`
+/// as JSON with one line for each of the hunks' lines, hunk after hunk;
+/// null when the hunks do not parse. Settles and frees as
 /// `amux_highlight_block` does.
 ///
 /// # Safety
 /// The strings are NUL-terminated.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_highlight_edit(
+pub unsafe extern "C" fn amux_highlight_patch(
     path: *const c_char,
-    lines: *const c_char,
+    hunks: *const c_char,
 ) -> *mut c_char {
     // SAFETY: the caller's contract.
     let path = unsafe { text(path) }.unwrap_or_default();
     // SAFETY: the caller's contract.
-    let lines: Option<Vec<ui_view::EditLine>> = unsafe { parse(lines) };
-    guard(std::ptr::null_mut(), || match lines {
-        Some(lines) => owned(&ui_view::highlight_edit(
+    let hunks: Option<Vec<ui_view::PatchHunk>> = unsafe { parse(hunks) };
+    guard(std::ptr::null_mut(), || match hunks {
+        Some(hunks) => owned(&ui_view::highlight_patch(
             ui_view::Highlighter::shared(),
             path,
-            &lines,
+            &hunks,
         )),
         None => std::ptr::null_mut(),
     })

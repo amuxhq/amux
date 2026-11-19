@@ -211,7 +211,8 @@ from a host's catalogue), and `amux_form_problems` (each field's
 Code is coloured the same way, by the shared view's highlighting:
 `amux_highlight_block(code, info, streaming)` for a fenced block of an
 agent's markdown, which the app parses itself, and
-`amux_highlight_edit(path, lines)` for an edit ask's `[EditLine]`. Each
+`amux_highlight_patch(path, hunks)` for one file's `[PatchHunk]` in an edit
+ask, each hunk coloured apart from the others. Each
 answers a `HighlightedCode`, lines of `CodeRun`s tagged with a `TokenKind`
 that the app maps to its own palette. Either can be called from any thread.
 A language's grammar is built in the background on first use, and a block

@@ -2171,8 +2171,14 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     );
     let hunks = patch_head(&state, &"k6".to_owned(), 10).unwrap().hunks;
     assert_eq!(
-        hunks.iter().map(Vec::len).collect::<Vec<_>>(),
-        vec![1, 1],
+        hunks
+            .iter()
+            .map(|hunk| (hunk.start, hunk.lines.len()))
+            .collect::<Vec<_>>(),
+        vec![
+            (Some(HunkStart { old: 2, new: 2 }), 1),
+            (Some(HunkStart { old: 40, new: 41 }), 1)
+        ],
         "each hunk of the patch is its own"
     );
     let head = patch_head(&state, &"k4".to_owned(), 3).expect("the landed edit has a head");
@@ -2281,7 +2287,12 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
         ]
     );
     // The two hunks stay apart, and a head cut short counts what it left.
-    let sizes = |head: &PatchHead| head.hunks.iter().map(Vec::len).collect::<Vec<_>>();
+    let sizes = |head: &PatchHead| {
+        head.hunks
+            .iter()
+            .map(|hunk| hunk.lines.len())
+            .collect::<Vec<_>>()
+    };
     assert_eq!(sizes(&head), vec![3, 2]);
     let short = patch_head(&codex, &"change".to_owned(), 4).unwrap();
     assert_eq!((sizes(&short), short.more), (vec![3, 1], 1));
@@ -3390,12 +3401,12 @@ fn a_notebook_edit_ask_shows_the_cell_change() {
         )],
         vec![],
     );
-    let AskBody::Edit { lines, .. } = &card.body else {
+    let AskBody::Edit { patch, .. } = &card.body else {
         panic!("not an edit card: {:?}", card.body);
     };
     assert!(
-        format!("{lines:?}").contains("print(2)"),
-        "the notebook edit's card shows no change: {lines:?}"
+        format!("{patch:?}").contains("print(2)"),
+        "the notebook edit's card shows no change: {patch:?}"
     );
 }
 
@@ -3443,6 +3454,79 @@ fn a_multi_file_patch_ask_names_every_file_and_its_change() {
             shown.contains(name),
             "the patch card never names {name}: {shown}"
         );
+    }
+}
+
+/// An edit ask's separate places in the file are coloured apart: a block
+/// comment that one replacement of a Claude edit, or one hunk of a Codex
+/// patch, leaves open does not colour the next, as it would were the two
+/// read as one stretch of code.
+#[test]
+fn an_edit_asks_hunks_are_coloured_apart() {
+    let queue = HeldJobs::default();
+    let highlighter = queue.highlighter();
+    highlighter.prepare(highlight::Language::Rust);
+    let path = format!("{QA_CWD}/src/lib.rs");
+    let claude = card_of(
+        Kind::ClaudeSdk,
+        vec![claude_permission(
+            "MultiEdit",
+            serde_json::json!({"file_path": path, "edits": [
+                {"old_string": "fn a() {}", "new_string": "/* opened here"},
+                {"old_string": "fn b() {}", "new_string": "fn far() {}"},
+            ]}),
+        )],
+        vec![],
+    );
+    let codex = card_of(
+        Kind::Codex,
+        vec![],
+        vec![wire::CodexAsk {
+            key: "patch-1".into(),
+            item_key: "t1".into(),
+            body: Some(wire::codex_ask::Body::FileChange(
+                wire::FileChangeApproval {
+                    changes: vec![wire::FileChange {
+                        path: path.clone(),
+                        kind: wire::FileChangeKind::Update as i32,
+                        patch: "@@ -3 +3 @@\n-fn a() {}\n+/* opened here\n@@ -40 +40 @@\n-fn b() {}\n+fn far() {}\n".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        }],
+    );
+    for (who, card) in [("claude", claude), ("codex", codex)] {
+        let AskBody::Edit { path, patch, .. } = &card.body else {
+            panic!("{who}: not an edit card: {:?}", card.body);
+        };
+        let [file] = patch.as_slice() else {
+            panic!("{who}: one file: {patch:?}");
+        };
+        assert_eq!(file.hunks.len(), 2, "{who}: each place is its own hunk");
+        let lines: Vec<PatchLine> = file
+            .hunks
+            .iter()
+            .flat_map(|hunk| hunk.lines.clone())
+            .collect();
+        let far = lines
+            .iter()
+            .position(|line| line.text == "fn far() {}")
+            .expect("the second place's added line");
+        let keyword = |code: &HighlightedCode| {
+            code.lines[far]
+                .iter()
+                .any(|run| run.text == "fn" && run.kind == TokenKind::Keyword)
+        };
+        let code = highlight_patch(&highlighter, path, &file.hunks);
+        assert!(code.settled);
+        assert_eq!(code.lines.len(), lines.len(), "{who}: a line for each");
+        assert!(keyword(&code), "{who}: {:?}", code.lines);
+        // Read as one stretch, the second place would be inside the comment.
+        let joined = highlight_patch(&highlighter, path, &[PatchHunk { start: None, lines }]);
+        assert!(!keyword(&joined), "{who}: the test no longer tells");
     }
 }
 

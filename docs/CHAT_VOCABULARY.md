@@ -163,17 +163,20 @@ another device does not flash from a cached snapshot.
 ### Permissions
 
 The body is `Command` (command, working directory, reason, description), `Edit` (path, file count, counts, the
-patch as parsed lines and the new file's line its first change lands on) or `Tool` (server, tool and
+patch and the new file's line its first change lands on) or `Tool` (server, tool and
 pretty-printed arguments; for Claude's web fetch and web search, the address or the words, as Claude's own dialog
-shows them). The edit's lines are `EditLine`s: in a patch of several files a `File` marker where each file's lines
-start, with its path and what happens to it (added, deleted, moved, edited); a `Hunk` marker with where the hunk
-starts in the old and new file; or a `PatchLine` (added, removed or context, numbered where the patch says). A
+shows them). The edit's patch is a `FilePatch` for each file: in a patch of several files, the file its part is
+in, with its path and what happens to it (added, deleted, moved, edited); then its `PatchHunk`s, each with where
+it starts in the old and new file when the patch says, and its `PatchLine`s (added, removed or context, numbered
+where the patch says). A landed edit's head under its row carries its first file's hunks the same way. The hunks
+are kept apart in the data because their lines are not neighbours in the file: each is coloured as code of its
+own, so a comment or string one leaves open does not colour the next, and no client joins or splits them. A
 notebook edit's lines are the cell's new source. A file's header
 lines are dropped and only outside a hunk, so a removed `-- comment` or an added `++i` stays a line of the patch;
 a file Codex adds or deletes whole reads as added or removed lines. Each client decides whether to draw a
 hunk's start: the terminal names the first change's line beside the path, the phone draws each hunk's start
-as its line in the new file. A Claude edit is only the text replaced and the text replacing it, so its lines
-carry no numbers and no line.
+as its line in the new file, the Mac a rule between hunks. A Claude edit is only the text replaced and the text
+replacing it, so its lines carry no numbers and no line; each of its replacements is a hunk of its own.
 
 | Outcome | Offered by |
 |---|---|

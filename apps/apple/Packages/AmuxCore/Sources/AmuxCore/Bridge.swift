@@ -86,10 +86,10 @@ extension CodeHighlighting {
                     Bridge.read(HighlightedCode.self, amux_highlight_block(code, info, streaming))
                 }
             }
-        case .edit(let path, let lines):
+        case .patch(let path, let hunks):
             path.withCString { path in
-                Bridge.json(lines).withCString { lines in
-                    Bridge.read(HighlightedCode.self, amux_highlight_edit(path, lines))
+                Bridge.json(hunks).withCString { hunks in
+                    Bridge.read(HighlightedCode.self, amux_highlight_patch(path, hunks))
                 }
             }
         }

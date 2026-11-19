@@ -19,7 +19,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::review::LineKind;
-use crate::rows::{EditLine, PatchHead};
+use crate::rows::{PatchHunk, PatchLine};
 
 /// What a run of code is, as far as colouring it goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -78,47 +78,38 @@ pub fn highlight_block(
     block(highlighter, code, info, streaming.then(Instant::now))
 }
 
-/// An edit card's patch lines, one result line for each, coloured as the
-/// file at `path` is. Removed lines are highlighted with the context around
-/// them as the old file read, added lines with it as the new file reads, so
-/// neither side's tokens run into the other's. A `File` line switches to
-/// that file's path and a `Hunk` line starts a new fragment, since the
-/// lines either side of it are not neighbours in the file; both come back
-/// as empty lines, the client drawing its own words for them.
-pub fn highlight_edit(
-    highlighter: &Highlighter,
-    path: &str,
-    lines: &[EditLine],
-) -> HighlightedCode {
-    edit(
-        highlighter,
-        path,
-        lines.iter().map(|line| match line {
-            EditLine::File(file) => Piece::File(&file.path),
-            EditLine::Hunk { .. } => Piece::Break,
-            EditLine::Line(line) => Piece::Line(line.kind, &line.text),
-        }),
-    )
-}
-
-/// A landed edit's patch head, all of one file, one result line for each
-/// of its lines, hunk after hunk; each hunk is coloured as a fragment of
-/// its own, as [`highlight_edit`] colours a card's.
+/// A file's change as an edit card shows it, coloured as the file at
+/// `path` is: one result line for each of its lines, hunk after hunk. The
+/// ask card and a landed edit's head both carry a file's change as its
+/// hunks, and both are coloured here.
+///
+/// Each hunk is coloured as a fragment of its own, since its lines are not
+/// neighbours of the next hunk's: a block comment or string one leaves open
+/// does not colour the next. Within a hunk, removed lines are highlighted
+/// with the context around them as the old file read, added lines with it
+/// as the new file reads, so neither side's tokens run into the other's.
 pub fn highlight_patch(
     highlighter: &Highlighter,
     path: &str,
-    patch: &PatchHead,
+    hunks: &[PatchHunk],
 ) -> HighlightedCode {
     let mut out = HighlightedCode {
         lines: Vec::new(),
         settled: true,
     };
-    for hunk in &patch.hunks {
-        let code = edit(
-            highlighter,
-            path,
-            hunk.iter().map(|line| Piece::Line(line.kind, &line.text)),
-        );
+    // A file without an extension is read by a `#!` on the patch's first
+    // line, where an edit that writes or starts a script carries it; the
+    // later hunks are of the same file.
+    let first = hunks.iter().flat_map(|hunk| &hunk.lines).next();
+    let language = first.and_then(|line| Language::from_file(path, &line.text));
+    for hunk in hunks {
+        let code = match language {
+            Some(language) => fragment(highlighter, language, &hunk.lines),
+            None => HighlightedCode {
+                lines: hunk.lines.iter().map(|line| plain(&line.text)).collect(),
+                settled: true,
+            },
+        };
         out.lines.extend(code.lines);
         out.settled &= code.settled;
     }
@@ -144,87 +135,34 @@ fn block(
     }
 }
 
-/// One line of an edit as the highlighting reads it.
-enum Piece<'a> {
-    /// Lines of another file start here.
-    File(&'a str),
-    /// The lines after this one do not follow on from those before.
-    Break,
-    Line(LineKind, &'a str),
-}
-
-fn edit<'a>(
-    highlighter: &Highlighter,
-    path: &'a str,
-    pieces: impl Iterator<Item = Piece<'a>>,
-) -> HighlightedCode {
+/// One hunk's lines, coloured in place: the old side (context and removed
+/// lines) and the new side (context and added lines) each as code of its
+/// own, the context taking the new side's colours.
+fn fragment(highlighter: &Highlighter, language: Language, lines: &[PatchLine]) -> HighlightedCode {
     let mut out = HighlightedCode {
-        lines: Vec::new(),
+        lines: lines.iter().map(|line| plain(&line.text)).collect(),
         settled: true,
-    };
-    let mut path = path;
-    // The fragment being gathered: each line's place in `out`, its kind
-    // and its text.
-    let mut fragment: Vec<(usize, LineKind, &str)> = Vec::new();
-    for piece in pieces {
-        match piece {
-            Piece::File(next) => {
-                fragment_into(highlighter, path, &mut fragment, &mut out);
-                path = next;
-                out.lines.push(Vec::new());
-            }
-            Piece::Break => {
-                fragment_into(highlighter, path, &mut fragment, &mut out);
-                out.lines.push(Vec::new());
-            }
-            Piece::Line(kind, text) => {
-                fragment.push((out.lines.len(), kind, text));
-                out.lines.push(plain(text));
-            }
-        }
-    }
-    fragment_into(highlighter, path, &mut fragment, &mut out);
-    out
-}
-
-/// Colours a fragment's lines in place in `out`: the old side (context
-/// and removed lines) and the new side (context and added lines) each as
-/// code of their own, the context taking the new side's colours.
-fn fragment_into(
-    highlighter: &Highlighter,
-    path: &str,
-    fragment: &mut Vec<(usize, LineKind, &str)>,
-    out: &mut HighlightedCode,
-) {
-    let lines = std::mem::take(fragment);
-    let Some((_, _, first)) = lines.first() else {
-        return;
-    };
-    // A file without an extension is read by a `#!` on the fragment's first
-    // line, where an edit that writes or starts a script carries it.
-    let Some(language) = Language::from_file(path, first) else {
-        return;
     };
     // The old side colours only its removed lines: the context it shares
     // with the new side takes the new side's colours.
-    let old: Vec<&(usize, LineKind, &str)> = lines
-        .iter()
-        .filter(|(_, kind, _)| *kind != LineKind::Added)
-        .collect();
-    let new: Vec<&(usize, LineKind, &str)> = lines
-        .iter()
-        .filter(|(_, kind, _)| *kind != LineKind::Removed)
-        .collect();
-    for (side, only) in [(old, Some(LineKind::Removed)), (new, None)] {
+    for (left_out, only) in [
+        (LineKind::Added, Some(LineKind::Removed)),
+        (LineKind::Removed, None),
+    ] {
+        let side: Vec<(usize, &PatchLine)> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.kind != left_out)
+            .collect();
         if !side
             .iter()
-            .any(|(_, kind, _)| only.is_none_or(|only| *kind == only))
+            .any(|(_, line)| only.is_none_or(|only| line.kind == only))
         {
             continue;
         }
         let mut code = String::new();
-        for (_, _, text) in &side {
-            code.push_str(text);
+        for (_, line) in &side {
+            code.push_str(&line.text);
             code.push('\n');
         }
         let Highlighted {
@@ -232,12 +170,13 @@ fn fragment_into(
             settled,
         } = highlighter.highlight(&code, Some(language));
         out.settled &= settled;
-        for ((at, kind, _), line) in side.iter().zip(coloured.iter()) {
-            if only.is_none_or(|only| *kind == only) {
-                out.lines[*at] = runs(line);
+        for ((at, line), runs_of) in side.iter().zip(coloured.iter()) {
+            if only.is_none_or(|only| line.kind == only) {
+                out.lines[*at] = runs(runs_of);
             }
         }
     }
+    out
 }
 
 fn runs(line: &[highlight::Run]) -> Vec<CodeRun> {
@@ -280,7 +219,6 @@ mod tests {
     use highlight::HeldJobs;
 
     use super::*;
-    use crate::rows::{FileChangeView, FileRow, PatchLine};
 
     fn kinds(code: &HighlightedCode) -> Vec<Vec<(&str, TokenKind)>> {
         code.lines
@@ -350,6 +288,18 @@ mod tests {
         assert_eq!(kinds(&passed)[1], vec![("let", TokenKind::Plain)]);
     }
 
+    fn line(kind: LineKind, text: &str) -> PatchLine {
+        PatchLine {
+            number: None,
+            kind,
+            text: text.to_owned(),
+        }
+    }
+
+    fn hunk(lines: Vec<PatchLine>) -> PatchHunk {
+        PatchHunk { start: None, lines }
+    }
+
     #[test]
     fn an_edit_colours_each_side_as_its_file_reads() {
         let queue = HeldJobs::default();
@@ -357,13 +307,13 @@ mod tests {
         highlighter.prepare(Language::Python);
         // Read as one text, the added line would sit inside the string the
         // removed lines open and close.
-        let lines = [
-            Piece::Line(LineKind::Context, "def f():"),
-            Piece::Line(LineKind::Removed, "    s = \"\"\""),
-            Piece::Line(LineKind::Added, "    n = 1"),
-            Piece::Line(LineKind::Removed, "    \"\"\""),
+        let lines = vec![
+            line(LineKind::Context, "def f():"),
+            line(LineKind::Removed, "    s = \"\"\""),
+            line(LineKind::Added, "    n = 1"),
+            line(LineKind::Removed, "    \"\"\""),
         ];
-        let code = edit(&highlighter, "src/f.py", lines.into_iter());
+        let code = highlight_patch(&highlighter, "src/f.py", &[hunk(lines)]);
         assert!(code.settled);
         assert_eq!(code.lines.len(), 4);
         assert!(has(&code, 0, "def", TokenKind::Keyword));
@@ -380,72 +330,38 @@ mod tests {
     }
 
     #[test]
-    fn an_edit_of_several_files_takes_each_files_language() {
+    fn a_patch_takes_its_files_language_and_none_is_plain() {
         let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
-        highlighter.prepare(Language::Rust);
         highlighter.prepare(Language::Python);
-        let file = |path: &str| FileRow {
-            path: path.to_owned(),
-            change: FileChangeView::Edited,
-            added: 1,
-            removed: 0,
-            line: None,
-        };
-        let line = |text: &str| {
-            EditLine::Line(PatchLine {
-                number: None,
-                kind: LineKind::Added,
-                text: text.to_owned(),
-            })
-        };
-        let lines = [
-            EditLine::File(file("a.rs")),
-            line("fn a() {}"),
-            EditLine::Hunk {
-                old_start: 9,
-                new_start: 9,
-            },
-            line("struct B;"),
-            EditLine::File(file("b.py")),
-            line("def b(): pass"),
-            EditLine::File(file("notes.txt")),
-            line("def plain"),
-        ];
-        let code = highlight_edit(&highlighter, "a.rs", &lines);
+        let hunks = [hunk(vec![line(LineKind::Added, "def b(): pass")])];
+        let code = highlight_patch(&highlighter, "b.py", &hunks);
         assert!(code.settled);
-        assert_eq!(code.lines.len(), lines.len());
-        assert!(code.lines[0].is_empty() && code.lines[2].is_empty());
-        assert!(has(&code, 1, "fn", TokenKind::Keyword));
-        assert!(has(&code, 3, "struct", TokenKind::Keyword));
-        assert!(has(&code, 5, "def", TokenKind::Keyword));
-        assert_eq!(kinds(&code)[7], vec![("def plain", TokenKind::Plain)]);
+        assert!(has(&code, 0, "def", TokenKind::Keyword));
+        let plain = highlight_patch(&highlighter, "notes.txt", &hunks);
+        assert!(plain.settled);
+        assert_eq!(
+            kinds(&plain),
+            vec![vec![("def b(): pass", TokenKind::Plain)]]
+        );
     }
 
-    /// A landed edit's hunks are fragments of their own: the block comment
-    /// the first leaves open does not run into the second, which is
-    /// elsewhere in the file.
+    /// A patch's hunks are fragments of their own: the block comment the
+    /// first leaves open does not run into the second, which is elsewhere
+    /// in the file.
     #[test]
     fn a_patchs_hunks_are_coloured_apart() {
         let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
-        let line = |number, kind, text: &str| PatchLine {
-            number: Some(number),
-            kind,
-            text: text.to_owned(),
-        };
-        let patch = PatchHead {
-            hunks: vec![
-                vec![
-                    line(3, LineKind::Context, "fn a() {}"),
-                    line(4, LineKind::Added, "/* opened here"),
-                ],
-                vec![line(40, LineKind::Added, "fn far() {}")],
-            ],
-            more: 0,
-        };
-        let code = highlight_patch(&highlighter, "src/lib.rs", &patch);
+        let hunks = [
+            hunk(vec![
+                line(LineKind::Context, "fn a() {}"),
+                line(LineKind::Added, "/* opened here"),
+            ]),
+            hunk(vec![line(LineKind::Added, "fn far() {}")]),
+        ];
+        let code = highlight_patch(&highlighter, "src/lib.rs", &hunks);
         assert!(code.settled);
         assert_eq!(code.lines.len(), 3, "one result line for each patch line");
         assert!(has(&code, 1, "/* opened here", TokenKind::Comment));
@@ -455,22 +371,39 @@ mod tests {
             kinds(&code)
         );
         // Read as one fragment, the second hunk would be inside the comment.
-        let joined = PatchHead {
-            hunks: vec![patch.lines().cloned().collect()],
-            more: 0,
-        };
+        let joined = [hunk(hunks.iter().flat_map(|h| h.lines.clone()).collect())];
         let joined = highlight_patch(&highlighter, "src/lib.rs", &joined);
         assert!(!has(&joined, 2, "fn", TokenKind::Keyword));
+    }
+
+    /// A script without an extension is read by the `#!` its patch starts
+    /// with, in every hunk: the later ones are of the same file.
+    #[test]
+    fn a_scripts_later_hunks_take_the_language_its_first_line_names() {
+        let queue = HeldJobs::default();
+        let highlighter = queue.highlighter();
+        highlighter.prepare(Language::Python);
+        let hunks = [
+            hunk(vec![line(LineKind::Context, "#!/usr/bin/env python3")]),
+            hunk(vec![line(LineKind::Added, "def far(): pass")]),
+        ];
+        let code = highlight_patch(&highlighter, "bin/tool", &hunks);
+        assert!(code.settled);
+        assert!(
+            has(&code, 1, "def", TokenKind::Keyword),
+            "{:?}",
+            kinds(&code)
+        );
     }
 
     #[test]
     fn an_edit_whose_grammar_is_building_is_unsettled() {
         let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
-        let code = edit(
+        let code = highlight_patch(
             &highlighter,
             "main.go",
-            [Piece::Line(LineKind::Added, "func main() {}")].into_iter(),
+            &[hunk(vec![line(LineKind::Added, "func main() {}")])],
         );
         assert!(!code.settled);
         assert_eq!(

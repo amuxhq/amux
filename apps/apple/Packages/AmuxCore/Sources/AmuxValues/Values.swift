@@ -421,10 +421,11 @@ public struct AppUpdate: Codable, Hashable, Sendable {
 
 public enum AskBody: Codable, Hashable, Sendable {
     case command(command: String, cwd: String, reason: String, description: String)
-    /// The patch's lines, and the new file's line its first change lands
-    /// on when the patch says (a Claude edit's does not: it is only the
-    /// text replaced and the text replacing it).
-    case edit(path: String, files: UInt32, added: UInt32, removed: UInt32, lines: [EditLine], reason: String, created: Bool?, line: UInt32?)
+    /// The patch, file by file and each file as its hunks, and the new
+    /// file's line its first change lands on when the patch says (a Claude
+    /// edit's does not: it is only the text replaced and the text
+    /// replacing it).
+    case edit(path: String, files: UInt32, added: UInt32, removed: UInt32, patch: [FilePatch], reason: String, created: Bool?, line: UInt32?)
     /// A tool call. Its arguments are the input pretty-printed, except
     /// for Claude's web fetch and web search, whose arguments are the
     /// address it would fetch or the words it would search for, as Claude's
@@ -464,7 +465,7 @@ public enum AskBody: Codable, Hashable, Sendable {
         case files
         case added
         case removed
-        case lines
+        case patch
         case reason
         case created
         case line
@@ -531,7 +532,7 @@ public enum AskBody: Codable, Hashable, Sendable {
                 files: try _fields.decode(UInt32.self, forKey: .files),
                 added: try _fields.decode(UInt32.self, forKey: .added),
                 removed: try _fields.decode(UInt32.self, forKey: .removed),
-                lines: try _fields.decode([EditLine].self, forKey: .lines),
+                patch: try _fields.decode([FilePatch].self, forKey: .patch),
                 reason: try _fields.decode(String.self, forKey: .reason),
                 created: try _fields.decodeIfPresent(Bool.self, forKey: .created),
                 line: try _fields.decodeIfPresent(UInt32.self, forKey: .line))
@@ -591,14 +592,14 @@ public enum AskBody: Codable, Hashable, Sendable {
             try _fields.encode(cwd, forKey: .cwd)
             try _fields.encode(reason, forKey: .reason)
             try _fields.encode(description, forKey: .description)
-        case .edit(let path, let files, let added, let removed, let lines, let reason, let created, let line):
+        case .edit(let path, let files, let added, let removed, let patch, let reason, let created, let line):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: EditKeys.self, forKey: .edit)
             try _fields.encode(path, forKey: .path)
             try _fields.encode(files, forKey: .files)
             try _fields.encode(added, forKey: .added)
             try _fields.encode(removed, forKey: .removed)
-            try _fields.encode(lines, forKey: .lines)
+            try _fields.encode(patch, forKey: .patch)
             try _fields.encode(reason, forKey: .reason)
             try _fields.encodeIfPresent(created, forKey: .created)
             try _fields.encodeIfPresent(line, forKey: .line)
@@ -2774,68 +2775,6 @@ public enum DraftPart: Codable, Hashable, Sendable {
     }
 }
 
-/// One line of an edit's patch as an ask carries it: where a file starts,
-/// where a hunk starts, by its first line in the old file and the new, or a
-/// line of the patch. A file's own header lines are not carried. Each
-/// client decides whether to draw a hunk's start.
-public enum EditLine: Codable, Hashable, Sendable {
-    /// In a patch of several files, where each file's lines start: the
-    /// file, named from the agent's folder, and what happens to it (added,
-    /// deleted, moved or edited), with its counts.
-    case file(FileRow)
-    case hunk(oldStart: UInt32, newStart: UInt32)
-    case line(PatchLine)
-
-    private enum Tag: String, CodingKey {
-        case file = "File"
-        case hunk = "Hunk"
-        case line = "Line"
-    }
-
-    private enum HunkKeys: String, CodingKey {
-        case oldStart = "old_start"
-        case newStart = "new_start"
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a EditLine names exactly one variant"))
-        }
-        switch _tag {
-        case .file:
-            self = .file(try _container.decode(FileRow.self, forKey: .file))
-        case .hunk:
-            let _fields = try _container.nestedContainer(
-                keyedBy: HunkKeys.self, forKey: .hunk)
-            self = .hunk(
-                oldStart: try _fields.decode(UInt32.self, forKey: .oldStart),
-                newStart: try _fields.decode(UInt32.self, forKey: .newStart))
-        case .line:
-            self = .line(try _container.decode(PatchLine.self, forKey: .line))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .file(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .file)
-        case .hunk(let oldStart, let newStart):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: HunkKeys.self, forKey: .hunk)
-            try _fields.encode(oldStart, forKey: .oldStart)
-            try _fields.encode(newStart, forKey: .newStart)
-        case .line(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .line)
-        }
-    }
-}
-
 public struct EffortChoice: Codable, Hashable, Sendable {
     public var value: String
     public var current: Bool
@@ -3221,6 +3160,29 @@ public enum FileChangeView: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: WritingKeys.self, forKey: .writing)
             try _fields.encode(lines, forKey: .lines)
         }
+    }
+}
+
+/// One file's part of an edit ask's patch, as hunks. A file's own header
+/// lines are not carried. Each client decides whether to draw a hunk's
+/// start.
+public struct FilePatch: Codable, Hashable, Sendable {
+    public var hunks: [PatchHunk]
+    /// In a patch of several files, the file these hunks are in, named
+    /// from the agent's folder, and what happens to it (added, deleted,
+    /// moved or edited), with its counts, for the client to draw where its
+    /// lines start. None in an edit of one file, which the card names
+    /// already.
+    public var file: FileRow?
+
+    public init(hunks: [PatchHunk], file: FileRow?) {
+        self.hunks = hunks
+        self.file = file
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hunks
+        case file
     }
 }
 
@@ -4059,6 +4021,22 @@ public struct Hunk: Codable, Hashable, Sendable {
         case skips
         case scope
         case lines
+    }
+}
+
+/// A hunk's first line in the old file and in the new.
+public struct HunkStart: Codable, Hashable, Sendable {
+    public var old: UInt32
+    public var new: UInt32
+
+    public init(old: UInt32, new: UInt32) {
+        self.old = old
+        self.new = new
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case old
+        case new
     }
 }
 
@@ -5315,6 +5293,32 @@ public struct PairingWindowView: Codable, Hashable, Sendable {
         case pin
         case qrLink = "qr_link"
         case ttlSeconds = "ttl_seconds"
+    }
+}
+
+/// A stretch of a patch whose lines are neighbours in the file: one
+/// hunk of a diff, or one of the places a Claude edit replaces text.
+///
+/// A file's change is always carried as its hunks, by an edit ask's card
+/// and by a landed edit's head alike, because the lines of two hunks are
+/// not neighbours. Kept apart in the data itself, nothing that reads the
+/// lines as code (the highlighting, which a comment or string one hunk
+/// leaves open would otherwise run into the next) can join them, whether
+/// or not a client draws where each starts.
+public struct PatchHunk: Codable, Hashable, Sendable {
+    public var lines: [PatchLine]
+    /// Where the hunk starts, when the provider said: a diff's hunk header
+    /// does, a Claude edit's replacement is only text and does not.
+    public var start: HunkStart?
+
+    public init(lines: [PatchLine], start: HunkStart?) {
+        self.lines = lines
+        self.start = start
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lines
+        case start
     }
 }
 

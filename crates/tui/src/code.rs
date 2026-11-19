@@ -14,7 +14,7 @@
 use std::cell::{Cell, RefCell};
 
 use ratatui::style::Style;
-use ui_view::{CodeRun, EditLine, HighlightedCode, Highlighter, PatchHead};
+use ui_view::{CodeRun, HighlightedCode, Highlighter, PatchHunk};
 
 use crate::theme::Theme;
 
@@ -79,16 +79,11 @@ pub(crate) fn block(code: &str, info: &str, streaming: bool, theme: Theme) -> (V
     (lines, settled)
 }
 
-/// An edit card's patch lines' code, one line for each; see
-/// [`ui_view::highlight_edit`].
-pub(crate) fn edit(path: &str, lines: &[EditLine]) -> Vec<Vec<CodeRun>> {
-    noted(ui_view::highlight_edit(&highlighter(), path, lines))
-}
-
-/// A landed edit's patch head's code, one line for each of its lines; see
+/// A file's change's code, for an edit card or a landed edit's head: one
+/// line for each of its hunks' lines, hunk after hunk; see
 /// [`ui_view::highlight_patch`].
-pub(crate) fn patch(path: &str, patch: &PatchHead) -> Vec<Vec<CodeRun>> {
-    noted(ui_view::highlight_patch(&highlighter(), path, patch))
+pub(crate) fn patch(path: &str, hunks: &[PatchHunk]) -> Vec<Vec<CodeRun>> {
+    noted(ui_view::highlight_patch(&highlighter(), path, hunks))
 }
 
 /// A diff line's runs in the line's style, each token in its colour.
@@ -101,7 +96,7 @@ pub(crate) fn diff_runs(runs: &[CodeRun], line: Style, theme: Theme) -> Runs {
 #[cfg(test)]
 mod tests {
     use ratatui::text::Line;
-    use ui_view::{LineKind, PatchHead, PatchLine, TokenKind};
+    use ui_view::{FilePatch, LineKind, PatchHead, PatchHunk, PatchLine, TokenKind};
 
     use super::*;
 
@@ -122,12 +117,15 @@ mod tests {
             text: text.into(),
         };
         let patch = PatchHead {
-            hunks: vec![vec![
-                line(1, LineKind::Context, "fn ready() -> bool {"),
-                line(2, LineKind::Removed, "    false"),
-                line(2, LineKind::Added, "    true"),
-                line(3, LineKind::Context, "}"),
-            ]],
+            hunks: vec![PatchHunk {
+                start: None,
+                lines: vec![
+                    line(1, LineKind::Context, "fn ready() -> bool {"),
+                    line(2, LineKind::Removed, "    false"),
+                    line(2, LineKind::Added, "    true"),
+                    line(3, LineKind::Context, "}"),
+                ],
+            }],
             more: 0,
         };
         let lines = crate::chat::rows::patch_lines(&patch, "src/ready.rs", true, 'b', 80, theme);
@@ -178,8 +176,9 @@ mod tests {
             line(1, LineKind::Context, "fn ready() -> bool {"),
             line(2, LineKind::Added, "    true"),
         ];
+        let hunks = vec![PatchHunk { start: None, lines }];
         let patch = PatchHead {
-            hunks: vec![lines.clone()],
+            hunks: hunks.clone(),
             more: 0,
         };
         let card = ui_view::AskCard {
@@ -193,7 +192,7 @@ mod tests {
                 files: 1,
                 added: 1,
                 removed: 0,
-                lines: lines.into_iter().map(EditLine::Line).collect(),
+                patch: vec![FilePatch { file: None, hunks }],
                 line: Some(2),
                 reason: String::new(),
                 created: Some(false),

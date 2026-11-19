@@ -289,7 +289,7 @@ enum ComponentCatalog {
                 command: "rm -rf target", cwd: "~/src/amux", reason: "", description: "Clean the build"),
                 F.sdkPermissionChoices)),
             ask("permission-edit", height: 560, F.card(.claudeSdk, .edit(
-                path: "crates/amux-ui/src/pairing.rs", files: 1, added: 1, removed: 2, lines: F.diff,
+                path: "crates/amux-ui/src/pairing.rs", files: 1, added: 1, removed: 2, patch: F.diff,
                 reason: "", created: false, line: 13), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
                     Choice(outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session), primary: false, takesNote: false),
@@ -297,7 +297,7 @@ enum ComponentCatalog {
                 ])),
             ask("permission-create", height: 420, F.card(.claudeSdk, .edit(
                 path: "crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs",
-                files: 1, added: 2, removed: 0, lines: F.created,
+                files: 1, added: 2, removed: 0, patch: F.created,
                 reason: "", created: true, line: 1), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
                     Choice(outcome: .deny, primary: false, takesNote: true),
@@ -1232,23 +1232,21 @@ enum CatalogFixtures {
         2. Update the three specs
         """
 
-    /// An edit's patch as the shared view hands it: where its hunk starts,
-    /// then its lines.
-    static let diff: [EditLine] = [
-        .hunk(oldStart: 12, newStart: 12),
-        .line(PatchLine(kind: .context, text: "  match status {", number: 12)),
-        .line(PatchLine(kind: .removed, text: "      Code::NotFound => \"no such host\",", number: 13)),
-        .line(PatchLine(kind: .removed, text: "      Code::InvalidPin => \"wrong PIN\",", number: 14)),
-        .line(PatchLine(kind: .added, text: "      _ => \"could not pair, check the code\",", number: 13)),
-        .line(PatchLine(kind: .context, text: "  }", number: 14)),
-    ]
+    /// An edit's patch as the shared view hands it: one file, its one hunk
+    /// with where it starts.
+    static let diff: [FilePatch] = [FilePatch(hunks: [PatchHunk(lines: [
+        PatchLine(kind: .context, text: "  match status {", number: 12),
+        PatchLine(kind: .removed, text: "      Code::NotFound => \"no such host\",", number: 13),
+        PatchLine(kind: .removed, text: "      Code::InvalidPin => \"wrong PIN\",", number: 14),
+        PatchLine(kind: .added, text: "      _ => \"could not pair, check the code\",", number: 13),
+        PatchLine(kind: .context, text: "  }", number: 14),
+    ], start: HunkStart(old: 12, new: 12))], file: nil)]
 
     /// A new file's whole body, every line added.
-    static let created: [EditLine] = [
-        .hunk(oldStart: 0, newStart: 1),
-        .line(PatchLine(kind: .added, text: "//! Every reason a pairing is refused.", number: 1)),
-        .line(PatchLine(kind: .added, text: "pub use super::Code;", number: 2)),
-    ]
+    static let created: [FilePatch] = [FilePatch(hunks: [PatchHunk(lines: [
+        PatchLine(kind: .added, text: "//! Every reason a pairing is refused.", number: 1),
+        PatchLine(kind: .added, text: "pub use super::Code;", number: 2),
+    ], start: HunkStart(old: 0, new: 1))], file: nil)]
 
     /// As the shared view reads a schema with a defaulted repository, a
     /// choice of labels and a defaulted toggle.

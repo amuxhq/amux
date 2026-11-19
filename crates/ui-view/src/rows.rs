@@ -1598,7 +1598,7 @@ fn web_step(search: &wire::WebSearch) -> (ExploreVerb, String) {
 /// file, so a file it would have added reads as a write that never
 /// happened.
 pub(crate) fn codex_file(cwd: &str, change: &wire::FileChange, landed: bool) -> FileRow {
-    let (added, removed) = counts(&change_lines(change));
+    let (added, removed) = counts(&change_hunks(change));
     let change_view =
         match FileChangeKind::try_from(change.kind).unwrap_or(FileChangeKind::Unspecified) {
             FileChangeKind::Add if landed => FileChangeView::Created { lines: added },
@@ -1618,23 +1618,26 @@ pub(crate) fn codex_file(cwd: &str, change: &wire::FileChange, landed: bool) -> 
     }
 }
 
-/// A Codex file change's patch lines. Codex gives a file it adds or
+/// A Codex file change's patch as hunks. Codex gives a file it adds or
 /// deletes as the file's text, not as a diff, so each of its lines is added
-/// or removed whole.
-pub(crate) fn change_lines(change: &wire::FileChange) -> Vec<EditLine> {
+/// or removed whole, in one hunk.
+pub(crate) fn change_hunks(change: &wire::FileChange) -> Vec<PatchHunk> {
     let whole = |kind| {
-        change
+        let lines: Vec<PatchLine> = change
             .patch
             .lines()
             .enumerate()
-            .map(|(i, text)| {
-                EditLine::Line(PatchLine {
-                    number: Some(i as u32 + 1),
-                    kind,
-                    text: text.to_owned(),
-                })
+            .map(|(i, text)| PatchLine {
+                number: Some(i as u32 + 1),
+                kind,
+                text: text.to_owned(),
             })
-            .collect()
+            .collect();
+        if lines.is_empty() {
+            Vec::new()
+        } else {
+            vec![PatchHunk { start: None, lines }]
+        }
     };
     let diff = change.patch.lines().any(|line| line.starts_with("@@"));
     match FileChangeKind::try_from(change.kind).unwrap_or(FileChangeKind::Unspecified) {
@@ -1644,20 +1647,15 @@ pub(crate) fn change_lines(change: &wire::FileChange) -> Vec<EditLine> {
     }
 }
 
-/// Added and removed lines among parsed patch lines.
-pub(crate) fn counts(lines: &[EditLine]) -> (u32, u32) {
-    lines
-        .iter()
-        .fold((0, 0), |(added, removed), line| match line {
-            EditLine::Line(PatchLine {
-                kind: LineKind::Added,
-                ..
-            }) => (added + 1, removed),
-            EditLine::Line(PatchLine {
-                kind: LineKind::Removed,
-                ..
-            }) => (added, removed + 1),
-            _ => (added, removed),
+/// Added and removed lines among hunks.
+pub(crate) fn counts<'a>(hunks: impl IntoIterator<Item = &'a PatchHunk>) -> (u32, u32) {
+    hunks
+        .into_iter()
+        .flat_map(|hunk| &hunk.lines)
+        .fold((0, 0), |(added, removed), line| match line.kind {
+            LineKind::Added => (added + 1, removed),
+            LineKind::Removed => (added, removed + 1),
+            LineKind::Context => (added, removed),
         })
 }
 
@@ -1671,41 +1669,56 @@ pub struct PatchLine {
     pub text: String,
 }
 
-/// One line of an edit's patch as an ask carries it: where a file starts,
-/// where a hunk starts, by its first line in the old file and the new, or a
-/// line of the patch. A file's own header lines are not carried. Each
-/// client decides whether to draw a hunk's start.
+/// A stretch of a patch whose lines are neighbours in the file: one
+/// hunk of a diff, or one of the places a Claude edit replaces text.
+///
+/// A file's change is always carried as its hunks, by an edit ask's card
+/// and by a landed edit's head alike, because the lines of two hunks are
+/// not neighbours. Kept apart in the data itself, nothing that reads the
+/// lines as code (the highlighting, which a comment or string one hunk
+/// leaves open would otherwise run into the next) can join them, whether
+/// or not a client draws where each starts.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum EditLine {
-    /// In a patch of several files, where each file's lines start: the
-    /// file, named from the agent's folder, and what happens to it (added,
-    /// deleted, moved or edited), with its counts.
-    File(FileRow),
-    Hunk {
-        old_start: u32,
-        new_start: u32,
-    },
-    Line(PatchLine),
+pub struct PatchHunk {
+    /// Where the hunk starts, when the provider said: a diff's hunk header
+    /// does, a Claude edit's replacement is only text and does not.
+    pub start: Option<HunkStart>,
+    pub lines: Vec<PatchLine>,
+}
+
+/// A hunk's first line in the old file and in the new.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HunkStart {
+    pub old: u32,
+    pub new: u32,
+}
+
+/// One file's part of an edit ask's patch, as hunks. A file's own header
+/// lines are not carried. Each client decides whether to draw a hunk's
+/// start.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FilePatch {
+    /// In a patch of several files, the file these hunks are in, named
+    /// from the agent's folder, and what happens to it (added, deleted,
+    /// moved or edited), with its counts, for the client to draw where its
+    /// lines start. None in an edit of one file, which the card names
+    /// already.
+    pub file: Option<FileRow>,
+    pub hunks: Vec<PatchHunk>,
 }
 
 /// The head of a landed file change: its first file's first lines, hunk
 /// by hunk, and how many lines of that file's patch follow them.
-///
-/// The lines of one hunk are neighbours in the file and the lines of two
-/// are not, so the hunks are kept apart in the data itself: whatever reads
-/// the head as code (the highlighting, a comment one hunk leaves open)
-/// cannot run one hunk into the next, whether or not a client draws where
-/// each starts.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct PatchHead {
-    pub hunks: Vec<Vec<PatchLine>>,
+    pub hunks: Vec<PatchHunk>,
     pub more: usize,
 }
 
 impl PatchHead {
     /// Every line of the head, hunk after hunk.
     pub fn lines(&self) -> impl Iterator<Item = &PatchLine> {
-        self.hunks.iter().flatten()
+        self.hunks.iter().flat_map(|hunk| &hunk.lines)
     }
 }
 
@@ -1726,15 +1739,13 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
                 return None;
             }
             match &work.of {
-                Some(wire::work::Of::FileChange(change)) => {
-                    hunks_of(change_lines(change.changes.first()?))
-                }
+                Some(wire::work::Of::FileChange(change)) => change_hunks(change.changes.first()?),
                 _ => return None,
             }
         }
         _ => return None,
     };
-    let total: usize = hunks.iter().map(Vec::len).sum();
+    let total: usize = hunks.iter().map(|hunk| hunk.lines.len()).sum();
     if total == 0 {
         return None;
     }
@@ -1745,11 +1756,11 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
             if left == 0 {
                 return None;
             }
-            hunk.truncate(left);
-            left -= hunk.len();
+            hunk.lines.truncate(left);
+            left -= hunk.lines.len();
             Some(hunk)
         })
-        .filter(|hunk| !hunk.is_empty())
+        .filter(|hunk| !hunk.lines.is_empty())
         .collect();
     Some(PatchHead {
         hunks,
@@ -1757,20 +1768,7 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
     })
 }
 
-/// A parsed patch's lines split where each hunk starts.
-fn hunks_of(lines: Vec<EditLine>) -> Vec<Vec<PatchLine>> {
-    let mut hunks = vec![Vec::new()];
-    for line in lines {
-        match line {
-            EditLine::Line(line) => hunks.last_mut().expect("one hunk at least").push(line),
-            EditLine::File(_) | EditLine::Hunk { .. } => hunks.push(Vec::new()),
-        }
-    }
-    hunks.retain(|hunk| !hunk.is_empty());
-    hunks
-}
-
-fn claude_patch(tool: &ToolCall) -> Option<Vec<Vec<PatchLine>>> {
+fn claude_patch(tool: &ToolCall) -> Option<Vec<PatchHunk>> {
     let (_, Some(tool_input::Of::Edit(edit))) = read_input(tool) else {
         return None;
     };
@@ -1780,18 +1778,26 @@ fn claude_patch(tool: &ToolCall) -> Option<Vec<Vec<PatchLine>>> {
                 .iter()
                 .map(|hunk| {
                     let (mut old, mut new) = (Some(hunk.old_start), Some(hunk.new_start));
-                    hunk.lines
-                        .iter()
-                        .map(|line| numbered(line, &mut old, &mut new))
-                        .collect()
+                    PatchHunk {
+                        start: Some(HunkStart {
+                            old: hunk.old_start,
+                            new: hunk.new_start,
+                        }),
+                        lines: hunk
+                            .lines
+                            .iter()
+                            .map(|line| numbered(line, &mut old, &mut new))
+                            .collect(),
+                    }
                 })
                 .collect(),
         );
     }
     if edit.write {
         let content = edit.replacements.first().map_or("", |write| &write.new);
-        return Some(vec![
-            content
+        return Some(vec![PatchHunk {
+            start: None,
+            lines: content
                 .lines()
                 .enumerate()
                 .map(|(i, text)| PatchLine {
@@ -1800,20 +1806,23 @@ fn claude_patch(tool: &ToolCall) -> Option<Vec<Vec<PatchLine>>> {
                     text: text.to_owned(),
                 })
                 .collect(),
-        ]);
+        }]);
     }
-    // Each replacement is a place of its own in the file.
-    Some(edit.replacements.iter().map(replacement_lines).collect())
+    Some(replaced_hunks(edit))
 }
 
-/// What a Claude edit replaces and writes, as unnumbered patch lines: each
+/// What a Claude edit replaces and writes, as unnumbered hunks, one for
+/// each replacement, since each is a place of its own in the file: the
 /// replaced text removed, then its replacement added. There is no file to
 /// number them against.
-pub(crate) fn replaced_lines(edit: &wire::EditInput) -> Vec<EditLine> {
+pub(crate) fn replaced_hunks(edit: &wire::EditInput) -> Vec<PatchHunk> {
     edit.replacements
         .iter()
-        .flat_map(replacement_lines)
-        .map(EditLine::Line)
+        .map(|replacement| PatchHunk {
+            start: None,
+            lines: replacement_lines(replacement),
+        })
+        .filter(|hunk| !hunk.lines.is_empty())
         .collect()
 }
 
@@ -1868,18 +1877,29 @@ fn numbered(line: &str, old: &mut Option<u32>, new: &mut Option<u32>) -> PatchLi
     }
 }
 
-/// A unified diff's lines, numbered from its hunk headers, with where each
-/// hunk starts. A file's header lines ("--- ", "+++ ", "index " and the
-/// rest) come only outside a hunk: inside one, the header's counts say how
-/// many lines are the hunk's, so a removed "-- comment" or an added "++i"
-/// is a line of the patch. A hunk header without counts runs to the next
-/// header.
-pub(crate) fn unified_patch(patch: &str) -> Vec<EditLine> {
-    let mut lines = Vec::new();
+/// A unified diff's hunks, their lines numbered from each hunk's header. A
+/// file's header lines ("--- ", "+++ ", "index " and the rest) come only
+/// outside a hunk: inside one, the header's counts say how many lines are
+/// the hunk's, so a removed "-- comment" or an added "++i" is a line of
+/// the patch. A hunk header without counts runs to the next header, and
+/// has no start. Every header, and every file's `diff --git` line, starts
+/// a hunk; lines before the first form one of their own.
+pub(crate) fn unified_patch(patch: &str) -> Vec<PatchHunk> {
+    let mut hunks = vec![PatchHunk {
+        start: None,
+        lines: Vec::new(),
+    }];
     let (mut old, mut new) = (None, None);
     // Lines each side of the open hunk still holds, from its header.
     let (mut old_left, mut new_left) = (0u32, 0u32);
     let mut uncounted = false;
+    fn push(hunks: &mut [PatchHunk], line: PatchLine) {
+        hunks
+            .last_mut()
+            .expect("one hunk at least")
+            .lines
+            .push(line);
+    }
     for line in patch.lines() {
         if line.starts_with('\\') {
             continue;
@@ -1893,7 +1913,7 @@ pub(crate) fn unified_patch(patch: &str) -> Vec<EditLine> {
                     new_left = new_left.saturating_sub(1);
                 }
             }
-            lines.push(EditLine::Line(numbered(line, &mut old, &mut new)));
+            push(&mut hunks, numbered(line, &mut old, &mut new));
             continue;
         }
         if let Some(header) = line.strip_prefix("@@") {
@@ -1913,16 +1933,21 @@ pub(crate) fn unified_patch(patch: &str) -> Vec<EditLine> {
                 to.map_or(0, |(_, count)| count),
             );
             uncounted = from.is_none() || to.is_none();
-            if let (Some((old_start, _)), Some((new_start, _))) = (from, to) {
-                lines.push(EditLine::Hunk {
-                    old_start,
-                    new_start,
-                });
-            }
+            hunks.push(PatchHunk {
+                start: from
+                    .zip(to)
+                    .map(|((old, _), (new, _))| HunkStart { old, new }),
+                lines: Vec::new(),
+            });
             continue;
         }
         if line.starts_with("diff --git") {
             uncounted = false;
+            (old, new) = (None, None);
+            hunks.push(PatchHunk {
+                start: None,
+                lines: Vec::new(),
+            });
             continue;
         }
         if !uncounted
@@ -1934,32 +1959,24 @@ pub(crate) fn unified_patch(patch: &str) -> Vec<EditLine> {
         {
             continue;
         }
-        lines.push(EditLine::Line(numbered(line, &mut old, &mut new)));
+        push(&mut hunks, numbered(line, &mut old, &mut new));
     }
-    lines
+    hunks.retain(|hunk| !hunk.lines.is_empty());
+    hunks
 }
 
-/// The new file's line the patch's first change lands on: an added line's
+/// The new file's line a file's first change lands on: an added line's
 /// own, or for a removal the new-side line where it was, counting from its
-/// hunk's start past the context before it. In a patch of several files,
-/// only the first file's lines count.
-pub(crate) fn first_change(lines: &[EditLine]) -> Option<u32> {
-    let mut at = None;
-    let mut files = 0;
-    for line in lines {
-        match line {
-            EditLine::File(_) => {
-                files += 1;
-                if files > 1 {
-                    return None;
-                }
-            }
-            EditLine::Hunk { new_start, .. } => at = Some(*new_start),
-            EditLine::Line(line) => match line.kind {
+/// hunk's start past the context before it.
+pub(crate) fn first_change(hunks: &[PatchHunk]) -> Option<u32> {
+    for hunk in hunks {
+        let mut at = hunk.start.map(|start| start.new);
+        for line in &hunk.lines {
+            match line.kind {
                 LineKind::Added => return line.number.or(at).map(|n| n.max(1)),
                 LineKind::Removed => return at.map(|n| n.max(1)),
                 LineKind::Context => at = line.number.map(|n| n + 1),
-            },
+            }
         }
     }
     None
@@ -1969,12 +1986,12 @@ pub(crate) fn first_change(lines: &[EditLine]) -> Option<u32> {
 mod tests {
     use super::*;
 
-    fn line(number: u32, kind: LineKind, text: &str) -> EditLine {
-        EditLine::Line(PatchLine {
+    fn line(number: u32, kind: LineKind, text: &str) -> PatchLine {
+        PatchLine {
             number: Some(number),
             kind,
             text: text.to_owned(),
-        })
+        }
     }
 
     /// Inside a hunk its header's counts say which lines are the patch's,
@@ -1983,22 +2000,84 @@ mod tests {
     #[test]
     fn a_patch_keeps_lines_that_look_like_file_headers_inside_its_hunks() {
         let patch = "--- a/q.sql\n+++ b/q.sql\n@@ -3,3 +3,3 @@\n select 1;\n--- old note\n+++i;\n select 2;\n";
-        let lines = unified_patch(patch);
+        let hunks = unified_patch(patch);
         assert_eq!(
-            lines,
+            hunks,
+            vec![PatchHunk {
+                start: Some(HunkStart { old: 3, new: 3 }),
+                lines: vec![
+                    line(3, LineKind::Context, "select 1;"),
+                    line(4, LineKind::Removed, "-- old note"),
+                    line(4, LineKind::Added, "++i;"),
+                    line(5, LineKind::Context, "select 2;"),
+                ],
+            }]
+        );
+        assert_eq!(counts(&hunks), (1, 1));
+        assert_eq!(first_change(&hunks), Some(4), "past the hunk's context");
+    }
+
+    /// Every hunk header starts a hunk of its own, one without counts
+    /// too, and so does each file of a patch: no two places in a file, or
+    /// two files, share one.
+    #[test]
+    fn every_hunk_header_and_file_starts_a_hunk() {
+        let patch = "@@ -1 +1 @@\n-a\n+b\n@@\n+c\n@@\n+d\ndiff --git a/e b/e\n+e\n";
+        let hunks = unified_patch(patch);
+        let shape: Vec<(Option<HunkStart>, Vec<&str>)> = hunks
+            .iter()
+            .map(|hunk| {
+                let texts = hunk.lines.iter().map(|line| line.text.as_str()).collect();
+                (hunk.start, texts)
+            })
+            .collect();
+        assert_eq!(
+            shape,
             vec![
-                EditLine::Hunk {
-                    old_start: 3,
-                    new_start: 3
-                },
-                line(3, LineKind::Context, "select 1;"),
-                line(4, LineKind::Removed, "-- old note"),
-                line(4, LineKind::Added, "++i;"),
-                line(5, LineKind::Context, "select 2;"),
+                (Some(HunkStart { old: 1, new: 1 }), vec!["a", "b"]),
+                (None, vec!["c"]),
+                (None, vec!["d"]),
+                (None, vec!["e"]),
             ]
         );
-        assert_eq!(counts(&lines), (1, 1));
-        assert_eq!(first_change(&lines), Some(4), "past the hunk's context");
+    }
+
+    /// Each of a Claude edit's replacements is a place of its own in the
+    /// file, so each is its own hunk.
+    #[test]
+    fn each_replacement_of_a_claude_edit_is_its_own_hunk() {
+        let edit = wire::EditInput {
+            replacements: vec![
+                wire::Replacement {
+                    old: "a".into(),
+                    new: "/* b".into(),
+                },
+                wire::Replacement {
+                    old: "c".into(),
+                    new: "d".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        let hunks = replaced_hunks(&edit);
+        let texts: Vec<Vec<(LineKind, &str)>> = hunks
+            .iter()
+            .map(|hunk| {
+                hunk.lines
+                    .iter()
+                    .map(|line| (line.kind, line.text.as_str()))
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                vec![(LineKind::Removed, "a"), (LineKind::Added, "/* b")],
+                vec![(LineKind::Removed, "c"), (LineKind::Added, "d")],
+            ]
+        );
+        assert!(hunks.iter().all(|hunk| hunk.start.is_none()));
+        assert_eq!(counts(&hunks), (2, 2));
     }
 
     #[test]

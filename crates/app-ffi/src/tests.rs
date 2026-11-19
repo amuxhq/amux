@@ -1587,32 +1587,37 @@ fn code_is_coloured_by_the_shared_view() {
     );
 
     let path = c("src/pair.py");
-    let lines = c(&json!([
-        {"Hunk": {"old_start": 3, "new_start": 3}},
-        {"Line": {"number": 3, "kind": "Removed", "text": "    s = \"\"\""}},
-        {"Line": {"number": 3, "kind": "Added", "text": "    n = 1"}},
+    let hunks = c(&json!([
+        {"start": {"old": 3, "new": 3}, "lines": [
+            {"number": 3, "kind": "Removed", "text": "    s = \"\"\""},
+            {"number": 3, "kind": "Added", "text": "    n = 1"},
+            {"number": 4, "kind": "Added", "text": "    t = \"\"\""},
+        ]},
+        {"start": {"old": 40, "new": 40}, "lines": [
+            {"number": 40, "kind": "Added", "text": "    m = 2"},
+        ]},
     ])
     .to_string());
     // SAFETY: the strings live for the call.
-    let edit = take(unsafe { amux_highlight_edit(path.as_ptr(), lines.as_ptr()) });
-    assert_eq!(edit["settled"], json!(true));
+    let patch = take(unsafe { amux_highlight_patch(path.as_ptr(), hunks.as_ptr()) });
+    assert_eq!(patch["settled"], json!(true));
     assert_eq!(
-        edit["lines"][0],
-        json!([]),
-        "a hunk's start is the client's own words"
+        patch["lines"].as_array().unwrap().len(),
+        4,
+        "a line for each of the hunks' lines, hunk after hunk"
     );
+    let has = |line: usize, run: serde_json::Value| {
+        patch["lines"][line].as_array().unwrap().contains(&run)
+    };
     // The added line is read as the new file reads, outside the string the
     // removed line opened.
-    assert!(
-        edit["lines"][2]
-            .as_array()
-            .unwrap()
-            .contains(&json!({"text": "1", "kind": "Number"})),
-        "{edit}"
-    );
+    assert!(has(1, json!({"text": "1", "kind": "Number"})), "{patch}");
+    // The string the first hunk leaves open does not reach the second,
+    // which is elsewhere in the file.
+    assert!(has(3, json!({"text": "2", "kind": "Number"})), "{patch}");
     let broken = c("{");
     // SAFETY: the strings live for the call.
-    assert!(unsafe { amux_highlight_edit(path.as_ptr(), broken.as_ptr()) }.is_null());
+    assert!(unsafe { amux_highlight_patch(path.as_ptr(), broken.as_ptr()) }.is_null());
 }
 
 /// An attached daemon restarts under the app (an update, a stop and a

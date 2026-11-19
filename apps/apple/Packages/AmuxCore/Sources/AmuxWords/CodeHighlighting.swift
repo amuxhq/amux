@@ -36,8 +36,11 @@ public struct CodeHighlighting: Sendable, Equatable {
         /// bounded rate while it streams, so the cost does not grow with
         /// the square of its length.
         case block(code: String, info: String, streaming: Bool)
-        /// An edit card's patch, coloured as the file at `path` reads.
-        case edit(path: String, lines: [EditLine])
+        /// One file's change in an edit card, coloured as the file at
+        /// `path` reads: its hunks exactly as the shared view handed them,
+        /// each coloured apart from the others. The answer has a line for
+        /// each of the hunks' lines, hunk after hunk.
+        case patch(path: String, hunks: [PatchHunk])
     }
 
     /// How long to wait before asking again for an unsettled answer: under

@@ -432,7 +432,7 @@ final class ChatWordsTests: XCTestCase {
             AskCard(
                 kind: .codex, key: "ask:1", itemKey: "", position: 1, count: 1,
                 body: .edit(
-                    path: "/work/notes.txt", files: 1, added: 1, removed: 0, lines: [], reason: "",
+                    path: "/work/notes.txt", files: 1, added: 1, removed: 0, patch: [], reason: "",
                     created: created, line: 1),
                 choices: [], questionNote: false, questionSkip: false, questionReply: false,
                 stopsTurn: false, defaultToNo: false, state: .open)

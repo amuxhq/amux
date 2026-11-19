@@ -32,9 +32,7 @@ pub use ask::{
 };
 /// The character that marks an attachment's place in text.
 pub use attachments::PLACEHOLDER;
-pub use code::{
-    CodeRun, HighlightedCode, TokenKind, highlight_block, highlight_edit, highlight_patch,
-};
+pub use code::{CodeRun, HighlightedCode, TokenKind, highlight_block, highlight_patch};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
@@ -63,9 +61,10 @@ pub use overview::{
 pub use repository::{REPOSITORY_TINTS, Repository};
 pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
 pub use rows::{
-    AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView, EditLine,
-    ExploreVerb, FileChangeView, FileRow, Granted, OUTPUT_HEAD_LINES, PatchHead, PatchLine,
-    PermissionGrant, PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
+    AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView,
+    ExploreVerb, FileChangeView, FilePatch, FileRow, Granted, HunkStart, OUTPUT_HEAD_LINES,
+    PatchHead, PatchHunk, PatchLine, PermissionGrant, PlanVerdict, Resolution, Row, RowKind,
+    ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
 pub use segments::{AttachmentView, Segment, THUMBNAIL_SIZE_LIMIT, segments};

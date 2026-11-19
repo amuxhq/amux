@@ -68,7 +68,7 @@ struct AskCardView: View {
             if !cwd.isEmpty {
                 Text("in \(PlaceNames.path(cwd))").font(.ui(.caption)).foregroundStyle(.tertiary)
             }
-        case .edit(let path, _, let added, let removed, let lines, let reason, _, _):
+        case .edit(let path, _, let added, let removed, let patch, let reason, _, _):
             if !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
             HStack(spacing: 6) {
                 Text(path).font(.mono(.meta)).lineLimit(1).truncationMode(.head)
@@ -76,7 +76,7 @@ struct AskCardView: View {
                 Text("−\(removed)").foregroundStyle(Palette.removed)
             }
             .font(.ui(.meta))
-            Patch(path: path, lines: lines)
+            Patch(path: path, patch: patch)
         case .tool(_, _, let arguments):
             if !arguments.isEmpty { Mono(text: arguments, lines: 12) }
         case .question(let questions):
@@ -293,42 +293,67 @@ private struct Mono: View {
     }
 }
 
-/// An edit's lines, added and removed in their colours, their code coloured
-/// as the file at `path` reads, each side of a change read apart, as the
-/// shared view colours it.
+/// An edit's patch, file by file: each file's lines added and removed in
+/// their colours, their code coloured as that file reads, hunk by hunk and
+/// each side of a change read apart, as the shared view colours it.
 private struct Patch: View {
-    @Environment(\.codeHighlighting) private var highlighting
-    /// The edit's file, which names the language of lines before any file
-    /// line of their own.
+    /// The edit's file, which names the language of the patch of a
+    /// one-file edit, whose part carries no file of its own.
     let path: String
-    let lines: [EditLine]
-    @State private var answer: HighlightedCode?
+    let patch: [FilePatch]
 
     var body: some View {
-        let request = CodeHighlighting.Request.edit(path: path, lines: lines)
-        let texts = lines.map { line in
-            if case .line(let patch) = line { return patch.text }
-            return ""
-        }
-        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                    switch line {
-                    case .file(let file):
-                        Text(file.path).font(.ui(.caption, weight: .semibold)).padding(.vertical, 4)
-                    case .hunk:
-                        Rectangle().fill(Palette.line).frame(height: 1).padding(.vertical, 4)
-                    case .line(let patch):
-                        PatchText(kind: patch.kind, text: patch.text, runs: runs[index])
-                    }
+                ForEach(Array(patch.enumerated()), id: \.offset) { _, file in
+                    FilePatchLines(path: file.file?.path ?? path, file: file)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: 220)
         .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+    }
+}
+
+/// One file's part of a ``Patch``: its name in a patch of several files,
+/// then its hunks exactly as the shared view handed them, a rule between
+/// each and the next, since they are separate places in the file.
+private struct FilePatchLines: View {
+    @Environment(\.codeHighlighting) private var highlighting
+    let path: String
+    let file: FilePatch
+    @State private var answer: HighlightedCode?
+
+    var body: some View {
+        let request = CodeHighlighting.Request.patch(path: path, hunks: file.hunks)
+        let texts = file.hunks.flatMap { $0.lines.map(\.text) }
+        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
+        let firsts = Self.firsts(file.hunks)
+        VStack(alignment: .leading, spacing: 0) {
+            if let header = file.file {
+                Text(header.path).font(.ui(.caption, weight: .semibold)).padding(.vertical, 4)
+            }
+            ForEach(Array(file.hunks.enumerated()), id: \.offset) { number, hunk in
+                if number > 0 {
+                    Rectangle().fill(Palette.line).frame(height: 1).padding(.vertical, 4)
+                }
+                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
+                    PatchText(kind: line.kind, text: line.text, runs: runs[firsts[number] + index])
+                }
+            }
+        }
         .task(id: request) { await highlighting.follow(request) { answer = $0 } }
+    }
+
+    /// Where each hunk's lines start among the file's, as the answer
+    /// holds them: hunk after hunk.
+    private static func firsts(_ hunks: [PatchHunk]) -> [Int] {
+        var at = 0
+        return hunks.map { hunk in
+            defer { at += hunk.lines.count }
+            return at
+        }
     }
 }
 

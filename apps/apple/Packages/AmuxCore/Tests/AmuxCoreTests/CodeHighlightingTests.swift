@@ -183,18 +183,41 @@ final class CodeHighlightingTests: XCTestCase {
         XCTAssertEqual(code?.settled, true)
         XCTAssertEqual(code?.lines.first?.first, piece("fn", .keyword))
 
-        let edit = CodeHighlighting.Request.edit(path: "src/pair.py", lines: [
-            .hunk(oldStart: 3, newStart: 3),
-            .line(PatchLine(kind: .added, text: "n = 1", number: 3)),
+        let edit = CodeHighlighting.Request.patch(path: "src/pair.py", hunks: [
+            PatchHunk(lines: [PatchLine(kind: .added, text: "n = 1", number: 3)], start: HunkStart(old: 3, new: 3)),
         ])
         var patches: [HighlightedCode?] = []
         await CodeHighlighting.bridge.follow(edit) { patches.append($0) }
         Self.assertPlainUntilSettled(patches)
         XCTAssertEqual(patches.last??.settled, true)
         let lines = (patches.last ?? nil)?.lines
-        XCTAssertEqual(lines?.count, 2)
-        XCTAssertEqual(lines?.first, [], "a hunk's start is drawn in the client's own words")
+        XCTAssertEqual(lines?.count, 1)
         XCTAssertTrue(lines?.last?.contains(piece("1", .number)) ?? false, "\(String(describing: lines))")
+    }
+
+    /// Through the real bridge, an edit's two hunks are coloured apart, as
+    /// the app hands them over: the block comment the first leaves open
+    /// does not reach the second, which is elsewhere in the file. Read as
+    /// one hunk, the second would be comment.
+    func testTheBridgeColoursAnEditsHunksApart() async throws {
+        let opened = PatchLine(kind: .added, text: "/* opened here", number: nil)
+        let far = PatchLine(kind: .added, text: "fn far() {}", number: nil)
+        let apart = CodeHighlighting.Request.patch(path: "src/lib.rs", hunks: [
+            PatchHunk(lines: [opened], start: nil),
+            PatchHunk(lines: [far], start: nil),
+        ])
+        var drawn: HighlightedCode?
+        await CodeHighlighting.bridge.follow(apart) { drawn = $0 }
+        let lines = try XCTUnwrap(drawn).lines
+        XCTAssertEqual(lines.count, 2, "a line for each of the hunks' lines")
+        XCTAssertEqual(lines.first, [piece("/* opened here", .comment)])
+        XCTAssertEqual(lines.last?.first, piece("fn", .keyword), "\(lines)")
+
+        let joined = CodeHighlighting.Request.patch(path: "src/lib.rs", hunks: [
+            PatchHunk(lines: [opened, far], start: nil),
+        ])
+        await CodeHighlighting.bridge.follow(joined) { drawn = $0 }
+        XCTAssertNotEqual(try XCTUnwrap(drawn).lines.last?.first?.kind, .keyword, "the test no longer tells")
     }
 
     /// Every answer but the last is unsettled with nothing coloured, and

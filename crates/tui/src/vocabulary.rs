@@ -16,9 +16,10 @@ use ratatui::widgets::Paragraph;
 use ui_state::{Composer, Waiting};
 use ui_view::{
     AnswerView, AskBody, AskCard, AskRow, AttachmentView, CallPhase, CardState, Choice,
-    ChoiceOutcome, Decision, DecisionView, EditLine, ExploreVerb, FileChangeView, FileRow, Granted,
-    LineKind, Offline, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict,
-    QuestionView, QueuedRow, Reach, Refusal, Resolution, Row, RowKind, Scope, Segment,
+    ChoiceOutcome, Decision, DecisionView, ExploreVerb, FileChangeView, FilePatch, FileRow,
+    Granted, HunkStart, LineKind, Offline, OptionView, PatchHead, PatchHunk, PatchLine,
+    PermissionGrant, PlanVerdict, QuestionView, QueuedRow, Reach, Refusal, Resolution, Row,
+    RowKind, Scope, Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
@@ -864,17 +865,20 @@ fn facts(row: &Row) -> RowFacts {
             text: text.into(),
         };
         facts.patch = Some(PatchHead {
-            hunks: vec![vec![
-                line(
-                    41,
-                    LineKind::Context,
-                    "    fn redraw(&mut self, frame: &mut Frame) {",
-                ),
-                line(42, LineKind::Removed, "        self.paint_all(frame);"),
-                line(42, LineKind::Added, "        if self.dirty {"),
-                line(43, LineKind::Added, "            self.paint_all(frame);"),
-                line(44, LineKind::Added, "        }"),
-            ]],
+            hunks: vec![PatchHunk {
+                start: Some(HunkStart { old: 41, new: 41 }),
+                lines: vec![
+                    line(
+                        41,
+                        LineKind::Context,
+                        "    fn redraw(&mut self, frame: &mut Frame) {",
+                    ),
+                    line(42, LineKind::Removed, "        self.paint_all(frame);"),
+                    line(42, LineKind::Added, "        if self.dirty {"),
+                    line(43, LineKind::Added, "            self.paint_all(frame);"),
+                    line(44, LineKind::Added, "        }"),
+                ],
+            }],
             more: 10,
         });
     }
@@ -1781,12 +1785,12 @@ fn choice(outcome: ChoiceOutcome) -> Choice {
 }
 
 /// One numbered line of an authored edit ask's patch.
-fn patch(number: Option<u32>, kind: LineKind, text: &str) -> EditLine {
-    EditLine::Line(PatchLine {
+fn patch(number: Option<u32>, kind: LineKind, text: &str) -> PatchLine {
+    PatchLine {
         number,
         kind,
         text: text.into(),
-    })
+    }
 }
 
 fn card(body: AskBody, mut choices: Vec<Choice>) -> AskCard {
@@ -1949,16 +1953,18 @@ fn cards() -> Vec<CardSet> {
                     files: 1,
                     added: 2,
                     removed: 1,
-                    lines: vec![
-                        EditLine::Hunk {
-                            old_start: 10,
-                            new_start: 10,
-                        },
-                        patch(Some(10), LineKind::Context, "let a = 1;"),
-                        patch(Some(11), LineKind::Removed, "let b = 2;"),
-                        patch(Some(11), LineKind::Added, "let b = 3;"),
-                        patch(Some(12), LineKind::Added, "let c = 4;"),
-                    ],
+                    patch: vec![FilePatch {
+                        file: None,
+                        hunks: vec![PatchHunk {
+                            start: Some(HunkStart { old: 10, new: 10 }),
+                            lines: vec![
+                                patch(Some(10), LineKind::Context, "let a = 1;"),
+                                patch(Some(11), LineKind::Removed, "let b = 2;"),
+                                patch(Some(11), LineKind::Added, "let b = 3;"),
+                                patch(Some(12), LineKind::Added, "let c = 4;"),
+                            ],
+                        }],
+                    }],
                     line: Some(11),
                     reason: String::new(),
                     created: Some(false),

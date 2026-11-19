@@ -455,11 +455,14 @@ async fn slow_checkouts(install: &Install) -> (PathBuf, PathBuf, node::Daemon) {
     let gate = install.path("checkout-gate");
     let hook = repo.join(".git/hooks/post-checkout");
     std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    // Bounded, and over once the install's folder is gone: a test killed
+    // before it opens the gate must not leave the hook polling forever.
     std::fs::write(
         &hook,
         format!(
-            "#!/bin/sh\nwhile [ ! -e '{}' ]; do sleep 0.1; done\n",
-            gate.display()
+            "#!/bin/sh\ni=0\nwhile [ ! -e '{gate}' ] && [ -d '{home}' ] && [ $i -lt 1200 ]; do sleep 0.1; i=$((i+1)); done\n",
+            gate = gate.display(),
+            home = gate.parent().unwrap().display(),
         ),
     )
     .unwrap();

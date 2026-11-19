@@ -350,14 +350,18 @@ suspensions:
   whether its own host or another forwarded it: the host finds no process
   to relay the input to, and asks the core for a resume that goes ahead
   only if the row is still suspended when its turn comes, after any exit it
-  waits out. A prompt is the new incarnation's first input and is answered
-  as taken; any other input goes to the new process once it connects. Input
-  typed to an agent stopped in the meantime starts nothing and is refused as
-  exited. Input the agent refuses as exiting waits for the exit when the
-  agent is leaving of its own accord, as it does when it suspends, and then
-  wakes it if the exit left it suspended or is refused as exited; input to
-  an agent the daemon is stopping is answered as exiting at once, not
-  after the stop's deadline;
+  waits out. The row reads suspended from the journal's last step, while
+  the process is still finishing and may already have stopped reading
+  input, so a process whose row carries its exit's cause is one the
+  resume waits out rather than refusing as running. A prompt is the new
+  incarnation's first input and is answered as taken; any other input
+  goes to the new process once it connects. Input typed to an agent
+  stopped in the meantime starts nothing and is refused as exited. Input
+  the agent refuses as exiting waits for the exit when the agent is
+  leaving of its own accord, as it does when it suspends, and then wakes
+  it if the exit left it suspended or is refused as exited; input to an
+  agent the daemon is stopping is answered as exiting at once, not after
+  the stop's deadline;
 - stopping or closing it marks it exited with cause `STOPPED` (closed, for a
   close), and its children follow as for any exit; deleting it removes it;
 - it is no awake member of its workspace while it has no process, and a

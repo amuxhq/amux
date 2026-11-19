@@ -34,3 +34,71 @@ fn to_wire(facts: git_facts::GitFacts) -> wire::Git {
         remote: facts.remote,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    fn git(cwd: &Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=amux",
+                "-c",
+                "user.email=amux@example.invalid",
+            ])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn totals(files: u32, added: u32, removed: u32) -> Option<wire::ChangeTotals> {
+        Some(wire::ChangeTotals {
+            files,
+            added,
+            removed,
+        })
+    }
+
+    /// An agent working on its base branch shows on its row what is not
+    /// pushed yet: its commits since the upstream and its uncommitted work.
+    /// With no upstream, the uncommitted work alone.
+    #[tokio::test]
+    async fn on_the_base_branch_the_row_counts_what_is_not_pushed() {
+        let repo = tempfile::tempdir().unwrap();
+        let dir = repo.path();
+        git(dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("start.txt"), "start\n").unwrap();
+        git(dir, &["add", "start.txt"]);
+        git(dir, &["commit", "-q", "-m", "start"]);
+        std::fs::write(dir.join("draft.txt"), "draft\n").unwrap();
+
+        let row = super::read(dir, None).await.unwrap();
+        assert_eq!(row.base_branch.as_deref(), Some("main"));
+        assert_eq!(row.uncommitted, totals(1, 1, 0));
+        assert_eq!(row.on_branch, row.uncommitted, "no upstream");
+
+        let remote = tempfile::tempdir().unwrap();
+        git(remote.path(), &["init", "-q", "--bare", "-b", "main"]);
+        git(
+            dir,
+            &["remote", "add", "origin", &remote.path().to_string_lossy()],
+        );
+        git(dir, &["push", "-q", "-u", "origin", "main"]);
+        std::fs::write(dir.join("unpushed.txt"), "one\ntwo\n").unwrap();
+        git(dir, &["add", "unpushed.txt"]);
+        git(dir, &["commit", "-q", "-m", "not pushed"]);
+
+        let row = super::read(dir, None).await.unwrap();
+        assert_eq!(row.branch.as_deref(), Some("main"));
+        assert_eq!(row.uncommitted, totals(1, 1, 0));
+        assert_eq!(row.on_branch, totals(2, 3, 0), "the unpushed commit counts");
+    }
+}

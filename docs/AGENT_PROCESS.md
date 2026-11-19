@@ -733,7 +733,9 @@ facts do. A folder outside a repository, or a machine without git, has none.
 The base is the branch the agent's worktree was made from when its host
 made one (the spec's `base_branch`), else the repository's default branch:
 what `origin/HEAD` names, else the configured default, else `main` or
-`master`.
+`master`. On the base branch itself the counts on the branch run from where
+it left its upstream, so commits not yet pushed count; with no upstream they
+are the uncommitted work.
 
 ## The facts ring
 

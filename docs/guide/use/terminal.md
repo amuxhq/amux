@@ -236,7 +236,9 @@ Your comments go into the message box as one review, ready to send to the
 agent with anything else you want to say.
 
 The header can count either your uncommitted changes, or everything since the
-branch left its base. Ctrl+A then `c` switches between the two.
+branch left its base. Ctrl+A then `c` switches between the two. For an agent
+working on the base branch itself, everything on the branch is what isn't
+pushed yet: its commits since the upstream, and its uncommitted changes.
 
 ## Chatting in each agent's own interface
 

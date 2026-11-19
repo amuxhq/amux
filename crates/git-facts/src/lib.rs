@@ -1,7 +1,12 @@
 //! What an agent's folder says about its git repository: the branch, the
-//! branch it is measured against, and how much changed. The one piece of git
-//! code the agent process and the daemon share, including the worktree a new
-//! agent can start in.
+//! branch it is measured against, how much changed and which files, and the
+//! commits a branch holds alone. The one piece of git code the agent process
+//! and the daemon share, including the worktree a new agent can start in.
+//!
+//! One rule picks the base a branch's changes run from, for the fleet row's
+//! counts and the host's list of changed files alike ([`Base::Default`]),
+//! and one rule says which commits only a branch holds, for a delete's
+//! warning and the removal alike ([`branch_own_commits`]).
 //!
 //! Everything is read by running `git` in the folder, with optional locks
 //! off so a read never contends with the person's own git. The person's
@@ -38,9 +43,10 @@ pub struct GitFacts {
     /// empty tree.
     pub uncommitted: Option<ChangeTotals>,
     /// From where the branch left its base to the working tree, so
-    /// uncommitted work counts; on the base branch itself that is the
-    /// uncommitted work. None without a base or a commit, or when the
-    /// branch shares no history with it.
+    /// uncommitted work counts. On the base branch itself, from where it
+    /// left its upstream, so commits not pushed yet count too; with no
+    /// upstream, the uncommitted work. None without a base or a commit, or
+    /// when the branch shares no history with it.
     pub on_branch: Option<ChangeTotals>,
     /// Where origin points, as [`remote_identity`] writes it; None without
     /// an origin.
@@ -87,6 +93,143 @@ pub struct Compared {
     /// Built only when asked for.
     pub patch: Option<Vec<u8>>,
 }
+
+/// What [`changes`] compares the working tree with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Base {
+    /// HEAD: the work not committed yet.
+    Head,
+    /// Where the branch left this branch: its commits and its uncommitted
+    /// work.
+    Branch(String),
+    /// The default rule. The base branch is `recorded_branch`, the branch
+    /// the agent's worktree was made from as its spec records it, else the
+    /// repository's default branch (what `origin/HEAD` names, else
+    /// `init.defaultBranch`, else `main` or `master`). The changes run from
+    /// where the branch left it; on the base branch itself from where it
+    /// left its upstream, so commits not pushed yet count; and with no
+    /// upstream, from HEAD.
+    Default { recorded_branch: Option<String> },
+}
+
+/// The base a comparison actually ran from.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UsedBase {
+    /// The base branch: the one named, or the one the default rule found.
+    /// None from HEAD by request, or when the default rule found none.
+    pub branch: Option<String>,
+    /// On the base branch itself, the upstream the comparison ran from
+    /// (`origin/main`); None otherwise, and when there is no upstream.
+    pub upstream: Option<String>,
+    /// The commit the comparison ran from; None before the first commit,
+    /// when it ran from the empty tree.
+    pub commit: Option<String>,
+}
+
+/// What happened to a file between a base and the working tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Status {
+    Changed,
+    Created,
+    Deleted,
+    /// Moved from [`ChangedFile::old_path`], perhaps changed as well.
+    Renamed,
+}
+
+/// What a reader may want folded away or left out. Each is set by
+/// `.gitattributes` when it says so either way, and otherwise by the
+/// heuristic named.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Flags {
+    /// `linguist-generated`, else a header in the file's first lines that
+    /// says `@generated` or `DO NOT EDIT`.
+    pub generated: bool,
+    /// A package manager's lock file, by its name ([`LOCKFILES`]).
+    pub lockfile: bool,
+    /// `linguist-vendored`, else a folder in its path named one of
+    /// [`VENDORED_FOLDERS`].
+    pub vendored: bool,
+    /// Over [`LARGE_FILE_BYTES`] on either side.
+    pub large: bool,
+}
+
+/// One file that differs between a base and the working tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangedFile {
+    pub path: String,
+    /// Where a renamed file was, at the base.
+    pub old_path: Option<String>,
+    pub status: Status,
+    /// Lines added and removed; none for a binary file.
+    pub added: u32,
+    pub removed: u32,
+    pub binary: bool,
+    pub flags: Flags,
+}
+
+/// What changed in an agent's folder against a base.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Changes {
+    pub base: UsedBase,
+    /// The commit checked out; None before the first commit.
+    pub head: Option<String>,
+    pub files: Vec<ChangedFile>,
+}
+
+/// What deleting a workspace would take with it, in git.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteFacts {
+    /// The branch checked out; None on a detached head.
+    pub branch: Option<String>,
+    /// The branch's [`branch_own_commits`]: None on a detached head, before
+    /// the first commit, or when they could not be counted.
+    pub own_commits: Option<u32>,
+    /// Whether the removal takes the branch with it ([`branch_goes`]).
+    pub branch_goes: bool,
+    /// The working tree against HEAD, untracked files included.
+    pub uncommitted: ChangeTotals,
+}
+
+/// Names of the lock files package managers write, flagged wherever they
+/// sit.
+pub const LOCKFILES: &[&str] = &[
+    "Cargo.lock",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lock",
+    "bun.lockb",
+    "deno.lock",
+    "Gemfile.lock",
+    "poetry.lock",
+    "Pipfile.lock",
+    "uv.lock",
+    "pdm.lock",
+    "composer.lock",
+    "go.sum",
+    "go.work.sum",
+    "Package.resolved",
+    "Podfile.lock",
+    "Cartfile.resolved",
+    "flake.lock",
+    "mix.lock",
+    "pubspec.lock",
+    "packages.lock.json",
+    "gradle.lockfile",
+    "MODULE.bazel.lock",
+];
+
+/// Folders whose contents are someone else's code, at any depth.
+pub const VENDORED_FOLDERS: &[&str] = &["vendor", "third_party", "node_modules"];
+
+/// The size over which a file is large: 1 MiB, on the base side or the
+/// working tree's.
+pub const LARGE_FILE_BYTES: u64 = 1024 * 1024;
+
+/// How far into a file a generated header is looked for.
+const HEADER_LINES: usize = 10;
+const HEADER_BYTES: usize = 4096;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
@@ -239,11 +382,9 @@ pub async fn facts(cwd: &Path, recorded_base: Option<&str>) -> Result<Option<Git
     };
     let uncommitted = Some(totals(cwd, &against).await?);
     let on_branch = match (&base_branch, &head) {
-        (Some(base), Some(head)) => match fork_point(cwd, base).await? {
-            // On the base branch itself, or a branch that has not left
-            // it, only the uncommitted work is on the branch.
-            Some(fork) if fork == *head => uncommitted,
-            Some(fork) => Some(totals(cwd, &fork).await?),
+        (Some(base), Some(head)) => match branch_base(cwd, base, head).await? {
+            Some(used) if used.commit.as_deref() == Some(head.as_str()) => uncommitted,
+            Some(used) => Some(totals(cwd, used.commit.as_deref().unwrap_or(head)).await?),
             None => None,
         },
         _ => None,
@@ -361,6 +502,88 @@ pub async fn compare(
     })
 }
 
+/// What changed in the working tree of `cwd` against `base`, untracked
+/// files included, renames found, and the base it ran from. The person's
+/// index is not touched and nothing is stored.
+pub async fn changes(cwd: &Path, base: &Base) -> Result<Changes, GitError> {
+    let inside = run(cwd, None, &["rev-parse", "--is-inside-work-tree"], None).await?;
+    if !inside.status.success() || text(&inside.stdout) != "true" {
+        return Err(GitError::NotARepository);
+    }
+    let head = answer(cwd, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).await?;
+    let used = match base {
+        Base::Head => UsedBase {
+            commit: head.clone(),
+            ..UsedBase::default()
+        },
+        Base::Branch(branch) => {
+            let fork = match head {
+                Some(_) => fork_point(cwd, branch).await?,
+                None => None,
+            };
+            UsedBase {
+                branch: Some(branch.clone()),
+                upstream: None,
+                commit: Some(fork.ok_or_else(|| GitError::NoForkPoint(branch.clone()))?),
+            }
+        }
+        Base::Default { recorded_branch } => {
+            let branch = match recorded_branch {
+                Some(branch) => Some(branch.clone()),
+                None => default_branch(cwd).await?,
+            };
+            match (branch, &head) {
+                (Some(branch), Some(head)) => branch_base(cwd, &branch, head)
+                    .await?
+                    .ok_or(GitError::NoForkPoint(branch))?,
+                // Before the first commit, or with no base branch to be
+                // found, all there is to show is the uncommitted work.
+                (branch, _) => UsedBase {
+                    branch,
+                    upstream: None,
+                    commit: head.clone(),
+                },
+            }
+        }
+    };
+    let against = match &used.commit {
+        Some(commit) => commit.clone(),
+        None => empty_tree(cwd).await?,
+    };
+    let scratch = Scratch::new(cwd).await?;
+    let raw = scratch.diff(&against, true).await?;
+    let files = flagged(cwd, raw).await?;
+    Ok(Changes {
+        base: used,
+        head,
+        files,
+    })
+}
+
+/// What deleting the workspace at `cwd` would take with it: its branch,
+/// the branch's own commits by the rule the removal applies, and its
+/// uncommitted work. None outside a git working tree.
+pub async fn delete_facts(cwd: &Path) -> Result<Option<DeleteFacts>, GitError> {
+    let inside = run(cwd, None, &["rev-parse", "--is-inside-work-tree"], None).await?;
+    if !inside.status.success() || text(&inside.stdout) != "true" {
+        return Ok(None);
+    }
+    let branch = answer(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await?;
+    let head = answer(cwd, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).await?;
+    let against = match &head {
+        Some(head) => head.clone(),
+        None => empty_tree(cwd).await?,
+    };
+    let uncommitted = totals(cwd, &against).await?;
+    let own_commits = own_commits(cwd).await?;
+    Ok(Some(DeleteFacts {
+        branch,
+        own_commits,
+        branch_goes: branch_goes(own_commits),
+        uncommitted,
+    }))
+}
+
 /// How many commits the branch `cwd` has checked out holds that no other
 /// ref does: [`branch_own_commits`] for that branch. None on a detached
 /// head, or before the first commit.
@@ -473,6 +696,51 @@ async fn fork_point(cwd: &Path, base: &str) -> Result<Option<String>, GitError> 
     answer(cwd, &["merge-base", &base, "HEAD"]).await
 }
 
+/// Where the default rule starts the changes of `head`, the commit checked
+/// out, given the base branch `base`: from where the branch left `base`;
+/// on the base branch itself, or a branch that has not left it, where the
+/// merge base is HEAD, from where it left its upstream, so commits not yet
+/// pushed count; and with no upstream, from HEAD. None when `base` does not
+/// exist or shares no history with HEAD.
+async fn branch_base(cwd: &Path, base: &str, head: &str) -> Result<Option<UsedBase>, GitError> {
+    let Some(fork) = fork_point(cwd, base).await? else {
+        return Ok(None);
+    };
+    let mut used = UsedBase {
+        branch: Some(base.to_owned()),
+        upstream: None,
+        commit: Some(fork),
+    };
+    if used.commit.as_deref() != Some(head) {
+        return Ok(Some(used));
+    }
+    // A detached head, or a branch with no upstream or one that is gone,
+    // has none to ask.
+    let upstream = answer(
+        cwd,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+    )
+    .await?;
+    if let Some(upstream) = upstream
+        && let Some(commit) = answer(cwd, &["merge-base", &upstream, "HEAD"]).await?
+    {
+        let short = upstream
+            .strip_prefix("refs/remotes/")
+            .or_else(|| upstream.strip_prefix("refs/heads/"))
+            .unwrap_or(&upstream)
+            .to_owned();
+        used.upstream = Some(short);
+        used.commit = Some(commit);
+    }
+    Ok(Some(used))
+}
+
 /// The empty tree's id in this repository's hash.
 async fn empty_tree(cwd: &Path) -> Result<String, GitError> {
     let output = checked(cwd, None, &["hash-object", "-t", "tree", "--stdin"]).await?;
@@ -579,22 +847,49 @@ impl<'a> Scratch<'a> {
         checked(self.cwd, Some(&self.index()), args).await
     }
 
-    /// Each file that differs between `against` and the working tree.
+    /// Each file that differs between `against` and the working tree,
+    /// with renames as one file each.
     async fn files(&self, against: &str) -> Result<Vec<FileChange>, GitError> {
+        Ok(self
+            .diff(against, false)
+            .await?
+            .into_iter()
+            .map(|file| FileChange {
+                path: file.path,
+                added: file.added,
+                removed: file.removed,
+                change: match file.status {
+                    Status::Created => Change::Created,
+                    Status::Deleted => Change::Deleted,
+                    Status::Changed | Status::Renamed => Change::Changed,
+                },
+                binary: file.binary,
+            })
+            .collect())
+    }
+
+    /// Each file that differs between `against` and the working tree, with
+    /// renames found when `renames`.
+    async fn diff(&self, against: &str, renames: bool) -> Result<Vec<RawFile>, GitError> {
         let raw = self
             .checked(&[
                 "diff",
                 "--raw",
                 "--numstat",
                 "-z",
-                "--no-renames",
+                "--no-abbrev",
+                if renames {
+                    "--find-renames"
+                } else {
+                    "--no-renames"
+                },
                 "--no-ext-diff",
                 "--no-textconv",
                 against,
                 "--",
             ])
             .await?;
-        Ok(file_changes(&raw))
+        Ok(raw_files(&raw))
     }
 
     /// The patch from `against` to the working tree, with full object ids
@@ -614,24 +909,70 @@ impl<'a> Scratch<'a> {
     }
 }
 
-/// Reads `git diff --raw --numstat -z --no-renames`: first a raw record per
-/// file (`:modes ids STATUS NUL path NUL`), then a numstat record per file
-/// in the same order (`added TAB removed TAB path NUL`, `-` for both counts
-/// on a binary file).
-fn file_changes(output: &[u8]) -> Vec<FileChange> {
+/// One file of `git diff --raw --numstat`, as git wrote it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RawFile {
+    path: String,
+    old_path: Option<String>,
+    status: Status,
+    /// Modes as git writes them (`100644`, `120000` for a link, `160000`
+    /// for a submodule, `000000` for a side that is not there).
+    old_mode: String,
+    new_mode: String,
+    /// The base side's object id.
+    old_id: String,
+    added: u32,
+    removed: u32,
+    binary: bool,
+}
+
+/// Reads `git diff --raw --numstat -z`: first a raw record per file
+/// (`:modes ids STATUS NUL path NUL`, or with two paths, old then new, for
+/// a rename), then a numstat record per file in the same order (`added TAB
+/// removed TAB path NUL`, or `added TAB removed TAB NUL old NUL new NUL`
+/// for a rename; `-` for both counts on a binary file).
+fn raw_files(output: &[u8]) -> Vec<RawFile> {
     let mut fields = output
         .split(|byte| *byte == 0)
-        .filter(|field| !field.is_empty());
-    let mut changes: Vec<Change> = Vec::new();
-    let mut files = Vec::new();
+        .filter(|field| !field.is_empty())
+        .map(String::from_utf8_lossy);
+    let mut files: Vec<RawFile> = Vec::new();
+    let mut counted = 0;
     while let Some(field) = fields.next() {
-        let field = String::from_utf8_lossy(field);
         if let Some(raw) = field.strip_prefix(':') {
-            let _path = fields.next();
-            changes.push(match raw.rsplit(' ').next() {
-                Some("A") => Change::Created,
-                Some("D") => Change::Deleted,
-                _ => Change::Changed,
+            let parts: Vec<&str> = raw.split(' ').collect();
+            let letter = parts.get(4).and_then(|status| status.chars().next());
+            let first = fields
+                .next()
+                .map(|path| path.into_owned())
+                .unwrap_or_default();
+            let (old_path, path) = match letter {
+                Some('R' | 'C') => (
+                    Some(first),
+                    fields
+                        .next()
+                        .map(|path| path.into_owned())
+                        .unwrap_or_default(),
+                ),
+                _ => (None, first),
+            };
+            files.push(RawFile {
+                path,
+                old_path: old_path.filter(|_| letter == Some('R')),
+                status: match letter {
+                    Some('A') => Status::Created,
+                    Some('D') => Status::Deleted,
+                    Some('R') => Status::Renamed,
+                    // A copy is not asked for; read as the new file it is.
+                    Some('C') => Status::Created,
+                    _ => Status::Changed,
+                },
+                old_mode: parts.first().copied().unwrap_or_default().to_owned(),
+                new_mode: parts.get(1).copied().unwrap_or_default().to_owned(),
+                old_id: parts.get(2).copied().unwrap_or_default().to_owned(),
+                added: 0,
+                removed: 0,
+                binary: false,
             });
             continue;
         }
@@ -640,16 +981,221 @@ fn file_changes(output: &[u8]) -> Vec<FileChange> {
         else {
             continue;
         };
-        let binary = added == "-" && removed == "-";
-        files.push(FileChange {
-            path: path.to_owned(),
-            added: added.parse().unwrap_or(0),
-            removed: removed.parse().unwrap_or(0),
-            change: changes.get(files.len()).copied().unwrap_or(Change::Changed),
-            binary,
-        });
+        if path.is_empty() {
+            // A rename's two paths follow; the raw record has them.
+            fields.next();
+            fields.next();
+        }
+        if let Some(file) = files.get_mut(counted) {
+            file.binary = added == "-" && removed == "-";
+            file.added = added.parse().unwrap_or(0);
+            file.removed = removed.parse().unwrap_or(0);
+        }
+        counted += 1;
     }
     files
+}
+
+/// `files` with their flags.
+async fn flagged(cwd: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, GitError> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let attributes = attributes(cwd, &files).await?;
+    let base_sizes = base_sizes(cwd, &files).await?;
+    let regular = |mode: &str| mode.starts_with("100");
+    let mut flagged = Vec::with_capacity(files.len());
+    // The base side of deleted files, read for their headers in one go.
+    let mut deleted_heads = Vec::new();
+    for file in files {
+        let (generated, vendored) = attributes.get(&file.path).copied().unwrap_or_default();
+        let base_size = base_sizes.get(&file.old_id).copied();
+        let tree_size = match file.status {
+            Status::Deleted => None,
+            _ => std::fs::symlink_metadata(cwd.join(&file.path))
+                .ok()
+                .filter(std::fs::Metadata::is_file)
+                .map(|meta| meta.len()),
+        };
+        let large = base_size
+            .max(tree_size)
+            .is_some_and(|size| size > LARGE_FILE_BYTES);
+        let readable = !file.binary && !large;
+        let header = match generated {
+            Some(_) => false,
+            None if !readable => false,
+            None if file.status == Status::Deleted => {
+                if regular(&file.old_mode) {
+                    deleted_heads.push((flagged.len(), file.old_id.clone()));
+                }
+                false
+            }
+            None => regular(&file.new_mode) && generated_header(&read_head(&cwd.join(&file.path))),
+        };
+        flagged.push(ChangedFile {
+            flags: Flags {
+                generated: generated.unwrap_or(header),
+                lockfile: is_lockfile(&file.path),
+                vendored: vendored.unwrap_or_else(|| is_vendored(&file.path)),
+                large,
+            },
+            path: file.path,
+            old_path: file.old_path,
+            status: file.status,
+            added: file.added,
+            removed: file.removed,
+            binary: file.binary,
+        });
+    }
+    if !deleted_heads.is_empty() {
+        let ids: Vec<&str> = deleted_heads.iter().map(|(_, id)| id.as_str()).collect();
+        let contents = objects(cwd, &ids).await?;
+        for ((at, _), content) in deleted_heads.iter().zip(contents) {
+            flagged[*at].flags.generated = generated_header(&content);
+        }
+    }
+    Ok(flagged)
+}
+
+/// Whether `path` is a lock file, by its name.
+fn is_lockfile(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    LOCKFILES.contains(&name)
+}
+
+/// Whether a folder on `path` is one of [`VENDORED_FOLDERS`].
+fn is_vendored(path: &str) -> bool {
+    let mut folders = path.split('/').rev().skip(1);
+    folders.any(|folder| VENDORED_FOLDERS.contains(&folder))
+}
+
+/// Whether the first lines of a file say it is generated.
+fn generated_header(head: &[u8]) -> bool {
+    let head = &head[..head.len().min(HEADER_BYTES)];
+    String::from_utf8_lossy(head)
+        .lines()
+        .take(HEADER_LINES)
+        .any(|line| line.contains("@generated") || line.contains("DO NOT EDIT"))
+}
+
+/// The first bytes of a file in the working tree; none when it cannot be
+/// read.
+fn read_head(path: &Path) -> Vec<u8> {
+    use std::io::Read as _;
+    let mut head = Vec::new();
+    if let Ok(file) = std::fs::File::open(path) {
+        let _ = file.take(HEADER_BYTES as u64).read_to_end(&mut head);
+    }
+    head
+}
+
+/// What `.gitattributes` says of each file's `linguist-generated` and
+/// `linguist-vendored`: Some either way when it says, None when it does
+/// not.
+async fn attributes(
+    cwd: &Path,
+    files: &[RawFile],
+) -> Result<std::collections::HashMap<String, (Option<bool>, Option<bool>)>, GitError> {
+    let mut input = Vec::new();
+    for file in files {
+        input.extend_from_slice(file.path.as_bytes());
+        input.push(0);
+    }
+    let output = checked_with_input(
+        cwd,
+        None,
+        &[
+            "check-attr",
+            "-z",
+            "--stdin",
+            "linguist-generated",
+            "linguist-vendored",
+        ],
+        input,
+    )
+    .await?;
+    let mut said = std::collections::HashMap::<String, (Option<bool>, Option<bool>)>::new();
+    let fields: Vec<_> = output.split(|byte| *byte == 0).collect();
+    for [path, attribute, value] in fields.as_chunks::<3>().0 {
+        let value = match *value {
+            b"set" | b"true" => Some(true),
+            b"unset" | b"false" => Some(false),
+            _ => None,
+        };
+        let entry = said
+            .entry(String::from_utf8_lossy(path).into_owned())
+            .or_default();
+        match *attribute {
+            b"linguist-generated" => entry.0 = value,
+            b"linguist-vendored" => entry.1 = value,
+            _ => {}
+        }
+    }
+    Ok(said)
+}
+
+/// The size of each file's base side, by its object id, for the files
+/// that have one.
+async fn base_sizes(
+    cwd: &Path,
+    files: &[RawFile],
+) -> Result<std::collections::HashMap<String, u64>, GitError> {
+    let mut input = String::new();
+    for file in files {
+        if file.status != Status::Created && file.old_mode.starts_with("100") {
+            input.push_str(&file.old_id);
+            input.push('\n');
+        }
+    }
+    if input.is_empty() {
+        return Ok(Default::default());
+    }
+    let output = checked_with_input(
+        cwd,
+        None,
+        &["cat-file", "--batch-check=%(objectname) %(objectsize)"],
+        input.into_bytes(),
+    )
+    .await?;
+    Ok(text(&output)
+        .lines()
+        .filter_map(|line| {
+            let (id, size) = line.split_once(' ')?;
+            Some((id.to_owned(), size.parse().ok()?))
+        })
+        .collect())
+}
+
+/// The first bytes of each object in `ids`, in order; empty for one git
+/// cannot find.
+async fn objects(cwd: &Path, ids: &[&str]) -> Result<Vec<Vec<u8>>, GitError> {
+    let input: String = ids.iter().map(|id| format!("{id}\n")).collect();
+    let output =
+        checked_with_input(cwd, None, &["cat-file", "--batch"], input.into_bytes()).await?;
+    // Each object is `id type size LF`, its bytes, then LF; one missing is
+    // `id missing LF`.
+    let mut rest = output.as_slice();
+    let mut contents = Vec::with_capacity(ids.len());
+    while !rest.is_empty() && contents.len() < ids.len() {
+        let Some(end) = rest.iter().position(|byte| *byte == b'\n') else {
+            break;
+        };
+        let header = String::from_utf8_lossy(&rest[..end]).into_owned();
+        rest = &rest[end + 1..];
+        let size = header
+            .rsplit(' ')
+            .next()
+            .and_then(|size| size.parse::<usize>().ok())
+            .filter(|_| !header.ends_with(" missing"));
+        let Some(size) = size.filter(|size| *size <= rest.len()) else {
+            contents.push(Vec::new());
+            continue;
+        };
+        contents.push(rest[..size.min(HEADER_BYTES)].to_vec());
+        rest = rest.get(size + 1..).unwrap_or_default();
+    }
+    contents.resize(ids.len(), Vec::new());
+    Ok(contents)
 }
 
 /// A git query's one-line answer, or None when git says no (exit status

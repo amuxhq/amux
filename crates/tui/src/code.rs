@@ -5,17 +5,24 @@
 //! A result that is not settled yet (a grammar still building, a streaming
 //! block with lines not yet passed over) is drawn as it is, and the frame
 //! notes it so the loop draws again soon; the next draw asks afresh.
+//!
+//! Every piece of code the terminal draws is highlighted here, with the
+//! highlighter this thread draws with: the process's shared one, unless a
+//! test has handed the thread one whose background work it runs itself, so
+//! what a frame shows does not hang on how fast a background thread is.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use ratatui::style::Style;
-use ui_view::{CodeRun, HighlightedCode, TokenKind};
+use ui_view::{CodeRun, EditLine, HighlightedCode, Highlighter, PatchHead, TokenKind};
 
 use crate::theme::Theme;
 
 thread_local! {
     /// Whether this frame drew code that a later frame colours more of.
     static UNSETTLED: Cell<bool> = const { Cell::new(false) };
+    /// What the terminal highlights with on this thread.
+    static HIGHLIGHTER: RefCell<Highlighter> = RefCell::new(Highlighter::shared().clone());
 }
 
 /// Starts a frame: nothing unsettled drawn yet.
@@ -29,21 +36,34 @@ pub(crate) fn drew_unsettled() -> bool {
     UNSETTLED.with(Cell::get)
 }
 
+/// The highlighter code on this thread is drawn with.
+pub(crate) fn highlighter() -> Highlighter {
+    HIGHLIGHTER.with(|highlighter| highlighter.borrow().clone())
+}
+
+/// Draws this thread's code with `highlighter` from now on: for a test,
+/// one built on [`ui_view::HeldJobs`].
+#[cfg(test)]
+pub(crate) fn draw_with(highlighter: Highlighter) {
+    HIGHLIGHTER.with(|held| *held.borrow_mut() = highlighter);
+}
+
 /// A line of code as styled runs.
 pub(crate) type Runs = Vec<(String, Style)>;
 
 /// Notes a result's state for the frame, and hands its lines on.
-pub(crate) fn noted(code: HighlightedCode) -> Vec<Vec<CodeRun>> {
+fn noted(code: HighlightedCode) -> Vec<Vec<CodeRun>> {
     if !code.settled {
         UNSETTLED.with(|unsettled| unsettled.set(true));
     }
     code.lines
 }
 
-/// A code block's lines as styled runs. `streaming` is for the block still
-/// being written; see [`ui_view::highlight_block`].
+/// A code block's lines as styled runs, and whether they are settled.
+/// `streaming` is for the block still being written; see
+/// [`ui_view::highlight_block`].
 pub(crate) fn block(code: &str, info: &str, streaming: bool, theme: Theme) -> (Vec<Runs>, bool) {
-    let highlighted = ui_view::highlight_block(code, info, streaming);
+    let highlighted = ui_view::highlight_block(&highlighter(), code, info, streaming);
     let settled = highlighted.settled;
     let lines = noted(highlighted)
         .into_iter()
@@ -57,6 +77,18 @@ pub(crate) fn block(code: &str, info: &str, streaming: bool, theme: Theme) -> (V
         })
         .collect();
     (lines, settled)
+}
+
+/// An edit card's patch lines' code, one line for each; see
+/// [`ui_view::highlight_edit`].
+pub(crate) fn edit(path: &str, lines: &[EditLine]) -> Vec<Vec<CodeRun>> {
+    noted(ui_view::highlight_edit(&highlighter(), path, lines))
+}
+
+/// A landed edit's patch head's code, one line for each of its lines; see
+/// [`ui_view::highlight_patch`].
+pub(crate) fn patch(path: &str, patch: &PatchHead) -> Vec<Vec<CodeRun>> {
+    noted(ui_view::highlight_patch(&highlighter(), path, patch))
 }
 
 /// A token's style on a diff line: plain text keeps the line's own diff
@@ -92,7 +124,7 @@ mod tests {
 
     #[test]
     fn a_landed_edit_colours_its_code_over_the_diff_tints() {
-        ui_view::preload_highlighting();
+        highlighter().preload();
         let theme = Theme::default();
         let line = |number, kind, text: &str| PatchLine {
             number: Some(number),

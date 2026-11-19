@@ -408,39 +408,53 @@ fn run_once(job: &Mutex<Option<Job>>) {
     }
 }
 
+/// Background work held until whoever holds it runs it. A highlighter
+/// built on it does nothing away from its caller, so a test fixes what a
+/// caller sees before and after each job, whatever the machine's speed.
+#[derive(Clone, Default)]
+pub struct HeldJobs(Arc<Mutex<Vec<Job>>>);
+
+impl HeldJobs {
+    /// A highlighter whose background work waits here.
+    pub fn highlighter(&self) -> Highlighter {
+        let held = self.clone();
+        Highlighter::with_spawner(move |job| held.jobs().push(job))
+    }
+
+    /// The jobs waiting.
+    pub fn len(&self) -> usize {
+        self.jobs().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.jobs().is_empty()
+    }
+
+    /// Runs every job waiting, and any those hand off in turn.
+    pub fn run(&self) {
+        loop {
+            let jobs = std::mem::take(&mut *self.jobs());
+            if jobs.is_empty() {
+                return;
+            }
+            for job in jobs {
+                job();
+            }
+        }
+    }
+
+    fn jobs(&self) -> std::sync::MutexGuard<'_, Vec<Job>> {
+        // A job that panicked leaves the list as it was.
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::TokenKind;
-
-    /// Background work held until the test runs it, so what a caller sees
-    /// before and after each job is fixed.
-    #[derive(Clone, Default)]
-    struct Queue(Arc<Mutex<Vec<Job>>>);
-
-    impl Queue {
-        fn highlighter(&self) -> Highlighter {
-            let queue = self.clone();
-            Highlighter::with_spawner(move |job| queue.0.lock().unwrap().push(job))
-        }
-
-        fn len(&self) -> usize {
-            self.0.lock().unwrap().len()
-        }
-
-        /// Runs every job handed off, and any those hand off in turn.
-        fn run(&self) {
-            loop {
-                let jobs = std::mem::take(&mut *self.0.lock().unwrap());
-                if jobs.is_empty() {
-                    return;
-                }
-                for job in jobs {
-                    job();
-                }
-            }
-        }
-    }
 
     fn kinds(block: &Highlighted) -> Vec<Vec<TokenKind>> {
         block
@@ -460,7 +474,7 @@ mod tests {
 
     #[test]
     fn a_grammar_not_built_yet_draws_plain_until_its_build_has_run() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let code = "fn main() {}\n";
 
@@ -489,7 +503,7 @@ mod tests {
 
     #[test]
     fn a_grammar_waits_for_the_grammars_it_injects() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let code = "<script>const x = 1;</script>\n";
 
@@ -516,7 +530,7 @@ mod tests {
 
     #[test]
     fn plain_code_and_diffs_need_no_grammar() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let plain = highlighter.highlight("a\nb\n", None);
         assert!(plain.settled);
@@ -559,7 +573,7 @@ mod tests {
 
     #[test]
     fn preload_builds_every_grammar() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.preload();
         for language in Language::ALL {
@@ -593,7 +607,7 @@ mod tests {
 
     #[test]
     fn a_streaming_block_is_passed_over_at_most_once_an_interval() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
         let start = Instant::now();
@@ -651,7 +665,7 @@ mod tests {
 
     #[test]
     fn a_finished_block_takes_over_from_its_stream() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
         let now = Instant::now();
@@ -679,7 +693,7 @@ mod tests {
 
     #[test]
     fn two_blocks_streaming_keep_their_own_passes() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
         let now = Instant::now();
@@ -698,7 +712,7 @@ mod tests {
 
     #[test]
     fn a_stream_not_ready_draws_plain_and_builds_its_grammar() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let block =
             highlighter.highlight_streaming("fn a() {}\n", Some(Language::Rust), Instant::now());

@@ -43,7 +43,7 @@ mod render;
 use std::sync::Arc;
 
 pub use definitions::{Definition, DefinitionKind, Definitions, LineRange};
-pub use highlighter::{Highlighter, Job, STREAM_INTERVAL};
+pub use highlighter::{HeldJobs, Highlighter, Job, STREAM_INTERVAL};
 pub use language::Language;
 
 /// What a run of code is, as far as colouring it goes.

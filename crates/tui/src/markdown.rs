@@ -1145,8 +1145,6 @@ fn hard_wrap(line: &[(String, Style)], width: usize) -> Vec<Vec<Span<'static>>> 
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
-
     use super::*;
 
     fn open_blocks(source: &str) -> Vec<bool> {
@@ -1196,13 +1194,20 @@ mod tests {
 
     #[test]
     fn a_streaming_message_streams_only_its_open_block() {
-        ui_view::preload_highlighting();
+        // The background work is held and run here, so what each frame
+        // shows does not hang on a thread's speed.
+        let held = ui_view::HeldJobs::default();
+        crate::code::draw_with(held.highlighter());
         let theme = Theme::default();
         let keyword = theme.syntax(ui_view::TokenKind::Keyword);
         let plain = theme.syntax(ui_view::TokenKind::Plain);
-        // Words no other test streams, so the highlighter has no pass of
-        // this block from before.
         let source = "Closed:\n\n```rust\nstruct Closed;\n```\n\nOpen:\n\n```rust\nstruct Open;\nenum Partial";
+
+        // Until the grammar is built, every block is plain.
+        let (building, settled) = render(source, true, 80, theme);
+        assert!(!settled);
+        assert_eq!(styles_of(&building, "struct Closed;"), vec![plain]);
+        held.run();
 
         // The closed block is highlighted whole at once; the open one is
         // plain until its background pass comes back.
@@ -1211,6 +1216,7 @@ mod tests {
         assert_eq!(styles_of(&first, "struct"), vec![keyword]);
         assert_eq!(styles_of(&first, "struct Open;"), vec![plain]);
         assert_eq!(styles_of(&first, "enum Partial"), vec![plain]);
+        assert_eq!(held.len(), 1, "the open block's pass is under way");
         crate::code::begin_frame();
         let again = markdown_lines(source, true, 80, theme);
         assert!(
@@ -1222,15 +1228,9 @@ mod tests {
             "an unsettled message is not kept"
         );
 
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let passed = loop {
-            let (lines, settled) = render(source, true, 80, theme);
-            if settled {
-                break lines;
-            }
-            assert!(Instant::now() < deadline, "the streaming pass came back");
-            std::thread::sleep(Duration::from_millis(10));
-        };
+        held.run();
+        let (passed, settled) = render(source, true, 80, theme);
+        assert!(settled);
         assert_eq!(styles_of(&passed, "struct"), vec![keyword, keyword]);
         // The last line, not complete yet, waits for the block to grow.
         assert_eq!(styles_of(&passed, "enum Partial"), vec![plain]);

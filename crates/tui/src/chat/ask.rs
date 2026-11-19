@@ -896,7 +896,7 @@ impl AskUi {
                 // hunks' starts are not drawn. A patch of several files names
                 // each file where its lines start.
                 // Each line's code is coloured as its file is.
-                let code = crate::code::noted(ui_view::highlight_edit(path, patch));
+                let code = crate::code::edit(path, patch);
                 let lines: Vec<(char, Style, crate::code::Runs)> = patch
                     .iter()
                     .zip(code)

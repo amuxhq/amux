@@ -4,12 +4,15 @@
 //! the same functions, so a block reads with the same runs on each; each
 //! client maps a [`TokenKind`] to its own palette.
 //!
-//! The highlighting is the `highlight` crate's, through the highlighter the
-//! process shares. Its grammars are built in the background on first use,
-//! so a result can come back plain and not [settled](HighlightedCode::settled):
-//! the client draws what it got and asks again soon.
+//! The highlighting is the `highlight` crate's, through the [`Highlighter`]
+//! the caller gives: in a client, the one the process shares
+//! ([`Highlighter::shared`]); in a test, one whose background work the test
+//! runs when it chooses ([`HeldJobs`](crate::HeldJobs)). Its grammars are built in
+//! the background on first use, so a result can come back plain and not
+//! [settled](HighlightedCode::settled): the client draws what it got and
+//! asks again soon.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use highlight::{Highlighted, Highlighter, Language};
 use schemars::JsonSchema;
@@ -66,13 +69,13 @@ pub struct HighlightedCode {
 /// and the rest comes back plain, because highlighting it whole on every
 /// line that arrives costs time quadratic in its length. Every other block,
 /// a finished one, is highlighted once and kept by content.
-pub fn highlight_block(code: &str, info: &str, streaming: bool) -> HighlightedCode {
-    block(
-        Highlighter::shared(),
-        code,
-        info,
-        streaming.then(Instant::now),
-    )
+pub fn highlight_block(
+    highlighter: &Highlighter,
+    code: &str,
+    info: &str,
+    streaming: bool,
+) -> HighlightedCode {
+    block(highlighter, code, info, streaming.then(Instant::now))
 }
 
 /// An edit card's patch lines, one result line for each, coloured as the
@@ -82,9 +85,13 @@ pub fn highlight_block(code: &str, info: &str, streaming: bool) -> HighlightedCo
 /// that file's path and a `Hunk` line starts a new fragment, since the
 /// lines either side of it are not neighbours in the file; both come back
 /// as empty lines, the client drawing its own words for them.
-pub fn highlight_edit(path: &str, lines: &[EditLine]) -> HighlightedCode {
+pub fn highlight_edit(
+    highlighter: &Highlighter,
+    path: &str,
+    lines: &[EditLine],
+) -> HighlightedCode {
     edit(
-        Highlighter::shared(),
+        highlighter,
         path,
         lines.iter().map(|line| match line {
             EditLine::File(file) => Piece::File(&file.path),
@@ -97,35 +104,7 @@ pub fn highlight_edit(path: &str, lines: &[EditLine]) -> HighlightedCode {
 /// A landed edit's patch head, all of one file, one result line for each
 /// of its lines, hunk after hunk; each hunk is coloured as a fragment of
 /// its own, as [`highlight_edit`] colours a card's.
-pub fn highlight_patch(path: &str, patch: &PatchHead) -> HighlightedCode {
-    patch_code(Highlighter::shared(), path, patch)
-}
-
-/// Builds every grammar on the calling thread, for a client that wants
-/// its first frame's code coloured and settled and can wait for it.
-/// Returns how long it took.
-pub fn preload_highlighting() -> Duration {
-    Highlighter::shared().preload()
-}
-
-pub(crate) fn block(
-    highlighter: &Highlighter,
-    code: &str,
-    info: &str,
-    streaming: Option<Instant>,
-) -> HighlightedCode {
-    let language = Language::from_fence(info);
-    let highlighted = match streaming {
-        Some(now) => highlighter.highlight_streaming(code, language, now),
-        None => highlighter.highlight(code, language),
-    };
-    HighlightedCode {
-        lines: highlighted.lines.iter().map(|line| runs(line)).collect(),
-        settled: highlighted.settled,
-    }
-}
-
-pub(crate) fn patch_code(
+pub fn highlight_patch(
     highlighter: &Highlighter,
     path: &str,
     patch: &PatchHead,
@@ -146,8 +125,27 @@ pub(crate) fn patch_code(
     out
 }
 
+/// `streaming` carries the time a streaming block is asked at, which a
+/// test fixes.
+fn block(
+    highlighter: &Highlighter,
+    code: &str,
+    info: &str,
+    streaming: Option<Instant>,
+) -> HighlightedCode {
+    let language = Language::from_fence(info);
+    let highlighted = match streaming {
+        Some(now) => highlighter.highlight_streaming(code, language, now),
+        None => highlighter.highlight(code, language),
+    };
+    HighlightedCode {
+        lines: highlighted.lines.iter().map(|line| runs(line)).collect(),
+        settled: highlighted.settled,
+    }
+}
+
 /// One line of an edit as the highlighting reads it.
-pub(crate) enum Piece<'a> {
+enum Piece<'a> {
     /// Lines of another file start here.
     File(&'a str),
     /// The lines after this one do not follow on from those before.
@@ -155,7 +153,7 @@ pub(crate) enum Piece<'a> {
     Line(LineKind, &'a str),
 }
 
-pub(crate) fn edit<'a>(
+fn edit<'a>(
     highlighter: &Highlighter,
     path: &'a str,
     pieces: impl Iterator<Item = Piece<'a>>,
@@ -279,36 +277,10 @@ impl From<highlight::TokenKind> for TokenKind {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use highlight::Job;
+    use highlight::HeldJobs;
 
     use super::*;
     use crate::rows::{FileChangeView, FileRow, PatchLine};
-
-    /// Background work held until the test runs it, so what a caller sees
-    /// before and after each job is fixed.
-    #[derive(Clone, Default)]
-    struct Queue(Arc<Mutex<Vec<Job>>>);
-
-    impl Queue {
-        fn highlighter(&self) -> Highlighter {
-            let queue = self.clone();
-            Highlighter::with_spawner(move |job| queue.0.lock().unwrap().push(job))
-        }
-
-        fn run(&self) {
-            loop {
-                let jobs = std::mem::take(&mut *self.0.lock().unwrap());
-                if jobs.is_empty() {
-                    return;
-                }
-                for job in jobs {
-                    job();
-                }
-            }
-        }
-    }
 
     fn kinds(code: &HighlightedCode) -> Vec<Vec<(&str, TokenKind)>> {
         code.lines
@@ -329,7 +301,7 @@ mod tests {
 
     #[test]
     fn a_block_draws_plain_and_unsettled_until_its_grammar_is_built() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let first = block(&highlighter, "fn main() {}\n", "rust", None);
         assert!(!first.settled);
@@ -345,7 +317,7 @@ mod tests {
 
     #[test]
     fn an_unknown_fence_is_plain_and_a_diff_fence_keeps_its_signs() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let plain = block(&highlighter, "puts 1\n", "ruby", None);
         assert!(plain.settled);
@@ -364,7 +336,7 @@ mod tests {
 
     #[test]
     fn a_streaming_block_colours_its_completed_lines_in_the_background() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
         let now = Instant::now();
@@ -380,7 +352,7 @@ mod tests {
 
     #[test]
     fn an_edit_colours_each_side_as_its_file_reads() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Python);
         // Read as one text, the added line would sit inside the string the
@@ -409,7 +381,7 @@ mod tests {
 
     #[test]
     fn an_edit_of_several_files_takes_each_files_language() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
         highlighter.prepare(Language::Python);
@@ -440,12 +412,7 @@ mod tests {
             EditLine::File(file("notes.txt")),
             line("def plain"),
         ];
-        let pieces = lines.iter().map(|line| match line {
-            EditLine::File(file) => Piece::File(&file.path),
-            EditLine::Hunk { .. } => Piece::Break,
-            EditLine::Line(line) => Piece::Line(line.kind, &line.text),
-        });
-        let code = edit(&highlighter, "a.rs", pieces);
+        let code = highlight_edit(&highlighter, "a.rs", &lines);
         assert!(code.settled);
         assert_eq!(code.lines.len(), lines.len());
         assert!(code.lines[0].is_empty() && code.lines[2].is_empty());
@@ -460,7 +427,7 @@ mod tests {
     /// elsewhere in the file.
     #[test]
     fn a_patchs_hunks_are_coloured_apart() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         highlighter.prepare(Language::Rust);
         let line = |number, kind, text: &str| PatchLine {
@@ -478,7 +445,7 @@ mod tests {
             ],
             more: 0,
         };
-        let code = patch_code(&highlighter, "src/lib.rs", &patch);
+        let code = highlight_patch(&highlighter, "src/lib.rs", &patch);
         assert!(code.settled);
         assert_eq!(code.lines.len(), 3, "one result line for each patch line");
         assert!(has(&code, 1, "/* opened here", TokenKind::Comment));
@@ -492,13 +459,13 @@ mod tests {
             hunks: vec![patch.lines().cloned().collect()],
             more: 0,
         };
-        let joined = patch_code(&highlighter, "src/lib.rs", &joined);
+        let joined = highlight_patch(&highlighter, "src/lib.rs", &joined);
         assert!(!has(&joined, 2, "fn", TokenKind::Keyword));
     }
 
     #[test]
     fn an_edit_whose_grammar_is_building_is_unsettled() {
-        let queue = Queue::default();
+        let queue = HeldJobs::default();
         let highlighter = queue.highlighter();
         let code = edit(
             &highlighter,

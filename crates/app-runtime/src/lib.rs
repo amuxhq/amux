@@ -9,7 +9,9 @@
 //! reconfigures only the cells an update changed.
 //!
 //! Nothing here opens a store or knows the node: the runtime is reached
-//! through a [`client::Client`], in process on the phone.
+//! through a [`client::next::Client`] of the profile's node, in memory on
+//! the phone and over the profile's socket on the Mac. Reads ask that
+//! node; every act on an agent is addressed to the host that owns it.
 
 mod chat;
 mod coalesce;
@@ -24,7 +26,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 pub use chat::Chat;
-use client::{Client, RpcError};
+use client::RpcError;
+use client::next::Client;
 pub use coalesce::{Batch, Coalescer, WakeFn};
 use prost::Message as _;
 use tokio::task::JoinHandle;
@@ -38,10 +41,8 @@ pub use values::{FleetDelta, HostView};
 /// phone's bridge passes it on without a dependency of its own on the wire
 /// crate.
 pub use wire::Provider;
-use wire::{
-    CreateAgentRequest, DeleteAgentRequest, DumpRequest, Filing, Kind, ListRepositoriesRequest,
-    RenameAgentRequest, RepositoryEntry,
-};
+use wire::amux::staging;
+use wire::{DumpRequest, Filing, Kind, RepositoryEntry};
 
 /// How many rows a chat opens with unless the host says otherwise.
 pub const DEFAULT_TAIL: u32 = 200;
@@ -64,7 +65,7 @@ pub type HostWake = Arc<dyn Fn(Wake) + Send + Sync>;
 
 /// The drivers of one profile's chats and fleet.
 pub struct AppRuntime {
-    client: Arc<dyn Client>,
+    client: Client,
     clock: Arc<dyn client::Clock>,
     local_host: Vec<u8>,
     wake: HostWake,
@@ -82,17 +83,16 @@ pub struct AppRuntime {
 }
 
 impl AppRuntime {
-    /// Opens the fleet and resolves once it has caught up with the local
-    /// runtime. `local_host` is this device's host id. The fleet and its
-    /// chats run on `node`, a client of the same profile as `client`.
+    /// Opens the fleet on `client`, a client of the profile's node, and
+    /// resolves once it has caught up with the local runtime. `local_host`
+    /// is this device's host id.
     pub async fn open(
-        client: Arc<dyn Client>,
-        node: client::next::Client,
+        client: Client,
         clock: Arc<dyn client::Clock>,
         local_host: Vec<u8>,
         wake: HostWake,
     ) -> Result<AppRuntime, RpcError> {
-        let fleet = Arc::new(Fleet::connect(node, clock.clone()).await?);
+        let fleet = Arc::new(Fleet::connect(client.clone(), clock.clone()).await?);
         let fleet_wake = wake.clone();
         let fleet_changes = Arc::new(Coalescer::new(Arc::new(move || fleet_wake(Wake::Fleet))));
         let fleet_watcher =
@@ -112,7 +112,8 @@ impl AppRuntime {
         })
     }
 
-    pub fn client(&self) -> &Arc<dyn Client> {
+    /// The client of the profile's node the fleet and its chats run on.
+    pub fn client(&self) -> &Client {
         &self.client
     }
 
@@ -292,7 +293,7 @@ impl AppRuntime {
 
     /// Starts an agent on a host and returns it as the fleet names it.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
-        use wire::create_agent_request::Agent;
+        use staging::create_agent_request::Agent;
         let claude = || wire::ClaudeCreateConfig {
             model: agent.model.clone(),
             effort: agent.effort.clone(),
@@ -312,9 +313,10 @@ impl AppRuntime {
         };
         let created = self
             .client
-            .create_agent(CreateAgentRequest {
+            .host(&agent.host_id)
+            .agents()
+            .create(staging::CreateAgentRequest {
                 agent_id: ui_runtime::inputs::input_id(),
-                host: Some(wire::HostRef::id(agent.host_id.clone())),
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
                 agent: config,
@@ -336,13 +338,7 @@ impl AppRuntime {
         host_id: &[u8],
         provider: Provider,
     ) -> Result<wire::Catalogue, RpcError> {
-        let blob = self
-            .client
-            .get_catalogue(wire::GetCatalogueRequest {
-                host_id: host_id.to_vec(),
-                provider: provider as i32,
-            })
-            .await?;
+        let blob = self.client.host(host_id).catalogue(provider).await?;
         wire::Catalogue::decode(blob.bytes.as_slice()).map_err(|error| {
             RpcError::Refused(wire::Error {
                 code: wire::ErrorCode::Internal as i32,
@@ -360,14 +356,8 @@ impl AppRuntime {
         query: &str,
         limit: u32,
     ) -> Result<Directories, RpcError> {
-        let listed = self
-            .client
-            .list_repositories(ListRepositoriesRequest {
-                query: Some(query.to_owned()).filter(|query| !query.is_empty()),
-                limit,
-                host_id: Some(host_id.to_vec()),
-            })
-            .await?;
+        let query = Some(query).filter(|query| !query.is_empty());
+        let listed = self.client.host(host_id).repositories(query, limit).await?;
         let directory = |entry: RepositoryEntry| Directory {
             path: entry.path,
             name: entry.name,
@@ -395,21 +385,21 @@ impl AppRuntime {
         let head = wire::DiffBase {
             base: Some(wire::diff_base::Base::Head(wire::Empty {})),
         };
-        let compared =
-            ui_runtime::review::changed_files(self.client.as_ref(), &agent.agent, head).await;
+        let compared = self
+            .client
+            .agent(&address(agent))
+            .get_diff(head, false)
+            .await;
         Some(warning.answered(compared.as_ref()))
     }
 
     /// Renames, files or deletes an agent.
     pub async fn agent_act(&self, agent: &AgentKey, act: &AgentAct) -> Result<(), RpcError> {
-        let agent_id = agent.agent.clone();
         match act {
             AgentAct::Rename(name) => self
                 .client
-                .rename_agent(RenameAgentRequest {
-                    agent_id,
-                    name: name.clone(),
-                })
+                .agent(&address(agent))
+                .rename(name)
                 .await
                 .map(drop),
             AgentAct::Close => self.fleet.close_agent(agent).await.map(drop),
@@ -419,14 +409,12 @@ impl AppRuntime {
             }
             AgentAct::Pin => self.fleet.file(agent, Filing::Pinned).await.map(drop),
             AgentAct::Unfile => self.fleet.file(agent, Filing::Open).await.map(drop),
-            AgentAct::Delete | AgentAct::DeleteDiscardingChanges => self
-                .client
-                .delete_agent(DeleteAgentRequest {
-                    agent_id,
-                    discard_workspace_changes: *act == AgentAct::DeleteDiscardingChanges,
-                })
-                .await
-                .map(drop),
+            AgentAct::Delete | AgentAct::DeleteDiscardingChanges => {
+                self.client
+                    .agent(&address(agent))
+                    .delete(*act == AgentAct::DeleteDiscardingChanges)
+                    .await
+            }
         }
     }
 
@@ -436,6 +424,7 @@ impl AppRuntime {
     pub async fn dump(&self, reason: &str) -> Result<PathBuf, RpcError> {
         let response = self
             .client
+            .admin()
             .dump(DumpRequest {
                 reason: reason.to_owned(),
                 sessions: self.fleet.on_screen_records(),
@@ -467,6 +456,7 @@ impl AppRuntime {
         }
         let sent = self
             .client
+            .admin()
             .submit_report(wire::SubmitReportRequest { dump_path, files })
             .await?;
         Ok(values::ReportSent {
@@ -475,6 +465,15 @@ impl AppRuntime {
             received_at_ms: sent.received_at_ms,
             not_sent: sent.not_sent,
         })
+    }
+}
+
+/// An agent's key as the address of its host's services: the host that
+/// owns it and its id there, so an act goes to that host.
+fn address(agent: &AgentKey) -> wire::AgentRef {
+    wire::AgentRef {
+        host_id: agent.host.clone(),
+        agent_id: agent.agent.clone(),
     }
 }
 

@@ -626,13 +626,9 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 .iter()
                 .find(|listed| listed.id == profile.as_bytes())
                 .ok_or_else(|| format!("the installation hosts no profile {profile}"))?;
-            let client = installation
-                .open_profile(described)
-                .await
-                .map_err(|error| error.to_string())?;
             // The phone calls its hosted node in memory; the Mac dials the
             // profile's socket, as the Mac app.
-            let node = match embedded {
+            let client = match embedded {
                 Some(embedded) => embedded.node(profile).map_err(|error| error.to_string())?,
                 None => client::next::Client::connect(
                     std::path::Path::new(&described.socket_path),
@@ -642,11 +638,12 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 .map_err(|error| error.to_string())?,
             };
             let host = client
+                .admin()
                 .get_device_identity()
                 .await
                 .map_err(|error| error.to_string())?
                 .host_id;
-            AppRuntime::open(client, node, clock, host, host_wake)
+            AppRuntime::open(client, clock, host, host_wake)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -655,7 +652,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
     shared
         .outbox
         .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
-    let (watching, posting) = (app.client().clone(), shared.outbox.clone());
+    let (watching, posting) = (app.client().admin(), shared.outbox.clone());
     let offers = shared.phone.handle().spawn(async move {
         follow(
             || watching.subscribe_sign_in_offers(),
@@ -2221,12 +2218,12 @@ pub unsafe extern "C" fn amux_profile_offer_sign_in(
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
-        let client = profile.app.client().clone();
+        let admin = profile.app.client().admin();
         profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
-            Answered::from(client.offer_sign_in(host_id).await)
+            Answered::from(admin.offer_sign_in(host_id).await)
         })
     })
 }
@@ -2254,12 +2251,12 @@ pub unsafe extern "C" fn amux_profile_answer_sign_in_offer(
         };
         // SAFETY: the caller's contract.
         let answer: Option<SignInAnswer> = unsafe { parse(answer) };
-        let client = profile.app.client().clone();
+        let admin = profile.app.client().admin();
         profile.act(async move {
             let Some(answer) = answer else {
                 return Answered::Err("the answer is not a SignInAnswer".into());
             };
-            let answered = client
+            let answered = admin
                 .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
                     host_id: answer.host_id,
                     accept: answer.accept,
@@ -2375,12 +2372,12 @@ pub unsafe extern "C" fn amux_profile_open_pairing(
         let Some(profile) = (unsafe { live_profile(profile) }) else {
             return 0;
         };
-        let client = profile.app.client().clone();
+        let admin = profile.app.client().admin();
         {
             let mut watch = profile.pairing.lock().unwrap_or_else(|p| p.into_inner());
             if watch.is_none() {
                 let (watching, outbox, fleet) =
-                    (client.clone(), profile.shared.outbox.clone(), profile.fleet);
+                    (admin.clone(), profile.shared.outbox.clone(), profile.fleet);
                 *watch = Some(profile.shared.handle().spawn(async move {
                     follow(
                         || watching.subscribe_pairing(),
@@ -2395,9 +2392,9 @@ pub unsafe extern "C" fn amux_profile_open_pairing(
         profile.act(async move {
             // One window is open at a time: a renewal replaces the one
             // before, which may already have ended.
-            let _ = client.cancel_pairing().await;
+            let _ = admin.cancel_pairing().await;
             Answered::from(
-                client
+                admin
                     .start_pairing(wire::StartPairingRequest {
                         method: Some(wire::start_pairing_request::Method::PinOrQr(wire::Empty {})),
                         ttl_seconds: (ttl_seconds > 0).then_some(ttl_seconds),
@@ -2429,8 +2426,8 @@ pub unsafe extern "C" fn amux_profile_close_pairing(profile: *const AmuxProfile)
         {
             watch.abort();
         }
-        let client = profile.app.client().clone();
-        profile.act(async move { Answered::from(client.cancel_pairing().await) })
+        let admin = profile.app.client().admin();
+        profile.act(async move { Answered::from(admin.cancel_pairing().await) })
     })
 }
 

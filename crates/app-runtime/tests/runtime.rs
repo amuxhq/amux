@@ -11,7 +11,7 @@ use app_runtime::values::{
     ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
-use client::{Client, InProcess, SystemClock};
+use client::SystemClock;
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
@@ -87,10 +87,6 @@ async fn open(net: &Net) -> (AppRuntime, Host) {
 
 /// The runtime, with home not yet opened.
 async fn connect(net: &Net) -> (AppRuntime, Host) {
-    let client: Arc<dyn Client> = Arc::new(
-        InProcess::new(net.client("desk").unwrap())
-            .with_admin(Arc::new(net.profile_admin("desk").unwrap())),
-    );
     let (sender, wakes) = mpsc::unbounded_channel();
     let wake = Arc::new(move |wake: Wake| {
         let _ = sender.send(wake);
@@ -100,7 +96,7 @@ async fn connect(net: &Net) -> (AppRuntime, Host) {
         net.entrance("desk").unwrap(),
         client::next::Surface::Phone,
     );
-    let runtime = AppRuntime::open(client, node, Arc::new(SystemClock), local, wake)
+    let runtime = AppRuntime::open(node, Arc::new(SystemClock), local, wake)
         .await
         .unwrap();
     (

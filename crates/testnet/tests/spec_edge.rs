@@ -20,6 +20,7 @@ use testnet::{
 };
 use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
+use wire::amux::staging;
 use wire::cloud_standing::Standing;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
@@ -150,8 +151,8 @@ fn refresh_ms() -> i64 {
 async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
     let mut client = from.peer(to).await.expect("a route to the peer");
     let mut events = client
-        .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .peer
+        .follow_agents(staging::FollowAgentsRequest {})
         .await
         .expect("the peer answers a trusted caller")
         .into_inner();
@@ -347,8 +348,8 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     println!("the stranger's dial was refused: {refused}");
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
-        Ok(channel) => wire::agent_service_client(channel)
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        Ok(channel) => staging::peer_service_client(channel)
+            .follow_agents(staging::FollowAgentsRequest {})
             .await
             .map(|_| ())
             .expect_err("a stranger reaches no agent service")
@@ -365,13 +366,13 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
         })
         .await
         .unwrap();
-    let in_pairing = wire::agent_service_client(
+    let in_pairing = staging::peer_service_client(
         edge(&net, "stranger")
             .unpinned_channel(desk_addr)
             .await
             .expect("pairing mode admits an unpinned stream"),
     )
-    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+    .follow_agents(staging::FollowAgentsRequest {})
     .await
     .map(|_| ())
     .expect_err("pairing mode serves only pairing")

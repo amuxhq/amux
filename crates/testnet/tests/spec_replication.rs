@@ -22,7 +22,6 @@ use provider_fakes::script::{Ask, Question, Step};
 use store::{Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
 use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
-use wire::session_service_server::SessionService as _;
 use wire::{Item, ListItemsRequest, SessionEvent, session_event};
 
 fn text(text: &str) -> Step {
@@ -546,7 +545,6 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
 /// bytes under the replica, so the next read needs no link.
 #[tokio::test(flavor = "multi_thread")]
 async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader() {
-    use wire::agent_service_server::AgentService as _;
     let topology = desk_and_laptop().agent(
         AgentDecl::new("worker", "desk")
             .steps(turns(1, 1))
@@ -578,19 +576,12 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
     git(&["commit", "-qm", "first"]);
     std::fs::write(work.join("deploy.sh"), "rsync --delete build/ prod:/srv\n").unwrap();
 
-    let laptop = net.client("laptop").unwrap();
+    let laptop = net.person("laptop").await.unwrap();
     let stored = laptop
-        .put_blob(tonic::Request::new(wire::PutBlobRequest {
-            agent_id: agent_id.clone(),
-            name: "notes.txt".to_owned(),
-            mime: "text/plain".to_owned(),
-            bytes: b"from the laptop".to_vec(),
-        }))
+        .agent(&worker)
+        .put_blob("notes.txt", "text/plain", b"from the laptop".to_vec())
         .await
-        .expect("the desk stores the laptop's attachment")
-        .into_inner()
-        .blob
-        .unwrap();
+        .expect("the desk stores the laptop's attachment");
     let hex = |hash: &[u8]| hash.iter().map(|b| format!("{b:02x}")).collect::<String>();
     let on_desk = |hash: &[u8]| {
         walk(&own).into_iter().find(|path| {
@@ -602,22 +593,17 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
     assert_eq!(std::fs::read(written).unwrap(), b"from the laptop");
 
     let diff = |with_patch| {
-        let laptop = laptop.clone();
-        let agent_id = agent_id.clone();
+        let worker = laptop.agent(&worker);
         async move {
-            laptop
-                .get_diff(tonic::Request::new(wire::GetDiffRequest {
-                    agent_id,
-                    base: Some(wire::DiffBase {
+            worker
+                .get_diff(
+                    wire::DiffBase {
                         base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-                    }),
+                    },
                     with_patch,
-                }))
+                )
                 .await
                 .expect("the desk diffs its agent's working tree")
-                .into_inner()
-                .diff
-                .unwrap()
         }
     };
     let listed = diff(false).await;
@@ -639,14 +625,9 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
     );
 
     let read = |hash: Vec<u8>| {
-        let laptop = laptop.clone();
+        let sessions = laptop.sessions();
         let agent_id = agent_id.clone();
-        async move {
-            laptop
-                .get_blob(tonic::Request::new(wire::GetBlobRequest { agent_id, hash }))
-                .await
-                .map(|response| response.into_inner().bytes)
-        }
+        async move { sessions.get_blob(&agent_id, &hash).await }
     };
     let bytes = read(patch.hash.clone())
         .await
@@ -824,15 +805,13 @@ async fn an_ask_open_across_a_daemon_restart_is_the_same_ask_and_is_answered_aft
     )
     .unwrap();
     let verdict = net
-        .client("laptop")
-        .unwrap()
-        .send_input(tonic::Request::new(wire::SendInputRequest {
-            agent_id: worker.id.as_bytes().to_vec(),
-            input: Some(answer),
-        }))
+        .person("laptop")
         .await
         .unwrap()
-        .into_inner();
+        .agent(&worker)
+        .send_input(answer)
+        .await
+        .unwrap();
     assert!(
         matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
         "{verdict:?}"

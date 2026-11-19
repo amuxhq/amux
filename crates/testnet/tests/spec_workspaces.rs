@@ -15,7 +15,7 @@ use std::sync::Arc;
 use node::Launch;
 use prost::Message as _;
 use testnet::{HostDecl, Net, NetOptions, PATIENCE, Topology, until};
-use wire::agent_service_server::AgentService as _;
+use wire::amux::staging;
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::inventory_event;
 
@@ -70,22 +70,23 @@ fn options(on: bool, homes: PathBuf) -> NetOptions {
 async fn create(net: &Net, name: &str) -> wire::Agent {
     let desk = net.host("desk").unwrap();
     let site = desk.work.with_file_name("repositories").join("site");
-    net.client("laptop")
-        .unwrap()
-        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+    let laptop = net.person("laptop").await.unwrap();
+    let desk = laptop.inventory().resolve_host("desk").await.unwrap();
+    laptop
+        .host(desk.host_id())
+        .agents()
+        .create(staging::CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host: Some(wire::HostRef::named("desk")),
             name: Some(name.to_owned()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+                Default::default(),
+            )),
             new_workspace: true,
-            ..wire::CreateAgentRequest::default()
-        }))
+            ..staging::CreateAgentRequest::default()
+        })
         .await
         .unwrap()
-        .into_inner()
-        .agent
-        .expect("a created agent is answered")
 }
 
 fn entry(agent: &wire::Agent) -> Option<AgentWorkspace> {
@@ -305,12 +306,11 @@ async fn without_the_experiment_a_new_workspace_from_another_host_is_a_plain_wor
 /// The laptop deletes an agent on the desk whose worktree has work nobody
 /// committed, saying `discard`.
 async fn delete_from_laptop(net: &Net, agent: &wire::Agent, discard: bool) {
-    net.client("laptop")
+    net.person("laptop")
+        .await
         .unwrap()
-        .delete_agent(tonic::Request::new(wire::DeleteAgentRequest {
-            agent_id: agent.agent_id.clone(),
-            discard_workspace_changes: discard,
-        }))
+        .agent(agent)
+        .delete(discard)
         .await
         .unwrap();
 }

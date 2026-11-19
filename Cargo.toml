@@ -19,6 +19,7 @@ members = [
     "crates/daemon-core",
     "crates/fake-amux",
     "crates/git-facts",
+    "crates/highlight",
     "crates/installer",
     "crates/interpret",
     "crates/ios-tools",
@@ -165,6 +166,28 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # the pure-Rust regex engine so no C library is linked.
 syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "regex-fancy"] }
 shell-words = "1"
+# Syntax highlighting: tree-sitter's parser and highlighter, and one grammar
+# crate per language the highlight crate colours. Every grammar crate depends
+# only on tree-sitter-language's ABI type, not on tree-sitter itself, so they
+# all load into the one tree-sitter version here.
+tree-sitter = "0.27.2"
+tree-sitter-highlight = "0.27.2"
+tree-sitter-language = "0.1.9"
+tree-sitter-bash = "0.25.1"
+tree-sitter-c = "0.24.2"
+tree-sitter-cpp = "0.23.4"
+tree-sitter-css = "0.25.0"
+tree-sitter-go = "0.25.0"
+tree-sitter-html = "0.23.2"
+tree-sitter-java = "0.23.5"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-json = "0.24.8"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-swift = "0.7.4"
+tree-sitter-toml-ng = "0.7.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-yaml = "0.7.2"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
 rusqlite = { version = "0.41.1", default-features = false, features = ["hooks", "cache"] }

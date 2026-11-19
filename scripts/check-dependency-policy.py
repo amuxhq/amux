@@ -27,6 +27,9 @@ ALLOWED_LOCAL = {
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
+    # Syntax highlighting over tree-sitter's grammars: a leaf, so the host
+    # colouring a diff and every client colouring a chat share one engine.
+    "highlight": set(),
     # The pure per-kind step, and the per-kind body redactor beside it;
     # core-ring for the check type its every-step checks report as, and for
     # reading the facts ring an agent's record is built from.

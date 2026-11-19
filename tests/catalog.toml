@@ -347,6 +347,24 @@ cargo = [
 ]
 
 [[suite]]
+name = "syntax-highlighting"
+contract = "Code comes out as its lines with each run tagged by token kind: every grammar compiles its queries and colours a representative snippet of its language, a language is picked from a fence word through the alias table or from a path's extension and then a shebang, a diff is coloured by its prefixes, a grammar not built yet draws plain and unsettled until its background build has run, finished code is kept by content, and a block still streaming is passed over at most once an interval from its completed lines."
+paths = ["crates/highlight/src", "crates/highlight/queries"]
+recipe = "just suite syntax-highlighting"
+boundary = "Views"
+oracle = "Exact kinds for chosen tokens of authored snippets, exact picks for words, paths and shebang lines, and what a caller sees before and after each background job the test runs by hand at stepped instants."
+real = ["tree-sitter grammars and queries", "one background thread in the prepare-while-building case"]
+substituted = ["background threads by a queue the test runs", "the clock by instants the test steps"]
+time = "driven"
+capabilities = ["Rust toolchain", "C compiler"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [
+  { package = "highlight", kind = "lib", targets = ["highlight"], features = [] },
+]
+
+[[suite]]
 name = "recording-manifests"
 contract = "A joined capture's manifest inventories every replay-relevant file by its digest, and a recording whose bytes differ from it or that holds a file it does not list is refused; sanitizing a capture redacts the recording machine's paths, secrets and identifiers wherever they nest and keeps package and version names."
 paths = ["crates/qualification/src/recording", "crates/qualification/tests/recording"]

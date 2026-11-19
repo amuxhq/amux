@@ -33,8 +33,9 @@
 //! recipient is closed, and a child's report never. A suspended agent's
 //! row is live with no process, and any message resumes it, a child's
 //! report included. A parent on
-//! another host is sent the report as a message from the child, and that
-//! host's daemon makes the same checks where the parent lives.
+//! another host is delivered the report on that host's peer service, built
+//! from the same outbox row, and that host's daemon hands it on as a
+//! message from the child, making the same checks where the parent lives.
 //!
 //! Nothing is handed to a lane or drained until the start's sweep is done:
 //! every own journal has been read to its end by then, so the lookup for an
@@ -44,6 +45,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, Delivery, StoreError};
+use wire::amux::staging::DeliverReportRequest;
 use wire::{
     AgentRef, AgentSender, Bootstrap, ChildReport, Envelope, ErrorCode, Human, Lifecycle,
     Refusal as Refused, Rejected, SendInputResponse, Sender, bootstrap, ctl_frame, envelope,
@@ -203,6 +205,30 @@ pub(crate) enum Removal {
 enum Judged {
     Counted(Outcome),
     Send(Box<Envelope>),
+}
+
+/// The report an outbox row's envelope carries, as the parent's host is
+/// sent it. The envelope is the one a parent here is handed, so a report
+/// reads the same at both ends; the host it is sent from is the one the
+/// link authenticates, so the envelope's own sender host goes.
+fn delivered(envelope: Envelope) -> Option<DeliverReportRequest> {
+    let Some(envelope::Body::Report(report)) = envelope.body else {
+        return None;
+    };
+    let (child_agent_id, child_name) = match envelope.from.and_then(|from| from.value) {
+        Some(sender::Value::Agent(sender)) => (
+            sender.agent.map(|agent| agent.agent_id).unwrap_or_default(),
+            sender.name,
+        ),
+        _ => return None,
+    };
+    Some(DeliverReportRequest {
+        id: envelope.id,
+        child_agent_id,
+        child_name,
+        parent_agent_id: envelope.to?.agent_id,
+        report: Some(report),
+    })
 }
 
 /// The envelope id of an outbox row: the same for every re-send of one
@@ -460,7 +486,8 @@ impl Daemon {
     }
 
     /// Hands a report to its parent: through the parent's lane here, or to
-    /// the parent's own daemon as a message from the child.
+    /// the parent's own daemon, which hands it on as a message from the
+    /// child.
     fn hand_off(&mut self, parent: &Parent, envelope: Envelope, out: &mut Vec<Output>) {
         let incarnation = match &envelope.body {
             Some(envelope::Body::Report(report)) => Some(report.to_incarnation),
@@ -483,18 +510,21 @@ impl Daemon {
         let Some(host) = HostId::from_slice(&parent.0) else {
             return;
         };
+        let Some(report) = delivered(envelope) else {
+            return;
+        };
         let made = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
             made,
             Waiting::Report {
                 parent: AgentKey::new(parent.0.clone(), parent.1.clone()),
-                id: envelope.id.clone(),
+                id: report.id.clone(),
             },
         );
         out.push(Output::Call {
             host,
             call: made,
-            request: PeerRequest::SendMessage(envelope),
+            request: PeerRequest::DeliverReport(report),
             absorbed: true,
         });
     }
@@ -1478,7 +1508,7 @@ mod tests {
                 output,
                 Output::Call {
                     host: FAR,
-                    request: PeerRequest::SendMessage(_),
+                    request: PeerRequest::DeliverReport(_),
                     ..
                 }
             )),
@@ -1611,7 +1641,7 @@ mod tests {
                     output,
                     Output::Call {
                         host: FAR,
-                        request: PeerRequest::SendMessage(_),
+                        request: PeerRequest::DeliverReport(_),
                         ..
                     }
                 )
@@ -1623,6 +1653,75 @@ mod tests {
             );
             assert_eq!(violations(&out), Vec::<crate::Check>::new());
         }
+    }
+
+    /// A report for a parent on another host is delivered from the outbox
+    /// row as it stands: the row's envelope id, so the parent's host keeps
+    /// one however often it is sent, the child as it is named here, and
+    /// the incarnations the row was written for. The parent's host hands
+    /// it on as the same message a parent here would be handed.
+    #[test]
+    fn a_report_for_a_parent_on_another_host_is_delivered_from_its_outbox_row() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = daemon(&dir);
+        let parent = AgentKey::new(FAR.0.to_vec(), PARENT.0.to_vec());
+        let mut row = AgentRow::new(parent.clone(), 1, "/src");
+        row.incarnation = 1;
+        daemon.store.put_agent(&row).unwrap();
+        owe_report(&mut daemon, parent.clone());
+        let mut child = daemon.store.agent(&daemon.own_key(CHILD)).unwrap().unwrap();
+        child.name = "scout".to_owned();
+        daemon.store.put_agent(&child).unwrap();
+        daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![FAR]));
+        step(&mut daemon, Input::Started);
+        let out = step(&mut daemon, Input::Swept);
+        let reports: Vec<&DeliverReportRequest> = out
+            .iter()
+            .filter_map(|output| match output {
+                Output::Call {
+                    host: FAR,
+                    request: PeerRequest::DeliverReport(report),
+                    absorbed: true,
+                    ..
+                } => Some(report),
+                _ => None,
+            })
+            .collect();
+        let delivery = report_to(parent);
+        let expected = DeliverReportRequest {
+            id: delivery_envelope_id(&delivery),
+            child_agent_id: CHILD.0.to_vec(),
+            child_name: "scout".to_owned(),
+            parent_agent_id: PARENT.0.to_vec(),
+            report: Some(ChildReport {
+                to_incarnation: 1,
+                from_incarnation: 1,
+                end: Some(delivery.end.clone()),
+            }),
+        };
+        assert_eq!(reports, vec![&expected], "{out:?}");
+        assert_eq!(
+            crate::payload::report_envelope(&OWN, &FAR.0, expected.clone()),
+            Envelope {
+                id: expected.id.clone(),
+                context: None,
+                from: Some(Sender {
+                    value: Some(sender::Value::Agent(AgentSender {
+                        agent: Some(AgentRef {
+                            host_id: OWN.to_vec(),
+                            agent_id: CHILD.0.to_vec(),
+                        }),
+                        name: "scout".to_owned(),
+                    })),
+                }),
+                to: Some(AgentRef {
+                    host_id: FAR.0.to_vec(),
+                    agent_id: PARENT.0.to_vec(),
+                }),
+                body: Some(envelope::Body::Report(expected.report.clone().unwrap())),
+            },
+            "the parent's host reads it back as the message a parent here is handed"
+        );
     }
 
     #[test]

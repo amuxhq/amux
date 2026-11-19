@@ -175,7 +175,9 @@ fn writes(input: &Input, copying: JobId) -> bool {
 fn peer_writes(request: &PeerRequest) -> bool {
     !matches!(
         request,
-        PeerRequest::SubscribeSession(_)
+        PeerRequest::FollowAgents
+            | PeerRequest::FollowSession(_)
+            | PeerRequest::SubscribeSession(_)
             | PeerRequest::SubscribeInventory
             | PeerRequest::ListItems(_)
             | PeerRequest::GetItem(_)

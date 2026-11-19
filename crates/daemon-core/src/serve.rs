@@ -721,7 +721,7 @@ mod tests {
             Input::PeerCall {
                 from: crate::HostId(*OTHER),
                 call: CallId(3),
-                request: crate::payload::PeerRequest::SubscribeInventory,
+                request: crate::payload::PeerRequest::FollowAgents,
             },
         );
         let inventory_answer = |of| Output::Answer {

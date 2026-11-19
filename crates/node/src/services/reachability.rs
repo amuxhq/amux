@@ -458,8 +458,8 @@ impl From<ChannelError> for DialFailure {
 fn early_call(request: &PeerRequest) -> Option<crate::link::EarlyCall> {
     use crate::link::EarlyCall;
     match request {
-        PeerRequest::SubscribeInventory => Some(EarlyCall::SubscribeInventory),
-        PeerRequest::SubscribeSession(request) => Some(EarlyCall::SubscribeSession {
+        PeerRequest::FollowAgents => Some(EarlyCall::FollowAgents),
+        PeerRequest::FollowSession(request) => Some(EarlyCall::FollowSession {
             session: request.agent_id.clone(),
             from: request.from?,
         }),

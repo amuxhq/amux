@@ -95,20 +95,20 @@ impl ChannelError {
     }
 }
 
-/// Where a session subscription starts: the origin's tail, or after a
-/// revision this host already holds.
-pub type Cursor = wire::subscribe_session_request::From;
+/// Where a followed session starts: the origin's tail, or after a revision
+/// this host already holds.
+pub type Cursor = wire::amux::staging::follow_session_request::From;
 
 /// The only calls the channel pool writes before a link's handshake
-/// finishes, as early data the far end may see more than once: each reads
-/// and changes nothing. A send, a stop or a pairing call has no variant
-/// here, so it cannot be early data.
+/// finishes, as early data the far end may see more than once: the peer
+/// service's two follows, which read and change nothing. A send, a stop or
+/// a pairing call has no variant here, so it cannot be early data.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EarlyCall {
-    /// The host's inventory, which always opens with all of it: the wire
-    /// gives it no cursor.
-    SubscribeInventory,
-    SubscribeSession {
+    /// The host's entry and its own agents, which always opens with all of
+    /// them: the call has no cursor.
+    FollowAgents,
+    FollowSession {
         session: Vec<u8>,
         from: Cursor,
     },
@@ -118,32 +118,33 @@ impl EarlyCall {
     /// The channel the call rides, as the same call made later would.
     fn class(&self) -> ChannelClass {
         match self {
-            EarlyCall::SubscribeInventory => ChannelClass::Calls,
-            EarlyCall::SubscribeSession { .. } => ChannelClass::Session,
+            EarlyCall::FollowAgents => ChannelClass::Calls,
+            EarlyCall::FollowSession { .. } => ChannelClass::Session,
         }
     }
 
     /// The service method the call is.
     fn method(&self) -> &'static str {
         match self {
-            EarlyCall::SubscribeInventory => "SubscribeInventory",
-            EarlyCall::SubscribeSession { .. } => "SubscribeSession",
+            EarlyCall::FollowAgents => "FollowAgents",
+            EarlyCall::FollowSession { .. } => "FollowSession",
         }
     }
 
     async fn make(self, mut client: PeerClient) -> Result<EarlyAnswer, tonic::Status> {
+        use wire::amux::staging::{FollowAgentsRequest, FollowSessionRequest};
         Ok(match self {
-            EarlyCall::SubscribeInventory => EarlyAnswer::Inventory(
+            EarlyCall::FollowAgents => EarlyAnswer::Agents(
                 client
-                    .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .peer
+                    .follow_agents(FollowAgentsRequest {})
                     .await?
                     .into_inner(),
             ),
-            EarlyCall::SubscribeSession { session, from } => EarlyAnswer::Session(
+            EarlyCall::FollowSession { session, from } => EarlyAnswer::Session(
                 client
-                    .sessions
-                    .subscribe_session(wire::SubscribeSessionRequest {
+                    .peer
+                    .follow_session(FollowSessionRequest {
                         agent_id: session,
                         from: Some(from),
                     })
@@ -154,11 +155,11 @@ impl EarlyCall {
     }
 }
 
-/// The answer to an early call: the stream the subscription opened.
+/// The answer to an early call: the stream the follow opened.
 #[derive(Debug)]
 pub enum EarlyAnswer {
-    Inventory(tonic::Streaming<wire::SubscribeInventoryResponse>),
-    Session(tonic::Streaming<wire::SubscribeSessionResponse>),
+    Agents(tonic::Streaming<wire::amux::staging::FollowAgentsResponse>),
+    Session(tonic::Streaming<wire::amux::staging::FollowSessionResponse>),
 }
 
 /// An early call under way: it went out with the link's first packets, and
@@ -885,10 +886,12 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 }
 
-/// The client services' clients on one [`PeerChannel`], as a paired host
-/// is called.
+/// The clients a daemon calls a paired host with, on one [`PeerChannel`]:
+/// the peer service, for everything it asks for itself, and the client
+/// services, for the calls of its own clients it forwards.
 #[derive(Clone)]
 pub struct PeerClient {
+    pub peer: wire::amux::staging::peer_service_client::PeerServiceClient<PeerChannel>,
     pub agents: wire::agent_service_client::AgentServiceClient<PeerChannel>,
     pub sessions: wire::session_service_client::SessionServiceClient<PeerChannel>,
 }
@@ -896,6 +899,7 @@ pub struct PeerClient {
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
     let channel = PeerChannel::new(channel);
     PeerClient {
+        peer: wire::amux::staging::peer_service_client(channel.clone()),
         agents: wire::agent_service_client::AgentServiceClient::new(channel.clone())
             .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
             .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
@@ -1031,8 +1035,8 @@ mod tests {
         use std::time::Duration;
 
         use tonic::{Request, Response, Status};
-        use wire::agent_service_server::AgentService;
-        use wire::session_service_server::SessionService;
+        use wire::amux::staging;
+        use wire::amux::staging::peer_service_server::PeerService;
 
         use super::*;
         use crate::identity::DeviceIdentity;
@@ -1059,115 +1063,27 @@ mod tests {
         }
 
         #[tonic::async_trait]
-        impl AgentService for Answering {
-            type SubscribeInventoryStream = Events<wire::SubscribeInventoryResponse>;
+        impl PeerService for Answering {
+            type FollowAgentsStream = Events<staging::FollowAgentsResponse>;
+            type FollowSessionStream = Events<staging::FollowSessionResponse>;
 
-            async fn subscribe_inventory(
+            async fn follow_agents(
                 &self,
-                _: Request<wire::SubscribeInventoryRequest>,
-            ) -> Answer<Self::SubscribeInventoryStream> {
+                _: Request<staging::FollowAgentsRequest>,
+            ) -> Answer<Self::FollowAgentsStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
-                let event = wire::SubscribeInventoryResponse::default();
+                let event = staging::FollowAgentsResponse::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
             }
 
-            async fn resolve_agent(
+            async fn follow_session(
                 &self,
-                _: Request<wire::ResolveAgentRequest>,
-            ) -> Answer<wire::ResolveAgentResponse> {
-                unanswered()
-            }
-
-            async fn create_agent(
-                &self,
-                _: Request<wire::CreateAgentRequest>,
-            ) -> Answer<wire::CreateAgentResponse> {
-                unanswered()
-            }
-
-            async fn rename_agent(
-                &self,
-                _: Request<wire::RenameAgentRequest>,
-            ) -> Answer<wire::RenameAgentResponse> {
-                unanswered()
-            }
-
-            async fn file_agent(
-                &self,
-                _: Request<wire::FileAgentRequest>,
-            ) -> Answer<wire::FileAgentResponse> {
-                unanswered()
-            }
-
-            async fn resume_agent(
-                &self,
-                _: Request<wire::ResumeAgentRequest>,
-            ) -> Answer<wire::ResumeAgentResponse> {
-                unanswered()
-            }
-
-            async fn delete_agent(
-                &self,
-                _: Request<wire::DeleteAgentRequest>,
-            ) -> Answer<wire::DeleteAgentResponse> {
-                unanswered()
-            }
-
-            async fn send_message(
-                &self,
-                _: Request<wire::SendMessageRequest>,
-            ) -> Answer<wire::SendMessageResponse> {
-                unanswered()
-            }
-
-            async fn put_blob(
-                &self,
-                _: Request<wire::PutBlobRequest>,
-            ) -> Answer<wire::PutBlobResponse> {
-                unanswered()
-            }
-
-            async fn get_blob(
-                &self,
-                _: Request<wire::GetBlobRequest>,
-            ) -> Answer<wire::GetBlobResponse> {
-                unanswered()
-            }
-
-            async fn get_diff(
-                &self,
-                _: Request<wire::GetDiffRequest>,
-            ) -> Answer<wire::GetDiffResponse> {
-                unanswered()
-            }
-
-            async fn get_catalogue(
-                &self,
-                _: Request<wire::GetCatalogueRequest>,
-            ) -> Answer<wire::GetCatalogueResponse> {
-                unanswered()
-            }
-
-            async fn list_repositories(
-                &self,
-                _: Request<wire::ListRepositoriesRequest>,
-            ) -> Answer<wire::ListRepositoriesResponse> {
-                unanswered()
-            }
-        }
-
-        #[tonic::async_trait]
-        impl SessionService for Answering {
-            type SubscribeSessionStream = Events<wire::SubscribeSessionResponse>;
-
-            async fn subscribe_session(
-                &self,
-                _: Request<wire::SubscribeSessionRequest>,
-            ) -> Answer<Self::SubscribeSessionStream> {
+                _: Request<staging::FollowSessionRequest>,
+            ) -> Answer<Self::FollowSessionStream> {
                 self.sessions.fetch_add(1, Ordering::SeqCst);
-                let event = wire::SubscribeSessionResponse::default();
+                let event = staging::FollowSessionResponse::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
@@ -1175,36 +1091,22 @@ mod tests {
 
             async fn list_items(
                 &self,
-                _: Request<wire::ListItemsRequest>,
-            ) -> Answer<wire::ListItemsResponse> {
+                _: Request<staging::PeerServiceListItemsRequest>,
+            ) -> Answer<staging::PeerServiceListItemsResponse> {
                 unanswered()
             }
 
-            async fn get_item(
+            async fn get_blob(
                 &self,
-                _: Request<wire::GetItemRequest>,
-            ) -> Answer<wire::GetItemResponse> {
+                _: Request<staging::PeerServiceGetBlobRequest>,
+            ) -> Answer<staging::PeerServiceGetBlobResponse> {
                 unanswered()
             }
 
-            async fn send_input(
+            async fn deliver_report(
                 &self,
-                _: Request<wire::SendInputRequest>,
-            ) -> Answer<wire::SendInputResponse> {
-                unanswered()
-            }
-
-            async fn update_draft(
-                &self,
-                _: Request<wire::UpdateDraftRequest>,
-            ) -> Answer<wire::UpdateDraftResponse> {
-                unanswered()
-            }
-
-            async fn get_draft(
-                &self,
-                _: Request<wire::GetDraftRequest>,
-            ) -> Answer<wire::GetDraftResponse> {
+                _: Request<staging::DeliverReportRequest>,
+            ) -> Answer<staging::DeliverReportResponse> {
                 unanswered()
             }
         }
@@ -1233,7 +1135,7 @@ mod tests {
             Arc::new(std::sync::RwLock::new(trust))
         }
 
-        /// A host answering links on loopback with the agent and session services, issuing
+        /// A host answering links on loopback with the peer service, issuing
         /// tickets from `tickets`. What it answered, and for each stream a
         /// dialler opened on a link, whether it arrived as early data.
         struct LoopbackHost {
@@ -1262,8 +1164,7 @@ mod tests {
                 });
                 tokio::spawn(
                     tonic::transport::Server::builder()
-                        .add_service(wire::agent_service_server(answering.clone()))
-                        .add_service(wire::session_service_server(answering.clone()))
+                        .add_service(staging::peer_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );
                 let early = arrived_early.clone();
@@ -1398,8 +1299,8 @@ mod tests {
 
         fn calls() -> Vec<EarlyCall> {
             vec![
-                EarlyCall::SubscribeInventory,
-                EarlyCall::SubscribeSession {
+                EarlyCall::FollowAgents,
+                EarlyCall::FollowSession {
                     session: b"agent".to_vec(),
                     from: Cursor::Tail(10),
                 },
@@ -1421,7 +1322,7 @@ mod tests {
             let mut answered = Vec::new();
             for reply in opened.replies {
                 match reply.await.expect("each early call is answered") {
-                    EarlyAnswer::Inventory(mut events) => {
+                    EarlyAnswer::Agents(mut events) => {
                         events.message().await.unwrap().expect("the inventory");
                         answered.push("inventory");
                     }

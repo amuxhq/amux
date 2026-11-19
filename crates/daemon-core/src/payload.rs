@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use wire::amux::staging;
 
 use crate::codec;
 use crate::families::{Create, Refusal, Resume};
@@ -277,13 +278,32 @@ pub enum MessageRefusal {
 
 /// A request on a peer's services, decoded: one a paired host makes of
 /// this one, or one this host makes of a paired host.
+///
+/// What a daemon asks a paired daemon for itself is a PeerService call:
+/// [`PeerRequest::FollowAgents`], [`PeerRequest::FollowSession`],
+/// [`PeerRequest::ListItems`] and [`PeerRequest::DeliverReport`]. The rest
+/// are the client services' calls as a paired host made them of this one,
+/// or as this one forwards a client's.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerRequest {
+    /// PeerService.FollowAgents: a stream of this host's entry and its own
+    /// agents, then every change.
+    FollowAgents,
+    /// PeerService.FollowSession: a stream of one of this host's agents'
+    /// session events, from what came after the revision the peer's copy
+    /// holds, or a tail.
+    FollowSession(#[serde(with = "codec::message")] staging::FollowSessionRequest),
+    /// PeerService.DeliverReport: a child's report to its parent on the
+    /// called host. The host it reaches hands it on as a message from the
+    /// child, as [`report_envelope`] spells it.
+    DeliverReport(#[serde(with = "codec::message")] staging::DeliverReportRequest),
     /// A stream of one of this host's agents' session events: from what
     /// came after the revision the peer's replica holds, or a tail.
     SubscribeSession(#[serde(with = "codec::message")] wire::SubscribeSessionRequest),
     /// A stream of this host's entry and its own agents.
     SubscribeInventory,
+    /// A page of one of this host's agents' older items. Made of a peer, it
+    /// is PeerService.ListItems, whose request is this one field for field.
     ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
     GetItem(#[serde(with = "codec::message")] wire::GetItemRequest),
     SendInput(#[serde(with = "codec::message")] wire::SendInputRequest),
@@ -298,6 +318,36 @@ pub enum PeerRequest {
     GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
     GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
     ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
+}
+
+/// A child's report as the parent's host hands it on to the parent: a
+/// message from the child, one of the agents of `from`, the host whose
+/// daemon delivered it, to the parent, one of `here`'s. The sender is the
+/// calling host's, whoever its link authenticated, so a daemon reports only
+/// for its own agents.
+pub fn report_envelope(
+    from: &[u8],
+    here: &[u8],
+    report: staging::DeliverReportRequest,
+) -> wire::Envelope {
+    wire::Envelope {
+        id: report.id,
+        context: None,
+        from: Some(wire::Sender {
+            value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                agent: Some(wire::AgentRef {
+                    host_id: from.to_vec(),
+                    agent_id: report.child_agent_id,
+                }),
+                name: report.child_name,
+            })),
+        }),
+        to: Some(wire::AgentRef {
+            host_id: here.to_vec(),
+            agent_id: report.parent_agent_id,
+        }),
+        body: report.report.map(wire::envelope::Body::Report),
+    }
 }
 
 /// A peer's whole reply to one of its unary calls.

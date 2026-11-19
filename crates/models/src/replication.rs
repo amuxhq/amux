@@ -48,6 +48,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, AgentRow, CommitClock, Dump, Marker, Sqlite};
+use wire::amux::staging::FollowSessionRequest;
 use wire::{Item, Phase, SessionEvent, Snapshot, Step, session_event};
 
 use crate::held::{Held, Slot};
@@ -405,7 +406,7 @@ impl Machine for Replication {
             let Some((inventory, request)) = follow.iter().find_map(|output| match output {
                 Output::Call {
                     call,
-                    request: request @ PeerRequest::SubscribeInventory,
+                    request: request @ PeerRequest::FollowAgents,
                     ..
                 } => Some((*call, request.clone())),
                 _ => None,
@@ -646,15 +647,14 @@ impl Transition<'_> {
                     unreachable!("answered without an ask")
                 };
                 let call = *call;
-                let request = wire::SubscribeSessionRequest::decode(request.as_slice())
-                    .expect("a request decodes");
+                let request =
+                    FollowSessionRequest::decode(request.as_slice()).expect("a request decodes");
                 self.next.link = Link::Open {
                     call,
                     queue: Vec::new(),
                     live: true,
                 };
-                let answered =
-                    self.serve(ORIGIN_LINK, call, PeerRequest::SubscribeSession(request));
+                let answered = self.serve(ORIGIN_LINK, call, PeerRequest::FollowSession(request));
                 let (events, ended) = answers_to(call, &answered);
                 let Link::Open { queue, live, .. } = &mut self.next.link else {
                     unreachable!("the stream was just opened")
@@ -895,8 +895,7 @@ impl Transition<'_> {
         let Link::Asked { request, .. } = &self.next.link else {
             unreachable!("only an opening in flight is replayed")
         };
-        let request =
-            wire::SubscribeSessionRequest::decode(request.as_slice()).expect("a request decodes");
+        let request = FollowSessionRequest::decode(request.as_slice()).expect("a request decodes");
         self.next.replays += 1;
         let before = (
             self.next.origin.store.clone(),
@@ -905,11 +904,7 @@ impl Transition<'_> {
         );
         let out = self.origin(resumed_up(REPLAY_LINK));
         if !out.contains(&Output::RefuseResumed { link: REPLAY_LINK }) {
-            self.serve(
-                REPLAY_LINK,
-                REPLAYED,
-                PeerRequest::SubscribeSession(request),
-            );
+            self.serve(REPLAY_LINK, REPLAYED, PeerRequest::FollowSession(request));
             self.origin(Input::CallCancelled { call: REPLAYED });
         }
         self.origin(Input::LinkDown {
@@ -943,7 +938,7 @@ impl Transition<'_> {
             match output {
                 Output::Call {
                     call,
-                    request: PeerRequest::SubscribeSession(request),
+                    request: PeerRequest::FollowSession(request),
                     ..
                 } => {
                     if let Some(old) = self.next.link.call() {

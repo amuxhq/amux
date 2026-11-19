@@ -798,8 +798,12 @@ impl CoreThread {
             Some(Arriving::Peer(from, call, request)) => {
                 let request = *request;
                 let stream = match &request {
-                    PeerRequest::SubscribeInventory => Some("inventory"),
-                    PeerRequest::SubscribeSession(_) => Some("session"),
+                    PeerRequest::FollowAgents | PeerRequest::SubscribeInventory => {
+                        Some("inventory")
+                    }
+                    PeerRequest::FollowSession(_) | PeerRequest::SubscribeSession(_) => {
+                        Some("session")
+                    }
                     _ => None,
                 };
                 if let Some(stream) = stream {
@@ -1172,8 +1176,7 @@ impl CoreThread {
                 let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
                 let task = match request {
-                    request @ (PeerRequest::SubscribeSession(_)
-                    | PeerRequest::SubscribeInventory) => {
+                    request @ (PeerRequest::FollowSession(_) | PeerRequest::FollowAgents) => {
                         tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
                     request => tokio::spawn(async move {
@@ -1590,14 +1593,22 @@ async fn send_file(
     }
 }
 
-/// Makes a call the core asked for of a peer, unless the profile is gone.
+/// Makes a call the core asked for of a peer, unless the profile is gone:
+/// one the core makes for itself on the peer's peer service, a client's it
+/// forwards on the client services.
 async fn call_peer(
     runtime: Weak<ProfileRuntime>,
     host: HostId,
     request: PeerRequest,
 ) -> Option<Answer> {
     let runtime = runtime.upgrade()?;
-    Some(runtime.call_peer(host_from_core(host), request).await)
+    let host = host_from_core(host);
+    Some(match request {
+        request @ (PeerRequest::ListItems(_) | PeerRequest::DeliverReport(_)) => {
+            runtime.call_peer_service(host, request).await
+        }
+        request => runtime.call_peer(host, request).await,
+    })
 }
 
 /// The fsync job: replaces the file at `path` with `bytes` so that a crash

@@ -36,7 +36,7 @@ use std::hash::{Hash, Hasher};
 
 use daemon_core::payload::{
     Answer, CarrierKind, ClientRequest, JobResult, MessageFrom, PeerFailure, PeerReply,
-    PeerRequest, Response, Status,
+    PeerRequest, Response, Status, report_envelope,
 };
 use daemon_core::{
     AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
@@ -44,6 +44,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
+use wire::amux::staging::DeliverReportRequest;
 use wire::{InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
 use crate::held::{Dir, Held, Journal, Slot};
@@ -279,7 +280,7 @@ pub struct State {
     link: Option<LinkId>,
     links: u64,
     following: Option<Following>,
-    /// The child's host's SendMessage calls on their way, encoded.
+    /// The child's host's DeliverReport calls on their way, encoded.
     sent: Vec<(CallId, Vec<u8>)>,
     /// Calls the parent's host took and has not answered: the child host's
     /// id for each, and the one the parent's driver named it by.
@@ -1165,7 +1166,7 @@ impl<'a> Transition<'a> {
     /// answered there at once, a report goes on the link; with no link the
     /// call never leaves.
     fn call(&mut self, call: CallId, request: PeerRequest) {
-        if matches!(request, PeerRequest::SendMessage(_)) && self.next.used.unpaired {
+        if matches!(request, PeerRequest::DeliverReport(_)) && self.next.used.unpaired {
             self.next
                 .seen
                 .handed_after_unpair
@@ -1181,7 +1182,7 @@ impl<'a> Transition<'a> {
             );
         }
         match request {
-            request @ PeerRequest::SubscribeInventory => {
+            request @ PeerRequest::FollowAgents => {
                 if let Some(old) = self.next.following.take() {
                     self.feed(PARENTS, Input::CallCancelled { call: old.call });
                 }
@@ -1199,8 +1200,8 @@ impl<'a> Transition<'a> {
                     },
                 );
             }
-            PeerRequest::SendMessage(envelope) => {
-                self.next.sent.push((call, envelope.encode_to_vec()));
+            PeerRequest::DeliverReport(report) => {
+                self.next.sent.push((call, report.encode_to_vec()));
             }
             other => unreachable!("the child's host makes no {other:?} call here"),
         }
@@ -1356,11 +1357,12 @@ impl<'a> Transition<'a> {
                 }
             }
             Action::Carry => {
-                let (call, envelope) = self.next.sent.remove(0);
-                let envelope =
-                    wire::Envelope::decode(envelope.as_slice()).expect("an envelope decodes");
-                // The parent's driver takes the sender the child's host
-                // stamped.
+                let (call, report) = self.next.sent.remove(0);
+                let report =
+                    DeliverReportRequest::decode(report.as_slice()).expect("a report decodes");
+                // The parent's driver hands the report on as a message
+                // from the child, of the host the link authenticated.
+                let envelope = report_envelope(&HOSTS[CHILDS].0, &HOSTS[PARENTS].0, report);
                 let from = match envelope.from.clone().and_then(|from| from.value) {
                     Some(wire::sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
                     _ => MessageFrom::PeerPerson,
@@ -1386,9 +1388,8 @@ impl<'a> Transition<'a> {
             Action::Reply => {
                 let (call, reply) = self.next.replies.remove(0);
                 let answer = match reply {
-                    Reply::Accepted => Answer::Reply(Box::new(PeerReply::SendMessage(
-                        wire::SendMessageResponse::default(),
-                    ))),
+                    // DeliverReport answers with nothing.
+                    Reply::Accepted => Answer::Reply(Box::new(PeerReply::Done)),
                     Reply::Refused(code) => Answer::Failed(PeerFailure::Refused(wire::Error {
                         code,
                         message: String::new(),
@@ -1737,8 +1738,8 @@ impl<'a> Transition<'a> {
     }
 }
 
-/// What the parent's driver sends back for a message call that ended with
-/// `status`: the reply, or the error code a refusal travels as.
+/// What the parent's driver sends back for a report whose message ended
+/// with `status`: the reply, or the error code a refusal travels as.
 fn reply_of(status: &Status) -> Reply {
     match status {
         Status::Ok => Reply::Accepted,

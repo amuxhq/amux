@@ -763,7 +763,7 @@ fn a_dial_carries_the_calls_the_core_makes_of_the_host_once_linked() {
             _ => None,
         })
         .unwrap();
-    assert_eq!(early, vec![PeerRequest::SubscribeInventory]);
+    assert_eq!(early, vec![PeerRequest::FollowAgents]);
 }
 
 #[test]

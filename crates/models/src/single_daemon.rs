@@ -82,12 +82,15 @@ fn peer_key() -> PublicKey {
     PublicKey(key.to_vec())
 }
 
-/// The peer's early read: a page of the agent's rows.
+/// The peer's early read: a follow of the agent's session from its tail,
+/// one of the two calls that may go out before a link's handshake
+/// finishes.
 fn early_read() -> PeerRequest {
-    PeerRequest::ListItems(wire::ListItemsRequest {
+    PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
         agent_id: AGENT.0.to_vec(),
-        before_order: None,
-        page_size: TAIL,
+        from: Some(wire::amux::staging::follow_session_request::From::Tail(
+            TAIL,
+        )),
     })
 }
 
@@ -849,6 +852,9 @@ impl SingleDaemon {
         let answered = out
             .iter()
             .any(|output| matches!(output, Output::Answer { call: to, .. } if *to == call));
+        // The peer lets the follow go once it has read the opening, so the
+        // model's subscriber stays the one client's.
+        self.step(next, Input::CallCancelled { call }, false);
         if answered {
             next.early_answered = true;
             if !next.pinned && next.answered_unpinned.is_none() {

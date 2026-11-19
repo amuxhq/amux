@@ -813,6 +813,42 @@ mod tests {
                     })),
                 }),
             },
+            Input::PeerCall {
+                from: HostId([1; 16]),
+                call: CallId(11),
+                request: PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
+                    agent_id: vec![1, 2],
+                    from: Some(wire::amux::staging::follow_session_request::From::After(
+                        wire::After {
+                            revision: 3,
+                            cap: 4,
+                            generation: 5,
+                        },
+                    )),
+                }),
+            },
+            Input::PeerCall {
+                from: HostId([1; 16]),
+                call: CallId(12),
+                request: PeerRequest::FollowAgents,
+            },
+            Input::PeerCall {
+                from: HostId([1; 16]),
+                call: CallId(13),
+                request: PeerRequest::DeliverReport(wire::amux::staging::DeliverReportRequest {
+                    id: vec![4],
+                    child_agent_id: vec![5],
+                    child_name: "scout".into(),
+                    parent_agent_id: vec![6],
+                    report: Some(wire::ChildReport {
+                        to_incarnation: 2,
+                        from_incarnation: 1,
+                        end: Some(wire::child_report::End::TurnEnded(
+                            wire::TurnEnded::default(),
+                        )),
+                    }),
+                }),
+            },
             Input::ClientCall {
                 call: CallId(8),
                 request: ClientRequest::Forward {

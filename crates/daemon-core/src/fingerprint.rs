@@ -173,7 +173,7 @@ mod tests {
             .find_map(|output| match output {
                 Output::Call {
                     call,
-                    request: PeerRequest::SubscribeInventory,
+                    request: PeerRequest::FollowAgents,
                     ..
                 } => Some(*call),
                 _ => None,

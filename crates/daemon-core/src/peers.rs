@@ -15,6 +15,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use wire::amux::staging::follow_session_request;
 use wire::subscribe_session_request;
 
 use crate::ids::{CallId, HostId};
@@ -145,6 +146,20 @@ impl Daemon {
     ) {
         let own = self.store.own_host().to_vec();
         let answered = match request {
+            PeerRequest::FollowAgents => self.subscribe_inventory(call, Some(own), out),
+            PeerRequest::FollowSession(request) => {
+                let from = match request.from {
+                    Some(follow_session_request::From::After(after)) => Opening::After {
+                        revision: after.revision,
+                        cap: after.cap,
+                        generation: after.generation,
+                    },
+                    Some(follow_session_request::From::Tail(tail)) => Opening::Tail(tail),
+                    None => Opening::Tail(0),
+                };
+                self.own(&request.agent_id)
+                    .and_then(|()| self.subscribe_session(call, &request.agent_id, from, out))
+            }
             PeerRequest::SubscribeSession(request) => {
                 let from = match request.from {
                     Some(subscribe_session_request::From::After(after)) => Opening::After {
@@ -165,7 +180,10 @@ impl Daemon {
             PeerRequest::GetItem(request) => self
                 .own(&request.agent_id)
                 .and_then(|()| self.get_item(call, &request, out)),
-            PeerRequest::SendInput(_)
+            // The shell hands a report on as a message from the child, as
+            // a message from another host goes.
+            PeerRequest::DeliverReport(_)
+            | PeerRequest::SendInput(_)
             | PeerRequest::CreateAgent(_)
             | PeerRequest::RenameAgent(_)
             | PeerRequest::FileAgent(_)
@@ -408,10 +426,9 @@ mod tests {
         let mut daemon = daemon();
         let before = daemon.store().dump().expect("the store dumps");
         let read = || {
-            PeerRequest::ListItems(wire::ListItemsRequest {
+            PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
                 agent_id: MINE.to_vec(),
-                before_order: None,
-                page_size: 8,
+                from: Some(follow_session_request::From::Tail(8)),
             })
         };
         for (link, call) in [(1, minted(1)), (2, minted(2))] {

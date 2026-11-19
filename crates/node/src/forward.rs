@@ -451,8 +451,15 @@ async fn dispatch(
             PeerReply::Repositories,
         ),
         // Streams are opened by the replica's source, not forwarded.
-        PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory => Err(
-            Status::unimplemented("a stream is not made as a forwarded call"),
-        ),
+        PeerRequest::SubscribeSession(_)
+        | PeerRequest::SubscribeInventory
+        | PeerRequest::FollowAgents
+        | PeerRequest::FollowSession(_) => Err(Status::unimplemented(
+            "a stream is not made as a forwarded call",
+        )),
+        // The core's own calls go on the peer service.
+        PeerRequest::DeliverReport(_) => Err(Status::unimplemented(
+            "a report is not made as a forwarded call",
+        )),
     }
 }

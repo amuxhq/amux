@@ -42,7 +42,7 @@ use std::sync::Arc;
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
     Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageFrom,
-    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
+    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status, report_envelope,
 };
 use daemon_core::reach::{AttemptOutcome, Dialling};
 use daemon_core::{
@@ -1333,7 +1333,7 @@ impl Transition<'_> {
                     }
                     _ => {}
                 }
-                let input = self.served_by_the_shell(input);
+                let input = self.served_by_the_shell(h, input);
                 self.feed(h, input);
             }
             Delivery::Agent(p, Dbg(input)) => self.feed_agent(p, input),
@@ -1852,11 +1852,14 @@ impl Transition<'_> {
         let served = CallId(server.next_call);
         let stream = matches!(
             request,
-            PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory
+            PeerRequest::FollowSession(_)
+                | PeerRequest::FollowAgents
+                | PeerRequest::SubscribeSession(_)
+                | PeerRequest::SubscribeInventory
         );
         let silent = match request {
             PeerRequest::FileAgent(_) => Some(PeerReply::Agent(wire::Agent::default())),
-            PeerRequest::DeleteAgent(_) => Some(PeerReply::Done),
+            PeerRequest::DeleteAgent(_) | PeerRequest::DeliverReport(_) => Some(PeerReply::Done),
             PeerRequest::SendMessage(_) => {
                 Some(PeerReply::SendMessage(wire::SendMessageResponse::default()))
             }
@@ -1888,10 +1891,11 @@ impl Transition<'_> {
         );
     }
 
-    /// A paired host's call as node's peer edge hands it to the core: a
-    /// message as [`peer_message`] makes it, a create as [`peer_create`]
-    /// does.
-    fn served_by_the_shell(&self, input: Input) -> Input {
+    /// A paired host's call to host `h` as node's peer edge hands it to
+    /// the core: a message as [`peer_message`] makes it, a child's report
+    /// as the message from the child [`report_envelope`] spells, a create
+    /// as [`peer_create`] does.
+    fn served_by_the_shell(&self, h: usize, input: Input) -> Input {
         match input {
             Input::PeerCall {
                 call,
@@ -1900,6 +1904,14 @@ impl Transition<'_> {
             } => Input::ClientCall {
                 call,
                 request: peer_message(envelope),
+            },
+            Input::PeerCall {
+                from,
+                call,
+                request: PeerRequest::DeliverReport(report),
+            } => Input::ClientCall {
+                call,
+                request: peer_message(report_envelope(&from.0, &self.plan.hosts[h].id.0, report)),
             },
             Input::PeerCall {
                 from,
@@ -2752,6 +2764,9 @@ pub fn wire_error(error: &CallError) -> wire::Error {
 
 fn peer_request(request: &PeerRequest) -> &'static str {
     match request {
+        PeerRequest::FollowAgents => "FollowAgents",
+        PeerRequest::FollowSession(_) => "FollowSession",
+        PeerRequest::DeliverReport(_) => "DeliverReport",
         PeerRequest::SubscribeSession(_) => "SubscribeSession",
         PeerRequest::SubscribeInventory => "SubscribeInventory",
         PeerRequest::ListItems(_) => "ListItems",

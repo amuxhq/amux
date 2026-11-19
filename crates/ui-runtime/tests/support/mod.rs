@@ -185,6 +185,13 @@ impl Client for FakeRuntime {
         unimplemented!("list_repositories")
     }
 
+    async fn pin_folder(
+        &self,
+        _: wire::PinFolderRequest,
+    ) -> Result<wire::PinFolderResponse, RpcError> {
+        unimplemented!("pin_folder")
+    }
+
     async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
         self.call(|reply| Call::Dump(request, reply)).await
     }

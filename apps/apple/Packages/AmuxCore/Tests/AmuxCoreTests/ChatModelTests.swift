@@ -1211,7 +1211,7 @@ final class ChatModelTests: XCTestCase {
     }
 
     private func git(uncommitted: ChangeTotals?, onBranch: ChangeTotals?, base: String? = "main") -> Git {
-        Git(baseBranch: base, branch: "fix", onBranch: onBranch, remote: nil, uncommitted: uncommitted)
+        Git(baseBranch: base, branch: "fix", checkout: nil, onBranch: onBranch, remote: nil, uncommitted: uncommitted)
     }
 
     func testTheHeaderCountsTheChosenComparisonFromTheFrame() async {

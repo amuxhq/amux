@@ -2528,6 +2528,39 @@ pub unsafe extern "C" fn amux_profile_directories(
     })
 }
 
+/// Pins `path` among a host's repositories, the host by its id as a JSON
+/// byte array, or unpins it; the ticket answers `{"Ok": null}` or
+/// `{"Err": ..}`. The host's entry says the change once it has made it.
+///
+/// # Safety
+/// `profile` is from `amux_profile_open`; the strings are NUL-terminated
+/// or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_profile_pin_folder(
+    profile: *const AmuxProfile,
+    host_id: *const c_char,
+    path: *const c_char,
+    pinned: bool,
+) -> u64 {
+    guard(0, || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return 0;
+        };
+        // SAFETY: the caller's contract.
+        let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
+        // SAFETY: the caller's contract.
+        let path = unsafe { text(path) }.unwrap_or_default().to_owned();
+        let app = profile.app.clone();
+        profile.act(async move {
+            let Some(host_id) = host_id else {
+                return Answered::Err("the host id is not a byte array".into());
+            };
+            Answered::from(app.pin_folder(&host_id, &path, pinned).await)
+        })
+    })
+}
+
 /// Renames, stops or deletes an agent, named by its `AgentKey`, with an
 /// `AgentAct`, both as JSON; the ticket answers `{"Ok": null}` or
 /// `{"Err": ..}`.

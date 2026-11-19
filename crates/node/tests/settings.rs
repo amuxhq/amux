@@ -293,6 +293,86 @@ async fn a_paired_host_learns_the_claude_kind_a_host_publishes() {
     laptop_daemon.shutdown().await.unwrap();
 }
 
+/// A paired laptop pins a folder on the desk: the desk keeps it among its
+/// repositories, in its config file, and its entry in the laptop's inventory
+/// lists it as pinned, with its working tree; unpinned, it goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_paired_host_pins_a_folder_and_sees_the_desks_entry_say_it() {
+    let desk = Install::new();
+    let (desk_daemon, file) = desk_with_file(&desk, "").await;
+    let desk_runtime = runtime(&desk_daemon, &desk);
+    let app = desk.work.join("app");
+    std::fs::create_dir_all(app.join(".git")).unwrap();
+    let app = app.canonicalize().unwrap();
+    let laptop = Install::new();
+    let laptop_daemon = laptop.start("boot-1", quiet_launch()).await;
+    let laptop_runtime = runtime(&laptop_daemon, &laptop);
+    let (desk_edge, laptop_edge) = (desk_runtime.edge().unwrap(), laptop_runtime.edge().unwrap());
+    let desk_host = desk_runtime.host();
+    desk_edge.trust(&laptop_edge).await.unwrap();
+    laptop_edge.trust(&desk_edge).await.unwrap();
+    let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
+    assert!(wait_for_route(&laptop_edge, desk_host, PATIENCE).await);
+
+    let from_laptop = node::ClientApi::new(&laptop_runtime, None);
+    let pin = |pinned: bool| wire::PinFolderRequest {
+        host_id: Some(desk_host.as_bytes().to_vec()),
+        path: app.to_str().unwrap().to_owned(),
+        pinned,
+    };
+    from_laptop
+        .pin_folder(Request::new(pin(true)))
+        .await
+        .unwrap();
+    let pinned = |want: bool| {
+        let laptop_runtime = laptop_runtime.clone();
+        let app = app.clone();
+        move || {
+            let folder = laptop_runtime.host_entry_of(desk_host).and_then(|entry| {
+                entry
+                    .folders
+                    .into_iter()
+                    .find(|folder| folder.path == app.to_str().unwrap())
+            });
+            async move {
+                match folder {
+                    Some(folder) if want && folder.kind() == wire::FolderKind::Pinned => Ok(folder),
+                    None if !want => Ok(wire::Folder::default()),
+                    other => Err(format!("{other:?}")),
+                }
+            }
+        }
+    };
+    let folder = until("the laptop to see the desk's pin", pinned(true))
+        .await
+        .unwrap();
+    assert_eq!(folder.name, "app");
+    assert_eq!(
+        folder.checkout.map(|checkout| checkout.root),
+        Some(app.to_str().unwrap().to_owned()),
+        "a folder in Git says its working tree"
+    );
+    assert_eq!(
+        settings::InstallationConfig::from_file(&file)
+            .unwrap()
+            .repositories,
+        std::slice::from_ref(&app),
+        "the desk keeps the pin in its config file"
+    );
+
+    from_laptop
+        .pin_folder(Request::new(pin(false)))
+        .await
+        .unwrap();
+    until("the laptop to see the desk's unpin", pinned(false))
+        .await
+        .unwrap();
+
+    drop((desk_edge, laptop_edge, desk_runtime, laptop_runtime));
+    desk_daemon.shutdown().await.unwrap();
+    laptop_daemon.shutdown().await.unwrap();
+}
+
 /// Under `keep_awake` the daemon keeps the machine awake while one of its
 /// agents works and lets it sleep once none does; turning the setting off
 /// lets it sleep at once.

@@ -1,5 +1,6 @@
 import AmuxValues
 import AmuxWords
+import AppKit
 import SwiftUI
 
 /// Whether a host has said what a provider offers there.
@@ -31,6 +32,12 @@ public protocol NewAgentSurface: AnyObject {
     var listing: ListingState { get }
     var repositories: [Directory] { get }
     var recent: [Directory] { get }
+    /// Where Claude Code and Codex ran on the host lately, outside amux.
+    var history: [Directory] { get }
+    /// Whether the host keeps the folder among its repositories.
+    func isPinned(_ path: String) -> Bool
+    /// Pins a folder among the host's repositories, or unpins it.
+    func pin(_ directory: Directory, _ on: Bool)
     /// Where an agent is most likely wanted: where agents worked lately,
     /// then the repositories.
     var likely: [Directory] { get }
@@ -556,21 +563,44 @@ public struct DirectoryChooser: View {
         if surface.searching {
             if !surface.found.isEmpty {
                 SectionTitle(text: "Found")
-                ForEach(surface.found, id: \.path) { row($0, recent: false) }
+                ForEach(surface.found, id: \.path) { row($0) }
             } else if surface.listing != .asking {
                 message("No matching folders.")
             }
         } else {
             if !surface.repositories.isEmpty {
                 SectionTitle(text: "Repositories")
-                ForEach(surface.repositories, id: \.path) { row($0, recent: false) }
+                ForEach(surface.repositories, id: \.path) { row($0) }
             }
             if !surface.recent.isEmpty {
                 SectionTitle(text: "Recent")
-                ForEach(surface.recent, id: \.path) { row($0, recent: true) }
+                ForEach(surface.recent, id: \.path) { row($0) }
             }
-            if surface.listing == .ready, surface.repositories.isEmpty, surface.recent.isEmpty {
-                message("Add repositories in amux on this computer, or type a path.")
+            if !surface.history.isEmpty {
+                SectionTitle(text: "From Claude Code and Codex")
+                ForEach(surface.history, id: \.path) { row($0) }
+            }
+            if surface.listing == .ready, surface.repositories.isEmpty, surface.recent.isEmpty,
+                surface.history.isEmpty
+            {
+                message(onThisMac
+                    ? "No repositories yet. Add one, or type a path below."
+                    : "Nothing has started on this computer yet. Type a path below.")
+            }
+            if onThisMac {
+                Button(action: addRepositories) {
+                    HStack(spacing: 9) {
+                        Icon("plus", size: 14).foregroundStyle(Palette.textSecondary)
+                            .frame(width: 16)
+                        Text("Add repository…").font(.ui(.body))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HoverButtonStyle())
+                .padding(.top, 2)
             }
         }
         switch surface.listing {
@@ -580,31 +610,38 @@ public struct DirectoryChooser: View {
         }
     }
 
-    private func row(_ directory: Directory, recent: Bool) -> some View {
-        Button {
-            surface.choose(directory: directory.path)
-            done()
-        } label: {
-            HStack(spacing: 9) {
-                DirectoryMark(directory: directory, size: 16)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(directory.name).font(.ui(.body))
-                    Text(PlaceNames.path(directory.path))
-                        .font(.ui(.meta))
-                        .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                Spacer(minLength: 6)
-                if surface.directory == directory.path {
-                    Icon("check", size: 14).foregroundStyle(Palette.accent)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
+    /// Whether the chosen computer is this Mac, whose folders can be browsed.
+    private var onThisMac: Bool {
+        surface.hosts.first { $0.hostId == surface.machine }?.local ?? false
+    }
+
+    private func addRepositories() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        panel.message = "Choose folders for agents to work in."
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            surface.pin(Directory(path: url.path, name: url.lastPathComponent, repository: nil), true)
         }
-        .buttonStyle(HoverButtonStyle())
+        if let first = panel.urls.first {
+            surface.choose(directory: first.path)
+            done()
+        }
+    }
+
+    private func row(_ directory: Directory) -> some View {
+        DirectoryRow(
+            directory: directory,
+            chosen: surface.directory == directory.path,
+            pinned: surface.isPinned(directory.path),
+            choose: {
+                surface.choose(directory: directory.path)
+                done()
+            },
+            pin: { surface.pin(directory, $0) })
     }
 
     private func message(_ text: String) -> some View {
@@ -612,6 +649,53 @@ public struct DirectoryChooser: View {
             .font(.ui(.meta))
             .foregroundStyle(Palette.textSecondary)
             .padding(10)
+    }
+}
+
+/// One folder in the chooser: a click starts there; under the pointer a pin
+/// keeps it among the computer's repositories, or lets it go.
+private struct DirectoryRow: View {
+    let directory: Directory
+    let chosen: Bool
+    let pinned: Bool
+    let choose: () -> Void
+    let pin: (Bool) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(action: choose) {
+                HStack(spacing: 9) {
+                    DirectoryMark(directory: directory, size: 16)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(directory.name).font(.ui(.body))
+                        Text(PlaceNames.path(directory.path))
+                            .font(.ui(.meta))
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                    }
+                    Spacer(minLength: 6)
+                    if chosen {
+                        Icon("check", size: 14).foregroundStyle(Palette.accent)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            BarButton(
+                symbol: pinned ? "pin-off" : "pin",
+                help: pinned ? "Remove from repositories" : "Keep in repositories", size: 14
+            ) { pin(!pinned) }
+            .opacity(hovering ? 1 : 0)
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 2)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.row, style: .continuous)
+                .fill(hovering ? Palette.hover : .clear))
+        .onHover { hovering = $0 }
     }
 }
 

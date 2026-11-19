@@ -130,6 +130,10 @@ pub trait Client: Send + Sync + 'static {
         &self,
         request: ListRepositoriesRequest,
     ) -> Result<ListRepositoriesResponse, RpcError>;
+    async fn pin_folder(
+        &self,
+        request: wire::PinFolderRequest,
+    ) -> Result<wire::PinFolderResponse, RpcError>;
     async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError>;
     /// Writes a person's report around a dump and sends it on when the
     /// profile is signed in.
@@ -294,6 +298,13 @@ macro_rules! client_impl {
                 request: ListRepositoriesRequest,
             ) -> Result<ListRepositoriesResponse, RpcError> {
                 Ok($call!(self, agents, list_repositories, request).await?.into_inner())
+            }
+
+            async fn pin_folder(
+                &self,
+                request: wire::PinFolderRequest,
+            ) -> Result<wire::PinFolderResponse, RpcError> {
+                Ok($call!(self, agents, pin_folder, request).await?.into_inner())
             }
 
             async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {

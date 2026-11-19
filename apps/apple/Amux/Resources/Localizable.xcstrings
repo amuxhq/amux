@@ -1237,18 +1237,6 @@
         }
       }
     },
-    "Add repositories in amux on this computer, or type a path." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add repositories in amux on this computer, or type a path."
-          }
-        }
-      }
-    },
     "amux stopped" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
@@ -1317,6 +1305,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Computers"
+          }
+        }
+      }
+    },
+    "From Claude Code and Codex" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From Claude Code and Codex"
           }
         }
       }
@@ -1477,6 +1477,18 @@
         }
       }
     },
+    "Keep in Repositories" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep in Repositories"
+          }
+        }
+      }
+    },
     "Look for Computers" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
       "extractionState" : "manual",
@@ -1509,6 +1521,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No matching folders on this computer."
+          }
+        }
+      }
+    },
+    "Nothing has started on this computer yet. Type a path below." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing has started on this computer yet. Type a path below."
           }
         }
       }
@@ -1689,6 +1713,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reading this computer’s repositories…"
+          }
+        }
+      }
+    },
+    "Remove from Repositories" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Repositories"
           }
         }
       }

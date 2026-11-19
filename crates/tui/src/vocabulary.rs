@@ -2447,6 +2447,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         removed,
     };
     let git = wire::Git {
+        checkout: None,
         branch: Some("overview-files".into()),
         base_branch: Some("main".into()),
         uncommitted: Some(totals(4, 42, 7)),

@@ -767,6 +767,7 @@ fn git_of(body: &Value) -> Result<Option<wire::Git>, String> {
         })
     };
     Ok(Some(wire::Git {
+        checkout: None,
         branch: git.branch,
         base_branch: git.base_branch,
         uncommitted: totals(git.uncommitted),

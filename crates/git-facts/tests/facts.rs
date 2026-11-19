@@ -4,8 +4,9 @@ use std::path::Path;
 use std::process::Command;
 
 use git_facts::{
-    Change, ChangeTotals, Comparison, FileChange, GitError, GitFacts, Worktree, WorktreeError,
-    add_worktree, compare, facts, origin, own_commits, repository as repository_of,
+    Change, ChangeTotals, Checkout, Comparison, FileChange, GitError, GitFacts, Worktree,
+    WorktreeError, add_worktree, checkout, compare, facts, origin, own_commits,
+    repository as repository_of,
 };
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -311,6 +312,47 @@ async fn a_comparison_lists_each_file_and_builds_a_patch_only_when_asked() {
         compare(outside.path(), &Comparison::Uncommitted, false).await,
         Err(GitError::NotARepository)
     ));
+}
+
+#[tokio::test]
+async fn a_checkout_is_its_working_trees_root_and_a_worktree_names_its_clone() {
+    let repo = repository();
+    let dir = repo.path().canonicalize().unwrap();
+    git(
+        &dir,
+        &["remote", "add", "origin", "git@github.com:amuxhq/amux.git"],
+    );
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    let remote = Some("github.com/amuxhq/amux".to_owned());
+
+    // A folder inside the clone is in the clone's working tree.
+    assert_eq!(
+        checkout(&dir.join("sub")),
+        Some(Checkout {
+            root: dir.clone(),
+            main: None,
+            remote: remote.clone(),
+        })
+    );
+
+    let home = tempfile::tempdir().unwrap();
+    let destination = home.path().join("quiet-otter");
+    add_worktree(&dir, &destination, "quiet-otter")
+        .await
+        .unwrap();
+    let destination = destination.canonicalize().unwrap();
+    assert_eq!(
+        checkout(&destination),
+        Some(Checkout {
+            root: destination.clone(),
+            main: Some(dir.clone()),
+            remote,
+        }),
+        "a linked worktree names the clone it was made from"
+    );
+
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(checkout(outside.path()), None);
 }
 
 #[tokio::test]

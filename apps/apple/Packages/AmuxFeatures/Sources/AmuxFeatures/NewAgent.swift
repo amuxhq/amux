@@ -14,6 +14,8 @@ public enum NewAgentAction: Equatable, Sendable {
     /// Ask the machine again with what is being searched for. Only sent for a
     /// machine whose first answer stopped at the limit.
     case search
+    /// Keep a folder among the machine's repositories, or let it go.
+    case pin(Directory, Bool)
     /// Start it.
     case start
     /// Left without starting anything.
@@ -544,10 +546,16 @@ public struct NewAgentDirectories: View {
                         row(repository, recent: true)
                     }
                 }
-                if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty {
-                    // Repositories are the host's own setting, chosen where amux
-                    // runs; this phone only reads them.
-                    Explain("Add repositories in amux on this computer, or type a path.")
+                if !model.history.isEmpty {
+                    SectionHead(title: "From Claude Code and Codex")
+                    RowGroup(items: model.history) { repository in
+                        row(repository, recent: true)
+                    }
+                }
+                if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty
+                    && model.history.isEmpty
+                {
+                    Explain("Nothing has started on this computer yet. Type a path below.")
                         .identified("new-agent.browse.none")
                 }
             }
@@ -565,6 +573,13 @@ public struct NewAgentDirectories: View {
     }
 
     private func row(_ repository: Directory, recent: Bool) -> some View {
+        HStack(spacing: 0) {
+            choice(repository, recent: recent)
+            pin(repository)
+        }
+    }
+
+    private func choice(_ repository: Directory, recent: Bool) -> some View {
         Button {
             model.choose(directory: repository.path)
             model.browsing = false
@@ -591,7 +606,7 @@ public struct NewAgentDirectories: View {
                         .foregroundStyle(design.accent.color)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.leading, 14)
             .padding(.vertical, 10)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
@@ -601,6 +616,24 @@ public struct NewAgentDirectories: View {
         .identified(
             "new-agent.repository.\(repository.name)", label: repository.path,
             value: model.directory == repository.path ? "chosen" : "")
+    }
+
+    /// Keeps the folder among the machine's repositories, or lets it go: a
+    /// filled pin for one kept.
+    private func pin(_ repository: Directory) -> some View {
+        let pinned = model.isPinned(repository.path)
+        return Button {
+            actions(.pin(repository, !pinned))
+        } label: {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(pinned ? design.accent.color : design.inkFaint.color)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(pinned ? "Remove from Repositories" : "Keep in Repositories")
+        .identified("new-agent.pin.\(repository.name)", value: pinned ? "pinned" : "")
     }
 
     /// A path typed by hand, for a directory the machine did not list. The

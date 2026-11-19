@@ -1074,6 +1074,7 @@ enum CatalogFixtures {
 
     static let git = Git(
         baseBranch: "main", branch: "refactor-auth",
+        checkout: nil,
         onBranch: ChangeTotals(files: 6, added: 120, removed: 30), remote: nil,
         uncommitted: ChangeTotals(files: 5, added: 56, removed: 20))
 
@@ -1520,7 +1521,7 @@ extension ComponentCatalog {
             store.started(.failure(RuntimeFailure("desk refused: ~/src/amux is not a git repository")))
         },
         newAgent("no-repositories", provider: .claude, signedIn: true, browsing: true) { store in
-            store.listed(.success(Directories(recent: [], repositories: [])), asked: store.asking())
+            store.listed(.success(Directories(recent: [], repositories: [], history: [])), asked: store.asking())
         },
         newAgent("unlisted", provider: .claude, signedIn: true, browsing: true) { store in
             store.listed(.failure(RuntimeFailure("desk did not answer")), asked: store.asking())
@@ -1585,7 +1586,7 @@ extension CatalogFixtures {
                 Directory(path: "~/src/amux", name: "amux", repository: nil),
                 Directory(path: "~/src/dotfiles", name: "dotfiles", repository: nil),
                 Directory(path: "~/src/skills", name: "skills", repository: nil),
-            ])), asked: store.asking())
+            ], history: [])), asked: store.asking())
         for offered in NewAgentStore.Provider.allCases {
             let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue
             store.offered(.success(catalogue), for: offered, asked: store.askingOffer(for: offered))

@@ -263,11 +263,6 @@ pub enum AppEvent {
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
-    /// The folders a host offers a new agent: its repositories, then recent.
-    Folders {
-        host: Vec<u8>,
-        answer: wire::ListRepositoriesResponse,
-    },
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
@@ -339,9 +334,6 @@ pub struct App {
     home_held: Option<i64>,
     /// Onboarding and settings, when the installation is served.
     desk: Option<desk::Desk>,
-    /// The folders each host last offered, and the hosts asked now.
-    host_folders: HashMap<Vec<u8>, wire::ListRepositoriesResponse>,
-    folders_asked: HashSet<Vec<u8>>,
     events: mpsc::UnboundedSender<AppEvent>,
     pub receiver: mpsc::UnboundedReceiver<AppEvent>,
 }
@@ -561,8 +553,6 @@ impl App {
             offers_asked: HashSet::new(),
             servers_told: tool_servers::Told::default(),
             desk: None,
-            host_folders: HashMap::new(),
-            folders_asked: HashSet::new(),
             events,
             receiver,
         }
@@ -768,11 +758,6 @@ impl App {
                     .changes_checked(&agent, compared.as_ref().map_err(Clone::clone));
             }
             AppEvent::Desk(event) => self.desk_event(event),
-            AppEvent::Folders { host, answer } => {
-                self.folders_asked.remove(&host);
-                self.home.take_folders(&host, &answer);
-                self.host_folders.insert(host, answer);
-            }
             AppEvent::Restore {
                 agent_id,
                 text,
@@ -1839,39 +1824,29 @@ impl App {
         }
     }
 
-    /// While a new agent is being set up: the folders its host offers,
-    /// from what it said last time at once and asked again, so a repository
-    /// added since shows.
+    /// While a new agent is being set up: the folders its host offers, as
+    /// its entry in the inventory says them now, so a repository pinned
+    /// since shows.
     fn ask_folders(&mut self) {
         let Some(setup) = self.home.open_setup() else {
             return;
         };
-        if !setup.wants_folders() {
-            return;
-        }
         let host = setup.host.clone();
-        if let Some(answer) = self.host_folders.get(&host) {
-            // Offered at once; asked again, as repositories may have changed.
-            let answer = answer.clone();
-            self.home.take_folders(&host, &answer);
+        let folders: Vec<String> = self
+            .fleet
+            .state()
+            .host(&host)
+            .map(|entry| {
+                entry
+                    .folders
+                    .iter()
+                    .map(|folder| folder.path.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !setup.holds_folders(&host, &folders) {
+            self.home.take_folders(&host, &folders);
         }
-        if !self.folders_asked.insert(host.clone()) {
-            return;
-        }
-        let client = self.client.clone();
-        self.spawn(async move {
-            let answer = client
-                .list_repositories(wire::ListRepositoriesRequest {
-                    query: None,
-                    // As many as the host offers; it caps the answer.
-                    limit: u32::MAX,
-                    host_id: Some(host.clone()),
-                })
-                .await
-                // A host that cannot say leaves the folder to be typed.
-                .unwrap_or_default();
-            Some(AppEvent::Folders { host, answer })
-        });
     }
 
     /// While a new agent is being set up: what its host offers for each

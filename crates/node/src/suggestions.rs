@@ -175,32 +175,12 @@ fn cwd_in(path: &Path, lines: usize, cwd: impl Fn(Line) -> Option<PathBuf>) -> O
         .find_map(|line| cwd(line).filter(|dir| dir.is_absolute()))
 }
 
-/// The repository a directory is in, as it is now: the nearest directory
-/// up from it holding `.git`, and for a linked worktree the repository it
-/// was made from, which is the one a person means.
+/// The repository a directory is in, as it is now: its working tree, and
+/// for a linked worktree the clone it was made from, which is the one a
+/// person means.
 fn repository(dir: &Path) -> Option<PathBuf> {
-    let dir = dir.canonicalize().ok()?;
-    let root = dir.ancestors().find(|dir| dir.join(".git").exists())?;
-    let dot_git = root.join(".git");
-    if dot_git.is_file()
-        && let Ok(text) = std::fs::read_to_string(&dot_git)
-        && let Some(gitdir) = text.trim().strip_prefix("gitdir:")
-    {
-        // `<repository>/.git/worktrees/<name>`; a submodule's points under
-        // `.git/modules` and is a repository of its own.
-        let gitdir = root.join(gitdir.trim());
-        if let Some(worktrees) = gitdir.parent()
-            && worktrees
-                .file_name()
-                .is_some_and(|name| name == "worktrees")
-            && let Some(main) = worktrees.parent().and_then(Path::parent)
-            && let Ok(main) = main.canonicalize()
-            && main.join(".git").is_dir()
-        {
-            return Some(main);
-        }
-    }
-    Some(root.to_owned())
+    let (root, main) = git_facts::working_tree(dir)?;
+    Some(main.unwrap_or(root))
 }
 
 /// The directories whose contents are made to be thrown away.

@@ -37,6 +37,7 @@ impl ProfileRuntime {
                 current: true,
             })),
             claude_kind: self.launch_claude_kind() as i32,
+            folders: self.folders(),
             push_key: self
                 .push_key
                 .lock()

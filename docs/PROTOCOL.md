@@ -881,7 +881,8 @@ command again.
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
-| `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots, each with its origin remote when it has one, so a client names and tints a folder as it does an agent working in it. |
+| `ListRepositories` | Superseded by `HostEntry.folders`, which a client reads from the inventory; still answered for clients that ask. Where a host offers to start an agent: its repositories and recent working directories, each with its origin remote when it has one. |
+| `PinFolder` | Pins a folder among a host's repositories (the `repositories` setting), or unpins it. The host applies it to its config file and its own entry's `folders` says the change, which every client sees through the inventory. A paired host may pin only on the answering host's own list. |
 
 `SessionService` is one agent's conversation:
 
@@ -1024,7 +1025,7 @@ these ways:
   client's `after` is refused.
 - `SendMessage`'s `Envelope` comes stamped by the calling host's daemon, and
   its sender is taken as given; a client's sender is always the caller.
-- `ListRepositories` answers for this host only.
+- `ListRepositories` and `PinFolder` answer for this host only.
 - `ResolveAgent` and the drafts are refused: a peer resolves names itself, and
   a draft stays on the machine it was typed on.
 

@@ -710,24 +710,20 @@ fn home_offers_to_finish_setting_up_and_takes_the_settings_key() {
 }
 
 #[test]
-fn the_picker_offers_the_hosts_repositories_then_its_recent_folders() {
+fn the_picker_offers_the_hosts_folders_in_its_order() {
     let mut setup =
         crate::setup::Setup::defaults(settings::ChatInSetting::Amux, "/src/here", b"desk");
-    assert!(setup.wants_folders());
-    let entry = |path: &str| wire::RepositoryEntry {
-        path: path.into(),
-        ..Default::default()
-    };
-    let answer = wire::ListRepositoriesResponse {
-        recent: vec![entry("/src/recent"), entry("/src/app")],
-        repositories: vec![entry("/src/app"), entry("/src/lib")],
-    };
-    setup.take_folders(b"desk", &answer);
-    assert!(!setup.wants_folders());
+    // As the host's entry lists them: repositories, then recent folders.
+    let offered: Vec<String> = ["/src/app", "/src/lib", "/src/recent"]
+        .map(String::from)
+        .to_vec();
+    assert!(!setup.holds_folders(b"desk", &offered));
+    setup.take_folders(b"desk", &offered);
+    assert!(setup.holds_folders(b"desk", &offered));
     assert_eq!(
         setup.folder_choices(),
         ["/src/here", "/src/app", "/src/lib", "/src/recent"],
-        "the folder the client started in, then the repositories, then recent ones"
+        "the folder the client started in, then the host's folders"
     );
     // A folder the host lists keeps its place among the others.
     setup.pick(crate::setup::Item::Folder, "/src/lib");
@@ -737,8 +733,8 @@ fn the_picker_offers_the_hosts_repositories_then_its_recent_folders() {
     );
     // On another host the folder is the first that host offers.
     setup.pick(crate::setup::Item::Host, "6c6170746f70");
-    assert!(setup.wants_folders());
-    setup.take_folders(b"laptop", &answer);
+    assert!(!setup.holds_folders(b"laptop", &offered));
+    setup.take_folders(b"laptop", &offered);
     assert_eq!(setup.folder, "/src/app");
 }
 

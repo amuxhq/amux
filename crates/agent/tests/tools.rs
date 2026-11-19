@@ -261,6 +261,13 @@ impl AgentService for Fleet {
     ) -> Result<Response<wire::ListRepositoriesResponse>, Status> {
         Err(Status::unimplemented("list_repositories"))
     }
+
+    async fn pin_folder(
+        &self,
+        _: Request<wire::PinFolderRequest>,
+    ) -> Result<Response<wire::PinFolderResponse>, Status> {
+        Err(Status::unimplemented("pin_folder"))
+    }
 }
 
 #[tonic::async_trait]

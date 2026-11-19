@@ -252,6 +252,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     let agent = own("a");
     let mut store = with_agent(store, &agent);
     let git = wire::Git {
+        checkout: None,
         branch: Some("fix-build".into()),
         base_branch: Some("main".into()),
         uncommitted: Some(wire::ChangeTotals {

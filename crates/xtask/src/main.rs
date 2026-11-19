@@ -25,6 +25,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.BoundaryKind",
     "amux.v1.Catalogue",
     "amux.v1.ChangeTotals",
+    "amux.v1.Checkout",
     "amux.v1.Diff",
     "amux.v1.DiffBase",
     "amux.v1.DiffBase.base",
@@ -32,6 +33,8 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.Empty",
     "amux.v1.EnvelopeKind",
     "amux.v1.Filing",
+    "amux.v1.Folder",
+    "amux.v1.FolderKind",
     "amux.v1.Git",
     "amux.v1.Kind",
     "amux.v1.OfferedCommand",
@@ -132,6 +135,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // A notice is rare and a snapshot is moved through every step, so the
     // notice's room is taken only when there is one.
     config.boxed(".amux.v1.Snapshot.notice");
+    // Every agent row carries its git facts, and the store's records hold
+    // rows by value, so the checkout's room is taken only when there is one.
+    config.boxed(".amux.v1.Git.checkout");
     // The chat model's Refusal holds the wire's reason; the mirrors name
     // the reason apart from it.
     config.type_attribute("amux.v1.Refusal", "#[schemars(rename = \"RefusalReason\")]");

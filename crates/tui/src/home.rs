@@ -417,14 +417,14 @@ impl Home {
 
     /// The folders `host` offers, for the new agent being set up there,
     /// and its form's empty folder field.
-    pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
+    pub fn take_folders(&mut self, host: &[u8], folders: &[String]) {
         if !self.draft.open {
             return;
         }
         let Some(setup) = self.draft.setup.as_mut() else {
             return;
         };
-        setup.take_folders(host, answer);
+        setup.take_folders(host, folders);
         if let Some(form) = self.draft.form.as_mut() {
             form.folders_arrived(setup);
         }

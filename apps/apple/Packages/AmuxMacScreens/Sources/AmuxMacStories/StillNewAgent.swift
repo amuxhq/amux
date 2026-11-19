@@ -13,6 +13,7 @@ final class StillNewAgent: NewAgentSurface {
     let listing: ListingState
     let repositories: [Directory]
     let recent: [Directory]
+    var history: [Directory] = []
     private(set) var directory: String
     var query = ""
     var typed = ""
@@ -39,10 +40,18 @@ final class StillNewAgent: NewAgentSurface {
 
     var likely: [Directory] { recent + repositories }
     func choose(directory: String) { self.directory = directory }
+    /// The same, with Claude Code and Codex's own recent folders.
+    func with(history: [Directory]) -> Self {
+        self.history = history
+        return self
+    }
+
+    func isPinned(_ path: String) -> Bool { repositories.contains { $0.path == path } }
+    func pin(_ directory: Directory, _ on: Bool) {}
     var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
     var found: [Directory] {
         let wanted = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return (repositories + recent).filter { $0.path.lowercased().contains(wanted) }
+        return (repositories + recent + history).filter { $0.path.lowercased().contains(wanted) }
     }
 
     func choose(provider: Provider) {

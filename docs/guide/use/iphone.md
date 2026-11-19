@@ -32,7 +32,9 @@ and asks first if that would cut work short. A settled agent can be un-settled
 or deleted the same way, and sending it a message starts it again.
 
 Tap **+** to start an agent. Pick the computer and the folder (your repositories
-come first, then folders your agents used lately, or type a path), then the
+come first, then folders your agents used lately, then ones you used with Claude
+Code or Codex, or type a path). Tap the pin beside a folder to keep it among that
+computer's repositories, or tap it again to take it out. Then pick the
 agent, its model, effort and permission. Turn on **New worktree** to give the
 agent a worktree of its own, made from the folder's repository, so it can work
 without touching your checkout. The computer says which agents are signed in there,

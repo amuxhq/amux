@@ -3652,6 +3652,7 @@ fn chat_in_git(items: Vec<Item>, base: Option<&str>) -> SessionState {
     };
     let agent = wire::Agent {
         git: Some(wire::Git {
+            checkout: None,
             branch: Some("topic".into()),
             base_branch: base.map(str::to_owned),
             uncommitted: Some(totals(2, 42, 7)),

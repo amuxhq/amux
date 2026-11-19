@@ -15,10 +15,10 @@ use wire::{
     CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
     FileAgentRequest, FileAgentResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest,
     GetDiffResponse, GetItemRequest, GetItemResponse, InventoryEvent, ListItemsRequest,
-    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
-    PutBlobResponse, RenameAgentRequest, RenameAgentResponse, ResolveAgentRequest,
-    ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse, SendInputRequest,
-    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
+    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PinFolderRequest,
+    PinFolderResponse, PutBlobRequest, PutBlobResponse, RenameAgentRequest, RenameAgentResponse,
+    ResolveAgentRequest, ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse,
+    SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
     SubscribeInventoryRequest, SubscribeInventoryResponse, SubscribeSessionRequest,
     SubscribeSessionResponse,
 };
@@ -337,6 +337,25 @@ impl AgentService for PeerApi {
                 .list_repositories(request.query, request.limit)
                 .await,
         ))
+    }
+
+    /// A paired host pins on this host's list as a person here would: the
+    /// list is this host's to keep, and its entry says the change.
+    async fn pin_folder(
+        &self,
+        request: Request<PinFolderRequest>,
+    ) -> Result<Response<PinFolderResponse>, Status> {
+        Self::caller(&request)?;
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        if let Some(host) = request.host_id.as_deref().map(host_id).transpose()? {
+            this_host(&runtime, host, "a paired host pins only on its own list")?;
+        }
+        runtime
+            .pin_folder(&request.path, request.pinned)
+            .await
+            .map_err(crate::grpc::settings_status)?;
+        Ok(Response::new(PinFolderResponse {}))
     }
 }
 

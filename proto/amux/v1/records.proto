@@ -405,8 +405,23 @@ message Git {
   // Where origin points, as host/owner/name: no scheme, credentials, port
   // or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
   // Clients group checkouts of one repository by it, worktrees and other
-  // machines' checkouts included. Absent without an origin.
+  // machines' checkouts included. Absent without an origin. The same as
+  // checkout.remote, which replaces it.
   optional string remote = 5;
+  // The working tree the agent's directory is in.
+  optional Checkout checkout = 6;
+}
+
+// A working tree of a Git repository on one host. Two checkouts are of the
+// same repository when their remotes match, or, on one host without a
+// remote, when their main clones do.
+message Checkout {
+  // The working tree's top directory.
+  string root = 1;
+  // The main clone's top directory, when this is a linked worktree of it.
+  optional string main = 2;
+  // Where origin points, as Git.remote writes it; absent without an origin.
+  optional string remote = 3;
 }
 
 message ChangeTotals {

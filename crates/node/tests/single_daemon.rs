@@ -1063,6 +1063,7 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
 
     runtime.rename(agent.id, "beta").await.unwrap();
     let git = wire::Git {
+        checkout: None,
         branch: Some("beta".into()),
         base_branch: Some("main".into()),
         uncommitted: Some(wire::ChangeTotals {

@@ -298,6 +298,7 @@ pub enum PeerRequest {
     GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
     GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
     ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
+    PinFolder(#[serde(with = "codec::message")] wire::PinFolderRequest),
 }
 
 /// A peer's whole reply to one of its unary calls.

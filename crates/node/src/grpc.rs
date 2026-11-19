@@ -26,10 +26,10 @@ use wire::{
     CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
     FileAgentRequest, FileAgentResponse, GetBlobRequest, GetBlobResponse, GetDiffRequest,
     GetDiffResponse, GetItemRequest, GetItemResponse, InventoryEvent, ListItemsRequest,
-    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
-    PutBlobResponse, RenameAgentRequest, RenameAgentResponse, ResolveAgentRequest,
-    ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse, SendInputRequest,
-    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
+    ListItemsResponse, ListRepositoriesRequest, ListRepositoriesResponse, PinFolderRequest,
+    PinFolderResponse, PutBlobRequest, PutBlobResponse, RenameAgentRequest, RenameAgentResponse,
+    ResolveAgentRequest, ResolveAgentResponse, ResumeAgentRequest, ResumeAgentResponse,
+    SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
     SubscribeInventoryRequest, SubscribeInventoryResponse, SubscribeSessionRequest,
     SubscribeSessionResponse, subscribe_session_request,
 };
@@ -42,6 +42,11 @@ use crate::telemetry::{self, InputShape};
 
 /// A wire error as a gRPC status: the coarse code for generic clients, and
 /// the whole error, details included, in the status details for ours.
+/// A settings change refused, as a gRPC status.
+pub(crate) fn settings_status(error: crate::host_settings::SettingsError) -> Status {
+    status(error.to_wire())
+}
+
 pub fn status(error: wire::Error) -> Status {
     // The error's code is gRPC's own; the whole error rides in the details,
     // as gRPC's richer error model carries it.
@@ -636,6 +641,23 @@ impl AgentService for ClientApi {
                 .list_repositories(request.query, request.limit)
                 .await,
         ))
+    }
+
+    async fn pin_folder(
+        &self,
+        request: Request<PinFolderRequest>,
+    ) -> Result<Response<PinFolderResponse>, Status> {
+        let request = request.into_inner();
+        let runtime = self.runtime()?;
+        let named = request.host_id.as_deref().map(host_id).transpose()?;
+        if let Some(host) = named.filter(|host| *host != runtime.host()) {
+            return forwarded(&runtime, host, request).await;
+        }
+        runtime
+            .pin_folder(&request.path, request.pinned)
+            .await
+            .map_err(settings_status)?;
+        Ok(Response::new(PinFolderResponse {}))
     }
 }
 

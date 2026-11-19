@@ -10,7 +10,7 @@ final class NewAgentTests: XCTestCase {
         repositories: [
             Directory(path: "/src/web", name: "web", repository: nil),
             Directory(path: "/src/relay", name: "relay", repository: nil),
-        ])
+        ], history: [])
 
     func testTheMostRecentDirectoryIsPrefilledAndTheNameLeftToTheHost() {
         let store = NewAgentStore()
@@ -25,6 +25,31 @@ final class NewAgentTests: XCTestCase {
             store.request,
             NewAgent(hostId: Cards.desk.bytes, kind: .claudeSdk, cwd: "/src/amux",
                      name: "", effort: nil, mode: nil, model: nil, newWorktree: nil, permission: nil))
+    }
+
+    func testAFolderPinnedMovesToTheRepositoriesAtOnceAndHistoryIsListedOnce() {
+        let store = NewAgentStore()
+        store.open(on: Cards.desk)
+        let notes = Directory(path: "/src/notes", name: "notes", repository: nil)
+        store.listed(
+            .success(Directories(
+                recent: listed.recent, repositories: listed.repositories,
+                history: [notes, Directory(path: "/src/amux", name: "amux", repository: nil)])),
+            asked: store.asking())
+        XCTAssertEqual(store.history.map(\.path), ["/src/notes"], "a recent folder is listed once")
+        XCTAssertFalse(store.isPinned("/src/notes"))
+
+        store.pinned(notes, true)
+        XCTAssertTrue(store.isPinned("/src/notes"))
+        XCTAssertEqual(store.repositories.map(\.path), ["/src/web", "/src/relay", "/src/notes"])
+        XCTAssertTrue(store.history.isEmpty)
+
+        store.pinned(notes, false)
+        XCTAssertFalse(store.isPinned("/src/notes"))
+        XCTAssertEqual(store.recent.first?.path, "/src/notes")
+        XCTAssertEqual(store.found.count, 0, "nothing is searched")
+        store.query = "NOT"
+        XCTAssertEqual(store.found.map(\.path), ["/src/notes"])
     }
 
     func testAHostThatCannotListOffersWhereItsAgentsWork() {
@@ -99,7 +124,7 @@ final class NewAgentTests: XCTestCase {
             repositories: [
                 Directory(path: "/src/web", name: "web", repository: nil),
                 Directory(path: "/src/relay", name: "relay", repository: nil),
-            ])), asked: store.asking())
+            ], history: [])), asked: store.asking())
         XCTAssertEqual(store.repositories.map(\.name), ["web", "relay"])
         XCTAssertEqual(store.recent.map(\.name), ["scratch"])
         XCTAssertEqual(store.likely.map(\.name), ["scratch", "web", "relay"])
@@ -115,7 +140,7 @@ final class NewAgentTests: XCTestCase {
         let store = NewAgentStore()
         store.open(on: Cards.desk)
         store.listed(.success(Directories(
-            recent: [], repositories: [Directory(path: "/src/web", name: "web", repository: nil)])),
+            recent: [], repositories: [Directory(path: "/src/web", name: "web", repository: nil)], history: [])),
             asked: store.asking())
         XCTAssertEqual(store.directory, "/src/web")
     }

@@ -149,7 +149,7 @@ chats with their agents, the installation's `ui.chat_in`:
   asked of the host before any agent runs on it; until it answers a model can be typed by name. Another model starts
   at its own default effort, and a permission it does not take gives way to the normal one. A provider the host
   says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists the
-  host's repositories, then the folders its agents ran in lately, and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
+  host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
   or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
 - **In each agent's own interface** (`native`): a small window over home with the name, the agent (Claude or
   Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,

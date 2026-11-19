@@ -106,9 +106,11 @@ panel, repository tiles, rows, tabs, chips, cards).
   provider's mark, model and effort — inside it beside send, opening the
   picker.
   Under it, a strip of chips for the host (this Mac to begin with; an
-  unreachable one cannot be picked), the folder (the host's recent folders
-  and repositories, and a popover that searches as typed and takes a
-  path), a new worktree as a toggle of its own, and at the far end the
+  unreachable one cannot be picked), the folder (a popover listing the
+  host's repositories, its recent folders, then where Claude Code and
+  Codex ran, read from the host's entry and searched as typed; a pin on
+  each row under the pointer keeps it among the host's repositories or
+  lets it go; Add repository… on this Mac; and a typed path), a new worktree as a toggle of its own, and at the far end the
   permission. Folders that are repositories carry their tile. As the
   window narrows the chips give way to their icons, the folder last. The
   recent folders sit under the strip as one line of chips. Return starts

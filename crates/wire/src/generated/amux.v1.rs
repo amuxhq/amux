@@ -805,9 +805,13 @@ pub struct Git {
     /// Where origin points, as host/owner/name: no scheme, credentials, port
     /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
     /// Clients group checkouts of one repository by it, worktrees and other
-    /// machines' checkouts included. Absent without an origin.
+    /// machines' checkouts included. Absent without an origin. The same as
+    /// checkout.remote, which replaces it.
     #[prost(string, optional, tag = "5")]
     pub remote: ::core::option::Option<::prost::alloc::string::String>,
+    /// The working tree the agent's directory is in.
+    #[prost(message, optional, boxed, tag = "6")]
+    pub checkout: ::core::option::Option<::prost::alloc::boxed::Box<Checkout>>,
 }
 impl ::prost::Name for Git {
     const NAME: &'static str = "Git";
@@ -817,6 +821,32 @@ impl ::prost::Name for Git {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Git".into()
+    }
+}
+/// A working tree of a Git repository on one host. Two checkouts are of the
+/// same repository when their remotes match, or, on one host without a
+/// remote, when their main clones do.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Checkout {
+    /// The working tree's top directory.
+    #[prost(string, tag = "1")]
+    pub root: ::prost::alloc::string::String,
+    /// The main clone's top directory, when this is a linked worktree of it.
+    #[prost(string, optional, tag = "2")]
+    pub main: ::core::option::Option<::prost::alloc::string::String>,
+    /// Where origin points, as Git.remote writes it; absent without an origin.
+    #[prost(string, optional, tag = "3")]
+    pub remote: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for Checkout {
+    const NAME: &'static str = "Checkout";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Checkout".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Checkout".into()
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -4279,6 +4309,13 @@ pub struct HostEntry {
     /// its trust in the host; it is not on `Host`, which neighbors repeat.
     #[prost(message, optional, tag = "7")]
     pub push_key: ::core::option::Option<PushKey>,
+    /// Where this host offers to start an agent, said on its own entry and
+    /// repeated as it said them: the folders its person pinned, in their
+    /// order, then the ones its agents started in, newest first, then the ones
+    /// Claude Code and Codex ran in lately outside amux. Each path once, at
+    /// most a few dozen. Clients search it themselves.
+    #[prost(message, repeated, tag = "8")]
+    pub folders: ::prost::alloc::vec::Vec<Folder>,
     #[prost(oneof = "host_entry::Standing", tags = "4, 5")]
     pub standing: ::core::option::Option<host_entry::Standing>,
 }
@@ -4302,6 +4339,36 @@ impl ::prost::Name for HostEntry {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.HostEntry".into()
+    }
+}
+/// A folder a host offers to start an agent in.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Folder {
+    /// Absolute and canonical, on the host that offers it.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// Its last component, as a picker names it.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(enumeration = "FolderKind", tag = "3")]
+    pub kind: i32,
+    /// When an agent, or Claude Code or Codex outside amux, last started
+    /// there; absent for a pinned folder nothing started in yet.
+    #[prost(int64, optional, tag = "4")]
+    pub last_used_ms: ::core::option::Option<i64>,
+    /// The working tree the folder is in; absent outside Git.
+    #[prost(message, optional, tag = "5")]
+    pub checkout: ::core::option::Option<Checkout>,
+}
+impl ::prost::Name for Folder {
+    const NAME: &'static str = "Folder";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Folder".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Folder".into()
     }
 }
 /// A public key notifications are sealed to.
@@ -4614,6 +4681,43 @@ impl ::prost::Name for HostRef {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.HostRef".into()
+    }
+}
+/// Why a host offers a folder. UNSPECIFIED is never sent.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum FolderKind {
+    Unspecified = 0,
+    /// Its person pinned it: the repositories in its settings.
+    Pinned = 1,
+    /// An agent started there lately.
+    Recent = 2,
+    /// Claude Code or Codex ran there lately, outside amux.
+    History = 3,
+}
+impl FolderKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "FOLDER_KIND_UNSPECIFIED",
+            Self::Pinned => "FOLDER_KIND_PINNED",
+            Self::Recent => "FOLDER_KIND_RECENT",
+            Self::History => "FOLDER_KIND_HISTORY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FOLDER_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "FOLDER_KIND_PINNED" => Some(Self::Pinned),
+            "FOLDER_KIND_RECENT" => Some(Self::Recent),
+            "FOLDER_KIND_HISTORY" => Some(Self::History),
+            _ => None,
+        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -7895,6 +7999,40 @@ impl ::prost::Name for ListRepositoriesResponse {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PinFolderRequest {
+    /// Absent means the answering host.
+    #[prost(bytes = "vec", optional, tag = "1")]
+    pub host_id: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// An absolute path on that host, or one from its home ("~/src/app").
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    /// Pinned at the end of the list, or unpinned.
+    #[prost(bool, tag = "3")]
+    pub pinned: bool,
+}
+impl ::prost::Name for PinFolderRequest {
+    const NAME: &'static str = "PinFolderRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PinFolderRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PinFolderRequest".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PinFolderResponse {}
+impl ::prost::Name for PinFolderResponse {
+    const NAME: &'static str = "PinFolderResponse";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PinFolderResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PinFolderResponse".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RepositoryEntry {
     #[prost(string, tag = "1")]
     pub path: ::prost::alloc::string::String,
@@ -8308,6 +8446,7 @@ pub mod agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.AgentService", "GetCatalogue"));
             self.inner.unary(req, path, codec).await
         }
+        /// Superseded by HostEntry.folders, which clients read from the inventory.
         pub async fn list_repositories(
             &mut self,
             request: impl tonic::IntoRequest<super::ListRepositoriesRequest>,
@@ -8330,6 +8469,32 @@ pub mod agent_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("amux.v1.AgentService", "ListRepositories"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Pins a folder among a host's repositories, or unpins it; the host's own
+        /// entry says the change.
+        pub async fn pin_folder(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PinFolderRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PinFolderResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/amux.v1.AgentService/PinFolder",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("amux.v1.AgentService", "PinFolder"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -8452,11 +8617,21 @@ pub mod agent_service_server {
             tonic::Response<super::GetCatalogueResponse>,
             tonic::Status,
         >;
+        /// Superseded by HostEntry.folders, which clients read from the inventory.
         async fn list_repositories(
             &self,
             request: tonic::Request<super::ListRepositoriesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListRepositoriesResponse>,
+            tonic::Status,
+        >;
+        /// Pins a folder among a host's repositories, or unpins it; the host's own
+        /// entry says the change.
+        async fn pin_folder(
+            &self,
+            request: tonic::Request<super::PinFolderRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PinFolderResponse>,
             tonic::Status,
         >;
     }
@@ -9110,6 +9285,51 @@ pub mod agent_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListRepositoriesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/amux.v1.AgentService/PinFolder" => {
+                    #[allow(non_camel_case_types)]
+                    struct PinFolderSvc<T: AgentService>(pub Arc<T>);
+                    impl<
+                        T: AgentService,
+                    > tonic::server::UnaryService<super::PinFolderRequest>
+                    for PinFolderSvc<T> {
+                        type Response = super::PinFolderResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PinFolderRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as AgentService>::pin_folder(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PinFolderSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

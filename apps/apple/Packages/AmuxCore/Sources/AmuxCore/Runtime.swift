@@ -685,6 +685,18 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
+    /// Pins a folder among a host's repositories, or unpins it.
+    public func pinFolder(
+        _ path: String, on host: HostId, pinned: Bool
+    ) async -> Result<Nothing, RuntimeFailure> {
+        let host = Bridge.json(host.bytes)
+        return await act(Nothing.self) { live in
+            host.withCString { host in
+                path.withCString { amux_profile_pin_folder(live, host, $0, pinned) }
+            }
+        }
+    }
+
     public func act(_ act: AgentAct, on agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
         let (agent, act) = (Bridge.json(agent), Bridge.json(act))
         return await self.act(Nothing.self) { live in

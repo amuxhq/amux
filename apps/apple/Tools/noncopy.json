@@ -576,7 +576,11 @@
       {"literal": "\"new-agent.host\"", "context": "name: String(localized: \"Computer, \\(value)\"), identifier: \"new-agent.host\", items: items,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.provider\"", "context": "name: String(localized: \"Agent, \\(model.provider.title)\"), identifier: \"new-agent.provider\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.browse.done\"", "context": "BarButton(\"checkmark\", label: String(localized: \"Done\"), identifier: \"new-agent.browse.done\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"new-agent.search\"", "context": ".identified(\"new-agent.search\", label: \"Search folders\", value: model.query)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
+      {"literal": "\"new-agent.search\"", "context": ".identified(\"new-agent.search\", label: \"Search folders\", value: model.query)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
+      {"literal": "\"pin.fill\"", "context": "Image(systemName: pinned ? \"pin.fill\" : \"pin\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
+      {"literal": "\"pin\"", "context": "Image(systemName: pinned ? \"pin.fill\" : \"pin\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.pin.\\(repository.name)\"", "context": ".identified(\"new-agent.pin.\\(repository.name)\", value: pinned ? \"pinned\" : \"\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"pinned\"", "context": ".identified(\"new-agent.pin.\\(repository.name)\", value: pinned ? \"pinned\" : \"\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift": [
       {"literal": "\"pin\"", "context": ".identified(\"pin\", value: model.digits)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},

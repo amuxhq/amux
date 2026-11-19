@@ -261,6 +261,54 @@ pub async fn facts(cwd: &Path, recorded_base: Option<&str>) -> Result<Option<Git
     }))
 }
 
+/// The working tree a directory is in, as it is now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checkout {
+    /// The working tree's top directory: the nearest one up holding `.git`.
+    pub root: PathBuf,
+    /// The main clone's top directory, when `root` is a linked worktree of
+    /// it; a submodule is a repository of its own.
+    pub main: Option<PathBuf>,
+    /// Where origin points, as [`remote_identity`] writes it.
+    pub remote: Option<String>,
+}
+
+/// The working tree `dir` is in, canonical; None outside one. Reads the
+/// file system and asks git for the origin: call it off the async workers.
+pub fn checkout(dir: &Path) -> Option<Checkout> {
+    let (root, main) = working_tree(dir)?;
+    let remote = origin(&root);
+    Some(Checkout { root, main, remote })
+}
+
+/// The working tree `dir` is in and, for a linked worktree, the main clone
+/// it was made from, read from the file system alone.
+pub fn working_tree(dir: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
+    let dir = dir.canonicalize().ok()?;
+    let root = dir.ancestors().find(|dir| dir.join(".git").exists())?;
+    let dot_git = root.join(".git");
+    let mut main = None;
+    if dot_git.is_file()
+        && let Ok(text) = std::fs::read_to_string(&dot_git)
+        && let Some(gitdir) = text.trim().strip_prefix("gitdir:")
+    {
+        // `<repository>/.git/worktrees/<name>`; a submodule's points under
+        // `.git/modules` and is a repository of its own.
+        let gitdir = root.join(gitdir.trim());
+        if let Some(worktrees) = gitdir.parent()
+            && worktrees
+                .file_name()
+                .is_some_and(|name| name == "worktrees")
+            && let Some(clone) = worktrees.parent().and_then(Path::parent)
+            && let Ok(clone) = clone.canonicalize()
+            && clone.join(".git").is_dir()
+        {
+            main = Some(clone);
+        }
+    }
+    Some((root.to_owned(), main))
+}
+
 /// Where the origin of the repository at `cwd` points, as
 /// [`remote_identity`] writes it; None outside a repository or without an
 /// origin. Blocks on git: call it off the async workers.

@@ -551,6 +551,9 @@ pub struct Directory {
 pub struct Directories {
     pub recent: Vec<Directory>,
     pub repositories: Vec<Directory>,
+    /// Where Claude Code and Codex ran lately on the host, outside amux.
+    #[serde(default)]
+    pub history: Vec<Directory>,
 }
 
 /// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as

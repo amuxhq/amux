@@ -333,6 +333,9 @@ public enum Stories {
                 Directory(path: home("/Desktop/notes"), name: "notes", repository: repository(home("/Desktop/notes"))),
             ],
             directory: home("/src/amux"))
+        .with(history: [
+            Directory(path: home("/src/dotfiles"), name: "dotfiles", repository: repository(home("/src/dotfiles"))),
+        ])
     }
 
     /// What a Claude agent offers to change, as a chat's settings hold it.
@@ -399,6 +402,7 @@ public enum Stories {
             refused: [], askInput: nil, context: nil, ended: nil,
             git: Git(
                 baseBranch: "main", branch: card.branch ?? "main",
+                checkout: Checkout(root: card.cwd, main: nil, remote: "github.com/amuxhq/amux"),
                 onBranch: ChangeTotals(files: 3, added: 48, removed: 12), remote: "github.com/amuxhq/amux",
                 uncommitted: ChangeTotals(files: 2, added: 30, removed: 4)),
             signIn: nil)

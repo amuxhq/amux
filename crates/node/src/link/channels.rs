@@ -1150,6 +1150,13 @@ mod tests {
             ) -> Answer<wire::ListRepositoriesResponse> {
                 unanswered()
             }
+
+            async fn pin_folder(
+                &self,
+                _: Request<wire::PinFolderRequest>,
+            ) -> Answer<wire::PinFolderResponse> {
+                unanswered()
+            }
         }
 
         #[tonic::async_trait]

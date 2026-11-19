@@ -15,6 +15,7 @@ mod dump;
 mod forwarded_send;
 mod front_door;
 mod host_acts;
+mod host_acts_link;
 mod host_acts_messages;
 mod host_acts_usage;
 mod host_acts_workspaces;

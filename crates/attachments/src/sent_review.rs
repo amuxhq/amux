@@ -71,7 +71,6 @@ pub fn attachment(summary: &ReviewSummary, comments: &[ReviewerComment]) -> Atta
             round: u32::try_from(summary.rounds.len())
                 .unwrap_or(u32::MAX)
                 .saturating_add(1),
-            snapshot: summary.snapshot.clone(),
             comments: comments
                 .iter()
                 .map(|comment| ReviewSentComment {

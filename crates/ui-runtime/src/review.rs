@@ -883,7 +883,6 @@ pub fn round_of(
             comments,
             objects: summary.objects.clone(),
             root: summary.root.clone(),
-            began_at: summary.began_at.clone(),
             ..ReviewSummary::default()
         },
     ))

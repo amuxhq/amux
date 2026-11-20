@@ -45,12 +45,6 @@ pub struct SentReview {
     /// never claim one number.
     #[prost(uint32, tag = "2")]
     pub round: u32,
-    /// The snapshot the text's line numbers are on. The host records the round
-    /// on the review's latest snapshot when the agent takes the message, which
-    /// a refresh in between may have made a later one: a client finds the
-    /// round a sent review closed by its comments, not by this.
-    #[prost(string, tag = "3")]
-    pub snapshot: ::prost::alloc::string::String,
     /// Exactly the comments sent, each as it was when the text was written:
     /// the host marks sent those still drafts at that revision, and no others.
     #[prost(message, repeated, tag = "4")]
@@ -167,10 +161,6 @@ pub struct ReviewSummary {
     /// for an answer that took none.
     #[prost(uint32, tag = "13")]
     pub moved_drafts: u32,
-    /// The commit HEAD was at when the review began: on a base branch with no
-    /// upstream, all changes are those since it.
-    #[prost(string, tag = "14")]
-    pub began_at: ::prost::alloc::string::String,
     /// A git index of the snapshot, an absolute path on the agent's host,
     /// kept in the review's own folder: with it as GIT_INDEX_FILE and the
     /// store as an alternate, git diffs the working tree against the snapshot,
@@ -199,10 +189,6 @@ pub struct ReviewRound {
     /// `snapshot`, and REVIEW_VIEW_ALL.
     #[prost(string, tag = "2")]
     pub base_commit: ::prost::alloc::string::String,
-    /// When the host accepted the message that sent it, in milliseconds since
-    /// the Unix epoch.
-    #[prost(int64, tag = "3")]
-    pub sent_at_ms: i64,
 }
 impl ::prost::Name for ReviewRound {
     const NAME: &'static str = "ReviewRound";

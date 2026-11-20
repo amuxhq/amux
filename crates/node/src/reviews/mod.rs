@@ -613,7 +613,6 @@ async fn summary(
             .map(|round| ReviewRound {
                 snapshot: round.snapshot.clone(),
                 base_commit: round.base_commit.clone(),
-                sent_at_ms: round.sent_ms,
             })
             .collect(),
         files: wire_files,
@@ -623,7 +622,6 @@ async fn summary(
         objects: tree.store.dir().to_string_lossy().into_owned(),
         root: tree.root.to_string_lossy().into_owned(),
         moved_drafts,
-        began_at: review.began_at.clone(),
         index: tree.index_of(snapshot).await,
     })
 }

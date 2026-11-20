@@ -253,7 +253,6 @@ fn summary() -> ReviewSummary {
         base_commit: BASE.into(),
         snapshot: SNAPSHOT.into(),
         files: files(),
-        began_at: BASE.into(),
         objects: "/agents/a/review/objects".into(),
         root: "/work/repo".into(),
         ..Default::default()
@@ -359,7 +358,6 @@ fn second_look() -> ReviewSummary {
         rounds: vec![ReviewRound {
             snapshot: LAST_ROUND.into(),
             base_commit: BASE.into(),
-            sent_at_ms: 1_000,
         }],
         since_last: vec![changed("src/store.rs", wire::FileStatus::Changed, 1, 0)],
         comments: vec![
@@ -849,7 +847,6 @@ fn an_undo_since_the_last_round_is_listed_fetched_and_shown() {
         rounds: vec![ReviewRound {
             snapshot: LAST_ROUND.into(),
             base_commit: BASE.into(),
-            sent_at_ms: 1_000,
         }],
         since_last: vec![
             changed("made.txt", wire::FileStatus::Deleted, 0, 1),
@@ -1189,7 +1186,6 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
         &SentReview {
             review_id: b"review".to_vec(),
             round: 2,
-            snapshot: SNAPSHOT.into(),
             comments: vec![
                 ReviewSentComment {
                     id: b"d1".to_vec(),

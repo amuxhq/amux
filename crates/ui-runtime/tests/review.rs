@@ -625,7 +625,6 @@ async fn a_round_reads_its_whole_diff() {
     now.rounds = vec![ReviewRound {
         snapshot: first.clone(),
         base_commit: "a".repeat(40),
-        sent_at_ms: 1,
     }];
     now.comments = vec![
         ReviewerComment {
@@ -904,12 +903,10 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
         ReviewRound {
             snapshot: first.clone(),
             base_commit: "a".repeat(40),
-            sent_at_ms: 1,
         },
         ReviewRound {
             snapshot: "2".repeat(40),
             base_commit: "b".repeat(40),
-            sent_at_ms: 2,
         },
     ];
     now.stale = true;

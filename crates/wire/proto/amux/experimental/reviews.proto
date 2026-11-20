@@ -69,11 +69,6 @@ message SentReview {
   // rounds as the agent takes the messages, so two clients sending at once
   // never claim one number.
   uint32 round = 2;
-  // The snapshot the text's line numbers are on. The host records the round
-  // on the review's latest snapshot when the agent takes the message, which
-  // a refresh in between may have made a later one: a client finds the
-  // round a sent review closed by its comments, not by this.
-  string snapshot = 3;
   // Exactly the comments sent, each as it was when the text was written:
   // the host marks sent those still drafts at that revision, and no others.
   repeated ReviewSentComment comments = 4;
@@ -141,9 +136,6 @@ message ReviewSummary {
   // How many drafts the refresh that took this snapshot moved onto it; zero
   // for an answer that took none.
   uint32 moved_drafts = 13;
-  // The commit HEAD was at when the review began: on a base branch with no
-  // upstream, all changes are those since it.
-  string began_at = 14;
   // A git index of the snapshot, an absolute path on the agent's host,
   // kept in the review's own folder: with it as GIT_INDEX_FILE and the
   // store as an alternate, git diffs the working tree against the snapshot,
@@ -159,9 +151,6 @@ message ReviewRound {
   // round's whole diff is GetFiles with this as `from`, the snapshot as
   // `snapshot`, and REVIEW_VIEW_ALL.
   string base_commit = 2;
-  // When the host accepted the message that sent it, in milliseconds since
-  // the Unix epoch.
-  int64 sent_at_ms = 3;
 }
 
 // Which comparison a file's hunks show.

@@ -541,7 +541,6 @@ fn first_look_summary() -> wire::experimental::ReviewSummary {
         )],
         objects: "/srv/amux/.amux/review/objects".into(),
         root: "/srv/amux".into(),
-        began_at: REVIEW_BASE.into(),
         ..Default::default()
     }
 }
@@ -641,7 +640,6 @@ pub fn review_since_last() -> crate::chat::review::Page {
         rounds: vec![ReviewRound {
             snapshot: REVIEW_ROUND.into(),
             base_commit: REVIEW_BASE.into(),
-            sent_at_ms: written_at() - 3_600_000,
         }],
         since_last: vec![changed_file(
             "src/store.rs",

@@ -720,7 +720,6 @@ mod sent_review {
             rounds: vec![ReviewRound {
                 snapshot: BASE.into(),
                 base_commit: BASE.into(),
-                sent_at_ms: 1,
             }],
             objects: OBJECTS.into(),
             root: ROOT.into(),
@@ -855,7 +854,6 @@ mod sent_review {
             Some(SentReview {
                 review_id: b"review-1".to_vec(),
                 round: 2,
-                snapshot: SNAPSHOT.into(),
                 comments: vec![
                     ReviewSentComment {
                         id: b"c1".to_vec(),

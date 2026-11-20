@@ -1132,7 +1132,6 @@ fn attachment(attachment: &wire::Attachment) -> Value {
                 observed["review"] = json!({
                     "id": hex(&review.review_id),
                     "round": review.round,
-                    "snapshot": review.snapshot,
                     "comments": review.comments.iter().map(|comment| hex(&comment.id)).collect::<Vec<_>>(),
                 });
             }

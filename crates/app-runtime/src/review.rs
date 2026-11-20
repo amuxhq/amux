@@ -1029,7 +1029,6 @@ mod tests {
         fake.host().summary.rounds.push(ReviewRound {
             snapshot: "4444444444444444444444444444444444444444".into(),
             base_commit: BASE.into(),
-            sent_at_ms: 1,
         });
         let opened = page(&fake);
         let page = &opened.page;
@@ -1087,7 +1086,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![b"one".to_vec(), b"two".to_vec()]
         );
-        assert_eq!(entry.snapshot, SNAPSHOT);
         assert_eq!(entry.round, 2);
         let Some(wire::attachment::Of::Text(text)) = attachment.of else {
             panic!("a text attachment");
@@ -1112,7 +1110,6 @@ mod tests {
             host.summary.rounds.push(ReviewRound {
                 snapshot: SNAPSHOT.into(),
                 base_commit: BASE.into(),
-                sent_at_ms: 1,
             });
             host.summary.comments.push(ReviewerComment {
                 id: b"sent".to_vec(),

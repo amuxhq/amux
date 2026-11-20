@@ -318,10 +318,6 @@ async fn a_first_look_snapshots_and_lists_and_a_second_with_nothing_changed_take
         first.base_commit,
         git(&host.install.work, &["rev-parse", "main"])
     );
-    assert_eq!(
-        first.began_at,
-        git(&host.install.work, &["rev-parse", "HEAD"])
-    );
     assert_eq!(paths(&first), ["notes.txt", "todo.txt"]);
     assert_eq!(first.files[1].status, wire::FileStatus::Created as i32);
     assert_eq!(
@@ -558,7 +554,6 @@ async fn on_the_base_branch_with_no_upstream_the_first_commits_stay_in_all_chang
     git(work, &["commit", "-q", "-am", "the agent's"]);
     let later = host.open(&agent).await;
     assert_eq!(later.base_commit, began);
-    assert_eq!(later.began_at, began);
     assert_eq!(paths(&later), ["notes.txt"]);
     // What changed alone falls back to HEAD there, and sees nothing.
     let changes = host.runtime.changes(agent.id, None).await.unwrap();
@@ -1280,7 +1275,6 @@ mod sent {
         };
         assert_eq!(round.snapshot, snapshot);
         assert_eq!(round.base_commit, mine.base_commit);
-        assert!(round.sent_at_ms > 0);
         // The agent was handed the review as it was sent: once when it
         // refused it, and once when it took it.
         let handed = agent

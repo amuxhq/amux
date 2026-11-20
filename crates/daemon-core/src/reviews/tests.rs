@@ -568,7 +568,6 @@ fn taken_prompt(input: &[u8], ids: &[u8]) -> Step {
         &SentReview {
             review_id: REVIEW_ID.to_vec(),
             round: 1,
-            snapshot: "s1".into(),
             comments: ids
                 .iter()
                 .map(|id| wire::experimental::ReviewSentComment {

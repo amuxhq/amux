@@ -51,7 +51,7 @@ pub(crate) fn on_open(dir: &Path, store: &store::Sqlite, launch: &Launch) {
 /// Removes the review folder of the agent whose directory is `agent_dir`,
 /// answering whether there was one. A link in its place is removed itself:
 /// nothing it points at is touched.
-fn remove(agent_dir: &Path) -> io::Result<bool> {
+pub(super) fn remove(agent_dir: &Path) -> io::Result<bool> {
     let folder = agent_dir.join(daemon_core::reviews::REVIEW);
     match std::fs::symlink_metadata(&folder) {
         Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&folder).map(|()| true),

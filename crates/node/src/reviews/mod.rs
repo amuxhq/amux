@@ -745,14 +745,7 @@ impl Tree {
     /// names its objects once the review is gone. Never follows a link out
     /// of the agent's directory.
     fn remove_store(&self) {
-        let folder = self.dir.join(daemon_core::reviews::REVIEW);
-        let removed = match std::fs::symlink_metadata(&folder) {
-            Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&folder),
-            Ok(_) => std::fs::remove_file(&folder),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error),
-        };
-        if let Err(error) = removed {
+        if let Err(error) = cleanup::remove(&self.dir) {
             tracing::warn!(%error, "removing a review's snapshot store failed");
         }
     }

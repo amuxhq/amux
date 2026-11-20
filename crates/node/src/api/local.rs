@@ -193,19 +193,11 @@ impl SessionService for Local {
         let runtime = self
             .reading(&request, &request.get_ref().agent_id, CHATS)
             .await?;
-        let request = request.into_inner();
-        let page = runtime
-            .list_items(&wire::ListItemsRequest {
-                agent_id: request.agent_id,
-                before_order: request.before_order,
-                page_size: request.page_size,
-            })
+        runtime
+            .list_items(&request.into_inner())
             .await
-            .map_err(|error| status(error.to_wire()))?;
-        Ok(Response::new(ListItemsResponse {
-            items: page.items,
-            exhausted: page.exhausted,
-        }))
+            .map(Response::new)
+            .map_err(|error| status(error.to_wire()))
     }
 
     async fn get_item(
@@ -215,12 +207,8 @@ impl SessionService for Local {
         let runtime = self
             .reading(&request, &request.get_ref().agent_id, CHATS)
             .await?;
-        let request = request.into_inner();
         runtime
-            .get_item(&wire::GetItemRequest {
-                agent_id: request.agent_id,
-                key: request.key,
-            })
+            .get_item(&request.into_inner())
             .await
             .map(|item| Response::new(GetItemResponse { item: Some(item) }))
             .map_err(|error| status(error.to_wire()))

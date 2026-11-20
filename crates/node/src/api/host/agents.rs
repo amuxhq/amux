@@ -341,7 +341,7 @@ impl AgentService for Agents {
         &self,
         request: Request<SendInputRequest>,
     ) -> Result<Response<wire::SendInputResponse>, Status> {
-        let (runtime, caller, own) = self
+        let (runtime, caller, _) = self
             .acting_on(
                 &request,
                 &request.get_ref().agent_id,
@@ -350,10 +350,6 @@ impl AgentService for Agents {
             .await?;
         let request = request.into_inner();
         let shape = request.input.as_ref().and_then(InputShape::of);
-        let request = wire::SendInputRequest {
-            agent_id: own.id.as_bytes().to_vec(),
-            input: request.input,
-        };
         let verdict = runtime
             .send_input(&request)
             .await
@@ -403,13 +399,7 @@ impl AgentService for Agents {
         request: Request<PutBlobRequest>,
     ) -> Result<Response<PutBlobResponse>, Status> {
         let caller = Caller::of(&request)?;
-        let request = request.into_inner();
-        let put = wire::PutBlobRequest {
-            agent_id: request.agent_id,
-            name: request.name,
-            mime: request.mime,
-            bytes: request.bytes,
-        };
+        let put = request.into_inner();
         // The owner holds the limit, whoever carried the bytes here: refused
         // before anything is looked up, in the limit's own words.
         crate::blobs::within_limit(&put).map_err(|error| status(error.to_wire()))?;
@@ -431,21 +421,15 @@ impl AgentService for Agents {
         &self,
         request: Request<GetDiffRequest>,
     ) -> Result<Response<GetDiffResponse>, Status> {
-        let (runtime, _, own) = self
+        let (runtime, ..) = self
             .acting_on(
                 &request,
                 &request.get_ref().agent_id,
                 "an agent reads only its own children's changes",
             )
             .await?;
-        let request = request.into_inner();
-        let request = wire::GetDiffRequest {
-            agent_id: own.id.as_bytes().to_vec(),
-            base: request.base,
-            with_patch: request.with_patch,
-        };
         runtime
-            .get_diff(request)
+            .get_diff(request.into_inner())
             .await
             .map(|diff| Response::new(GetDiffResponse { diff: Some(diff) }))
             .map_err(|error| status(error.to_wire()))

@@ -693,10 +693,9 @@ pub(crate) async fn create(
     })
     .await;
     match made {
-        Ok(response) => match response.agent {
+        Ok(response) => match &response.agent {
             Some(agent) => {
                 let incarnation = agent.incarnation;
-                let response = wire::CreateAgentResponse { agent: Some(agent) };
                 (
                     Spawned::Created(Box::new(response)),
                     Spawn::Created { incarnation },

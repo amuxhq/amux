@@ -57,8 +57,10 @@ already stopped needs nothing: it starts with its tools the next time it
 resumes.
 
 The browser extension updates itself from the Chrome Web Store, a little
-after amux does. Until its update arrives, its picker lists your profiles
-but none of their agents, and it can't send a page.
+after amux does. Until its update arrives, an extension too old for your
+amux says "this version of amux needs a newer amux browser extension" and
+does nothing else. To update it at once, open `chrome://extensions`, turn on
+Developer mode and click Update.
 
 ## Channels
 

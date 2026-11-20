@@ -5,8 +5,8 @@
 The iPhone app is native SwiftUI, iPhone only, with iOS 26.0 as its minimum.
 It is a full amux installation in its own process: the daemon runs in the
 app, with one profile per account, and the chats and fleet are read from
-that in-process runtime through the same client service the terminal dials
-over a socket. The phone runs no agents of its own. It pairs with the
+that in-process runtime through the same services and the same client
+library the terminal uses over a socket. The phone runs no agents of its own. It pairs with the
 machines that do, reaches them directly on the local network or through the
 relay, and keeps replica rows of their agents in its own store so a chat
 draws before any machine answers.

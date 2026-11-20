@@ -628,7 +628,7 @@ only by delete and by retention.
 Replica rows are a cache of a paired host's agent. Only `absorb` writes their
 records, copying the origin's revisions and orders as received. Each replica
 agent has one source in [`crates/daemon-core/src/sources.rs`](../crates/daemon-core/src/sources.rs):
-one `SubscribeSession` to the origin. With no block it asks for a tail of K rows; with
+one `PeerService.FollowSession` to the origin. With no block it asks for a tail of K rows; with
 one it asks for what came after its `source_cursor`, capped at K, under its
 `source_generation`, and the origin answers either that delta or `Reset` and a
 fresh tail. The source holds

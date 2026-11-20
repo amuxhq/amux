@@ -93,7 +93,8 @@ const INSTALLATION: &str = "installation";
 const NODE: &str = "amux.local";
 
 /// Why a call from an extension written for framing 1 is refused.
-const OUTDATED: &str = "this version of amux needs a newer amux browser extension: update the extension";
+const OUTDATED: &str =
+    "this version of amux needs a newer amux browser extension: update the extension";
 
 /// Where the sockets are.
 #[derive(Clone, Debug)]

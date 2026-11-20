@@ -96,7 +96,10 @@ empty None fetch []
 header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
 banners []
 empty None fetch []
-  file src/store.rs Modified +1 -0 flags [] changed-since comments 3 outline [impl Store 5-90 @4,   fn close 66-75 @4]
+  file README.md Modified +0 -0 flags [] comments 1
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
+  file src/store.rs Modified +1 -0 flags [] changed-since comments 3 outline [impl Store 5-90 @6,   fn close 66-75 @6]
       comment r2 Sent { round: 1 } Outdated folded scope [] "Don't log the path."
       snippet +        41 |        log::debug!("{path:?}");
   gap hidden 69 up 66-69 to fn close down -
@@ -112,9 +115,6 @@ empty None fetch []
       72   73 |    }
       73   74 |
   gap hidden ? up - down 75-75 to fn close
-  file README.md Modified +0 -0 flags [] comments 1
-      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
-      snippet      3    3 |Opens a store.
   file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
       comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
       snippet      1    1 |pub fn gone() {}
@@ -123,7 +123,10 @@ empty None fetch []
 header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
 banners []
 empty None fetch []
-  file src/store.rs Modified +1 -0 flags [] changed-since comments 3 outline [impl Store 5-90 @4,   fn close 66-75 @4]
+  file README.md Modified +0 -0 flags [] comments 1
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
+  file src/store.rs Modified +1 -0 flags [] changed-since comments 3 outline [impl Store 5-90 @6,   fn close 66-75 @6]
       comment r2 Sent { round: 1 } Outdated scope [] "Don't log the path."
       snippet +        41 |        log::debug!("{path:?}");
   gap hidden 69 up 66-69 to fn close down -
@@ -139,9 +142,6 @@ empty None fetch []
       72   73 |    }
       73   74 |
   gap hidden ? up - down 75-75 to fn close
-  file README.md Modified +0 -0 flags [] comments 1
-      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
-      snippet      3    3 |Opens a store.
   file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
       comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
       snippet      1    1 |pub fn gone() {}
@@ -198,6 +198,9 @@ empty None fetch ["README.md"]
 header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
 banners [RoundGone]
 empty None fetch []
+  file README.md Modified +0 -0 flags [] comments 1
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
   file src/store.rs Modified +1 -0 flags [] changed-since comments 3
       comment r2 Sent { round: 1 } Outdated folded scope [] "Don't log the path."
       snippet +        41 |        log::debug!("{path:?}");
@@ -206,9 +209,6 @@ empty None fetch []
       snippet -   10      |        self.open
       snippet +        10 |        self.open [&& !self.closing]
       comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
-  file README.md Modified +0 -0 flags [] comments 1
-      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
-      snippet      3    3 |Opens a store.
   file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
       comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
       snippet      1    1 |pub fn gone() {}

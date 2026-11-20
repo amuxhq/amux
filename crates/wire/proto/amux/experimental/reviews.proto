@@ -118,8 +118,13 @@ message ReviewSummary {
   repeated ReviewRound rounds = 6;
   // What changed from the base commit to the snapshot, by path.
   repeated amux.v1.ChangedFile files = 7;
-  // What changed since the last round, by path; empty before the first.
-  repeated ReviewFileState file_states = 8;
+  reserved 8;
+  // What changed since the last round, by path, as REVIEW_VIEW_SINCE_LAST
+  // compares and limits it: a file the agent put back as it was, or made
+  // and then deleted, is here though `files` no longer lists it. Empty
+  // before the first round, and when the last round's snapshot can no
+  // longer be read.
+  repeated amux.v1.ChangedFile since_last = 16;
   // Drafts and sent comments, each placed on the snapshot.
   repeated ReviewerComment comments = 9;
   // A merge or rebase was under way when the snapshot was taken, so
@@ -158,17 +163,6 @@ message ReviewRound {
   int64 sent_at_ms = 3;
 }
 
-// One file's change since the last round's snapshot, counted from the same
-// comparison REVIEW_VIEW_SINCE_LAST shows.
-message ReviewFileState {
-  string path = 1;
-  // It differs between the last round's snapshot and this one.
-  bool changed_since_last = 2;
-  // Lines added and removed since then; none for a binary file.
-  uint32 added = 3;
-  uint32 removed = 4;
-}
-
 // Which comparison a file's hunks show.
 enum ReviewView {
   REVIEW_VIEW_UNSPECIFIED = 0;
@@ -182,9 +176,11 @@ enum ReviewView {
 // One comparison the review handed out, and the files of it wanted. The
 // host diffs exactly `from` to `snapshot`, after checking both are this
 // review's: `snapshot` one it keeps (a summary's snapshot, the one before
-// it, or a round's), and `from` that snapshot's base commit for
-// REVIEW_VIEW_ALL, or a round's snapshot for REVIEW_VIEW_SINCE_LAST.
-// Anything else is INVALID_ARGUMENT; a snapshot no longer kept, NOT_FOUND.
+// it, or a round's), and `from` a base commit that snapshot has been shown
+// against for REVIEW_VIEW_ALL, or a round's snapshot for
+// REVIEW_VIEW_SINCE_LAST. Anything else is INVALID_ARGUMENT; a snapshot no
+// longer kept, NOT_FOUND. A request names everything its answer depends on,
+// so it answers the same whatever the review's base becomes later.
 message ReviewGetFilesRequest {
   bytes agent_id = 1;
   // The commit the files are shown at: a ReviewSummary.snapshot, or a
@@ -200,6 +196,12 @@ message ReviewGetFilesRequest {
   // lists them. With no files asked for, the answer is the list alone:
   // how a client shows a past round's whole diff, which no summary lists.
   bool list = 6;
+  // For REVIEW_VIEW_SINCE_LAST, which keeps only what is part of the
+  // agent's change on either side: the base commit `snapshot` is shown
+  // against (ReviewSummary.base_commit), and the one the round's snapshot
+  // `from` was (ReviewRound.base_commit). Empty for REVIEW_VIEW_ALL.
+  string base = 7;
+  string from_base = 8;
 }
 
 message ReviewFileRequest {
@@ -379,6 +381,10 @@ message ReviewerComment {
   // Goes up each time a person puts it; a sent review names the revision
   // its text was written from.
   uint64 revision = 8;
+  // The revision the agent took it at, which closed its round: a sent
+  // review naming this comment at this revision is the message that sent
+  // it. Absent while a draft; it stays when a sent comment is edited.
+  optional uint64 sent_revision = 9;
 }
 
 // The lines a comment was written on.

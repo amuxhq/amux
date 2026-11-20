@@ -95,7 +95,13 @@ pub unsafe extern "C" fn amux_review_open(
 #[derive(Deserialize)]
 struct SentRound {
     review_id: Vec<u8>,
-    comment_ids: Vec<Vec<u8>>,
+    comments: Vec<SentComment>,
+}
+
+#[derive(Deserialize)]
+struct SentComment {
+    id: Vec<u8>,
+    revision: u64,
 }
 
 /// Opens the round a review sent into the chat closed: `sent` is the
@@ -117,7 +123,15 @@ pub unsafe extern "C" fn amux_review_round(chat: *const AmuxChat, sent: *const c
     unsafe {
         act(chat, move |chat| async move {
             let sent = sent?;
-            chat.review_round(&sent.review_id, &sent.comment_ids).await
+            let comments: Vec<ui_view::SentCommentRef> = sent
+                .comments
+                .into_iter()
+                .map(|comment| ui_view::SentCommentRef {
+                    id: comment.id,
+                    revision: comment.revision,
+                })
+                .collect();
+            chat.review_round(&sent.review_id, &comments).await
         })
     }
 }

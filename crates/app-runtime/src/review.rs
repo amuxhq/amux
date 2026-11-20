@@ -444,9 +444,9 @@ pub(crate) async fn edit_closed(review: &Review, changes: Vec<ReviewChange>) -> 
     }
 }
 
-/// The page of the round a sent review closed, `review_id` and
-/// `comment_ids` as its attachment names them: its whole diff with the
-/// comments it sent, read from the agent's host as any look at it is; with
+/// The page of the round a sent review closed, `review_id` and the
+/// comments `sent` as its attachment names them: its whole diff, every file
+/// open, with the comments it sent, read from the agent's host as any look at it is; with
 /// the host out of reach, from what this process loaded of it, and the page
 /// says so. With the host out of reach and none of the round loaded, a page
 /// with nothing but that to say. None when the host holds none of the
@@ -454,9 +454,9 @@ pub(crate) async fn edit_closed(review: &Review, changes: Vec<ReviewChange>) -> 
 pub(crate) async fn round_page(
     review: &Review,
     review_id: &[u8],
-    comment_ids: &[Vec<u8>],
+    sent: &[ui_view::SentCommentRef],
 ) -> Option<ReviewPage> {
-    let round = match review.round(review_id, comment_ids).await {
+    let round = match review.round(review_id, sent).await {
         Ok(round) => round?,
         Err(error) if ui_runtime::review::unreachable(&error) => {
             let state = ReviewPageState {
@@ -467,15 +467,11 @@ pub(crate) async fn round_page(
         }
         Err(_) => return None,
     };
-    let state = ReviewPageState {
-        notices: round.notices,
-        ..ReviewPageState::default()
-    };
     Some(ui_view::review_page(
         Some(&round.summary),
         &round.files,
         &[],
-        &state,
+        &round.state,
     ))
 }
 
@@ -1130,10 +1126,15 @@ mod tests {
                     changed_near: false,
                     path: "src/lib.rs".into(),
                 }),
+                revision: 1,
+                sent_revision: Some(1),
                 ..ReviewerComment::default()
             });
         }
-        let sent = [b"sent".to_vec()];
+        let sent = [ui_view::SentCommentRef {
+            id: b"sent".to_vec(),
+            revision: 1,
+        }];
 
         // With the host out of reach before anything was loaded, the page
         // says only that.

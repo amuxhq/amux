@@ -5,8 +5,8 @@
 
 use wire::experimental::reviews1_client::Reviews1Client;
 use wire::experimental::{
-    ReviewEdit, ReviewEditRequest, ReviewFileRequest, ReviewGetFilesRequest,
-    ReviewGetFilesResponse, ReviewOpenRequest, ReviewSummary, ReviewView,
+    ReviewEdit, ReviewEditRequest, ReviewGetFilesRequest, ReviewGetFilesResponse,
+    ReviewOpenRequest, ReviewSummary,
 };
 
 use crate::{Addressed, Conn, RpcError, stub};
@@ -62,24 +62,16 @@ impl AgentReviews {
         Ok(self.stub()?.open(request).await?.into_inner())
     }
 
-    /// The bodies of `files` of the comparison from `from` to `snapshot`
-    /// that `view` names; the files that did not fit are absent from the
-    /// answer. `list` also answers every file the comparison changed.
+    /// The bodies of the files `request` asks for of the comparison it
+    /// names, for this agent; the files that did not fit are absent from the
+    /// answer. With `list`, also every file the comparison changed.
     pub async fn get_files(
         &self,
-        from: &str,
-        snapshot: &str,
-        view: ReviewView,
-        files: Vec<ReviewFileRequest>,
-        list: bool,
+        request: ReviewGetFilesRequest,
     ) -> Result<ReviewGetFilesResponse, RpcError> {
         let request = ReviewGetFilesRequest {
             agent_id: self.agent_id.clone(),
-            snapshot: snapshot.to_owned(),
-            view: view as i32,
-            files,
-            from: from.to_owned(),
-            list,
+            ..request
         };
         Ok(self.stub()?.get_files(request).await?.into_inner())
     }

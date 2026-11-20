@@ -12,10 +12,12 @@
 //! other callers are not held up behind a large change. A file too large
 //! to show is never highlighted.
 //!
-//! A call names the comparison it reads: the snapshot shown, and the commit
-//! compared against. Both must be commits the review handed out, so a page
-//! reads exactly what its summary described, whatever the review's base has
-//! become since.
+//! A call names the comparison it reads: the snapshot shown, the commit
+//! compared against, and for what changed since a round the base each of
+//! the two was shown against. Each must be one the review handed out, and
+//! the review keeps every base a snapshot it keeps was shown against, so a
+//! page reads exactly what its summary described, whatever the review's
+//! base has become since, and a request answers the same each time.
 //!
 //! An answer holds at most [`MOST_FILES`] files and [`MOST_BYTES`]
 //! encoded; the files past either are left out, for the client to ask for
@@ -97,27 +99,31 @@ const WHOLE_FILE: u32 = 1 << 24;
 pub(crate) async fn get_files(
     runtime: &Arc<ProfileRuntime>,
     row: AgentRow,
-    request: ReviewGetFilesRequest,
+    mut request: ReviewGetFilesRequest,
     _caller: &Caller,
 ) -> Result<ReviewGetFilesResponse, Status> {
+    let asked: Vec<ReviewFileRequest> = std::mem::take(&mut request.files)
+        .into_iter()
+        .take(MOST_FILES)
+        .collect();
     let repo = Repo::of(runtime, &row)?;
     let review = review_of(runtime, &row).await?;
     let view = request.view();
-    let (taken, since) = comparison(&review, view, &request.from, &request.snapshot)?;
+    let (taken, since) = comparison(&review, view, &request)?;
     let snapshot = taken.commit.clone();
     let from = request.from.clone();
 
     let mut answer = ReviewGetFilesResponse::default();
     if request.list {
-        let all = super::listed(&repo.cwd, &repo.store, taken, &taken.base_commit).await?;
         answer.changed = match since {
-            Some(last) => super::listed_since(&repo.cwd, &repo.store, last, taken, &all).await?,
-            None if from == taken.base_commit => all,
+            Some((last, now)) => {
+                let all = super::listed(&repo.cwd, &repo.store, taken, now.base).await?;
+                super::listed_since(&repo.cwd, &repo.store, last, now, &taken.omitted, &all).await?
+            }
             None => super::listed(&repo.cwd, &repo.store, taken, &from).await?,
         };
     }
 
-    let asked: Vec<ReviewFileRequest> = request.files.into_iter().take(MOST_FILES).collect();
     // A file the snapshot left out for its size holds only what the index
     // had, so it is not shown at all.
     let shown: Vec<&str> = asked
@@ -127,22 +133,16 @@ pub(crate) async fn get_files(
         .collect();
     let diffed = match since {
         _ if shown.is_empty() => Vec::new(),
-        Some(last) => {
-            let now = Shown {
-                base: &taken.base_commit,
-                snapshot: &snapshot,
-            };
-            compare::since_last(
-                &repo.cwd,
-                &repo.store,
-                last,
-                now,
-                Some(&shown),
-                HUNK_CONTEXT,
-            )
-            .await
-            .map_err(compared)?
-        }
+        Some((last, now)) => compare::since_last(
+            &repo.cwd,
+            &repo.store,
+            last,
+            now,
+            Some(&shown),
+            HUNK_CONTEXT,
+        )
+        .await
+        .map_err(compared)?,
         None => compare::hunks(
             &repo.cwd,
             &repo.store,
@@ -228,14 +228,15 @@ pub(crate) async fn get_files(
 }
 
 /// The comparison a GetFiles call names, checked against what the review
-/// handed out: the snapshot shown, one the review keeps, and for what
-/// changed since a round, that round as since-last compares against it.
+/// handed out: the snapshot shown, one the review keeps; and for what
+/// changed since a round, that round and the snapshot, each with the base
+/// it was shown against, as since-last compares them.
 fn comparison<'a>(
     review: &'a Review,
     view: ReviewView,
-    from: &str,
-    snapshot: &str,
-) -> Result<(&'a Taken, Option<Shown<'a>>), Status> {
+    request: &'a ReviewGetFilesRequest,
+) -> Result<(&'a Taken, Option<(Shown<'a>, Shown<'a>)>), Status> {
+    let (from, snapshot) = (request.from.as_str(), request.snapshot.as_str());
     let Some(taken) = review.snapshot(snapshot) else {
         return Err(refused(
             ErrorCode::NotFound,
@@ -243,11 +244,12 @@ fn comparison<'a>(
         ));
     };
     match view {
-        // From the snapshot's own base, or for a round's snapshot the base
-        // that round records (one and the same, as the round took it from
-        // the snapshot when it closed).
+        // From a base the snapshot has been shown against, or for a
+        // round's snapshot the base that round records (one of those, as
+        // the round took it from the snapshot when it closed).
         ReviewView::All => {
             let base = from == taken.base_commit
+                || taken.bases.iter().any(|base| base == from)
                 || review
                     .rounds
                     .iter()
@@ -261,18 +263,30 @@ fn comparison<'a>(
             }
         }
         ReviewView::SinceLast => {
+            let base = request.base.as_str();
+            if base != taken.base_commit && !taken.bases.iter().any(|shown| shown == base) {
+                return Err(refused(
+                    ErrorCode::InvalidArgument,
+                    format!("{snapshot} has not been shown against the base commit {base:?}"),
+                ));
+            }
             match review
                 .rounds
                 .iter()
-                .rev()
-                .find(|round| round.snapshot == from)
+                .find(|round| round.snapshot == from && round.base_commit == request.from_base)
             {
                 Some(round) => Ok((
                     taken,
-                    Some(Shown {
-                        base: &round.base_commit,
-                        snapshot: &round.snapshot,
-                    }),
+                    Some((
+                        Shown {
+                            base: &round.base_commit,
+                            snapshot: &round.snapshot,
+                        },
+                        Shown {
+                            base,
+                            snapshot: &taken.commit,
+                        },
+                    )),
                 )),
                 None if review.rounds.is_empty() => Err(refused(
                     ErrorCode::InvalidArgument,
@@ -280,7 +294,10 @@ fn comparison<'a>(
                 )),
                 None => Err(refused(
                     ErrorCode::InvalidArgument,
-                    format!("{from} is not a round's snapshot to compare {snapshot} with"),
+                    format!(
+                        "{from} shown against {:?} is not a round to compare {snapshot} with",
+                        request.from_base
+                    ),
                 )),
             }
         }

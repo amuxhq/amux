@@ -22,8 +22,8 @@ use tokio::sync::watch;
 use wire::ErrorCode;
 use wire::experimental::{
     REVIEW_ROW, ReviewAnchor, ReviewComparedLines, ReviewEdit, ReviewFileDiff, ReviewFileRequest,
-    ReviewLine, ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSummary, ReviewView,
-    ReviewerComment, review_placement,
+    ReviewGetFilesRequest, ReviewLine, ReviewLineRange, ReviewPlacement, ReviewRound,
+    ReviewSummary, ReviewView, ReviewerComment, review_placement,
 };
 
 use crate::Session;
@@ -136,13 +136,21 @@ impl RowMark {
 }
 
 /// One comparison a review handed out, as GetFiles names it: the files of
-/// `snapshot`, compared with `from` as `view` shows them. Every body read
-/// is of one comparison, and kept by it.
+/// `snapshot`, compared with `from` as `view` shows them; for what changed
+/// since a round, with the base commit each of the two was shown against,
+/// which decide what of the change is the agent's. It names everything an
+/// answer depends on, so the same comparison always answers the same:
+/// every body read is of one comparison, and kept by it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Comparison {
     pub from: String,
     pub snapshot: String,
     pub view: ReviewView,
+    /// For since-last, the base `snapshot` was shown against; else empty.
+    pub base: String,
+    /// For since-last, the base the round's snapshot `from` was shown
+    /// against; else empty.
+    pub from_base: String,
 }
 
 impl Comparison {
@@ -150,14 +158,24 @@ impl Comparison {
     /// recorded with its snapshot; or what changed since the last round,
     /// from that round's snapshot. None for the second before any round.
     pub fn shown(summary: &ReviewSummary, view: ReviewView) -> Option<Comparison> {
-        let from = match view {
-            ReviewView::SinceLast => summary.rounds.last()?.snapshot.clone(),
-            _ => summary.base_commit.clone(),
-        };
-        Some(Comparison {
-            from,
-            snapshot: summary.snapshot.clone(),
-            view,
+        Some(match view {
+            ReviewView::SinceLast => {
+                let last = summary.rounds.last()?;
+                Comparison {
+                    from: last.snapshot.clone(),
+                    snapshot: summary.snapshot.clone(),
+                    view,
+                    base: summary.base_commit.clone(),
+                    from_base: last.base_commit.clone(),
+                }
+            }
+            _ => Comparison {
+                from: summary.base_commit.clone(),
+                snapshot: summary.snapshot.clone(),
+                view,
+                base: String::new(),
+                from_base: String::new(),
+            },
         })
     }
 
@@ -168,18 +186,42 @@ impl Comparison {
             from: round.base_commit.clone(),
             snapshot: round.snapshot.clone(),
             view: ReviewView::All,
+            base: String::new(),
+            from_base: String::new(),
         }
     }
 
     /// The comparison a composed page shows, as its header names it.
     pub fn of_page(header: &ui_view::ReviewHeader) -> Comparison {
+        let since = header.view == ui_view::ReviewView::SinceLast;
+        let only_since = |commit: &str| match since {
+            true => commit.to_owned(),
+            false => String::new(),
+        };
         Comparison {
             from: header.compared_with.clone(),
             snapshot: header.snapshot.clone(),
-            view: match header.view {
-                ui_view::ReviewView::All => ReviewView::All,
-                ui_view::ReviewView::SinceLast => ReviewView::SinceLast,
+            view: match since {
+                false => ReviewView::All,
+                true => ReviewView::SinceLast,
             },
+            base: only_since(&header.base_commit),
+            from_base: only_since(&header.compared_base),
+        }
+    }
+
+    /// The GetFiles request reading `files` of this comparison; with
+    /// `list`, also every file it changed.
+    fn request(&self, files: Vec<ReviewFileRequest>, list: bool) -> ReviewGetFilesRequest {
+        ReviewGetFilesRequest {
+            snapshot: self.snapshot.clone(),
+            view: self.view as i32,
+            files,
+            from: self.from.clone(),
+            list,
+            base: self.base.clone(),
+            from_base: self.from_base.clone(),
+            ..ReviewGetFilesRequest::default()
         }
     }
 }
@@ -192,12 +234,17 @@ pub struct Round {
     /// the comments it sent, each on its lines of that snapshot. Composed
     /// with no view chosen, it shows the round's whole diff.
     pub summary: ReviewSummary,
-    /// The bodies fetched of the files its page shows open.
+    /// The bodies fetched of its files.
     pub files: Vec<ReviewFileDiff>,
     /// What reading it taught the page: the host out of reach, so this is
     /// what the process had loaded; or the round's snapshot gone from the
     /// host, so its comments show with the code stored with them.
     pub notices: Vec<ui_view::ReviewNotice>,
+    /// What its page is composed with: those notices, and every file open.
+    /// A past round is read to see what was sent, so a file the review
+    /// folds by default, generated, vendored or a lockfile, opens with its
+    /// body and the comments on it like any other.
+    pub state: ui_view::ReviewPageState,
 }
 
 /// One agent's review. Made from its chat's [`Session`]; every one made in
@@ -446,13 +493,7 @@ impl Review {
                 .collect();
             let answer = self
                 .reviews
-                .get_files(
-                    &comparison.from,
-                    &comparison.snapshot,
-                    comparison.view,
-                    requests,
-                    false,
-                )
+                .get_files(comparison.request(requests, false))
                 .await;
             let answer = self.answered(answer.map_err(ReviewError::of))?;
             let mut landed = 0;
@@ -517,13 +558,7 @@ impl Review {
         }
         let answer = self
             .reviews
-            .get_files(
-                &comparison.from,
-                &comparison.snapshot,
-                comparison.view,
-                Vec::new(),
-                true,
-            )
+            .get_files(comparison.request(Vec::new(), true))
             .await
             .map_err(ReviewError::of);
         let listed: Arc<[wire::ChangedFile]> = match self.answered(answer) {
@@ -563,13 +598,7 @@ impl Review {
         };
         let answer = self
             .reviews
-            .get_files(
-                &comparison.from,
-                &comparison.snapshot,
-                comparison.view,
-                vec![request],
-                false,
-            )
+            .get_files(comparison.request(vec![request], false))
             .await;
         let answer = self.answered(answer.map_err(ReviewError::of))?;
         let Some(file) = answer.files.into_iter().find(|file| file.path == path) else {
@@ -603,33 +632,35 @@ impl Review {
     }
 
     /// The round a sent review closed, read for its page: the review as its
-    /// host holds it now, without changing it, and of it the round in which
-    /// the comments `comment_ids` were sent, whose whole diff is listed and
-    /// the bodies its page shows open fetched. The host records a round on
-    /// its latest snapshot when the agent takes the message, so the round
-    /// is found by its comments, not by the snapshot the sender named.
+    /// host holds it now, without changing it, and of it the round that
+    /// message closed, the one whose comments the agent took at the
+    /// revisions `sent` names; its whole diff is listed and the body of
+    /// every file it shows fetched. The host records a round on its latest
+    /// snapshot when the agent takes the message, so the round is found by
+    /// its comments, not by the snapshot the sender named.
     ///
     /// With the host out of reach, the round is read from what this process
     /// loaded, and the error is the host's when that holds none of it. When
     /// the host no longer keeps the round's snapshot, its comments show with
-    /// the code stored with them. None when the review holds none of the
-    /// comments, as after starting over or deleting them, and the chat
-    /// shows the text the agent read instead.
+    /// the code stored with them. None when the message closed no round (its
+    /// comments were edited before the agent took it, and a later message
+    /// sent them), or the review holds none of them, as after starting over
+    /// or deleting them, and the chat shows the text the agent read instead.
     pub async fn round(
         &self,
         review_id: &[u8],
-        comment_ids: &[Vec<u8>],
+        sent: &[ui_view::SentCommentRef],
     ) -> Result<Option<Round>, ReviewError> {
         let mut notices = Vec::new();
         let (summary, (number, mut round)) = match self.read().await {
-            Ok(summary) => match round_of(&summary, review_id, comment_ids) {
+            Ok(summary) => match round_of(&summary, review_id, sent) {
                 Some(round) => (summary, round),
                 None => return Ok(None),
             },
             Err(error) if unreachable(&error) => {
                 notices.push(ui_view::ReviewNotice::Unreachable);
                 let held = self.summary().and_then(|summary| {
-                    let round = round_of(&summary, review_id, comment_ids)?;
+                    let round = round_of(&summary, review_id, sent)?;
                     Some((summary, round))
                 });
                 match held {
@@ -656,6 +687,12 @@ impl Review {
         }
         let state = ui_view::ReviewPageState {
             notices: notices.clone(),
+            toggled_files: round
+                .files
+                .iter()
+                .filter(|file| file.flags().next().is_some())
+                .map(|file| file.path.clone())
+                .collect(),
             ..ui_view::ReviewPageState::default()
         };
         let wanted = ui_view::review_page(Some(&round), &[], &[], &state).to_fetch;
@@ -672,6 +709,7 @@ impl Review {
                 .map(|file| ReviewFileDiff::clone(file))
                 .collect(),
             notices,
+            state,
         }))
     }
 
@@ -791,25 +829,32 @@ fn written_on(anchor: &ReviewAnchor, snapshot: &str) -> ReviewPlacement {
     }
 }
 
-/// The round of `summary`, the review as its host holds it now, that sent
-/// the comments `comment_ids` of the review `review_id`, as a review of its
-/// own, and its number: the round's snapshot compared with the base commit
-/// it was recorded with, and of the comments it sent those still on the
-/// review, each on the lines it was written on. The round's files are for
-/// the caller to list ([`Review::list`]). None when `summary` is of another
-/// review, as after starting over, or holds none of the comments.
+/// The round of `summary`, the review as its host holds it now, that a
+/// message sending the comments `sent` of the review `review_id` closed, as
+/// a review of its own, and its number: the round whose comments the agent
+/// took at exactly the revisions the message named. It is the round's
+/// snapshot compared with the base commit it was recorded with, and of the
+/// comments that message sent those still on the review, each on the lines
+/// it was written on. The round's files are for the caller to list
+/// ([`Review::list`]). None when `summary` is of another review, as after
+/// starting over, or when the message closed no round of it: a comment it
+/// carried was edited before the agent took it, so another message sent it.
 pub fn round_of(
     summary: &ReviewSummary,
     review_id: &[u8],
-    comment_ids: &[Vec<u8>],
+    sent: &[ui_view::SentCommentRef],
 ) -> Option<(u32, ReviewSummary)> {
     if summary.id != review_id || review_id.is_empty() {
         return None;
     }
+    let delivered = |comment: &ReviewerComment| {
+        sent.iter()
+            .any(|sent| sent.id == comment.id && comment.sent_revision == Some(sent.revision))
+    };
     let number = summary
         .comments
         .iter()
-        .filter(|comment| comment_ids.contains(&comment.id))
+        .filter(|comment| delivered(comment))
         .filter_map(|comment| comment.round)
         .min()?;
     let round = (number as usize)
@@ -818,7 +863,7 @@ pub fn round_of(
     let comments = summary
         .comments
         .iter()
-        .filter(|comment| comment.round == Some(number) && comment_ids.contains(&comment.id))
+        .filter(|comment| comment.round == Some(number) && delivered(comment))
         .map(|comment| ReviewerComment {
             // Where it sits on a later snapshot is not where it was sent.
             placement: comment
@@ -975,7 +1020,11 @@ impl FileKey {
 }
 
 fn comparison_size(comparison: &Comparison) -> usize {
-    comparison.from.len() + comparison.snapshot.len() + 4
+    comparison.from.len()
+        + comparison.snapshot.len()
+        + comparison.base.len()
+        + comparison.from_base.len()
+        + 4
 }
 
 /// Lines of one file of one commit.

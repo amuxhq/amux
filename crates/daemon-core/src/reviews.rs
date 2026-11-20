@@ -82,12 +82,15 @@ pub enum Change {
     },
     /// Compares the review with another branch from now on.
     Base { base_branch: String },
-    /// The snapshot `snapshot` is compared against `base_commit` for all
-    /// changes from now on: a person picked another base, or the base rule
-    /// found another, without a snapshot being taken.
+    /// The snapshot `snapshot` is compared against `base_commit`, named
+    /// `base_name`, for all changes from now on: a person picked another
+    /// base, or the base rule found another, without a snapshot being
+    /// taken. The bases it was shown against before stay ones the review
+    /// answers comparisons from.
     Rebased {
         snapshot: String,
         base_commit: String,
+        base_name: String,
     },
     /// A snapshot was taken: it is the latest, the tree has not moved since
     /// it, and once the write's other changes are made the review forgets
@@ -98,6 +101,8 @@ pub enum Change {
         /// The commit its all changes run from, as the base rule found it
         /// when it was taken.
         base_commit: String,
+        /// The base branch as a summary names it, found with the commit.
+        base_name: String,
         /// The paths left out of it for their size.
         omitted: Vec<String>,
         /// A merge or rebase was under way.
@@ -489,18 +494,19 @@ fn apply_one(
         Change::Rebased {
             snapshot,
             base_commit,
+            base_name,
         } => {
-            if review
-                .snapshot(snapshot)
-                .is_some_and(|taken| taken.base_commit != *base_commit)
-            {
-                writer.set_snapshot_base(&review.id, snapshot, base_commit)?;
+            if review.snapshot(snapshot).is_some_and(|taken| {
+                taken.base_commit != *base_commit || taken.base_name != *base_name
+            }) {
+                writer.set_snapshot_base(&review.id, snapshot, base_commit, base_name)?;
                 effect.changed = true;
             }
         }
         Change::Snapshot {
             commit,
             base_commit,
+            base_name,
             omitted,
             merging,
         } => {
@@ -509,6 +515,8 @@ fn apply_one(
                 &Taken {
                     commit: commit.clone(),
                     base_commit: base_commit.clone(),
+                    base_name: base_name.clone(),
+                    bases: vec![base_commit.clone()],
                     taken_ms: now_ms,
                     omitted: omitted.clone(),
                     merging: *merging,
@@ -528,6 +536,7 @@ fn apply_one(
                 Some(_) => return Err(CallError::Review(Refusal::Taken(put.comment.clone()))),
             };
             let round = held.and_then(|comment| comment.round);
+            let sent_revision = held.and_then(|comment| comment.sent_revision);
             let revision = held.map_or(0, |comment| comment.revision) + 1;
             writer.put_comment(
                 &review.id,
@@ -539,6 +548,7 @@ fn apply_one(
                     scope: put.scope.clone(),
                     round,
                     revision,
+                    sent_revision,
                     updated_ms: now_ms,
                 },
             )?;
@@ -604,6 +614,7 @@ fn apply_one(
                     &review.id,
                     &Comment {
                         round: Some(n),
+                        sent_revision: Some(draft.revision),
                         ..draft.clone()
                     },
                 )?;

@@ -52,7 +52,7 @@ final class ReviewPageChoice: XCTestCase {
             banners: banners, rows: [], toFetch: [], opening: false, empty: .nothing,
             header: ReviewHeader(
                 baseBranch: "main", baseCommit: "a41f2b7", snapshot: "5e1d0c9", view: .all,
-                comparedWith: "a41f2b7", views: [ReviewViewTab(view: .all, files: 0)], rounds: 0, files: 0,
+                comparedWith: "a41f2b7", comparedBase: "", views: [ReviewViewTab(view: .all, files: 0)], rounds: 0, files: 0,
                 added: 0, removed: 0, drafts: 0, sent: 0, discardDrafts: false, startOver: true))
     }
 }

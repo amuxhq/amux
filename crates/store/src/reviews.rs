@@ -32,10 +32,17 @@ CREATE TABLE IF NOT EXISTS exp_reviews_1_snapshots (
   review_id BLOB    NOT NULL,
   snapshot  TEXT    NOT NULL,               -- the snapshot's commit
   base_commit TEXT  NOT NULL,               -- the commit its all changes run from, as found when it was taken
+  base_name TEXT    NOT NULL,               -- the base branch as a summary names it, found with base_commit
   taken_ms  INTEGER NOT NULL,
   omitted   BLOB    NOT NULL,               -- the paths left out for their size, each ended by a NUL
   merging   INTEGER NOT NULL,               -- a merge or rebase was under way when it was taken
   PRIMARY KEY (review_id, snapshot)
+) STRICT;
+CREATE TABLE IF NOT EXISTS exp_reviews_1_bases (
+  review_id   BLOB NOT NULL,
+  snapshot    TEXT NOT NULL,                -- a snapshot the review keeps
+  base_commit TEXT NOT NULL,                -- a commit a summary showed it against, its current base among them
+  PRIMARY KEY (review_id, snapshot, base_commit)
 ) STRICT;
 CREATE TABLE IF NOT EXISTS exp_reviews_1_rounds (
   review_id   BLOB    NOT NULL,
@@ -57,6 +64,7 @@ CREATE TABLE IF NOT EXISTS exp_reviews_1_comments (
   scope         BLOB    NOT NULL,             -- amux.experimental.ReviewDefinition, each length-delimited
   round         INTEGER,                      -- the round it was sent in; NULL while a draft
   revision      INTEGER NOT NULL,             -- from 1, up by one each time a person puts it
+  sent_revision INTEGER,                      -- the revision the agent took it at; NULL while a draft
   updated_ms    INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS exp_reviews_1_comments_by_review ON exp_reviews_1_comments (review_id);
@@ -90,6 +98,12 @@ pub struct Taken {
     /// The commit its all changes run from, as the review's base rule found
     /// it when the snapshot was taken (or its base was picked again).
     pub base_commit: String,
+    /// The base branch as a summary of it names it, found with
+    /// `base_commit`: what is shown without asking git again.
+    pub base_name: String,
+    /// Every base commit a summary has shown it against, `base_commit`
+    /// among them: each comparison handed out stays one the review answers.
+    pub bases: Vec<String>,
     pub taken_ms: i64,
     /// The paths left out of it for their size, from the repository's top
     /// folder.
@@ -138,6 +152,9 @@ pub struct Comment {
     /// From 1, up by one each time a person puts it: a sent review names
     /// the revision it was written from.
     pub revision: u64,
+    /// The revision the agent took it at, which closed its round; none
+    /// while a draft.
+    pub sent_revision: Option<u64>,
     pub updated_ms: i64,
 }
 
@@ -208,16 +225,21 @@ impl Sqlite {
         }
         self.read(|rows| {
             let mut statement = rows.conn.prepare_cached(
-                "SELECT r.agent_id, s.snapshot, s.base_commit, s.taken_ms, s.omitted, s.merging \
-                 FROM exp_reviews_1_reviews r JOIN exp_reviews_1_snapshots s \
+                "SELECT r.agent_id, s.snapshot, s.base_commit, s.base_name, s.taken_ms, s.omitted, \
+                 s.merging FROM exp_reviews_1_reviews r JOIN exp_reviews_1_snapshots s \
                  ON s.review_id = r.id \
                  WHERE s.rowid = (SELECT max(rowid) FROM exp_reviews_1_snapshots \
                                   WHERE review_id = r.id) \
                  ORDER BY r.agent_id",
             )?;
-            let found = statement
-                .query_map([], |row| Ok((row.get(0)?, taken(row, 1)?)))?
+            let mut found = statement
+                .query_map([], |row| Ok((row.get::<_, Vec<u8>>(0)?, taken(row, 1)?)))?
                 .collect::<Result<Vec<_>, _>>()?;
+            for (agent, taken) in &mut found {
+                if let Some(review) = review_id(rows, agent)? {
+                    taken.bases = bases(rows, &review, &taken.commit)?;
+                }
+            }
             Ok(found)
         })
     }
@@ -325,8 +347,9 @@ impl ReviewWriter<'_> {
         Ok(())
     }
 
-    /// Records `taken` as the review's latest snapshot; one it took before
-    /// becomes the latest again.
+    /// Records `taken` as the review's latest snapshot, shown against its
+    /// base commit; one it took before becomes the latest again, keeping
+    /// the bases it was shown against.
     pub fn add_snapshot(&self, review: &[u8], taken: &Taken) -> Result<(), StoreError> {
         self.rows.conn.execute(
             "DELETE FROM exp_reviews_1_snapshots WHERE review_id = ?1 AND snapshot = ?2",
@@ -334,31 +357,43 @@ impl ReviewWriter<'_> {
         )?;
         self.rows.conn.execute(
             "INSERT INTO exp_reviews_1_snapshots \
-             (review_id, snapshot, base_commit, taken_ms, omitted, merging) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+             (review_id, snapshot, base_commit, base_name, taken_ms, omitted, merging) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 review,
                 taken.commit,
                 taken.base_commit,
+                taken.base_name,
                 taken.taken_ms,
                 encode_paths(&taken.omitted),
                 taken.merging
             ],
         )?;
-        Ok(())
+        self.add_base(review, &taken.commit, &taken.base_commit)
     }
 
-    /// Records `base_commit` as what the snapshot `snapshot` is compared
-    /// against for all changes from now on.
+    /// Records `base_commit`, named `base_name`, as what the snapshot
+    /// `snapshot` is compared against for all changes from now on; the
+    /// bases it was shown against before stay its.
     pub fn set_snapshot_base(
         &self,
         review: &[u8],
         snapshot: &str,
         base_commit: &str,
+        base_name: &str,
     ) -> Result<(), StoreError> {
         self.rows.conn.execute(
-            "UPDATE exp_reviews_1_snapshots SET base_commit = ?3 \
+            "UPDATE exp_reviews_1_snapshots SET base_commit = ?3, base_name = ?4 \
              WHERE review_id = ?1 AND snapshot = ?2",
+            params![review, snapshot, base_commit, base_name],
+        )?;
+        self.add_base(review, snapshot, base_commit)
+    }
+
+    fn add_base(&self, review: &[u8], snapshot: &str, base_commit: &str) -> Result<(), StoreError> {
+        self.rows.conn.execute(
+            "INSERT OR IGNORE INTO exp_reviews_1_bases (review_id, snapshot, base_commit) \
+             VALUES (?1, ?2, ?3)",
             params![review, snapshot, base_commit],
         )?;
         Ok(())
@@ -373,10 +408,12 @@ impl ReviewWriter<'_> {
             .query_map(params![review], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for commit in held.iter().filter(|commit| !kept.contains(*commit)) {
-            self.rows.conn.execute(
-                "DELETE FROM exp_reviews_1_snapshots WHERE review_id = ?1 AND snapshot = ?2",
-                params![review, commit],
-            )?;
+            for table in ["exp_reviews_1_snapshots", "exp_reviews_1_bases"] {
+                self.rows.conn.execute(
+                    &format!("DELETE FROM {table} WHERE review_id = ?1 AND snapshot = ?2"),
+                    params![review, commit],
+                )?;
+            }
         }
         Ok(())
     }
@@ -387,14 +424,14 @@ impl ReviewWriter<'_> {
         self.rows.conn.execute(
             "INSERT INTO exp_reviews_1_comments \
              (id, review_id, anchor_commit, path, start_line, end_line, text, snippet, scope, \
-              round, revision, updated_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+              round, revision, sent_revision, updated_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
              ON CONFLICT (id) DO UPDATE SET \
              anchor_commit = excluded.anchor_commit, path = excluded.path, \
              start_line = excluded.start_line, end_line = excluded.end_line, \
              text = excluded.text, snippet = excluded.snippet, scope = excluded.scope, \
              round = excluded.round, revision = excluded.revision, \
-             updated_ms = excluded.updated_ms",
+             sent_revision = excluded.sent_revision, updated_ms = excluded.updated_ms",
             params![
                 comment.id,
                 review,
@@ -408,6 +445,7 @@ impl ReviewWriter<'_> {
                 comment.round,
                 // SQLite's integers are signed; no comment is put 2^63 times.
                 comment.revision as i64,
+                comment.sent_revision.map(|revision| revision as i64),
                 comment.updated_ms
             ],
         )?;
@@ -475,6 +513,7 @@ pub(crate) fn remove_agent(rows: &Rows<'_>, agent: &[u8]) -> Result<(), StoreErr
         "exp_reviews_1_comments",
         "exp_reviews_1_rounds",
         "exp_reviews_1_snapshots",
+        "exp_reviews_1_bases",
     ] {
         rows.conn
             .prepare_cached(&format!("DELETE FROM {table} WHERE review_id = ?1"))?
@@ -521,11 +560,14 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
     review.snapshots = rows
         .conn
         .prepare_cached(
-            "SELECT snapshot, base_commit, taken_ms, omitted, merging FROM exp_reviews_1_snapshots \
-             WHERE review_id = ?1 ORDER BY rowid",
+            "SELECT snapshot, base_commit, base_name, taken_ms, omitted, merging \
+             FROM exp_reviews_1_snapshots WHERE review_id = ?1 ORDER BY rowid",
         )?
         .query_map(params![review.id], |row| taken(row, 0))?
         .collect::<Result<_, _>>()?;
+    for taken in &mut review.snapshots {
+        taken.bases = bases(rows, &review.id, &taken.commit)?;
+    }
     review.rounds = rows
         .conn
         .prepare_cached(
@@ -545,7 +587,8 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
         .conn
         .prepare_cached(
             "SELECT id, anchor_commit, path, start_line, end_line, text, snippet, scope, round, \
-             revision, updated_ms FROM exp_reviews_1_comments WHERE review_id = ?1 ORDER BY rowid",
+             revision, sent_revision, updated_ms FROM exp_reviews_1_comments \
+             WHERE review_id = ?1 ORDER BY rowid",
         )?
         .query_map(params![review.id], |row| {
             Ok((
@@ -562,7 +605,10 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
                     scope: Vec::new(),
                     round: row.get(8)?,
                     revision: row.get::<_, i64>(9)? as u64,
-                    updated_ms: row.get(10)?,
+                    sent_revision: row
+                        .get::<_, Option<i64>>(10)?
+                        .map(|revision| revision as u64),
+                    updated_ms: row.get(11)?,
                 },
                 row.get::<_, Vec<u8>>(6)?,
                 row.get::<_, Vec<u8>>(7)?,
@@ -580,15 +626,31 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
     Ok(Some(review))
 }
 
+/// Every base commit the snapshot `snapshot` of `review` has been shown
+/// against, in the order it was.
+fn bases(rows: &Rows<'_>, review: &[u8], snapshot: &str) -> Result<Vec<String>, StoreError> {
+    Ok(rows
+        .conn
+        .prepare_cached(
+            "SELECT base_commit FROM exp_reviews_1_bases WHERE review_id = ?1 AND snapshot = ?2 \
+             ORDER BY rowid",
+        )?
+        .query_map(params![review, snapshot], |row| row.get(0))?
+        .collect::<Result<_, _>>()?)
+}
+
 /// A snapshot from the row's columns starting at `at`: commit, base
-/// commit, time, omitted paths and the merging flag.
+/// commit, base name, time, omitted paths and the merging flag. Its bases
+/// are read apart.
 fn taken(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<Taken> {
     Ok(Taken {
         commit: row.get(at)?,
         base_commit: row.get(at + 1)?,
-        taken_ms: row.get(at + 2)?,
-        omitted: decode_paths(&row.get::<_, Vec<u8>>(at + 3)?),
-        merging: row.get(at + 4)?,
+        base_name: row.get(at + 2)?,
+        bases: Vec::new(),
+        taken_ms: row.get(at + 3)?,
+        omitted: decode_paths(&row.get::<_, Vec<u8>>(at + 4)?),
+        merging: row.get(at + 5)?,
     })
 }
 

@@ -1481,7 +1481,7 @@ fn the_review_page_moves_with_the_chats_deltas_through_the_c_abi() {
         "review_id": [1, 2],
         "round": 1,
         "snapshot": "5".repeat(40),
-        "comment_ids": [[3]],
+        "comments": [{"id": [3], "revision": 1}],
     })
     .to_string());
     // SAFETY: the chat is open; the string lives for the call.

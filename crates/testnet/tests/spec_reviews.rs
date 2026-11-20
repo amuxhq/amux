@@ -18,8 +18,8 @@ use node::Launch;
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, HostDecl, Net, NetOptions, Topology, until};
 use wire::experimental::{
-    REVIEW_ROW, ReviewAnchor, ReviewEdit, ReviewFileRequest, ReviewLineKind, ReviewLineRange,
-    ReviewPutComment, ReviewRowEntry, ReviewSummary, ReviewView, review_edit,
+    REVIEW_ROW, ReviewAnchor, ReviewEdit, ReviewFileRequest, ReviewGetFilesRequest, ReviewLineKind,
+    ReviewLineRange, ReviewPutComment, ReviewRowEntry, ReviewSummary, ReviewView, review_edit,
 };
 use wire::{AgentRef, ErrorCode, MessageBody};
 
@@ -194,16 +194,16 @@ async fn a_person_on_another_host_reviews_an_agent_through_the_carrier() {
     assert_eq!(first.drafts, 0);
 
     let files = reviews
-        .get_files(
-            &opened.base_commit,
-            &opened.snapshot,
-            ReviewView::All,
-            vec![ReviewFileRequest {
+        .get_files(ReviewGetFilesRequest {
+            from: opened.base_commit.clone(),
+            snapshot: opened.snapshot.clone(),
+            view: ReviewView::All as i32,
+            files: vec![ReviewFileRequest {
                 path: "README.md".to_owned(),
                 ..ReviewFileRequest::default()
             }],
-            false,
-        )
+            ..ReviewGetFilesRequest::default()
+        })
         .await
         .unwrap();
     let added: Vec<&str> = files

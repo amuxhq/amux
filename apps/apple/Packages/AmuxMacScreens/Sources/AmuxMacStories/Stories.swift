@@ -833,7 +833,7 @@ public enum Stories {
     ) -> ReviewHeader {
         ReviewHeader(
             baseBranch: "main", baseCommit: base, snapshot: at, view: view,
-            comparedWith: view == .all ? base : lastRound,
+            comparedWith: view == .all ? base : lastRound, comparedBase: view == .all ? "" : base,
             views: [ReviewViewTab(view: .all, files: allFiles)]
                 + (rounds > 0 ? [ReviewViewTab(view: .sinceLast, files: sinceFiles)] : []),
             rounds: rounds, files: files, added: added, removed: removed, drafts: drafts, sent: sent,
@@ -850,7 +850,10 @@ public enum Stories {
                     comments: 2,
                     review: SentReviewRef(
                         reviewId: Array("review".utf8), round: 1,
-                        commentIds: [Array("sent-dial".utf8), Array("sent-settled".utf8)]),
+                        comments: [
+                            SentCommentRef(id: Array("sent-dial".utf8), revision: 1),
+                            SentCommentRef(id: Array("sent-settled".utf8), revision: 1),
+                        ]),
                     text: sentText)),
             ],
             steered: false)),

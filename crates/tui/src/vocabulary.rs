@@ -500,6 +500,7 @@ fn store_comment(
             path: "src/store.rs".into(),
         }),
         revision: 1,
+        sent_revision: round.map(|_| 1),
     }
 }
 
@@ -594,7 +595,7 @@ pub fn review_first_look() -> crate::chat::review::Page {
 /// store's `fn close` changed again.
 pub fn review_since_last() -> crate::chat::review::Page {
     use wire::experimental::review_placement::At;
-    use wire::experimental::{ReviewFileState, ReviewRound, ReviewSummary};
+    use wire::experimental::{ReviewRound, ReviewSummary};
     let mut sent = store_comment(
         "sent-open",
         REVIEW_ROUND,
@@ -642,12 +643,13 @@ pub fn review_since_last() -> crate::chat::review::Page {
             base_commit: REVIEW_BASE.into(),
             sent_at_ms: written_at() - 3_600_000,
         }],
-        file_states: vec![ReviewFileState {
-            path: "src/store.rs".into(),
-            changed_since_last: true,
-            added: 1,
-            removed: 1,
-        }],
+        since_last: vec![changed_file(
+            "src/store.rs",
+            wire::FileStatus::Changed,
+            1,
+            1,
+            &[],
+        )],
         comments: vec![sent, outdated, draft],
         ..first_look_summary()
     };
@@ -676,18 +678,22 @@ pub fn review_round() -> crate::chat::review::Page {
         .summary
         .clone()
         .expect("the next look's summary");
-    let sent: Vec<Vec<u8>> = summary
+    let sent: Vec<ui_view::SentCommentRef> = summary
         .comments
         .iter()
-        .filter(|comment| comment.round.is_some())
-        .map(|comment| comment.id.clone())
+        .filter_map(|comment| {
+            Some(ui_view::SentCommentRef {
+                id: comment.id.clone(),
+                revision: comment.sent_revision?,
+            })
+        })
         .collect();
     let (_, mut round) =
         ui_runtime::review::round_of(&summary, &summary.id, &sent).expect("the round");
     round.files = first_look_summary().files;
     // The round's snapshot, before the agent made close keep sync_all's
     // error.
-    let files = review_files_all()
+    let mut files: Vec<_> = review_files_all()
         .into_iter()
         .map(|mut file| {
             if file.path == "src/store.rs" {
@@ -696,6 +702,28 @@ pub fn review_round() -> crate::chat::review::Page {
             file
         })
         .collect();
+    // A past round opens its lockfile too, which the review folds.
+    files.push(wire::experimental::ReviewFileDiff {
+        path: "Cargo.lock".into(),
+        hunks: vec![wire::experimental::ReviewHunk {
+            old_commit: REVIEW_BASE.into(),
+            old_start: 210,
+            new_start: 210,
+            scope: Vec::new(),
+            lines: vec![
+                kept(210, 210, "[[package]]"),
+                kept(211, 211, "name = \"store\""),
+                cut(212, "version = \"0.3.0\""),
+                put(212, "version = \"0.4.0\""),
+            ],
+        }],
+        outline: Vec::new(),
+        context: Vec::new(),
+    });
+    let state = ui_view::ReviewPageState {
+        toggled_files: vec!["Cargo.lock".into()],
+        ..ui_view::ReviewPageState::default()
+    };
     let mut page = crate::chat::review::Page::round(1);
     page.set_owner("fixer", "/srv/amux");
     page.round_read(
@@ -703,6 +731,7 @@ pub fn review_round() -> crate::chat::review::Page {
             summary: round,
             files,
             notices: Vec::new(),
+            state,
         })),
         "",
     );
@@ -1450,7 +1479,16 @@ fn row_sets() -> Vec<RowSet> {
                                 review: ui_view::SentReviewRef {
                                     review_id: vec![1; 16],
                                     round: 1,
-                                    comment_ids: vec![vec![1], vec![2]],
+                                    comments: vec![
+                                        ui_view::SentCommentRef {
+                                            id: vec![1],
+                                            revision: 1,
+                                        },
+                                        ui_view::SentCommentRef {
+                                            id: vec![2],
+                                            revision: 1,
+                                        },
+                                    ],
                                 },
                                 text: "Two comments on src/sum.rs.".into(),
                             }),

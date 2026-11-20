@@ -198,19 +198,20 @@ fn request(
     summary: &ReviewSummary,
     view: ReviewView,
 ) -> ReviewGetFilesRequest {
-    let from = match view {
-        ReviewView::SinceLast => summary
-            .rounds
-            .last()
-            .map(|round| round.snapshot.clone())
-            .unwrap_or_default(),
-        _ => summary.base_commit.clone(),
+    let (from, base, from_base) = match view {
+        ReviewView::SinceLast => {
+            let last = summary.rounds.last().cloned().unwrap_or_default();
+            (last.snapshot, summary.base_commit.clone(), last.base_commit)
+        }
+        _ => (summary.base_commit.clone(), String::new(), String::new()),
     };
     ReviewGetFilesRequest {
         agent_id: agent.id.as_bytes().to_vec(),
         snapshot: summary.snapshot.clone(),
         view: view as i32,
         from,
+        base,
+        from_base,
         ..ReviewGetFilesRequest::default()
     }
 }
@@ -993,20 +994,8 @@ async fn get_files_reads_the_comparison_it_names_and_lists_its_files() {
         .map(|line| line.text.as_str())
         .collect();
     assert_eq!(shown, ["line 20", "twenty"]);
-    // The summary's file states agree with the listing.
-    let states: Vec<(&str, bool, u32, u32)> = second
-        .file_states
-        .iter()
-        .map(|state| {
-            (
-                state.path.as_str(),
-                state.changed_since_last,
-                state.added,
-                state.removed,
-            )
-        })
-        .collect();
-    assert_eq!(states, [("new.txt", true, 1, 0), ("notes.txt", true, 1, 1)]);
+    // The summary's since-last list is the listing.
+    assert_eq!(second.since_last, since.changed);
 
     // The first round's whole diff: its base to its snapshot.
     let round = &second.rounds[0];
@@ -1019,6 +1008,7 @@ async fn get_files_reads_the_comparison_it_names_and_lists_its_files() {
             view: ReviewView::All as i32,
             list: true,
             files: vec![asked("notes.txt")],
+            ..ReviewGetFilesRequest::default()
         })
         .await
         .unwrap()
@@ -1093,21 +1083,17 @@ async fn an_undo_since_the_last_round_is_counted_and_shown_since_it() {
         "all changes lists nothing: {:?}",
         undone.files
     );
-    let states: Vec<(&str, bool, u32, u32)> = undone
-        .file_states
+    let states: Vec<(&str, wire::FileStatus, u32, u32)> = undone
+        .since_last
         .iter()
-        .map(|state| {
-            (
-                state.path.as_str(),
-                state.changed_since_last,
-                state.added,
-                state.removed,
-            )
-        })
+        .map(|file| (file.path.as_str(), file.status(), file.added, file.removed))
         .collect();
     assert_eq!(
         states,
-        [("made.txt", true, 0, 1), ("notes.txt", true, 1, 1)]
+        [
+            ("made.txt", wire::FileStatus::Deleted, 0, 1),
+            ("notes.txt", wire::FileStatus::Changed, 1, 1)
+        ]
     );
 
     let since = host
@@ -1147,5 +1133,115 @@ async fn an_undo_since_the_last_round_is_counted_and_shown_since_it() {
             ("made.txt", vec!["made"])
         ]
     );
+
+    // What every client draws from this summary: the page opens on since
+    // your last review, lists and counts both undos from that comparison's
+    // own list, asks for both bodies, and with them shows their lines.
+    let state = ui_view::ReviewPageState::default();
+    let opened = ui_view::review_page(Some(&undone), &[], &[], &state);
+    let header = opened.header.as_ref().unwrap();
+    assert_eq!(header.view, ui_view::ReviewView::SinceLast);
+    assert_eq!((header.files, header.added, header.removed), (2, 1, 2));
+    assert_eq!(opened.empty, None);
+    assert_eq!(opened.to_fetch, ["made.txt", "notes.txt"]);
+    let shown = ui_view::review_page(Some(&undone), &since.files, &[], &state);
+    assert!(shown.to_fetch.is_empty(), "{:?}", shown.to_fetch);
+    let drawn: Vec<(&str, &str)> = shown
+        .rows
+        .iter()
+        .filter_map(|row| match &row.of {
+            ui_view::ReviewRowOf::File(head) => Some((head.path.as_str(), "")),
+            ui_view::ReviewRowOf::Line(line) if line.kind != ui_view::LineKind::Context => {
+                Some((line.path.as_str(), line.text.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        drawn,
+        [
+            ("made.txt", ""),
+            ("made.txt", "made"),
+            ("notes.txt", ""),
+            ("notes.txt", "three"),
+            ("notes.txt", "line 3"),
+        ]
+    );
+    host.stop().await;
+}
+
+/// A comparison the review handed out answers the same however the base is
+/// picked after: one person re-picks the base of a snapshot whose tree has
+/// not moved, and another's page, still on the comparisons it was given,
+/// reads all changes and what changed since the last round exactly as
+/// before, while the new base's comparisons answer too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_comparison_handed_out_answers_the_same_after_the_base_is_picked_again() {
+    let install = Install::new();
+    repository(&install.work, &[("notes.txt", &numbered(&[]))]);
+    write(&install.work, &[("notes.txt", &numbered(&[(10, "ten")]))]);
+    git(&install.work, &["commit", "-q", "-am", "feature"]);
+    git(&install.work, &["branch", "dev"]);
+    write(
+        &install.work,
+        &[("notes.txt", &numbered(&[(3, "three"), (10, "ten")]))],
+    );
+    let agent = agent_in(&install, &install.work);
+    let host = Host::start(install).await;
+    let first = host.open(&agent).await;
+    host.send(&agent, &first);
+    write(
+        &host.install.work,
+        &[(
+            "notes.txt",
+            &numbered(&[(3, "three"), (10, "ten"), (20, "twenty")]),
+        )],
+    );
+    let second = host.open(&agent).await;
+    assert_ne!(second.snapshot, first.snapshot);
+
+    let read = |summary: &ReviewSummary, view: ReviewView| {
+        let request = ReviewGetFilesRequest {
+            list: true,
+            files: vec![asked("notes.txt")],
+            ..request(&agent, summary, view)
+        };
+        let client = host.client();
+        async move {
+            let mut client = client;
+            client
+                .get_files(request)
+                .await
+                .map(|answer| answer.into_inner())
+        }
+    };
+    let all = read(&second, ReviewView::All).await.unwrap();
+    let since = read(&second, ReviewView::SinceLast).await.unwrap();
+
+    // Another person picks dev, where the feature's own commit already is:
+    // the same snapshot, compared from then on against another base.
+    let picked = host
+        .client()
+        .open(ReviewOpenRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            base_branch: Some("dev".to_owned()),
+            refresh: false,
+            read_only: false,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(picked.snapshot, second.snapshot);
+    assert_ne!(picked.base_commit, second.base_commit);
+    assert_eq!(picked.base_branch, "dev");
+
+    assert_eq!(read(&second, ReviewView::All).await.unwrap(), all);
+    assert_eq!(read(&second, ReviewView::SinceLast).await.unwrap(), since);
+    let all_now = read(&picked, ReviewView::All).await.unwrap();
+    assert_ne!(
+        all_now, all,
+        "the new base's all changes leave out dev's commit"
+    );
+    read(&picked, ReviewView::SinceLast).await.unwrap();
     host.stop().await;
 }

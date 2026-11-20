@@ -79,6 +79,7 @@ fn snapshot(commit: &str) -> Change {
     Change::Snapshot {
         commit: commit.into(),
         base_commit: "base".into(),
+        base_name: "main".into(),
         omitted: vec!["big.bin".into()],
         merging: false,
     }
@@ -486,6 +487,7 @@ fn a_send_marks_only_the_revision_it_was_written_from_on_the_latest_snapshot() {
         vec![Change::Snapshot {
             commit: "s2".into(),
             base_commit: "base 2".into(),
+            base_name: "main".into(),
             omitted: Vec::new(),
             merging: false,
         }],
@@ -510,6 +512,27 @@ fn a_send_marks_only_the_revision_it_was_written_from_on_the_latest_snapshot() {
         ("s2", "base 2"),
         "recorded on the latest snapshot, with its base"
     );
+
+    // The next message carries comment 2 at revision 2 and closes round 2
+    // with it; each sent comment keeps the revision the agent took, which
+    // names the message that sent it, through later edits.
+    let w = rig.written(
+        LEAD,
+        vec![Change::Sent {
+            review: REVIEW_ID.to_vec(),
+            comments: vec![(vec![2; 16], 2)],
+        }],
+    );
+    assert_eq!(w.round, Some(2));
+    let w = rig.written(LEAD, vec![put(1, "s1", "a, edited after it went")]);
+    let sent: Vec<(u8, Option<u32>, u64, Option<u64>)> = w
+        .review
+        .unwrap()
+        .comments
+        .iter()
+        .map(|c| (c.id[0], c.round, c.revision, c.sent_revision))
+        .collect();
+    assert_eq!(sent, [(1, Some(1), 2, Some(1)), (2, Some(2), 2, Some(2))]);
 }
 
 #[test]
@@ -519,12 +542,16 @@ fn a_rebased_snapshot_keeps_its_new_base_and_raises_the_counter_once() {
     let rebase = |base: &str| Change::Rebased {
         snapshot: "s1".into(),
         base_commit: base.into(),
+        base_name: "dev".into(),
     };
     let w = rig.written(LEAD, vec![rebase("picked")]);
+    let review = w.review.unwrap();
+    let s1 = review.snapshot("s1").unwrap();
     assert_eq!(
-        w.review.unwrap().snapshot("s1").unwrap().base_commit,
-        "picked"
+        (s1.base_commit.as_str(), s1.base_name.as_str()),
+        ("picked", "dev")
     );
+    assert_eq!(s1.bases, ["base", "picked"], "the base shown before stays");
     assert_eq!(rig.entry(LEAD), Some(entry(0, 2, false)));
     // The same base again changes nothing.
     let (_, out) = rig.write(LEAD, vec![rebase("picked")]);

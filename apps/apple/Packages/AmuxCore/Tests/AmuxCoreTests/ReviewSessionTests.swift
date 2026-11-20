@@ -107,7 +107,7 @@ enum ReviewPages {
     ) -> ReviewHeader {
         ReviewHeader(
             baseBranch: "main", baseCommit: base, snapshot: snapshot, view: view, comparedWith: base,
-            views: [ReviewViewTab(view: .all, files: 2)], rounds: 0, files: 2, added: 3, removed: 1,
+            comparedBase: "", views: [ReviewViewTab(view: .all, files: 2)], rounds: 0, files: 2, added: 3, removed: 1,
             drafts: drafts, sent: 0, discardDrafts: drafts > 0, startOver: true)
     }
 

@@ -6544,6 +6544,10 @@ public struct ReviewHeader: Codable, Hashable, Sendable {
     /// The commit the view shown compares the snapshot against: the base
     /// commit, or the last round's snapshot.
     public var comparedWith: String
+    /// For since your last review, the base commit the last round's
+    /// snapshot was shown against, which with `base_commit` decides what of
+    /// the change since is the agent's; empty for all changes.
+    public var comparedBase: String
     /// The views the person can switch between, in order: since your last
     /// review is offered once a round has been sent.
     public var views: [ReviewViewTab]
@@ -6562,12 +6566,13 @@ public struct ReviewHeader: Codable, Hashable, Sendable {
     /// Starting over, which deletes the review, is offered.
     public var startOver: Bool
 
-    public init(baseBranch: String, baseCommit: String, snapshot: String, view: ReviewView, comparedWith: String, views: [ReviewViewTab], rounds: UInt32, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32, discardDrafts: Bool, startOver: Bool) {
+    public init(baseBranch: String, baseCommit: String, snapshot: String, view: ReviewView, comparedWith: String, comparedBase: String, views: [ReviewViewTab], rounds: UInt32, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32, discardDrafts: Bool, startOver: Bool) {
         self.baseBranch = baseBranch
         self.baseCommit = baseCommit
         self.snapshot = snapshot
         self.view = view
         self.comparedWith = comparedWith
+        self.comparedBase = comparedBase
         self.views = views
         self.rounds = rounds
         self.files = files
@@ -6585,6 +6590,7 @@ public struct ReviewHeader: Codable, Hashable, Sendable {
         case snapshot
         case view
         case comparedWith = "compared_with"
+        case comparedBase = "compared_base"
         case views
         case rounds
         case files
@@ -8005,6 +8011,23 @@ public enum SendState: String, Codable, Hashable, Sendable, CaseIterable {
     case sent = "Sent"
 }
 
+/// A comment a sent review carries, at the revision its text was written
+/// from.
+public struct SentCommentRef: Codable, Hashable, Sendable {
+    public var id: [UInt8]
+    public var revision: UInt64
+
+    public init(id: [UInt8], revision: UInt64) {
+        self.id = id
+        self.revision = revision
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case revision
+    }
+}
+
 /// A prompt of this client's on its way to the agent.
 public struct SentPrompt: Codable, Hashable, Sendable {
     public var inputId: [UInt8]
@@ -8034,19 +8057,22 @@ public struct SentReviewRef: Codable, Hashable, Sendable {
     /// numbers rounds as the agent takes the messages, so the comments name
     /// the round.
     public var round: UInt32
-    /// Exactly the comments it sent.
-    public var commentIds: [[UInt8]]
+    /// Exactly the comments it sent, each at the revision it sent: the
+    /// round this message closed is the one whose comments the agent took
+    /// at those revisions, and a message that closed none names no
+    /// comment's sent revision.
+    public var comments: [SentCommentRef]
 
-    public init(reviewId: [UInt8], round: UInt32, commentIds: [[UInt8]]) {
+    public init(reviewId: [UInt8], round: UInt32, comments: [SentCommentRef]) {
         self.reviewId = reviewId
         self.round = round
-        self.commentIds = commentIds
+        self.comments = comments
     }
 
     private enum CodingKeys: String, CodingKey {
         case reviewId = "review_id"
         case round
-        case commentIds = "comment_ids"
+        case comments
     }
 }
 

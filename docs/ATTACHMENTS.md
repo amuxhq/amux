@@ -317,14 +317,19 @@ comments it sends, each with the revision the text was written from. When
 the agent takes the prompt or message (when the item it became is in the
 agent's journal, not while it waits in the queue), its host marks sent those
 comments still drafts at that revision, in a round numbered as it arrives
-and recorded on the review's latest snapshot. So a draft another client
-wrote meanwhile stays a draft, as does one edited after the text was built
-and every comment of a prompt withdrawn from the queue, and a chip removed
-from the composer sends nothing.
+and recorded on the review's latest snapshot, in the store transaction that
+commits the item and moves the journal's cursor past it, so a round never
+stays open behind a cursor that has moved on. Each comment marked keeps the
+revision it was sent at. So a draft another client wrote meanwhile stays a
+draft, as does one edited after the text was built and every comment of a
+prompt withdrawn from the queue, and a chip removed from the composer sends
+nothing.
 A client draws an attachment with the entry as a sent review
-(`AttachmentView::SentReview`) that opens its round, or the text the agent
-read once the host no longer holds the round; a build that reads no entry
-draws it as pasted text.
+(`AttachmentView::SentReview`) that opens the round that message closed: the
+one whose comments were sent at the revisions the entry names. A message
+whose comments were edited before the agent took it closed none, and opens
+the text the agent read, as does one whose round the host no longer holds; a
+build that reads no entry draws it as pasted text.
 
 ## Tests
 

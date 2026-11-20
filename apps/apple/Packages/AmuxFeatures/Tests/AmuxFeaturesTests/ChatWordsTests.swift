@@ -383,7 +383,7 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.changes(files: 4, added: 0, removed: 28), "4 files, 0 added, 28 removed")
         XCTAssertEqual(ChatWords.commentOn(lines: 1), "Comment on 1 line")
         XCTAssertEqual(ChatWords.commentOn(lines: 5), "Comment on 5 lines")
-        let sent = SentReviewRef(reviewId: [1], round: 1, commentIds: [[1], [2]])
+        let sent = SentReviewRef(reviewId: [1], round: 1, comments: [SentCommentRef(id: [1], revision: 1), SentCommentRef(id: [2], revision: 1)])
         XCTAssertEqual(
             ChatWords.chip(.sentReview(comments: 2, review: sent, text: "src/lib.rs:4")), "Review · 2 comments")
         // A sent prompt is heard whole, the review's chip among its words.

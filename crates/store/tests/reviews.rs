@@ -35,6 +35,8 @@ fn taken(commit: &str) -> Taken {
     Taken {
         commit: commit.into(),
         base_commit: format!("base of {commit}"),
+        base_name: "main".into(),
+        bases: vec![format!("base of {commit}")],
         taken_ms: 5,
         omitted: vec!["big.bin".into(), "assets/huge.png".into()],
         merging: false,
@@ -66,6 +68,7 @@ fn comment(id: u8, commit: &str, round: Option<u32>) -> Comment {
         }],
         round,
         revision: 1,
+        sent_revision: round.map(|_| 1),
         updated_ms: 9,
     }
 }
@@ -160,13 +163,19 @@ fn a_review_reads_back_as_written() {
     write(&mut store, b"agent", |w| w.put_comment(REVIEW, &edited)).unwrap();
     assert_eq!(review(&store, b"agent").comments[0], edited);
 
-    // A snapshot's base is recorded with it, and can be recorded again.
+    // A snapshot's base is recorded with it, and can be recorded again,
+    // named anew; every base it was shown against stays its.
     write(&mut store, b"agent", |w| {
-        w.set_snapshot_base(REVIEW, "s2", "picked")
+        w.set_snapshot_base(REVIEW, "s2", "picked", "dev")
     })
     .unwrap();
     let read = review(&store, b"agent");
-    assert_eq!(read.snapshot("s2").unwrap().base_commit, "picked");
+    let s2 = read.snapshot("s2").unwrap();
+    assert_eq!(
+        (s2.base_commit.as_str(), s2.base_name.as_str()),
+        ("picked", "dev")
+    );
+    assert_eq!(s2.bases, ["base of s2", "picked"]);
     assert_eq!(read.snapshot("s1").unwrap().base_commit, "base of s1");
 }
 
@@ -382,7 +391,7 @@ fn switched_off_the_tables_and_own_entries_go() {
         Err(StoreError::NotOwn)
     ));
     drop(store);
-    assert_eq!(tables(&path).len(), 4);
+    assert_eq!(tables(&path).len(), 5);
 
     let mut store = open(&path, &[]);
     assert!(
@@ -410,7 +419,7 @@ fn switched_off_the_tables_and_own_entries_go() {
     drop(store);
 
     let store = open(&path, ON);
-    assert_eq!(tables(&path).len(), 4);
+    assert_eq!(tables(&path).len(), 5);
     assert_eq!(
         store.review(b"agent").unwrap(),
         None,

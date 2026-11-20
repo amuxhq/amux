@@ -100,6 +100,8 @@ fn all_of(snapshot: &str) -> Comparison {
         from: "b".repeat(40),
         snapshot: snapshot.into(),
         view: ReviewView::All,
+        base: String::new(),
+        from_base: String::new(),
     }
 }
 
@@ -186,6 +188,8 @@ async fn a_second_read_of_the_same_snapshot_makes_no_call() {
         from: "r".repeat(40),
         snapshot: "s1".into(),
         view: ReviewView::SinceLast,
+        base: "b".repeat(40),
+        from_base: "q".repeat(40),
     };
     let since = tokio::spawn({
         let (second, want, since_round) = (second.clone(), want.clone(), since_round.clone());
@@ -194,6 +198,11 @@ async fn a_second_read_of_the_same_snapshot_makes_no_call() {
     let (request, reply) = calls.review_files().await;
     assert_eq!(request.view, ReviewView::SinceLast as i32);
     assert_eq!(request.from, "r".repeat(40));
+    assert_eq!(
+        (request.base.as_str(), request.from_base.as_str()),
+        ("b".repeat(40).as_str(), "q".repeat(40).as_str()),
+        "since-last names both bases"
+    );
     reply
         .send(Ok(ReviewGetFilesResponse {
             files: want.iter().map(|path| file(path)).collect(),
@@ -594,9 +603,18 @@ async fn an_edit_on_a_page_held_behind_shows_its_comments() {
     );
 }
 
+/// A comment a sent review names, at the revision it sent.
+fn sent_at(id: &[u8], revision: u64) -> ui_view::SentCommentRef {
+    ui_view::SentCommentRef {
+        id: id.to_vec(),
+        revision,
+    }
+}
+
 /// A sent review opens its round: read without changing the review, found
-/// by its comments, its whole diff listed and fetched from the round's base
-/// to its snapshot.
+/// by its comments, its whole diff listed and the body of every file of it
+/// fetched from the round's base to its snapshot, a lockfile the review
+/// folds included, so the round's page opens it with the comment on it.
 #[tokio::test]
 async fn a_round_reads_its_whole_diff() {
     let (client, mut calls) = runtime();
@@ -609,19 +627,43 @@ async fn a_round_reads_its_whole_diff() {
         base_commit: "a".repeat(40),
         sent_at_ms: 1,
     }];
-    now.comments = vec![ReviewerComment {
-        id: b"sent".to_vec(),
-        anchor: Some(ReviewAnchor {
-            commit: first.clone(),
-            path: "src/file00.rs".into(),
-            lines: Some(ReviewLineRange { start: 1, end: 1 }),
-        }),
-        round: Some(1),
-        ..ReviewerComment::default()
-    }];
+    now.comments = vec![
+        ReviewerComment {
+            id: b"sent".to_vec(),
+            anchor: Some(ReviewAnchor {
+                commit: first.clone(),
+                path: "src/file00.rs".into(),
+                lines: Some(ReviewLineRange { start: 1, end: 1 }),
+            }),
+            round: Some(1),
+            revision: 1,
+            sent_revision: Some(1),
+            ..ReviewerComment::default()
+        },
+        ReviewerComment {
+            id: b"on the lock".to_vec(),
+            anchor: Some(ReviewAnchor {
+                commit: first.clone(),
+                path: "Cargo.lock".into(),
+                lines: Some(ReviewLineRange { start: 1, end: 1 }),
+            }),
+            text: "why this bump?".into(),
+            round: Some(1),
+            revision: 1,
+            sent_revision: Some(1),
+            ..ReviewerComment::default()
+        },
+    ];
     let reading = tokio::spawn({
         let review = review.clone();
-        async move { review.round(b"review-1", &[b"sent".to_vec()]).await }
+        async move {
+            review
+                .round(
+                    b"review-1",
+                    &[sent_at(b"sent", 1), sent_at(b"on the lock", 1)],
+                )
+                .await
+        }
     });
     let (request, reply) = calls.review_open().await;
     assert!(request.read_only);
@@ -632,6 +674,12 @@ async fn a_round_reads_its_whole_diff() {
     assert_eq!(request.snapshot, first);
     assert_eq!(request.view, ReviewView::All as i32);
     let listed = vec![
+        wire::ChangedFile {
+            path: "Cargo.lock".into(),
+            added: 1,
+            flags: vec![wire::FileFlag::Lockfile as i32],
+            ..wire::ChangedFile::default()
+        },
         wire::ChangedFile {
             path: "src/file00.rs".into(),
             added: 1,
@@ -654,10 +702,14 @@ async fn a_round_reads_its_whole_diff() {
     assert_eq!(request.snapshot, first);
     assert!(!request.list);
     let asked: Vec<&str> = request.files.iter().map(|f| f.path.as_str()).collect();
-    assert_eq!(asked, ["src/file00.rs", "src/gone.rs"]);
+    assert_eq!(asked, ["Cargo.lock", "src/file00.rs", "src/gone.rs"]);
     reply
         .send(Ok(ReviewGetFilesResponse {
-            files: vec![file("src/file00.rs"), file("src/gone.rs")],
+            files: vec![
+                file("Cargo.lock"),
+                file("src/file00.rs"),
+                file("src/gone.rs"),
+            ],
             ..Default::default()
         }))
         .ok();
@@ -665,8 +717,29 @@ async fn a_round_reads_its_whole_diff() {
     assert_eq!(round.summary.snapshot, first);
     assert_eq!(round.summary.base_commit, "a".repeat(40));
     assert_eq!(round.summary.files, listed);
-    assert_eq!(round.files.len(), 2);
+    assert_eq!(round.files.len(), 3);
     assert!(round.notices.is_empty());
+    // Its page opens the lockfile, its body and the comment on it.
+    let page = ui_view::review_page(Some(&round.summary), &round.files, &[], &round.state);
+    assert!(page.to_fetch.is_empty(), "{:?}", page.to_fetch);
+    let lock = page
+        .rows
+        .iter()
+        .position(
+            |row| matches!(&row.of, ui_view::ReviewRowOf::File(head) if head.path == "Cargo.lock"),
+        )
+        .expect("the lockfile's head");
+    let ui_view::ReviewRowOf::File(head) = &page.rows[lock].of else {
+        unreachable!()
+    };
+    assert!(!head.folded, "a past round opens every file");
+    let body = &page.rows[lock + 1..];
+    assert!(body.iter().take_while(|row| !matches!(row.of, ui_view::ReviewRowOf::File(_))).any(
+        |row| matches!(&row.of, ui_view::ReviewRowOf::Comment(comment) if comment.text == "why this bump?")
+    ));
+    assert!(body.iter().take_while(|row| !matches!(row.of, ui_view::ReviewRowOf::File(_))).any(
+        |row| matches!(&row.of, ui_view::ReviewRowOf::Line(line) if line.path == "Cargo.lock")
+    ));
     calls.none().await;
 
     // The host has since dropped the round's snapshot: the comments show
@@ -677,7 +750,7 @@ async fn a_round_reads_its_whole_diff() {
     ));
     let reading = tokio::spawn({
         let again = again.clone();
-        async move { again.round(b"review-1", &[b"sent".to_vec()]).await }
+        async move { again.round(b"review-1", &[sent_at(b"sent", 1)]).await }
     });
     let (_, reply) = calls.review_open().await;
     reply.send(Ok(now.clone())).ok();
@@ -691,7 +764,7 @@ async fn a_round_reads_its_whole_diff() {
     let round = reading.await.unwrap().unwrap().expect("the round");
     assert!(round.summary.files.is_empty());
     assert_eq!(round.notices, [ui_view::ReviewNotice::RoundGone]);
-    assert_eq!(round.summary.comments.len(), 1);
+    assert_eq!(round.summary.comments.len(), 1, "the one this chip names");
 
     // With the host out of reach and nothing loaded, the host's error.
     let empty = Arc::new(Review::with_cache(
@@ -700,7 +773,7 @@ async fn a_round_reads_its_whole_diff() {
     ));
     let reading = tokio::spawn({
         let empty = empty.clone();
-        async move { empty.round(b"review-1", &[b"sent".to_vec()]).await }
+        async move { empty.round(b"review-1", &[sent_at(b"sent", 1)]).await }
     });
     let (_, reply) = calls.review_open().await;
     reply.send(Err(host_unreachable())).ok();
@@ -810,6 +883,8 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
     let first = "1".repeat(40);
     let comment = |id: &[u8], round: Option<u32>| ReviewerComment {
         id: id.to_vec(),
+        revision: 1,
+        sent_revision: round.map(|_| 1),
         anchor: Some(ReviewAnchor {
             commit: first.clone(),
             path: "src/lib.rs".into(),
@@ -838,12 +913,19 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
         },
     ];
     now.stale = true;
+    // Edited after one message carried it at revision 1, so that message
+    // closed nothing, and a later one sent it at revision 2 in round 2;
+    // edited again since, which a sent comment may be.
+    let mut edited = comment(b"edited", Some(2));
+    edited.revision = 3;
+    edited.sent_revision = Some(2);
     now.comments = vec![
         comment(b"sent", Some(1)),
         comment(b"other round", Some(2)),
         comment(b"draft", None),
+        edited,
     ];
-    let sent = vec![b"sent".to_vec(), b"deleted since".to_vec()];
+    let sent = vec![sent_at(b"sent", 1), sent_at(b"deleted since", 1)];
 
     let (number, round) = ui_runtime::review::round_of(&now, b"review-1", &sent).expect("held");
     assert_eq!(number, 1);
@@ -875,12 +957,23 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
     // none of the round.
     assert_eq!(ui_runtime::review::round_of(&now, b"review-2", &sent), None);
     assert_eq!(
-        ui_runtime::review::round_of(&now, b"review-1", &[b"deleted since".to_vec()]),
+        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"deleted since", 1)]),
         None
     );
     // A draft is not sent, whatever names it.
     assert_eq!(
-        ui_runtime::review::round_of(&now, b"review-1", &[b"draft".to_vec()]),
+        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"draft", 1)]),
         None
     );
+    // The message that carried the edited comment at revision 1 closed no
+    // round: it opens none, not the round a later message closed. That one
+    // opens round 2, whatever the comment's revision has become.
+    assert_eq!(
+        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"edited", 1)]),
+        None
+    );
+    let (number, round) =
+        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"edited", 2)]).expect("held");
+    assert_eq!(number, 2);
+    assert_eq!(round.comments.len(), 1);
 }

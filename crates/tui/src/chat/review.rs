@@ -271,11 +271,13 @@ impl Page {
                 if let Some(number) = read.summary.comments.iter().filter_map(|c| c.round).min() {
                     round.number = number;
                 }
-                for notice in read.notices {
+                // Every file of a past round opens, a flagged one too.
+                for notice in read.state.notices {
                     if !self.state.notices.contains(&notice) {
                         self.state.notices.push(notice);
                     }
                 }
+                self.state.toggled_files = read.state.toggled_files;
                 self.update(Fetched {
                     summary: Some(Arc::new(read.summary)),
                     all: read

@@ -140,9 +140,13 @@ pub struct ReviewSummary {
     /// What changed from the base commit to the snapshot, by path.
     #[prost(message, repeated, tag = "7")]
     pub files: ::prost::alloc::vec::Vec<super::v1::ChangedFile>,
-    /// What changed since the last round, by path; empty before the first.
-    #[prost(message, repeated, tag = "8")]
-    pub file_states: ::prost::alloc::vec::Vec<ReviewFileState>,
+    /// What changed since the last round, by path, as REVIEW_VIEW_SINCE_LAST
+    /// compares and limits it: a file the agent put back as it was, or made
+    /// and then deleted, is here though `files` no longer lists it. Empty
+    /// before the first round, and when the last round's snapshot can no
+    /// longer be read.
+    #[prost(message, repeated, tag = "16")]
+    pub since_last: ::prost::alloc::vec::Vec<super::v1::ChangedFile>,
     /// Drafts and sent comments, each placed on the snapshot.
     #[prost(message, repeated, tag = "9")]
     pub comments: ::prost::alloc::vec::Vec<ReviewerComment>,
@@ -210,37 +214,14 @@ impl ::prost::Name for ReviewRound {
         "type.googleapis.com/amux.experimental.ReviewRound".into()
     }
 }
-/// One file's change since the last round's snapshot, counted from the same
-/// comparison REVIEW_VIEW_SINCE_LAST shows.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReviewFileState {
-    #[prost(string, tag = "1")]
-    pub path: ::prost::alloc::string::String,
-    /// It differs between the last round's snapshot and this one.
-    #[prost(bool, tag = "2")]
-    pub changed_since_last: bool,
-    /// Lines added and removed since then; none for a binary file.
-    #[prost(uint32, tag = "3")]
-    pub added: u32,
-    #[prost(uint32, tag = "4")]
-    pub removed: u32,
-}
-impl ::prost::Name for ReviewFileState {
-    const NAME: &'static str = "ReviewFileState";
-    const PACKAGE: &'static str = "amux.experimental";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.experimental.ReviewFileState".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.experimental.ReviewFileState".into()
-    }
-}
 /// One comparison the review handed out, and the files of it wanted. The
 /// host diffs exactly `from` to `snapshot`, after checking both are this
 /// review's: `snapshot` one it keeps (a summary's snapshot, the one before
-/// it, or a round's), and `from` that snapshot's base commit for
-/// REVIEW_VIEW_ALL, or a round's snapshot for REVIEW_VIEW_SINCE_LAST.
-/// Anything else is INVALID_ARGUMENT; a snapshot no longer kept, NOT_FOUND.
+/// it, or a round's), and `from` a base commit that snapshot has been shown
+/// against for REVIEW_VIEW_ALL, or a round's snapshot for
+/// REVIEW_VIEW_SINCE_LAST. Anything else is INVALID_ARGUMENT; a snapshot no
+/// longer kept, NOT_FOUND. A request names everything its answer depends on,
+/// so it answers the same whatever the review's base becomes later.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReviewGetFilesRequest {
     #[prost(bytes = "vec", tag = "1")]
@@ -263,6 +244,14 @@ pub struct ReviewGetFilesRequest {
     /// how a client shows a past round's whole diff, which no summary lists.
     #[prost(bool, tag = "6")]
     pub list: bool,
+    /// For REVIEW_VIEW_SINCE_LAST, which keeps only what is part of the
+    /// agent's change on either side: the base commit `snapshot` is shown
+    /// against (ReviewSummary.base_commit), and the one the round's snapshot
+    /// `from` was (ReviewRound.base_commit). Empty for REVIEW_VIEW_ALL.
+    #[prost(string, tag = "7")]
+    pub base: ::prost::alloc::string::String,
+    #[prost(string, tag = "8")]
+    pub from_base: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ReviewGetFilesRequest {
     const NAME: &'static str = "ReviewGetFilesRequest";
@@ -504,6 +493,11 @@ pub struct ReviewerComment {
     /// its text was written from.
     #[prost(uint64, tag = "8")]
     pub revision: u64,
+    /// The revision the agent took it at, which closed its round: a sent
+    /// review naming this comment at this revision is the message that sent
+    /// it. Absent while a draft; it stays when a sent comment is edited.
+    #[prost(uint64, optional, tag = "9")]
+    pub sent_revision: ::core::option::Option<u64>,
 }
 impl ::prost::Name for ReviewerComment {
     const NAME: &'static str = "ReviewerComment";

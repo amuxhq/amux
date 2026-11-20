@@ -66,10 +66,13 @@ impl AttachmentView {
                     review: SentReviewRef {
                         review_id: sent.review_id,
                         round: sent.round,
-                        comment_ids: sent
+                        comments: sent
                             .comments
                             .into_iter()
-                            .map(|comment| comment.id)
+                            .map(|comment| SentCommentRef {
+                                id: comment.id,
+                                revision: comment.revision,
+                            })
                             .collect(),
                     },
                     text: text.text.clone(),
@@ -106,8 +109,19 @@ pub struct SentReviewRef {
     /// numbers rounds as the agent takes the messages, so the comments name
     /// the round.
     pub round: u32,
-    /// Exactly the comments it sent.
-    pub comment_ids: Vec<Vec<u8>>,
+    /// Exactly the comments it sent, each at the revision it sent: the
+    /// round this message closed is the one whose comments the agent took
+    /// at those revisions, and a message that closed none names no
+    /// comment's sent revision.
+    pub comments: Vec<SentCommentRef>,
+}
+
+/// A comment a sent review carries, at the revision its text was written
+/// from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct SentCommentRef {
+    pub id: Vec<u8>,
+    pub revision: u64,
 }
 
 /// The largest image a client downloads by itself to draw its thumbnail. A

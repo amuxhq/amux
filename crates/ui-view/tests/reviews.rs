@@ -9,10 +9,10 @@ use std::path::Path;
 use ui_view::*;
 use wire::experimental::{
     REVIEW_ROW, ReviewAnchor as WireAnchor, ReviewComparedLines, ReviewDefinition,
-    ReviewDefinitionKind, ReviewFileDiff, ReviewFileState, ReviewHunk, ReviewLine, ReviewLineKind,
-    ReviewLineRange, ReviewPlacement, ReviewRound, ReviewRowEntry, ReviewRun as WireRun,
-    ReviewSentComment, ReviewSide, ReviewSummary, ReviewTokenKind, ReviewerComment, SENT_REVIEW,
-    SentReview, review_placement,
+    ReviewDefinitionKind, ReviewFileDiff, ReviewHunk, ReviewLine, ReviewLineKind, ReviewLineRange,
+    ReviewPlacement, ReviewRound, ReviewRowEntry, ReviewRun as WireRun, ReviewSentComment,
+    ReviewSide, ReviewSummary, ReviewTokenKind, ReviewerComment, SENT_REVIEW, SentReview,
+    review_placement,
 };
 
 const SNAPSHOT: &str = "s2";
@@ -137,6 +137,7 @@ fn comment(
             path: path.into(),
         }),
         revision: 1,
+        sent_revision: round.map(|_| 1),
     }
 }
 
@@ -360,20 +361,7 @@ fn second_look() -> ReviewSummary {
             base_commit: BASE.into(),
             sent_at_ms: 1_000,
         }],
-        file_states: vec![
-            ReviewFileState {
-                path: "src/store.rs".into(),
-                changed_since_last: true,
-                added: 1,
-                removed: 0,
-            },
-            ReviewFileState {
-                path: "README.md".into(),
-                changed_since_last: false,
-                added: 0,
-                removed: 0,
-            },
-        ],
+        since_last: vec![changed("src/store.rs", wire::FileStatus::Changed, 1, 0)],
         comments: vec![
             comment(
                 "r1",
@@ -789,10 +777,7 @@ fn review_page_goldens() {
     case("nothing left to review", page(&empty, &[], &none));
 
     let mut quiet = second_look();
-    quiet
-        .file_states
-        .iter_mut()
-        .for_each(|file| file.changed_since_last = false);
+    quiet.since_last.clear();
     quiet.comments.clear();
     case(
         "nothing changed since your last review",
@@ -851,6 +836,121 @@ fn review_page_goldens() {
             path.display()
         ),
     }
+}
+
+/// The agent undoing its own change since the last round: a line put back
+/// and a file it made and then deleted. All changes lists neither, yet since
+/// your last review lists, counts, fetches and shows both from that
+/// comparison's own list.
+#[test]
+fn an_undo_since_the_last_round_is_listed_fetched_and_shown() {
+    let summary = ReviewSummary {
+        files: Vec::new(),
+        rounds: vec![ReviewRound {
+            snapshot: LAST_ROUND.into(),
+            base_commit: BASE.into(),
+            sent_at_ms: 1_000,
+        }],
+        since_last: vec![
+            changed("made.txt", wire::FileStatus::Deleted, 0, 1),
+            changed("notes.txt", wire::FileStatus::Changed, 1, 1),
+        ],
+        comments: Vec::new(),
+        ..summary()
+    };
+    let none = ReviewPageState::default();
+    let opened = page(&summary, &[], &none);
+    let header = opened.header.as_ref().unwrap();
+    assert_eq!(header.view, ReviewView::SinceLast);
+    assert_eq!(
+        (header.files, header.added, header.removed),
+        (2, 1, 2),
+        "counted from since-last's own list"
+    );
+    assert_eq!(
+        header
+            .views
+            .iter()
+            .map(|tab| (tab.view, tab.files))
+            .collect::<Vec<_>>(),
+        [(ReviewView::All, 0), (ReviewView::SinceLast, 2)]
+    );
+    assert_eq!(opened.empty, None, "something changed since");
+    assert_eq!(opened.to_fetch, ["made.txt", "notes.txt"]);
+    let heads: Vec<(&str, FileStatus, u32, u32, bool)> = opened
+        .rows
+        .iter()
+        .filter_map(|row| match &row.of {
+            ReviewRowOf::File(head) => Some((
+                head.path.as_str(),
+                head.status,
+                head.added,
+                head.removed,
+                head.changed_since_last,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        heads,
+        [
+            ("made.txt", FileStatus::Deleted, 0, 1, true),
+            ("notes.txt", FileStatus::Modified, 1, 1, true),
+        ]
+    );
+
+    let bodies = [
+        ReviewFileDiff {
+            path: "made.txt".into(),
+            hunks: vec![ReviewHunk {
+                old_commit: LAST_ROUND.into(),
+                old_start: 1,
+                new_start: 0,
+                scope: Vec::new(),
+                lines: vec![removed(1, "made")],
+            }],
+            ..ReviewFileDiff::default()
+        },
+        ReviewFileDiff {
+            path: "notes.txt".into(),
+            hunks: vec![ReviewHunk {
+                old_commit: LAST_ROUND.into(),
+                old_start: 3,
+                new_start: 3,
+                scope: Vec::new(),
+                lines: vec![removed(3, "three"), added(3, "line 3")],
+            }],
+            ..ReviewFileDiff::default()
+        },
+    ];
+    let shown = page(&summary, &bodies, &none);
+    assert!(shown.to_fetch.is_empty(), "{:?}", shown.to_fetch);
+    let lines: Vec<(&str, &str)> = shown
+        .rows
+        .iter()
+        .filter_map(|row| match &row.of {
+            ReviewRowOf::Line(line) => Some((line.path.as_str(), line.text.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            ("made.txt", "made"),
+            ("notes.txt", "three"),
+            ("notes.txt", "line 3")
+        ]
+    );
+    // All changes lists nothing, and says so.
+    let all = page(
+        &summary,
+        &[],
+        &ReviewPageState {
+            view: Some(ReviewView::All),
+            ..ReviewPageState::default()
+        },
+    );
+    assert_eq!(all.empty, Some(ReviewEmpty::Nothing));
 }
 
 #[test]
@@ -1109,7 +1209,16 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
             review: SentReviewRef {
                 review_id: b"review".to_vec(),
                 round: 2,
-                comment_ids: vec![b"d1".to_vec(), b"d3".to_vec()],
+                comments: vec![
+                    SentCommentRef {
+                        id: b"d1".to_vec(),
+                        revision: 1,
+                    },
+                    SentCommentRef {
+                        id: b"d3".to_vec(),
+                        revision: 2,
+                    },
+                ],
             },
             text: "src/store.rs:41\nWhy the flags?".into(),
         })]

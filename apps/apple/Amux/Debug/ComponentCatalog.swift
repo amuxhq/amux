@@ -949,7 +949,8 @@ enum ReviewStory {
     static let anchor = ReviewAnchor(commit: snapshot, path: open, start: 41, end: 42)
 
     static let sent = SentReviewRef(
-        reviewId: [1], round: 1, commentIds: [[0x0a], [0x0b]])
+        reviewId: [1], round: 1,
+        comments: [SentCommentRef(id: [0x0a], revision: 1), SentCommentRef(id: [0x0b], revision: 1)])
 
     /// What the agent read of the first round.
     static let sentText = """
@@ -1078,7 +1079,7 @@ enum ReviewStory {
             ] + libBody(), toFetch: [], opening: false, empty: nil,
             header: ReviewHeader(
                 baseBranch: "main", baseCommit: base, snapshot: lastRound, view: .all, comparedWith: base,
-                views: [ReviewViewTab(view: .all, files: 2)], rounds: 0, files: 2, added: 5, removed: 0,
+                comparedBase: "", views: [ReviewViewTab(view: .all, files: 2)], rounds: 0, files: 2, added: 5, removed: 0,
                 drafts: 0, sent: 2, discardDrafts: false, startOver: true))
     }
 
@@ -1092,7 +1093,8 @@ enum ReviewStory {
         if rounds > 0 { views.append(ReviewViewTab(view: .sinceLast, files: 1)) }
         return ReviewHeader(
             baseBranch: "main", baseCommit: base, snapshot: snapshot, view: view,
-            comparedWith: view == .all ? base : lastRound, views: views, rounds: rounds, files: files,
+            comparedWith: view == .all ? base : lastRound, comparedBase: view == .all ? "" : base,
+            views: views, rounds: rounds, files: files,
             added: added, removed: removed, drafts: drafts, sent: sent, discardDrafts: drafts > 0,
             startOver: true)
     }

@@ -35,8 +35,8 @@ use store::AgentRow;
 use store::reviews::{Review, Taken};
 use tonic::Status;
 use wire::experimental::{
-    REVIEW_ROW, ReviewAnchor, ReviewEditRequest, ReviewFileState, ReviewLineRange,
-    ReviewOpenRequest, ReviewRound, ReviewSummary, ReviewerComment, review_edit,
+    REVIEW_ROW, ReviewAnchor, ReviewEditRequest, ReviewLineRange, ReviewOpenRequest, ReviewRound,
+    ReviewSummary, ReviewerComment, review_edit,
 };
 use wire::{ChangedFile, ErrorCode, FileFlag, FileStatus};
 
@@ -159,6 +159,7 @@ pub(crate) async fn open(
         changes.push(Change::Snapshot {
             commit: taken.commit,
             base_commit: base.commit.clone(),
+            base_name: base.branch.clone(),
             omitted: taken.omitted,
             merging: taken.merging,
         });
@@ -184,6 +185,7 @@ pub(crate) async fn open(
         changes.push(Change::Rebased {
             snapshot: latest.commit.clone(),
             base_commit: base.commit.clone(),
+            base_name: base.branch.clone(),
         });
         // Waiting drafts keep the page on their snapshot; the row says
         // the tree has moved under it.
@@ -211,13 +213,15 @@ pub(crate) async fn open(
     if take {
         tree.drop_unkept(&review).await;
     }
-    summary(&tree, &review, &base.branch, moved && !take, moved_drafts).await
+    summary(&tree, &review, moved && !take, moved_drafts).await
 }
 
 /// A read-only Open: the review as it stands, changing nothing, and an
 /// empty summary for an agent with none. It waits for no other call on the
 /// review, so a client following the row is never held behind a snapshot
-/// another is taking; what it reads is one store read, whole.
+/// another is taking; what it reads is one store read, whole. The base is
+/// named as it was when the snapshot was shown against it, so a base
+/// branch deleted or rewritten since never stops the review being read.
 async fn read_only(runtime: &Arc<ProfileRuntime>, row: &AgentRow) -> Result<ReviewSummary, Status> {
     let tree = Tree::of(runtime, row).await?;
     let Some(review) = tree.review(runtime).await? else {
@@ -226,11 +230,10 @@ async fn read_only(runtime: &Arc<ProfileRuntime>, row: &AgentRow) -> Result<Revi
     if review.latest().is_none() {
         return Ok(tree.empty());
     }
-    let branch = shown_branch(runtime, &tree, &review).await?;
     let stale = REVIEW_ROW
         .get(&row.experimental)
         .is_some_and(|entry| entry.moved);
-    summary(&tree, &review, &branch, stale, 0).await
+    summary(&tree, &review, stale, 0).await
 }
 
 /// Reviews1.Edit: `caller`'s edits to the review of `row`'s agent, all of
@@ -388,10 +391,11 @@ pub(crate) async fn edit(
         return Ok(tree.empty());
     };
     // The turn-end check keeps the row's word on whether the tree moved;
-    // an edit does not look again.
+    // an edit does not look again, nor at the base branch: what the edit
+    // made is answered from the store alone, so a save that landed is
+    // never reported failed.
     let stale = entry.is_some_and(|entry| entry.moved);
-    let branch = shown_branch(runtime, &tree, &review).await?;
-    summary(&tree, &review, &branch, stale, 0).await
+    summary(&tree, &review, stale, 0).await
 }
 
 /// What one comment takes in a summary, encoded.
@@ -496,13 +500,17 @@ fn same_anchor(stored: &store::reviews::Anchor, anchor: &ReviewAnchor) -> bool {
 }
 
 /// Every commit the review has handed a client lines of: each snapshot it
-/// keeps, and the base commit each is compared against. A comment is put
-/// on one of these; GetFiles diffs between them.
+/// keeps, and every base commit each has been shown against. A comment is
+/// put on one of these; GetFiles diffs between them.
 fn handed_out(review: &Review) -> BTreeSet<&str> {
     review
         .snapshots
         .iter()
-        .flat_map(|taken| [taken.commit.as_str(), taken.base_commit.as_str()])
+        .flat_map(|taken| {
+            std::iter::once(taken.commit.as_str())
+                .chain(std::iter::once(taken.base_commit.as_str()))
+                .chain(taken.bases.iter().map(String::as_str))
+        })
         .collect()
 }
 
@@ -524,12 +532,11 @@ fn last_shown(review: &Review) -> Option<Shown<'_>> {
     })
 }
 
-/// The review as of its latest snapshot, its comments placed there.
-/// `branch` is the base branch as the summary names it.
+/// The review as of its latest snapshot, its comments placed there, its
+/// base named as it was found with the base commit.
 async fn summary(
     tree: &Tree,
     review: &Review,
-    branch: &str,
     stale: bool,
     moved_drafts: u32,
 ) -> Result<ReviewSummary, Status> {
@@ -540,8 +547,20 @@ async fn summary(
     let (root, store) = (tree.root.as_path(), &tree.store);
 
     let wire_files = listed(root, store, latest, &latest.base_commit).await?;
-    let file_states = match last_shown(review) {
-        Some(last) => file_states(root, store, last, latest, &wire_files).await?,
+    let since_last = match last_shown(review) {
+        Some(last) => {
+            let now = Shown {
+                base: &latest.base_commit,
+                snapshot: &latest.commit,
+            };
+            match listed_since(root, store, last, now, &latest.omitted, &wire_files).await {
+                Ok(since) => since,
+                // The last round's snapshot can no longer be read: nothing
+                // is said of what changed since it.
+                Err(status) if status.code() == tonic::Code::DataLoss => Vec::new(),
+                Err(status) => return Err(status),
+            }
+        }
         None => Vec::new(),
     };
 
@@ -578,12 +597,13 @@ async fn summary(
             round: comment.round,
             placement: Some(placement),
             revision: comment.revision,
+            sent_revision: comment.sent_revision,
         })
         .collect();
 
     Ok(ReviewSummary {
         id: review.id.clone(),
-        base_branch: branch.to_owned(),
+        base_branch: latest.base_name.clone(),
         base_commit: latest.base_commit.clone(),
         snapshot: snapshot.to_owned(),
         stale,
@@ -597,7 +617,7 @@ async fn summary(
             })
             .collect(),
         files: wire_files,
-        file_states,
+        since_last,
         comments,
         merge_in_progress: latest.merging,
         objects: tree.store.dir().to_string_lossy().into_owned(),
@@ -658,20 +678,20 @@ pub(super) async fn listed(
     Ok(wire_files)
 }
 
-/// Every file that changed since the `last` round to the snapshot `taken`,
-/// limited as since-last's hunks are and counted from them: renames
-/// followed, flagged as all changes `all` flags them.
+/// Every file that changed since the `last` round to `now`, a snapshot
+/// shown against its base, limited as since-last's hunks are and counted
+/// from them: renames followed, flagged as all changes `all` flags them. A
+/// file the agent put back as it was, or made and then deleted, is here
+/// though all changes no longer lists it; one the snapshot left out for its
+/// size, `omitted`, is not.
 pub(super) async fn listed_since(
     root: &Path,
     store: &ObjectStore,
     last: Shown<'_>,
-    taken: &Taken,
+    now: Shown<'_>,
+    omitted: &[String],
     all: &[ChangedFile],
 ) -> Result<Vec<ChangedFile>, Status> {
-    let now = Shown {
-        base: &taken.base_commit,
-        snapshot: &taken.commit,
-    };
     let since = match compare::since_last(root, store, last, now, None, files::HUNK_CONTEXT).await {
         Ok(since) => since,
         Err(error) => return Err(compare_refused(error)),
@@ -680,7 +700,7 @@ pub(super) async fn listed_since(
         all.iter().map(|file| (file.path.as_str(), file)).collect();
     let mut listed = Vec::with_capacity(since.len());
     for file in since {
-        if taken.omitted.contains(&file.path) {
+        if omitted.contains(&file.path) {
             continue;
         }
         let (added, removed) = file.counts();
@@ -693,60 +713,22 @@ pub(super) async fn listed_since(
             binary: file.binary,
             flags: git_facts::Flags::default(),
         };
-        let mut wire_file = match flagged.get(file.path.as_str()) {
-            Some(all) => changed_file(changed, all.language.clone()),
+        let wire_file = match flagged.get(file.path.as_str()) {
+            Some(all) => ChangedFile {
+                flags: all.flags.clone(),
+                ..changed_file(changed, all.language.clone())
+            },
+            // Not in all changes, so not flagged: one the agent put back is
+            // shown open, as the undo it is.
             None => {
-                let language = language(root, store, &taken.commit, &changed).await;
+                let language = language(root, store, now.snapshot, &changed).await;
                 changed_file(changed, language)
             }
         };
-        if let Some(all) = flagged.get(file.path.as_str()) {
-            wire_file.flags = all.flags.clone();
-        }
         listed.push(wire_file);
     }
     listed.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(listed)
-}
-
-/// How each file of all changes, `files`, changed since the `last` round's
-/// snapshot to `taken`, counted from the same limited comparison
-/// since-last's hunks come from; a file the agent changed and then put
-/// back, which all changes no longer lists, comes after them. When the last
-/// round's snapshot can no longer be read, nothing is said about any file.
-async fn file_states(
-    root: &Path,
-    store: &ObjectStore,
-    last: Shown<'_>,
-    taken: &Taken,
-    files: &[ChangedFile],
-) -> Result<Vec<ReviewFileState>, Status> {
-    let since = match listed_since(root, store, last, taken, files).await {
-        Ok(since) => since,
-        Err(status) if status.code() == tonic::Code::DataLoss => return Ok(Vec::new()),
-        Err(status) => return Err(status),
-    };
-    let by_path: HashMap<&str, &ChangedFile> = since
-        .iter()
-        .map(|file| (file.path.as_str(), file))
-        .collect();
-    let state = |path: &str, changed: Option<&&ChangedFile>| ReviewFileState {
-        path: path.to_owned(),
-        changed_since_last: changed.is_some(),
-        added: changed.map_or(0, |file| file.added),
-        removed: changed.map_or(0, |file| file.removed),
-    };
-    let listed: BTreeSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
-    Ok(files
-        .iter()
-        .map(|file| state(&file.path, by_path.get(file.path.as_str())))
-        .chain(
-            since
-                .iter()
-                .filter(|file| !listed.contains(file.path.as_str()))
-                .map(|file| state(&file.path, Some(&file))),
-        )
-        .collect())
 }
 
 /// The language a file is coloured by, by the one rule every client uses:
@@ -810,28 +792,6 @@ pub(super) struct Base {
     pub(super) branch: String,
     /// The commit, or before the first commit the empty tree.
     pub(super) commit: String,
-}
-
-/// The base branch `review` is compared with, as a summary names it. Only
-/// the name: the commit a snapshot is compared against is the one recorded
-/// with it.
-async fn shown_branch(
-    runtime: &ProfileRuntime,
-    tree: &Tree,
-    review: &Review,
-) -> Result<String, Status> {
-    let named = |text: &str| Some(text.to_owned()).filter(|text| !text.is_empty());
-    let chosen = named(&review.base_branch);
-    let began_at = named(&review.began_at);
-    let base = base(
-        runtime,
-        tree.agent,
-        &tree.root,
-        chosen.as_deref(),
-        began_at.as_deref(),
-    )
-    .await?;
-    Ok(base.branch)
 }
 
 /// The base all changes run from, by the review's rule: the base branch

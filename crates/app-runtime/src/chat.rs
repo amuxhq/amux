@@ -490,9 +490,9 @@ impl Chat {
     pub async fn review_round(
         &self,
         review_id: &[u8],
-        comment_ids: &[Vec<u8>],
+        sent: &[ui_view::SentCommentRef],
     ) -> Option<ui_view::ReviewPage> {
-        crate::review::round_page(&self.session.reviews(), review_id, comment_ids).await
+        crate::review::round_page(&self.session.reviews(), review_id, sent).await
     }
 
     /// The agent's review: the open page's, or one read for a send.

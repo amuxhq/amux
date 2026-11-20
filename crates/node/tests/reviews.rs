@@ -216,6 +216,7 @@ impl Host {
                             &review.id,
                             &store::reviews::Comment {
                                 round: Some(n),
+                                sent_revision: Some(comment.revision),
                                 ..comment.clone()
                             },
                         )?;
@@ -332,7 +333,7 @@ async fn a_first_look_snapshots_and_lists_and_a_second_with_nothing_changed_take
         &first.objects,
         &first.snapshot
     ));
-    assert!(!first.stale && first.rounds.is_empty() && first.file_states.is_empty());
+    assert!(!first.stale && first.rounds.is_empty() && first.since_last.is_empty());
     // The snapshot is the store's, not the repository's.
     let in_repository = Command::new("git")
         .args(["cat-file", "-e", &first.snapshot])
@@ -591,11 +592,11 @@ async fn since_the_last_round_after_a_merge_from_the_base_holds_only_the_agents_
     assert_ne!(after.snapshot, first.snapshot);
     assert_eq!(paths(&after), ["notes.txt"]);
     let states: Vec<_> = after
-        .file_states
+        .since_last
         .iter()
-        .map(|state| (state.path.as_str(), state.changed_since_last, state.added))
+        .map(|file| (file.path.as_str(), file.added))
         .collect();
-    assert_eq!(states, [("notes.txt", true, 1)]);
+    assert_eq!(states, [("notes.txt", 1)]);
     host.stop().await;
 }
 
@@ -884,6 +885,48 @@ async fn a_read_only_open_begins_nothing_and_takes_no_snapshot() {
         let refused = host.client().open(request).await.unwrap_err();
         assert_eq!(refused.code(), Code::InvalidArgument);
     }
+    host.stop().await;
+}
+
+/// The base is named as it was when the snapshot was shown against it:
+/// with the base branch since rewritten onto history the agent's shares
+/// nothing with, a person's open, which finds the base anew, is refused,
+/// but a read-only open still reads the review, and an edit that lands is
+/// answered as landed, both naming the branch as the snapshot recorded it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rewritten_base_branch_never_stops_a_read_or_an_edit() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let agent = agent_in(&install, &install.work, Some("main"));
+    let host = Host::start(install).await;
+    let opened = host.open(&agent).await;
+    assert_eq!(opened.base_branch, "main");
+
+    // main now holds history unrelated to the feature's.
+    let work = &host.install.work;
+    git(work, &["switch", "-q", "--orphan", "elsewhere"]);
+    std::fs::write(work.join("other.txt"), "other\n").unwrap();
+    git(work, &["add", "other.txt"]);
+    git(work, &["commit", "-q", "-m", "unrelated"]);
+    git(work, &["branch", "-f", "main", "elsewhere"]);
+    git(work, &["switch", "-q", "-f", "feature"]);
+    // A person's open finds the base anew, and finds no fork point.
+    let refused = host.open_with(&agent, false, None).await.unwrap_err();
+    assert_eq!(refused.code(), Code::InvalidArgument, "{refused:?}");
+
+    let read = host.read_only(&agent).await.unwrap();
+    assert_eq!(
+        (read.base_branch.as_str(), read.snapshot.as_str()),
+        ("main", opened.snapshot.as_str())
+    );
+    let edited = host
+        .edit(
+            &agent,
+            vec![put("c1", &opened.snapshot, "notes.txt", 25, 25)],
+        )
+        .await;
+    assert_eq!(edited.base_branch, "main");
+    assert_eq!(ids(&edited), ["c1"], "the edit landed and says so");
     host.stop().await;
 }
 
@@ -1494,7 +1537,7 @@ mod stores {
         host.edit(&agent, vec![put("draft", &snapshot, "notes.txt", 25, 25)])
             .await;
         assert!(host.entry(&agent).await.is_some());
-        assert_eq!(review_tables(&host.install), 4);
+        assert_eq!(review_tables(&host.install), 5);
         let install = stopped(host).await;
 
         let review = agent.dir.join(daemon_core::reviews::REVIEW);

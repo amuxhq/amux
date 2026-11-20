@@ -152,6 +152,10 @@ pub struct ReviewHeader {
     /// The commit the view shown compares the snapshot against: the base
     /// commit, or the last round's snapshot.
     pub compared_with: String,
+    /// For since your last review, the base commit the last round's
+    /// snapshot was shown against, which with `base_commit` decides what of
+    /// the change since is the agent's; empty for all changes.
+    pub compared_base: String,
     /// The views the person can switch between, in order: since your last
     /// review is offered once a round has been sent.
     pub views: Vec<ReviewViewTab>,
@@ -568,27 +572,29 @@ pub fn review_page_of(
         Some(view) => view,
         None => ReviewView::SinceLast,
     };
-    let compared_with = match view {
-        ReviewView::All => summary.base_commit.clone(),
+    let (compared_with, compared_base) = match view {
+        ReviewView::All => (summary.base_commit.clone(), String::new()),
         ReviewView::SinceLast => summary
             .rounds
             .last()
-            .map(|round| round.snapshot.clone())
+            .map(|round| (round.snapshot.clone(), round.base_commit.clone()))
             .unwrap_or_default(),
     };
-    let since: BTreeMap<&str, &wire::experimental::ReviewFileState> = summary
-        .file_states
+    // What changed since the last round, as that comparison lists it: a
+    // file the agent put back as it was is here, though all changes no
+    // longer lists it.
+    let since: BTreeMap<&str, &wire::ChangedFile> = summary
+        .since_last
         .iter()
         .map(|file| (file.path.as_str(), file))
         .collect();
-    let changed_since = |path: &str| since.get(path).is_some_and(|file| file.changed_since_last);
+    let changed_since = |path: &str| since.contains_key(path);
 
     // Comments by the file they sit in, as the host placed them: for a file
     // renamed since a comment was written, its new path. One whose commit
     // can no longer be read has no place, and shows on the file it was
     // written on.
     let mut by_file: BTreeMap<String, Vec<&ReviewerComment>> = BTreeMap::new();
-    let mut outside: Vec<String> = Vec::new();
     for comment in &summary.comments {
         let path = comment
             .placement
@@ -597,19 +603,31 @@ pub fn review_page_of(
             .filter(|path| !path.is_empty())
             .or_else(|| comment.anchor.as_ref().map(|anchor| anchor.path.as_str()))
             .unwrap_or_default();
-        if !summary.files.iter().any(|file| file.path == path) && !outside.iter().any(|p| p == path)
-        {
-            outside.push(path.to_owned());
-        }
         by_file.entry(path.to_owned()).or_default().push(comment);
     }
 
-    let listed: Vec<&wire::ChangedFile> = summary
-        .files
-        .iter()
-        .filter(|file| {
-            view == ReviewView::All || changed_since(&file.path) || by_file.contains_key(&file.path)
-        })
+    // The files the view lists, each as its own comparison has it: all
+    // changes; or since the last round, every file that comparison lists,
+    // and besides, for the comments on them, the files of all changes that
+    // did not change since.
+    let listed: Vec<&wire::ChangedFile> = match view {
+        ReviewView::All => summary.files.iter().collect(),
+        ReviewView::SinceLast => {
+            let mut listed: Vec<&wire::ChangedFile> = summary.since_last.iter().collect();
+            listed.extend(
+                summary
+                    .files
+                    .iter()
+                    .filter(|file| !changed_since(&file.path) && by_file.contains_key(&file.path)),
+            );
+            listed.sort_by(|a, b| a.path.cmp(&b.path));
+            listed
+        }
+    };
+    let outside: Vec<String> = by_file
+        .keys()
+        .filter(|path| !listed.iter().any(|file| file.path == **path))
+        .cloned()
         .collect();
     let files = files(view);
     let fetched: BTreeMap<&str, &ReviewFileDiff> = files
@@ -629,14 +647,11 @@ pub fn review_page_of(
 
     let (mut files_shown, mut added, mut removed) = (0, 0, 0);
     for file in listed {
-        let (file_added, file_removed) = match view {
-            ReviewView::All => (file.added, file.removed),
-            ReviewView::SinceLast => since
-                .get(file.path.as_str())
-                .filter(|state| state.changed_since_last)
-                .map_or((0, 0), |state| (state.added, state.removed)),
-        };
         let in_view = view == ReviewView::All || changed_since(&file.path);
+        let (file_added, file_removed) = match in_view {
+            true => (file.added, file.removed),
+            false => (0, 0),
+        };
         if in_view {
             files_shown += 1;
             added += file_added;
@@ -739,11 +754,7 @@ pub fn review_page_of(
     if !summary.rounds.is_empty() {
         views.push(ReviewViewTab {
             view: ReviewView::SinceLast,
-            files: summary
-                .files
-                .iter()
-                .filter(|file| changed_since(&file.path))
-                .count() as u32,
+            files: summary.since_last.len() as u32,
         });
     }
     page.empty = match view {
@@ -757,6 +768,7 @@ pub fn review_page_of(
         snapshot: summary.snapshot.clone(),
         view,
         compared_with,
+        compared_base,
         views,
         rounds: summary.rounds.len() as u32,
         files: files_shown,

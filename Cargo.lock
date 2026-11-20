@@ -2483,6 +2483,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "ui-view",
  "uuid",
  "webpki-roots",
  "windows-sys 0.61.2",

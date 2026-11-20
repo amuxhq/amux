@@ -411,8 +411,8 @@ drafts the composer shows `[review · 3 comments ✕]`, read from the review's e
 reads the review again and carries its drafts as a sent review ([ATTACHMENTS.md](ATTACHMENTS.md#sent-reviews)),
 with the typed words as the summary, and the ✕ discards the drafts after asking. A sent review in the feed reads
 `[review · 3 comments]`; clicking it, or the leader then `o` on its message, opens that round on the same page to
-read only: its whole diff, from the base commit it was recorded with to its snapshot, with the comments it sent on
-their lines, or each with its stored code once the host no longer keeps the round's snapshot; or the text the agent
+read only: its whole diff, from the base commit it was recorded with to its snapshot, every file open (a flagged one
+too), with the comments it sent on their lines, or each with its stored code once the host no longer keeps the round's snapshot; or the text the agent
 read once the host no longer holds the round, or can't be reached with none of it loaded.
 
 ### Reporting a problem

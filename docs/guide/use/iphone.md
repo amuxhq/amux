@@ -123,8 +123,10 @@ on; refreshing moves them to the code as it is now, and any whose lines were
 edited become comments on their file.
 
 A review you sent shows in the chat as a chip. Tap it to see that round: its
-whole diff, from the base branch to the code you reviewed, with each comment
-you sent on its lines. Once the review has moved on to newer code twice since,
+whole diff, from the base branch to the code you reviewed, every file open,
+lockfiles and generated files too, with each comment you sent on its lines.
+If you edited a comment before the agent read the message, a later message
+sent it, and this chip shows the text it sent. Once the review has moved on to newer code twice since,
 the agent's computer no longer keeps the round's code, and each comment shows
 with the code you wrote it on. If the agent's computer no longer has the round, for example
 after you started over, or can't be reached and the round was never loaded,

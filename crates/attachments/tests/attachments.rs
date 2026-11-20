@@ -660,6 +660,7 @@ mod sent_review {
                 round: None,
                 placement: placed(At::Lines(lines(13, 14)), "src/store.rs"),
                 revision: 1,
+                sent_revision: None,
             },
             ReviewerComment {
                 id: b"c2".to_vec(),
@@ -683,6 +684,7 @@ mod sent_review {
                     "src/limits.rs",
                 ),
                 revision: 3,
+                sent_revision: None,
             },
             ReviewerComment {
                 id: b"c3".to_vec(),
@@ -697,6 +699,7 @@ mod sent_review {
                 round: None,
                 placement: placed(At::File(Empty {}), "docs/notes & limits.md"),
                 revision: 1,
+                sent_revision: None,
             },
             ReviewerComment {
                 id: b"c4".to_vec(),
@@ -711,6 +714,7 @@ mod sent_review {
                 round: Some(1),
                 placement: placed(At::Lines(lines(5, 5)), "src/new.rs"),
                 revision: 1,
+                sent_revision: None,
             },
         ]
     }

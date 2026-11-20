@@ -261,8 +261,10 @@ folded away where their lines changed. Tab shows all the changes again.
 
 A review you sent shows in the chat as `[review · 3 comments]`. Click it, or
 focus its message and press Ctrl+A then `o`, to see that round again: its whole
-diff, from the base branch to the code you reviewed, with each comment you sent
-on its lines. Once the review has moved on to newer code twice since, the
+diff, from the base branch to the code you reviewed, every file open, lockfiles
+and generated files too, with each comment you sent on its lines; Enter on a
+file folds it. If you edited a comment before the agent read the message, a
+later message sent it, and this chip shows the text it sent. Once the review has moved on to newer code twice since, the
 agent's computer no longer keeps the round's code, and each comment shows with
 the code it was written on. If the review has since been started over, or the
 computer can't be reached and the round was never loaded, you see the text the

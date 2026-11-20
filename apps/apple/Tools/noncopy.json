@@ -1545,7 +1545,7 @@
       {"literal": "\"/\"", "context": "let name = command.hasPrefix(\"/\") ? command : \"/\" + command", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 2},
       {"literal": "\"/\"", "context": "let runs = offered.map { $0.hasPrefix(\"/\") || $0.hasPrefix(\"$\") ? $0 : \"/\" + $0 }", "reason": "Slash command syntax the agent reads, not interface copy.", "count": 2},
       {"literal": "\"$\"", "context": "let runs = offered.map { $0.hasPrefix(\"/\") || $0.hasPrefix(\"$\") ? $0 : \"/\" + $0 }", "reason": "Skill mention syntax the agent reads, not interface copy.", "count": 1},
-      {"literal": "\"%02x\"", "context": "([sent.snapshot] + sent.commentIds.map { $0.map { String(format: \"%02x\", $0) }.joined() })", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"%02x\"", "context": "([sent.reviewId] + sent.commentIds).map { $0.map { String(format: \"%02x\", $0) }.joined() }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"/\"", "context": ".joined(separator: \"/\")", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift": [

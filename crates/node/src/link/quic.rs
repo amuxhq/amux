@@ -1200,7 +1200,7 @@ pub(crate) fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
     match kind {
         FramedKind::RelayTcp => CarrierKind::Relay,
         FramedKind::Ssh => CarrierKind::Ssh,
-        FramedKind::InProcess => CarrierKind::Direct,
+        FramedKind::Loopback => CarrierKind::Direct,
     }
 }
 
@@ -1210,7 +1210,7 @@ pub(crate) fn stream_path(kind: FramedKind) -> PathKind {
     match kind {
         FramedKind::RelayTcp => PathKind::RelayTcp,
         FramedKind::Ssh => PathKind::Ssh,
-        FramedKind::InProcess => PathKind::Lan,
+        FramedKind::Loopback => PathKind::Lan,
     }
 }
 

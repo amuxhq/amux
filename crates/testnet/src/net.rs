@@ -329,7 +329,7 @@ struct Link {
 pub(crate) enum LinkFlip {
     // Weak, so a host killed or removed mid-flap still drops its edge,
     // which withdraws it from discovery.
-    InProcess {
+    Loopback {
         a: Weak<Edge>,
         b: Weak<Edge>,
         id_a: Uuid,
@@ -347,7 +347,7 @@ impl LinkFlip {
     pub(crate) fn cut(&mut self) {
         match self {
             // Dropping the link severs it.
-            Self::InProcess { live, .. } => *live = None,
+            Self::Loopback { live, .. } => *live = None,
             Self::Lan { lan, a, b } => {
                 lan.cut(a, b, true);
             }
@@ -359,7 +359,7 @@ impl LinkFlip {
     /// have not within a few seconds, it stays cut until the next period.
     pub(crate) async fn restore(&mut self) {
         match self {
-            Self::InProcess {
+            Self::Loopback {
                 a,
                 b,
                 id_a,
@@ -2723,7 +2723,7 @@ impl Net {
             self.host(b)?.host_id,
         );
         self.sever_link(a, b)?;
-        Ok(LinkFlip::InProcess {
+        Ok(LinkFlip::Loopback {
             a: Arc::downgrade(&ends.0),
             b: Arc::downgrade(&ends.1),
             id_a: ends.2,

@@ -2313,7 +2313,7 @@ mod tests {
         }
 
         fn kind(&self) -> FramedKind {
-            FramedKind::InProcess
+            FramedKind::Loopback
         }
     }
 

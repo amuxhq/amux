@@ -386,7 +386,7 @@ pub async fn facts(cwd: &Path, recorded_base: Option<&str>) -> Result<Option<Git
     };
     let uncommitted = Some(totals(cwd, &against).await?);
     let on_branch = match (&base_branch, &head) {
-        (Some(base), Some(head)) => match branch_base(cwd, base, head).await? {
+        (Some(base), Some(head)) => match branch_base(cwd, base).await? {
             Some(used) if used.commit.as_deref() == Some(head.as_str()) => uncommitted,
             Some(used) => Some(totals(cwd, used.commit.as_deref().unwrap_or(head)).await?),
             None => None,
@@ -613,7 +613,7 @@ pub async fn changes(cwd: &Path, base: &Base) -> Result<Changes, GitError> {
                 None => default_branch(cwd).await?,
             };
             match (branch, &head) {
-                (Some(branch), Some(head)) => branch_base(cwd, &branch, head)
+                (Some(branch), Some(_)) => branch_base(cwd, &branch)
                     .await?
                     .ok_or(GitError::NoForkPoint(branch))?,
                 // Before the first commit, or with no base branch to be
@@ -752,11 +752,15 @@ async fn default_branch(cwd: &Path) -> Result<Option<String>, GitError> {
     Ok(None)
 }
 
-/// The ref a base branch is read from: the local branch, else origin's.
+/// The ref a base branch is read from: the local branch, else origin's,
+/// else a remote's branch named with its remote (`origin/main`), which is
+/// how the default rule reports an upstream. So every name the rule
+/// reports as the base can be asked for again and finds the same commit.
 async fn branch_ref(cwd: &Path, branch: &str) -> Result<Option<String>, GitError> {
     for name in [
         format!("refs/heads/{branch}"),
         format!("refs/remotes/origin/{branch}"),
+        format!("refs/remotes/{branch}"),
     ] {
         if answer(cwd, &["rev-parse", "--verify", "--quiet", &name])
             .await?
@@ -777,13 +781,18 @@ async fn fork_point(cwd: &Path, base: &str) -> Result<Option<String>, GitError> 
     answer(cwd, &["merge-base", &base, "HEAD"]).await
 }
 
-/// Where the default rule starts the changes of `head`, the commit checked
-/// out, given the base branch `base`: from where the branch left `base`;
-/// on the base branch itself, or a branch that has not left it, where the
-/// merge base is HEAD, from where it left its upstream, so commits not yet
-/// pushed count; and with no upstream, from HEAD. None when `base` does not
-/// exist or shares no history with HEAD.
-async fn branch_base(cwd: &Path, base: &str, head: &str) -> Result<Option<UsedBase>, GitError> {
+/// Where the default rule starts the changes of the commit checked out,
+/// given the base branch `base`: from where the branch left `base`; and
+/// with `base` itself checked out, from where it left its upstream, so
+/// commits not yet pushed count, and with no upstream, from HEAD. None when
+/// `base` does not exist or shares no history with HEAD.
+///
+/// Which branch is checked out decides the second step, not where HEAD
+/// sits. A branch of its own that has not left `base` yet has no commits of
+/// its own, though its merge base is HEAD as on `base` itself: asking its
+/// upstream would count `base`'s commits since it was pushed as the
+/// agent's.
+async fn branch_base(cwd: &Path, base: &str) -> Result<Option<UsedBase>, GitError> {
     let Some(fork) = fork_point(cwd, base).await? else {
         return Ok(None);
     };
@@ -792,11 +801,11 @@ async fn branch_base(cwd: &Path, base: &str, head: &str) -> Result<Option<UsedBa
         upstream: None,
         commit: Some(fork),
     };
-    if used.commit.as_deref() != Some(head) {
+    let checked_out = answer(cwd, &["symbolic-ref", "--quiet", "HEAD"]).await?;
+    if checked_out.as_deref() != Some(format!("refs/heads/{base}").as_str()) {
         return Ok(Some(used));
     }
-    // A detached head, or a branch with no upstream or one that is gone,
-    // has none to ask.
+    // A branch with no upstream, or one that is gone, has none to ask.
     let upstream = answer(
         cwd,
         &[

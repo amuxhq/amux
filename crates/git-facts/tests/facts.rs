@@ -831,7 +831,7 @@ async fn changes_on_a_branch_of_its_own_run_from_where_it_left_its_base() {
     ));
 }
 
-/// On the base branch the merge base is HEAD, so the default rule runs from
+/// With the base branch itself checked out, the default rule runs from
 /// where the branch left its upstream: commits not pushed yet count.
 /// Without an upstream it runs from HEAD.
 #[tokio::test]
@@ -879,6 +879,13 @@ async fn changes_on_the_base_branch_run_from_its_upstream_else_head() {
     let paths: Vec<_> = found.files.iter().map(|file| file.path.as_str()).collect();
     assert_eq!(paths, ["draft.txt", "unpushed.txt"]);
 
+    // The upstream the rule reports, asked for by name, is the same base.
+    let asked = changes(dir, &Base::Branch("origin/main".into()))
+        .await
+        .unwrap();
+    assert_eq!(asked.base.commit, found.base.commit);
+    assert_eq!(asked.files, found.files);
+
     // The row's own counts follow the same rule.
     let row = facts(dir, None).await.unwrap().unwrap();
     assert_eq!(row.uncommitted, totals(1, 1, 0));
@@ -886,6 +893,55 @@ async fn changes_on_the_base_branch_run_from_its_upstream_else_head() {
     // Once pushed, only the uncommitted work is left.
     git(dir, &["push", "-q"]);
     let row = facts(dir, None).await.unwrap().unwrap();
+    assert_eq!(row.on_branch, row.uncommitted);
+}
+
+/// A branch of its own that has not left its base has no commits of its
+/// own, though its merge base with the base is HEAD as on the base itself.
+/// Pushed with an upstream while the base was behind and moved up to the
+/// base since, it still shows only its uncommitted work: the base's commits
+/// since the push are not the agent's.
+#[tokio::test]
+async fn a_branch_moved_up_to_its_base_does_not_count_the_bases_commits() {
+    let repo = repository();
+    let dir = repo.path();
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare", "-b", "main"]);
+    git(
+        dir,
+        &["remote", "add", "origin", &remote.path().to_string_lossy()],
+    );
+    git(dir, &["push", "-q", "-u", "origin", "main"]);
+    git(dir, &["switch", "-q", "-c", "feat"]);
+    git(dir, &["push", "-q", "-u", "origin", "feat"]);
+    git(dir, &["switch", "-q", "main"]);
+    write(dir, "mainline.txt", 4);
+    git(dir, &["add", "mainline.txt"]);
+    git(
+        dir,
+        &["commit", "-q", "-m", "on main since feat was pushed"],
+    );
+    git(dir, &["switch", "-q", "feat"]);
+    git(dir, &["merge", "-q", "--ff-only", "main"]);
+    write(dir, "draft.txt", 1);
+
+    let default = Base::Default {
+        recorded_branch: Some("main".into()),
+    };
+    let found = changes(dir, &default).await.unwrap();
+    assert_eq!(
+        found.base,
+        UsedBase {
+            branch: Some("main".into()),
+            upstream: None,
+            commit: head_of(dir),
+        }
+    );
+    let paths: Vec<_> = found.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(paths, ["draft.txt"]);
+
+    let row = facts(dir, Some("main")).await.unwrap().unwrap();
+    assert_eq!(row.uncommitted, totals(1, 1, 0));
     assert_eq!(row.on_branch, row.uncommitted);
 }
 

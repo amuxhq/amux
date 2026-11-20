@@ -75,6 +75,7 @@ tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
 agent-dir = { workspace = true }
+attachments = { workspace = true }
 bytes = { workspace = true }
 client = { workspace = true }
 hyper-util = { workspace = true }

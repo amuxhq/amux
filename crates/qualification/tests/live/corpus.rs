@@ -1077,3 +1077,297 @@ impl Install {
         Ok(Verdict::Pass)
     }
 }
+
+/// The file a review is sent on, at the base commit: its code holds `<`,
+/// `>` and `&`, which the attachment's element must carry as written.
+const STORE_BASE: &str = "use std::fs::File;
+
+pub struct Store<F> {
+    path: String,
+    size: u64,
+    file: Option<F>,
+}
+
+impl Store<File> {
+    pub fn open(dir: &str, size: u64, limit: u64, open: bool) -> Option<Self> {
+        let path = format!(\"{dir}/store\");
+        if size < limit && open {
+            return Some(Store::<File> { path, size, file: None });
+        }
+        None
+    }
+}
+";
+
+/// The line the comment is on, before and at the snapshot.
+pub(super) const REVIEWED_BEFORE: &str = "        if size < limit && open {";
+pub(super) const REVIEWED_AFTER: &str = "        if size <= limit && open {";
+/// What the working tree gains after the snapshot: only the command the
+/// review gives shows it.
+pub(super) const AFTER_SNAPSHOT: &str = "PELICAN";
+
+fn git(
+    dir: &std::path::Path,
+    env: &[(&str, &std::ffi::OsStr)],
+    args: &[&str],
+) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .current_dir(dir)
+        .args(["-c", "user.name=amux", "-c", "user.email=amux@localhost"])
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ])
+        .args(args)
+        .envs(env.iter().copied())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| format!("git {}: {error}", args.join(" ")))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+impl Install {
+    /// The directory amux keeps the agent in.
+    pub(super) fn agent_dir(&self, agent: &[u8]) -> Result<std::path::PathBuf, String> {
+        fn find(dir: &std::path::Path, id: &str) -> Option<std::path::PathBuf> {
+            for entry in std::fs::read_dir(dir).ok()?.flatten() {
+                let path = entry.path();
+                if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    continue;
+                }
+                if entry.file_name() == id && dir.file_name().is_some_and(|name| name == "agents") {
+                    return Some(path);
+                }
+                if let Some(found) = find(&path, id) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let id = uuid::Uuid::from_slice(agent)
+            .map_err(|error| error.to_string())?
+            .to_string();
+        find(&self.root.path().join("data"), &id)
+            .ok_or_else(|| format!("no directory for agent {id}"))
+    }
+
+    /// A review of the scenario's project, sent as a client sends one: a
+    /// repository whose working tree changed `src/store.rs` since its
+    /// commit, a snapshot of that tree in a store in the agent's directory
+    /// (never the repository), a comment on the changed line, and then one
+    /// more change after the snapshot.
+    pub(super) fn review_fixture(
+        &self,
+        scenario: Scenario,
+        agent: &[u8],
+    ) -> Result<wire::Attachment, String> {
+        use wire::experimental::review_placement::At;
+        use wire::experimental::{
+            ReviewAnchor, ReviewDefinition, ReviewDefinitionKind, ReviewLine, ReviewLineKind,
+            ReviewLineRange, ReviewPlacement, ReviewSummary, ReviewerComment,
+        };
+
+        let root = self.project(scenario)?;
+        std::fs::create_dir_all(root.join("src")).map_err(|error| error.to_string())?;
+        let store = root.join("src").join("store.rs");
+        std::fs::write(&store, STORE_BASE).map_err(|error| error.to_string())?;
+        git(&root, &[], &["init", "-q", "-b", "main"])?;
+        git(&root, &[], &["add", "-A"])?;
+        git(&root, &[], &["commit", "-q", "-m", "Open the store"])?;
+        let reviewed = STORE_BASE.replace(REVIEWED_BEFORE, REVIEWED_AFTER);
+        std::fs::write(&store, &reviewed).map_err(|error| error.to_string())?;
+
+        let objects = self.agent_dir(agent)?.join("review").join("objects");
+        std::fs::create_dir_all(&objects).map_err(|error| error.to_string())?;
+        let index = objects.with_file_name("index");
+        let repository_objects = root.join(".git").join("objects");
+        let env = [
+            ("GIT_OBJECT_DIRECTORY", objects.as_os_str()),
+            (
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                repository_objects.as_os_str(),
+            ),
+            ("GIT_INDEX_FILE", index.as_os_str()),
+        ];
+        git(&root, &env, &["read-tree", "HEAD"])?;
+        git(&root, &env, &["add", "-A"])?;
+        let tree = git(&root, &env, &["write-tree"])?;
+        let snapshot = git(
+            &root,
+            &env,
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                "HEAD",
+                "-m",
+                "amux review snapshot",
+            ],
+        )?;
+        let _ = std::fs::remove_file(&index);
+        std::fs::write(
+            &store,
+            format!("{reviewed}\nconst AFTER_SNAPSHOT: &str = \"{AFTER_SNAPSHOT}\";\n"),
+        )
+        .map_err(|error| error.to_string())?;
+
+        let line = |kind: ReviewLineKind, old_line, new_line, text: &str| ReviewLine {
+            kind: kind as i32,
+            old_line,
+            new_line,
+            text: text.into(),
+            runs: Vec::new(),
+        };
+        let definition =
+            |kind: ReviewDefinitionKind, name: &str, label: &str, start, end| ReviewDefinition {
+                kind: kind as i32,
+                name: name.into(),
+                label: label.into(),
+                start_line: start,
+                end_line: end,
+                parent: None,
+            };
+        let on = ReviewLineRange { start: 12, end: 12 };
+        use ReviewLineKind::{Added, Context, Removed};
+        let comment = ReviewerComment {
+            id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            anchor: Some(ReviewAnchor {
+                commit: snapshot.clone(),
+                path: "src/store.rs".into(),
+                lines: Some(on),
+            }),
+            text: "Keep the strict comparison: a store at its limit is full.".into(),
+            snippet: vec![
+                line(Context, 9, 9, "impl Store<File> {"),
+                line(
+                    Context,
+                    10,
+                    10,
+                    "    pub fn open(dir: &str, size: u64, limit: u64, open: bool) -> Option<Self> {",
+                ),
+                line(
+                    Context,
+                    11,
+                    11,
+                    "        let path = format!(\"{dir}/store\");",
+                ),
+                line(Removed, 12, 0, REVIEWED_BEFORE),
+                line(Added, 0, 12, REVIEWED_AFTER),
+            ],
+            scope: vec![
+                definition(
+                    ReviewDefinitionKind::Impl,
+                    "Store",
+                    "impl Store<File>",
+                    9,
+                    17,
+                ),
+                definition(ReviewDefinitionKind::Method, "open", "fn open", 10, 16),
+            ],
+            round: None,
+            placement: Some(ReviewPlacement {
+                at: Some(At::Lines(on)),
+                changed_near: false,
+            }),
+        };
+        let summary = ReviewSummary {
+            id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            base_branch: "main".into(),
+            snapshot,
+            objects: objects.to_string_lossy().into_owned(),
+            root: root.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        Ok(attachments::sent_review::attachment(&summary, &[comment]))
+    }
+
+    /// The prompt a review is sent in: the person's summary, then the
+    /// review.
+    pub(super) fn review_prompt(attachment: wire::Attachment) -> PromptInput {
+        PromptInput {
+            text: format!(
+                "Here is my review of your changes. Do not change any file. First quote the code \
+                 my comment is on, its removed and added lines exactly as the review shows them, \
+                 in a fenced diff block. Then run, once and exactly as given, the command the \
+                 review gives for seeing what changed since the snapshot, and tell me the word in \
+                 quotes on the line it shows added.\n{}",
+                attachments::PLACEHOLDER
+            ),
+            attachments: vec![attachment],
+        }
+    }
+
+    /// What the agent replied, all its messages together.
+    pub(super) fn replied(&self, log: &Log) -> String {
+        use wire::codex_item::Kind as Codex;
+        log.ordered()
+            .into_iter()
+            .filter(|item| {
+                matches!(
+                    ItemBody::decode(self.kind, &item.body),
+                    ItemBody::Claude(Claude::Message(_))
+                        | ItemBody::Codex(Codex::Message(_) | Codex::WorkingNote(_))
+                )
+            })
+            .map(|item| item.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The reply quotes the commented code as written, `<` and `&` and
+    /// all, and names what only the review's command shows.
+    pub(super) fn read_the_review(&self, log: &Log) -> Result<(), String> {
+        let reply = self.replied(log);
+        for quoted in [REVIEWED_BEFORE.trim(), REVIEWED_AFTER.trim()] {
+            if !reply.contains(quoted) {
+                return Err(format!("the reply does not quote {quoted:?}: {reply:?}"));
+            }
+        }
+        if !reply.contains(AFTER_SNAPSHOT) {
+            return Err(format!(
+                "the reply does not name what the diff command shows: {reply:?}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// A review sent into the chat: the agent quotes the commented code as
+    /// written and runs the diff command the review gives.
+    pub(super) async fn review_attachment(&self) -> Result<Verdict, String> {
+        let scenario = Scenario::ReviewAttachment;
+        let (agent, follow) = match self
+            .claude_agent(scenario, super::CLAUDE_MODEL, &[], &[])
+            .await?
+        {
+            Ok(ready) => ready,
+            Err(verdict) => return Ok(verdict),
+        };
+        let review = self.review_fixture(scenario, &agent)?;
+        self.send_input(
+            &agent,
+            sdk(claude_sdk_input::Of::Prompt(Self::review_prompt(review))),
+        )
+        .await?;
+        self.settle(&agent, &follow, "the review to be read", |ask| {
+            self.by_the_way(ask)
+        })
+        .await?;
+        if !tools(&follow.snapshot())
+            .iter()
+            .any(|call| call.name == "Bash" && call.state() == wire::ToolState::Succeeded)
+        {
+            return Err("no command ran".into());
+        }
+        self.read_the_review(&follow.snapshot())?;
+        self.judged(scenario, &follow)
+    }
+}

@@ -587,6 +587,58 @@ impl Install {
         self.judged(scenario, &follow)
     }
 
+    /// A review sent into the chat, under the permission Codex's own
+    /// config gives: the agent quotes the commented code as written, and
+    /// the diff command the review gives runs in Codex's default sandbox,
+    /// which reads the snapshot store outside the workspace, without asking
+    /// to leave it.
+    pub(super) async fn codex_review_attachment(&self) -> Result<Verdict, String> {
+        let scenario = Scenario::ReviewAttachment;
+        let (agent, follow) = match self
+            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .await?
+        {
+            Ok(ready) => ready,
+            Err(verdict) => return Ok(verdict),
+        };
+        let review = self.review_fixture(scenario, &agent)?;
+        self.input(
+            &agent,
+            wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Prompt(Self::review_prompt(review))),
+            }),
+        )
+        .await?;
+        let mut asked = Vec::new();
+        self.settle(&agent, &follow, "the review to be read", |ask| {
+            asked.push(super::ask_token(ask));
+            self.by_the_way(ask)
+        })
+        .await?;
+        let log = follow.snapshot();
+        let ran = commands(&log).into_iter().any(|(command, state)| {
+            command.command.contains("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+                && command.command.contains(" diff ")
+                && state == wire::ToolState::Succeeded
+        });
+        if !ran {
+            return Err(format!(
+                "the review's diff command did not run: {:?}",
+                commands(&log)
+                    .iter()
+                    .map(|(command, state)| (command.command.clone(), state.as_str_name()))
+                    .collect::<Vec<_>>()
+            ));
+        }
+        if !asked.is_empty() {
+            return Err(format!(
+                "Codex asked before the review's command ran, so its sandbox refused it: {asked:?}"
+            ));
+        }
+        self.read_the_review(&log)?;
+        self.judged(scenario, &follow)
+    }
+
     /// A turn, then `/compact`: the conversation reads compacted.
     pub(super) async fn compaction(&self) -> Result<Verdict, String> {
         let scenario = Scenario::Compaction;

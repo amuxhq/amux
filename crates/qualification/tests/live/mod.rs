@@ -116,6 +116,7 @@ pub enum Scenario {
     Image,
     SignInProblem,
     SteerFolded,
+    ReviewAttachment,
     ApprovalDeny,
     InjectIdle,
     InjectDrain,
@@ -169,7 +170,7 @@ pub enum Scenario {
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 85] = [
+pub const SCENARIOS: [Scenario; 86] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -205,6 +206,7 @@ pub const SCENARIOS: [Scenario; 85] = [
     Scenario::Image,
     Scenario::SignInProblem,
     Scenario::SteerFolded,
+    Scenario::ReviewAttachment,
     Scenario::ApprovalDeny,
     Scenario::InjectIdle,
     Scenario::InjectDrain,
@@ -295,6 +297,7 @@ impl Scenario {
             Scenario::Image => "image",
             Scenario::SignInProblem => "sign_in_problem",
             Scenario::SteerFolded => "steer_folded",
+            Scenario::ReviewAttachment => "review_attachment",
             Scenario::ApprovalDeny => "approval_deny",
             Scenario::InjectIdle => "inject_idle",
             Scenario::InjectDrain => "inject_drain",
@@ -362,7 +365,9 @@ impl Scenario {
     /// its own to attach; the rest record each kind's corpus (corpus.rs for
     /// both Claude kinds, pty.rs and terminal.rs for terminal Claude alone,
     /// codex_corpus.rs for Codex), a failing command, an image and a
-    /// message sent into the running turn on every kind.
+    /// message sent into the running turn on every kind. A sent review is
+    /// recorded where the corpora that the strict decode tests read are
+    /// taken, headless Claude and Codex.
     fn applies(self, kind: Kind) -> bool {
         match self {
             Scenario::Initialize
@@ -377,7 +382,7 @@ impl Scenario {
             | Scenario::FailingCommand
             | Scenario::Image
             | Scenario::SteerFolded => true,
-            Scenario::Usage => kind != Kind::ClaudePty,
+            Scenario::Usage | Scenario::ReviewAttachment => kind != Kind::ClaudePty,
             Scenario::Controls
             | Scenario::Effort
             | Scenario::ElicitationAccepted
@@ -1323,6 +1328,10 @@ impl Install {
             Scenario::SignInProblem => self.sign_in_problem().await,
             Scenario::SteerFolded if self.kind == Kind::Codex => self.codex_steer_folded().await,
             Scenario::SteerFolded => self.steer_folded().await,
+            Scenario::ReviewAttachment if self.kind == Kind::Codex => {
+                self.codex_review_attachment().await
+            }
+            Scenario::ReviewAttachment => self.review_attachment().await,
             Scenario::ApprovalDeny => self.approval_deny().await,
             Scenario::InjectIdle => self.inject_idle().await,
             Scenario::InjectDrain => self.inject_drain().await,

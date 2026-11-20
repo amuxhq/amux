@@ -1360,6 +1360,38 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.reviewChip, ReviewChip(comments: 3, moved: true))
     }
 
+    /// A queued prompt that carried the review, withdrawn, closed no round:
+    /// its words come back without the review, and the chip is back, so the
+    /// next send reads the drafts as they are then and carries one review.
+    func testAWithdrawnReviewPromptBringsTheChipBack() async {
+        let chip = ReviewChip(comments: 2, moved: false)
+        let source = FakeChat(rows: [row("a", 1)], frame: frame(phase: .working, reviewChip: chip))
+        source.withReview = .success(SendOutcome(inputId: [7], state: .queued))
+        let model = ChatModel(source: source)
+        model.draft = "Look at these."
+        await model.send()?.value
+        XCTAssertNil(model.reviewChip, "held back while the prompt waits")
+
+        // The bridge's draft of a queued prompt never carries the review.
+        source.drafts[[7]] = Draft(words: "Look at these.", attachments: [])
+        let sent = SentReviewRef(
+            reviewId: [1], round: 1,
+            comments: [SentCommentRef(id: [1], revision: 1), SentCommentRef(id: [2], revision: 1)])
+        let queued = QueuedRow(
+            inputId: [7],
+            text: [.text("Look at these. "), .attachment(.sentReview(comments: 2, review: sent, text: ""))],
+            steered: false, canWithdraw: true, canSendNow: true, fromAgent: nil)
+        await model.withdraw(queued)?.value
+        XCTAssertEqual(source.withdrawn, [[7]])
+        XCTAssertEqual(model.draft, "Look at these.")
+        XCTAssertTrue(model.attachments.isEmpty, "the review stays behind")
+        XCTAssertEqual(model.reviewChip, chip, "the drafts are the chip's again")
+
+        await model.send()?.value
+        XCTAssertEqual(source.sentWithReview.count, 2, "the next send reads the drafts afresh")
+        XCTAssertEqual(source.sentWithReview.last, Draft(words: "Look at these.", attachments: []))
+    }
+
     func testASendWithTheReviewThatFailsKeepsTheWordsAndTheChip() async {
         let chip = ReviewChip(comments: 1, moved: false)
         let source = FakeChat(rows: [row("a", 1)], frame: frame(reviewChip: chip))

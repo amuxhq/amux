@@ -1201,12 +1201,20 @@ public final class ChatModel {
     }
 
     /// Takes a queued prompt back; its words and attachments return to the
-    /// draft. What it held is read before it leaves the queue.
+    /// draft. What it held is read before it leaves the queue. A review it
+    /// carried does not come back with it: withdrawn, it closed no round,
+    /// so its comments are drafts still, the chip shows them again, and the
+    /// next send reads them as they are then.
     @discardableResult
     public func withdraw(_ queued: QueuedRow) -> Task<Void, Never>? {
         let taken = source.draft(of: queued.inputId)
+        let carriedReview = queued.text.contains { segment in
+            if case .attachment(.sentReview) = segment { return true }
+            return false
+        }
         return act({ await $0.withdraw(queued.inputId) }) { [weak self] in
             if let taken { self?.restore(taken) }
+            if carriedReview { self?.sentChip = nil }
         }
     }
 

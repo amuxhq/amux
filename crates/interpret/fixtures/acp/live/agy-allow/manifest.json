@@ -1,0 +1,25 @@
+{
+  "spec": "agy-allow",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.145398Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:ae048ec9457d6cad73a3b41a97c2d1d4bd60cb5bff84ae0b791e85da1b78f7e5",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "3e3ea054-2142-41b2-9523-c3725cbeba10"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a shell command needing permission, allowed once"
+  }
+}

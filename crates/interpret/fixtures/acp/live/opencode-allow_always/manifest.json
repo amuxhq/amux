@@ -1,0 +1,35 @@
+{
+  "spec": "opencode-allow_always",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:46.968195Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:3058665daae636f79f6d069422f1ea5dec71872aab19b3c7f7101eb2de6b735f",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 27,
+    "personal_identifiers": 12
+  },
+  "session_ids": [
+    "ses_e05978b1cffefWPIhKFo1pmg03"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a narrow shell command allowed always, then the same command again",
+    "started_as": {
+      "command": [
+        "opencode",
+        "acp"
+      ],
+      "env": [
+        "OPENCODE_CONFIG_CONTENT={\"permission\":{\"bash\":\"ask\",\"edit\":\"ask\"}}"
+      ],
+      "session_meta": null
+    }
+  }
+}

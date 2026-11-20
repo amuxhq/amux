@@ -1,0 +1,25 @@
+{
+  "spec": "agy-allow_always",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.098738Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:3af774fe44bed4b0ba865b8b5ab0f2a3d7d4fb0aa9bfcbd00d500f9e32c60c37",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "45829441-1fea-44bb-b959-cc8aec4e43b6"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a narrow shell command allowed always, then the same command again"
+  }
+}

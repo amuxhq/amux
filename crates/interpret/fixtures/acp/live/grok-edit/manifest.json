@@ -1,0 +1,25 @@
+{
+  "spec": "grok-edit",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:45.012045Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:c7d064e2275c298eab9fe86bb33b33900210b1b1ccba793e0b925ae790563295",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 265,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa61-ad73-72d2-9bfe-35beb62c6069"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt that has the agent edit a file, its permission allowed once"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "spec": "agy-elicitation",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.546961Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:f5d7b758aed2469fff311239c7d5c6e75b7e4c5328b2edb9ab1817a94f38c599",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 3,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "5966bbe7-45c2-48d4-9cf4-0c072dde9a53"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a tool server's form elicitation, during a tool call the prompt asks for"
+  }
+}

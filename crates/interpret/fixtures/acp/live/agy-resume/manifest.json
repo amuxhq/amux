@@ -1,0 +1,25 @@
+{
+  "spec": "agy-resume",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:44.015902Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:c7f9d073f36469fb49351ab99318a8a6e23f82bd920f4d5ccb94224571e684f2",
+    "spawn.jsonl": "sha256:fab8ade3cf718913606b5a9b83c087d5ca6a5cd494afeee5f812975af81308b2"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 4,
+    "personal_identifiers": 6
+  },
+  "session_ids": [
+    "52ffe6ea-fda9-45c7-bc93-19b99bc3a25c"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt, the process ended, then session/resume in a new process and a prompt"
+  }
+}

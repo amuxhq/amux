@@ -353,12 +353,16 @@ ci: no-update-flags lint fmt-check codegen-check store-check dependency-policy d
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
 # resume, plan, questions, usage, catalogue, host_catalogue, permission, mode,
 # attach, a headless-corpus scenario for claude_sdk, or all), under the
-# operator's existing login. With no arguments
+# operator's existing login. The acp kind takes an agent and a scenario
+# instead (`just live acp grok cancel`, `just live acp all all`; lists may
+# be comma-separated), drives the agent with a scripted ACP client through
+# acp-probe, and joins each run to crates/interpret/fixtures/acp/live.
+# With no arguments
 # it reports not_run for every kind and starts nothing. Its tests are not
 # libtest's, so they run under cargo test, with the binaries they start built
 # first.
 live *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p qualification --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test "${kind}_live" -- "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex acp; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; acp) {{bounded}} 900 cargo build --locked -p qualification --bin acp-probe; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test acp_live -- "$@"; exit $? ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex, acp" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p qualification --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test "${kind}_live" -- "$@"
 
 # Waves of Sonnet testers, each on a test network of its own with real
 # Claude and Codex agents, keeping evidence of what they find (docs/QA.md).

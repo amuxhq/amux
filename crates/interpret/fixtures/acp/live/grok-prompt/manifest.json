@@ -1,0 +1,25 @@
+{
+  "spec": "grok-prompt",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:46.033969Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:2e07a8048dc803a8d478596b79dc0f3a6fab4360d89909ad0dd92e59dee1a3a4",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 151,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa61-7751-75c3-b3ab-f00c547ba207"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "one plain prompt and its answer"
+  }
+}

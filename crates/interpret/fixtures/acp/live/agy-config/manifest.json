@@ -1,0 +1,25 @@
+{
+  "spec": "agy-config",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.384436Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:7fc7c129ca9df8b0574aa1aa4769e17657efa95ec574859ab6402f56a3953e6b",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "d17bba63-2ff9-421f-8f75-f25fcc1b562a"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "thought level and mode changed by session/set_config_option and session/set_mode, then one prompt"
+  }
+}

@@ -217,6 +217,25 @@ cargo = [
 ]
 
 [[suite]]
+name = "acp-recorded-adapter"
+contract = "The ACP capture proxy runs any agent command, carries its stdin, stdout and stderr through unchanged while recording each line, refuses to run unrecorded, and joins a capture spanning two agent processes to the corpus with each line naming its process and nothing of the owner's home, host, installation ids or subscription left."
+paths = ["crates/qualification/src/bin/acp_probe", "crates/qualification/src/recording/acp.rs", "crates/qualification/tests/acp_probe.rs"]
+recipe = "just suite acp-recorded-adapter"
+boundary = "Provider adapter"
+oracle = "The relayed bytes, the recorded rows and the joined recording's manifest and lines."
+real = ["processes on the PATH"]
+substituted = ["live ACP agent by a shell script"]
+time = "driven"
+capabilities = ["Unix", "Rust toolchain"]
+lane = "fast"
+evidence = "crates/interpret/fixtures/acp/live"
+update = "Re-record with `just live acp <agent> <scenario>`, which joins each run; `acp-probe join` sanitizes a kept capture again."
+cargo = [
+  { package = "qualification", kind = "bin", targets = ["acp-probe"], features = [] },
+  { package = "qualification", modules = ["acp_probe"], features = [] },
+]
+
+[[suite]]
 name = "claude-protocol"
 contract = "Every line of every headless Claude recording, in both directions, and every transcript row and hook payload of every terminal Claude recording decodes as a known type; an unknown type is kept whole in production and refused by the strict check."
 paths = ["crates/claude-protocol"]
@@ -803,6 +822,24 @@ update = "Join a passing run's capture into the Codex corpus with codex-probe jo
 cargo = [
   { package = "qualification", targets = ["codex_live"], features = ["live"] },
   { package = "qualification", kind = "bin", targets = ["codex-probe"], features = [] },
+]
+
+[[suite]]
+name = "acp-live-compatibility"
+contract = "Each built-in ACP agent (Antigravity, OpenCode, Grok) under its real program and the owner's sign-in answers a scripted client across the scenario matrix (prompt, file read and edit, approvals allowed, denied and always, cancel, queued and mid-turn prompts, image, settings, resume and load in a new process, catalogue, signed-out start, elicitation, question, compaction), and each run joins the ACP corpus sanitized."
+paths = ["crates/qualification/tests/acp_live.rs", "crates/qualification/tests/acp"]
+recipe = "just live acp all all"
+boundary = "Provider adapter"
+oracle = "Each scenario's own protocol facts (an answer, a stop reason, a permission request, a file changed); the recordings are the evidence, as no ACP interpreter judges them yet."
+real = ["Antigravity, OpenCode and Grok programs", "operator login"]
+substituted = ["amux by a scripted ACP client"]
+time = "real"
+capabilities = ["Unix", "agent sign-ins", "network", "may spend provider credits"]
+lane = "qualification"
+evidence = "the printed verdict lines and notes; raw captures with each agent's stderr in target/live/acp/"
+update = "Re-run the scenario; the run replaces its recording in crates/interpret/fixtures/acp/live."
+cargo = [
+  { package = "qualification", targets = ["acp_live"], features = ["live"] },
 ]
 
 [[suite]]

@@ -20,8 +20,11 @@
 //! - never left, the relay refusing a lapsed plan: `PERMISSION_DENIED`,
 //!   reason `PAYMENT_REQUIRED`;
 //! - never left, the host no longer trusting this one: `UNAUTHENTICATED`;
-//! - left, and no answer began within the answer limit, or the link failed
-//!   under it, mid-body included: `ABORTED`, since the owner may have acted.
+//! - left, and no answer began within the answer limit of the request
+//!   last going out, or the link failed under it, mid-body included:
+//!   `ABORTED`, since the owner may have acted. The limit runs from the
+//!   request's last part going to the link, so uploading a large request
+//!   over a slow link is not counted as waiting for its answer.
 //!
 //! Anything the owner answered passes through untouched.
 //!
@@ -143,8 +146,9 @@ impl Carrier {
             }
         };
         let aborted = status(uncertain(&name()));
-        match tokio::time::timeout(ANSWER_PATIENCE, channel.oneshot(request)).await {
-            Ok(Ok(response)) => {
+        let (request, sent) = sending(request);
+        match answer_begun(channel.oneshot(request), &sent).await {
+            Some(Ok(response)) => {
                 let (parts, body) = response.into_parts();
                 // A refusal with no messages carries its status in the
                 // headers, and its body ends with nothing more to read.
@@ -161,7 +165,7 @@ impl Carrier {
             }
             // It went out: whether it arrived before the link failed, or
             // before the limit, nobody here can know.
-            Ok(Err(_)) | Err(_) => {
+            Some(Err(_)) | None => {
                 line.end(CarriedOutcome::Aborted, aborted.code());
                 aborted.into_http()
             }
@@ -181,6 +185,81 @@ impl Service<http::Request<Body>> for Carrier {
     fn call(&mut self, request: http::Request<Body>) -> Self::Future {
         let carrier = self.clone();
         Box::pin(async move { Ok(carrier.carry(request).await) })
+    }
+}
+
+/// When a carried request's body last went to the link: when the call
+/// set out, then each time the link took more of it, and when it ended.
+#[derive(Clone)]
+struct Sent(Arc<std::sync::Mutex<tokio::time::Instant>>);
+
+impl Sent {
+    fn last(&self) -> tokio::time::Instant {
+        *self.0.lock().expect("a time is only written")
+    }
+
+    fn now(&self) {
+        *self.0.lock().expect("a time is only written") = tokio::time::Instant::now();
+    }
+}
+
+/// `request` with its body telling the returned [`Sent`] each time the link
+/// takes more of it.
+fn sending(request: http::Request<Body>) -> (http::Request<Body>, Sent) {
+    let sent = Sent(Arc::new(std::sync::Mutex::new(tokio::time::Instant::now())));
+    let request = request.map(|inner| {
+        Body::new(Sending {
+            inner,
+            sent: sent.clone(),
+        })
+    });
+    (request, sent)
+}
+
+/// What `call` answers, if its answer begins within [`ANSWER_PATIENCE`] of
+/// its request's body last going out: a request still being sent, such as
+/// a large file over a slow relay, is not waiting for an answer yet, so its
+/// upload is not counted against the limit.
+async fn answer_begun<F: std::future::Future>(call: F, sent: &Sent) -> Option<F::Output> {
+    let mut call = std::pin::pin!(call);
+    loop {
+        let until = sent.last() + ANSWER_PATIENCE;
+        tokio::select! {
+            answered = &mut call => return Some(answered),
+            () = tokio::time::sleep_until(until) => {
+                if sent.last() + ANSWER_PATIENCE <= tokio::time::Instant::now() {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+/// A carried request's body, marking when the link takes each part of it.
+struct Sending {
+    inner: Body,
+    sent: Sent,
+}
+
+impl http_body::Body for Sending {
+    type Data = bytes::Bytes;
+    type Error = Status;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let polled = ready!(Pin::new(&mut self.inner).poll_frame(cx));
+        self.sent.now();
+        Poll::Ready(polled)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
     }
 }
 

@@ -19,9 +19,11 @@ use crate::runtime::ProfileRuntime;
 /// unreachable.
 pub(crate) const REACH_PATIENCE: Duration = Duration::from_secs(10);
 
-/// How long a call that went out waits for its answer to begin. A spawn
-/// waits for the child's Hello on the far side, so this covers a start as
-/// well as a round trip. Past it the call may or may not have arrived.
+/// How long a call that went out waits for its answer to begin, from when
+/// the last of its request went to the link: a large request still being
+/// sent is not waiting yet. A spawn waits for the child's Hello on the far
+/// side, so this covers a start as well as a round trip. Past it the call
+/// may or may not have arrived.
 pub(crate) const ANSWER_PATIENCE: Duration = Duration::from_secs(30);
 
 /// Why no call to a host could leave this one. Nothing reached the host.

@@ -154,7 +154,7 @@ meets often:
 | `FAILED_PRECONDITION`, reason `HOST_UNREACHABLE` | A carried call that never left: no link to the host, the host not trusted, or no channel within 10 seconds. Also older history on a host that cannot be reached, with nothing held locally |
 | `PERMISSION_DENIED`, reason `PAYMENT_REQUIRED` | A carried call that never left because only the relay reaches the host and the account's subscription lapsed to the free plan, which carries no calls between hosts |
 | `UNAUTHENTICATED` | A carried call that never left because the host no longer trusts this machine |
-| `ABORTED` | A carried call that left and got no answer within 30 seconds, or whose link failed under it; or input handed to the agent whose answer was lost. Either may have taken effect |
+| `ABORTED` | A carried call that left and got no answer within 30 seconds of the last of its request being sent, or whose link failed under it; or input handed to the agent whose answer was lost. Either may have taken effect |
 | `UNIMPLEMENTED` | The answering host has no such call: its build predates it, or it does not run the experiment the call belongs to. With no message, the client library words it as that host needing an update |
 | `RESOURCE_EXHAUSTED` | An attachment over the 64 MB limit |
 | `PERMISSION_DENIED` | An agent caller acted on an agent that is not its own direct child, or asked for what only a person may |

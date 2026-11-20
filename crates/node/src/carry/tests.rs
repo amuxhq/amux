@@ -126,6 +126,15 @@ impl Service<http::Request<Body>> for Probe {
                     });
                     grpc.server_streaming(ticks, request).await
                 }
+                "/probe.Probe/Count" => {
+                    let count = tower::service_fn(
+                        |request: tonic::Request<tonic::Streaming<Vec<u8>>>| async move {
+                            let parts: Vec<_> = request.into_inner().collect().await;
+                            Ok::<_, Status>(tonic::Response::new(vec![parts.len() as u8]))
+                        },
+                    );
+                    grpc.client_streaming(count, request).await
+                }
                 "/probe.Probe/Echo" => {
                     let echo = tower::service_fn(
                         |request: tonic::Request<tonic::Streaming<Vec<u8>>>| async move {
@@ -407,6 +416,58 @@ async fn an_answer_that_does_not_begin_within_its_limit_is_aborted() {
         "desk stopped answering; the call may or may not have arrived"
     );
     assert_eq!(started.elapsed(), ANSWER_PATIENCE);
+}
+
+/// The limit is for the answer to begin once the request has gone: a
+/// request whose body takes longer than the limit to send, as a large file
+/// over a slow relay does, is answered; an answer that does not begin
+/// within the limit of the last of it going out is aborted.
+#[tokio::test(start_paused = true)]
+async fn a_request_still_being_sent_is_not_waiting_for_its_answer() {
+    let far = Far::new();
+    let entrance = near(reaching(&far));
+    let gap = ANSWER_PATIENCE * 2 / 3;
+    let parts = futures_util::stream::unfold(0u8, move |sent| async move {
+        (sent < 3).then_some(())?;
+        tokio::time::sleep(gap).await;
+        Some((vec![sent], sent + 1))
+    });
+    let started = tokio::time::Instant::now();
+    let answer = client(&entrance, Some(wire::authority(&far.id)))
+        .await
+        .client_streaming(
+            tonic::Request::new(parts),
+            PathAndQuery::from_static("/probe.Probe/Count"),
+            Raw,
+        )
+        .await
+        .expect("answered once the slow request was all sent");
+    assert_eq!(answer.into_inner(), vec![3]);
+    assert!(started.elapsed() >= gap * 3, "{:?}", started.elapsed());
+
+    // Sent slowly, then never answered: aborted the limit after the last
+    // of it went out, not the limit after it set out.
+    let parts = futures_util::stream::unfold(0u8, move |sent| async move {
+        (sent < 2).then_some(())?;
+        tokio::time::sleep(gap).await;
+        Some((vec![sent], sent + 1))
+    });
+    let started = tokio::time::Instant::now();
+    let answer = client(&entrance, Some(wire::authority(&far.id)))
+        .await
+        .client_streaming(
+            tonic::Request::new(parts),
+            PathAndQuery::from_static("/probe.Probe/Hang"),
+            Raw,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(answer.code(), tonic::Code::Aborted, "{answer:?}");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= gap * 2 + ANSWER_PATIENCE && elapsed < gap * 3 + ANSWER_PATIENCE,
+        "{elapsed:?}"
+    );
 }
 
 #[tokio::test]

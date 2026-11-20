@@ -31,7 +31,7 @@ What the design holds itself to:
    history only if it needs it. There is no replay protocol.
 4. **Every surface tolerates version skew by field discipline,** because
    paired machines, pinned agent processes and long-lived clients never
-   update together; from 0.9.0 `just proto-compat` holds the protocol to it
+   update together; from 0.11.0 `just proto-compat` holds the protocol to it
    against the latest release ([the wire](WIRE.md#compatibility)).
 5. **Lean on the operating system.** Files, file locks, sockets closing on
    process death and inodes surviving a binary swap do the work before any
@@ -196,21 +196,30 @@ addresses change. See [embedding](EMBEDDED.md).
 
 ## Who dials the daemon
 
-![Everyone who needs something from the daemon uses its amux protocol, the MCP server included; the agent process itself never dials it, because its directory and journal are its whole interface. ctl.sock and the journal remain the daemon's way in to an agent. Both surfaces live by the same field discipline; the only difference is that ctl.sock has no version integer at all.](figures/who-dials-daemon.svg)
+![Everyone who needs something from the daemon uses its amux protocol, the MCP server included; the agent process itself dials it only for a spawn, because its directory and journal are otherwise its whole interface. ctl.sock and the journal remain the daemon's way in to an agent. Both surfaces live by the same field discipline; the only difference is that ctl.sock has no version integer at all.](figures/who-dials-daemon.svg)
 
 | Caller | Where | What it speaks |
 |---|---|---|
-| CLI, terminal client, Mac app and any [other client](guide/build/build-a-client.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
+| CLI, terminal client, Mac app and any [other client](guide/build/build-a-client.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; on the profile socket the local services (`InventoryService`, `SessionService`, `DraftService`), the host services (`AgentService`, `HostService`, `ReviewService`) and `ProfileAdminService` |
 | phone UI | in memory, through [`client::Client::in_memory`](../crates/client/src/lib.rs) and the phone's entry | the same services as the profile socket |
-| paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
-| an agent's tool server, and its agent process for a spawn | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
+| paired daemon | a link stream, after a pinned mutual-TLS handshake | the host services, carried for its people and agents and answered only for this host's own agents, and `PeerService`, asking for itself |
+| an agent's tool server, and its agent process for a spawn | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | the local and host services, without administration; the socket it arrived on is the caller's identity |
+
+A client reads from the daemon it is attached to, which answers from its own
+agents and its copies of other hosts', and addresses every act to the host
+that owns what it acts on, by that host's id. The daemon answers a call
+addressed to itself and carries any other, unread, over its link to the host
+it names: one hop, since a link's server passes nothing on. A paired daemon
+never calls a local service; it keeps its copy through the peer service.
 
 The daemon dials in the other direction exactly once per agent: it connects
 to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
-and writes inputs and stops. The agent never dials the daemon.
+and writes inputs and stops. The agent dials the daemon only to make the
+spawns its tool server asks it for, on its own `tools.sock`.
 
 Every surface is protobuf, and none carries a version integer. From 0.9.0 the
-schemas change only by adding; [the wire](WIRE.md) has the calls, the records
+schemas change only by adding, and the services from 0.11.0, the release that
+gave them their present shape; [the wire](WIRE.md) has the calls, the records
 and the rule.
 
 ## Inside the daemon
@@ -604,7 +613,7 @@ every message a provider sends or is sent.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the agent, session, pairing, profile-administration and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and every service: the local, host and peer services, pairing, profile administration and the installation. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`preview`](../crates/preview/src/lib.rs) | The one line a fleet row quotes from a reply: the interpreter writes it onto the agent's record, and the views read it from a chat they hold, so both say the same line. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |

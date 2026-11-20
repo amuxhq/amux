@@ -286,6 +286,198 @@ async fn nothing_in_the_repository_changes_taking_asking_or_dropping() {
     assert!(!first.merging);
 }
 
+/// `count` numbered lines, `line 1` first, with the lines `changed` (from
+/// 1) rewritten.
+fn numbered(count: usize, changed: &[usize]) -> String {
+    (1..=count)
+        .map(|n| match changed.contains(&n) {
+            true => format!("changed {n}\n"),
+            false => format!("line {n}\n"),
+        })
+        .collect()
+}
+
+/// What every call of the crate answers for the repository at `root`,
+/// committed at `from`, as text to compare: the changes and facts the
+/// fleet shows, a snapshot and whether the tree moved since, every
+/// comparison between `from` and the snapshot, and a drop. The store is a
+/// fresh one each time, so the answers can be compared.
+async fn every_answer(root: &Path, from: &str) -> Vec<String> {
+    use git_facts::compare::{self, LineMap, LineRange, Shown};
+
+    let store = store();
+    let store = &store.store;
+    let mut answers = vec![
+        format!(
+            "{:?}",
+            git_facts::changes(root, &git_facts::Base::Head).await
+        ),
+        format!(
+            "{:?}",
+            git_facts::changes(
+                root,
+                &git_facts::Base::Default {
+                    recorded_branch: None
+                }
+            )
+            .await
+        ),
+        format!("{:?}", git_facts::facts(root, None).await),
+        format!("{:?}", git_facts::delete_facts(root).await),
+        format!("{:?}", git_facts::branch_own_commits(root, "main")),
+        format!("{:?}", git_facts::origin(root)),
+    ];
+    let taken_at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let taken = snapshot::take(root, store, &LIMITS, taken_at)
+        .await
+        .unwrap();
+    let to = taken.commit.as_str();
+    answers.push(format!("{taken:?}"));
+    answers.push(format!(
+        "{:?}",
+        snapshot::moved(root, store, &LIMITS, to, &taken.omitted).await
+    ));
+    answers.push(format!("{:?}", compare::files(root, store, from, to).await));
+    let paths = ["a.txt", "lib", "new.txt", "x.bin"];
+    for context in [0, 3] {
+        answers.push(format!(
+            "{:?}",
+            compare::hunks(root, store, from, to, &paths, context).await
+        ));
+    }
+    let maps = LineMap::for_paths(root, store, from, to, &paths)
+        .await
+        .unwrap();
+    for path in paths {
+        let map = &maps[path];
+        let ranges = [(1, 4), (5, 5), (6, 12), (21, 22), (26, 27), (30, 40)];
+        let mapped: Vec<_> = ranges
+            .iter()
+            .map(|&(start, end)| map.map(LineRange::new(start, end)))
+            .collect();
+        answers.push(format!(
+            "{path}: {:?} {mapped:?} {:?}",
+            map.path(),
+            map.changed()
+        ));
+    }
+    for path in paths {
+        answers.push(format!("{:?}", compare::read(root, store, to, path).await));
+    }
+    let shown = Shown {
+        base: from,
+        snapshot: to,
+    };
+    let last = Shown {
+        base: from,
+        snapshot: from,
+    };
+    answers.push(format!(
+        "{:?}",
+        compare::since_last(root, store, last, shown, None, 3).await
+    ));
+    answers.push(format!("{:?}", snapshot::drop(root, store, [to]).await));
+    answers
+}
+
+/// The person's configuration changes neither what the crate answers nor
+/// anything in `.git`, whatever it asks for: a filesystem monitor and a
+/// split index, both of which write into `.git`; LFS configured as
+/// required but not installed, with a file LFS tracks whose cached times
+/// are stale, so any read that runs the filter fails; and every diff
+/// setting that changes what git writes (submodules as a log, hunks joined
+/// across more context, other prefixes and paths, colour, an external diff,
+/// another algorithm, an order file, no refresh of cached times).
+#[tokio::test]
+async fn the_persons_git_configuration_changes_no_answer_and_nothing_in_git() {
+    let library = repository();
+    let repo = repository();
+    let root = repo.path();
+    write(root, "a.txt", &numbered(40, &[]));
+    write(
+        root,
+        ".gitattributes",
+        "*.bin filter=lfs diff=lfs merge=lfs -text\n",
+    );
+    // A pointer, committed as is: no LFS runs here.
+    write(
+        root,
+        "x.bin",
+        "version https://git-lfs.github.com/spec/v1\noid sha256:\
+         4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\nsize 12345\n",
+    );
+    git(root, &["add", "-A"]);
+    git(
+        root,
+        &[
+            "submodule",
+            "add",
+            "-q",
+            library.path().to_str().unwrap(),
+            "lib",
+        ],
+    );
+    git(root, &["commit", "-q", "-m", "more"]);
+    let from = git(root, &["rev-parse", "HEAD"]);
+    // Changes 8 lines apart, which more inter-hunk context joins at three
+    // lines of context, and 3 apart, which it joins at none.
+    write(root, "a.txt", &numbered(40, &[5, 13, 25, 28]));
+    write(root, "new.txt", "new\n");
+    let inner = root.join("lib");
+    write(&inner, "base.txt", "moved on\n");
+    git(&inner, &["commit", "-q", "-am", "inner"]);
+    // Its cached times stale, its content as committed.
+    std::fs::File::options()
+        .write(true)
+        .open(root.join("x.bin"))
+        .unwrap()
+        .set_modified(SystemTime::now() + Duration::from_secs(3600))
+        .unwrap();
+    let order = tempfile::tempdir().unwrap();
+    let order = order.path().join("order");
+    std::fs::write(&order, "x.bin\nnew.txt\nlib\n").unwrap();
+    std::thread::sleep(Duration::from_millis(1100));
+
+    let before = manifest(root);
+    let defaults = every_answer(root, &from).await;
+    unchanged(&before, root, "every call, with git's defaults");
+    assert!(
+        defaults.iter().all(|answer| !answer.contains("Err(")),
+        "{defaults:#?}"
+    );
+
+    let order = order.to_str().unwrap();
+    for (key, value) in [
+        ("core.fsmonitor", "true"),
+        ("core.splitIndex", "true"),
+        ("gc.auto", "1"),
+        ("filter.lfs.process", "amux-no-such-lfs filter-process"),
+        ("filter.lfs.clean", "amux-no-such-lfs clean -- %f"),
+        ("filter.lfs.smudge", "amux-no-such-lfs smudge -- %f"),
+        ("filter.lfs.required", "true"),
+        ("diff.submodule", "log"),
+        ("diff.interHunkContext", "3"),
+        ("diff.noprefix", "true"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.relative", "true"),
+        ("color.ui", "always"),
+        ("color.diff", "always"),
+        ("diff.external", "amux-no-such-diff"),
+        ("diff.algorithm", "patience"),
+        ("diff.indentHeuristic", "false"),
+        ("diff.orderFile", order),
+        ("diff.autoRefreshIndex", "false"),
+    ] {
+        git(root, &["config", key, value]);
+    }
+    let before = manifest(root);
+    let configured = every_answer(root, &from).await;
+    unchanged(&before, root, "every call, with the person's configuration");
+    for (default, configured) in defaults.iter().zip(&configured) {
+        assert_eq!(configured, default);
+    }
+}
+
 /// An untracked file, a secret not yet ignored, is in the snapshot and its
 /// store and nowhere in the repository; an ignored one is in neither.
 #[tokio::test]

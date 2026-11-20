@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 pub use ui_state::ExitCause;
@@ -16,7 +17,8 @@ use crate::repository::Repository;
 use crate::subagents::GroupState;
 use crate::text::{within, without_direction_controls};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FleetCard {
     pub agent: AgentKey,
     /// What a person reads it as: its title, else its name.
@@ -67,7 +69,8 @@ pub struct FleetCard {
 
 /// Home's sections, computed once for every client. Empty sections are
 /// left out.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FleetView {
     pub sections: Vec<FleetSection>,
     /// Agents across the whole fleet that need the person, and that are
@@ -78,7 +81,8 @@ pub struct FleetView {
     pub working: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FleetSection {
     pub kind: SectionKind,
     /// How many families the section holds, folded or not.
@@ -94,7 +98,8 @@ pub struct FleetSection {
 /// else by its loudest member. Live holds the starting, working and idle,
 /// and those that ended without being closed: they read as ordinary
 /// agents, which a message resumes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum SectionKind {
     /// Kept at the top in the order pinned, newest pin first, whatever
     /// their members are doing.
@@ -105,7 +110,8 @@ pub enum SectionKind {
     Closed,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FleetRow {
     pub card: FleetCard,
     /// Zero for a family's head.
@@ -117,7 +123,8 @@ pub struct FleetRow {
     pub loud: Option<LoudMember>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct LoudMember {
     pub agent: AgentKey,
     pub name: String,
@@ -126,7 +133,8 @@ pub struct LoudMember {
 
 /// What a row says under its name, by the agent's state. What the agent is
 /// working on is a fact for agents finding each other, not for this line.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum SecondLine {
     /// What it wants of the person: what it asks, or what stops it. The
     /// same words a push says.
@@ -146,7 +154,8 @@ pub enum SecondLine {
 
 /// The activity line, with the subject of the step it names when the step
 /// is a held row: the command, the file, the query.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ActivityLine {
     pub activity: Activity,
     pub step: Option<String>,
@@ -406,14 +415,16 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
 
 /// Which agents home lists: those whose row says the words, narrowed to
 /// one state or one host. The default lists every agent.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FleetFilter {
     /// Matched without regard to case against what a row says.
     pub words: String,
     pub only: Option<FleetOnly>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FleetOnly {
     NeedsYou,
     /// Working or starting.
@@ -628,7 +639,8 @@ fn push(
 
 /// How this machine reaches a host now: one answer every client words, for
 /// the host itself and for every agent on it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Reach {
     /// A channel to it opened, over this route; this machine's own host
     /// has none.
@@ -649,7 +661,8 @@ impl Reach {
 /// Why a host is offline from here. A powered-off host and a signed-out
 /// machine look the same from here, so the cause is only ever a fact about
 /// this machine, never a claim about the host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Offline {
     /// No channel to it opens, or nothing reaches it at all.
     Plain,
@@ -705,7 +718,8 @@ pub fn fleet_card(fleet: &FleetState, local_host: &[u8], agent_id: &[u8]) -> Opt
 /// A chat's family: its parent, its children, how loud the whole family
 /// is, and how many of the family other than the chat's own agent need the
 /// person, the parent's side and grandchildren included.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FamilyHeader {
     pub parent: Option<FleetCard>,
     pub children: Vec<FleetCard>,

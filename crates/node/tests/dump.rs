@@ -78,8 +78,8 @@ async fn a_dump_carries_this_hosts_records_and_our_logs_and_no_secret() {
     // before the dump, which its window leaves out, one below the default
     // level, and the minute before it.
     let stamped = |ago_ms: i64| {
-        let at = chrono::DateTime::from_timestamp_millis(log_file::unix_ms_now() - ago_ms).unwrap();
-        at.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+        let at = jiff::Timestamp::from_millisecond(log_file::unix_ms_now() - ago_ms).unwrap();
+        at.strftime("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
     };
     let log = install.path("daemon.log");
     std::fs::write(

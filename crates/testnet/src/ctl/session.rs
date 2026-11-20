@@ -169,14 +169,14 @@ impl Folder {
         }
         let line = match outcome {
             Ok(done) => json!({
-                "time": chrono::Utc::now().to_rfc3339(),
+                "time": jiff::Timestamp::now().to_string(),
                 "args": arguments,
                 "ok": true,
                 "reply": done.text,
                 "files": done.files,
             }),
             Err(error) => json!({
-                "time": chrono::Utc::now().to_rfc3339(),
+                "time": jiff::Timestamp::now().to_string(),
                 "args": arguments,
                 "ok": false,
                 "reply": error,

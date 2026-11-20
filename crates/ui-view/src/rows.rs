@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
@@ -25,7 +26,8 @@ pub const OUTPUT_HEAD_LINES: usize = 3;
 /// The output's last lines a command row carries.
 pub const OUTPUT_TAIL_LINES: usize = 12;
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Row {
     pub id: Key,
     pub order: u64,
@@ -81,7 +83,8 @@ pub enum ToolRows<'a> {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum RowKind {
     Prompt {
         text: Vec<Segment>,
@@ -241,7 +244,8 @@ pub enum RowKind {
     Hidden,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AskRow {
     /// A plan the agent proposed, and what the person decided: its title,
     /// lifted from an opening heading that names it, and the rest as its
@@ -308,7 +312,8 @@ pub enum AskRow {
 }
 
 /// How an ask that is the work closed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Resolution {
     Open,
     /// Answered, sent, opened or granted.
@@ -324,7 +329,8 @@ pub enum Resolution {
 
 /// One question's answer: the picked options, a typed answer, or a secret
 /// answer that reads "answered (hidden)"; skipped when it is none of them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AnswerView {
     /// "(Recommended)" lifted off, as on the card.
     pub picked: Vec<String>,
@@ -336,7 +342,8 @@ pub struct AnswerView {
 }
 
 /// What an access grant granted, and for how long.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Granted {
     pub read: Vec<String>,
     pub write: Vec<String>,
@@ -344,7 +351,8 @@ pub struct Granted {
     pub for_session: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PlanVerdict {
     Open,
     Approved,
@@ -360,7 +368,8 @@ pub enum PlanVerdict {
 /// started, and asking nobody. Denied: refused, by the person or by the
 /// agent's own rules, whatever the call reports after. The rest are the
 /// call's own state.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CallPhase {
     Asking,
     Pending,
@@ -396,13 +405,15 @@ impl Row {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ChildAction {
     Start,
     Stop,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ExploreVerb {
     Read,
     Search,
@@ -411,7 +422,8 @@ pub enum ExploreVerb {
     WebSearch,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FileRow {
     pub path: String,
     pub change: FileChangeView,
@@ -421,7 +433,8 @@ pub struct FileRow {
     pub line: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FileChangeView {
     Edited,
     Created {
@@ -440,7 +453,8 @@ pub enum FileChangeView {
 
 /// A permission decision: allowed or denied, with what it granted and a
 /// note when the provider says them, and where it was answered.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Decision {
     pub outcome: DecisionView,
     /// What an allowance granted beyond this one call.
@@ -451,7 +465,8 @@ pub struct Decision {
 }
 
 /// What a permission allowed from then on.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PermissionGrant {
     /// Claude's standing permission: what it allows ("cargo test", as on
     /// the card), folders added, the permission it switched to, and the
@@ -477,7 +492,8 @@ pub enum PermissionGrant {
     NetworkHosts { hosts: Vec<String> },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DecisionView {
     Allowed,
     Denied,
@@ -1664,7 +1680,8 @@ pub(crate) fn counts(lines: &[EditLine]) -> (u32, u32) {
 /// One line of a patch, numbered on the side it belongs to (the new file
 /// for context and added lines, the old for removed ones) when the provider
 /// said where its hunk starts.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PatchLine {
     pub number: Option<u32>,
     pub kind: LineKind,
@@ -1675,7 +1692,8 @@ pub struct PatchLine {
 /// where a hunk starts, by its first line in the old file and the new, or a
 /// line of the patch. A file's own header lines are not carried. Each
 /// client decides whether to draw a hunk's start.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum EditLine {
     /// In a patch of several files, where each file's lines start: the
     /// file, named from the agent's folder, and what happens to it (added,
@@ -1690,7 +1708,8 @@ pub enum EditLine {
 
 /// The head of a landed file change: its first file's first lines, and
 /// how many lines of that file's patch follow them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PatchHead {
     pub lines: Vec<PatchLine>,
     pub more: usize,

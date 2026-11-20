@@ -21,7 +21,7 @@ ALLOWED_LOCAL = {
     "journal": {"wire"},
     "store": {"wire"},
     "agent-dir": {"wire"},
-    "redaction": set(),
+    "redaction": {"wire"},
     # The capped log file every process writes and a dump reads the tail of.
     "log-file": set(),
     # Reads an agent folder's branch and change totals by running git; the
@@ -43,12 +43,10 @@ ALLOWED_LOCAL = {
     "codex-protocol": set(),
     "pty-host": set(),
     # The daemon reaches agent processes only through the directory contract,
-    # never the agent crate, so the phone can host a runtime without a
-    # provider in its graph.
-    # interpret only for the dump path's per-kind redactor: the one stated
-    # exception to "the daemon interprets nothing". redaction for the table
-    # a dump writes the core's part by, as its structure alone.
-    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "interpret", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    # never the agent or interpret crates, so the phone hosts a runtime with
+    # no interpreter or provider-protocol crates in its graph. redaction walks
+    # wire descriptors and redacts free text without touching interpret.
+    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask

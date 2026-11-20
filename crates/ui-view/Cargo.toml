@@ -7,10 +7,15 @@ description = "Pure content values both amux clients compose: chat rows, ask car
 publish = false
 autotests = false
 
+[features]
+default = []
+# JSON Schema derives for generating the Swift mirrors (`ios-tools`).
+schema = ["dep:schemars", "ui-state/schema", "wire/schema"]
+
 [dependencies]
 attachments = { workspace = true }
 preview = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ui-state = { workspace = true }
@@ -24,3 +29,6 @@ prost = { workspace = true }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

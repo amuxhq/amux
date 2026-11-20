@@ -25,7 +25,7 @@ wire = { workspace = true }
 anyhow = { workspace = true }
 arboard = { workspace = true }
 sha2 = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 futures-util = { workspace = true }
 png = { workspace = true }
@@ -37,7 +37,7 @@ prost = { workspace = true }
 pulldown-cmark = { workspace = true }
 qrcode = { workspace = true }
 syntect = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -60,7 +60,11 @@ node = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
 testnet = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

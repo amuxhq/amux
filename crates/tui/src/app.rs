@@ -1254,10 +1254,8 @@ impl App {
         let state = chat.session.state();
         let writable = matches!(state.composer(), Composer::Send | Composer::Resume);
         let agent_id = chat.view.agent_id.clone();
-        // The page reads the changes the header counts, against the base
-        // the host reported for the list it shows.
+        // The page reads the changes the header counts.
         let comparison = chat.view.comparison;
-        let listed = chat.view.listed(comparison);
         let native = matches!(state.composer(), Composer::Native { .. });
         drop(state);
         // A subagent works in its parent's folder: the changes are the
@@ -1276,7 +1274,7 @@ impl App {
         {
             self.notice("reading the changes…", Tone::Info);
             self.spawn(async move {
-                Some(match session.review(comparison, listed).await {
+                Some(match session.review(comparison).await {
                     // The host's list of changed files is its word on
                     // whether anything changed; an empty patch beside a
                     // list was not read whole, and is no reason to say

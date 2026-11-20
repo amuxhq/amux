@@ -1,12 +1,12 @@
 shell |  | agents | 0,62,402,778
 chat |  | reviewer | 0,116,402,724
-chat.row.prompt | Please check against[Pasted text · 12 lines][Review · 1 comment] |  | 16,124,370,104
+chat.row.prompt | Please check against[Pasted text · 12 lines][Review · 1 comment] |  | 16,124,370,120
 chat.prose.render |  | rendered | 216,134,153,20
 chat.attachment | Pasted text · 12 lines |  | 216,160,155,26
-chat.attachment | Review · 1 comment |  | 216,192,156,26
-chat.row.prose | I read the review. | final | 16,240,370,20
-chat.prose.render |  | rendered | 16,240,370,20
-chat.row.turn-end | Worked for <t> |  | 16,267,81,16
+chat.attachment | Review · 1 comment |  | 216,200,156,26
+chat.row.prose | I read the review. | final | 16,256,370,20
+chat.prose.render |  | rendered | 16,256,370,20
+chat.row.turn-end | Worked for <t> |  | 16,283,81,16
 chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
@@ -26,9 +26,9 @@ chat.overview.review | Review changes |  | 31,698,121,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Please check against, Pasted text · 12 lines, Review · 1 comment |  | 16,124,370,104
- | I read the review. |  | 16,240,370,20
- | Worked for <t> |  | 16,267,81,16
+ | Please check against, Pasted text · 12 lines |  | 16,124,370,120
+ | I read the review. |  | 16,256,370,20
+ | Worked for <t> |  | 16,283,81,16
 BackButton | Agents |  | 16,62,44,44
  | reviewer, /p/t/a/n/d/work · desk |  | 76,66,159,36
  | 1 file, 2 added, 1 removed |  | 277,66,51,36

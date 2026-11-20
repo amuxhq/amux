@@ -1855,7 +1855,7 @@
       {"literal": "\"chevron.right\"", "context": "systemImage: head.folded ? \"chevron.down\" : \"chevron.right\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"review.file\"", "context": "\"review.file\", label: head.path,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review.comment\"", "context": ".identified(\"review.comment\", label: comment.text, value: ReviewWords.commentValue(comment))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"review.line\"", "context": "\"review.line\", label: line.text,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"review.line.\\(row.key)\"", "context": "\"review.line.\\(row.key)\", label: line.text,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"commented\"", "context": "value: [line.commented ? \"commented\" : nil, selected ? \"selected\" : nil]", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review.loading\"", "context": ".identified(\"review.loading\", label: String(localized: \"Loading…\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review.noLines\"", "context": ".identified(\"review.noLines\", label: ChatWords.reviewNoLines(why))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

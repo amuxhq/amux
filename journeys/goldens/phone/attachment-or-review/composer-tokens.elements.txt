@@ -2,8 +2,8 @@ shell |  | agents | 0,62,402,778
 chat |  | reviewer | 0,116,402,724
 chat.attachment | Pasted text · 12 lines |  | 28,682,172,26
 chat.attachment.remove | Remove |  | 164,673,44,44
-chat.attachment | Review · 1 comment |  | 28,714,173,26
-chat.attachment.remove | Remove |  | 165,705,44,44
+chat.review.chip | Review · 1 comment |  | 37,719,138,16
+chat.review.discard | Discard Drafts |  | 165,705,44,44
 chat.field | Reply | Please check against | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
@@ -16,9 +16,8 @@ chat.title | reviewer | reviewer | 76,66,159,36
  | Plain Text |  | 38,689,10,13
  | Pasted text · 12 lines |  | 57,687,117,16
  | Remove |  | 164,673,44,44
- | Comment Lines |  | 38,721,13,13
- | Review · 1 comment |  | 60,719,115,16
- | Remove |  | 165,705,44,44
+ | Review · 1 comment |  | 37,711,138,32
+ | Discard Drafts |  | 165,705,44,44
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44

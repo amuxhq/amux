@@ -392,8 +392,10 @@ public struct ReviewScreen: View {
                 .id(row.key)
                 .onTapGesture { tap(index) }
                 .accessibilityAction(named: Text("Select line")) { tap(index) }
+                // One identifier per line, its row's key, so each line can be
+                // reached on its own, as VoiceOver reaches it.
                 .identified(
-                    "review.line", label: line.text,
+                    "review.line.\(row.key)", label: line.text,
                     value: [line.commented ? "commented" : nil, selected ? "selected" : nil]
                         .compactMap { $0 }.joined(separator: " "))
         case .gap(let gap):

@@ -108,7 +108,7 @@ const CAPTURE_APART: Duration = Duration::from_millis(100);
 /// sends only its newest lines.
 pub const DUMP_LOG_BYTES: u64 = 1 << 20;
 /// The most a bundle may take, compressed: its logs and every record.
-pub const REPORT_LIMIT: usize = interpret::record::LIMIT;
+pub const REPORT_LIMIT: usize = redaction::REPORT_LIMIT;
 /// The room under which an agent whose record did not fit is left out
 /// rather than asked for a shorter one: hardly an event would fit.
 const SMALLEST_RECORD: usize = 4 << 10;
@@ -354,7 +354,7 @@ impl ProfileRuntime {
             "dump_id": dump_id.to_string(),
             "created_at_ms": created_at_ms,
             "trigger": trigger,
-            "reason": interpret::redact_text(&request.reason),
+            "reason": redaction::redact_for_this_machine(&request.reason),
             "profile": self.profile().to_string(),
             "host": self.host().to_string(),
             "generation": self.generation(),
@@ -640,7 +640,7 @@ fn dump_log(path: &Path, to: &Path, max: u64) -> io::Result<usize> {
     let Some(window) = log_file::window(path, since, max)? else {
         return Ok(0);
     };
-    let text = interpret::redact_text(&String::from_utf8_lossy(&window));
+    let text = redaction::redact_for_this_machine(&String::from_utf8_lossy(&window));
     std::fs::write(to, &text)?;
     Ok(compressed_len(text.as_bytes()))
 }
@@ -894,7 +894,7 @@ impl Structure {
     }
 
     fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8> {
-        interpret::structure_message(name, bytes, &mut self.0.lock().unwrap())
+        redaction::structure_message(name, bytes, &mut self.0.lock().unwrap())
     }
 }
 

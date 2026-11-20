@@ -15,3 +15,6 @@ tracing-subscriber = { workspace = true }
 [[bin]]
 name = "fake-amux"
 path = "src/main.rs"
+
+[lints]
+workspace = true

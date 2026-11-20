@@ -93,7 +93,7 @@ The principles that follow from that picture:
 
 - **The daemon interprets nothing.** Item and snapshot bodies are bytes to
   it. A report's record of its core walks those bytes by the schema only to
-  empty them (`interpret`'s structure walker), never to read them.
+  empty them (`redaction`'s structure walker), never to read them.
 - **Commit before fan-out.** A client never sees a revision the store
   cannot serve, so catching up and going live join at one point.
 - **Full state per revision.** Items are complete every time they are sent,
@@ -604,7 +604,7 @@ every message a provider sends or is sent.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the agent, session, pairing, profile-administration and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature: a crate that only speaks the messages leaves it off and takes no tokio from `wire`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the agent, session, pairing, profile-administration and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature, and `schemars` sits behind its `schema` feature: crates that only speak the messages take neither tokio nor schemars from `wire`. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`preview`](../crates/preview/src/lib.rs) | The one line a fleet row quotes from a reply: the interpreter writes it onto the agent's record, and the views read it from a chat they hold, so both say the same line. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
@@ -718,8 +718,8 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
-| `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
+| `wire`, `settings`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
+| `journal`, `store`, `agent-dir`, `attachments`, `redaction` | `wire` | |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `preview`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
@@ -731,7 +731,7 @@ The allowed sets encode the layering above:
 | `supervisor-core` | at most `core-ring`, `release` | reads release manifests and version stamps, and shares the cores' step budget and dump reasons from the ring's crate |
 | `workspace-core` | nothing in the workspace | the daemon core composes it and runs it inside its own step, so it needs no budget or dump reason of its own |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure |
+| `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `journal`, `log-file`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`) |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |

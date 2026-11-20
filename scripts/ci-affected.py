@@ -5,8 +5,12 @@ Reads the files a push or pull request changed (`--base` and `--head`, two
 commits) and prints one `name=true|false` line per group of jobs, the form
 GitHub reads as a job's outputs:
 
-  tests       Clippy, formatting and the workspace tests. Everything but a
-              change to documentation alone.
+  tests       Clippy, formatting and the workspace tests. Runs for any Rust
+              change or a file a Rust test reads, not for documentation or
+              Swift-only phone edits.
+  ios_tools   The ios-tools crate's tests alone, when only the phone app
+              changed (Swift mirrors and verification CLI), leaving the full
+              workspace tests unrun and the phone's rest to the iOS gate.
   product     The terminal journeys, the simulated stories and doctests. Not documentation, and not the phone app alone,
               which the iOS gate judges.
   models      The protocol models: a crate the models crate is built from.
@@ -48,12 +52,16 @@ except ModuleNotFoundError:  # Apple's command-line tools still ship Python 3.9.
     from pip._vendor import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-GROUPS = ["tests", "product", "models", "sanitizers", "bridge", "browser"]
+GROUPS = ["tests", "ios_tools", "product", "models", "sanitizers", "bridge", "browser"]
 
 # Documentation: nothing built or tested reads it, but for READS.
 DOCS = ("docs/", "images/", "marketing/")
-# A file under DOCS that a crate's test reads, and that crate.
-READS = {"docs/guide/understand/what-amux-sends.md": "analytics"}
+# A file outside crates/ (under DOCS or PHONE) that a crate's test reads, and
+# that crate.
+READS = {
+    "docs/guide/understand/what-amux-sends.md": "analytics",
+    "apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json": "node",
+}
 PHONE = "apps/apple/"
 JS = "js/"
 
@@ -135,7 +143,8 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
         return everything or bool(changed & built_from(names, crates))
 
     return {
-        "tests": product or phone,
+        "tests": product,
+        "ios_tools": phone and not product,
         "product": product,
         "models": reaches(MODELS),
         "sanitizers": everything or bool(changed & set(sanitizers)),

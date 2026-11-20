@@ -54,6 +54,11 @@ members = [
 edition = "2024"
 license = "FSL-1.1-ALv2"
 
+[workspace.lints.clippy]
+await_holding_lock = "deny"
+dbg_macro = "deny"
+todo = "deny"
+
 [workspace.dependencies]
 # Internal
 agent = { path = "crates/agent" }
@@ -102,7 +107,7 @@ replay-support = { path = "crates/replay-support" }
 # planning (0.6.0); deny.toml allows this source alone beside rustls.
 wt = { git = "https://github.com/jordanwebster/wt", tag = "v0.6.1" }
 portable-pty = "0.9"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time", "process", "fs", "signal", "test-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time", "process", "fs", "signal"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 libc = "0.2"
 signal-hook = "0.3"
@@ -139,17 +144,18 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 webpki-roots = "1"
 hpke = { version = "0.15", default-features = false, features = ["alloc", "chacha", "getrandom", "hkdfsha2", "x25519"] }
 ring = "0.17"
-curve25519-dalek = "4.1"
+base64 = "0.22"
+curve25519-dalek = "5"
 rcgen = { version = "0.14.8", default-features = false, features = ["crypto", "pem", "ring"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 semver = { version = "1", features = ["serde"] }
-sha2 = "0.10"
+sha2 = "0.11"
 fontdue = "0.9"
 png = "0.18.1"
 # The system clipboard, for pasting an image or a file into a chat draft.
 arboard = "3.6"
 socket2 = "0.6"
-chrono = { version = "0.4", features = ["serde"] }
+jiff = { version = "0.2", features = ["serde"] }
 anyhow = "1.0.101"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }

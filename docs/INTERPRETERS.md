@@ -624,7 +624,7 @@ again through the kind's interpreter when the report is made, keeping each
 event's kind and size and what the interpreter concluded, with every id and
 key aliased (see [the agent's record](DEBUGGING.md#the-agents-record)). What it
 carries of the daemon core's protocol messages, `structure_message`
-([`redact.rs`](../crates/interpret/src/redact.rs)) writes as their structure
+([`message.rs`](../crates/redaction/src/message.rs)) writes as their structure
 alone, walked by descriptor: every text and body zero bytes of its length,
 each value treated by its field's name.
 

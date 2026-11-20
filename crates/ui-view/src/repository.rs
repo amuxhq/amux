@@ -3,6 +3,7 @@
 //! repository share all three wherever they are — worktrees, and the same
 //! repository on another machine — because they share a remote.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,8 @@ use serde::{Deserialize, Serialize};
 /// its own palette; the index is what they agree on.
 pub const REPOSITORY_TINTS: u8 = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Repository {
     /// What its checkouts share: the remote, else the folder's path.
     pub key: String,

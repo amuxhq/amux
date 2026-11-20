@@ -7,9 +7,14 @@ description = "The pure session and fleet model both amux clients reduce their s
 publish = false
 autotests = false
 
+[features]
+default = []
+# JSON Schema derives for generating the Swift mirrors (`ios-tools`).
+schema = ["dep:schemars", "wire/schema"]
+
 [dependencies]
 prost = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 wire = { workspace = true }
 
@@ -20,3 +25,6 @@ serde_json = { workspace = true }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

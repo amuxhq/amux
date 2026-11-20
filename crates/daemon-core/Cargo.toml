@@ -25,3 +25,6 @@ workspace-core = { workspace = true }
 journal = { workspace = true, features = ["synthetic"] }
 store = { workspace = true, features = ["explore"] }
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

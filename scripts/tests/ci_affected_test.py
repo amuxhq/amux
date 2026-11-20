@@ -45,8 +45,20 @@ class AffectedTest(unittest.TestCase):
         self.assertTrue(result["tests"] and result["product"])
         self.assertFalse(result["models"])
 
-    def test_the_phone_app_alone_runs_the_tests_and_leaves_the_product_to_its_gate(self):
-        self.assertEqual(groups("apps/apple/Amux/Sources/AmuxApp.swift", "docs/IOS.md"), {"tests"})
+    def test_the_phone_app_alone_runs_only_ios_tools_and_leaves_the_rest_to_its_gate(self):
+        self.assertEqual(
+            groups("apps/apple/Amux/Sources/AmuxApp.swift", "docs/IOS.md"), {"ios_tools"}
+        )
+
+    def test_a_phone_fixture_read_by_a_rust_test_runs_that_crates_jobs(self):
+        with_node = dict(CRATES, node={"folder": "node", "built": {"wire"}, "tests": set()})
+        result = ci.affected(
+            ["apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json"],
+            with_node,
+            SANITIZED,
+        )
+        self.assertTrue(result["tests"] and result["product"])
+        self.assertFalse(result["ios_tools"])
 
     def test_a_crate_runs_the_jobs_built_from_it(self):
         self.assertEqual(groups("crates/tui/src/lib.rs"), {"tests", "product", "sanitizers"})
@@ -70,7 +82,8 @@ class AffectedTest(unittest.TestCase):
         for file in ["Cargo.lock", "justfile", ".github/workflows/ci.yml", "scripts/sim.py",
                      "journeys/manifest.json", "proto/amux/v1/chat.proto", "qa/FINDING.md",
                      "crates/gone/src/lib.rs", "crates/README.md"]:
-            self.assertEqual(groups(file), set(ci.GROUPS), file)
+            # Anything else runs the full workspace tests, which already cover ios-tools.
+            self.assertEqual(groups(file), set(ci.GROUPS) - {"ios_tools"}, file)
 
     def test_the_browser_extension_alone_runs_its_own_job(self):
         self.assertEqual(groups("js/extension/src/background/index.ts"), {"browser"})

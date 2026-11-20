@@ -139,7 +139,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
             let named = codex
                 .permission
                 .as_deref()
-                .and_then(interpret::codex::permission);
+                .and_then(wire::codex::permission);
             for (key, value) in [
                 ("approval_policy", named.map(|named| named.approval_policy)),
                 ("sandbox_mode", named.map(|named| named.sandbox)),

@@ -34,6 +34,7 @@ jobs:
       actions: read
     outputs:
       tests: ${{ steps.affected.outputs.tests }}
+      ios_tools: ${{ steps.affected.outputs.ios_tools }}
       product: ${{ steps.affected.outputs.product }}
       models: ${{ steps.affected.outputs.models }}
       sanitizers: ${{ steps.affected.outputs.sanitizers }}
@@ -84,11 +85,40 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: ./.github/actions/setup-just
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Compile through sccache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
       - name: Check formatting
         run: just fmt-check
       - name: Run Clippy
         if: always()
         run: just lint
+
+  ios-tools:
+    name: Phone mirror and CLI tests
+    needs: changes
+    if: needs.changes.outputs.ios_tools == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: test
+      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-nextest
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Compile through sccache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+      - name: Run ios-tools tests
+        run: just test-crate ios-tools
 
   miri:
     name: Pointer checks over the C ABI
@@ -239,6 +269,12 @@ jobs:
           shared-key: test
       - uses: ./.github/actions/setup-just
       - uses: ./.github/actions/setup-nextest
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Compile through sccache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
       - name: Walk the simulated stories by seed
         # The same stories under TESTNET_MODE=simulated, a few seeds each;
         # a failure prints the seed and the `just sim --seed` that reruns
@@ -279,6 +315,12 @@ jobs:
           shared-key: models
       - uses: ./.github/actions/setup-just
       - uses: ./.github/actions/setup-nextest
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Compile through sccache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
       - name: Check each model at its CI bounds
         # Every model of the job runs, whichever fails.
         run: |
@@ -306,6 +348,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: ./.github/actions/setup-just
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Compile through sccache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
       - name: Install tmux on Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tmux

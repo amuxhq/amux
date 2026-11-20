@@ -5,6 +5,7 @@
 //! client and in a notification extension with no protobuf in it, whose
 //! mirror is generated from this definition.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -27,7 +28,8 @@ impl ExitCause {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Said {
     /// The head ask.
     Ask {
@@ -51,7 +53,8 @@ pub enum Said {
     Died { detail: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Wants {
     Run {
         command: String,

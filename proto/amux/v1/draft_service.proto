@@ -1,7 +1,6 @@
-// These files move into amux.v1 once every caller uses them.
 syntax = "proto3";
 
-package amux.staging;
+package amux.v1;
 
 import "amux/v1/session.proto";
 
@@ -21,11 +20,11 @@ service DraftService {
 
 message UpdateDraftRequest {
   bytes agent_id = 1;
-  amux.v1.Draft draft = 2;
+  Draft draft = 2;
 }
 
 message UpdateDraftResponse {
-  amux.v1.Draft draft = 1;
+  Draft draft = 1;
 }
 
 message GetDraftRequest {
@@ -33,5 +32,5 @@ message GetDraftRequest {
 }
 
 message GetDraftResponse {
-  amux.v1.Draft draft = 1;
+  Draft draft = 1;
 }

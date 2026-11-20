@@ -19,8 +19,10 @@ use ratatui::text::{Line, Span};
 use settings::ChatInSetting;
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
-use wire::amux::staging::{CreateAgentRequest, create_agent_request};
-use wire::{ClaudeCreateConfig, CodexCreateConfig, HostEntry, Kind, PromptSubmission};
+use wire::{
+    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, HostEntry, Kind, PromptSubmission,
+    create_agent_request,
+};
 
 use crate::editor::Editor;
 use crate::text::{self, push};

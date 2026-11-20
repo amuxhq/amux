@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use wire::amux::staging::follow_session_request;
+use wire::follow_session_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
@@ -230,7 +230,7 @@ mod tests {
         let mut daemon = daemon();
         let before = daemon.store().dump().expect("the store dumps");
         let read = || {
-            PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
+            PeerRequest::FollowSession(wire::FollowSessionRequest {
                 agent_id: MINE.to_vec(),
                 from: Some(follow_session_request::From::Tail(8)),
             })

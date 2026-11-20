@@ -10,10 +10,9 @@ use node::{Daemon, Generation, ProfileRuntime, StartOptions, Telemetry};
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
-use wire::amux::staging::{self, SendInputRequest};
 use wire::{
     ClaudeAnswer, ClaudeSdkInput, Input, Interrupt, Kind as WireKind, PromptInput, QuestionAnswer,
-    claude_answer, claude_sdk_input,
+    SendInputRequest, claude_answer, claude_sdk_input,
 };
 
 use crate::support;
@@ -145,14 +144,14 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
         Served::Profile,
         Calling::PersonHere(Client::Terminal),
     );
-    let mut person = staging::agent_service_client(terminal.clone());
+    let mut person = wire::agent_service_client(terminal.clone());
 
     // The terminal lists the agents when it starts; listing again within
     // the hour is the same visit.
     for _ in 0..2 {
         drop(
-            staging::inventory_service_client(terminal.clone())
-                .subscribe_inventory(Request::new(staging::SubscribeInventoryRequest {}))
+            wire::inventory_service_client(terminal.clone())
+                .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
                 .await
                 .unwrap(),
         );
@@ -178,8 +177,8 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     // the agents in memory counts no client.
     let phone = served_as(&runtime, Served::Phone, Calling::PersonHere(Client::Phone));
     drop(
-        staging::inventory_service_client(phone)
-            .subscribe_inventory(Request::new(staging::SubscribeInventoryRequest {}))
+        wire::inventory_service_client(phone)
+            .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
             .await
             .unwrap(),
     );
@@ -233,7 +232,7 @@ async fn undecodable_input_is_still_delivered() {
     let recording = Recording::new();
     let daemon = start(&install, "boot-1", &recording).await;
     let runtime: Arc<ProfileRuntime> = runtime(&daemon, &install);
-    let mut person = staging::agent_service_client(served_as(
+    let mut person = wire::agent_service_client(served_as(
         &runtime,
         Served::Profile,
         Calling::PersonHere(Client::Terminal),

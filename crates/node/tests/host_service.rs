@@ -16,8 +16,7 @@ use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use tonic::transport::Channel;
-use wire::amux::staging::{self as staging, GetCatalogueRequest, GetCatalogueResponse};
-use wire::{Catalogue, ProviderOnHost, inventory_event};
+use wire::{Catalogue, GetCatalogueRequest, GetCatalogueResponse, ProviderOnHost, inventory_event};
 
 use crate::support;
 
@@ -114,7 +113,7 @@ fn from_a_person<T>(body: T) -> Request<T> {
     request.metadata_mut().insert_bin(
         wire::CALLER_HEADER,
         tonic::metadata::BinaryMetadataValue::from_bytes(
-            &staging::Caller::person("terminal").encode_to_vec(),
+            &wire::Caller::person("terminal").encode_to_vec(),
         ),
     );
     request
@@ -143,7 +142,7 @@ fn catalogue_of(provider: wire::Provider) -> GetCatalogueRequest {
 
 async fn ask_with(request: Request<GetCatalogueRequest>, channel: &Channel) -> Asked {
     let provider = request.get_ref().provider;
-    let blob = staging::host_service_client(channel.clone())
+    let blob = wire::host_service_client(channel.clone())
         .get_catalogue(request)
         .await
         .unwrap_or_else(|error| panic!("provider {provider} on the host: {error:?}"))
@@ -219,7 +218,7 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
 
     // A provider this build does not know, and none at all.
     for provider in [99, wire::Provider::Unspecified as i32] {
-        let unknown = staging::host_service_client(socket.clone())
+        let unknown = wire::host_service_client(socket.clone())
             .get_catalogue(GetCatalogueRequest { provider })
             .await
             .unwrap_err();
@@ -345,7 +344,7 @@ async fn a_host_that_cannot_ask_its_provider_says_so() {
     let daemon = serving(&install, "boot-1", quiet_launch()).await;
     let runtime = runtime(&daemon, &install);
     let socket = profile_socket(&runtime).await;
-    let refused = staging::host_service_client(socket.clone())
+    let refused = wire::host_service_client(socket.clone())
         .get_catalogue(catalogue_of(wire::Provider::Codex))
         .await
         .unwrap_err();
@@ -359,8 +358,8 @@ async fn a_host_that_cannot_ask_its_provider_says_so() {
 /// catalogue and in the agent's own launch.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_persons_pick_is_what_later_agents_start_with() {
-    use staging::create_agent_request::Agent;
     use wire::ClaudeCreateConfig;
+    use wire::create_agent_request::Agent;
 
     let host = Host::new(&Script::default());
     let daemon = serving(&host.install, "boot-1", host.launch()).await;
@@ -368,18 +367,17 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
     let socket = profile_socket(&runtime).await;
     let cwd = host.install.path("work");
     std::fs::create_dir_all(&cwd).unwrap();
-    let create =
-        |name: &str, model: Option<&str>, remember_model: bool| staging::CreateAgentRequest {
-            agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            name: Some(name.into()),
-            cwd: cwd.to_string_lossy().into_owned(),
-            agent: Some(Agent::ClaudeSdk(ClaudeCreateConfig {
-                model: model.map(str::to_owned),
-                ..Default::default()
-            })),
-            remember_model,
-            ..staging::CreateAgentRequest::default()
-        };
+    let create = |name: &str, model: Option<&str>, remember_model: bool| wire::CreateAgentRequest {
+        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+        name: Some(name.into()),
+        cwd: cwd.to_string_lossy().into_owned(),
+        agent: Some(Agent::ClaudeSdk(ClaudeCreateConfig {
+            model: model.map(str::to_owned),
+            ..Default::default()
+        })),
+        remember_model,
+        ..wire::CreateAgentRequest::default()
+    };
     let args_of = |agent: &wire::Agent| {
         let bytes = std::fs::read(
             host.install
@@ -430,8 +428,8 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
     {
         let terminal = runtime
             .spawn(
-                staging::CreateAgentRequest {
-                    agent: defaults(wire::Kind::ClaudePty),
+                wire::CreateAgentRequest {
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudePty),
                     ..create("fourth", None, false)
                 },
                 None,
@@ -465,12 +463,12 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
 
     let agent = runtime
         .spawn(
-            staging::CreateAgentRequest {
+            wire::CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("terminal".into()),
                 cwd: host.install.work.to_string_lossy().into_owned(),
-                agent: defaults(Kind::ClaudePty),
-                ..staging::CreateAgentRequest::default()
+                agent: wire::create_agent_request::Agent::defaults(Kind::ClaudePty),
+                ..wire::CreateAgentRequest::default()
             },
             None,
         )
@@ -491,8 +489,8 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
         named(seen).is_some()
     })
     .await;
-    let blob = staging::session_service_client(socket.clone())
-        .get_blob(Request::new(staging::GetBlobRequest {
+    let blob = wire::session_service_client(socket.clone())
+        .get_blob(Request::new(wire::GetBlobRequest {
             agent_id: agent.agent_id.clone(),
             hash: named(&seen).unwrap(),
         }))
@@ -578,12 +576,12 @@ async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
 
     let agent = runtime
         .spawn(
-            staging::CreateAgentRequest {
+            wire::CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("terminal".into()),
                 cwd: project.to_string_lossy().into_owned(),
-                agent: defaults(Kind::ClaudePty),
-                ..staging::CreateAgentRequest::default()
+                agent: wire::create_agent_request::Agent::defaults(Kind::ClaudePty),
+                ..wire::CreateAgentRequest::default()
             },
             None,
         )
@@ -604,8 +602,8 @@ async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
         named(seen).is_some()
     })
     .await;
-    let blob = staging::session_service_client(socket.clone())
-        .get_blob(Request::new(staging::GetBlobRequest {
+    let blob = wire::session_service_client(socket.clone())
+        .get_blob(Request::new(wire::GetBlobRequest {
             agent_id: agent.agent_id.clone(),
             hash: named(&seen).unwrap(),
         }))

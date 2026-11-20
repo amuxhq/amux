@@ -447,7 +447,7 @@ impl ProfileRuntime {
     /// person here is. Answers once the recipient has accepted.
     pub(crate) async fn send_message_by(
         &self,
-        request: wire::amux::staging::SendMessageRequest,
+        request: wire::SendMessageRequest,
         caller: &crate::api::Caller,
     ) -> Result<SendMessageResponse, RelayError> {
         use crate::api::Caller;
@@ -481,7 +481,7 @@ impl ProfileRuntime {
     pub(crate) async fn deliver_report(
         &self,
         from: crate::HostId,
-        report: wire::amux::staging::DeliverReportRequest,
+        report: wire::DeliverReportRequest,
     ) -> Result<SendMessageResponse, RelayError> {
         let envelope =
             daemon_core::payload::report_envelope(from.as_bytes(), self.host().as_bytes(), report);

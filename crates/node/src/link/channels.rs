@@ -97,7 +97,7 @@ impl ChannelError {
 
 /// Where a followed session starts: the origin's tail, or after a revision
 /// this host already holds.
-pub type Cursor = wire::amux::staging::follow_session_request::From;
+pub type Cursor = wire::follow_session_request::From;
 
 /// The only calls the channel pool writes before a link's handshake
 /// finishes, as early data the far end may see more than once: the peer
@@ -132,7 +132,7 @@ impl EarlyCall {
     }
 
     async fn make(self, mut client: PeerClient) -> Result<EarlyAnswer, tonic::Status> {
-        use wire::amux::staging::{FollowAgentsRequest, FollowSessionRequest};
+        use wire::{FollowAgentsRequest, FollowSessionRequest};
         Ok(match self {
             EarlyCall::FollowAgents => EarlyAnswer::Agents(
                 client
@@ -158,8 +158,8 @@ impl EarlyCall {
 /// The answer to an early call: the stream the follow opened.
 #[derive(Debug)]
 pub enum EarlyAnswer {
-    Agents(tonic::Streaming<wire::amux::staging::FollowAgentsResponse>),
-    Session(tonic::Streaming<wire::amux::staging::FollowSessionResponse>),
+    Agents(tonic::Streaming<wire::FollowAgentsResponse>),
+    Session(tonic::Streaming<wire::FollowSessionResponse>),
 }
 
 /// An early call under way: it went out with the link's first packets, and
@@ -895,12 +895,12 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
 /// carries for one of its clients rides the carrier, never this.
 #[derive(Clone)]
 pub struct PeerClient {
-    pub peer: wire::amux::staging::peer_service_client::PeerServiceClient<PeerChannel>,
+    pub peer: wire::peer_service_client::PeerServiceClient<PeerChannel>,
 }
 
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
     PeerClient {
-        peer: wire::amux::staging::peer_service_client(PeerChannel::new(channel)),
+        peer: wire::peer_service_client(PeerChannel::new(channel)),
     }
 }
 
@@ -1030,8 +1030,7 @@ mod tests {
         use std::time::Duration;
 
         use tonic::{Request, Response, Status};
-        use wire::amux::staging;
-        use wire::amux::staging::peer_service_server::PeerService;
+        use wire::peer_service_server::PeerService;
 
         use super::*;
         use crate::identity::DeviceIdentity;
@@ -1059,15 +1058,15 @@ mod tests {
 
         #[tonic::async_trait]
         impl PeerService for Answering {
-            type FollowAgentsStream = Events<staging::FollowAgentsResponse>;
-            type FollowSessionStream = Events<staging::FollowSessionResponse>;
+            type FollowAgentsStream = Events<wire::FollowAgentsResponse>;
+            type FollowSessionStream = Events<wire::FollowSessionResponse>;
 
             async fn follow_agents(
                 &self,
-                _: Request<staging::FollowAgentsRequest>,
+                _: Request<wire::FollowAgentsRequest>,
             ) -> Answer<Self::FollowAgentsStream> {
                 self.inventory.fetch_add(1, Ordering::SeqCst);
-                let event = staging::FollowAgentsResponse::default();
+                let event = wire::FollowAgentsResponse::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
@@ -1075,10 +1074,10 @@ mod tests {
 
             async fn follow_session(
                 &self,
-                _: Request<staging::FollowSessionRequest>,
+                _: Request<wire::FollowSessionRequest>,
             ) -> Answer<Self::FollowSessionStream> {
                 self.sessions.fetch_add(1, Ordering::SeqCst);
-                let event = staging::FollowSessionResponse::default();
+                let event = wire::FollowSessionResponse::default();
                 Ok(Response::new(Box::pin(futures_util::stream::iter([Ok(
                     event,
                 )]))))
@@ -1086,22 +1085,22 @@ mod tests {
 
             async fn list_items(
                 &self,
-                _: Request<staging::PeerServiceListItemsRequest>,
-            ) -> Answer<staging::PeerServiceListItemsResponse> {
+                _: Request<wire::PeerServiceListItemsRequest>,
+            ) -> Answer<wire::PeerServiceListItemsResponse> {
                 unanswered()
             }
 
             async fn get_blob(
                 &self,
-                _: Request<staging::PeerServiceGetBlobRequest>,
-            ) -> Answer<staging::PeerServiceGetBlobResponse> {
+                _: Request<wire::PeerServiceGetBlobRequest>,
+            ) -> Answer<wire::PeerServiceGetBlobResponse> {
                 unanswered()
             }
 
             async fn deliver_report(
                 &self,
-                _: Request<staging::DeliverReportRequest>,
-            ) -> Answer<staging::DeliverReportResponse> {
+                _: Request<wire::DeliverReportRequest>,
+            ) -> Answer<wire::DeliverReportResponse> {
                 unanswered()
             }
         }
@@ -1159,7 +1158,7 @@ mod tests {
                 });
                 tokio::spawn(
                     tonic::transport::Server::builder()
-                        .add_service(staging::peer_service_server(answering.clone()))
+                        .add_service(wire::peer_service_server(answering.clone()))
                         .serve_with_incoming(incoming),
                 );
                 let early = arrived_early.clone();

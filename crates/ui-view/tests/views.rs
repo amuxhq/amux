@@ -2774,7 +2774,7 @@ fn rows_hold_their_order_while_an_agent_streams() {
 
 #[test]
 fn changed_files_group_by_folder_with_root_files_first() {
-    use wire::amux::staging::{ChangedFile as Changed, FileStatus as Status, GetChangesResponse};
+    use wire::{ChangedFile as Changed, FileStatus as Status, GetChangesResponse};
     let file = |path: &str, added, removed, status: Status| Changed {
         path: path.into(),
         added,
@@ -2844,7 +2844,7 @@ fn the_overview_holds_the_changes_it_is_given() {
     let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     assert_eq!(overview(&state, None).changes, None);
-    let clean = wire::amux::staging::GetChangesResponse::default();
+    let clean = wire::GetChangesResponse::default();
     assert_eq!(
         overview(&state, Some(&clean)).changes,
         Some(Changes::default()),
@@ -2863,7 +2863,7 @@ fn the_overview_holds_the_changes_it_is_given() {
 /// a base itself: the row's base branch, else HEAD.
 #[test]
 fn the_overview_leaves_the_branchs_base_to_the_host() {
-    use wire::amux::staging::get_changes_request::Base;
+    use wire::get_changes_request::Base;
     assert!(matches!(
         Comparison::Uncommitted.base(),
         Some(Base::Head(_))

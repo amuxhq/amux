@@ -11,7 +11,6 @@ use node::{Edge, Relay, RelayCarrier};
 use testnet::{HostDecl, Net, PATIENCE, until};
 use tonic::transport::Channel;
 use uuid::Uuid;
-use wire::amux::staging;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
@@ -104,7 +103,7 @@ pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>,
     let mut client = from.peer(to).await.map_err(|error| error.status())?;
     let mut events = client
         .peer
-        .follow_agents(staging::FollowAgentsRequest {})
+        .follow_agents(wire::FollowAgentsRequest {})
         .await?
         .into_inner();
     let mut hosts = Vec::new();
@@ -239,16 +238,16 @@ pub async fn open_session(
     from: &Edge,
     host: Uuid,
     agent: Uuid,
-) -> Result<tonic::Streaming<staging::FollowSessionResponse>, tonic::Status> {
+) -> Result<tonic::Streaming<wire::FollowSessionResponse>, tonic::Status> {
     let mut client = from
         .session_peer(host)
         .await
         .map_err(|error| error.status())?;
     let mut events = client
         .peer
-        .follow_session(staging::FollowSessionRequest {
+        .follow_session(wire::FollowSessionRequest {
             agent_id: agent.as_bytes().to_vec(),
-            from: Some(staging::follow_session_request::From::Tail(10)),
+            from: Some(wire::follow_session_request::From::Tail(10)),
         })
         .await?
         .into_inner();
@@ -289,7 +288,7 @@ pub fn tier(net: &Net, host: &str) -> Option<node::Tier> {
 
 /// Reads a session until an item with `text` arrives, failing on Lagged,
 /// on the stream's end, or after the patience.
-pub async fn until_item(stream: &mut tonic::Streaming<staging::FollowSessionResponse>, text: &str) {
+pub async fn until_item(stream: &mut tonic::Streaming<wire::FollowSessionResponse>, text: &str) {
     let deadline = tokio::time::Instant::now() + PATIENCE;
     loop {
         let event = tokio::time::timeout_at(deadline, stream.message())

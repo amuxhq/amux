@@ -15,7 +15,6 @@ use std::sync::Arc;
 use node::Launch;
 use prost::Message as _;
 use testnet::{HostDecl, Net, NetOptions, PATIENCE, Topology, until};
-use wire::amux::staging;
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::inventory_event;
 
@@ -75,15 +74,15 @@ async fn create(net: &Net, name: &str) -> wire::Agent {
     laptop
         .host(desk.host_id())
         .agents()
-        .create(staging::CreateAgentRequest {
+        .create(wire::CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name: Some(name.to_owned()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
                 Default::default(),
             )),
             new_workspace: true,
-            ..staging::CreateAgentRequest::default()
+            ..wire::CreateAgentRequest::default()
         })
         .await
         .unwrap()

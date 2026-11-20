@@ -253,13 +253,13 @@ pub enum AppEvent {
     Changes {
         agent_id: Vec<u8>,
         key: crate::chat::FetchKey,
-        changes: wire::amux::staging::GetChangesResponse,
+        changes: wire::GetChangesResponse,
     },
     /// What deleting an agent takes with it, as its host previewed it, or
     /// why it could not be asked, for home's delete confirmation.
     DeletePreviewed {
         agent: AgentKey,
-        preview: Result<wire::amux::staging::PreviewDeleteResponse, String>,
+        preview: Result<wire::PreviewDeleteResponse, String>,
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),

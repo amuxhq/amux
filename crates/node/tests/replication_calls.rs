@@ -12,7 +12,6 @@ use support::synthetic::*;
 use support::*;
 use tonic::codegen::http;
 use tonic::metadata::MetadataMap;
-use wire::amux::staging;
 
 use crate::support;
 
@@ -39,7 +38,7 @@ fn calls_made() -> Vec<String> {
 
 /// `message` as the desk's node carries it for `caller`, with the caller
 /// header it writes beside it.
-fn carried<T>(message: T, caller: &staging::Caller) -> tonic::Request<T> {
+fn carried<T>(message: T, caller: &wire::Caller) -> tonic::Request<T> {
     let mut request = tonic::Request::new(message);
     let mut headers = http::HeaderMap::new();
     headers.insert(wire::CALLER_HEADER, caller.to_header().parse().unwrap());
@@ -253,10 +252,10 @@ async fn a_daemon_asks_a_paired_one_only_on_the_peer_service() {
         .channel(pair.laptop_runtime.host())
         .await
         .unwrap();
-    let sender = staging::Caller::agent(coder.clone(), "coder");
-    staging::agent_service_client(channel)
+    let sender = wire::Caller::agent(coder.clone(), "coder");
+    wire::agent_service_client(channel)
         .send_message(carried(
-            staging::SendMessageRequest {
+            wire::SendMessageRequest {
                 id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 agent_id: pair.notes.id.as_bytes().to_vec(),
                 context: None,
@@ -284,7 +283,7 @@ async fn a_daemon_asks_a_paired_one_only_on_the_peer_service() {
     let calls = calls_made();
     let others: Vec<&String> = calls
         .iter()
-        .filter(|method| !method.starts_with("/amux.staging.PeerService/"))
+        .filter(|method| !method.starts_with("/amux.v1.PeerService/"))
         .collect();
     assert!(
         others.is_empty(),
@@ -297,7 +296,7 @@ async fn a_daemon_asks_a_paired_one_only_on_the_peer_service() {
         "DeliverReport",
         "GetBlob",
     ] {
-        let path = format!("/amux.staging.PeerService/{method}");
+        let path = format!("/amux.v1.PeerService/{method}");
         assert!(calls.contains(&path), "no {method} in {calls:?}");
     }
     pair.stop().await;

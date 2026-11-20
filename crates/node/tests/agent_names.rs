@@ -8,7 +8,6 @@ use std::process::Command;
 use prost::Message as _;
 use support::*;
 use wire::AgentSpec;
-use wire::amux::staging;
 
 use crate::support;
 
@@ -17,8 +16,8 @@ fn spec_name(install: &Install, agent: &wire::Agent) -> String {
     AgentSpec::decode(bytes.as_slice()).unwrap().name
 }
 
-fn unnamed(cwd: &Path) -> staging::CreateAgentRequest {
-    staging::CreateAgentRequest {
+fn unnamed(cwd: &Path) -> wire::CreateAgentRequest {
+    wire::CreateAgentRequest {
         name: None,
         ..create(cwd, "", None)
     }

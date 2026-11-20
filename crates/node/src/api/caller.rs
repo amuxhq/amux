@@ -80,9 +80,9 @@ impl Caller {
             Self::Person {
                 at: At::Here,
                 surface,
-            } => wire::amux::staging::Caller::person(analytics::Token::as_str(*surface)),
+            } => wire::Caller::person(analytics::Token::as_str(*surface)),
             Self::Agent { agent, name } if agent.host == own => {
-                wire::amux::staging::Caller::agent(agent.agent.as_bytes().to_vec(), name.clone())
+                wire::Caller::agent(agent.agent.as_bytes().to_vec(), name.clone())
             }
             _ => return None,
         };
@@ -101,14 +101,14 @@ impl Caller {
                 "a paired host's daemon asks for itself only on the peer service",
             ));
         };
-        let caller = wire::amux::staging::Caller::from_header(header)
+        let caller = wire::Caller::from_header(header)
             .map_err(|error| status(wire_error(ErrorCode::InvalidArgument, error.to_string())))?;
         Ok(match caller.of {
-            Some(wire::amux::staging::caller::Of::Person(person)) => Self::Person {
+            Some(wire::caller::Of::Person(person)) => Self::Person {
                 at: At::Paired(peer),
                 surface: surface_named(&person.surface),
             },
-            Some(wire::amux::staging::caller::Of::Agent(agent)) => Self::Agent {
+            Some(wire::caller::Of::Agent(agent)) => Self::Agent {
                 agent: AgentRef {
                     host: peer,
                     agent: crate::grpc::agent_id(&agent.agent_id)?,
@@ -307,7 +307,7 @@ mod tests {
     #[test]
     fn a_header_that_does_not_read_or_names_a_short_id_is_refused() {
         let peer = host(1);
-        let short = wire::amux::staging::Caller::agent(vec![3; 4], "coder").to_header();
+        let short = wire::Caller::agent(vec![3; 4], "coder").to_header();
         for header in ["not base64!".to_owned(), String::new(), short] {
             let refused = on_link(peer, Some(header.clone()));
             assert_eq!(

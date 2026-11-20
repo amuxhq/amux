@@ -12,7 +12,6 @@ use std::process::Command;
 use prost::Message as _;
 use support::synthetic::{quiet_launch, read_until};
 use support::*;
-use wire::amux::staging;
 use wire::{AgentSpec, SessionEvent, session_event};
 
 use crate::support;
@@ -53,8 +52,8 @@ fn repository(install: &Install) -> PathBuf {
     repo
 }
 
-fn in_worktree(cwd: &Path, name: Option<&str>) -> staging::CreateAgentRequest {
-    staging::CreateAgentRequest {
+fn in_worktree(cwd: &Path, name: Option<&str>) -> wire::CreateAgentRequest {
+    wire::CreateAgentRequest {
         name: name.map(str::to_owned),
         new_workspace: true,
         ..create(cwd, "", None)
@@ -251,7 +250,7 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
     assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
     // A person on the laptop, addressing the desk: the laptop carries the
     // call there.
-    let from_laptop = staging::agent_service_client(
+    let from_laptop = wire::agent_service_client(
         addressed(&laptop_runtime, &wire::authority(&desk_runtime.host())).await,
     );
     let on_desk = |name: &str| in_worktree(&repo, Some(name));

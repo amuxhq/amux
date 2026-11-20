@@ -10,9 +10,9 @@ use ui_runtime::{
     TraceEvent,
 };
 use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, Waiting};
-use wire::amux::staging::{GetBlobResponse, SendInputRequest};
 use wire::{
-    ErrorCode, Input, Kind, ListItemsResponse, claude_pty_input, claude_sdk_input, codex_input,
+    ErrorCode, GetBlobResponse, Input, Kind, ListItemsResponse, SendInputRequest, claude_pty_input,
+    claude_sdk_input, codex_input,
 };
 
 use crate::support;

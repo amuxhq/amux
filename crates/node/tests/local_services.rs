@@ -14,11 +14,10 @@ use support::synthetic::*;
 use support::*;
 use tonic::transport::Channel;
 use tonic::{Code, Request};
-use wire::amux::staging::{
-    self as staging, GetBlobRequest, GetDraftRequest, GetItemRequest, ListItemsRequest,
+use wire::{
+    GetBlobRequest, GetDraftRequest, GetItemRequest, ListItemsRequest, Phase, PutBlobRequest,
     ResolveHostRequest, SubscribeInventoryRequest, SubscribeSessionRequest, UpdateDraftRequest,
 };
-use wire::{Phase, PutBlobRequest};
 
 use crate::peer_server::{Pair, serving};
 use crate::support;
@@ -52,8 +51,8 @@ async fn tools_socket(agent: &SyntheticAgent) -> Channel {
 /// Every read the session and draft services make of `agent`, as the
 /// refusal each came back with, if any.
 async fn reads(channel: &Channel, agent: &[u8], hash: &[u8]) -> Vec<(&'static str, Option<Code>)> {
-    let mut sessions = staging::session_service_client(channel.clone());
-    let mut drafts = staging::draft_service_client(channel.clone());
+    let mut sessions = wire::session_service_client(channel.clone());
+    let mut drafts = wire::draft_service_client(channel.clone());
     let draft = wire::Draft {
         text: "half a thought".to_owned(),
         ..Default::default()
@@ -196,7 +195,7 @@ async fn on_its_tools_socket_an_agent_reads_only_its_own_childrens() {
             assert_eq!(refused, None, "{call} by a person of {}", agent.name);
         }
     }
-    let draft = staging::draft_service_client(person)
+    let draft = wire::draft_service_client(person)
         .get_draft(GetDraftRequest {
             agent_id: other.id.as_bytes().to_vec(),
         })
@@ -238,7 +237,7 @@ async fn resolve_host_matches_exactly_then_ignoring_case_and_names_the_known_hos
     let edge = desk_runtime.edge().unwrap();
     edge.trust(&upper_runtime.edge().unwrap()).await.unwrap();
     edge.trust(&lower_runtime.edge().unwrap()).await.unwrap();
-    let mut inventory = staging::inventory_service_client(profile_socket(&desk_runtime).await);
+    let mut inventory = wire::inventory_service_client(profile_socket(&desk_runtime).await);
     let mut resolve = async |name: &str| {
         inventory
             .resolve_host(ResolveHostRequest {
@@ -306,7 +305,7 @@ async fn a_client_opening_is_counted_on_the_node_it_opened_on() {
             .collect::<Vec<_>>()
     };
 
-    let mut tools = staging::inventory_service_client(tools_socket(&worker).await);
+    let mut tools = wire::inventory_service_client(tools_socket(&worker).await);
     drop(
         tools
             .subscribe_inventory(SubscribeInventoryRequest {})
@@ -315,7 +314,7 @@ async fn a_client_opening_is_counted_on_the_node_it_opened_on() {
     );
     assert_eq!(opened(), [], "an agent is no client");
 
-    let mut person = staging::inventory_service_client(profile_socket(&runtime).await);
+    let mut person = wire::inventory_service_client(profile_socket(&runtime).await);
     let mut request = Request::new(SubscribeInventoryRequest {});
     request
         .metadata_mut()
@@ -362,7 +361,7 @@ async fn a_file_not_fetched_yet_is_asked_of_its_host_checked_and_kept() {
         .unwrap();
     let kept = replica_file(pair.laptop_runtime.dir(), desk, coder, &blob.hash);
     assert!(!kept.exists(), "not fetched yet");
-    let mut sessions = staging::session_service_client(profile_socket(&pair.laptop_runtime).await);
+    let mut sessions = wire::session_service_client(profile_socket(&pair.laptop_runtime).await);
     let read = |hash: &[u8]| GetBlobRequest {
         agent_id: coder.as_bytes().to_vec(),
         hash: hash.to_vec(),

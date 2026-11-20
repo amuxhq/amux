@@ -18,7 +18,6 @@ use node::RelayCarrier;
 use node::harness::{Advertisement, LiveRoute};
 use support::*;
 use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
-use wire::amux::staging;
 use wire::begin_pair_request;
 
 use crate::support;
@@ -1148,7 +1147,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .await
             .unwrap()
             .peer
-            .follow_agents(staging::FollowAgentsRequest {})
+            .follow_agents(wire::FollowAgentsRequest {})
             .await
             .unwrap()
             .into_inner();
@@ -1661,7 +1660,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .await
         .unwrap()
         .peer
-        .follow_agents(staging::FollowAgentsRequest {})
+        .follow_agents(wire::FollowAgentsRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -1752,9 +1751,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "FollowSession with a three-byte agent id",
         peer.peer
-            .follow_session(staging::FollowSessionRequest {
+            .follow_session(wire::FollowSessionRequest {
                 agent_id: short.clone(),
-                from: Some(staging::follow_session_request::From::Tail(5)),
+                from: Some(wire::follow_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
@@ -1762,9 +1761,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "FollowSession of an agent the desk never had",
         peer.peer
-            .follow_session(staging::FollowSessionRequest {
+            .follow_session(wire::FollowSessionRequest {
                 agent_id: unknown.clone(),
-                from: Some(staging::follow_session_request::From::Tail(5)),
+                from: Some(wire::follow_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
@@ -1772,7 +1771,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "ListItems with a three-byte agent id",
         peer.peer
-            .list_items(staging::PeerServiceListItemsRequest {
+            .list_items(wire::PeerServiceListItemsRequest {
                 agent_id: short.clone(),
                 before_order: None,
                 page_size: 10,
@@ -1783,7 +1782,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "GetBlob with a malformed hash",
         peer.peer
-            .get_blob(staging::PeerServiceGetBlobRequest {
+            .get_blob(wire::PeerServiceGetBlobRequest {
                 agent_id: worker.clone(),
                 hash: vec![0; 3],
             })
@@ -1793,16 +1792,16 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "DeliverReport with no id, child, parent or report",
         peer.peer
-            .deliver_report(staging::DeliverReportRequest::default())
+            .deliver_report(wire::DeliverReportRequest::default())
             .await
             .map(|_| ()),
     ));
     // The daemon asks the host services for no one: only a call carried
     // for a person or an agent, with its caller, is answered there.
-    let mut acts = staging::agent_service_client(edge(&net, "laptop").channel(desk).await.unwrap());
+    let mut acts = wire::agent_service_client(edge(&net, "laptop").channel(desk).await.unwrap());
     answers.push((
         "SendInput carried for no one",
-        acts.send_input(staging::SendInputRequest {
+        acts.send_input(wire::SendInputRequest {
             agent_id: worker.clone(),
             input: None,
         })
@@ -1811,13 +1810,13 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     ));
     answers.push((
         "CreateAgent carried for no one, with no configuration",
-        acts.create_agent(staging::CreateAgentRequest::default())
+        acts.create_agent(wire::CreateAgentRequest::default())
             .await
             .map(|_| ()),
     ));
     answers.push((
         "SetFiling carried for no one, with a three-byte agent id",
-        acts.set_filing(staging::SetFilingRequest {
+        acts.set_filing(wire::SetFilingRequest {
             agent_id: short.clone(),
             filing: wire::Filing::Closed as i32,
         })
@@ -1977,7 +1976,7 @@ async fn a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its
     };
     let lagged = seen
         .iter()
-        .position(|response: &staging::FollowSessionResponse| {
+        .position(|response: &wire::FollowSessionResponse| {
             matches!(
                 response.event.as_ref().and_then(|event| event.of.as_ref()),
                 Some(wire::session_event::Of::Lagged(_))
@@ -2096,12 +2095,12 @@ async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
         .unwrap()
         .host(host_id(&net, "desk").as_bytes())
         .agents()
-        .create(staging::CreateAgentRequest {
+        .create(wire::CreateAgentRequest {
             cwd: work,
-            agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
                 Default::default(),
             )),
-            ..staging::CreateAgentRequest::default()
+            ..wire::CreateAgentRequest::default()
         })
         .await
         .expect("the desk starts the phone's agent");
@@ -2707,7 +2706,7 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a
             .await
             .unwrap()
             .peer
-            .get_blob(staging::PeerServiceGetBlobRequest {
+            .get_blob(wire::PeerServiceGetBlobRequest {
                 agent_id: worker.as_bytes().to_vec(),
                 hash: stored.hash.clone(),
             }),

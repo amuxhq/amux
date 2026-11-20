@@ -9,7 +9,6 @@ use prost::Message as _;
 use store::{AgentKey, AgentRow, Marker};
 use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use wire::amux::staging;
 use wire::{AgentSpec, ExitCause, Lifecycle, Phase};
 
 use crate::support;
@@ -422,7 +421,7 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
 
     let again = runtime
         .spawn(
-            staging::CreateAgentRequest {
+            wire::CreateAgentRequest {
                 agent_id: id.as_bytes().to_vec(),
                 ..create(&install.work, "again", None)
             },
@@ -879,8 +878,7 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
     let (stopped, spawned) = {
         // The read waits on `release`, so the core steps nothing until both
         // are queued behind it.
-        let mut tools =
-            wire::amux::staging::agent_service_client(served_to(&runtime, Some(parent)).await);
+        let mut tools = wire::agent_service_client(served_to(&runtime, Some(parent)).await);
         let (release, gate) = std::sync::mpsc::channel::<()>();
         let mut hold = std::pin::pin!(runtime.read_store(move |_| gate.recv().is_ok()));
         assert!(poll_once(&mut hold).await.is_pending());
@@ -1068,7 +1066,7 @@ async fn a_create_without_a_kind_is_invalid() {
     let runtime = runtime(&daemon, &install);
     let refused = runtime
         .spawn(
-            staging::CreateAgentRequest {
+            wire::CreateAgentRequest {
                 agent: None,
                 ..create(&install.work, "kindless", None)
             },
@@ -1099,8 +1097,8 @@ async fn an_unnamed_agent_shows_its_providers_title_until_it_is_renamed() {
     let runtime = runtime(&daemon, &install);
     let created = runtime
         .spawn(
-            staging::CreateAgentRequest {
-                agent: defaults(wire::Kind::ClaudeSdk),
+            wire::CreateAgentRequest {
+                agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
                 initial_prompt: Some(submission(b"p1", "fix the login test")),
                 name: None,
                 ..create(&install.work, "unused", None)
@@ -1141,8 +1139,8 @@ async fn renaming_a_live_codex_agent_renames_its_thread() {
     let id = id_of(
         &runtime
             .spawn(
-                staging::CreateAgentRequest {
-                    agent: defaults(wire::Kind::Codex),
+                wire::CreateAgentRequest {
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
                     ..create(&install.work, "before", None)
                 },
                 None,
@@ -1622,8 +1620,8 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
     let id = id_of(
         &runtime
             .spawn(
-                staging::CreateAgentRequest {
-                    agent: defaults(wire::Kind::Codex),
+                wire::CreateAgentRequest {
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
                     ..create(&install.work, "codex", Some("first"))
                 },
                 None,
@@ -1744,8 +1742,8 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
     let id = id_of(
         &runtime
             .spawn(
-                staging::CreateAgentRequest {
-                    agent: defaults(wire::Kind::Codex),
+                wire::CreateAgentRequest {
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
                     ..create(&install.work, "codex", Some("first"))
                 },
                 None,

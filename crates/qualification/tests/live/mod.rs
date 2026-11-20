@@ -52,7 +52,6 @@ use interpret::Replayed;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
-use wire::amux::staging;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput, Input, Item, Kind,
@@ -1105,12 +1104,12 @@ impl Install {
             .client
             .host(&self.host_id)
             .agents()
-            .create(staging::CreateAgentRequest {
+            .create(wire::CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(scenario.agent()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
-                agent: Some(staging::create_agent_request::Agent::Codex(config)),
-                ..staging::CreateAgentRequest::default()
+                agent: Some(wire::create_agent_request::Agent::Codex(config)),
+                ..wire::CreateAgentRequest::default()
             })
             .await
             .map_err(|error| error.to_string())?;

@@ -14,17 +14,16 @@ use store::{AgentRow, StoreError};
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
-use wire::amux::staging::draft_service_server::DraftService;
-use wire::amux::staging::inventory_service_server::InventoryService;
-use wire::amux::staging::session_service_server::SessionService;
-use wire::amux::staging::{
-    self as staging, GetBlobRequest, GetBlobResponse, GetDraftRequest, GetDraftResponse,
-    GetItemRequest, GetItemResponse, ListItemsRequest, ListItemsResponse, ResolveAgentRequest,
+use wire::draft_service_server::DraftService;
+use wire::inventory_service_server::InventoryService;
+use wire::session_service_server::SessionService;
+use wire::{
+    ErrorCode, GetBlobRequest, GetBlobResponse, GetDraftRequest, GetDraftResponse, GetItemRequest,
+    GetItemResponse, HostEntry, ListItemsRequest, ListItemsResponse, ResolveAgentRequest,
     ResolveAgentResponse, ResolveHostRequest, ResolveHostResponse, SubscribeInventoryRequest,
     SubscribeInventoryResponse, SubscribeSessionRequest, SubscribeSessionResponse,
     UpdateDraftRequest, UpdateDraftResponse,
 };
-use wire::{ErrorCode, HostEntry};
 
 use crate::api::Entry;
 use crate::api::caller::{At, Caller};
@@ -43,9 +42,9 @@ pub(in crate::api) fn mount(
         entry,
     };
     routes
-        .add_service(staging::inventory_service_server(local.clone()))
-        .add_service(staging::session_service_server(local.clone()))
-        .add_service(staging::draft_service_server(local));
+        .add_service(wire::inventory_service_server(local.clone()))
+        .add_service(wire::session_service_server(local.clone()))
+        .add_service(wire::draft_service_server(local));
 }
 
 /// The local services, as one entry serves them.

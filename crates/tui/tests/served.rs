@@ -258,10 +258,9 @@ impl SlowClearing {
     fn client(&self, net: &Net) -> client::Client {
         use tonic::codegen::http;
         use tower::ServiceExt as _;
-        type Server = wire::amux::staging::draft_service_server::DraftServiceServer<SlowClearing>;
+        type Server = wire::draft_service_server::DraftServiceServer<SlowClearing>;
         let prefix = format!("/{}/", <Server as tonic::server::NamedService>::NAME);
-        let drafts =
-            tonic::service::Routes::new(wire::amux::staging::draft_service_server(self.clone()));
+        let drafts = tonic::service::Routes::new(wire::draft_service_server(self.clone()));
         let rest = net.entrance("desk").unwrap();
         let split = tower::service_fn(move |request: http::Request<tonic::body::Body>| {
             let (drafts, rest) = (drafts.clone(), rest.clone());
@@ -279,11 +278,11 @@ impl SlowClearing {
 }
 
 #[tonic::async_trait]
-impl wire::amux::staging::draft_service_server::DraftService for SlowClearing {
+impl wire::draft_service_server::DraftService for SlowClearing {
     async fn update_draft(
         &self,
-        request: tonic::Request<wire::amux::staging::UpdateDraftRequest>,
-    ) -> Result<tonic::Response<wire::amux::staging::UpdateDraftResponse>, tonic::Status> {
+        request: tonic::Request<wire::UpdateDraftRequest>,
+    ) -> Result<tonic::Response<wire::UpdateDraftResponse>, tonic::Status> {
         let request = request.into_inner();
         self.saved.lock().unwrap().push(request.agent_id.clone());
         let draft = request.draft.unwrap_or_default();
@@ -296,24 +295,24 @@ impl wire::amux::staging::draft_service_server::DraftService for SlowClearing {
             .update(&request.agent_id, draft)
             .await
             .map_err(client::RpcError::into_status)?;
-        Ok(tonic::Response::new(
-            wire::amux::staging::UpdateDraftResponse { draft: Some(kept) },
-        ))
+        Ok(tonic::Response::new(wire::UpdateDraftResponse {
+            draft: Some(kept),
+        }))
     }
 
     async fn get_draft(
         &self,
-        request: tonic::Request<wire::amux::staging::GetDraftRequest>,
-    ) -> Result<tonic::Response<wire::amux::staging::GetDraftResponse>, tonic::Status> {
+        request: tonic::Request<wire::GetDraftRequest>,
+    ) -> Result<tonic::Response<wire::GetDraftResponse>, tonic::Status> {
         let kept = self
             .inner
             .drafts()
             .get(&request.into_inner().agent_id)
             .await
             .map_err(client::RpcError::into_status)?;
-        Ok(tonic::Response::new(
-            wire::amux::staging::GetDraftResponse { draft: Some(kept) },
-        ))
+        Ok(tonic::Response::new(wire::GetDraftResponse {
+            draft: Some(kept),
+        }))
     }
 }
 

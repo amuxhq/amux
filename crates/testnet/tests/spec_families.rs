@@ -20,7 +20,6 @@ use store::AgentRow;
 use testnet::{AgentDecl, Net, PATIENCE, Topology, observe, until};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
-use wire::amux::staging;
 use wire::{
     AgentRef, ClaudeSdkInput, ErrorCode, InventoryEvent, Lifecycle, Phase, claude_sdk_input,
 };
@@ -290,11 +289,11 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there(
     .await
     .unwrap();
     let tools = net.tools("lead").await.unwrap();
-    let request = || staging::CreateAgentRequest {
-        agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+    let request = || wire::CreateAgentRequest {
+        agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
             Default::default(),
         )),
-        ..staging::CreateAgentRequest::default()
+        ..wire::CreateAgentRequest::default()
     };
     let resolved = |name: &'static str| {
         let tools = tools.clone();
@@ -306,7 +305,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there(
     let unreadable = tools
         .host(desk.host_id())
         .agents()
-        .create(staging::CreateAgentRequest {
+        .create(wire::CreateAgentRequest {
             initial_prompt: Some(wire::PromptSubmission {
                 input_id: b"first".to_vec(),
                 prompt: Some(wire::PromptInput {

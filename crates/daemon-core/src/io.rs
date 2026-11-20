@@ -805,15 +805,13 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(11),
-                request: PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
+                request: PeerRequest::FollowSession(wire::FollowSessionRequest {
                     agent_id: vec![1, 2],
-                    from: Some(wire::amux::staging::follow_session_request::From::After(
-                        wire::After {
-                            revision: 3,
-                            cap: 4,
-                            generation: 5,
-                        },
-                    )),
+                    from: Some(wire::follow_session_request::From::After(wire::After {
+                        revision: 3,
+                        cap: 4,
+                        generation: 5,
+                    })),
                 }),
             },
             Input::PeerCall {
@@ -824,7 +822,7 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(13),
-                request: PeerRequest::DeliverReport(wire::amux::staging::DeliverReportRequest {
+                request: PeerRequest::DeliverReport(wire::DeliverReportRequest {
                     id: vec![4],
                     child_agent_id: vec![5],
                     child_name: "scout".into(),

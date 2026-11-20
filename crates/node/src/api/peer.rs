@@ -11,10 +11,9 @@ use std::sync::{Arc, Weak};
 
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
-use wire::ErrorCode;
-use wire::amux::staging::peer_service_server::PeerService;
-use wire::amux::staging::{
-    self as staging, DeliverReportRequest, DeliverReportResponse, FollowAgentsRequest,
+use wire::peer_service_server::PeerService;
+use wire::{
+    DeliverReportRequest, DeliverReportResponse, ErrorCode, FollowAgentsRequest,
     FollowAgentsResponse, FollowSessionRequest, FollowSessionResponse, PeerServiceGetBlobRequest,
     PeerServiceGetBlobResponse, PeerServiceListItemsRequest, PeerServiceListItemsResponse,
 };
@@ -26,7 +25,7 @@ use crate::serve::ServeError;
 
 /// Mounts PeerService, which only links serve.
 pub(in crate::api) fn mount(routes: &mut RoutesBuilder, runtime: &Weak<ProfileRuntime>) {
-    routes.add_service(staging::peer_service_server(Peer {
+    routes.add_service(wire::peer_service_server(Peer {
         runtime: runtime.clone(),
     }));
 }

@@ -546,11 +546,11 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
         .unwrap()
         .host(desk.host_id.as_bytes())
         .agents()
-        .create(wire::amux::staging::CreateAgentRequest {
+        .create(wire::CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name: Some("fix-header".into()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: Some(wire::amux::staging::create_agent_request::Agent::ClaudeSdk(
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
                 Default::default(),
             )),
             new_workspace: true,

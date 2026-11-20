@@ -10,10 +10,9 @@ use std::sync::Weak;
 
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
-use wire::ErrorCode;
-use wire::amux::staging::host_service_server::HostService;
-use wire::amux::staging::{
-    GetCatalogueRequest, GetCatalogueResponse, PinFolderRequest, PinFolderResponse,
+use wire::host_service_server::HostService;
+use wire::{
+    ErrorCode, GetCatalogueRequest, GetCatalogueResponse, PinFolderRequest, PinFolderResponse,
 };
 
 use crate::api::Entry;
@@ -28,7 +27,7 @@ pub(in crate::api) fn mount(
     runtime: &Weak<ProfileRuntime>,
     _entry: Entry,
 ) {
-    routes.add_service(wire::amux::staging::host_service_server(Offers {
+    routes.add_service(wire::host_service_server(Offers {
         runtime: runtime.clone(),
     }));
 }

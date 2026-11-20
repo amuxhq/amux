@@ -35,8 +35,7 @@ use ui_view::{
     AskBody, AskCard, CardState, Changeable, ClientCommand, ExitCause, FamilyHeader, Offline,
     Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
 };
-use wire::Attachment;
-use wire::amux::staging::{GetChangesResponse, get_changes_request};
+use wire::{Attachment, GetChangesResponse, get_changes_request};
 
 use self::ask::{AskAction, AskUi};
 use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};

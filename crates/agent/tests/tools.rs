@@ -24,12 +24,12 @@ use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 use tonic::codegen::http;
 use tonic::{Request, Response, Status};
-use wire::amux::staging::agent_service_server::AgentService;
-use wire::amux::staging::inventory_service_server::InventoryService;
-use wire::amux::staging::{
-    self as staging, CreateAgentRequest, SendMessageRequest, SetFilingRequest, create_agent_request,
+use wire::agent_service_server::AgentService;
+use wire::inventory_service_server::InventoryService;
+use wire::{
+    Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, HostEntry, InventoryEvent, Kind,
+    Lifecycle, Phase, SendMessageRequest, SetFilingRequest, create_agent_request,
 };
-use wire::{Agent as Row, AgentRef, AgentSpec, HostEntry, InventoryEvent, Kind, Lifecycle, Phase};
 
 use crate::support;
 
@@ -121,9 +121,7 @@ fn answering(authority: &str) -> Vec<u8> {
 }
 
 type Events = Pin<
-    Box<
-        dyn futures_util::Stream<Item = Result<staging::SubscribeInventoryResponse, Status>> + Send,
-    >,
+    Box<dyn futures_util::Stream<Item = Result<wire::SubscribeInventoryResponse, Status>> + Send>,
 >;
 
 #[tonic::async_trait]
@@ -132,7 +130,7 @@ impl InventoryService for Fleet {
 
     async fn subscribe_inventory(
         &self,
-        _: Request<staging::SubscribeInventoryRequest>,
+        _: Request<wire::SubscribeInventoryRequest>,
     ) -> Result<Response<Events>, Status> {
         self.record(Call::Inventory);
         let events = self
@@ -148,7 +146,7 @@ impl InventoryService for Fleet {
             )
             .chain([wire::inventory_event::Of::CaughtUp(Default::default())])
             .map(|of| {
-                Ok(staging::SubscribeInventoryResponse {
+                Ok(wire::SubscribeInventoryResponse {
                     event: Some(InventoryEvent { of: Some(of) }),
                 })
             })
@@ -163,8 +161,8 @@ impl InventoryService for Fleet {
 
     async fn resolve_agent(
         &self,
-        request: Request<staging::ResolveAgentRequest>,
-    ) -> Result<Response<staging::ResolveAgentResponse>, Status> {
+        request: Request<wire::ResolveAgentRequest>,
+    ) -> Result<Response<wire::ResolveAgentResponse>, Status> {
         let name = request.into_inner().name;
         self.record(Call::Resolve(name.clone()));
         if self.ambiguous.contains(&name) {
@@ -182,7 +180,7 @@ impl InventoryService for Fleet {
             .iter()
             .find(|agent| agent.name == name)
             .cloned()
-            .map(|agent| Response::new(staging::ResolveAgentResponse { agent: Some(agent) }))
+            .map(|agent| Response::new(wire::ResolveAgentResponse { agent: Some(agent) }))
             .ok_or_else(|| Status::not_found(format!("no agent named {name}")))
     }
 
@@ -190,8 +188,8 @@ impl InventoryService for Fleet {
     /// one ignoring case, as the daemon resolves a host.
     async fn resolve_host(
         &self,
-        request: Request<staging::ResolveHostRequest>,
-    ) -> Result<Response<staging::ResolveHostResponse>, Status> {
+        request: Request<wire::ResolveHostRequest>,
+    ) -> Result<Response<wire::ResolveHostResponse>, Status> {
         let name = request.into_inner().name;
         self.record(Call::ResolveHost(name.clone()));
         let trusted = || self.hosts.iter().filter(|host| host.trusted().is_some());
@@ -199,7 +197,7 @@ impl InventoryService for Fleet {
             .find(|host| host.name() == name)
             .or_else(|| trusted().find(|host| host.name().eq_ignore_ascii_case(&name)))
             .cloned()
-            .map(|host| Response::new(staging::ResolveHostResponse { host: Some(host) }))
+            .map(|host| Response::new(wire::ResolveHostResponse { host: Some(host) }))
             .ok_or_else(|| {
                 Status::not_found(format!(
                     "no trusted host is named {name}; trusted hosts: laptop, Studio"
@@ -215,7 +213,7 @@ impl AgentService for Fleet {
     async fn create_agent(
         &self,
         request: Request<CreateAgentRequest>,
-    ) -> Result<Response<staging::CreateAgentResponse>, Status> {
+    ) -> Result<Response<wire::CreateAgentResponse>, Status> {
         let to = authority(&request);
         let request = request.into_inner();
         self.record(Call::Create(to.clone(), Box::new(request.clone())));
@@ -228,27 +226,27 @@ impl AgentService for Fleet {
             ));
         }
         let name = request.name.clone().unwrap_or_else(|| "quiet-otter".into());
-        Ok(Response::new(staging::CreateAgentResponse {
+        Ok(Response::new(wire::CreateAgentResponse {
             agent: Some(row(&request.agent_id, &host, &name)),
         }))
     }
 
     async fn rename_agent(
         &self,
-        _: Request<staging::RenameAgentRequest>,
-    ) -> Result<Response<staging::RenameAgentResponse>, Status> {
+        _: Request<wire::RenameAgentRequest>,
+    ) -> Result<Response<wire::RenameAgentResponse>, Status> {
         Err(Status::unimplemented("rename"))
     }
 
     async fn set_filing(
         &self,
         request: Request<SetFilingRequest>,
-    ) -> Result<Response<staging::SetFilingResponse>, Status> {
+    ) -> Result<Response<wire::SetFilingResponse>, Status> {
         self.record(Call::Stop(authority(&request), request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(staging::SetFilingResponse {
+            None => Ok(Response::new(wire::SetFilingResponse {
                 agent: Some(Row::default()),
             })),
         }
@@ -256,28 +254,28 @@ impl AgentService for Fleet {
 
     async fn resume_agent(
         &self,
-        _: Request<staging::ResumeAgentRequest>,
-    ) -> Result<Response<staging::ResumeAgentResponse>, Status> {
+        _: Request<wire::ResumeAgentRequest>,
+    ) -> Result<Response<wire::ResumeAgentResponse>, Status> {
         Err(Status::unimplemented("resume"))
     }
 
     async fn delete_agent(
         &self,
-        _: Request<staging::DeleteAgentRequest>,
-    ) -> Result<Response<staging::DeleteAgentResponse>, Status> {
+        _: Request<wire::DeleteAgentRequest>,
+    ) -> Result<Response<wire::DeleteAgentResponse>, Status> {
         Err(Status::unimplemented("delete"))
     }
 
     async fn preview_delete(
         &self,
-        _: Request<staging::PreviewDeleteRequest>,
-    ) -> Result<Response<staging::PreviewDeleteResponse>, Status> {
+        _: Request<wire::PreviewDeleteRequest>,
+    ) -> Result<Response<wire::PreviewDeleteResponse>, Status> {
         Err(Status::unimplemented("preview_delete"))
     }
 
     async fn send_input(
         &self,
-        _: Request<staging::SendInputRequest>,
+        _: Request<wire::SendInputRequest>,
     ) -> Result<Response<wire::SendInputResponse>, Status> {
         // No tool sends a person's input: the stop tool stops.
         Err(Status::unimplemented("send_input"))
@@ -286,7 +284,7 @@ impl AgentService for Fleet {
     async fn send_message(
         &self,
         request: Request<SendMessageRequest>,
-    ) -> Result<Response<staging::SendMessageResponse>, Status> {
+    ) -> Result<Response<wire::SendMessageResponse>, Status> {
         let to = authority(&request);
         let request = request.into_inner();
         self.record(Call::Send(to, request.clone()));
@@ -294,22 +292,22 @@ impl AgentService for Fleet {
         if let Some(status) = &self.refuse_send {
             return Err(status.clone());
         }
-        Ok(Response::new(staging::SendMessageResponse {
+        Ok(Response::new(wire::SendMessageResponse {
             envelope_id: request.id,
         }))
     }
 
     async fn put_blob(
         &self,
-        _: Request<staging::PutBlobRequest>,
-    ) -> Result<Response<staging::PutBlobResponse>, Status> {
+        _: Request<wire::PutBlobRequest>,
+    ) -> Result<Response<wire::PutBlobResponse>, Status> {
         Err(Status::unimplemented("put_blob"))
     }
 
     async fn get_diff(
         &self,
-        _: Request<staging::GetDiffRequest>,
-    ) -> Result<Response<staging::GetDiffResponse>, Status> {
+        _: Request<wire::GetDiffRequest>,
+    ) -> Result<Response<wire::GetDiffResponse>, Status> {
         Err(Status::unimplemented("diff"))
     }
 }
@@ -405,8 +403,8 @@ impl Daemon {
         let task = tokio::spawn(async move {
             let _ = tonic::transport::Server::builder()
                 .layer(addressed)
-                .add_service(staging::inventory_service_server(fleet.clone()))
-                .add_service(staging::agent_service_server(fleet))
+                .add_service(wire::inventory_service_server(fleet.clone()))
+                .add_service(wire::agent_service_server(fleet))
                 .serve_with_incoming(incoming)
                 .await;
         });
@@ -958,21 +956,40 @@ async fn a_spawn_whose_agent_process_is_not_listening_is_refused_plainly() {
 
 /// An ask of a kind the agent process does not know, as a later build's
 /// tool server would send an earlier agent process, is refused in words:
-/// nothing is told to the core and nothing goes to the daemon.
+/// nothing is told to the core and nothing goes to the daemon. So is a
+/// spawn from a tool server built before the create took its host from the
+/// call's address, which this build reads as an ask of no kind.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ask_the_agent_process_does_not_know_is_refused_in_words() {
+    use prost::Message as _;
+    /// A spawn as those builds asked for it, at the field this build
+    /// leaves reserved.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct OldAsk {
+        #[prost(bytes = "vec", tag = "1")]
+        spawn: Vec<u8>,
+    }
+    let old = OldAsk {
+        spawn: CreateAgentRequest {
+            agent_id: vec![1; 16],
+            ..Default::default()
+        }
+        .encode_to_vec(),
+    };
+    let old = wire::AgentAsk::decode(old.encode_to_vec().as_slice()).unwrap();
+    assert_eq!(old.of, None);
     let mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
-    let answer = agent_dir::agent_sock::ask(&mcp.dir, &wire::AgentAsk { of: None })
-        .await
-        .unwrap();
-    assert_eq!(
-        answer.of,
-        Some(wire::agent_answer::Of::Refused(
-            agent_dir::agent_sock::UNKNOWN_ASK.to_owned()
-        ))
-    );
+    for ask in [wire::AgentAsk::default(), old] {
+        let answer = agent_dir::agent_sock::ask(&mcp.dir, &ask).await.unwrap();
+        assert_eq!(
+            answer.of,
+            Some(wire::agent_answer::Of::Refused(
+                agent_dir::agent_sock::UNKNOWN_ASK.to_owned()
+            ))
+        );
+    }
     assert!(mcp.spawns.lock().unwrap().is_empty());
     assert!(fleet.calls().is_empty(), "{:?}", fleet.calls());
 }

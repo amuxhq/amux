@@ -8,7 +8,7 @@ use node::harness::LiveRoute;
 use prost::Message as _;
 use support::*;
 use testnet::{Net, Topology, until};
-use wire::amux::staging::{self as staging, PinFolderRequest};
+use wire::PinFolderRequest;
 
 use crate::support;
 
@@ -51,7 +51,7 @@ async fn a_call_carried_to_a_host_only_a_lapsed_plan_reached_names_the_lapse() {
     net.trust("desk", "laptop").await.unwrap();
     until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
     let laptop = wire::authority(&host_id(&net, "laptop"));
-    let mut to_laptop = staging::host_service_client(socket(&net, "desk", &laptop).await);
+    let mut to_laptop = wire::host_service_client(socket(&net, "desk", &laptop).await);
     // Unpinning a folder never pinned: answered, and it changes nothing.
     let unpinning = || {
         tonic::Request::new(PinFolderRequest {

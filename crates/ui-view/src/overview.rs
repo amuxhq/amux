@@ -7,8 +7,10 @@ use schemars::JsonSchema;
 use serde::Serialize;
 pub use ui_state::JobStop;
 use ui_state::{Key, SessionState, Usage};
-use wire::amux::staging::{self, GetChangesResponse, get_changes_request};
-use wire::{BackgroundKind, Kind, Limit, TaskListStatus, UsageMeter, UsageState};
+use wire::{
+    BackgroundKind, GetChangesResponse, Kind, Limit, TaskListStatus, UsageMeter, UsageState,
+    get_changes_request,
+};
 
 /// Everything the overview lists; each part is empty or None when there is
 /// nothing to show.
@@ -331,12 +333,12 @@ pub fn changes(changed: &GetChangesResponse) -> Changes {
                 added: file.added,
                 removed: file.removed,
                 status: match file.status() {
-                    staging::FileStatus::Changed | staging::FileStatus::Unspecified => {
+                    wire::FileStatus::Changed | wire::FileStatus::Unspecified => {
                         FileStatus::Modified
                     }
-                    staging::FileStatus::Created => FileStatus::Added,
-                    staging::FileStatus::Deleted => FileStatus::Deleted,
-                    staging::FileStatus::Renamed => FileStatus::Renamed,
+                    wire::FileStatus::Created => FileStatus::Added,
+                    wire::FileStatus::Deleted => FileStatus::Deleted,
+                    wire::FileStatus::Renamed => FileStatus::Renamed,
                 },
                 binary: file.binary,
                 language: file.language.clone(),

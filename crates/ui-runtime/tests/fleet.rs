@@ -551,7 +551,7 @@ fn offering(revision: u64, hash: &[u8]) -> SessionEvent {
 }
 
 /// The catalogue blob offering `model`, as GetBlob answers it.
-fn catalogue(model: &str) -> wire::amux::staging::GetBlobResponse {
+fn catalogue(model: &str) -> wire::GetBlobResponse {
     use prost::Message as _;
     let catalogue = wire::Catalogue {
         models: vec![wire::OfferedModel {
@@ -561,7 +561,7 @@ fn catalogue(model: &str) -> wire::amux::staging::GetBlobResponse {
         }],
         ..wire::Catalogue::default()
     };
-    wire::amux::staging::GetBlobResponse {
+    wire::GetBlobResponse {
         bytes: catalogue.encode_to_vec(),
     }
 }

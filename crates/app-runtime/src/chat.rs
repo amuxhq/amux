@@ -13,8 +13,7 @@ use ui_view::{
     AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
     ToolRows,
 };
-use wire::amux::staging::GetChangesResponse;
-use wire::{BlobRef, send_input_response};
+use wire::{BlobRef, GetChangesResponse, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
 use crate::delta::Sent;

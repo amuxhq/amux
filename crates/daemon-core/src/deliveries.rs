@@ -45,11 +45,10 @@ use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, Delivery, StoreError};
-use wire::amux::staging::DeliverReportRequest;
 use wire::{
-    AgentRef, AgentSender, Bootstrap, ChildReport, Envelope, ErrorCode, Human, Lifecycle,
-    Refusal as Refused, Rejected, SendInputResponse, Sender, bootstrap, ctl_frame, envelope,
-    send_input_response, sender,
+    AgentRef, AgentSender, Bootstrap, ChildReport, DeliverReportRequest, Envelope, ErrorCode,
+    Human, Lifecycle, Refusal as Refused, Rejected, SendInputResponse, Sender, bootstrap,
+    ctl_frame, envelope, send_input_response, sender,
 };
 
 use crate::families::{Caller, Refusal};

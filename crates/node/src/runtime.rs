@@ -1035,12 +1035,9 @@ impl ProfileRuntime {
     /// once the process has sent its Hello, or has already exited.
     pub(crate) async fn create(
         &self,
-        request: wire::amux::staging::CreateAgentRequest,
+        request: wire::CreateAgentRequest,
         caller: &crate::api::Caller,
     ) -> Result<Agent, RegistryError> {
-        use wire::amux::staging::create_agent_request::Agent as Asked;
-        use wire::create_agent_request::Agent as Config;
-
         use crate::api::Caller;
         let id = match request.agent_id.len() {
             0 => Uuid::new_v4(),
@@ -1064,11 +1061,8 @@ impl ProfileRuntime {
                 (None, Some(parent))
             }
         };
-        let agent = match request.agent {
-            Some(Asked::ClaudePty(config)) => Config::ClaudePty(config),
-            Some(Asked::ClaudeSdk(config)) => Config::ClaudeSdk(config),
-            Some(Asked::Codex(config)) => Config::Codex(config),
-            None => return Err(RegistryError::NoKind),
+        let Some(agent) = request.agent else {
+            return Err(RegistryError::NoKind);
         };
         let kind = agent.kind();
         if let Some(edge) = self.edge() {

@@ -1609,9 +1609,9 @@ fn working_tree_diff() -> wire::Diff {
 
 /// [`working_tree_diff`]'s files as the agent's host lists them for an
 /// overview.
-fn working_tree_changes() -> wire::amux::staging::GetChangesResponse {
-    use wire::amux::staging::{ChangedFile, FileStatus};
-    wire::amux::staging::GetChangesResponse {
+fn working_tree_changes() -> wire::GetChangesResponse {
+    use wire::{ChangedFile, FileStatus};
+    wire::GetChangesResponse {
         base_commit: "3f2a1c9e0000".into(),
         files: vec![
             ChangedFile {
@@ -2813,9 +2813,7 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
     assert_eq!(setup.kind(), Kind::ClaudePty);
     assert!(matches!(
         setup.request(b"id".to_vec(), None).agent,
-        Some(wire::amux::staging::create_agent_request::Agent::ClaudePty(
-            _
-        ))
+        Some(wire::create_agent_request::Agent::ClaudePty(_))
     ));
 }
 
@@ -3118,8 +3116,7 @@ fn a_new_agent_offers_what_its_host_offers() {
         "{screen}"
     );
     let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
-    let Some(wire::amux::staging::create_agent_request::Agent::Codex(config)) = request.agent
-    else {
+    let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
         panic!("a Codex agent: {request:?}");
     };
     // Only what the person picked is sent; the rest is the host's to decide.
@@ -3801,7 +3798,7 @@ fn the_header_counts_the_comparison_chosen() {
 /// shows: once per comparison, and again when the row's totals move.
 #[test]
 fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
-    use wire::amux::staging::get_changes_request::Base;
+    use wire::get_changes_request::Base;
 
     use crate::chat::Comparison;
     let mut state = chat_in_git(replies(1, 2), Some("main"));
@@ -3825,7 +3822,7 @@ fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
 
     // The host's answer names the base it used, and the header names that
     // one, not the row's.
-    let changes = wire::amux::staging::GetChangesResponse {
+    let changes = wire::GetChangesResponse {
         base_branch: "origin/main".into(),
         ..working_tree_changes()
     };
@@ -3902,7 +3899,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
     state.update(snapshot(Phase::Idle, body, vec![]));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     view.open_pane();
-    let file = |path: &str| wire::amux::staging::ChangedFile {
+    let file = |path: &str| wire::ChangedFile {
         path: path.into(),
         added: 1,
         ..Default::default()
@@ -3912,14 +3909,14 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             comparison: Comparison::Uncommitted,
             totals: None,
         },
-        wire::amux::staging::GetChangesResponse {
+        wire::GetChangesResponse {
             files: vec![
                 file("src/b.rs"),
                 file("README.md"),
                 file("src/a.rs"),
-                wire::amux::staging::ChangedFile {
+                wire::ChangedFile {
                     old_path: Some("lib/c.rs".into()),
-                    status: wire::amux::staging::FileStatus::Renamed as i32,
+                    status: wire::FileStatus::Renamed as i32,
                     ..file("src/c.rs")
                 },
             ],

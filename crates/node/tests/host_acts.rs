@@ -19,8 +19,7 @@ use store::{AgentKey, AgentRow};
 use support::synthetic::*;
 use support::*;
 use tonic::{Code, Status};
-use wire::amux::staging;
-use wire::amux::staging::agent_service_client::AgentServiceClient;
+use wire::agent_service_client::AgentServiceClient;
 
 use crate::support;
 
@@ -172,7 +171,7 @@ impl Host {
                 },
             ),
         };
-        staging::agent_service_client(served_as(&self.runtime, served, calling))
+        wire::agent_service_client(served_as(&self.runtime, served, calling))
     }
 
     /// The agent who calls, when `who` is one: its host and its id.
@@ -248,12 +247,12 @@ pub fn prompt(text: &str) -> wire::Input {
 
 /// A create in `cwd` with the kind's defaults, and a first prompt when
 /// given.
-pub fn create(cwd: &Path, name: &str, first: Option<&str>) -> staging::CreateAgentRequest {
-    staging::CreateAgentRequest {
+pub fn create(cwd: &Path, name: &str, first: Option<&str>) -> wire::CreateAgentRequest {
+    wire::CreateAgentRequest {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         name: Some(name.to_owned()),
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+        agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
             wire::ClaudeCreateConfig::default(),
         )),
         initial_prompt: first.map(|text| submission(b"p0", text)),
@@ -262,8 +261,8 @@ pub fn create(cwd: &Path, name: &str, first: Option<&str>) -> staging::CreateAge
 }
 
 /// A message to `to` with a fresh id.
-pub fn message(to: uuid::Uuid, text: &str) -> staging::SendMessageRequest {
-    staging::SendMessageRequest {
+pub fn message(to: uuid::Uuid, text: &str) -> wire::SendMessageRequest {
+    wire::SendMessageRequest {
         id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         agent_id: to.as_bytes().to_vec(),
         context: None,
@@ -333,21 +332,21 @@ async fn act(host: &Host, who: Who, act: Act, target: uuid::Uuid) -> Result<(), 
     let agent_id = target.as_bytes().to_vec();
     match act {
         Act::Rename => agents
-            .rename_agent(staging::RenameAgentRequest {
+            .rename_agent(wire::RenameAgentRequest {
                 agent_id,
                 name: format!("renamed-{}", &target.simple().to_string()[..8]),
             })
             .await
             .map(drop),
         Act::Input => agents
-            .send_input(staging::SendInputRequest {
+            .send_input(wire::SendInputRequest {
                 agent_id,
                 input: Some(prompt("look at the logs")),
             })
             .await
             .map(drop),
         Act::PutBlob => agents
-            .put_blob(staging::PutBlobRequest {
+            .put_blob(wire::PutBlobRequest {
                 agent_id,
                 name: "notes.txt".into(),
                 mime: "text/plain".into(),
@@ -356,7 +355,7 @@ async fn act(host: &Host, who: Who, act: Act, target: uuid::Uuid) -> Result<(), 
             .await
             .map(drop),
         Act::Diff => agents
-            .get_diff(staging::GetDiffRequest {
+            .get_diff(wire::GetDiffRequest {
                 agent_id,
                 base: Some(wire::DiffBase {
                     base: Some(wire::diff_base::Base::Head(wire::Empty {})),
@@ -366,18 +365,18 @@ async fn act(host: &Host, who: Who, act: Act, target: uuid::Uuid) -> Result<(), 
             .await
             .map(drop),
         Act::PreviewDelete => agents
-            .preview_delete(staging::PreviewDeleteRequest { agent_id })
+            .preview_delete(wire::PreviewDeleteRequest { agent_id })
             .await
             .map(drop),
         Act::Close => agents
-            .set_filing(staging::SetFilingRequest {
+            .set_filing(wire::SetFilingRequest {
                 agent_id,
                 filing: wire::Filing::Closed as i32,
             })
             .await
             .map(drop),
         Act::Resume => agents
-            .resume_agent(staging::ResumeAgentRequest {
+            .resume_agent(wire::ResumeAgentRequest {
                 agent_id,
                 initial_prompt: None,
                 if_suspended: true,
@@ -385,7 +384,7 @@ async fn act(host: &Host, who: Who, act: Act, target: uuid::Uuid) -> Result<(), 
             .await
             .map(drop),
         Act::Delete => agents
-            .delete_agent(staging::DeleteAgentRequest {
+            .delete_agent(wire::DeleteAgentRequest {
                 agent_id,
                 discard_workspace_changes: false,
             })
@@ -520,8 +519,8 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
 
     for (who, child) in EVERYONE.into_iter().zip(mine) {
         let tag = format!("{who:?}").to_lowercase();
-        let never_ask = staging::CreateAgentRequest {
-            agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+        let never_ask = wire::CreateAgentRequest {
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
                 wire::ClaudeCreateConfig {
                     permission: Some("bypassPermissions".into()),
                     ..Default::default()
@@ -545,7 +544,7 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
         for filing in [wire::Filing::Pinned, wire::Filing::Open] {
             let filed = host
                 .agents(who)
-                .set_filing(staging::SetFilingRequest {
+                .set_filing(wire::SetFilingRequest {
                     agent_id: target.as_bytes().to_vec(),
                     filing: filing as i32,
                 })
@@ -563,7 +562,7 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
         }
         let closed = host
             .agents(who)
-            .set_filing(staging::SetFilingRequest {
+            .set_filing(wire::SetFilingRequest {
                 agent_id: target.as_bytes().to_vec(),
                 filing: wire::Filing::Closed as i32,
             })
@@ -612,7 +611,7 @@ async fn a_new_agents_parent_is_its_caller() {
         if !who.is_agent() {
             continue;
         }
-        let unnamed = staging::CreateAgentRequest {
+        let unnamed = wire::CreateAgentRequest {
             cwd: String::new(),
             ..create(&work, &format!("{tag}-unnamed"), None)
         };
@@ -686,7 +685,7 @@ async fn the_owner_holds_the_attachment_limit() {
     let host = setup.start().await;
     let too_large = vec![0; wire::ATTACHMENT_SIZE_LIMIT + 1];
     for (who, agent) in EVERYONE.into_iter().zip(mine) {
-        let put = |bytes: Vec<u8>| staging::PutBlobRequest {
+        let put = |bytes: Vec<u8>| wire::PutBlobRequest {
             agent_id: agent.as_bytes().to_vec(),
             name: "huge.bin".into(),
             mime: "application/octet-stream".into(),
@@ -717,7 +716,13 @@ async fn a_message_id_is_sixteen_bytes() {
     let host = setup.start().await;
     let old_shape = {
         use prost::Message as _;
-        let old = wire::SendMessageRequest {
+        /// A send as builds before the caller was its sender wrote it.
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct OldSend {
+            #[prost(message, optional, tag = "1")]
+            envelope: Option<wire::Envelope>,
+        }
+        let old = OldSend {
             envelope: Some(wire::Envelope {
                 id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 to: Some(wire::AgentRef {
@@ -731,13 +736,13 @@ async fn a_message_id_is_sixteen_bytes() {
                 ..Default::default()
             }),
         };
-        staging::SendMessageRequest::decode(old.encode_to_vec().as_slice()).unwrap()
+        wire::SendMessageRequest::decode(old.encode_to_vec().as_slice()).unwrap()
     };
     for who in EVERYONE {
         for length in [0, 4, 15, 17, 32] {
             let refused = host
                 .agents(who)
-                .send_message(staging::SendMessageRequest {
+                .send_message(wire::SendMessageRequest {
                     id: vec![7; length],
                     ..message(recipient, "hello")
                 })
@@ -814,8 +819,8 @@ async fn the_owner_refuses_a_kind_it_does_not_run() {
         .await;
     let work = host.install.work.clone();
     for who in EVERYONE {
-        let codex = staging::CreateAgentRequest {
-            agent: Some(staging::create_agent_request::Agent::Codex(
+        let codex = wire::CreateAgentRequest {
+            agent: Some(wire::create_agent_request::Agent::Codex(
                 wire::CodexCreateConfig::default(),
             )),
             ..create(&work, &format!("{who:?}").to_lowercase(), None)
@@ -840,7 +845,7 @@ async fn a_create_without_a_kind_is_invalid() {
     let host = setup.start().await;
     let work = host.install.work.clone();
     for who in EVERYONE {
-        let kindless = staging::CreateAgentRequest {
+        let kindless = wire::CreateAgentRequest {
             agent: None,
             ..create(&work, &format!("{who:?}").to_lowercase(), None)
         };
@@ -873,7 +878,7 @@ async fn a_delete_preview_is_answered_to_whoever_may_delete() {
         let mut agents = host.agents(who);
         async move {
             agents
-                .preview_delete(staging::PreviewDeleteRequest {
+                .preview_delete(wire::PreviewDeleteRequest {
                     agent_id: agent.as_bytes().to_vec(),
                 })
                 .await

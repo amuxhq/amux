@@ -13,12 +13,11 @@ use std::path::{Path, PathBuf};
 use git_facts::{Base, GitError};
 use highlight::Language;
 use store::{AgentKey, AgentRow, StoreError};
-use wire::ErrorCode;
-use wire::amux::staging::{
-    ChangedFile, FileFlag, FileStatus, GetChangesResponse, PreviewDeleteResponse,
+use wire::experimental::WorkspaceKind;
+use wire::{
+    ChangedFile, ErrorCode, FileFlag, FileStatus, GetChangesResponse, PreviewDeleteResponse,
     get_changes_request,
 };
-use wire::experimental::WorkspaceKind;
 
 use crate::runtime::ProfileRuntime;
 use crate::{AgentId, HostId, spec};

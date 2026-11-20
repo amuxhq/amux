@@ -12,11 +12,11 @@ use std::process::Command;
 
 use support::synthetic::*;
 use support::*;
-use wire::amux::staging;
-use wire::amux::staging::get_changes_request::Base;
-use wire::amux::staging::{ChangedFile, FileStatus, GetChangesResponse, PreviewDeleteResponse};
 use wire::experimental::AgentWorkspace;
-use wire::{ErrorCode, Lifecycle};
+use wire::get_changes_request::Base;
+use wire::{
+    ChangedFile, ErrorCode, FileStatus, GetChangesResponse, Lifecycle, PreviewDeleteResponse,
+};
 
 use crate::support;
 
@@ -306,7 +306,7 @@ async fn the_preview_says_what_a_delete_would_take() {
 
     let lead = runtime
         .spawn(
-            staging::CreateAgentRequest {
+            wire::CreateAgentRequest {
                 new_workspace: true,
                 ..create(&repo, "checkout-fix", None)
             },
@@ -393,7 +393,7 @@ async fn without_the_experiment_no_workspace_goes() {
     let runtime = runtime(&daemon, &install);
     let agent = runtime
         .spawn(
-            staging::CreateAgentRequest {
+            wire::CreateAgentRequest {
                 new_workspace: true,
                 ..create(&repo, "checkout-fix", None)
             },
@@ -417,7 +417,7 @@ async fn without_the_experiment_no_workspace_goes() {
 async fn every_entry_answers_a_person_and_an_agent_only_about_its_children() {
     use node::harness::{Calling, Served, served_as};
     use store::AgentKey;
-    use wire::amux::staging::{self as staging, GetChangesRequest};
+    use wire::GetChangesRequest;
 
     let install = Install::new();
     feature_branch(&install.work);
@@ -434,7 +434,7 @@ async fn every_entry_answers_a_person_and_an_agent_only_about_its_children() {
     let runtime = runtime(&daemon, &install);
 
     let ask = |served, calling, agent: &SyntheticAgent| {
-        let mut client = staging::review_service_client(served_as(&runtime, served, calling));
+        let mut client = wire::review_service_client(served_as(&runtime, served, calling));
         let request = GetChangesRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             base: None,

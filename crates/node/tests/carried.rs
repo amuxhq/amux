@@ -16,10 +16,10 @@ use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use tonic::transport::Channel;
-use wire::amux::staging::{
-    self as staging, FollowAgentsRequest, PinFolderRequest, PutBlobRequest, SendInputRequest,
+use wire::{
+    FollowAgentsRequest, PinFolderRequest, PutBlobRequest, SendInputRequest, SendInputResponse,
+    send_input_response,
 };
-use wire::{SendInputResponse, send_input_response};
 
 use crate::support;
 
@@ -253,7 +253,7 @@ async fn a_person_on_the_laptop_is_answered_by_the_desk_as_a_person_there() {
     let (pair, _link) = Pair::new().await;
     assert!(pinned(&pair.desk_runtime).is_empty());
 
-    staging::host_service_client(pair.to_desk().await)
+    wire::host_service_client(pair.to_desk().await)
         .pin_folder(pinning(&pair.desk_docs()))
         .await
         .unwrap();
@@ -263,7 +263,7 @@ async fn a_person_on_the_laptop_is_answered_by_the_desk_as_a_person_there() {
         "the laptop pinned nothing of its own"
     );
 
-    let answer = staging::agent_service_client(pair.to_desk().await)
+    let answer = wire::agent_service_client(pair.to_desk().await)
         .send_input(pair.send(b"p1", "look at the logs"))
         .await
         .unwrap();
@@ -300,7 +300,7 @@ async fn the_phones_entry_in_memory_carries_a_call_to_the_desk() {
     let origin = format!("http://{}", wire::authority(&pair.desk_id()))
         .parse()
         .unwrap();
-    let mut desk = staging::host_service_client::HostServiceClient::with_origin(entrance, origin);
+    let mut desk = wire::host_service_client::HostServiceClient::with_origin(entrance, origin);
     desk.pin_folder(pinning(&pair.desk_docs())).await.unwrap();
     until_pinned(&pair.desk_runtime, &["docs"]).await;
     pair.stop().await;
@@ -311,7 +311,7 @@ async fn a_call_for_a_host_with_no_link_never_leaves_and_says_so() {
     let (pair, link) = Pair::new().await;
     link.sever();
     drop(link);
-    let desk = staging::agent_service_client(pair.to_desk().await);
+    let desk = wire::agent_service_client(pair.to_desk().await);
     until("the laptop to lose its route to the desk", || {
         let mut desk = desk.clone();
         let request = pair.send(b"p1", "look at the logs");
@@ -334,11 +334,10 @@ async fn a_call_for_a_host_with_no_link_never_leaves_and_says_so() {
 
     // A host never paired is no different.
     let stranger = node::HostId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_0000_0000_0001);
-    let answer =
-        staging::host_service_client(pair.laptop_socket(&wire::authority(&stranger)).await)
-            .pin_folder(pinning(&pair.desk_docs()))
-            .await
-            .unwrap_err();
+    let answer = wire::host_service_client(pair.laptop_socket(&wire::authority(&stranger)).await)
+        .pin_folder(pinning(&pair.desk_docs()))
+        .await
+        .unwrap_err();
     assert_eq!(reason(&answer), Some(wire::ErrorReason::HostUnreachable));
     pair.stop().await;
 }
@@ -366,7 +365,7 @@ async fn a_call_for_a_host_that_no_longer_trusts_this_one_says_so() {
     })
     .await
     .unwrap();
-    let answer = staging::host_service_client(pair.to_desk().await)
+    let answer = wire::host_service_client(pair.to_desk().await)
         .pin_folder(pinning(&pair.desk_docs()))
         .await
         .unwrap_err();
@@ -382,7 +381,7 @@ async fn a_call_for_a_host_that_no_longer_trusts_this_one_says_so() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_carried_call_to_the_peer_service_is_refused() {
     let (pair, _link) = Pair::new().await;
-    let answer = staging::peer_service_client(pair.to_desk().await)
+    let answer = wire::peer_service_client(pair.to_desk().await)
         .follow_agents(FollowAgentsRequest {})
         .await
         .unwrap_err();
@@ -419,7 +418,7 @@ async fn an_attachment_at_the_limit_carried_to_the_desk_arrives() {
     let bytes: Vec<u8> = (0..wire::ATTACHMENT_SIZE_LIMIT)
         .map(|index| (index % 251) as u8)
         .collect();
-    let stored = staging::agent_service_client(pair.to_desk().await)
+    let stored = wire::agent_service_client(pair.to_desk().await)
         .put_blob(PutBlobRequest {
             agent_id: pair.agent.id.as_bytes().to_vec(),
             name: "big.bin".to_owned(),
@@ -444,7 +443,7 @@ async fn a_send_cut_off_after_it_left_is_aborted_and_arrives_once() {
     pair.agent.freeze();
     let sending = tokio::spawn({
         let request = pair.send(b"p1", "look at the logs");
-        let mut desk = staging::agent_service_client(pair.to_desk().await);
+        let mut desk = wire::agent_service_client(pair.to_desk().await);
         async move { desk.send_input(request).await }
     });
     until("the prompt to reach the desk's agent", || async {
@@ -471,7 +470,7 @@ async fn a_send_cut_off_after_it_left_is_aborted_and_arrives_once() {
 
     let _link = pair.link().await;
     pair.agent.thaw();
-    let answer = staging::agent_service_client(pair.to_desk().await)
+    let answer = wire::agent_service_client(pair.to_desk().await)
         .send_input(pair.send(b"p2", "and the config"))
         .await
         .unwrap();
@@ -515,7 +514,7 @@ async fn an_input_no_daemon_knows_is_carried_as_it_was_sent() {
     // The person on the agent's own host, then on the paired one.
     let on_desk = socket(&pair.desk_runtime, "amux.local").await;
     for (channel, input) in [(on_desk, &inputs[0]), (pair.to_desk().await, &inputs[1])] {
-        let answer = staging::agent_service_client(channel)
+        let answer = wire::agent_service_client(channel)
             .send_input(Request::new(SendInputRequest {
                 agent_id: pair.agent.id.as_bytes().to_vec(),
                 input: Some(input.clone()),
@@ -552,9 +551,9 @@ async fn the_link_log_has_one_line_per_carried_call() {
     let (pair, link) = Pair::new().await;
     let laptop_docs = pair.laptop.path("docs");
     std::fs::create_dir_all(&laptop_docs).unwrap();
-    let mut here = staging::host_service_client(pair.laptop_socket("amux.local").await);
+    let mut here = wire::host_service_client(pair.laptop_socket("amux.local").await);
     here.pin_folder(pinning(&laptop_docs)).await.unwrap();
-    let mut desk = staging::host_service_client(pair.to_desk().await);
+    let mut desk = wire::host_service_client(pair.to_desk().await);
     desk.pin_folder(pinning(&pair.desk_docs())).await.unwrap();
     let unknown =
         wire::profile_admin_service_client::ProfileAdminServiceClient::new(pair.to_desk().await)
@@ -584,7 +583,7 @@ async fn the_link_log_has_one_line_per_carried_call() {
 
     let carried = pair.carried();
     let desk_id = pair.desk_id();
-    let list = "/amux.staging.HostService/PinFolder";
+    let list = "/amux.v1.HostService/PinFolder";
     assert!(
         carried.iter().all(|call| call.peer == desk_id),
         "{carried:?}"

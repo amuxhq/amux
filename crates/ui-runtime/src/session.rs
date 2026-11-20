@@ -20,11 +20,10 @@ use ui_state::{
     BlobStatus, Connection, InputId, InputOutcome, Key, Msg, Outcome, Refusal, SessionState,
 };
 use ui_view::SessionLine;
-use wire::amux::staging::{GetChangesResponse, get_changes_request};
 use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
 use wire::{
-    Agent, BlobRef, DumpRequest, HostEntry, Input, PromptSubmission, SendInputResponse,
-    SessionEvent, send_input_response, session_event,
+    Agent, BlobRef, DumpRequest, GetChangesResponse, HostEntry, Input, PromptSubmission,
+    SendInputResponse, SessionEvent, get_changes_request, send_input_response, session_event,
 };
 
 use crate::trace::{DriverError, DriverEvent, DriverTrace, Ring, TraceEvent};

@@ -1,7 +1,6 @@
-// These files move into amux.v1 once every caller uses them.
 syntax = "proto3";
 
-package amux.staging;
+package amux.v1;
 
 import "amux/v1/inventory.proto";
 
@@ -29,7 +28,7 @@ service HostService {
 }
 
 message GetCatalogueRequest {
-  amux.v1.Provider provider = 1;
+  Provider provider = 1;
 }
 
 // The encoded Catalogue and the SHA-256 of exactly these bytes, which is

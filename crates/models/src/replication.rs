@@ -48,8 +48,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, AgentRow, CommitClock, Dump, Marker, Sqlite};
-use wire::amux::staging::FollowSessionRequest;
-use wire::{Item, Phase, SessionEvent, Snapshot, Step, session_event};
+use wire::{FollowSessionRequest, Item, Phase, SessionEvent, Snapshot, Step, session_event};
 
 use crate::held::{Held, Slot};
 use crate::single_daemon::{EARLY_AFTER_ACCEPT, REPLAY_CHANGES_NOTHING};

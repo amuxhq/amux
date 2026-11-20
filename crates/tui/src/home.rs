@@ -724,7 +724,7 @@ impl Home {
     pub fn delete_previewed(
         &mut self,
         of: &AgentKey,
-        preview: Result<&wire::amux::staging::PreviewDeleteResponse, &String>,
+        preview: Result<&wire::PreviewDeleteResponse, &String>,
     ) {
         if let Some(Overlay::Confirm { agent, warning, .. }) = &mut self.overlay
             && agent == of

@@ -1188,7 +1188,7 @@ async fn a_link_behind_a_router_survives_its_host_changing_network() {
         .expect("a channel to the desk after the move");
     let mut inventory = peer
         .peer
-        .follow_agents(wire::amux::staging::FollowAgentsRequest {})
+        .follow_agents(wire::FollowAgentsRequest {})
         .await
         .expect("the desk answers across the moved link")
         .into_inner();

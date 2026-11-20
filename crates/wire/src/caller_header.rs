@@ -5,7 +5,7 @@ use base64::Engine as _;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use prost::Message as _;
 
-use crate::amux::staging::{AgentCaller, Caller, Person, caller};
+use crate::amux::v1::{AgentCaller, Caller, Person, caller};
 
 /// gRPC writes a binary header's value in base64 and lets a sender pad it
 /// or not, so a reader takes either.

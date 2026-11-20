@@ -11,10 +11,9 @@ use std::sync::Weak;
 use store::AgentRow;
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
-use wire::ErrorCode;
-use wire::amux::staging::review_service_server::ReviewService;
-use wire::amux::staging::{
-    GetChangesRequest, GetChangesResponse, PreviewDeleteRequest, PreviewDeleteResponse,
+use wire::review_service_server::ReviewService;
+use wire::{
+    ErrorCode, GetChangesRequest, GetChangesResponse, PreviewDeleteRequest, PreviewDeleteResponse,
 };
 
 use crate::api::Entry;
@@ -29,7 +28,7 @@ pub(in crate::api) fn mount(
     runtime: &Weak<ProfileRuntime>,
     _entry: Entry,
 ) {
-    routes.add_service(wire::amux::staging::review_service_server(Reviews {
+    routes.add_service(wire::review_service_server(Reviews {
         runtime: runtime.clone(),
     }));
 }
@@ -118,7 +117,7 @@ mod tests {
     use std::sync::Arc;
 
     use store::AgentKey;
-    use wire::amux::staging::get_changes_request::Base;
+    use wire::get_changes_request::Base;
 
     use super::*;
     use crate::api::caller::{At, Surface};

@@ -27,7 +27,6 @@ use store::AgentKey;
 use tokio::sync::mpsc;
 use tracing::Instrument as _;
 use uuid::Uuid;
-use wire::amux::staging;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
@@ -1070,16 +1069,16 @@ impl Net {
         let script = self.write_script(&decl.name, decl.script.clone().unwrap_or_default())?;
         let id = Uuid::new_v4();
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
-        let request = staging::CreateAgentRequest {
+        let request = wire::CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
             name: Some(decl.name.clone()),
             cwd,
-            agent: Some(staged(create_config(&decl, provider))),
+            agent: Some(create_config(&decl, provider)),
             initial_prompt: decl
                 .prompt
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
-            ..staging::CreateAgentRequest::default()
+            ..wire::CreateAgentRequest::default()
         };
         let person = self.person(&decl.host).await?;
         let launching = self.launching(&host, Some((decl.kind, &script, provider)))?;
@@ -1451,7 +1450,6 @@ impl Net {
         let provider = self.provider_of(&decl)?;
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
-            host: Some(wire::HostRef::id(host.host_id.as_bytes().to_vec())),
             name: Some(decl.name.clone()),
             initial_prompt: decl
                 .prompt
@@ -1464,7 +1462,7 @@ impl Net {
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let asked = self.agent_dir(parent)?;
         let launching = self.launching(&host, Some((decl.kind, &script, provider)))?;
-        let spawned = agent_dir::agent_sock::spawn(&asked, &request).await;
+        let spawned = agent_dir::agent_sock::spawn(&asked, host.host_id.as_bytes(), &request).await;
         self.launched(&host, launching);
         let agent = match spawned {
             Ok(agent_dir::agent_sock::Spawned::Created(response)) => {
@@ -2291,14 +2289,14 @@ impl Net {
         Ok(person
             .host(at.host_id())
             .agents()
-            .create(staging::CreateAgentRequest {
+            .create(wire::CreateAgentRequest {
                 agent_id: Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(name.to_owned()),
                 cwd: work,
-                agent: Some(staging::create_agent_request::Agent::ClaudeSdk(
+                agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
                     ClaudeCreateConfig::default(),
                 )),
-                ..staging::CreateAgentRequest::default()
+                ..wire::CreateAgentRequest::default()
             })
             .await?)
     }
@@ -3999,15 +3997,6 @@ fn forward_events<T: Send + 'static>(
 }
 
 /// A kind and its settings as a person's create asks for them.
-fn staged(agent: create_agent_request::Agent) -> staging::create_agent_request::Agent {
-    use staging::create_agent_request::Agent as Staged;
-    match agent {
-        create_agent_request::Agent::ClaudePty(config) => Staged::ClaudePty(config),
-        create_agent_request::Agent::ClaudeSdk(config) => Staged::ClaudeSdk(config),
-        create_agent_request::Agent::Codex(config) => Staged::Codex(config),
-    }
-}
-
 fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::Agent {
     use create_agent_request::Agent;
     // A real Claude starts asking, as a person's own default on a real

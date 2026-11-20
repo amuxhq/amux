@@ -86,11 +86,9 @@ fn peer_key() -> PublicKey {
 /// one of the two calls that may go out before a link's handshake
 /// finishes.
 fn early_read() -> PeerRequest {
-    PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
+    PeerRequest::FollowSession(wire::FollowSessionRequest {
         agent_id: AGENT.0.to_vec(),
-        from: Some(wire::amux::staging::follow_session_request::From::Tail(
-            TAIL,
-        )),
+        from: Some(wire::follow_session_request::From::Tail(TAIL)),
     })
 }
 

@@ -8,7 +8,6 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use wire::amux::staging;
 
 use crate::codec;
 use crate::families::{Create, Refusal, Resume};
@@ -271,11 +270,11 @@ pub enum PeerRequest {
     /// PeerService.FollowSession: a stream of one of this host's agents'
     /// session events, from what came after the revision the peer's copy
     /// holds, or a tail.
-    FollowSession(#[serde(with = "codec::message")] staging::FollowSessionRequest),
+    FollowSession(#[serde(with = "codec::message")] wire::FollowSessionRequest),
     /// PeerService.DeliverReport: a child's report to its parent on the
     /// called host. The host it reaches hands it on as a message from the
     /// child, as [`report_envelope`] spells it.
-    DeliverReport(#[serde(with = "codec::message")] staging::DeliverReportRequest),
+    DeliverReport(#[serde(with = "codec::message")] wire::DeliverReportRequest),
     /// PeerService.ListItems: a page of one of this host's agents' older
     /// items, whose request is this one field for field.
     ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
@@ -289,7 +288,7 @@ pub enum PeerRequest {
 pub fn report_envelope(
     from: &[u8],
     here: &[u8],
-    report: staging::DeliverReportRequest,
+    report: wire::DeliverReportRequest,
 ) -> wire::Envelope {
     wire::Envelope {
         id: report.id,

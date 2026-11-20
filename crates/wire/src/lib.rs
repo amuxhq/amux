@@ -55,21 +55,6 @@ pub mod amux {
     pub mod v1 {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.v1.rs");
-    }
-
-    /// What a client writes into a dump, read back only by the build that
-    /// wrote it; outside the protocol's compatibility promises.
-    pub mod dump {
-        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
-        include!("generated/amux.dump.rs");
-    }
-
-    /// The services that take the place of amux.v1's agent and session
-    /// services, written beside them while callers move over; they become
-    /// amux.v1 once none is left.
-    pub mod staging {
-        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
-        include!("generated/amux.staging.rs");
 
         sized_service!(
             generic inventory_service_client,
@@ -136,6 +121,13 @@ pub mod amux {
         );
     }
 
+    /// What a client writes into a dump, read back only by the build that
+    /// wrote it; outside the protocol's compatibility promises.
+    pub mod dump {
+        #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
+        include!("generated/amux.dump.rs");
+    }
+
     /// The shapes of experiments, carried as bytes in the `experimental`
     /// maps of amux.v1 messages; outside the protocol's compatibility
     /// promises, so they change freely.
@@ -168,7 +160,7 @@ pub mod google {
 pub use google::rpc;
 
 mod authority;
-mod caller;
+mod caller_header;
 mod continued;
 mod entry;
 mod error;
@@ -178,7 +170,7 @@ mod pinned;
 mod said;
 pub use amux::v1::*;
 pub use authority::{authority, host_of_authority};
-pub use caller::CallerHeaderError;
+pub use caller_header::CallerHeaderError;
 pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
@@ -362,13 +354,6 @@ impl HostRef {
     pub fn id(host_id: impl Into<Vec<u8>>) -> Self {
         Self {
             of: Some(host_ref::Of::HostId(host_id.into())),
-        }
-    }
-
-    /// A host as a person names it.
-    pub fn named(name: impl Into<String>) -> Self {
-        Self {
-            of: Some(host_ref::Of::Name(name.into())),
         }
     }
 }
@@ -617,7 +602,7 @@ mod tests {
     fn enums(set: &FileDescriptorSet) -> BTreeMap<String, Vec<(String, i32)>> {
         set.file
             .iter()
-            .filter(|file| matches!(file.package(), "amux.v1" | "amux.staging"))
+            .filter(|file| file.package() == "amux.v1")
             .flat_map(|file| file.enum_type.iter())
             .map(|enumeration| {
                 let values = enumeration
@@ -746,7 +731,7 @@ mod tests {
                 [
                     ".amux.experimental.AgentWorkspace",
                     ".amux.experimental.SuspensionSpec",
-                    ".amux.staging.Caller",
+                    ".amux.v1.Caller",
                 ]
                 .map(str::to_owned),
             )
@@ -857,10 +842,64 @@ mod tests {
         }
     }
 
-    /// A spawn from an agent's tool server as builds before the reshaped
-    /// create wrote it, which an agent running across the upgrade still
-    /// sends: its first prompt is at field 9, where the reshaped request
-    /// has a boolean, so it fails to decode rather than being misread.
+    /// The three calls that kept their path when their requests changed
+    /// shape, so a caller built before the change (an agent's tool server
+    /// that ran across the upgrade) can still reach them with the old one.
+    #[test]
+    fn the_calls_whose_requests_changed_keep_their_paths() {
+        let set = descriptor();
+        let input = |service: &str, method: &str| {
+            set.file
+                .iter()
+                .flat_map(|file| file.service.iter())
+                .filter(|found| found.name() == service)
+                .flat_map(|found| found.method.iter())
+                .find(|found| found.name() == method)
+                .map(|found| found.input_type().to_owned())
+        };
+        for (service, method, request) in [
+            ("AgentService", "CreateAgent", ".amux.v1.CreateAgentRequest"),
+            ("AgentService", "SendMessage", ".amux.v1.SendMessageRequest"),
+            (
+                "SessionService",
+                "SubscribeSession",
+                ".amux.v1.SubscribeSessionRequest",
+            ),
+        ] {
+            assert_eq!(
+                input(service, method).as_deref(),
+                Some(request),
+                "/amux.v1.{service}/{method}"
+            );
+        }
+    }
+
+    /// A create as builds before the request lost its host and parent wrote
+    /// it, which an agent's tool server that ran across the upgrade still
+    /// sends.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct OldCreate {
+        #[prost(bytes = "vec", tag = "1")]
+        agent_id: Vec<u8>,
+        #[prost(message, optional, tag = "2")]
+        host: Option<HostRef>,
+        #[prost(string, optional, tag = "3")]
+        name: Option<String>,
+        #[prost(message, optional, tag = "4")]
+        parent: Option<AgentRef>,
+        #[prost(string, tag = "5")]
+        cwd: String,
+        #[prost(message, optional, tag = "7")]
+        claude_sdk: Option<ClaudeCreateConfig>,
+        #[prost(message, optional, tag = "8")]
+        codex: Option<CodexCreateConfig>,
+        #[prost(message, optional, tag = "9")]
+        initial_prompt: Option<PromptSubmission>,
+    }
+
+    /// An old create carries its first prompt at field 9, where today's
+    /// request has a boolean, so it fails to decode rather than being
+    /// misread.
     #[test]
     fn an_old_create_does_not_decode_as_the_reshaped_one() {
         let prompt = Some(PromptSubmission {
@@ -871,34 +910,45 @@ mod tests {
             }),
         });
         let spawns = [
-            CreateAgentRequest {
+            OldCreate {
                 agent_id: vec![2; 16],
-                agent: create_agent_request::Agent::defaults(Kind::ClaudeSdk),
+                claude_sdk: Some(ClaudeCreateConfig::default()),
                 initial_prompt: prompt.clone(),
                 ..Default::default()
             },
-            CreateAgentRequest {
+            OldCreate {
                 agent_id: vec![2; 16],
-                host: Some(HostRef::named("desk")),
+                host: Some(HostRef::id(vec![4; 16])),
                 name: Some("helper".into()),
+                parent: Some(AgentRef {
+                    host_id: vec![4; 16],
+                    agent_id: vec![5; 16],
+                }),
                 cwd: "~/src/app".into(),
-                agent: create_agent_request::Agent::defaults(Kind::Codex),
+                codex: Some(CodexCreateConfig::default()),
                 initial_prompt: prompt,
                 ..Default::default()
             },
         ];
         for spawn in spawns {
-            let read = amux::staging::CreateAgentRequest::decode(spawn.encode_to_vec().as_slice());
+            let read = CreateAgentRequest::decode(spawn.encode_to_vec().as_slice());
             assert!(read.is_err(), "{spawn:?} read as {read:?}");
         }
     }
 
-    /// A send as builds before the reshaped one wrote it, its whole
-    /// envelope at field 1, decodes with the envelope as an id of the wrong
-    /// length and no recipient, which the host refuses by the id's length.
+    /// A send as builds before the caller was its sender wrote it: the
+    /// whole envelope at field 1.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct OldSend {
+        #[prost(message, optional, tag = "1")]
+        envelope: Option<Envelope>,
+    }
+
+    /// An old send decodes with the envelope as an id of the wrong length
+    /// and no recipient, which the host refuses by the id's length.
     #[test]
     fn an_old_send_decodes_with_no_recipient_and_an_id_of_the_wrong_length() {
-        let old = SendMessageRequest {
+        let old = OldSend {
             envelope: Some(Envelope {
                 id: vec![3; 16],
                 context: Some(b"build".to_vec()),
@@ -913,11 +963,34 @@ mod tests {
                 })),
             }),
         };
-        let read = amux::staging::SendMessageRequest::decode(old.encode_to_vec().as_slice())
+        let read = SendMessageRequest::decode(old.encode_to_vec().as_slice())
             .expect("an old send decodes");
         assert_ne!(read.id.len(), 16);
         assert!(read.agent_id.is_empty());
         assert_eq!(read.context, None);
         assert_eq!(read.message, None);
+    }
+
+    /// A subscribe as builds before it lost its cursor wrote it: a tail, or
+    /// a cursor a client was never let send.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct OldSubscribe {
+        #[prost(bytes = "vec", tag = "1")]
+        agent_id: Vec<u8>,
+        #[prost(uint32, optional, tag = "2")]
+        tail: Option<u32>,
+    }
+
+    /// An old client's subscribe reads as the same tail.
+    #[test]
+    fn an_old_subscribe_reads_as_the_same_tail() {
+        let old = OldSubscribe {
+            agent_id: vec![6; 16],
+            tail: Some(40),
+        };
+        let read = SubscribeSessionRequest::decode(old.encode_to_vec().as_slice())
+            .expect("an old subscribe decodes");
+        assert_eq!(read.agent_id, vec![6; 16]);
+        assert_eq!(read.tail, 40);
     }
 }

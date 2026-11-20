@@ -9,7 +9,7 @@ use std::sync::Weak;
 
 use daemon_core::payload::{Answer, PeerFailure, PeerRequest};
 use daemon_core::{CallId, HostId, Input};
-use wire::amux::staging::{FollowAgentsRequest, FollowSessionRequest};
+use wire::{FollowAgentsRequest, FollowSessionRequest};
 
 use super::feed;
 use crate::link::EarlyAnswer;

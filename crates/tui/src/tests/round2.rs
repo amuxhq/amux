@@ -451,9 +451,9 @@ fn preview(
     branch: Option<&str>,
     own_commits: Option<u32>,
     uncommitted: (u32, u32, u32),
-) -> wire::amux::staging::PreviewDeleteResponse {
+) -> wire::PreviewDeleteResponse {
     let (files, added, removed) = uncommitted;
-    wire::amux::staging::PreviewDeleteResponse {
+    wire::PreviewDeleteResponse {
         removes_workspace,
         branch: branch.map(Into::into),
         own_commits,
@@ -492,7 +492,7 @@ fn open_delete(fleet: &FleetState) -> (crate::home::Home, String) {
 fn a_delete_says_what_its_host_previewed_and_confirming_discards_it() {
     // The row's facts are stale and say nothing: the window does not read them.
     let fleet = archive_in_worktree(wire::Git::default());
-    let confirm = |answer: wire::amux::staging::PreviewDeleteResponse| {
+    let confirm = |answer: wire::PreviewDeleteResponse| {
         let (mut home, opening) = open_delete(&fleet);
         home.delete_previewed(&archive(), Ok(&answer));
         let screen = home_at(&mut home, &fleet, W, H);

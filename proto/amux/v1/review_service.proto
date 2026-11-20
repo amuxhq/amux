@@ -1,7 +1,6 @@
-// These files move into amux.v1 once every caller uses them.
 syntax = "proto3";
 
-package amux.staging;
+package amux.v1;
 
 import "amux/v1/records.proto";
 
@@ -32,7 +31,7 @@ message GetChangesRequest {
   // 3. It does so with no upstream: the uncommitted work against HEAD.
   oneof base {
     // The uncommitted work alone, against HEAD.
-    amux.v1.Empty head = 2;
+    Empty head = 2;
     // Everything since the merge base with this branch.
     string branch = 3;
   }

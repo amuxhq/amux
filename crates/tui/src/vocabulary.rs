@@ -2458,8 +2458,8 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         uncommitted: Some(totals(4, 42, 7)),
         on_branch: Some(totals(6, 120, 30)),
     };
-    use wire::amux::staging::FileStatus::{Changed, Created, Deleted};
-    use wire::amux::staging::{ChangedFile, FileStatus, GetChangesResponse};
+    use wire::FileStatus::{Changed, Created, Deleted};
+    use wire::{ChangedFile, FileStatus, GetChangesResponse};
     let file = |path: &str, added, removed, status: FileStatus| ChangedFile {
         path: path.into(),
         added,

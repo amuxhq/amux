@@ -38,16 +38,13 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use uuid::Uuid;
-use wire::amux::staging::agent_service_client::AgentServiceClient;
-use wire::amux::staging::inventory_service_client::InventoryServiceClient;
-use wire::amux::staging::{
-    self, ResolveAgentRequest, ResolveHostRequest, SendMessageRequest, SetFilingRequest,
-    SubscribeInventoryRequest,
-};
+use wire::agent_service_client::AgentServiceClient;
+use wire::inventory_service_client::InventoryServiceClient;
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry,
-    HostRef, Kind, Lifecycle, PromptInput, PromptSubmission, attachment, create_agent_request,
-    host_ref, inventory_event,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry, Kind,
+    Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, ResolveHostRequest,
+    SendMessageRequest, SetFilingRequest, SubscribeInventoryRequest, attachment,
+    create_agent_request, inventory_event,
 };
 
 use crate::dir;
@@ -434,9 +431,7 @@ impl Server {
         };
         let request = CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host: host.map(|host| HostRef::id(host.as_bytes().to_vec())),
             name,
-            parent: None,
             cwd,
             agent: create_agent_request::Agent::defaults(kind),
             initial_prompt: Some(PromptSubmission {
@@ -445,7 +440,8 @@ impl Server {
             }),
             ..CreateAgentRequest::default()
         };
-        let agent = match agent_sock::spawn(&self.dir, &request).await {
+        let host = host.map_or_else(Vec::new, |host| host.as_bytes().to_vec());
+        let agent = match agent_sock::spawn(&self.dir, &host, &request).await {
             Ok(Spawned::Created(response)) => response.agent.ok_or(NO_AGENT)?,
             Ok(Spawned::Refused(why)) => return Err(Refusal(why)),
             Err(agent_sock::AskError::NotListening(_)) => return Err(NOT_TAKING_SPAWNS.into()),
@@ -671,32 +667,26 @@ fn status(arguments: &Value) -> Answer {
 }
 
 /// The agent process's half of a spawn: makes the child its tool server
-/// asked the process for, addressed to the host the ask names (this one
-/// when it names none) on the socket of the agent in `dir`, under the rule
-/// of any call that acts. The daemon passes a create for another host on to
-/// it, so the answer comes from the child's own host, which makes the
+/// asked the process for, addressed to the host the ask names by id (this
+/// one when it names none) on the socket of the agent in `dir`, under the
+/// rule of any call that acts. The daemon passes a create for another host
+/// on to it, so the answer comes from the child's own host, which makes the
 /// caller, this agent, its parent. The answer is the tool server's, in the
 /// words the model reads; beside it, what the agent's core is to hear of
 /// the child.
-pub(crate) async fn create(dir: &Path, request: CreateAgentRequest) -> (Spawned, Spawn) {
-    let to = match request.host.as_ref().and_then(|host| host.of.as_ref()) {
-        None => To::Here,
-        Some(host_ref::Of::HostId(host)) => match host_of(host) {
+pub(crate) async fn create(
+    dir: &Path,
+    host_id: &[u8],
+    request: CreateAgentRequest,
+) -> (Spawned, Spawn) {
+    let to = if host_id.is_empty() {
+        To::Here
+    } else {
+        match host_of(host_id) {
             Ok(host) => To::Host(host),
             Err(Refusal(why)) => return (Spawned::Refused(why), Spawn::Refused),
-        },
-        // The tool server resolves a host's name before it asks: a name is
-        // never an address.
-        Some(host_ref::Of::Name(name)) => {
-            return (
-                Spawned::Refused(format!(
-                    "a spawn names its host by id, not as {name:?}: the tool server resolves the name"
-                )),
-                Spawn::Refused,
-            );
         }
     };
-    let request = reshaped(request);
     let made = once(dir, to, "the new agent".to_owned(), |mut stubs| {
         let request = request.clone();
         async move { stubs.agents.create_agent(request).await }
@@ -716,26 +706,6 @@ pub(crate) async fn create(dir: &Path, request: CreateAgentRequest) -> (Spawned,
         },
         Err(Settled::Refused(status)) => (Spawned::Refused(plain(&status)), Spawn::Refused),
         Err(Settled::Unconfirmed(text)) => (Spawned::Refused(text), Spawn::Unconfirmed),
-    }
-}
-
-/// The create an ask describes, as its host takes it: no host, since the
-/// call's address is the host, and no parent, since the caller is.
-fn reshaped(request: CreateAgentRequest) -> staging::CreateAgentRequest {
-    use staging::create_agent_request::Agent as Asked;
-    staging::CreateAgentRequest {
-        agent_id: request.agent_id,
-        name: request.name,
-        cwd: request.cwd,
-        agent: request.agent.map(|agent| match agent {
-            create_agent_request::Agent::ClaudePty(config) => Asked::ClaudePty(config),
-            create_agent_request::Agent::ClaudeSdk(config) => Asked::ClaudeSdk(config),
-            create_agent_request::Agent::Codex(config) => Asked::Codex(config),
-        }),
-        initial_prompt: request.initial_prompt,
-        new_workspace: request.new_workspace,
-        remember_model: request.remember_model,
-        remember_effort: request.remember_effort,
     }
 }
 
@@ -804,8 +774,8 @@ where
         let failed = match connect(&dir.join(TOOLS_SOCK), to).await {
             Ok(channel) => {
                 let stubs = Stubs {
-                    inventory: staging::inventory_service_client(channel.clone()),
-                    agents: staging::agent_service_client(channel),
+                    inventory: wire::inventory_service_client(channel.clone()),
+                    agents: wire::agent_service_client(channel),
                 };
                 match call(stubs).await {
                     Ok(response) => return Ok(response.into_inner()),

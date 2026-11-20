@@ -2,12 +2,12 @@
 //! it owns. A handle is made only from a host's id or an agent's address,
 //! so every call it makes names its host.
 
-use wire::amux::staging::agent_service_client::AgentServiceClient;
-use wire::amux::staging::host_service_client::HostServiceClient;
-use wire::amux::staging::review_service_client::ReviewServiceClient;
-use wire::amux::staging::{self, get_changes_request};
+use wire::agent_service_client::AgentServiceClient;
+use wire::host_service_client::HostServiceClient;
+use wire::review_service_client::ReviewServiceClient;
 use wire::{
     BlobRef, Diff, DiffBase, Filing, Input, MessageBody, PromptSubmission, SendInputResponse,
+    get_changes_request,
 };
 
 use crate::{Addressed, Conn, RpcError, held, stub};
@@ -40,8 +40,8 @@ impl Host {
     pub async fn catalogue(
         &self,
         provider: wire::Provider,
-    ) -> Result<staging::GetCatalogueResponse, RpcError> {
-        let request = staging::GetCatalogueRequest {
+    ) -> Result<wire::GetCatalogueResponse, RpcError> {
+        let request = wire::GetCatalogueRequest {
             provider: provider as i32,
         };
         Ok(self.stub()?.get_catalogue(request).await?.into_inner())
@@ -51,7 +51,7 @@ impl Host {
     /// The folders themselves are read from the host's entry in the
     /// inventory, which says the change once the host has made it.
     pub async fn pin_folder(&self, path: &str, pinned: bool) -> Result<(), RpcError> {
-        let request = staging::PinFolderRequest {
+        let request = wire::PinFolderRequest {
             path: path.to_owned(),
             pinned,
         };
@@ -69,10 +69,7 @@ pub struct HostAgents {
 impl HostAgents {
     /// Makes an agent on this host. The call's address is the host; an
     /// agent that calls is the new agent's parent.
-    pub async fn create(
-        &self,
-        request: staging::CreateAgentRequest,
-    ) -> Result<wire::Agent, RpcError> {
+    pub async fn create(&self, request: wire::CreateAgentRequest) -> Result<wire::Agent, RpcError> {
         let mut stub = stub!(AgentServiceClient<Conn>, self.to.conn()?);
         held(stub.create_agent(request).await?.into_inner().agent)
     }
@@ -106,7 +103,7 @@ impl Agent {
 
     /// Input for the agent's interpreter, answered with its verdict.
     pub async fn send_input(&self, input: Input) -> Result<SendInputResponse, RpcError> {
-        let request = staging::SendInputRequest {
+        let request = wire::SendInputRequest {
             agent_id: self.id_owned(),
             input: Some(input),
         };
@@ -122,7 +119,7 @@ impl Agent {
         context: Option<Vec<u8>>,
         message: MessageBody,
     ) -> Result<Vec<u8>, RpcError> {
-        let request = staging::SendMessageRequest {
+        let request = wire::SendMessageRequest {
             id,
             agent_id: self.id_owned(),
             context,
@@ -137,7 +134,7 @@ impl Agent {
     }
 
     pub async fn rename(&self, name: &str) -> Result<wire::Agent, RpcError> {
-        let request = staging::RenameAgentRequest {
+        let request = wire::RenameAgentRequest {
             agent_id: self.id_owned(),
             name: name.to_owned(),
         };
@@ -152,7 +149,7 @@ impl Agent {
 
     /// Files the agent open, pinned or closed; closing a live one stops it.
     pub async fn set_filing(&self, filing: Filing) -> Result<wire::Agent, RpcError> {
-        let request = staging::SetFilingRequest {
+        let request = wire::SetFilingRequest {
             agent_id: self.id_owned(),
             filing: filing as i32,
         };
@@ -166,7 +163,7 @@ impl Agent {
         initial_prompt: Option<PromptSubmission>,
         if_suspended: bool,
     ) -> Result<wire::Agent, RpcError> {
-        let request = staging::ResumeAgentRequest {
+        let request = wire::ResumeAgentRequest {
             agent_id: self.id_owned(),
             initial_prompt,
             if_suspended,
@@ -181,8 +178,8 @@ impl Agent {
     }
 
     /// What deleting the agent now would take with it. Changes nothing.
-    pub async fn preview_delete(&self) -> Result<staging::PreviewDeleteResponse, RpcError> {
-        let request = staging::PreviewDeleteRequest {
+    pub async fn preview_delete(&self) -> Result<wire::PreviewDeleteResponse, RpcError> {
+        let request = wire::PreviewDeleteRequest {
             agent_id: self.id_owned(),
         };
         Ok(self.agents()?.preview_delete(request).await?.into_inner())
@@ -191,7 +188,7 @@ impl Agent {
     /// Removes the agent for good. `discard_workspace_changes` is the
     /// person's consent to lose the uncommitted changes the preview named.
     pub async fn delete(&self, discard_workspace_changes: bool) -> Result<(), RpcError> {
-        let request = staging::DeleteAgentRequest {
+        let request = wire::DeleteAgentRequest {
             agent_id: self.id_owned(),
             discard_workspace_changes,
         };
@@ -207,7 +204,7 @@ impl Agent {
         mime: &str,
         bytes: Vec<u8>,
     ) -> Result<BlobRef, RpcError> {
-        let request = staging::PutBlobRequest {
+        let request = wire::PutBlobRequest {
             agent_id: self.id_owned(),
             name: name.to_owned(),
             mime: mime.to_owned(),
@@ -221,8 +218,8 @@ impl Agent {
     pub async fn changes(
         &self,
         base: Option<get_changes_request::Base>,
-    ) -> Result<staging::GetChangesResponse, RpcError> {
-        let request = staging::GetChangesRequest {
+    ) -> Result<wire::GetChangesResponse, RpcError> {
+        let request = wire::GetChangesRequest {
             agent_id: self.id_owned(),
             base,
         };
@@ -234,7 +231,7 @@ impl Agent {
     /// build the patch and keep it as one of the agent's files, which the
     /// diff names.
     pub async fn get_diff(&self, base: DiffBase, with_patch: bool) -> Result<Diff, RpcError> {
-        let request = staging::GetDiffRequest {
+        let request = wire::GetDiffRequest {
             agent_id: self.id_owned(),
             base: Some(base),
             with_patch,

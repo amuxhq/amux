@@ -47,8 +47,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
-use wire::amux::staging::DeliverReportRequest;
-use wire::{InventoryEvent, Item, Lifecycle, Step, inventory_event};
+use wire::{DeliverReportRequest, InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
 use crate::held::{Dir, Held, Journal, Slot};
 use crate::{Machine, Property};

@@ -13,8 +13,7 @@ use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
 use tonic::Code;
-use wire::amux::staging::{self, GetBlobRequest};
-use wire::{BlobRef, Catalogue, OfferedModel, Phase, SessionEvent, session_event};
+use wire::{BlobRef, Catalogue, GetBlobRequest, OfferedModel, Phase, SessionEvent, session_event};
 
 use crate::support;
 
@@ -67,7 +66,7 @@ fn person(runtime: &std::sync::Arc<node::ProfileRuntime>) -> InMemory {
 }
 
 async fn read(api: &InMemory, agent: &SyntheticAgent, hash: &[u8]) -> Vec<u8> {
-    staging::session_service_client(api.clone())
+    wire::session_service_client(api.clone())
         .get_blob(blob(agent, hash))
         .await
         .unwrap()
@@ -225,7 +224,7 @@ async fn a_paired_host_reads_its_peers_catalogue_keeps_a_copy_and_follows_a_new_
     );
     assert_eq!(read(&on_laptop, &agent, &first.0).await, first.1);
     // A hash the laptop never read has no answer with the desk away.
-    staging::session_service_client(on_laptop.clone())
+    wire::session_service_client(on_laptop.clone())
         .get_blob(blob(&agent, &offering("gpt-3").0))
         .await
         .unwrap_err();
@@ -291,8 +290,8 @@ async fn current_catalogue_is_pinned() {
 
     pair.until_named("the first catalogue", &first.0).await;
     read(&on_laptop, &agent, &first.0).await;
-    let attachment: BlobRef = staging::agent_service_client(on_desk.clone())
-        .put_blob(tonic::Request::new(staging::PutBlobRequest {
+    let attachment: BlobRef = wire::agent_service_client(on_desk.clone())
+        .put_blob(tonic::Request::new(wire::PutBlobRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             name: "notes.txt".into(),
             mime: "text/plain".into(),
@@ -352,12 +351,12 @@ async fn an_unknown_catalogue_is_not_found() {
     let runtime = runtime(&daemon, &install);
     let api = person(&runtime);
 
-    let unknown = staging::session_service_client(api.clone())
+    let unknown = wire::session_service_client(api.clone())
         .get_blob(blob(&agent, &offering("gpt-2").0))
         .await
         .unwrap_err();
     assert_eq!(unknown.code(), Code::NotFound, "{unknown:?}");
-    let no_agent = staging::session_service_client(api.clone())
+    let no_agent = wire::session_service_client(api.clone())
         .get_blob(tonic::Request::new(GetBlobRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             hash: named.0.clone(),
@@ -365,8 +364,8 @@ async fn an_unknown_catalogue_is_not_found() {
         .await
         .unwrap_err();
     assert_eq!(no_agent.code(), Code::NotFound, "{no_agent:?}");
-    let host = staging::host_service_client(api.clone())
-        .get_catalogue(tonic::Request::new(staging::GetCatalogueRequest {
+    let host = wire::host_service_client(api.clone())
+        .get_catalogue(tonic::Request::new(wire::GetCatalogueRequest {
             provider: wire::Provider::Codex as i32,
         }))
         .await

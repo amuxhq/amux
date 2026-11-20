@@ -1,7 +1,6 @@
-// These files move into amux.v1 once every caller uses them.
 syntax = "proto3";
 
-package amux.staging;
+package amux.v1;
 
 // The caller: who a call is for, when a node carries it to another host.
 //

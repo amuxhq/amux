@@ -12,7 +12,6 @@ use tonic::Code;
 use tonic::codegen::http;
 use tonic::metadata::MetadataMap;
 use tonic::transport::Channel;
-use wire::amux::staging;
 
 use crate::host_acts::{SEGMENTS, create};
 use crate::support;
@@ -115,7 +114,7 @@ impl Pair {
 
 /// `message` as the laptop's node carries it for `caller`, the header it
 /// writes beside it.
-fn carried<T>(message: T, caller: &wire::amux::staging::Caller) -> tonic::Request<T> {
+fn carried<T>(message: T, caller: &wire::Caller) -> tonic::Request<T> {
     let mut request = tonic::Request::new(message);
     let mut headers = http::HeaderMap::new();
     headers.insert(wire::CALLER_HEADER, caller.to_header().parse().unwrap());
@@ -133,10 +132,10 @@ fn carried<T>(message: T, caller: &wire::amux::staging::Caller) -> tonic::Reques
 async fn a_paired_hosts_agent_acts_over_the_link_only_on_its_own_children() {
     let pair = Pair::new().await;
     let laptop = pair.laptop_runtime.host();
-    let mut desk = staging::agent_service_client(pair.to_desk().await);
-    let live = staging::Caller::agent(pair.live.id.as_bytes().to_vec(), "live");
-    let ended = staging::Caller::agent(pair.ended.id.as_bytes().to_vec(), "ended");
-    let person = staging::Caller::person("phone");
+    let mut desk = wire::agent_service_client(pair.to_desk().await);
+    let live = wire::Caller::agent(pair.live.id.as_bytes().to_vec(), "live");
+    let ended = wire::Caller::agent(pair.ended.id.as_bytes().to_vec(), "ended");
+    let person = wire::Caller::person("phone");
     let work = pair.desk.work.clone();
 
     let child = desk
@@ -162,7 +161,7 @@ async fn a_paired_hosts_agent_acts_over_the_link_only_on_its_own_children() {
         .unwrap();
     assert_eq!(stranger.parent, None, "a person's agent has no parent");
 
-    let rename = |agent: &wire::Agent, name: &str| staging::RenameAgentRequest {
+    let rename = |agent: &wire::Agent, name: &str| wire::RenameAgentRequest {
         agent_id: agent.agent_id.clone(),
         name: name.to_owned(),
     };

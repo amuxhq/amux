@@ -11,7 +11,6 @@ use std::sync::Arc;
 use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
 pub use patience::{PATIENCE, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
-use wire::amux::staging;
 use wire::{
     AgentRef, ClaudeSdkInput, Input, Kind, PromptInput, PromptSubmission, claude_sdk_input,
 };
@@ -271,14 +270,14 @@ pub fn runtime(daemon: &Daemon, install: &Install) -> Arc<ProfileRuntime> {
 }
 
 /// A headless Claude creation in `cwd`, with a first prompt when given.
-pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> staging::CreateAgentRequest {
-    staging::CreateAgentRequest {
+pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> wire::CreateAgentRequest {
+    wire::CreateAgentRequest {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         name: Some(name.to_owned()),
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: defaults(Kind::ClaudeSdk),
+        agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
         initial_prompt: prompt.map(|text| submission(b"p0", text)),
-        ..staging::CreateAgentRequest::default()
+        ..wire::CreateAgentRequest::default()
     }
 }
 
@@ -429,17 +428,6 @@ impl std::io::Write for Captured {
     }
 }
 
-/// A kind's arm of a create with its default settings.
-pub fn defaults(kind: Kind) -> Option<staging::create_agent_request::Agent> {
-    use staging::create_agent_request::Agent;
-    match kind {
-        Kind::ClaudePty => Some(Agent::ClaudePty(Default::default())),
-        Kind::ClaudeSdk => Some(Agent::ClaudeSdk(Default::default())),
-        Kind::Codex => Some(Agent::Codex(Default::default())),
-        Kind::Unspecified => None,
-    }
-}
-
 /// The host services of `runtime` as `caller` reaches them in memory: a
 /// person on the profile's socket, or one of this host's agents on its
 /// tools socket, named as its row names it.
@@ -479,7 +467,7 @@ pub trait Acts {
     /// Makes an agent here; an agent that calls is its parent.
     fn spawn(
         &self,
-        request: staging::CreateAgentRequest,
+        request: wire::CreateAgentRequest,
         caller: Option<node::AgentId>,
     ) -> impl std::future::Future<Output = Result<wire::Agent, tonic::Status>> + Send;
 
@@ -489,18 +477,18 @@ pub trait Acts {
         &self,
         envelope: wire::Envelope,
         caller: Option<node::AgentId>,
-    ) -> impl std::future::Future<Output = Result<staging::SendMessageResponse, tonic::Status>> + Send;
+    ) -> impl std::future::Future<Output = Result<wire::SendMessageResponse, tonic::Status>> + Send;
 }
 
 impl Acts for Arc<ProfileRuntime> {
     fn spawn(
         &self,
-        request: staging::CreateAgentRequest,
+        request: wire::CreateAgentRequest,
         caller: Option<node::AgentId>,
     ) -> impl std::future::Future<Output = Result<wire::Agent, tonic::Status>> + Send {
         let runtime = self.clone();
         async move {
-            let mut agents = staging::agent_service_client(served_to(&runtime, caller).await);
+            let mut agents = wire::agent_service_client(served_to(&runtime, caller).await);
             let created = agents.create_agent(request).await?.into_inner();
             Ok(created.agent.expect("a created agent is answered"))
         }
@@ -510,7 +498,7 @@ impl Acts for Arc<ProfileRuntime> {
         &self,
         envelope: wire::Envelope,
         caller: Option<node::AgentId>,
-    ) -> impl std::future::Future<Output = Result<staging::SendMessageResponse, tonic::Status>> + Send
+    ) -> impl std::future::Future<Output = Result<wire::SendMessageResponse, tonic::Status>> + Send
     {
         let runtime = self.clone();
         async move {
@@ -518,13 +506,13 @@ impl Acts for Arc<ProfileRuntime> {
                 Some(wire::envelope::Body::Message(message)) => Some(message),
                 _ => None,
             };
-            let request = staging::SendMessageRequest {
+            let request = wire::SendMessageRequest {
                 id: envelope.id,
                 agent_id: envelope.to.map(|to| to.agent_id).unwrap_or_default(),
                 context: envelope.context,
                 message,
             };
-            let mut agents = staging::agent_service_client(served_to(&runtime, caller).await);
+            let mut agents = wire::agent_service_client(served_to(&runtime, caller).await);
             Ok(agents.send_message(request).await?.into_inner())
         }
     }

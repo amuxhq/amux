@@ -215,8 +215,8 @@ impl ProfileRuntime {
             .reach(host)
             .await
             .map_err(|why| BlobError::Unreached(unreached(&self.host_name(host), why)))?;
-        let mut owner = wire::amux::staging::peer_service_client(channel);
-        let asked = owner.get_blob(wire::amux::staging::PeerServiceGetBlobRequest {
+        let mut owner = wire::peer_service_client(channel);
+        let asked = owner.get_blob(wire::PeerServiceGetBlobRequest {
             agent_id: agent_id.to_vec(),
             hash: hash.to_vec(),
         });

@@ -67,8 +67,14 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/inventory.proto",
     "amux/v1/dump.proto",
     "amux/v1/session.proto",
-    "amux/v1/agent_service.proto",
+    "amux/v1/caller.proto",
+    "amux/v1/inventory_service.proto",
     "amux/v1/session_service.proto",
+    "amux/v1/draft_service.proto",
+    "amux/v1/agent_service.proto",
+    "amux/v1/host_service.proto",
+    "amux/v1/review_service.proto",
+    "amux/v1/peer_service.proto",
     "amux/v1/installation_service.proto",
     "amux/v1/profile_admin_service.proto",
     "amux/v1/pairing_service.proto",
@@ -82,21 +88,12 @@ const PROTO_FILES: &[&str] = &[
 
 /// The proto files outside the contract's promises, relative to
 /// `crates/wire/proto/`: what a client writes into a dump, read only by the
-/// build that wrote it, the shapes of experiments, which may change in any
-/// release, and `amux.staging`, the services written beside the ones they
-/// replace until every caller has moved to them.
+/// build that wrote it, and the shapes of experiments, which may change in
+/// any release.
 const INTERNAL_PROTO_FILES: &[&str] = &[
     "amux/dump/session.proto",
     "amux/experimental/suspension.proto",
     "amux/experimental/workspaces.proto",
-    "amux/staging/caller.proto",
-    "amux/staging/inventory_service.proto",
-    "amux/staging/session_service.proto",
-    "amux/staging/draft_service.proto",
-    "amux/staging/agent_service.proto",
-    "amux/staging/host_service.proto",
-    "amux/staging/review_service.proto",
-    "amux/staging/peer_service.proto",
 ];
 
 /// Regenerates the committed protobuf code under

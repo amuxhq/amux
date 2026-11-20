@@ -163,7 +163,7 @@ async fn who_may_wake_a_stopped_agent_is_the_callers_to_say() {
     for (agent, stranger) in [(here, Who::AgentThere), (there, Who::AgentHere)] {
         settled_closed(&host, agent).await;
         host.agents(Who::PersonHere)
-            .set_filing(wire::amux::staging::SetFilingRequest {
+            .set_filing(wire::SetFilingRequest {
                 agent_id: agent.as_bytes().to_vec(),
                 filing: wire::Filing::Open as i32,
             })
@@ -190,7 +190,7 @@ async fn a_message_this_host_cannot_read_is_refused() {
     let recipient = setup.agent("recipient", None, true);
     let host = setup.start().await;
     for who in EVERYONE {
-        let unreadable = wire::amux::staging::SendMessageRequest {
+        let unreadable = wire::SendMessageRequest {
             message: Some(wire::MessageBody {
                 text: "see this".into(),
                 attachments: vec![wire::Attachment { of: None }],
@@ -201,7 +201,7 @@ async fn a_message_this_host_cannot_read_is_refused() {
         assert_eq!(refused.code(), Code::FailedPrecondition, "{who:?}");
         assert_eq!(refused.message(), attachments::UNREADABLE);
 
-        let bodiless = wire::amux::staging::SendMessageRequest {
+        let bodiless = wire::SendMessageRequest {
             message: None,
             ..message(recipient, "")
         };

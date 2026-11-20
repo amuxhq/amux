@@ -5,7 +5,6 @@
 use analytics::{By, Event, Kind, Origin, Recording};
 use futures_util::StreamExt as _;
 use tonic::Request;
-use wire::amux::staging;
 use wire::installation_service_server::InstallationService as _;
 
 use crate::host_acts::{EVERYONE, Setup, Who, create, peer, prompt};
@@ -61,7 +60,7 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
 
         let verdict = host
             .agents(who)
-            .send_input(staging::SendInputRequest {
+            .send_input(wire::SendInputRequest {
                 agent_id: worker.as_bytes().to_vec(),
                 input: Some(prompt("a prompt the analytics never carries")),
             })
@@ -94,7 +93,7 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
             },
         );
         host.agents(who)
-            .send_input(staging::SendInputRequest {
+            .send_input(wire::SendInputRequest {
                 agent_id: worker.as_bytes().to_vec(),
                 input: Some(answer),
             })

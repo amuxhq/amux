@@ -13,7 +13,6 @@ use std::process::Command;
 use prost::Message as _;
 use support::synthetic::read_inventory_until;
 use support::*;
-use wire::amux::staging;
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::{AgentSpec, inventory_event};
 
@@ -121,8 +120,8 @@ fn launch(install: &Install, on: bool) -> node::Launch {
     launch
 }
 
-fn in_new_workspace(cwd: &Path, name: &str) -> staging::CreateAgentRequest {
-    staging::CreateAgentRequest {
+fn in_new_workspace(cwd: &Path, name: &str) -> wire::CreateAgentRequest {
+    wire::CreateAgentRequest {
         new_workspace: true,
         ..create(cwd, name, None)
     }

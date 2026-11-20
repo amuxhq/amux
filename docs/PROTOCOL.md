@@ -877,7 +877,7 @@ command again.
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
 | `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `FAILED_PRECONDITION` when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
-| `RenameAgent`, `FileAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. `FileAgent` files the agent as the person asked, apart from its lifecycle (see [filing](#filing)): closing ends a live agent now (its turn cancelled the provider's own way) and answers once it has ended; pinning or filing it active answers at once. A delete stops it if live and removes it. Each acts on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
+| `RenameAgent`, `SetFiling`, `ResumeAgent`, `DeleteAgent` | Registry operations. `SetFiling` files the agent as the person asked, apart from its lifecycle (see [filing](#filing)): closing ends a live agent now (its turn cancelled the provider's own way) and answers once it has ended; pinning or filing it active answers at once. A delete stops it if live and removes it. Each acts on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
@@ -1013,7 +1013,7 @@ these ways:
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
   other hosts. Every call that names an agent (`SubscribeSession`, `ListItems`, `GetItem`,
-  `SendInput`, `RenameAgent`, `FileAgent`, `ResumeAgent`, `DeleteAgent`,
+  `SendInput`, `RenameAgent`, `SetFiling`, `ResumeAgent`, `DeleteAgent`,
   `PutBlob`, `GetBlob` and `GetDiff`) is `NOT_FOUND` for an agent this host only
   replicates, even when this host holds that agent's rows or blobs.
 - `SubscribeSession` may ask for what came `after` a revision: that is how a
@@ -1117,11 +1117,11 @@ no request carries an agent id or a token claiming one. On that socket:
   model, effort or provider arguments are refused, being the person's to
   choose.
 - `SendMessage` stamps the caller as the message's sender.
-- Every call on a named agent (`SendInput`, `FileAgent`, `RenameAgent`,
+- Every call on a named agent (`SendInput`, `SetFiling`, `RenameAgent`,
   `ResumeAgent`, `DeleteAgent`, the blob, diff, draft and session reads) goes
   only to one of the caller's own direct children, refused with
   `PERMISSION_DENIED` otherwise; the stop tool's interrupt is the input an
-  agent sends. `FileAgent` there only closes: pinning and filing open are
+  agent sends. `SetFiling` there only closes: pinning and filing open are
   the person's. An agent reaches any other agent by messaging it.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.

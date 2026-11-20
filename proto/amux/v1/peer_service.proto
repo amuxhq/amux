@@ -1,7 +1,6 @@
-// These files move into amux.v1 once every caller uses them.
 syntax = "proto3";
 
-package amux.staging;
+package amux.v1;
 
 import "amux/v1/inventory.proto";
 import "amux/v1/records.proto";
@@ -46,7 +45,7 @@ service PeerService {
 message FollowAgentsRequest {}
 
 message FollowAgentsResponse {
-  amux.v1.InventoryEvent event = 1;
+  InventoryEvent event = 1;
 }
 
 message FollowSessionRequest {
@@ -55,12 +54,12 @@ message FollowSessionRequest {
     // The newest rows, for a copy that holds no cursor yet.
     uint32 tail = 2;
     // From the cursor the copy holds.
-    amux.v1.After after = 3;
+    After after = 3;
   }
 }
 
 message FollowSessionResponse {
-  amux.v1.SessionEvent event = 1;
+  SessionEvent event = 1;
 }
 
 message PeerServiceListItemsRequest {
@@ -72,7 +71,7 @@ message PeerServiceListItemsRequest {
 
 // By order, newest first; exhausted means no older history exists.
 message PeerServiceListItemsResponse {
-  repeated amux.v1.Item items = 1;
+  repeated Item items = 1;
   bool exhausted = 2;
 }
 
@@ -97,7 +96,7 @@ message DeliverReportRequest {
   // The parent, one of this host's agents.
   bytes parent_agent_id = 4;
   // Carries the parent's incarnation it is for.
-  amux.v1.ChildReport report = 5;
+  ChildReport report = 5;
 }
 
 message DeliverReportResponse {}

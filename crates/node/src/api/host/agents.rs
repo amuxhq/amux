@@ -25,10 +25,9 @@ use std::sync::{Arc, Weak};
 use store::AgentRow;
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
-use wire::ErrorCode;
-use wire::amux::staging::agent_service_server::AgentService;
-use wire::amux::staging::{
-    CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse,
+use wire::agent_service_server::AgentService;
+use wire::{
+    CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
     GetDiffRequest, GetDiffResponse, PreviewDeleteRequest, PreviewDeleteResponse, PutBlobRequest,
     PutBlobResponse, RenameAgentRequest, RenameAgentResponse, ResumeAgentRequest,
     ResumeAgentResponse, SendInputRequest, SendMessageRequest, SendMessageResponse,
@@ -55,7 +54,7 @@ pub(in crate::api) fn mount(
     runtime: &Weak<ProfileRuntime>,
     _entry: Entry,
 ) {
-    routes.add_service(wire::amux::staging::agent_service_server(Agents {
+    routes.add_service(wire::agent_service_server(Agents {
         runtime: runtime.clone(),
     }));
 }
@@ -159,15 +158,6 @@ fn first_prompt(
     Some(InputShape::Prompt(kind, pages))
 }
 
-/// The kind a create asks for.
-fn kind_asked(agent: &create_agent_request::Agent) -> wire::Kind {
-    match agent {
-        create_agent_request::Agent::ClaudePty(_) => wire::Kind::ClaudePty,
-        create_agent_request::Agent::ClaudeSdk(_) => wire::Kind::ClaudeSdk,
-        create_agent_request::Agent::Codex(_) => wire::Kind::Codex,
-    }
-}
-
 /// Whether a create asks for its kind with nothing but the defaults: a
 /// permission mode, a model or provider arguments are the person's to
 /// choose, never another agent's.
@@ -199,7 +189,7 @@ impl AgentService for Agents {
         let kind = request
             .agent
             .as_ref()
-            .and_then(|agent| telemetry::kind(kind_asked(agent)));
+            .and_then(|agent| telemetry::kind(agent.kind()));
         let first = first_prompt(kind, request.initial_prompt.as_ref());
         let created = runtime
             .create(request, &caller)

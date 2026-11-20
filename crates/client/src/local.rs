@@ -1,10 +1,9 @@
 //! The local services: answered by the node the client is attached to,
 //! from its own copy, for its own agents and its copies of other hosts'.
 
-use wire::amux::staging::draft_service_client::DraftServiceClient;
-use wire::amux::staging::inventory_service_client::InventoryServiceClient;
-use wire::amux::staging::session_service_client::SessionServiceClient;
-use wire::amux::staging::{self};
+use wire::draft_service_client::DraftServiceClient;
+use wire::inventory_service_client::InventoryServiceClient;
+use wire::session_service_client::SessionServiceClient;
 use wire::{Agent, HostEntry, InventoryEvent, Item, ListItemsResponse, SessionEvent};
 
 use crate::{Conn, EventStream, RpcError, held, held_events, stub};
@@ -32,7 +31,7 @@ impl Inventory {
     pub async fn subscribe(&self) -> Result<EventStream<InventoryEvent>, RpcError> {
         let stream = self
             .stub()
-            .subscribe_inventory(staging::SubscribeInventoryRequest {})
+            .subscribe_inventory(wire::SubscribeInventoryRequest {})
             .await?
             .into_inner();
         Ok(held_events(stream, |response| response.event))
@@ -40,7 +39,7 @@ impl Inventory {
 
     /// An agent by name across the fleet the node holds.
     pub async fn resolve_agent(&self, name: &str) -> Result<Agent, RpcError> {
-        let request = staging::ResolveAgentRequest {
+        let request = wire::ResolveAgentRequest {
             name: name.to_owned(),
         };
         held(self.stub().resolve_agent(request).await?.into_inner().agent)
@@ -49,7 +48,7 @@ impl Inventory {
     /// A host by the name a person uses for it. Its id is what a host
     /// service on it is addressed by ([`crate::Client::host`]).
     pub async fn resolve_host(&self, name: &str) -> Result<HostEntry, RpcError> {
-        let request = staging::ResolveHostRequest {
+        let request = wire::ResolveHostRequest {
             name: name.to_owned(),
         };
         held(self.stub().resolve_host(request).await?.into_inner().host)
@@ -81,7 +80,7 @@ impl Sessions {
         agent_id: &[u8],
         tail: u32,
     ) -> Result<EventStream<SessionEvent>, RpcError> {
-        let request = staging::SubscribeSessionRequest {
+        let request = wire::SubscribeSessionRequest {
             agent_id: agent_id.to_vec(),
             tail,
         };
@@ -97,7 +96,7 @@ impl Sessions {
         before_order: Option<u64>,
         page_size: u32,
     ) -> Result<ListItemsResponse, RpcError> {
-        let request = staging::ListItemsRequest {
+        let request = wire::ListItemsRequest {
             agent_id: agent_id.to_vec(),
             before_order,
             page_size,
@@ -110,7 +109,7 @@ impl Sessions {
     }
 
     pub async fn get_item(&self, agent_id: &[u8], key: &str) -> Result<Item, RpcError> {
-        let request = staging::GetItemRequest {
+        let request = wire::GetItemRequest {
             agent_id: agent_id.to_vec(),
             key: key.to_owned(),
         };
@@ -120,7 +119,7 @@ impl Sessions {
     /// A file a conversation references, by the hash its reference names.
     /// One the node does not hold yet it fetches from the agent's host.
     pub async fn get_blob(&self, agent_id: &[u8], hash: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let request = staging::GetBlobRequest {
+        let request = wire::GetBlobRequest {
             agent_id: agent_id.to_vec(),
             hash: hash.to_vec(),
         };
@@ -153,7 +152,7 @@ impl Drafts {
         agent_id: &[u8],
         draft: wire::Draft,
     ) -> Result<wire::Draft, RpcError> {
-        let request = staging::UpdateDraftRequest {
+        let request = wire::UpdateDraftRequest {
             agent_id: agent_id.to_vec(),
             draft: Some(draft),
         };
@@ -161,7 +160,7 @@ impl Drafts {
     }
 
     pub async fn get(&self, agent_id: &[u8]) -> Result<wire::Draft, RpcError> {
-        let request = staging::GetDraftRequest {
+        let request = wire::GetDraftRequest {
             agent_id: agent_id.to_vec(),
         };
         held(self.stub().get_draft(request).await?.into_inner().draft)

@@ -40,7 +40,6 @@ pub use values::{FleetDelta, HostView};
 /// phone's bridge passes it on without a dependency of its own on the wire
 /// crate.
 pub use wire::Provider;
-use wire::amux::staging;
 use wire::{DumpRequest, Filing, Kind};
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -292,7 +291,7 @@ impl AppRuntime {
 
     /// Starts an agent on a host and returns it as the fleet names it.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
-        use staging::create_agent_request::Agent;
+        use wire::create_agent_request::Agent;
         let claude = || wire::ClaudeCreateConfig {
             model: agent.model.clone(),
             effort: agent.effort.clone(),
@@ -314,7 +313,7 @@ impl AppRuntime {
             .client
             .host(&agent.host_id)
             .agents()
-            .create(staging::CreateAgentRequest {
+            .create(wire::CreateAgentRequest {
                 agent_id: ui_runtime::inputs::input_id(),
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),

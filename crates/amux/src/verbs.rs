@@ -9,11 +9,11 @@ use anyhow::{Result, anyhow, bail};
 use futures_util::StreamExt as _;
 use settings::ChatInSetting;
 use uuid::Uuid;
-use wire::amux::staging::{CreateAgentRequest, create_agent_request};
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    DumpRequest, Filing, HostEntry, Input, Kind, Lifecycle, Phase, PromptInput, PromptSubmission,
-    Refusal, claude_pty_input, claude_sdk_input, codex_input, inventory_event, send_input_response,
+    CreateAgentRequest, DumpRequest, Filing, HostEntry, Input, Kind, Lifecycle, Phase, PromptInput,
+    PromptSubmission, Refusal, claude_pty_input, claude_sdk_input, codex_input,
+    create_agent_request, inventory_event, send_input_response,
 };
 
 type Client = client::Client;

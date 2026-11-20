@@ -52,9 +52,7 @@ impl DeleteWarning {
 
     /// The warning once the host answered what deleting the agent takes
     /// with it, or failed to: none when the workspace stays.
-    pub fn previewed<E>(
-        preview: Result<&wire::amux::staging::PreviewDeleteResponse, E>,
-    ) -> Option<DeleteWarning> {
+    pub fn previewed<E>(preview: Result<&wire::PreviewDeleteResponse, E>) -> Option<DeleteWarning> {
         let Ok(preview) = preview else {
             return Some(DeleteWarning::Unknown);
         };

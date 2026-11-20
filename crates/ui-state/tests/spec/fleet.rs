@@ -308,7 +308,7 @@ fn totals(files: u32, added: u32, removed: u32) -> Option<wire::ChangeTotals> {
 #[test]
 fn a_delete_warning_says_what_the_host_previewed() {
     use ui_state::{DeleteWarning, WorkspaceGoes};
-    use wire::amux::staging::PreviewDeleteResponse;
+    use wire::PreviewDeleteResponse;
     let preview =
         |removes_workspace, branch: Option<&str>, own_commits, uncommitted| PreviewDeleteResponse {
             removes_workspace,

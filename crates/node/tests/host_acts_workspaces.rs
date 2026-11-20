@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use support::*;
-use wire::amux::staging;
 
 use crate::host_acts::{EVERYONE, Host, Setup, create};
 use crate::support;
@@ -90,7 +89,7 @@ async fn a_delete_takes_uncommitted_work_only_with_consent() {
             );
             let agent = host
                 .agents(who)
-                .create_agent(staging::CreateAgentRequest {
+                .create_agent(wire::CreateAgentRequest {
                     new_workspace: true,
                     ..create(&repo, &name, None)
                 })
@@ -105,7 +104,7 @@ async fn a_delete_takes_uncommitted_work_only_with_consent() {
             host.runtime.kill_agent(id).await.unwrap();
 
             host.agents(who)
-                .delete_agent(staging::DeleteAgentRequest {
+                .delete_agent(wire::DeleteAgentRequest {
                     agent_id: id.as_bytes().to_vec(),
                     discard_workspace_changes: consent,
                 })

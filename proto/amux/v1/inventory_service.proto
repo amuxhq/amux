@@ -1,7 +1,6 @@
-// These files move into amux.v1 once every caller uses them.
 syntax = "proto3";
 
-package amux.staging;
+package amux.v1;
 
 import "amux/v1/inventory.proto";
 
@@ -37,7 +36,7 @@ service InventoryService {
 message SubscribeInventoryRequest {}
 
 message SubscribeInventoryResponse {
-  amux.v1.InventoryEvent event = 1;
+  InventoryEvent event = 1;
 }
 
 message ResolveAgentRequest {
@@ -45,7 +44,7 @@ message ResolveAgentRequest {
 }
 
 message ResolveAgentResponse {
-  amux.v1.Agent agent = 1;
+  Agent agent = 1;
 }
 
 message ResolveHostRequest {
@@ -55,5 +54,5 @@ message ResolveHostRequest {
 // The host's entry as this node holds it; its id is the address a host
 // service on it is called with.
 message ResolveHostResponse {
-  amux.v1.HostEntry host = 1;
+  HostEntry host = 1;
 }

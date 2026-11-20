@@ -6,7 +6,6 @@ use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use wire::UpdateSettingsRequest;
-use wire::amux::staging;
 use wire::installation_service_server::InstallationService as _;
 
 use crate::support;
@@ -314,9 +313,8 @@ async fn a_paired_hosts_person_pins_a_folder_and_sees_the_desks_entry_say_it() {
     let origin = format!("http://{}", wire::authority(&desk_host))
         .parse()
         .unwrap();
-    let mut on_desk =
-        staging::host_service_client::HostServiceClient::with_origin(entrance, origin);
-    let pin = |pinned: bool| staging::PinFolderRequest {
+    let mut on_desk = wire::host_service_client::HostServiceClient::with_origin(entrance, origin);
+    let pin = |pinned: bool| wire::PinFolderRequest {
         path: app.to_str().unwrap().to_owned(),
         pinned,
     };
@@ -398,8 +396,8 @@ async fn an_agent_may_not_pin_a_folder() {
             agent,
             name: "coder".into(),
         };
-        let refused = staging::host_service_client(served_as(&desk_runtime, served, calling))
-            .pin_folder(staging::PinFolderRequest {
+        let refused = wire::host_service_client(served_as(&desk_runtime, served, calling))
+            .pin_folder(wire::PinFolderRequest {
                 path: app.to_str().unwrap().to_owned(),
                 pinned: true,
             })
@@ -420,12 +418,12 @@ async fn an_agent_may_not_pin_a_folder() {
     );
 
     // A person here may.
-    staging::host_service_client(served_as(
+    wire::host_service_client(served_as(
         &desk_runtime,
         Served::Profile,
         Calling::PersonHere(analytics::Client::Terminal),
     ))
-    .pin_folder(staging::PinFolderRequest {
+    .pin_folder(wire::PinFolderRequest {
         path: app.to_str().unwrap().to_owned(),
         pinned: true,
     })

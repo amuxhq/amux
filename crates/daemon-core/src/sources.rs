@@ -44,9 +44,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use store::{Absorb, AgentKey, AgentRow, Marker, Record, StoreError};
-use wire::amux::staging::{FollowSessionRequest, follow_session_request};
 use wire::{
-    Agent, AgentRemoved, Item, ListItemsResponse, SessionEvent, inventory_event, session_event,
+    Agent, AgentRemoved, FollowSessionRequest, Item, ListItemsResponse, SessionEvent,
+    follow_session_request, inventory_event, session_event,
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};

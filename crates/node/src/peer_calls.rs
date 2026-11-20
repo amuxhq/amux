@@ -11,8 +11,7 @@
 
 use daemon_core::payload::{Answer, PeerFailure, PeerReply, PeerRequest};
 use tonic::{Code, Status};
-use wire::ErrorCode;
-use wire::amux::staging::{PeerServiceGetBlobRequest, PeerServiceListItemsRequest};
+use wire::{ErrorCode, PeerServiceGetBlobRequest, PeerServiceListItemsRequest};
 
 use crate::HostId;
 use crate::reach::{ANSWER_PATIENCE, Unreached};

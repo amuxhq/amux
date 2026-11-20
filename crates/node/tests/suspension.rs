@@ -447,9 +447,9 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
         )
         .await;
     let runtime = runtime(&daemon, &install);
-    let client = wire::amux::staging::agent_service_client(served_to(&runtime, None).await);
+    let client = wire::agent_service_client(served_to(&runtime, None).await);
     let wake = |agent: &SyntheticAgent| {
-        tonic::Request::new(wire::amux::staging::ResumeAgentRequest {
+        tonic::Request::new(wire::ResumeAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             initial_prompt: None,
             if_suspended: true,

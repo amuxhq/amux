@@ -274,7 +274,7 @@ impl World for Net {
                 error: format!("no channel to {to}: {error}"),
             })?;
         peer.peer
-            .deliver_report(wire::amux::staging::DeliverReportRequest {
+            .deliver_report(wire::DeliverReportRequest {
                 id: envelope.id.clone(),
                 child_agent_id,
                 child_name: child.name,

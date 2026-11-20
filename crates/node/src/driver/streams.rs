@@ -81,7 +81,7 @@ impl ProfileRuntime {
     pub(crate) async fn peer_subscribe_session(
         &self,
         from: crate::HostId,
-        request: wire::amux::staging::FollowSessionRequest,
+        request: wire::FollowSessionRequest,
     ) -> Result<Subscription, ServeError> {
         let room = self.launch().fanout_capacity;
         let request = PeerRequest::FollowSession(request);

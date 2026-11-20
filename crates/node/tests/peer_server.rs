@@ -14,11 +14,11 @@ use support::*;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 use tonic::{Code, Request};
-use wire::amux::staging::{
-    self as staging, DeliverReportRequest, FollowAgentsRequest, FollowSessionRequest,
-    PeerServiceGetBlobRequest, PeerServiceListItemsRequest, follow_session_request,
+use wire::{
+    DeliverReportRequest, FollowAgentsRequest, FollowSessionRequest, InventoryEvent,
+    PeerServiceGetBlobRequest, PeerServiceListItemsRequest, Phase, PutBlobRequest,
+    follow_session_request, inventory_event, session_event,
 };
-use wire::{InventoryEvent, Phase, PutBlobRequest, inventory_event, session_event};
 
 use crate::support;
 
@@ -123,8 +123,8 @@ impl Pair {
     }
 
     /// The laptop's peer service, as the desk's daemon calls it for itself.
-    async fn laptop_peer(&self) -> staging::peer_service_client::PeerServiceClient<Channel> {
-        staging::peer_service_client(self.to_laptop().await)
+    async fn laptop_peer(&self) -> wire::peer_service_client::PeerServiceClient<Channel> {
+        wire::peer_service_client(self.to_laptop().await)
     }
 
     pub(crate) async fn stop(mut self) {
@@ -213,7 +213,7 @@ async fn follow_agents_carries_only_the_hosts_own_entry_and_agents() {
         .await
         .unwrap()
         .into_inner();
-    let next = async |stream: &mut tonic::Streaming<staging::FollowAgentsResponse>| {
+    let next = async |stream: &mut tonic::Streaming<wire::FollowAgentsResponse>| {
         tokio::time::timeout(PATIENCE, stream.message())
             .await
             .expect("the follow answers")
@@ -373,7 +373,7 @@ async fn a_replicas_agent_is_not_found_on_any_read_and_its_file_is_not_given() {
 }
 
 /// `request` as a node carrying it for `caller` writes it.
-fn carried<T>(message: T, caller: &staging::Caller) -> Request<T> {
+fn carried<T>(message: T, caller: &wire::Caller) -> Request<T> {
     let mut request = Request::new(message);
     request.metadata_mut().insert_bin(
         wire::CALLER_HEADER,
@@ -390,8 +390,8 @@ async fn the_peer_service_refuses_a_call_carried_for_someone() {
     let pair = Pair::new().await;
     let mut peer = pair.laptop_peer().await;
     let callers = [
-        staging::Caller::person("terminal"),
-        staging::Caller::agent(pair.coder.id.as_bytes().to_vec(), "coder"),
+        wire::Caller::person("terminal"),
+        wire::Caller::agent(pair.coder.id.as_bytes().to_vec(), "coder"),
     ];
     for caller in &callers {
         let report = DeliverReportRequest {
@@ -455,18 +455,18 @@ async fn the_local_services_are_not_served_on_a_link() {
     let pair = Pair::new().await;
     let channel = pair.to_laptop().await;
     let notes = pair.notes.id.as_bytes().to_vec();
-    let mut inventory = staging::inventory_service_client(channel.clone());
-    let mut sessions = staging::session_service_client(channel.clone());
-    let mut drafts = staging::draft_service_client(channel);
+    let mut inventory = wire::inventory_service_client(channel.clone());
+    let mut sessions = wire::session_service_client(channel.clone());
+    let mut drafts = wire::draft_service_client(channel);
     // Both as the daemon asking for itself and carried for a person: no
     // header settles anything that is not mounted.
-    let person = staging::Caller::person("phone");
+    let person = wire::Caller::person("phone");
     for header in [None, Some(&person)] {
         let calls = [
             (
                 "SubscribeInventory",
                 inventory
-                    .subscribe_inventory(carried_or(staging::SubscribeInventoryRequest {}, header))
+                    .subscribe_inventory(carried_or(wire::SubscribeInventoryRequest {}, header))
                     .await
                     .err(),
             ),
@@ -474,7 +474,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "ResolveAgent",
                 inventory
                     .resolve_agent(carried_or(
-                        staging::ResolveAgentRequest {
+                        wire::ResolveAgentRequest {
                             name: "notes".to_owned(),
                         },
                         header,
@@ -486,7 +486,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "ResolveHost",
                 inventory
                     .resolve_host(carried_or(
-                        staging::ResolveHostRequest {
+                        wire::ResolveHostRequest {
                             name: "desk".to_owned(),
                         },
                         header,
@@ -498,7 +498,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "SubscribeSession",
                 sessions
                     .subscribe_session(carried_or(
-                        staging::SubscribeSessionRequest {
+                        wire::SubscribeSessionRequest {
                             agent_id: notes.clone(),
                             tail: 10,
                         },
@@ -511,7 +511,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "ListItems",
                 sessions
                     .list_items(carried_or(
-                        staging::ListItemsRequest {
+                        wire::ListItemsRequest {
                             agent_id: notes.clone(),
                             before_order: None,
                             page_size: 10,
@@ -525,7 +525,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "GetItem",
                 sessions
                     .get_item(carried_or(
-                        staging::GetItemRequest {
+                        wire::GetItemRequest {
                             agent_id: notes.clone(),
                             key: "n1".to_owned(),
                         },
@@ -538,7 +538,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "GetBlob",
                 sessions
                     .get_blob(carried_or(
-                        staging::GetBlobRequest {
+                        wire::GetBlobRequest {
                             agent_id: notes.clone(),
                             hash: vec![0; 32],
                         },
@@ -551,7 +551,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "UpdateDraft",
                 drafts
                     .update_draft(carried_or(
-                        staging::UpdateDraftRequest {
+                        wire::UpdateDraftRequest {
                             agent_id: notes.clone(),
                             draft: Some(wire::Draft::default()),
                         },
@@ -564,7 +564,7 @@ async fn the_local_services_are_not_served_on_a_link() {
                 "GetDraft",
                 drafts
                     .get_draft(carried_or(
-                        staging::GetDraftRequest {
+                        wire::GetDraftRequest {
                             agent_id: notes.clone(),
                         },
                         header,
@@ -581,7 +581,7 @@ async fn the_local_services_are_not_served_on_a_link() {
     pair.stop().await;
 }
 
-fn carried_or<T>(message: T, caller: Option<&staging::Caller>) -> Request<T> {
+fn carried_or<T>(message: T, caller: Option<&wire::Caller>) -> Request<T> {
     match caller {
         Some(caller) => carried(message, caller),
         None => Request::new(message),

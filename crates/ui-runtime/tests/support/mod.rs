@@ -20,12 +20,11 @@ use tonic::body::Body;
 use tonic::codegen::http;
 use tonic::service::Routes;
 use tonic::{Request, Response, Status};
-use wire::amux::staging::agent_service_server::AgentService;
-use wire::amux::staging::draft_service_server::DraftService;
-use wire::amux::staging::inventory_service_server::InventoryService;
-use wire::amux::staging::session_service_server::SessionService;
-use wire::amux::staging::{self};
+use wire::agent_service_server::AgentService;
+use wire::draft_service_server::DraftService;
+use wire::inventory_service_server::InventoryService;
 use wire::profile_admin_service_server::ProfileAdminService;
+use wire::session_service_server::SessionService;
 use wire::{
     Agent, Attachment, BlobRef, DumpRequest, DumpResponse, InventoryEvent, Item, Kind, Lifecycle,
     ListItemsResponse, Phase, QueuedInput, SendInputResponse, SessionEvent, Snapshot, attachment,
@@ -45,16 +44,16 @@ pub type Reply<T> = oneshot::Sender<Result<T, RpcError>>;
 
 pub enum Call {
     Subscribe(
-        staging::SubscribeSessionRequest,
+        wire::SubscribeSessionRequest,
         Reply<EventStream<SessionEvent>>,
     ),
     Inventory(Reply<EventStream<InventoryEvent>>),
-    Fetch(staging::ListItemsRequest, Reply<ListItemsResponse>),
-    Get(staging::GetItemRequest, Reply<Item>),
-    SendInput(staging::SendInputRequest, Reply<SendInputResponse>),
-    Resume(staging::ResumeAgentRequest, Reply<Agent>),
-    GetBlob(staging::GetBlobRequest, Reply<staging::GetBlobResponse>),
-    Close(staging::SetFilingRequest, Reply<Agent>),
+    Fetch(wire::ListItemsRequest, Reply<ListItemsResponse>),
+    Get(wire::GetItemRequest, Reply<Item>),
+    SendInput(wire::SendInputRequest, Reply<SendInputResponse>),
+    Resume(wire::ResumeAgentRequest, Reply<Agent>),
+    GetBlob(wire::GetBlobRequest, Reply<wire::GetBlobResponse>),
+    Close(wire::SetFilingRequest, Reply<Agent>),
     Dump(DumpRequest, Reply<DumpResponse>),
 }
 
@@ -120,10 +119,10 @@ pub fn runtime() -> (client::Client, Calls) {
     let (tx, rx) = mpsc::unbounded_channel();
     let fake = FakeRuntime { calls: tx };
     let routes = Routes::default()
-        .add_service(staging::inventory_service_server(fake.clone()))
-        .add_service(staging::session_service_server(fake.clone()))
-        .add_service(staging::draft_service_server(fake.clone()))
-        .add_service(staging::agent_service_server(fake.clone()))
+        .add_service(wire::inventory_service_server(fake.clone()))
+        .add_service(wire::session_service_server(fake.clone()))
+        .add_service(wire::draft_service_server(fake.clone()))
+        .add_service(wire::agent_service_server(fake.clone()))
         .add_service(wire::profile_admin_service_server::ProfileAdminServiceServer::new(fake));
     let addressed = Addressed::default();
     let served = Recorded {
@@ -191,55 +190,55 @@ fn served<T: Send + 'static, R: Send + 'static>(
 
 #[tonic::async_trait]
 impl InventoryService for FakeRuntime {
-    type SubscribeInventoryStream = Streamed<staging::SubscribeInventoryResponse>;
+    type SubscribeInventoryStream = Streamed<wire::SubscribeInventoryResponse>;
 
     async fn subscribe_inventory(
         &self,
-        _: Request<staging::SubscribeInventoryRequest>,
+        _: Request<wire::SubscribeInventoryRequest>,
     ) -> Result<Response<Self::SubscribeInventoryStream>, Status> {
         let events = self.call(Call::Inventory).await?;
-        Ok(served(events, |event| {
-            staging::SubscribeInventoryResponse { event: Some(event) }
+        Ok(served(events, |event| wire::SubscribeInventoryResponse {
+            event: Some(event),
         }))
     }
 
     async fn resolve_agent(
         &self,
-        _: Request<staging::ResolveAgentRequest>,
-    ) -> Result<Response<staging::ResolveAgentResponse>, Status> {
+        _: Request<wire::ResolveAgentRequest>,
+    ) -> Result<Response<wire::ResolveAgentResponse>, Status> {
         unimplemented!("resolve_agent")
     }
 
     async fn resolve_host(
         &self,
-        _: Request<staging::ResolveHostRequest>,
-    ) -> Result<Response<staging::ResolveHostResponse>, Status> {
+        _: Request<wire::ResolveHostRequest>,
+    ) -> Result<Response<wire::ResolveHostResponse>, Status> {
         unimplemented!("resolve_host")
     }
 }
 
 #[tonic::async_trait]
 impl SessionService for FakeRuntime {
-    type SubscribeSessionStream = Streamed<staging::SubscribeSessionResponse>;
+    type SubscribeSessionStream = Streamed<wire::SubscribeSessionResponse>;
 
     async fn subscribe_session(
         &self,
-        request: Request<staging::SubscribeSessionRequest>,
+        request: Request<wire::SubscribeSessionRequest>,
     ) -> Result<Response<Self::SubscribeSessionStream>, Status> {
         let request = request.into_inner();
         let events = self.call(|reply| Call::Subscribe(request, reply)).await?;
-        Ok(served(events, |event| staging::SubscribeSessionResponse {
+        Ok(served(events, |event| wire::SubscribeSessionResponse {
             event: Some(event),
         }))
     }
 
     async fn list_items(
         &self,
-        request: Request<staging::ListItemsRequest>,
-    ) -> Result<Response<staging::ListItemsResponse>, Status> {
+        request: Request<wire::ListItemsRequest>,
+    ) -> Result<Response<wire::ListItemsResponse>, Status> {
         let request = request.into_inner();
         let page = self.call(|reply| Call::Fetch(request, reply)).await?;
-        Ok(Response::new(staging::ListItemsResponse {
+        Ok(Response::new(wire::ListItemsResponse {
             items: page.items,
             exhausted: page.exhausted,
         }))
@@ -247,17 +246,17 @@ impl SessionService for FakeRuntime {
 
     async fn get_item(
         &self,
-        request: Request<staging::GetItemRequest>,
-    ) -> Result<Response<staging::GetItemResponse>, Status> {
+        request: Request<wire::GetItemRequest>,
+    ) -> Result<Response<wire::GetItemResponse>, Status> {
         let request = request.into_inner();
         let item = self.call(|reply| Call::Get(request, reply)).await?;
-        Ok(Response::new(staging::GetItemResponse { item: Some(item) }))
+        Ok(Response::new(wire::GetItemResponse { item: Some(item) }))
     }
 
     async fn get_blob(
         &self,
-        request: Request<staging::GetBlobRequest>,
-    ) -> Result<Response<staging::GetBlobResponse>, Status> {
+        request: Request<wire::GetBlobRequest>,
+    ) -> Result<Response<wire::GetBlobResponse>, Status> {
         let request = request.into_inner();
         Ok(Response::new(
             self.call(|reply| Call::GetBlob(request, reply)).await?,
@@ -269,15 +268,15 @@ impl SessionService for FakeRuntime {
 impl DraftService for FakeRuntime {
     async fn update_draft(
         &self,
-        _: Request<staging::UpdateDraftRequest>,
-    ) -> Result<Response<staging::UpdateDraftResponse>, Status> {
+        _: Request<wire::UpdateDraftRequest>,
+    ) -> Result<Response<wire::UpdateDraftResponse>, Status> {
         unimplemented!("update_draft")
     }
 
     async fn get_draft(
         &self,
-        _: Request<staging::GetDraftRequest>,
-    ) -> Result<Response<staging::GetDraftResponse>, Status> {
+        _: Request<wire::GetDraftRequest>,
+    ) -> Result<Response<wire::GetDraftResponse>, Status> {
         unimplemented!("get_draft")
     }
 }
@@ -286,57 +285,57 @@ impl DraftService for FakeRuntime {
 impl AgentService for FakeRuntime {
     async fn create_agent(
         &self,
-        _: Request<staging::CreateAgentRequest>,
-    ) -> Result<Response<staging::CreateAgentResponse>, Status> {
+        _: Request<wire::CreateAgentRequest>,
+    ) -> Result<Response<wire::CreateAgentResponse>, Status> {
         unimplemented!("create_agent")
     }
 
     async fn rename_agent(
         &self,
-        _: Request<staging::RenameAgentRequest>,
-    ) -> Result<Response<staging::RenameAgentResponse>, Status> {
+        _: Request<wire::RenameAgentRequest>,
+    ) -> Result<Response<wire::RenameAgentResponse>, Status> {
         unimplemented!("rename_agent")
     }
 
     async fn set_filing(
         &self,
-        request: Request<staging::SetFilingRequest>,
-    ) -> Result<Response<staging::SetFilingResponse>, Status> {
+        request: Request<wire::SetFilingRequest>,
+    ) -> Result<Response<wire::SetFilingResponse>, Status> {
         let request = request.into_inner();
         let agent = self.call(|reply| Call::Close(request, reply)).await?;
-        Ok(Response::new(staging::SetFilingResponse {
+        Ok(Response::new(wire::SetFilingResponse {
             agent: Some(agent),
         }))
     }
 
     async fn resume_agent(
         &self,
-        request: Request<staging::ResumeAgentRequest>,
-    ) -> Result<Response<staging::ResumeAgentResponse>, Status> {
+        request: Request<wire::ResumeAgentRequest>,
+    ) -> Result<Response<wire::ResumeAgentResponse>, Status> {
         let request = request.into_inner();
         let agent = self.call(|reply| Call::Resume(request, reply)).await?;
-        Ok(Response::new(staging::ResumeAgentResponse {
+        Ok(Response::new(wire::ResumeAgentResponse {
             agent: Some(agent),
         }))
     }
 
     async fn delete_agent(
         &self,
-        _: Request<staging::DeleteAgentRequest>,
-    ) -> Result<Response<staging::DeleteAgentResponse>, Status> {
+        _: Request<wire::DeleteAgentRequest>,
+    ) -> Result<Response<wire::DeleteAgentResponse>, Status> {
         unimplemented!("delete_agent")
     }
 
     async fn preview_delete(
         &self,
-        _: Request<staging::PreviewDeleteRequest>,
-    ) -> Result<Response<staging::PreviewDeleteResponse>, Status> {
+        _: Request<wire::PreviewDeleteRequest>,
+    ) -> Result<Response<wire::PreviewDeleteResponse>, Status> {
         unimplemented!("preview_delete")
     }
 
     async fn send_input(
         &self,
-        request: Request<staging::SendInputRequest>,
+        request: Request<wire::SendInputRequest>,
     ) -> Result<Response<SendInputResponse>, Status> {
         let request = request.into_inner();
         Ok(Response::new(
@@ -346,22 +345,22 @@ impl AgentService for FakeRuntime {
 
     async fn send_message(
         &self,
-        _: Request<staging::SendMessageRequest>,
-    ) -> Result<Response<staging::SendMessageResponse>, Status> {
+        _: Request<wire::SendMessageRequest>,
+    ) -> Result<Response<wire::SendMessageResponse>, Status> {
         unimplemented!("send_message")
     }
 
     async fn put_blob(
         &self,
-        _: Request<staging::PutBlobRequest>,
-    ) -> Result<Response<staging::PutBlobResponse>, Status> {
+        _: Request<wire::PutBlobRequest>,
+    ) -> Result<Response<wire::PutBlobResponse>, Status> {
         unimplemented!("put_blob")
     }
 
     async fn get_diff(
         &self,
-        _: Request<staging::GetDiffRequest>,
-    ) -> Result<Response<staging::GetDiffResponse>, Status> {
+        _: Request<wire::GetDiffRequest>,
+    ) -> Result<Response<wire::GetDiffResponse>, Status> {
         unimplemented!("get_diff")
     }
 }
@@ -516,7 +515,7 @@ impl Calls {
     /// Answers the next call, a Subscribe, with a fresh stream.
     pub async fn subscribe_session(
         &mut self,
-    ) -> (staging::SubscribeSessionRequest, Feed<SessionEvent>) {
+    ) -> (wire::SubscribeSessionRequest, Feed<SessionEvent>) {
         match self.next().await {
             Call::Subscribe(request, reply) => {
                 let (feed, stream) = stream();
@@ -548,42 +547,42 @@ impl Calls {
         }
     }
 
-    pub async fn send_input(&mut self) -> (staging::SendInputRequest, Reply<SendInputResponse>) {
+    pub async fn send_input(&mut self) -> (wire::SendInputRequest, Reply<SendInputResponse>) {
         match self.next().await {
             Call::SendInput(request, reply) => (request, reply),
             other => panic!("expected SendInput, got {other:?}"),
         }
     }
 
-    pub async fn list_items(&mut self) -> (staging::ListItemsRequest, Reply<ListItemsResponse>) {
+    pub async fn list_items(&mut self) -> (wire::ListItemsRequest, Reply<ListItemsResponse>) {
         match self.next().await {
             Call::Fetch(request, reply) => (request, reply),
             other => panic!("expected Fetch, got {other:?}"),
         }
     }
 
-    pub async fn get_item(&mut self) -> (staging::GetItemRequest, Reply<Item>) {
+    pub async fn get_item(&mut self) -> (wire::GetItemRequest, Reply<Item>) {
         match self.next().await {
             Call::Get(request, reply) => (request, reply),
             other => panic!("expected Get, got {other:?}"),
         }
     }
 
-    pub async fn get_blob(&mut self) -> (staging::GetBlobRequest, Reply<staging::GetBlobResponse>) {
+    pub async fn get_blob(&mut self) -> (wire::GetBlobRequest, Reply<wire::GetBlobResponse>) {
         match self.next().await {
             Call::GetBlob(request, reply) => (request, reply),
             other => panic!("expected GetBlob, got {other:?}"),
         }
     }
 
-    pub async fn close_agent(&mut self) -> (staging::SetFilingRequest, Reply<Agent>) {
+    pub async fn close_agent(&mut self) -> (wire::SetFilingRequest, Reply<Agent>) {
         match self.next().await {
             Call::Close(request, reply) => (request, reply),
             other => panic!("expected Stop, got {other:?}"),
         }
     }
 
-    pub async fn resume(&mut self) -> (staging::ResumeAgentRequest, Reply<Agent>) {
+    pub async fn resume(&mut self) -> (wire::ResumeAgentRequest, Reply<Agent>) {
         match self.next().await {
             Call::Resume(request, reply) => (request, reply),
             other => panic!("expected Resume, got {other:?}"),

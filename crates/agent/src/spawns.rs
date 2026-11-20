@@ -52,10 +52,12 @@ async fn carry(mut stream: LocalStream, dir: PathBuf, heard: mpsc::UnboundedSend
         return;
     };
     let answer: AgentAnswer = match ask.of {
-        Some(agent_ask::Of::Spawn(request)) => match spawn(&dir, &heard, request).await {
-            Some(spawned) => spawned.into(),
-            None => return,
-        },
+        Some(agent_ask::Of::Spawn(request)) => {
+            match spawn(&dir, &heard, &ask.host_id, request).await {
+                Some(spawned) => spawned.into(),
+                None => return,
+            }
+        }
         None => AgentAnswer {
             of: Some(agent_answer::Of::Refused(
                 agent_sock::UNKNOWN_ASK.to_owned(),
@@ -70,13 +72,14 @@ async fn carry(mut stream: LocalStream, dir: PathBuf, heard: mpsc::UnboundedSend
 async fn spawn(
     dir: &std::path::Path,
     heard: &mpsc::UnboundedSender<Heard>,
+    host_id: &[u8],
     request: CreateAgentRequest,
 ) -> Option<Spawned> {
     let child = request.agent_id.clone();
     if !tell(heard, &child, Spawn::Requested).await {
         return None;
     }
-    let (answer, outcome) = tools::create(dir, request).await;
+    let (answer, outcome) = tools::create(dir, host_id, request).await;
     tell(heard, &child, outcome).await;
     Some(answer)
 }

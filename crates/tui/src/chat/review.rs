@@ -145,12 +145,12 @@ impl ReviewPage {
 
     /// `files` of the document as the shared view groups them by folder.
     fn changes(&self, files: impl IntoIterator<Item = usize>) -> ui_view::Changes {
-        ui_view::changes(&wire::amux::staging::GetChangesResponse {
+        ui_view::changes(&wire::GetChangesResponse {
             files: files
                 .into_iter()
                 .map(|f| {
                     let file = &self.doc.files[f];
-                    wire::amux::staging::ChangedFile {
+                    wire::ChangedFile {
                         path: file.path.clone(),
                         added: file.added,
                         removed: file.removed,

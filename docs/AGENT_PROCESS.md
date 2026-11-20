@@ -347,7 +347,7 @@ suspensions:
   resumes an exited agent. A report the agent refuses as exiting waits for
   the exit and begins again against the row;
 - a person's input wakes it the same way, whichever client sent it and
-  whether its own host or another forwarded it: the host finds no process
+  whether it was made on its own host or carried from another: the host finds no process
   to relay the input to, and asks the core for a resume that goes ahead
   only if the row is still suspended when its turn comes, after any exit it
   waits out. The row reads suspended from the commit of the step that ends
@@ -983,13 +983,19 @@ of its agent process: each connection carries one `AgentAsk` and its
 `AgentAnswer`, framed as control frames are, and each says which kind it
 is, so a later build can add an ask. A process that reads an ask it does
 not know refuses it in words. A spawn's ask is the `CreateAgentRequest` the
-daemon takes, with the child's agent id the tool server chose, and its
-answer the daemon's `CreateAgentResponse` or the words of a refusal. For
+child's host takes, with the child's agent id the tool server chose, in the
+`spawn` arm (field 2), and that host's id in `host_id` (empty for the agent's
+own host): the tool server resolves a host the model named to its id before
+it asks, so a name never reaches the process. The answer is the host's
+`CreateAgentResponse` or the words of a refusal. The arm took a new number
+when the create stopped naming its host, with the old one reserved, so a
+tool server and an agent process built on either side of that change read
+each other's spawn as an ask they do not know and refuse it in words. For
 each spawn the process
 ([`spawns.rs`](../crates/agent/src/spawns.rs)) tells its core the child was
-asked for and waits until the core has it; makes the create on `tools.sock`
-as the tool server used to, redialling for five seconds and making the call
-itself at most once; tells its core how the daemon answered and waits
+asked for and waits until the core has it; makes the create on `tools.sock`,
+addressed to that host by its id, so the daemon carries it there when it is
+another, redialling for five seconds and making the call itself at most once; tells its core how the daemon answered and waits
 again; and only then answers the tool server. The provider cannot go on
 with its turn, let alone end it, before the core knows what became of the
 spawn. A request that arrives once the core is gone, the process exiting, is

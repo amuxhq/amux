@@ -2,7 +2,7 @@
 title: Agents working together
 description: Let your agents message each other and start subagents of their own, Claude or Codex, on any of your computers.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Every agent amux runs, Claude or Codex, can see the rest of your fleet and work

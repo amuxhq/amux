@@ -222,13 +222,14 @@ one at a time and end on a review of your answers.
 
 ## Reviewing changes
 
-Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review.
+Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review; a
+file in the overview opens it at that file. Reviews need the reviews
+experiment on the agent's computer; [Reviewing changes](reviews.md) explains
+how to switch it on, and how comments, rounds and **Since your last review**
+work.
 
-The review needs the reviews experiment switched on on the agent's computer.
-It is a snapshot of the agent's folder, taken when you open it, and it stays
-put while you read: if the agent changes code meanwhile, the page says so and `r`
-refreshes it. Every file follows the next, each change under the functions it
-sits in; lock files, generated and vendored files start folded.
+The review holds still while you read: if the agent changes code meanwhile,
+the page says so and `r` refreshes it.
 
 | Key | What it does |
 |---|---|
@@ -247,32 +248,16 @@ sits in; lock files, generated and vendored files start folded.
 | `S` | Start the review over, asking first |
 | `q` | Back to the chat |
 
-Comments are saved on the agent's computer as you write them, so they're there
-from your other devices too. While you have drafts, the message box shows
-`[review · 3 comments ✕]`: whatever you send next carries them to the agent,
-with your message as the summary. Click the ✕ to discard them instead. With
-drafts waiting, opening the review keeps them on the code you wrote them on;
-refreshing moves them to the code as it is now, and any whose lines were edited
-become comments on their file.
-
-Once you've sent a review, the next look opens on **Since your last review**:
-just what changed since then, with your earlier comments where they sit now,
-folded away where their lines changed. Tab shows all the changes again.
+While you have drafts, the message box shows `[review · 3 comments ✕]`:
+whatever you send next carries them to the agent, with your message as the
+summary. Click the ✕ to discard them instead. When the agent has changed
+code since you wrote them, the chip adds `written on older code`
+([what that means](reviews.md#written-on-older-code)).
 
 A review you sent shows in the chat as `[review · 3 comments]`. Click it, or
-focus its message and press Ctrl+A then `o`, to see that round again: its whole
-diff, from the base branch to the code you reviewed, every file open, lockfiles
-and generated files too, with each comment you sent on its lines; Enter on a
-file folds it. If you edited a comment before the agent read the message, a
-later message sent it, and this chip shows the text it sent. Once the review has moved on to newer code twice since, the
-agent's computer no longer keeps the round's code, and each comment shows with
-the code it was written on. If the review has since been started over, or the
-computer can't be reached and the round was never loaded, you see the text the
-agent read instead. `q` goes back to the chat.
-
-Where the agent's computer doesn't run reviews, because the experiment is off
-there or its amux is older than reviews, the page says so. The overview still
-lists the changed files.
+focus its message and press Ctrl+A then `o`, to see that round again
+([Look back at a round](reviews.md#look-back-at-a-round)); Enter on a file
+folds it, and `q` goes back to the chat.
 
 The header can count either your uncommitted changes, or everything since the
 branch left its base. Ctrl+A then `c` switches between the two. For an agent
@@ -343,6 +328,10 @@ Press `,` on home for settings:
   stay that way until something reaches them, and one that was working
   carries on where it left off; its chat marks where with "Resumed · after
   the computer restarted".
+
+  With `reviews` on, you can review an agent's changes, comment on its lines
+  and send the comments back round by round
+  ([Reviewing changes](reviews.md)).
 
 These settings belong to the computer, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to

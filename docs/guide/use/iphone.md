@@ -87,54 +87,34 @@ words instead.
 ## Reviewing changes
 
 Open an agent's changes from its chat: the changes count at the top, the
-overview's **Review changes**, or the review chip in the message box.
+overview's **Review changes**, or the review chip in the message box. Reviews
+need the reviews experiment on the agent's computer;
+[Reviewing changes](reviews.md) explains how to switch it on, and how
+comments, rounds and **Since your last review** work. On the phone:
 
-The review needs the reviews experiment switched on on the agent's computer.
-It is a snapshot of the agent's folder, taken when you open it, and it stays
-put while you read. If the agent changes code meanwhile, the page says so and
-**Refresh** brings it up to date; pulling the page down does the same. Every
-file follows the next, each change under the functions it sits in, with the
-words an edited line changed marked. Lock files, generated and vendored files
-start folded; tap a file's name to fold or open it, and the list button at
-the top jumps between files. Tap the arrows on hidden lines to show more of
-the file above or below a change.
-
+- **Reading:** the review holds still while you read. If the agent changes
+  code meanwhile, the page says so and **Refresh** brings it up to date;
+  pulling the page down does the same. Tap a file's name to fold or open it,
+  and the list button at the top jumps between files. Tap the arrows on
+  hidden lines to show more of the file above or below a change. The switch
+  at the top changes between **Since your last review** and **All changes**.
 - **Commenting:** tap a line to select it, and tap another line in the same
   file to stretch the selection to it. Or hold a line for a moment and drag,
   the way you select text: hold your finger near the top or bottom of the
   screen and the page scrolls to take the selection further. A quick swipe
-  still scrolls. Then tap **Comment on 3 lines** at the bottom. To comment on a whole file, hold its
-  name and choose **Comment on the File**.
+  still scrolls. Then tap **Comment on 3 lines** at the bottom. To comment on
+  a whole file, hold its name and choose **Comment on the File**.
 - **Changing a comment:** tap it to change its words or delete it.
-- **Sending:** comments are saved on the agent's computer as you write them,
-  so they're there from your other devices too. While you have drafts, the
-  message box shows a **Review · 3 comments** chip, and whatever you send next
-  carries them to the agent, with your message as the summary. You can send
-  the chip alone. **Done** at the bottom of the review takes you back there.
-  Tap the chip's **✕** to discard the drafts instead.
-- **The next look** opens on **Since your last review**: just what changed
-  since then, with your earlier comments where they sit now, folded away where
-  their lines changed. The switch at the top shows all the changes again.
-- **Starting over:** the **…** menu discards your drafts, or deletes the whole
-  review so the next look is a first look. Both ask first.
+- **Sending:** while you have drafts, the message box shows a
+  **Review · 3 comments** chip, and whatever you send next carries them, with
+  your message as the summary; you can send the chip alone. **Done** at the
+  bottom of the review takes you back there. Tap the chip's **✕** to discard
+  the drafts instead.
+- **Starting over:** the **…** menu discards your drafts, or deletes the
+  whole review so the next look is a first look. Both ask first.
 
-With drafts waiting, opening the review keeps them on the code you wrote them
-on; refreshing moves them to the code as it is now, and any whose lines were
-edited become comments on their file.
-
-A review you sent shows in the chat as a chip. Tap it to see that round: its
-whole diff, from the base branch to the code you reviewed, every file open,
-lockfiles and generated files too, with each comment you sent on its lines.
-If you edited a comment before the agent read the message, a later message
-sent it, and this chip shows the text it sent. Once the review has moved on to newer code twice since,
-the agent's computer no longer keeps the round's code, and each comment shows
-with the code you wrote it on. If the agent's computer no longer has the round, for example
-after you started over, or can't be reached and the round was never loaded,
-you see the text the agent read instead.
-
-Where the agent's computer doesn't run reviews, because the experiment is off
-there or its amux is older than reviews, the page says so. The overview still
-lists the changed files.
+A review you sent shows in the chat as a chip. Tap it to see that round
+again ([Look back at a round](reviews.md#look-back-at-a-round)).
 
 ## Computers
 

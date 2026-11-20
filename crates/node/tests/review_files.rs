@@ -843,7 +843,7 @@ fn resident_kib() -> u64 {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_snapshot_no_longer_held_is_not_found() {
+async fn a_snapshot_no_longer_held_is_not_found_and_one_unreadable_is_data_loss() {
     let install = Install::new();
     repository(&install.work, &[("notes.txt", &numbered(&[]))]);
     write(&install.work, &[("notes.txt", &numbered(&[(3, "three")]))]);
@@ -874,7 +874,7 @@ async fn a_snapshot_no_longer_held_is_not_found() {
             .get_files(request(&summary.snapshot, view))
             .await
             .unwrap_err();
-        assert_eq!(gone.code(), tonic::Code::NotFound, "{view:?}: {gone:?}");
+        assert_eq!(gone.code(), tonic::Code::DataLoss, "{view:?}: {gone:?}");
     }
     host.stop().await;
 }

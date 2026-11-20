@@ -1012,11 +1012,12 @@ impl App {
                     link.fetch_failed = Some(comparison);
                     if let Some(page) = &mut chat.view.review_page {
                         // The host answers NOT_FOUND for a snapshot it no
-                        // longer has. Since the last review, that is the last
-                        // round's: its comments show with the code saved with
-                        // them. Of all changes, it is the page's own, which a
-                        // refresh replaces.
-                        let gone = matches!(&error, ReviewError::Rpc(rpc) if rpc.code() == Some(wire::ErrorCode::NotFound));
+                        // longer keeps, and DATA_LOSS for one whose commits
+                        // can no longer be read. Since the last review, that
+                        // is the last round's: its comments show with the
+                        // code saved with them. Of all changes, it is the
+                        // page's own, which a refresh replaces.
+                        let gone = matches!(&error, ReviewError::Rpc(rpc) if matches!(rpc.code(), Some(wire::ErrorCode::NotFound | wire::ErrorCode::DataLoss)));
                         match view {
                             ui_view::ReviewView::SinceLast if gone => {
                                 page.notice(ui_view::ReviewNotice::RoundGone, true)

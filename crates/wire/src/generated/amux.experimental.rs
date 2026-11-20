@@ -220,7 +220,8 @@ impl ::prost::Name for ReviewRound {
 /// it, or a round's), and `from` a base commit that snapshot has been shown
 /// against for REVIEW_VIEW_ALL, or a round's snapshot for
 /// REVIEW_VIEW_SINCE_LAST. Anything else is INVALID_ARGUMENT; a snapshot no
-/// longer kept, NOT_FOUND. A request names everything its answer depends on,
+/// longer kept, NOT_FOUND; one whose commits can no longer be read,
+/// DATA_LOSS. A request names everything its answer depends on,
 /// so it answers the same whatever the review's base becomes later.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReviewGetFilesRequest {
@@ -990,7 +991,8 @@ pub mod reviews1_client {
         /// are no drafts (or a refresh is asked for); a read-only open does
         /// neither, and answers the review as it stands, or an empty summary for
         /// an agent with none. Answers without file bodies. FAILED_PRECONDITION
-        /// when the agent's folder is not a repository.
+        /// when the agent's folder is not a repository; DATA_LOSS when a commit
+        /// the review needs can no longer be read.
         pub async fn open(
             &mut self,
             request: impl tonic::IntoRequest<super::ReviewOpenRequest>,
@@ -1085,7 +1087,8 @@ pub mod reviews1_server {
         /// are no drafts (or a refresh is asked for); a read-only open does
         /// neither, and answers the review as it stands, or an empty summary for
         /// an agent with none. Answers without file bodies. FAILED_PRECONDITION
-        /// when the agent's folder is not a repository.
+        /// when the agent's folder is not a repository; DATA_LOSS when a commit
+        /// the review needs can no longer be read.
         async fn open(
             &self,
             request: tonic::Request<super::ReviewOpenRequest>,

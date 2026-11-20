@@ -1104,9 +1104,11 @@ fn git_refused(error: GitError) -> Status {
     refused(code, error.to_string())
 }
 
-/// A comparison's failure: a commit the review needs is gone (its
-/// snapshot store removed, or the repository cloned again), or git failed.
-fn compare_refused(error: CompareError) -> Status {
+/// A comparison's failure, from Open and GetFiles alike: a commit the
+/// review needs can no longer be read (its snapshot store removed, the
+/// repository cloned again, or a rebase's old commits collected), which is
+/// data lost; or git failed, as any git failure is told.
+pub(super) fn compare_refused(error: CompareError) -> Status {
     match error {
         CompareError::Missing(_) => refused(
             ErrorCode::DataLoss,

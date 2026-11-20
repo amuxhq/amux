@@ -311,7 +311,10 @@ impl ReviewSession {
                             message: error.to_string(),
                         })
                     } else if call == Call::Files(ReviewView::SinceLast)
-                        && error.code() == Some(ErrorCode::NotFound)
+                        && matches!(
+                            error.code(),
+                            Some(ErrorCode::NotFound | ErrorCode::DataLoss)
+                        )
                     {
                         Some(ReviewNotice::RoundGone)
                     } else {

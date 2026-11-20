@@ -142,7 +142,7 @@ pub(crate) async fn get_files(
             HUNK_CONTEXT,
         )
         .await
-        .map_err(compared)?,
+        .map_err(super::compare_refused)?,
         None => compare::hunks(
             &repo.cwd,
             &repo.store,
@@ -152,7 +152,7 @@ pub(crate) async fn get_files(
             HUNK_CONTEXT,
         )
         .await
-        .map_err(compared)?,
+        .map_err(super::compare_refused)?,
     };
     let diffed: HashMap<&str, &FileHunks> = diffed
         .iter()
@@ -362,7 +362,7 @@ async fn cut(
         WHOLE_FILE,
     )
     .await
-    .map_err(compared)?
+    .map_err(super::compare_refused)?
     .into_iter()
     .find(|file| file.path == anchor.path);
     if file.as_ref().is_some_and(|file| file.binary) {
@@ -455,7 +455,7 @@ async fn cut(
             &[compare::LineRange::new(first, end)],
         )
         .await
-        .map_err(compared)?
+        .map_err(super::compare_refused)?
         .unwrap_or_default()
         .into_iter()
         .map(|line| {
@@ -577,7 +577,9 @@ async fn blob_at(repo: &Repo, commit: &str, path: &str) -> Result<Option<String>
         .await
         .map_err(|error| refused(ErrorCode::Internal, format!("running git: {error}")))?;
     if !output.status.success() {
-        return Err(compared(CompareError::Missing(commit.to_owned())));
+        return Err(super::compare_refused(CompareError::Missing(
+            commit.to_owned(),
+        )));
     }
     let listed = String::from_utf8_lossy(&output.stdout);
     Ok(listed.split('\0').find_map(|entry| {
@@ -586,17 +588,6 @@ async fn blob_at(repo: &Repo, commit: &str, path: &str) -> Result<Option<String>
         let (_mode, kind, id) = (info.next()?, info.next()?, info.next()?);
         (kind == "blob" && listed_path == path).then(|| id.to_owned())
     }))
-}
-
-/// A comparison's failure as the caller is told it. A commit that is gone
-/// is not found: the client shows that round from its comments' snippets.
-fn compared(error: CompareError) -> Status {
-    match error {
-        CompareError::Missing(_) => refused(ErrorCode::NotFound, error.to_string()),
-        // The folder is not a repository any more, or git cannot read it:
-        // the agent's state, not this host's.
-        CompareError::Git(_) => refused(ErrorCode::FailedPrecondition, error.to_string()),
-    }
 }
 
 fn refused(code: ErrorCode, message: impl Into<String>) -> Status {
@@ -824,7 +815,7 @@ async fn context(
     let commit = file.context_commit.as_str();
     let read = compare::lines(&repo.cwd, &repo.store, commit, path, &ranges)
         .await
-        .map_err(compared)?
+        .map_err(super::compare_refused)?
         .unwrap_or_default();
     let on_snapshot = commit == snapshot;
     Ok(read
@@ -964,7 +955,7 @@ async fn bodies(repo: &Repo, wanted: Vec<(String, String)>) -> Result<Bodies, St
     let ids: Vec<&str> = missing.iter().map(|(key, _)| key.blob.as_str()).collect();
     let read = compare::blobs(&repo.cwd, &repo.store, &ids)
         .await
-        .map_err(compared)?;
+        .map_err(super::compare_refused)?;
     let jobs = missing
         .into_iter()
         .zip(read)

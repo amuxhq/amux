@@ -223,7 +223,8 @@ compared from, the view, and for since-last the base each side was shown
 against. The host checks that it handed that comparison out (the snapshot is
 one it keeps, and the commit a base it has been shown against or a round's
 snapshot) and answers `INVALID_ARGUMENT` otherwise, `NOT_FOUND` for a
-snapshot it no longer keeps. So a request answers the same whatever the
+snapshot it no longer keeps, and `DATA_LOSS` for one whose commits can no
+longer be read. So a request answers the same whatever the
 review's base becomes later, and a client keys what it fetched by the
 request. With `list`, `GetFiles` also answers the comparison's file list,
 which is how a past round's whole diff is listed, since no summary lists it.
@@ -395,8 +396,10 @@ Any node carries a call to it unread, so the phone, whose runtime runs no
 experiment, reaches a desk's review. The other statuses a client acts on:
 `FAILED_PRECONDITION` from `Open` when the agent's folder is gone or is not a
 repository (and from `Edit` or `GetFiles` before a review has been opened);
-`DATA_LOSS` from `Open` when a commit the review needs is gone, which
-starting over clears; `RESOURCE_EXHAUSTED` for every cap on what a review
+`DATA_LOSS` from `Open` or `GetFiles` when a commit the review needs can no
+longer be read, which starting over clears (a client shows a past round's
+comments with the code stored with them instead); `INTERNAL` when git itself
+fails; `RESOURCE_EXHAUSTED` for every cap on what a review
 holds (500 comments, 16 KiB of words in one, 4 MiB of comments together,
 checked before anything is written) and for a tree with too many paths;
 `ABORTED` when files keep vanishing under a snapshot, or the review began or

@@ -829,9 +829,8 @@ messages, the `ctl.sock` frames and the journal's records) only adds:
 
 Every call has its own `FooRequest` and `FooResponse`, so either can grow.
 
-`just proto-compat` (run by hand for now: neither CI nor `just premerge`
-runs it while `amux.v1` takes a round of breaking changes) lints the schemas with buf's `STANDARD`
-rules and checks them against the newest release tag at or after 0.9.0 with
+`just proto-compat`, which CI runs, lints the schemas with buf's `STANDARD`
+rules and checks them against the newest release tag at or after 0.11.0 with
 its `PACKAGE` rules, which `buf.yaml` changes in one way: a field or enum value
 may go if its number stays `reserved`. `just proto-compat <ref>` checks against
 any other ref.

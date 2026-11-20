@@ -85,6 +85,7 @@ final class MacChat: ChatSurface {
     var attachments: [DraftAttachment] { model.attachments }
     func removeAttachment(at index: Int) { model.removeAttachment(at: index) }
     var canSend: Bool { model.canSend }
+    var hasMessage: Bool { model.hasMessage }
     var canResume: Bool { model.canResume }
     var sending: Bool { model.sending }
     var slashMatches: [CommandMatch] { model.slashMatches }
@@ -140,6 +141,30 @@ final class MacChat: ChatSurface {
         model.attach(open.model)
     }
 
+    // MARK: The agent's review
+
+    /// The page drawn for the review open on the chat, kept for as long as
+    /// that review is: what the person is writing on it lives here.
+    @ObservationIgnored private var shown: MacReviewPage?
+
+    /// A host without reviews, with nothing of its review ever read here,
+    /// gets its page over a patch instead. The runtime keeps the last
+    /// summary it read for the rest of the process, so a host that stops
+    /// offering reviews under a review already read leaves that page up,
+    /// saying so.
+    var reviewPage: (any ReviewPageSurface)? {
+        guard let session = model.reviewPage else { return nil }
+        let page = session.page
+        if page.header == nil, page.banners.contains(.notOffered) { return nil }
+        if shown?.session !== session { shown = MacReviewPage(session: session) }
+        return shown
+    }
+
+    func openReviewPage() { model.openReviewPage() }
+    func closeReviewPage() { model.closeReviewPage() }
+    var reviewChip: ReviewChip? { model.reviewChip }
+    func discardReviewDrafts() { model.discardReviewDrafts() }
+
     // MARK: Attaching and settings
 
     /// Each file is read here and stored on the agent's host; one that
@@ -156,6 +181,54 @@ final class MacChat: ChatSurface {
 
     var settings: SettingsView? { model.settings }
     func change(_ setting: SettingChange) { model.change(setting) }
+}
+
+/// The shared review page as the Mac's screens read it, and the comment
+/// being written on it.
+@MainActor
+@Observable
+final class MacReviewPage: ReviewPageSurface {
+    @ObservationIgnored let session: ReviewSession
+    var writing = false
+    var words = ""
+
+    init(session: ReviewSession) { self.session = session }
+
+    var page: ReviewPage { session.page }
+    var selected: ClosedRange<Int>? { session.selected }
+    var anchor: ReviewAnchor? { session.anchor }
+    var waiting: Int { session.waiting }
+    var notice: String? { session.notice }
+
+    func refresh() { session.refresh() }
+    func moreContext(_ ask: ReviewContextAsk) { session.moreContext(ask) }
+    func show(_ view: ReviewView) { session.show(view) }
+    func toggleFile(_ path: String) { session.toggleFile(path) }
+    func toggleComment(_ id: [UInt8]) { session.toggleComment(id) }
+    func select(_ row: Int) { session.select(row) }
+    func extend(to row: Int) { session.extend(to: row) }
+
+    func clearSelection() {
+        session.clearSelection()
+        writing = false
+        words = ""
+    }
+
+    func comment(_ text: String) {
+        guard let task = session.comment(text) else { return }
+        Task { [weak self] in
+            // Written: the field closes with the selection. Not: the words
+            // stay to try again, with the page's notice saying why.
+            guard await task.value == .done, let self, self.session.selected == nil else { return }
+            self.writing = false
+            self.words = ""
+        }
+    }
+
+    func reword(_ id: [UInt8], as text: String) { session.reword(id, as: text) }
+    func delete(_ id: [UInt8]) { session.delete(id) }
+    func discardDrafts() { session.discardDrafts() }
+    func startOver() { session.startOver() }
 }
 
 /// The shared review model as the Mac's screens read it.

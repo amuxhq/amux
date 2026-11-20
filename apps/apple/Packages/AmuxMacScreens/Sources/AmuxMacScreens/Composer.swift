@@ -13,6 +13,8 @@ struct Composer: View {
     let name: String
     let host: String
     let reach: Reach?
+    /// Opens the agent's review page in the tool window.
+    var openReview: @MainActor () -> Void = {}
 
     @FocusState private var focused: Bool
     @State private var dropping = false
@@ -27,8 +29,11 @@ struct Composer: View {
             if !chat.slashMatches.isEmpty {
                 commands
             }
-            if !chat.attachments.isEmpty {
+            if !chat.attachments.isEmpty || chat.reviewChip != nil {
                 FlowLayout(spacing: 6) {
+                    if let chip = chat.reviewChip {
+                        ReviewChipView(chip: chip, open: openReview, discard: { chat.discardReviewDrafts() })
+                    }
                     ForEach(Array(chat.attachments.enumerated()), id: \.offset) { index, attachment in
                         Chip(text: Self.chip(attachment)) { chat.removeAttachment(at: index) }
                     }
@@ -49,10 +54,10 @@ struct Composer: View {
             model
             permission
         } action: {
-            // One button for both: Stop while the agent
-            // works and nothing is typed, else Send (which queues while it
-            // works). ⌘. stops either way.
-            let stopping = working && !typed
+            // One button for both: Stop while the agent works and there is
+            // nothing to send, else Send (which queues while it works).
+            // ⌘. stops either way.
+            let stopping = working && !chat.hasMessage
             RoundButton(
                 face: stopping ? .stop : (chat.canResume ? .resume : .send), enabled: stopping || ready,
                 help: stopping ? "Stop (⌘.)" : (chat.canResume ? "Resume" : (working ? "Queue (↩)" : "Send (↩)"))
@@ -148,10 +153,10 @@ struct Composer: View {
         return false
     }
 
-    private var typed: Bool { !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
+    /// Words, an attachment or the review's drafts to send: the review goes
+    /// with or without words.
     private var ready: Bool {
-        chat.canResume || (chat.canSend && !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        chat.canResume || (chat.canSend && chat.hasMessage)
     }
 
     private var placeholder: String {
@@ -386,5 +391,50 @@ private struct Chip: View {
         .padding(.horizontal, 8)
         .frame(height: 24)
         .background(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).fill(Palette.well))
+    }
+}
+
+/// The agent's review riding on the next send: "Review · 3 comments",
+/// which opens the page, and its ✕, which discards the drafts once the
+/// person says so. There is no taking the review off without discarding:
+/// the drafts are the host's, and whatever holds them is what is sent.
+private struct ReviewChipView: View {
+    let chip: ReviewChip
+    let open: @MainActor () -> Void
+    let discard: @MainActor () -> Void
+    @State private var confirming = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Button(action: open) {
+                HStack(spacing: 5) {
+                    Icon("message-square-text", size: 12).foregroundStyle(Palette.textSecondary)
+                    Text(ChatWords.reviewChip(chip)).lineLimit(1)
+                    if chip.moved {
+                        Text(ChatWords.reviewChipMoved).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open the review")
+            Button {
+                confirming = true
+            } label: {
+                Icon("x", size: 11).foregroundStyle(Palette.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("Discard drafts")
+        }
+        .font(.ui(.meta))
+        .padding(.horizontal, 8)
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).fill(Palette.well))
+        .confirmationDialog(ChatWords.discardDrafts(chip.comments), isPresented: $confirming) {
+            Button("Discard Drafts", role: .destructive, action: discard)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(ChatWords.discardDraftsDetail)
+        }
     }
 }

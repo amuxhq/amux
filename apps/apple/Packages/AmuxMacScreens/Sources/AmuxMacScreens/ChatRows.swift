@@ -140,7 +140,7 @@ struct ChatRow: View {
     @ViewBuilder private var kind: some View {
         switch row.kind {
         case .prompt(let text, let steered):
-            PromptBubble(text: ChatWords.text(of: text), steered: steered)
+            PromptBubble(segments: text, steered: steered)
                 .padding(.bottom, 14)
         case .prose(let text, let streaming, let workingNote):
             ProseView(source: ChatWords.text(of: text), streaming: streaming, quiet: workingNote)
@@ -610,28 +610,86 @@ struct GridLine: View {
     }
 }
 
-/// The person's prompt, in a bubble on the right.
+/// The person's prompt, in a bubble on the right. A review sent with it
+/// goes under the bubble as a chip, which shows what the agent read.
 struct PromptBubble: View {
-    let text: String
+    let segments: [Segment]
     let steered: Bool
 
     var body: some View {
+        let reviews = Self.reviews(segments)
+        let text = ChatWords.text(of: reviews.isEmpty ? segments : segments.filter { Self.review($0) == nil })
         HStack {
             Spacer(minLength: Metrics.reading / 5)
             VStack(alignment: .trailing, spacing: 4) {
-                Text(text)
-                    .font(.ui(.bubble))
-                    .lineSpacing(6)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.well))
+                if !text.isEmpty || reviews.isEmpty {
+                    Text(text)
+                        .font(.ui(.bubble))
+                        .lineSpacing(6)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.well))
+                }
+                ForEach(Array(reviews.enumerated()), id: \.offset) { _, review in
+                    SentReviewChip(comments: review.comments, text: review.text)
+                }
                 if steered {
                     Text("steered").font(.ui(.caption)).foregroundStyle(Palette.textTertiary)
                 }
             }
         }
         .padding(.top, 6)
+    }
+}
+
+extension PromptBubble {
+    /// The reviews sent with the prompt, each its comment count and the
+    /// text the agent read.
+    static func reviews(_ segments: [Segment]) -> [(comments: UInt32, text: String)] {
+        segments.compactMap(review)
+    }
+
+    static func review(_ segment: Segment) -> (comments: UInt32, text: String)? {
+        if case .attachment(.sentReview(let comments, _, let text)) = segment { return (comments, text) }
+        return nil
+    }
+}
+
+/// A review sent into the chat: "Review · 3 comments", opening the text the
+/// agent read, which says each comment with the code it was written on.
+private struct SentReviewChip: View {
+    let comments: UInt32
+    let text: String
+    @State private var showing = false
+
+    var body: some View {
+        Button {
+            showing.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Icon("message-square-text", size: 12).foregroundStyle(Palette.textSecondary)
+                Text(ChatWords.reviewChip(ReviewChip(comments: comments, moved: false))).lineLimit(1)
+            }
+            .font(.ui(.meta))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).fill(Palette.well))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show what was sent")
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            ScrollView {
+                Text(text)
+                    .font(.mono(.small))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+            .frame(width: 520)
+            .frame(maxHeight: 460)
+        }
     }
 }
 

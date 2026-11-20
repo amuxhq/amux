@@ -2,18 +2,50 @@ import AmuxValues
 import AmuxWords
 import SwiftUI
 
-/// The tool window's Changes tab: the open agent's changes, to read and
-/// comment on line by line, with what is compared and its counts in the
-/// window's bar. The tab and the toggle that closes it are on the title
-/// row above.
+/// The tool window's Review tab: the open agent's changes, to read and
+/// comment on line by line. The tab and the toggle that closes it are on
+/// the title row above.
+///
+/// Each time it shows it opens the agent's review for a look, and draws
+/// that page while it is open. Where the agent's host offered no reviews
+/// as the page opened, the review over a patch stands in.
 public struct ChangesPane: View {
     let chat: any ChatSurface
+    /// The review has been asked to open, so the page it gives decides
+    /// which review is drawn.
+    @State private var opened = false
 
     public init(chat: any ChatSurface) {
         self.chat = chat
     }
 
     public var body: some View {
+        Group {
+            if !opened {
+                Color.clear
+            } else if let page = chat.reviewPage {
+                ReviewPagePane(review: page)
+            } else {
+                PatchReviewPane(chat: chat)
+            }
+        }
+        .onAppear {
+            chat.openReviewPage()
+            opened = true
+        }
+        .onDisappear { chat.closeReviewPage() }
+        // Another agent's chat is another review: the page shut here opens
+        // there.
+        .id(ObjectIdentifier(chat))
+    }
+}
+
+/// The open agent's changes as its host freezes them in a patch, with what
+/// is compared and its counts in the window's bar.
+private struct PatchReviewPane: View {
+    let chat: any ChatSurface
+
+    var body: some View {
         VStack(spacing: 0) {
             WindowBar(leading: 8, rule: false) {
                 comparison
@@ -214,7 +246,7 @@ private struct FileHeader: View {
 
 /// A file's name in the text colour after its folder in a quieter one, so
 /// the eye finds the file; its old path first when it moved.
-private struct FileName: View {
+struct FileName: View {
     let path: String
     let from: String?
 

@@ -75,6 +75,9 @@ public protocol ChatSurface: AnyObject {
     var settings: SettingsView? { get }
     func change(_ setting: SettingChange)
     var canSend: Bool { get }
+    /// Something to send: words, an attachment, or the review's drafts
+    /// under the chip, which go with or without words.
+    var hasMessage: Bool { get }
     var canResume: Bool { get }
     var sending: Bool { get }
     var slashMatches: [CommandMatch] { get }
@@ -113,6 +116,62 @@ public protocol ChatSurface: AnyObject {
     func loadReview(keepingComments: Bool)
     /// Puts the review's comments into the draft, for the next message.
     func attachReview()
+
+    // MARK: The agent's review
+
+    /// The agent's review page, read and written at the agent's host, while
+    /// the tool window shows it. Nil before it opens, and when the agent's
+    /// host offered no reviews as the page opened: the review over a patch
+    /// (`review`) stands in for it then.
+    var reviewPage: (any ReviewPageSurface)? { get }
+    /// Opens the review page for a look; it follows the agent's row until
+    /// it is closed.
+    func openReviewPage()
+    /// The page left the screen. The review and its drafts stay.
+    func closeReviewPage()
+    /// The composer's chip while the agent's review holds drafts, which
+    /// the next send carries.
+    var reviewChip: ReviewChip? { get }
+    /// The chip's ✕, once the person confirmed it: the drafts are deleted.
+    func discardReviewDrafts()
+}
+
+/// The agent's review page as the runtime composed it, and what the person
+/// does on it. Rows, banners and the header are drawn as handed; a
+/// selection is held by the rows' indices in `page`, and the runtime says
+/// which lines it is.
+@MainActor
+public protocol ReviewPageSurface: AnyObject {
+    var page: ReviewPage { get }
+    /// The rows selected, first to last.
+    var selected: ClosedRange<Int>? { get }
+    /// Where a comment on the selection goes: nil with nothing selected,
+    /// and for a selection with no line or across files.
+    var anchor: ReviewAnchor? { get }
+    /// Acts on their way to the agent's host.
+    var waiting: Int { get }
+    /// Why the last act came to nothing, when the page does not say it.
+    var notice: String? { get }
+    /// The comment being written on the selection, while its field is open.
+    var writing: Bool { get set }
+    var words: String { get set }
+
+    /// Takes a new snapshot, moving any drafts onto it.
+    func refresh()
+    func moreContext(_ ask: ReviewContextAsk)
+    func show(_ view: ReviewView)
+    func toggleFile(_ path: String)
+    func toggleComment(_ id: [UInt8])
+    func select(_ row: Int)
+    func extend(to row: Int)
+    func clearSelection()
+    /// Writes a draft on the selection; the selection ends once the host
+    /// has it.
+    func comment(_ text: String)
+    func reword(_ id: [UInt8], as text: String)
+    func delete(_ id: [UInt8])
+    func discardDrafts()
+    func startOver()
 }
 
 /// Where the review of an agent's changes stands.

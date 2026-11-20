@@ -44,6 +44,9 @@ mod ios 'apps/apple/justfile'
 # The Mac app's recipes: `just mac build`, `just mac run` (`just --list mac`).
 mod mac 'apps/apple/Mac/justfile'
 
+# The Android app's recipes: `just android build`, `just android unit`, ... (`just --list android`).
+mod android 'apps/android/justfile'
+
 # The browser extension's recipes: `just browser build`, `just browser test`, ... (`just --list browser`).
 mod browser 'js/extension/justfile'
 

@@ -1,4 +1,5 @@
 plugins {
+    `java-library`
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -8,6 +9,7 @@ kotlin {
 }
 
 dependencies {
+    api(project(":push"))
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)

@@ -810,7 +810,7 @@ and a remote host has no raw terminal attach.
 
 On a phone the same daemon runs in the app's process (`crates/app-embedded`).
 It serves no sockets: the app calls the profile `Registry`, each profile's
-`Edge` for its pairing and peers, and `ClientApi` in process, and it is an
+`Edge` for its pairing and peers, and its node's services in memory, and it is an
 ordinary peer to the desktops it pairs with.
 
 A client that finds nothing on the front door does not start a daemon itself.
@@ -891,42 +891,39 @@ command again.
 | `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `UpdateDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
 
-The implementation is `ClientApi` in `crates/node/src/grpc.rs`, a thin mapping
+The implementation is the services in `crates/node/src/api`, a thin mapping
 onto the profile runtime. It holds the runtime weakly, so a connection that
 outlives its runtime is answered `UNAVAILABLE` and the client redials.
 
 ### Calls on another host's agents
 
-Only the host that owns an agent can act on it. When a call names an agent
-whose row here is a replica, `ClientApi` makes the same call on the owner's
-daemon through its agent and session services, exactly as a phone would, and answers with what
-the owner answered (`crates/node/src/forward.rs`). A forwarded call fails in
-one of two ways, and they are kept apart because only the second may have
-reached the owner:
+Only the host that owns an agent can act on it. A client addresses a call on
+another host's agent to that host, by naming the host's id as the call's
+authority, and the daemon it is attached to carries the call there unread over
+the link, unary calls and streams alike, and passes back what the owner
+answered untouched (`crates/node/src/carry.rs`). The only thing the carrying
+daemon adds is who the call is for, in the caller header, from the caller it
+settled; a client cannot say who it is. A carried call fails in one of two
+ways, and they are kept apart because only the second may have reached the
+owner:
 
-- **Not sent.** The call never left: no link to the owner, the owner is not
-  trusted, or no channel opened within 10 seconds. That is
-  reason `HOST_UNREACHABLE` naming the host by the name it was paired under,
-  except for `SendInput`, which answers with a rejected verdict,
-  `REFUSAL_HOST_UNREACHABLE`, so a composer treats it like any other refusal.
-  When only the relay reaches the owner and the account is on the free plan
-  (its subscription lapsed), the relay carries no calls between hosts, and
-  the call is refused at once as that: reason `PAYMENT_REQUIRED` with a
-  sentence naming the lapse, for `SendInput` the same rejected verdict
-  with that sentence as its detail, and for `FileAgent`
-  reason `HOST_UNREACHABLE` with that sentence, so a client holds a close
-  as it holds any close that never left.
-- **Uncertain.** The call went out and its answer did not come back: the
-  link failed under it, or 30 seconds passed (enough for a spawn, which waits
-  for the child's process to start on the far side). That is
-  `ABORTED` for every call, `SendInput` included: the sender holds
-  the input as uncertain and settles it at its next catch-up, and nothing
-  sends it again.
+- **Not sent.** The call never left: no link to the owner, or no channel
+  opened within 10 seconds, is `FAILED_PRECONDITION` with reason
+  `HOST_UNREACHABLE`; the owner no longer trusting this host is
+  `UNAUTHENTICATED`. When only the relay reaches the owner and the account is
+  on the free plan (its subscription lapsed), the relay carries no calls
+  between hosts, and the call is refused at once as `PERMISSION_DENIED` with
+  reason `PAYMENT_REQUIRED`.
+- **Uncertain.** The call went out and no answer began within 30 seconds
+  (enough for a spawn, which waits for the child's process to start on the
+  far side), or the link failed under it, mid-stream included. That is `ABORTED` for every call: the
+  sender holds an input as uncertain and settles it at its next catch-up, and
+  nothing sends it again.
 
-Forwarding goes one hop. To a paired host the services answer only for this
-host's own agents and never pass a call on, so no two hosts can bounce a call between
-them, and no host reaches a third host's agent, or speaks for one, through
-another.
+A carried call goes one hop. A call that arrives on a link is answered by the
+host it arrived at, for its own agents only, and never carried on, so no two
+hosts can bounce a call between them, and no host reaches a third host's
+agent, or speaks for one, through another.
 
 `GetBlob` is answered from this host first: a replica's blob that was fetched
 before is read from the replica directory. Otherwise the owner is asked, the
@@ -1004,8 +1001,8 @@ entry's `problem`. [Workspaces](WORKSPACES.md) has the lifecycle in full.
 ### The client services on a link
 
 A paired daemon calls the same `AgentService` and `SessionService` over a link
-stream (`PeerApi` in `crates/node/src/edge/peer.rs` serves and answers them,
-apart from the local sockets' `ClientApi`); replication is a daemon being a client of
+stream (`crates/node/src/edge/peer.rs` serves the services of
+`crates/node/src/api` there, as the local sockets do); replication is a daemon being a client of
 its peer. The caller is the host whose pinned key the stream's handshake
 presented, and a call without one is refused as `UNAUTHENTICATED`. Only amux
 daemons call them, and each stamps what it says on behalf of its own callers,

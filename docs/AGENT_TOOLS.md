@@ -11,8 +11,9 @@ and it has no kind-specific code for any of it: the recipient's own agent
 process decides how a message reaches its provider.
 
 The tool server is [`crates/agent/src/tools.rs`](../crates/agent/src/tools.rs).
-The daemon's side is `ClientApi` in
-[`crates/node/src/grpc.rs`](../crates/node/src/grpc.rs), the sender and
+The daemon's side is the services in
+[`crates/node/src/api`](../crates/node/src/api), which take the caller from
+the tools socket the call came in on, the sender and
 attachments a message needs before it is handed over in
 [`crates/node/src/relay.rs`](../crates/node/src/relay.rs), and the message
 lanes and the parent outbox in the daemon core's
@@ -91,7 +92,7 @@ process makes a spawn's call under the same rule.
 | `hosts` | none | `{"hosts": [...]}`, the trusted hosts | the same inventory |
 | `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` |
 | `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `CreateAgent`, made by the agent process |
-| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `FileAgent` (closed) |
+| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `SetFiling` (closed) |
 | `status` | `working_on`: a string, or null | `ok` | nothing |
 | `attach` | `path`, `name?` | the attachment element | nothing |
 
@@ -166,7 +167,7 @@ conversation, as the tool's description says for every caller.
 ### stop
 
 Stops one of the caller's own direct children, exactly as a person's close
-does: `FileAgent` with `FILING_CLOSED` on the tools socket. The daemon checks
+does: `SetFiling` with `FILING_CLOSED` on the tools socket. The daemon checks
 the lineage and refuses any other agent with `PERMISSION_DENIED`. The child's
 turn is cancelled the provider's own way, the child ends as stopped and filed
 as closed, out of the agents' listing, and the stopped child's own

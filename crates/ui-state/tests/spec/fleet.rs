@@ -163,6 +163,35 @@ fn online(id: &str) -> FleetMsg {
     )))
 }
 
+fn offline(id: &str) -> FleetMsg {
+    ev(inventory_event::Of::Host(HostEntry::trusted_host(
+        id.as_bytes().to_vec(),
+        id,
+        wire::trusted::Reach::Offline(wire::Offline::default()),
+    )))
+}
+
+/// A link counts once, when the host is first read online after reading
+/// it otherwise: listings that read the same link agree on its count, and
+/// one read after the link went and came back does not, whichever
+/// listings a screen looked at in between.
+#[test]
+fn each_link_read_coming_up_counts_once() {
+    let mut fleet = FleetState::new();
+    assert_eq!(fleet.links(b"a"), 0, "never read");
+    fleet.update(offline("a"));
+    assert_eq!(fleet.links(b"a"), 0, "never linked");
+    fleet.update(online("a"));
+    assert_eq!(fleet.links(b"a"), 1);
+    fleet.update(online("a"));
+    assert_eq!(fleet.links(b"a"), 1, "the same link read again");
+    fleet.update(offline("a"));
+    assert_eq!(fleet.links(b"a"), 1);
+    fleet.update(online("a"));
+    assert_eq!(fleet.links(b"a"), 2, "another link");
+    assert_eq!(fleet.links(b"b"), 0, "each host counts its own");
+}
+
 /// A stop that could not reach a host this client still read as online,
 /// as when its own daemon restarts, is held; the stream that reopens names
 /// the host online again with no away in between, and the stop goes.

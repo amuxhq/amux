@@ -66,14 +66,14 @@ enum Cards {
     }
 
     static func host(
-        _ id: HostId = desk, name: String = "desk", reach: Reach = .online(.direct),
+        _ id: HostId = desk, name: String = "desk", reach: Reach = .online(.direct), link: UInt64 = 0,
         trusted: Bool = true, candidate: Bool = false, local: Bool = false, addrs: [String] = [],
         relayOnly: Bool = false, through: String? = nil, pairingOpen: Bool = false,
         signedIn: Bool? = nil, claudeKind: Kind? = nil
     ) -> HostView {
         HostView(
             hostId: id.bytes, name: name, local: local, trusted: trusted, candidate: candidate,
-            reach: reach, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
+            reach: reach, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: [], claudeKind: claudeKind, lastDialError: nil, platform: nil,
             signedIn: signedIn, through: through, version: nil)
     }

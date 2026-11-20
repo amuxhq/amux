@@ -86,6 +86,23 @@ final class HostsStoreTests: XCTestCase {
         XCTAssertEqual(later.connecting, [], "a machine that answered and went is gone")
     }
 
+    /// The listing that says a link from before coming forward went can be
+    /// skipped, the runtime listing the machine linked again by the next one
+    /// the phone reads: a newer link settles it all the same, and when that
+    /// link goes the machine is gone, not connecting.
+    func testANewerLinkSettlesAMachineWhoseUnlinkedReadWasSkipped() {
+        let hosts = HostsStore()
+        hosts.show([Cards.host(studio, name: "studio", reach: .online(.direct), link: 1)])
+        hosts.cameForward()
+        hosts.show([Cards.host(studio, name: "studio", reach: .online(.direct), link: 1)])
+        XCTAssertEqual(hosts.connecting, [], "drawn linked while it is read so")
+
+        hosts.show([Cards.host(studio, name: "studio", reach: .online(.direct), link: 2)])
+        XCTAssertEqual(hosts.connecting, [])
+        hosts.show([Cards.host(studio, name: "studio", reach: .offline(.plain), link: 2)])
+        XCTAssertEqual(hosts.connecting, [], "a machine that answered since and went is gone")
+    }
+
     /// A machine nothing dials at all is not connecting for ever.
     func testWaitingStopsAfterItsPatience() {
         let hosts = HostsStore()

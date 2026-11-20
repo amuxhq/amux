@@ -45,11 +45,13 @@ public final class HostsStore {
     /// forward. Nil until a listing fills it with every trusted machine:
     /// the last one, as the app comes forward, or the first one there is.
     @ObservationIgnored private var unsettled: Set<HostId>?
-    /// The machines read linked as the app came forward, whose links went
-    /// while it was away: a listing can still say they are linked until the
-    /// runtime has heard them go, so none of them is settled by being read
-    /// linked until it has been read unlinked once.
-    @ObservationIgnored private var linkedBefore: Set<HostId> = []
+    /// The machines read linked as the app came forward, with the link each
+    /// was read on. Those links went while the app was away, but a listing
+    /// can still say they are up until the runtime has heard them go, so a
+    /// machine is settled by being read linked only on a newer link. The
+    /// listings in between are not all seen, so one saying the old link
+    /// went may never be read.
+    @ObservationIgnored private var linkedBefore: [HostId: UInt64] = [:]
     @ObservationIgnored private var patience: Task<Void, Never>?
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
@@ -76,7 +78,9 @@ public final class HostsStore {
     /// anything is listed after.
     public func cameForward() {
         unsettled = nil
-        linkedBefore = Set(hosts.filter(\.online).compactMap(\.id))
+        linkedBefore = Dictionary(
+            hosts.filter(\.online).compactMap { host in host.id.map { ($0, host.link) } },
+            uniquingKeysWith: { _, last in last })
         if !hosts.isEmpty { settle(hosts) }
         patience?.cancel()
         patience = Task { [weak self] in
@@ -90,7 +94,7 @@ public final class HostsStore {
     public func stopWaiting() {
         patience?.cancel()
         unsettled = []
-        linkedBefore = []
+        linkedBefore = [:]
         connecting = []
     }
 
@@ -108,16 +112,17 @@ public final class HostsStore {
         var unsettled = self.unsettled ?? Set(ids)
         for host in trusted {
             guard let id = host.id else { continue }
-            if host.online, linkedBefore.contains(id) { continue }
-            linkedBefore.remove(id)
+            if host.online, let before = linkedBefore[id], host.link <= before { continue }
+            linkedBefore[id] = nil
             let waiting = host.reach == .offline(.plain) && host.lastDialError == nil
             if !waiting { unsettled.remove(id) }
         }
         unsettled.formIntersection(ids)
-        linkedBefore.formIntersection(ids)
+        let listed = Set(ids)
+        linkedBefore = linkedBefore.filter { listed.contains($0.key) }
         self.unsettled = unsettled
         // One still read linked is drawn linked, whatever settles it.
-        let shown = unsettled.subtracting(linkedBefore)
+        let shown = unsettled.subtracting(linkedBefore.keys)
         if connecting != shown { connecting = shown }
     }
 

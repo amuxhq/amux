@@ -218,6 +218,7 @@ impl AppRuntime {
                 trusted: host.trusted().is_some(),
                 candidate: host.candidate().is_some(),
                 reach: ui_view::reach(&fleet, &self.local_host, host.host_id()),
+                link: fleet.links(host.host_id()),
                 platform: Some(host.platform())
                     .filter(|platform| *platform != wire::Platform::Unspecified),
                 version: host.version().map(str::to_owned),

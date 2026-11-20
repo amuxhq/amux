@@ -188,6 +188,10 @@ pub struct FleetState {
     held_closes: BTreeSet<AgentKey>,
     /// Listings finished: every CaughtUp, the first included.
     listings: u64,
+    /// The links to each host this client has read come up: see
+    /// [`FleetState::links`]. Kept for a host no longer listed, so a count
+    /// never goes back.
+    links: BTreeMap<HostId, u64>,
     /// Held closes whose host is back, for the driver to send again.
     released_closes: Vec<AgentKey>,
 }
@@ -241,6 +245,15 @@ impl FleetState {
     /// included; a close's call notes it as it leaves.
     pub fn listings(&self) -> u64 {
         self.listings
+    }
+
+    /// How many links to `host` this client has read come up: one more
+    /// each time it reads the host online when it last read it otherwise,
+    /// or not at all. Two listings that both read a host online read the
+    /// same link when this is the same in both, however many listings in
+    /// between were never looked at.
+    pub fn links(&self, host: &[u8]) -> u64 {
+        self.links.get(host).copied().unwrap_or(0)
     }
 
     fn host_online(&self, host: &[u8]) -> bool {
@@ -384,6 +397,9 @@ impl FleetState {
                         }
                         let online = host.online().is_some();
                         let host_id = host.host_id().to_vec();
+                        if online && !self.host_online(&host_id) {
+                            *self.links.entry(host_id.clone()).or_default() += 1;
+                        }
                         self.hosts.insert(host.host_id().to_vec(), host);
                         if online {
                             self.release_closes(|agent| agent.host == host_id, &mut changed);

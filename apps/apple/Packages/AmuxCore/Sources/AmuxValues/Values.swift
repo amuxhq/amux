@@ -3980,6 +3980,11 @@ public struct HostView: Codable, Hashable, Sendable {
     public var candidate: Bool
     /// How this device reaches it now, and over which route.
     public var reach: Reach
+    /// How many links to it this device has read come up: one more each
+    /// time it reads the host linked after reading it otherwise. Two
+    /// listings that read it linked with the same count read the same
+    /// link, however many listings went by unread in between.
+    public var link: UInt64
     /// Where discovery found it; what pairing dials.
     public var addrs: [String]
     /// For a candidate: only the cloud relay reaches it, which carries a
@@ -4010,13 +4015,14 @@ public struct HostView: Codable, Hashable, Sendable {
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, link: UInt64, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
         self.trusted = trusted
         self.candidate = candidate
         self.reach = reach
+        self.link = link
         self.addrs = addrs
         self.relayOnly = relayOnly
         self.pairingOpen = pairingOpen
@@ -4037,6 +4043,7 @@ public struct HostView: Codable, Hashable, Sendable {
         case trusted
         case candidate
         case reach
+        case link
         case addrs
         case relayOnly = "relay_only"
         case pairingOpen = "pairing_open"

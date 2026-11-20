@@ -284,7 +284,7 @@ public enum Stories {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: number, count: 16), name: name, local: local, trusted: true, candidate: false,
-            reach: reach, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [],
+            reach: reach, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [],
             claudeKind: .claudeSdk, lastDialError: nil, platform: platform, signedIn: true, through: nil,
             version: "0.9.0")
     }

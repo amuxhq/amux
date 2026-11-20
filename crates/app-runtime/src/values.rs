@@ -448,6 +448,11 @@ pub struct HostView {
     pub candidate: bool,
     /// How this device reaches it now, and over which route.
     pub reach: Reach,
+    /// How many links to it this device has read come up: one more each
+    /// time it reads the host linked after reading it otherwise. Two
+    /// listings that read it linked with the same count read the same
+    /// link, however many listings went by unread in between.
+    pub link: u64,
     /// The operating system it runs, when it said.
     pub platform: Option<Platform>,
     pub version: Option<String>,

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use acp_protocol::{AgentMessage, AgentResponse, ClientMessage, RequestId};
+use acp_protocol::{AgentMessage, AgentResponse, ClientMessage, ClientResponse, RequestId};
 use serde_json::Value;
 
 /// The agents whose recordings are held to this crate.
@@ -43,9 +43,17 @@ fn recordings() -> Vec<PathBuf> {
     found
 }
 
-/// One recording's lines: where each came from, whether the agent wrote
-/// it, and the line.
-type Recording = Vec<(String, bool, String)>;
+/// One recorded line: where in the corpus it is, the agent process that
+/// read or wrote it (a recording may span a restart), whether the agent
+/// wrote it, and the line.
+struct Line {
+    place: String,
+    process: String,
+    from_agent: bool,
+    line: String,
+}
+
+type Recording = Vec<Line>;
 
 /// Each recording's lines, in the order they were written.
 fn recorded() -> Vec<Recording> {
@@ -59,14 +67,25 @@ fn recorded() -> Vec<Recording> {
         let text = std::fs::read_to_string(&path).expect("recording");
         let mut lines = Vec::new();
         for (number, record) in text.lines().enumerate() {
+            let place = format!("{name}:{}", number + 1);
             let record: Value = serde_json::from_str(record).expect("record is JSON");
             let line = record["line"].as_str().expect("line").to_owned();
             let from_agent = match record["dir"].as_str() {
                 Some("stdout") => true,
                 Some("stdin") => false,
-                other => panic!("{name}:{}: direction {other:?}", number + 1),
+                other => panic!("{place}: direction {other:?}"),
             };
-            lines.push((format!("{name}:{}", number + 1), from_agent, line));
+            let process = match &record["process"] {
+                Value::String(process) => process.clone(),
+                Value::Null => String::new(),
+                other => other.to_string(),
+            };
+            lines.push(Line {
+                place,
+                process,
+                from_agent,
+                line,
+            });
         }
         recorded.push(lines);
     }
@@ -87,7 +106,13 @@ fn lines() -> Recording {
 fn every_recorded_line_is_known() {
     let mut failures = Vec::new();
     let all = lines();
-    for (place, from_agent, line) in &all {
+    for Line {
+        place,
+        from_agent,
+        line,
+        ..
+    } in &all
+    {
         let result = if *from_agent {
             acp_protocol::strict(line.as_bytes()).map(drop)
         } else {
@@ -109,7 +134,13 @@ fn every_recorded_line_is_known() {
 #[test]
 fn every_recorded_line_encodes_back_to_the_same_json() {
     let mut failures = Vec::new();
-    for (place, from_agent, line) in lines() {
+    for Line {
+        place,
+        from_agent,
+        line,
+        ..
+    } in lines()
+    {
         let encoded = if from_agent {
             acp_protocol::encode_server(&acp_protocol::decode(line.as_bytes()).expect("decodes"))
         } else {
@@ -131,40 +162,98 @@ fn every_recorded_line_encodes_back_to_the_same_json() {
     );
 }
 
-/// Every agent answer to one of amux's requests in `recording`, read as
-/// the answer to that request: a failure per answer that does not.
+/// The method a line asks, with the id it is to be answered by: a
+/// request of either side, a vendor's own included.
+fn asked(line: &Line) -> Option<(RequestId, String)> {
+    let bytes = line.line.as_bytes();
+    if line.from_agent {
+        match acp_protocol::decode(bytes).ok()? {
+            AgentMessage::Request { id, request, .. } => Some((id, request.method().to_owned())),
+            AgentMessage::Extension { extension, .. } => Some((extension.id?, extension.method)),
+            _ => None,
+        }
+    } else {
+        match acp_protocol::decode_client(bytes).ok()? {
+            ClientMessage::Request { id, request, .. } => Some((id, request.method().to_owned())),
+            ClientMessage::Extension { extension, .. } => Some((extension.id?, extension.method)),
+            _ => None,
+        }
+    }
+}
+
+/// The result a line answers with, and its id; None for a line that is no
+/// answer. An error answer has no result to read.
+fn answered(line: &Line) -> Option<(RequestId, Option<Value>)> {
+    let bytes = line.line.as_bytes();
+    if line.from_agent {
+        match acp_protocol::decode(bytes).ok()? {
+            AgentMessage::Response { id, result, .. } => Some((id, result.ok())),
+            _ => None,
+        }
+    } else {
+        match acp_protocol::decode_client(bytes).ok()? {
+            ClientMessage::Response { id, response, .. } => {
+                let result = response
+                    .ok()
+                    .map(|response| serde_json::to_value(response).expect("answers serialize"));
+                Some((id, result))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Reads `result` strictly as the answer to `method`, and writes it back.
+fn reread(from_agent: bool, method: &str, result: &Value) -> Result<Value, String> {
+    let answer = if from_agent {
+        AgentResponse::strict_read(method, result)
+            .map(|answer| answer.map(|answer| serde_json::to_value(answer).unwrap()))
+    } else {
+        ClientResponse::strict_read(method, result)
+            .map(|answer| answer.map(|answer| serde_json::to_value(answer).unwrap()))
+    };
+    match answer {
+        None => Err(format!("{method} has no answer type")),
+        Some(Err(error)) => Err(format!("{method}: {error}")),
+        Some(Ok(again)) => Ok(again),
+    }
+}
+
+/// Every answer in `recording`, from either side, read as the answer to
+/// the request it answers: the one the other side sent with its id, in the
+/// same agent process. A failure per answer that does not read, or answers
+/// nothing.
 fn misread_responses(recording: &Recording) -> Vec<String> {
     let mut failures = Vec::new();
-    let mut asked: HashMap<RequestId, String> = HashMap::new();
-    for (place, from_agent, line) in recording {
-        if !from_agent {
-            if let Ok(ClientMessage::Request { id, request, .. }) =
-                acp_protocol::decode_client(line.as_bytes())
-            {
-                asked.insert(id, request.method().to_owned());
-            }
+    // Requests not yet answered, by process, the side that asked, and id.
+    let mut open: HashMap<(String, bool, RequestId), String> = HashMap::new();
+    for line in recording {
+        if let Some((id, method)) = asked(line) {
+            open.insert((line.process.clone(), line.from_agent, id), method);
             continue;
         }
-        let Ok(AgentMessage::Response { id, result, .. }) = acp_protocol::decode(line.as_bytes())
+        let Some((id, result)) = answered(line) else {
+            continue;
+        };
+        let place = &line.place;
+        let asker = if line.from_agent { "amux" } else { "the agent" };
+        let Some(method) = open.remove(&(line.process.clone(), !line.from_agent, id.clone()))
         else {
+            failures.push(format!(
+                "{place}: answers {id}, which {asker} never asked in process {:?}",
+                line.process
+            ));
             continue;
         };
-        let Ok(result) = result else { continue };
-        let Some(method) = asked.get(&id) else {
-            failures.push(format!("{place}: answers {id}, which amux never asked"));
-            continue;
-        };
-        match AgentResponse::strict_read(method, &result) {
-            None => failures.push(format!("{place}: {method} has no answer type")),
-            Some(Err(error)) => failures.push(format!("{place}: {method}: {error}")),
-            Some(Ok(answer)) => {
-                let again = serde_json::to_value(&answer).expect("answers serialize");
-                if again != result {
-                    let mut differences = Vec::new();
-                    differ("", &result, &again, &mut differences);
-                    failures.push(format!("{place}: {method} {}", differences.join(", ")));
-                }
+        let Some(result) = result else { continue };
+        match reread(line.from_agent, &method, &result) {
+            Ok(again) if again == result => {}
+            Ok(again) => {
+                let mut differences = Vec::new();
+                differ("", &result, &again, &mut differences);
+                failures.push(format!("{place}: {method} {}", differences.join(", ")));
             }
+            Err(error) => failures.push(format!("{place}: {error}")),
         }
     }
     failures

@@ -36,8 +36,12 @@ impl ContentBlock {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextContent {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<Annotations>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub annotations: Option<Option<Annotations>>,
     pub text: String,
     #[serde(
         rename = "_meta",
@@ -53,13 +57,21 @@ pub struct TextContent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageContent {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<Annotations>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub annotations: Option<Option<Annotations>>,
     /// Base64.
     pub data: String,
     pub mime_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uri: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub uri: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -74,8 +86,12 @@ pub struct ImageContent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioContent {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<Annotations>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub annotations: Option<Option<Annotations>>,
     /// Base64.
     pub data: String,
     pub mime_type: String,
@@ -93,17 +109,37 @@ pub struct AudioContent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceLink {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<Annotations>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mime_type: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub annotations: Option<Option<Annotations>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mime_type: Option<Option<String>>,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub size: Option<Option<i64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
     pub uri: String,
     #[serde(
         rename = "_meta",
@@ -119,8 +155,12 @@ pub struct ResourceLink {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddedResource {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<Annotations>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub annotations: Option<Option<Annotations>>,
     pub resource: EmbeddedResourceResource,
     #[serde(
         rename = "_meta",
@@ -144,8 +184,12 @@ pub enum EmbeddedResourceResource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextResourceContents {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mime_type: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mime_type: Option<Option<String>>,
     pub text: String,
     pub uri: String,
     #[serde(
@@ -164,8 +208,12 @@ pub struct TextResourceContents {
 pub struct BlobResourceContents {
     /// Base64.
     pub blob: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mime_type: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mime_type: Option<Option<String>>,
     pub uri: String,
     #[serde(
         rename = "_meta",
@@ -182,12 +230,24 @@ pub struct BlobResourceContents {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Annotations {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub audience: Option<Vec<Role>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_modified: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub priority: Option<Number>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub audience: Option<Option<Vec<Role>>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_modified: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub priority: Option<Option<Number>>,
     #[serde(
         rename = "_meta",
         default,

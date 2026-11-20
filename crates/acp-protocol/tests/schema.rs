@@ -486,9 +486,9 @@ fn reread(direction: Direction, line: &Value) -> Result<Value, String> {
     Ok(serde_json::from_slice(&encoded).unwrap())
 }
 
-/// Checks one sample, read by `read`: it reads, writes back the same
-/// (unless it holds nulls, which the crate does not keep apart from
-/// absence), and stops reading when any required field is taken out.
+/// Checks one sample, read by `read`: it reads, writes back the same (a
+/// null as a null, not as an absent field), and stops reading when any
+/// required field is taken out.
 fn check(
     sample: &Sample,
     read: &dyn Fn(&Value) -> Result<Value, String>,
@@ -499,8 +499,10 @@ fn check(
     } = sample;
     match read(value) {
         Err(error) => failures.push(format!("{name}: {error}\n    {value}")),
-        Ok(again) if *fill != Fill::Nulls && again != *value => {
-            failures.push(format!("{name}: wrote {again}\n    read {value}"))
+        Ok(again) if again != *value => {
+            let mut differences = Vec::new();
+            differ("", value, &again, &mut differences);
+            failures.push(format!("{name}: {}", differences.join(", ")));
         }
         Ok(_) => {}
     }
@@ -872,4 +874,26 @@ fn every_stable_def_is_reached_by_a_message() {
         unreached.is_empty(),
         "stable defs no message reaches: {unreached:?}"
     );
+}
+
+/// Where two JSON values differ, as paths with what each side holds.
+fn differ(path: &str, read: &Value, wrote: &Value, out: &mut Vec<String>) {
+    match (read, wrote) {
+        (Value::Object(a), Value::Object(b)) => {
+            for key in a.keys().chain(b.keys().filter(|key| !a.contains_key(*key))) {
+                let inner = format!("{path}/{key}");
+                match (a.get(key), b.get(key)) {
+                    (Some(x), Some(y)) => differ(&inner, x, y, out),
+                    (x, y) => out.push(format!("{inner} read {x:?} wrote {y:?}")),
+                }
+            }
+        }
+        (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
+            for (index, (x, y)) in a.iter().zip(b).enumerate() {
+                differ(&format!("{path}/{index}"), x, y, out);
+            }
+        }
+        (a, b) if a != b => out.push(format!("{path} read {a} wrote {b}")),
+        _ => {}
+    }
 }

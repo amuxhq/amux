@@ -399,7 +399,10 @@ fn antigravitys_initialize_answer_reads_what_it_offers() {
         capabilities.meta,
         Some(json!({ "antigravity": { "systemPrompt": { "append": true }, "tier": true } }))
     );
-    assert_eq!(initialize.agent_info.expect("info").version, "1.5.13");
+    assert_eq!(
+        initialize.agent_info.flatten().expect("info").version,
+        "1.5.13"
+    );
     let method = &initialize.auth_methods.expect("auth methods")[0];
     assert!(matches!(method, AuthMethod::Agent(_)));
     assert_eq!(method.id(), Some("oauth-personal"));
@@ -447,8 +450,8 @@ fn a_permission_request_reads_its_offers_and_its_answer_writes_the_choice() {
             &PermissionOptionKind::RejectOnce
         ]
     );
-    assert_eq!(ask.tool_call.kind, Some(ToolKind::Execute));
-    assert_eq!(ask.tool_call.status, Some(ToolCallStatus::Pending));
+    assert_eq!(ask.tool_call.kind, Some(Some(ToolKind::Execute)));
+    assert_eq!(ask.tool_call.status, Some(Some(ToolCallStatus::Pending)));
     assert_eq!(
         ask.tool_call.raw_input,
         Some(json!({ "command": "./make.sh" }))
@@ -516,7 +519,7 @@ fn config_options_read_their_category_values_and_current_value() {
     else {
         panic!("not a load answer");
     };
-    let Some(SessionConfigOption::Select(select)) = config_options.unwrap().pop() else {
+    let Some(SessionConfigOption::Select(select)) = config_options.flatten().unwrap().pop() else {
         panic!("a select");
     };
     let values: Vec<_> = select
@@ -538,10 +541,10 @@ fn a_turns_end_reads_its_reason_and_tokens() {
         panic!("not a prompt answer");
     };
     assert_eq!(stop_reason, StopReason::EndTurn);
-    let usage = usage.expect("usage");
+    let usage = usage.flatten().expect("usage");
     assert_eq!(
         (usage.total_tokens, usage.thought_tokens),
-        (13023, Some(10))
+        (13023, Some(Some(10)))
     );
 }
 
@@ -558,7 +561,7 @@ fn usage_keeps_a_whole_cost_whole() {
         panic!("not usage");
     };
     assert_eq!((usage.used, usage.size), (13010, 200000));
-    let cost = usage.cost.expect("cost");
+    let cost = usage.cost.flatten().expect("cost");
     assert_eq!(serde_json::to_string(&cost.amount).unwrap(), "0");
 }
 
@@ -572,7 +575,7 @@ fn a_form_reads_its_fields_and_its_answer_writes_them() {
         panic!("not a form");
     };
     assert_eq!(form.session_id.as_deref(), Some("s1"));
-    assert_eq!(form.tool_call_id.as_deref(), Some("call_2"));
+    assert_eq!(form.tool_call_id.flatten().as_deref(), Some("call_2"));
     let fields = form.requested_schema.properties.expect("fields");
     let Some(ElicitationPropertySchema::String(choice)) = fields.get("q1") else {
         panic!("a string field");
@@ -581,17 +584,21 @@ fn a_form_reads_its_fields_and_its_answer_writes_them() {
         .one_of
         .iter()
         .flatten()
+        .flatten()
         .map(|option| (option.value.as_str(), option.title.as_str()))
         .collect();
     assert_eq!(titles, [("1", "Tea"), ("2", "Coffee")]);
-    assert_eq!(form.requested_schema.required, Some(vec!["q1".to_owned()]));
+    assert_eq!(
+        form.requested_schema.required,
+        Some(Some(vec!["q1".to_owned()]))
+    );
 
     let answer = CreateElicitationResponse::Accept(ElicitationAccept {
-        content: Some(
+        content: Some(Some(
             [("q1".to_owned(), ElicitationValue::String("1".into()))]
                 .into_iter()
                 .collect(),
-        ),
+        )),
         meta: None,
         extra: Extra::new(),
     });
@@ -626,20 +633,20 @@ fn the_handshake_encodes_to_the_bytes_amux_means() {
         ClientRequest::Initialize(InitializeRequest {
             protocol_version: PROTOCOL_VERSION,
             client_capabilities: Some(ClientCapabilities {
-                elicitation: Some(ElicitationCapabilities {
-                    form: Some(Empty::default()),
-                    url: Some(Empty::default()),
+                elicitation: Some(Some(ElicitationCapabilities {
+                    form: Some(Some(Empty::default())),
+                    url: Some(Some(Empty::default())),
                     ..Default::default()
-                }),
+                })),
                 ..Default::default()
             }),
-            client_info: Some(Implementation {
+            client_info: Some(Some(Implementation {
                 name: "amux".into(),
-                title: Some("amux".into()),
+                title: Some(Some("amux".into())),
                 version: "0.1.0".into(),
                 meta: None,
                 extra: Extra::new(),
-            }),
+            })),
             meta: None,
             extra: Extra::new(),
         }),

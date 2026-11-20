@@ -66,8 +66,12 @@ tagged_enum! {
 pub struct ContentChunk {
     pub content: ContentBlock,
     /// The message the chunk belongs to, where the agent says.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub message_id: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -87,8 +91,12 @@ pub struct ToolCall {
     /// For people to read: what the call does.
     pub title: String,
     /// The tool's own name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub name: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ToolKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -134,20 +142,44 @@ pub struct ToolCall {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallUpdate {
     pub tool_call_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<ToolKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<ToolCallStatus>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub kind: Option<Option<ToolKind>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub status: Option<Option<ToolCallStatus>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub name: Option<Option<String>>,
     /// Replaces the call's content.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<Vec<ToolCallContent>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub content: Option<Option<Vec<ToolCallContent>>>,
     /// Replaces the call's locations.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub locations: Option<Vec<ToolCallLocation>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub locations: Option<Option<Vec<ToolCallLocation>>>,
     #[serde(
         default,
         deserialize_with = "crate::present",
@@ -241,8 +273,12 @@ pub struct Content {
 pub struct Diff {
     pub path: String,
     /// None for a new file.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub old_text: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub old_text: Option<Option<String>>,
     pub new_text: String,
     #[serde(
         rename = "_meta",
@@ -275,8 +311,12 @@ pub struct Terminal {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallLocation {
     pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub line: Option<Option<u32>>,
     #[serde(
         rename = "_meta",
         default,
@@ -424,10 +464,18 @@ pub struct ConfigOptionUpdate {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfoUpdate {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated_at: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -445,8 +493,12 @@ pub struct SessionInfoUpdate {
 pub struct UsageUpdate {
     pub used: u64,
     pub size: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost: Option<Cost>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cost: Option<Option<Cost>>,
     #[serde(
         rename = "_meta",
         default,
@@ -481,8 +533,12 @@ pub struct Cost {
 pub struct Notice {
     pub severity: NoticeSeverity,
     pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -507,11 +563,19 @@ string_enum! {
 pub struct CompactionUpdate {
     pub compaction_id: String,
     pub status: CompactionStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<Vec<ContentBlock>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub summary: Option<Option<Vec<ContentBlock>>>,
     /// Why a compaction failed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub error: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,

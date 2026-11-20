@@ -59,8 +59,12 @@ pub struct InitializeRequest {
     pub protocol_version: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_capabilities: Option<ClientCapabilities>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_info: Option<Implementation>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub client_info: Option<Option<Implementation>>,
     #[serde(
         rename = "_meta",
         default,
@@ -98,8 +102,12 @@ pub struct NewSessionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_directories: Option<Vec<String>>,
     pub mcp_servers: Vec<McpServer>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<SystemPrompt>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_prompt: Option<Option<SystemPrompt>>,
     #[serde(
         rename = "_meta",
         default,
@@ -121,8 +129,12 @@ pub struct LoadSessionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_directories: Option<Vec<String>>,
     pub session_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<SystemPrompt>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_prompt: Option<Option<SystemPrompt>>,
     #[serde(
         rename = "_meta",
         default,
@@ -145,8 +157,12 @@ pub struct ResumeSessionRequest {
     pub additional_directories: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<McpServer>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<SystemPrompt>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_prompt: Option<Option<SystemPrompt>>,
     #[serde(
         rename = "_meta",
         default,
@@ -179,10 +195,18 @@ pub struct SessionRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ListSessionsRequest {
     /// Only the sessions of this folder.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cwd: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cursor: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -298,8 +322,12 @@ pub struct SessionOptionsRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_directories: Option<Vec<String>>,
     /// The session whose options to resolve; a new one's when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub session_id: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -322,8 +350,12 @@ pub struct ForkSessionRequest {
     pub additional_directories: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<McpServer>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<SystemPrompt>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_prompt: Option<Option<SystemPrompt>>,
     #[serde(
         rename = "_meta",
         default,
@@ -452,8 +484,12 @@ pub struct TerminalOutputResponse {
     /// Whether the output was cut to the request's byte limit.
     pub truncated: bool,
     /// Present once the command has exited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exit_status: Option<TerminalExitStatus>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub exit_status: Option<Option<TerminalExitStatus>>,
     #[serde(
         rename = "_meta",
         default,
@@ -468,10 +504,18 @@ pub struct TerminalOutputResponse {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalExitStatus {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exit_code: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signal: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub exit_code: Option<Option<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub signal: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,

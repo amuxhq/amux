@@ -30,8 +30,12 @@ pub struct ElicitationForm {
     pub requested_schema: ElicitationSchema,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tool_call_id: Option<Option<String>>,
     #[serde(
         default,
         deserialize_with = "crate::present",
@@ -57,8 +61,12 @@ pub struct ElicitationUrl {
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tool_call_id: Option<Option<String>>,
     #[serde(
         default,
         deserialize_with = "crate::present",
@@ -82,16 +90,28 @@ pub struct ElicitationUrl {
 pub struct ElicitationSchema {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ElicitationSchemaType>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
     /// The fields by their names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub properties: Option<BTreeMap<String, ElicitationPropertySchema>>,
     /// The names of the fields an answer must fill.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub required: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub required: Option<Option<Vec<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -125,26 +145,63 @@ tagged_enum! {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StringPropertySchema {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_length: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_length: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pattern: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format: Option<StringFormat>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub min_length: Option<Option<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_length: Option<Option<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pattern: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub format: Option<Option<StringFormat>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<Option<String>>,
     /// The choices, by value.
-    #[serde(rename = "enum", default, skip_serializing_if = "Option::is_none")]
-    pub values: Option<Vec<String>>,
+    #[serde(
+        rename = "enum",
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub values: Option<Option<Vec<String>>>,
     /// The choices, each with a title.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub one_of: Option<Vec<EnumOption>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub one_of: Option<Option<Vec<EnumOption>>>,
     #[serde(
         rename = "_meta",
         default,
@@ -168,16 +225,36 @@ string_enum! {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NumberPropertySchema {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub minimum: Option<Number>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub maximum: Option<Number>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default: Option<Number>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub minimum: Option<Option<Number>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub maximum: Option<Option<Number>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<Option<Number>>,
     #[serde(
         rename = "_meta",
         default,
@@ -192,16 +269,36 @@ pub struct NumberPropertySchema {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IntegerPropertySchema {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub minimum: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub maximum: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub minimum: Option<Option<i64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub maximum: Option<Option<i64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<Option<i64>>,
     #[serde(
         rename = "_meta",
         default,
@@ -216,12 +313,24 @@ pub struct IntegerPropertySchema {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BooleanPropertySchema {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<Option<bool>>,
     #[serde(
         rename = "_meta",
         default,
@@ -236,17 +345,37 @@ pub struct BooleanPropertySchema {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MultiSelectPropertySchema {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_items: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_items: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub min_items: Option<Option<u64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_items: Option<Option<u64>>,
     pub items: MultiSelectItems,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default: Option<Option<Vec<String>>>,
     #[serde(
         rename = "_meta",
         default,
@@ -307,8 +436,12 @@ pub struct EnumOption {
     #[serde(rename = "const")]
     pub value: String,
     pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -335,8 +468,12 @@ tagged_enum! {
 #[serde(rename_all = "camelCase")]
 pub struct ElicitationAccept {
     /// A form's answers, by field name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<BTreeMap<String, ElicitationValue>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub content: Option<Option<BTreeMap<String, ElicitationValue>>>,
     #[serde(
         rename = "_meta",
         default,

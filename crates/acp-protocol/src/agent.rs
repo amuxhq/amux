@@ -143,10 +143,18 @@ pub struct ReadTextFileRequest {
     pub session_id: String,
     pub path: String,
     /// The first line to read, from 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub line: Option<Option<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub limit: Option<Option<u32>>,
     #[serde(
         rename = "_meta",
         default,
@@ -184,10 +192,18 @@ pub struct CreateTerminalRequest {
     pub args: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env: Option<Vec<EnvVariable>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_byte_limit: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cwd: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub output_byte_limit: Option<Option<u64>>,
     #[serde(
         rename = "_meta",
         default,
@@ -227,8 +243,12 @@ pub struct InitializeResponse {
     pub agent_capabilities: Option<AgentCapabilities>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_methods: Option<Vec<AuthMethod>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_info: Option<Implementation>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_info: Option<Option<Implementation>>,
     #[serde(
         rename = "_meta",
         default,
@@ -245,12 +265,20 @@ pub struct InitializeResponse {
 #[serde(rename_all = "camelCase")]
 pub struct NewSessionResponse {
     pub session_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modes: Option<SessionModeState>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub modes: Option<Option<SessionModeState>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub models: Option<SessionModelState>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config_options: Option<Vec<SessionConfigOption>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub config_options: Option<Option<Vec<SessionConfigOption>>>,
     #[serde(
         rename = "_meta",
         default,
@@ -270,12 +298,20 @@ pub struct SessionSetup {
     /// The session answered for, as Antigravity echoes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modes: Option<SessionModeState>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub modes: Option<Option<SessionModeState>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub models: Option<SessionModelState>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config_options: Option<Vec<SessionConfigOption>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub config_options: Option<Option<Vec<SessionConfigOption>>>,
     #[serde(
         rename = "_meta",
         default,
@@ -292,8 +328,12 @@ pub struct SessionSetup {
 pub struct ListSessionsResponse {
     pub sessions: Vec<SessionInfo>,
     /// Where the next page starts, when there is one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub next_cursor: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -327,8 +367,12 @@ pub struct SetSessionConfigOptionResponse {
 pub struct PromptResponse {
     pub stop_reason: StopReason,
     /// The turn's tokens. Still unstable in ACP.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub usage: Option<Option<Usage>>,
     #[serde(
         rename = "_meta",
         default,
@@ -360,12 +404,24 @@ pub struct Usage {
     pub total_tokens: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_tokens: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cached_read_tokens: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cached_write_tokens: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub thought_tokens: Option<Option<u64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cached_read_tokens: Option<Option<u64>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cached_write_tokens: Option<Option<u64>>,
     #[serde(
         rename = "_meta",
         default,
@@ -410,16 +466,36 @@ string_enum! {
 pub struct AuthAccount {
     /// For people to read: an email, an organization.
     pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub organization: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub active: Option<Option<bool>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub name: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub email: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub organization: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,

@@ -25,9 +25,12 @@
 //! nested object (a session update kind, a content block type) is that
 //! enum's `Unknown`; an unknown spelling of a string enum is its `Other`;
 //! and unknown fields of a known object are kept in its `extra` map. Each
-//! object's `_meta`, ACP's place for vendor data, is kept as written.
-//! Encoding writes all of it back, so decoding then encoding a line gives
-//! the same JSON. [`strict`] turns every one of those fallbacks into a
+//! object's `_meta`, ACP's place for vendor data, is kept as written. A
+//! field the schema lets be null is an `Option<Option<T>>` (read with
+//! [`present_nullable`]): `None` when absent, `Some(None)` when null, as
+//! ACP gives some nulls a meaning of their own (a terminal killed by a
+//! signal has a null exit code). Encoding writes all of it back, so
+//! decoding then encoding a line gives the same JSON. [`strict`] turns every one of those fallbacks into a
 //! [`Drift`]: a method, tag, spelling or field this crate does not type, or
 //! an extension not listed in [`EXTENSIONS`]. That is how the recording
 //! checks catch an agent changing what it writes.

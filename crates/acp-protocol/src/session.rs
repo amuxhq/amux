@@ -18,8 +18,12 @@ use crate::{Empty, Extra};
 pub struct Implementation {
     pub name: String,
     /// For people to read; `name` when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
     pub version: String,
     #[serde(
         rename = "_meta",
@@ -41,12 +45,20 @@ pub struct ClientCapabilities {
     pub fs: Option<FileSystemCapabilities>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<ClientSessionCapabilities>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub session: Option<Option<ClientSessionCapabilities>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthCapabilities>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub elicitation: Option<ElicitationCapabilities>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub elicitation: Option<Option<ElicitationCapabilities>>,
     #[serde(
         rename = "_meta",
         default,
@@ -80,12 +92,24 @@ pub struct FileSystemCapabilities {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientSessionCapabilities {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub compaction: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config_options: Option<SessionConfigOptionsCapabilities>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notices: Option<Empty>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub compaction: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub config_options: Option<Option<SessionConfigOptionsCapabilities>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub notices: Option<Option<Empty>>,
     #[serde(
         rename = "_meta",
         default,
@@ -101,8 +125,12 @@ pub struct ClientSessionCapabilities {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionConfigOptionsCapabilities {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub boolean: Option<Empty>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub boolean: Option<Option<Empty>>,
     #[serde(
         rename = "_meta",
         default,
@@ -135,10 +163,18 @@ pub struct AuthCapabilities {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ElicitationCapabilities {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub form: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<Empty>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub form: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub url: Option<Option<Empty>>,
     #[serde(
         rename = "_meta",
         default,
@@ -242,28 +278,72 @@ pub struct SessionCapabilities {
     /// lists it here too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub list: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delete: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub additional_directories: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<SessionSystemPromptCapabilities>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resume: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub close: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fork: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub options: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archive: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<Empty>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub list: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub delete: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub additional_directories: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_prompt: Option<Option<SessionSystemPromptCapabilities>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resume: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub close: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fork: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub options: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub status: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub archive: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<Empty>>,
     #[serde(
         rename = "_meta",
         default,
@@ -280,8 +360,12 @@ pub struct SessionCapabilities {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSystemPromptCapabilities {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<SessionSystemPromptModeCapabilities>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mode: Option<Option<SessionSystemPromptModeCapabilities>>,
     #[serde(
         rename = "_meta",
         default,
@@ -296,8 +380,13 @@ pub struct SessionSystemPromptCapabilities {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSystemPromptModeCapabilities {
-    #[serde(rename = "override", default, skip_serializing_if = "Option::is_none")]
-    pub replace: Option<Empty>,
+    #[serde(
+        rename = "override",
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub replace: Option<Option<Empty>>,
     #[serde(
         rename = "_meta",
         default,
@@ -314,10 +403,18 @@ pub struct SessionSystemPromptModeCapabilities {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentAuthCapabilities {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logout: Option<Empty>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<Empty>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub logout: Option<Option<Empty>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub status: Option<Option<Empty>>,
     #[serde(
         rename = "_meta",
         default,
@@ -354,8 +451,8 @@ impl AuthMethod {
     /// What a person is told to do to sign in.
     pub fn description(&self) -> Option<&str> {
         match self {
-            Self::Terminal(method) => method.description.as_deref(),
-            Self::Agent(method) => method.description.as_deref(),
+            Self::Terminal(method) => method.description.as_ref()?.as_deref(),
+            Self::Agent(method) => method.description.as_ref()?.as_deref(),
             Self::Unknown(_) => None,
         }
     }
@@ -366,8 +463,12 @@ impl AuthMethod {
 pub struct AuthMethodAgent {
     pub id: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -384,8 +485,12 @@ pub struct AuthMethodAgent {
 pub struct AuthMethodTerminal {
     pub id: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     /// Arguments to the agent's own command that run the sign-in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
@@ -545,8 +650,12 @@ pub struct SessionModeState {
 pub struct SessionMode {
     pub id: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -619,8 +728,8 @@ impl SessionConfigOption {
     /// What the option sets, when the agent says.
     pub fn category(&self) -> Option<&SessionConfigOptionCategory> {
         match self {
-            Self::Select(option) => option.category.as_ref(),
-            Self::Boolean(option) => option.category.as_ref(),
+            Self::Select(option) => option.category.as_ref()?.as_ref(),
+            Self::Boolean(option) => option.category.as_ref()?.as_ref(),
             Self::Unknown(_) => None,
         }
     }
@@ -631,10 +740,18 @@ impl SessionConfigOption {
 pub struct SessionConfigSelect {
     pub id: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category: Option<SessionConfigOptionCategory>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category: Option<Option<SessionConfigOptionCategory>>,
     /// The value of the option chosen now.
     pub current_value: String,
     pub options: SessionConfigSelectOptions,
@@ -654,10 +771,18 @@ pub struct SessionConfigSelect {
 pub struct SessionConfigBoolean {
     pub id: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category: Option<SessionConfigOptionCategory>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub category: Option<Option<SessionConfigOptionCategory>>,
     pub current_value: bool,
     #[serde(
         rename = "_meta",
@@ -707,8 +832,12 @@ impl SessionConfigSelectOptions {
 pub struct SessionConfigSelectOption {
     pub value: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,
@@ -745,11 +874,19 @@ pub struct SessionInfo {
     pub cwd: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_directories: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
     /// When it last changed, in ISO 8601.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::present_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated_at: Option<Option<String>>,
     #[serde(
         rename = "_meta",
         default,

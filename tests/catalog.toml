@@ -156,7 +156,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "git-facts", kind = "lib", targets = ["git_facts"], features = [] },
-  { package = "git-facts", modules = ["facts"], features = [] },
+  { package = "git-facts", modules = ["facts", "snapshot"], features = [] },
 ]
 
 [[suite]]

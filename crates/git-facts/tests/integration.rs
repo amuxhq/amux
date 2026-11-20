@@ -2,3 +2,4 @@
 //! test binary: one link per crate instead of one per suite.
 
 mod facts;
+mod snapshot;

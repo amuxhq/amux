@@ -250,6 +250,13 @@ pub enum GitError {
     NotARepository,
     #[error("the branch shares no history with {0}")]
     NoForkPoint(String),
+    /// A file a snapshot listed was gone when git came to read it, on every
+    /// try: something in the folder keeps creating and deleting files.
+    #[error("{path} disappeared while the snapshot was taken, on every try")]
+    Vanished { path: String },
+    /// More changed and untracked files than a snapshot takes.
+    #[error("{count} changed or untracked files is more than the {cap} a snapshot takes")]
+    TooManyPaths { count: usize, cap: usize },
 }
 
 /// A worktree made for an agent.
@@ -874,6 +881,33 @@ struct Scratch<'a> {
 
 impl<'a> Scratch<'a> {
     async fn new(cwd: &'a Path) -> Result<Self, GitError> {
+        let scratch = Self::copied(cwd).await?;
+        let untracked = scratch
+            .checked(&["ls-files", "--others", "--exclude-standard", "-z"])
+            .await?;
+        // The paths go to git on its standard input as ls-files wrote them:
+        // a folder's untracked paths can together pass the platform's
+        // command-line limit, and are not always valid UTF-8.
+        if !untracked.is_empty() {
+            checked_with_input(
+                cwd,
+                Some(&scratch.index()),
+                &[
+                    "--literal-pathspecs",
+                    "add",
+                    "--intent-to-add",
+                    "--pathspec-from-file=-",
+                    "--pathspec-file-nul",
+                ],
+                untracked,
+            )
+            .await?;
+        }
+        Ok(scratch)
+    }
+
+    /// The copy of the person's index alone, nothing marked in it.
+    async fn copied(cwd: &'a Path) -> Result<Self, GitError> {
         let mut builder = tempfile::Builder::new();
         builder.prefix("amux-git-facts-");
         #[cfg(unix)]
@@ -907,29 +941,7 @@ impl<'a> Scratch<'a> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(GitError::Scratch(error)),
         }
-        let scratch = Self { cwd, dir };
-        let untracked = scratch
-            .checked(&["ls-files", "--others", "--exclude-standard", "-z"])
-            .await?;
-        // The paths go to git on its standard input as ls-files wrote them:
-        // a folder's untracked paths can together pass the platform's
-        // command-line limit, and are not always valid UTF-8.
-        if !untracked.is_empty() {
-            checked_with_input(
-                cwd,
-                Some(&scratch.index()),
-                &[
-                    "--literal-pathspecs",
-                    "add",
-                    "--intent-to-add",
-                    "--pathspec-from-file=-",
-                    "--pathspec-file-nul",
-                ],
-                untracked,
-            )
-            .await?;
-        }
-        Ok(scratch)
+        Ok(Self { cwd, dir })
     }
 
     fn index(&self) -> std::path::PathBuf {

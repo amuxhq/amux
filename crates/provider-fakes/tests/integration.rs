@@ -3,6 +3,7 @@
 
 mod support;
 
+mod acp;
 mod codex;
 mod conformance;
 mod pty;

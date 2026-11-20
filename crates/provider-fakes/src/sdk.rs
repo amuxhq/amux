@@ -806,6 +806,11 @@ impl Engine {
                         break None;
                     }
                     Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
+                    Step::Call(_)
+                    | Step::ToolServer(_)
+                    | Step::Context { .. }
+                    | Step::Title { .. }
+                    | Step::Stop { .. } => unreachable!("refused when the script loaded"),
                     Step::Subagents { agents } => {
                         calls += agents.len() as u32;
                         self.run_subagents(&request, &message, agents).await;

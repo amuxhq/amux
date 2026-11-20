@@ -3089,6 +3089,7 @@ checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 name = "provider-fakes"
 version = "0.1.0"
 dependencies = [
+ "acp-protocol",
  "chrono",
  "claude-protocol",
  "codex-protocol",

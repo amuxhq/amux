@@ -1,4 +1,4 @@
-//! Every recording in the Claude and Codex corpora plays back
+//! Every recording in the Claude, Codex and ACP corpora plays back
 //! through its fake binary, byte for byte, one test per recording.
 
 use std::collections::BTreeSet;
@@ -11,6 +11,7 @@ fn binary(kind: Kind) -> &'static str {
         Kind::ClaudeSdk => env!("CARGO_BIN_EXE_fake-claude-sdk"),
         Kind::ClaudePty => env!("CARGO_BIN_EXE_fake-claude-pty"),
         Kind::Codex => env!("CARGO_BIN_EXE_fake-codex"),
+        Kind::Acp => env!("CARGO_BIN_EXE_fake-acp"),
     }
 }
 
@@ -224,5 +225,67 @@ mod codex {
         two_assistant_messages => "two_assistant_messages",
         usage => "usage",
         web_search => "web_search",
+    });
+}
+
+/// The ACP agents' corpus: Antigravity, OpenCode and Grok, captured live
+/// by the scripted ACP client. A recording whose agent was stopped and
+/// started again plays each of its processes through a fake of its own.
+mod acp {
+    use super::*;
+
+    recordings!(Kind::Acp, "interpret/fixtures/acp/live", {
+        agy_allow => "agy-allow",
+        agy_allow_always => "agy-allow_always",
+        agy_cancel => "agy-cancel",
+        agy_catalogue => "agy-catalogue",
+        agy_compact => "agy-compact",
+        agy_config => "agy-config",
+        agy_deny => "agy-deny",
+        agy_edit => "agy-edit",
+        agy_elicitation => "agy-elicitation",
+        agy_image => "agy-image",
+        agy_load => "agy-load",
+        agy_mid_turn => "agy-mid_turn",
+        agy_prompt => "agy-prompt",
+        agy_question => "agy-question",
+        agy_queued => "agy-queued",
+        agy_read => "agy-read",
+        agy_resume => "agy-resume",
+        grok_allow => "grok-allow",
+        grok_allow_always => "grok-allow_always",
+        grok_cancel => "grok-cancel",
+        grok_catalogue => "grok-catalogue",
+        grok_compact => "grok-compact",
+        grok_config => "grok-config",
+        grok_deny => "grok-deny",
+        grok_edit => "grok-edit",
+        grok_elicitation => "grok-elicitation",
+        grok_image => "grok-image",
+        grok_load => "grok-load",
+        grok_mid_turn => "grok-mid_turn",
+        grok_prompt => "grok-prompt",
+        grok_question => "grok-question",
+        grok_queued => "grok-queued",
+        grok_read => "grok-read",
+        grok_resume => "grok-resume",
+        grok_signed_out => "grok-signed_out",
+        opencode_allow => "opencode-allow",
+        opencode_allow_always => "opencode-allow_always",
+        opencode_cancel => "opencode-cancel",
+        opencode_catalogue => "opencode-catalogue",
+        opencode_compact => "opencode-compact",
+        opencode_config => "opencode-config",
+        opencode_deny => "opencode-deny",
+        opencode_edit => "opencode-edit",
+        opencode_elicitation => "opencode-elicitation",
+        opencode_image => "opencode-image",
+        opencode_load => "opencode-load",
+        opencode_mid_turn => "opencode-mid_turn",
+        opencode_prompt => "opencode-prompt",
+        opencode_question => "opencode-question",
+        opencode_queued => "opencode-queued",
+        opencode_read => "opencode-read",
+        opencode_resume => "opencode-resume",
     });
 }

@@ -164,7 +164,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
-    "provider-fakes": {"claude-protocol", "codex-protocol", "pty-host"},
+    "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "pty-host"},
     # A stand-in amux binary that runs the real supervisor, so the
     # supervisor tests exec and roll back the shipped code.
     "fake-amux": {"agent-dir", "node"},

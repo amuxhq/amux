@@ -1,17 +1,18 @@
 //! Scripted stand-ins for the provider binaries amux hosts.
 //!
-//! Three binaries speak the real protocols: `fake-claude-pty` (a terminal
+//! Four binaries speak the real protocols: `fake-claude-pty` (a terminal
 //! session that writes Claude's transcript JSONL, runs its hooks and serves
 //! its messaging socket, without drawing a TUI), `fake-claude-sdk`
-//! (stream-JSON over stdio) and `fake-codex` (the app server over stdio or,
+//! (stream-JSON over stdio), `fake-codex` (the app server over stdio or,
 //! for several clients at once, a Unix socket; and `resume <thread>`, the
-//! terminal view an attach opens, a client of that socket with `--remote`).
+//! terminal view an attach opens, a client of that socket with `--remote`)
+//! and `fake-acp` (an Agent Client Protocol agent over stdio).
 //! Each plays an authored [`Script`] named by [`SCRIPT_ENV`], so tests run
 //! whole agents offline and deterministically, or plays a recorded session
 //! back verbatim ([`PLAYBACK_ENV`]).
 //!
 //! Two properties hold each fake to its provider. Every recording in the
-//! Claude and Codex corpora plays back through the fake binary
+//! Claude, Codex and ACP corpora plays back through the fake binary
 //! over the transport hosts use (Codex's socket on Unix, stdio elsewhere)
 //! byte for byte ([`conformance`]), so the fake's
 //! transports and a recording's expressiveness as a script are the
@@ -19,6 +20,7 @@
 //! has a shape some recorded frame of the same kind has ([`shape`]), so a
 //! fake that invents or drops fields drifts from its corpus and fails.
 
+pub mod acp;
 pub mod binaries;
 pub mod claude;
 pub mod clients;
@@ -35,8 +37,8 @@ pub mod shape;
 
 pub use conformance::{Drift, conformance};
 pub use script::{
-    Ask, INPUT_LOG_ENV, OfferedCommand, OfferedModel, Outcome, PLAYBACK_ENV, SCRIPT_ENV, Script,
-    ScriptError, Step, Tool, ToolClass,
+    AcpAgent, Ask, Call, Diff, INPUT_LOG_ENV, MidTurn, Offer, OfferedCommand, OfferedModel,
+    Outcome, PLAYBACK_ENV, SCRIPT_ENV, Script, ScriptError, Step, Tool, ToolClass, ToolServerCall,
 };
 
 /// Which provider a fake stands in for.
@@ -45,6 +47,8 @@ pub enum Kind {
     ClaudePty,
     ClaudeSdk,
     Codex,
+    /// Any agent speaking the Agent Client Protocol.
+    Acp,
 }
 
 impl Kind {
@@ -53,6 +57,7 @@ impl Kind {
             Kind::ClaudePty => "fake-claude-pty",
             Kind::ClaudeSdk => "fake-claude-sdk",
             Kind::Codex => "fake-codex",
+            Kind::Acp => "fake-acp",
         }
     }
 }

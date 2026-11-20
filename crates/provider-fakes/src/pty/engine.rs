@@ -1016,7 +1016,13 @@ impl Engine {
             Step::TurnEnd => return Flow::End(None),
             Step::Exit { code } => return Flow::End(Some(code)),
             Step::Subagents { agents } => self.subagents(request, message, agents).await,
-            Step::Usage(_) | Step::AuthFailed { .. } => {
+            Step::Usage(_)
+            | Step::AuthFailed { .. }
+            | Step::Call(_)
+            | Step::ToolServer(_)
+            | Step::Context { .. }
+            | Step::Title { .. }
+            | Step::Stop { .. } => {
                 unreachable!("refused when the script loaded")
             }
             Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),

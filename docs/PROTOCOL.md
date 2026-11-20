@@ -886,7 +886,7 @@ calls in full):
 | Kind | Services | Answered by | Served on |
 | --- | --- | --- | --- |
 | Local | `InventoryService` (hosts, agent rows, names resolved), `SessionService` (conversations and their files), `DraftService` (unsent drafts) | The node the client is attached to, from what it holds, its own agents and its copies alike, whether or not any other host is reachable | The profile socket, the phone's entry in memory, an agent's tools socket; never a link |
-| Host | `AgentService` (an agent's lifecycle, the delete preview, input, messages, files put, the diff), `HostService` (catalogues, pinning folders), `ReviewService` (changes) | The host the call is addressed to, for what it owns, the same however the call arrived apart from the rules about the caller | Every entry; a client's entry carries a call addressed to another host there |
+| Host | `AgentService` (an agent's lifecycle, the delete preview, input, messages, files put), `HostService` (catalogues, pinning folders), `ReviewService` (changes) | The host the call is addressed to, for what it owns, the same however the call arrived apart from the rules about the caller | Every entry; a client's entry carries a call addressed to another host there |
 | Peer | `PeerService` (`FollowAgents`, `FollowSession`, `ListItems`, `GetBlob`, `DeliverReport`) | A host, to a paired daemon asking for itself | Link streams only |
 
 Each local read has its feed in the peer service: a node keeps its copy of
@@ -1153,12 +1153,15 @@ for an agent here and for one of a paired host.
   where it works itself; on another host it names one.
 - `SendMessage`'s sender is the caller, and an agent may message any agent.
 - Every other call naming an agent (`SendInput`, `SetFiling`, `RenameAgent`,
-  `ResumeAgent`, `DeleteAgent`, `PreviewDelete`, `PutBlob`, `GetChanges`,
-  `GetDiff`) the owner answers only for one of the caller's own direct
-  children, refused with `PERMISSION_DENIED` otherwise, and the node lets an
+  `ResumeAgent`, `DeleteAgent`, `PreviewDelete`, `PutBlob`, `GetChanges`)
+  the owner answers only for one of the caller's own direct children,
+  refused with `PERMISSION_DENIED` otherwise, and the node lets an
   agent read only its own children's conversations, files and drafts. `SetFiling`
   for an agent only closes: pinning and filing open are the person's, and so
   is `PinFolder`. An agent reaches any other agent by messaging it.
+- The reviews experiment's `Reviews1` refuses an agent with
+  `PERMISSION_DENIED`, even for its own children: a review is a person's, and an agent reads what it is sent. It is never mounted on an
+  agent's tools socket, so there it answers `UNIMPLEMENTED`.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 
@@ -1217,7 +1220,7 @@ reading a report.
 
 ## Chapter 9: Blob routing
 
-`PutBlob` and `GetDiff` for another host's agent, and `GetCatalogue` of
+`PutBlob` for another host's agent, and `GetCatalogue` of
 another host's provider, are carried calls like any other, on the `Calls`
 channel. `GetBlob` is a local read: the node answers from its copy, and
 fetches a file it does not hold yet from the owner's `PeerService.GetBlob`

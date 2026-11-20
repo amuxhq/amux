@@ -15,14 +15,14 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | [`inventory_service.proto`](../proto/amux/v1/inventory_service.proto) | `InventoryService`: the hosts and agent rows the node holds, and names resolved against them |
 | [`session_service.proto`](../proto/amux/v1/session_service.proto) | `SessionService`: the conversations the node holds, their older pages and items, and the files they reference |
 | [`draft_service.proto`](../proto/amux/v1/draft_service.proto) | `DraftService`: the composers' unsent drafts, kept on this machine |
-| [`agent_service.proto`](../proto/amux/v1/agent_service.proto) | `AgentService`: one host's own agents: making, naming, filing, resuming and deleting them, what a delete would take, their input and messages, files put in their directories, and the diff |
+| [`agent_service.proto`](../proto/amux/v1/agent_service.proto) | `AgentService`: one host's own agents: making, naming, filing, resuming and deleting them, what a delete would take, their input and messages, and files put in their directories |
 | [`host_service.proto`](../proto/amux/v1/host_service.proto) | `HostService`: what a host's providers offer with no agent running, and pinning its folders |
 | [`review_service.proto`](../proto/amux/v1/review_service.proto) | `ReviewService`: the files an agent changed against a base |
 | [`peer_service.proto`](../proto/amux/v1/peer_service.proto) | `PeerService`: what a paired daemon asks for itself, the feeds of its copy and a child's report |
 | [`caller.proto`](../proto/amux/v1/caller.proto) | `Caller`: who a call carried to another host is for |
 | [`session.proto`](../proto/amux/v1/session.proto) | What a conversation is streamed and driven with: `SessionEvent`, `Input` and `SendInputResponse`, the composer's `Draft` |
 | [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
-| [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
+| [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, and the streams' `CaughtUp` and `Lagged` |
 | [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
 | [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
 | [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, the `ctl.sock` and `pty.sock` frames, and what an agent's tool server asks its agent process on `private/agent.sock` |
@@ -222,7 +222,6 @@ it and answers from its copy, so the caller's call is never passed on.
 | `SendInput` | a verdict | The interpreter's verdict on one input |
 | `SendMessage` | the envelope id | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
 | `PutBlob` | `BlobRef` | Bytes into an agent's directory, for a prompt or message to reference |
-| `GetDiff` | `Diff` | The changed files against a base, compared on the agent's host; the patch, stored as a blob, only when asked. The review page is built on it |
 
 `service HostService` in [`host_service.proto`](../proto/amux/v1/host_service.proto):
 
@@ -820,24 +819,6 @@ tag or remote-tracking ref, its own upstream aside, by the same function the
 removal reads, so zero is exactly when the branch goes with the workspace),
 and the working tree's totals against HEAD, untracked files included.
 
-### The diff
-
-`AgentService.GetDiff(agent_id, base, with_patch)` compares the agent's
-working directory on its own host, through the `git-facts` crate the agent
-process also reads its row's totals with. It runs to the working tree,
-untracked files included, from HEAD for the `head` base, or from where the
-branch left the named base branch for a branch base, so the branch's commits
-and its uncommitted work both count. The `Diff` value carries the base,
-`head` (empty before the first commit), the `merge_base` for a branch base,
-and `files`: each changed file's path, lines added and removed, whether it was
-created, deleted or changed, and whether it is binary. Only `with_patch`
-builds the patch and stores it as one of that agent's blobs (`text/x-diff`),
-named in `patch`; without it the host writes nothing. The review page is
-built on that patch. An exited agent's folder is compared as it is now. A
-diff against HEAD or the row's base branch whose totals differ from the row's
-corrects the row before it is answered, so a client's changes marker agrees
-with the diff it opens. Who may ask is who may ask for the changes.
-
 ### Catalogues
 
 What an agent offers to pick from (the models, commands, permissions and modes)
@@ -1149,11 +1130,14 @@ none of the promises above:
   and bytes keep buf from seeing the experimental types at all. The map is
   promised; its entries are not.
 - **An experiment may add a service.** It is a host service in
-  `amux.experimental` with the experiment's version in its name (`Reviews1`
-  for the first version of a reviews experiment), so a changed shape is a new
-  name and a mismatch anywhere answers `UNIMPLEMENTED` rather than being
-  misread. Any node carries a call to it without knowing it exists, since
-  the carrier reads no service names: the phone, whose node has no
+  `amux.experimental` with the experiment's version in its name, so a changed
+  shape is a new name and a mismatch anywhere answers `UNIMPLEMENTED` rather
+  than being misread. The first is `Reviews1`, the reviews experiment's
+  (`Open`, `GetFiles` and `Edit` in
+  [`reviews.proto`](../crates/wire/proto/amux/experimental/reviews.proto)),
+  which an agent's host answers for its own agents and for people only.
+  Any node carries a call to it without knowing it exists, since the
+  carrier reads no service names: the phone, whose node has no
   experiment switch, reaches a desk's. Only the answering host needs the
   experiment on; with it off the service is not mounted, and a client of it
   reads `UNIMPLEMENTED` as "not offered there". The caller arrives as for any
@@ -1170,8 +1154,17 @@ none of the promises above:
 - **What a row says to everyone rides on the row; a host's working state
   stays home.** A host writes entries only on its own rows and specs, and
   only for the versions it runs, and clears its own rows of every other
-  version's when it opens its store. A replica's map is its origin's,
-  stored and passed on whole and undecoded whatever the host in between
+  version's when it opens its store. An attachment's entry is the one a
+  client writes: a sent review is a text attachment the client builds with
+  `Attachment.experimental["reviews/1"]` (a `SentReview`: the review, the
+  round the client expects to close, the snapshot and the comments it
+  sends), because only the sender knows which comments it chose to send. It
+  travels in the prompt or message like any attachment and is journaled
+  with it; the agent's host reads it when it accepts the send, to mark
+  exactly those comments sent, and never rewrites it. A journal is
+  promised and the entry is not, so a sent review whose entry a build
+  cannot read is still the text the agent read. A replica's map is its
+  origin's, stored and passed on whole and undecoded whatever the host in between
   runs, entries of versions it has never heard of included, and replaced
   whole by the origin's next row. So a client reads an entry whatever its
   own node runs: the phone, whose node has no experiment switch, shows a

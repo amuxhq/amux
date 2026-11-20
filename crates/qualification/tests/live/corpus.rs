@@ -1291,6 +1291,7 @@ impl Install {
                 path: "src/store.rs".into(),
             }),
             revision: 1,
+            sent_revision: None,
         };
         let summary = ReviewSummary {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),

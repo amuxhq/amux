@@ -559,13 +559,13 @@ cargo = [{ package = "client", modules = ["seam"], features = [] }]
 
 [[suite]]
 name = "phone-bridge-library-units"
-contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts."
-paths = ["crates/app-bridge/src", "crates/app-ffi/src"]
+contract = "The Rust phone bridge preserves its C and JNI boundaries, mobile lifecycle and callback contracts."
+paths = ["crates/app-bridge/src", "crates/app-ffi/src", "crates/app-jni/src"]
 recipe = "just suite phone-bridge-library-units"
 boundary = "Store, effects, bridge"
-oracle = "C-boundary results, callback records and runtime state."
+oracle = "C-boundary and JNI handle/wake results, callback records and runtime state."
 real = ["embedded runtime", "SQLite", "temporary files"]
-substituted = ["Swift caller", "cloud account", "providers"]
+substituted = ["Swift/Kotlin caller", "cloud account", "providers"]
 time = "real"
 capabilities = ["Rust toolchain"]
 lane = "fast"
@@ -574,6 +574,7 @@ update = ""
 cargo = [
   { package = "app-bridge", kind = "lib", targets = ["app_bridge"], features = [] },
   { package = "app-ffi", kind = "lib", targets = ["app_ffi"], features = [] },
+  { package = "app-jni", kind = "lib", targets = ["amux_app"], features = [] },
 ]
 
 [[suite]]

@@ -667,6 +667,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`app-embedded`](../crates/app-embedded/src/lib.rs) | The daemon's profile runtime hosted in the phone's process. |
 | [`app-bridge`](../crates/app-bridge/src/lib.rs) | The language-neutral bridge over the embedded runtime, its chats and fleet, with view values as JSON. |
 | [`app-ffi`](../crates/app-ffi/README.md) | The C ABI facade over `app-bridge` that the iPhone and Mac apps call. See [embedding](EMBEDDED.md). |
+| [`app-jni`](../crates/app-jni/src/lib.rs) | The JNI facade over `app-bridge` that the Android app and JVM tests call. |
 
 **Verification and tools** — never linked by production code.
 
@@ -740,6 +741,7 @@ The allowed sets encode the layering above:
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-bridge` | `app-embedded`, `app-runtime`, `client`, `installer` (desktop only), `node`, `ui-state`, `ui-view`, `wire` | the language-neutral bridge over both |
 | `app-ffi` | `app-bridge` | the C ABI facade over the bridge |
+| `app-jni` | `app-bridge` | the JNI facade over the bridge |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire`, `workspace-core` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |
@@ -748,7 +750,7 @@ The allowed sets encode the layering above:
 | `installer` | `agent-dir`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
 | `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift mirrors |
 
-The phone bridge (`app-embedded`, `app-bridge`, `app-ffi`) links `node` on purpose: it
+The phone bridge (`app-embedded`, `app-bridge`, `app-ffi`, `app-jni`) links `node` on purpose: it
 hosts the runtime in process. `just mobile-check` checks
 that provider-free graph for iOS and Android.
 

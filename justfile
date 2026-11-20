@@ -148,7 +148,7 @@ hooks:
 mobile-check:
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge --target aarch64-apple-ios
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge --target aarch64-apple-ios-sim
-    {{bounded}} 1200 cargo ndk -t arm64-v8a -P 34 check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge
+    {{bounded}} 1200 cargo ndk -t arm64-v8a -P 34 check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge -p app-jni
 
 # Run workspace tests with isolated user configuration and no external network,
 # on Linux, through sudo. The workspace test script bounds its own compile and

@@ -37,15 +37,16 @@ graph-check:
 
 # Build the Rust JNI bridge libraries for Android and/or the host JVM.
 rust *ARGS:
-    if [ ! -f apps/android/tools/android-rust.py ]; then echo "apps/android/tools/android-rust.py is not installed yet" >&2; exit 1; fi
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py "$@"
 
 # Build the debug Android APK.
 build *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py
     {{bounded}} 1800 {{gradle}} :app:assembleDebug "$@"
 
 # Run all JVM and Android Robolectric unit test suites.
 unit *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --host
     {{bounded}} 1800 {{gradle}} testDebugUnitTest :core:values:test :core:words:test :push:test "$@"
 
 # Render the headless Robolectric/Roborazzi storybook gallery.

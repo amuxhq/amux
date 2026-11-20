@@ -1069,3 +1069,359 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
         .expect("the net shuts down")
         .unwrap();
 }
+
+// --- an agent's review from another computer ---------------------------------
+
+/// The store the desk's repository holds when the net starts: ten lines,
+/// committed.
+const STORE: &str = "\
+pub struct Store {
+    file: File,
+}
+
+impl Store {
+    pub fn open(path: &Path) -> Store {
+        let file = File::open(path).unwrap();
+        Store { file }
+    }
+}
+";
+
+/// A desk running the reviews experiment with `worker` in its repository
+/// `site`, and a laptop linked to it, without the experiment, whose
+/// terminal client has the worker's chat open.
+async fn review_from_the_laptop() -> (Net, tui::App, std::path::PathBuf) {
+    use std::sync::Arc;
+
+    let topology = Topology::new()
+        .host_decl(testnet::HostDecl {
+            name: "desk".to_owned(),
+            repositories: vec!["site".to_owned()],
+            files: [("site/src/store.rs".to_owned(), STORE.to_owned())].into(),
+            ..testnet::HostDecl::default()
+        })
+        .host("laptop")
+        .link("desk", "laptop")
+        .agent(testnet::AgentDecl {
+            repository: Some("site".to_owned()),
+            ..AgentDecl::new("worker", "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![
+                    text("Ready."),
+                    Step::TurnEnd,
+                    text("Read it."),
+                    Step::TurnEnd,
+                ])
+                .prompt("go")
+        });
+    let options = testnet::NetOptions {
+        launch: Some(Arc::new(|host: &str, launch: &mut node::Launch| {
+            if host == "desk" {
+                launch.experiments =
+                    settings::experiments::Enabled::of(&[&settings::experiments::REVIEWS]);
+            }
+        })),
+        ..testnet::NetOptions::default()
+    };
+    let net = Net::start_with(topology, options).await.unwrap();
+    net.settle("worker").await.unwrap();
+    let site = net
+        .host("desk")
+        .unwrap()
+        .work
+        .with_file_name("repositories")
+        .join("site");
+    // The agent's change: the open no longer unwraps.
+    std::fs::write(
+        site.join("src/store.rs"),
+        STORE.replace(
+            "File::open(path).unwrap();",
+            "File::open(path).expect(\"the store opens\");",
+        ),
+    )
+    .unwrap();
+    let id = net.agent("worker").unwrap().id;
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        version: String::new(),
+        local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
+    };
+    let mut app = app_listing(node(&net, "laptop"), config, &[id.as_bytes()]).await;
+    open_chat(&mut app, id.as_bytes()).await;
+    (net, app, site)
+}
+
+/// Runs the client as its loop does, housekeeping, drawing and applying
+/// what its tasks answer, until `done` holds of it and its screen.
+async fn until(app: &mut tui::App, what: &str, done: impl Fn(&tui::App, &str) -> bool) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    loop {
+        app.housekeep();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let screen = screen_text(terminal.backend().buffer());
+        if done(app, &screen) {
+            return screen;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "waited for {what}; the screen:\n{screen}"
+        );
+        if let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(50), app.receiver.recv()).await
+        {
+            app.event(event);
+        }
+    }
+}
+
+fn review_page(app: &tui::App) -> Option<&tui::chat::review::Page> {
+    let chat = app.chat.as_ref()?;
+    chat.view
+        .review_page
+        .as_ref()
+        .filter(|_| chat.view.review_page_open)
+}
+
+fn row_key(app: &tui::App) -> String {
+    let page = review_page(app).expect("the page is open");
+    page.page().rows[page.cursor()].key.clone()
+}
+
+fn drafts(app: &tui::App) -> Vec<String> {
+    review_page(app)
+        .and_then(|page| page.fetched().summary.clone())
+        .map(|summary| {
+            summary
+                .comments
+                .iter()
+                .filter(|comment| comment.round.is_none())
+                .map(|comment| comment.text.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// docs/guide/use/terminal.md, "Reviewing changes": a person on the laptop
+/// opens the review of an agent on the desk, carried to the desk like any
+/// host service, reads its files, loads more lines, comments on a changed
+/// line and sees the draft; the laptop's copy of the agent's row carries
+/// the drafts to the composer's chip, and sending carries them to the
+/// agent. Starting over leaves a first look.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_person_on_the_laptop_reviews_the_desks_agent() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let (net, mut app, _site) = review_from_the_laptop().await;
+    // The leader, then `r`.
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('r'));
+
+    // Open, then GetFiles: the file's change, under where it sits.
+    let screen = until(&mut app, "the review's files", |app, _| {
+        review_page(app).is_some_and(|page| {
+            page.page()
+                .rows
+                .iter()
+                .any(|row| row.key == "l/src/store.rs/0/7")
+        })
+    })
+    .await;
+    assert!(screen.contains("src/store.rs"), "{screen}");
+    assert!(
+        screen.contains("File::open(path).expect(\"the store opens\");"),
+        "{screen}"
+    );
+    assert!(screen.contains("1 file · +1 −1"), "{screen}");
+
+    // More lines below the change, read from the snapshot.
+    for _ in 0..20 {
+        if row_key(&app).starts_with("g/src/store.rs/") && row_key(&app) != "g/src/store.rs/0" {
+            break;
+        }
+        press(&mut app, KeyCode::Char('j'));
+    }
+    let gap = row_key(&app);
+    assert!(
+        gap.starts_with("g/"),
+        "the cursor reached the gap below: {gap}"
+    );
+    press(&mut app, KeyCode::Char('e'));
+    until(&mut app, "the lines below the change", |app, _| {
+        review_page(app).is_some_and(|page| {
+            page.page()
+                .rows
+                .iter()
+                .any(|row| row.key.starts_with("l/src/store.rs/") && row.key.ends_with("/10"))
+        })
+    })
+    .await;
+
+    // A comment on the changed line.
+    for _ in 0..40 {
+        if row_key(&app) == "l/src/store.rs/0/7" {
+            break;
+        }
+        press(&mut app, KeyCode::Char('k'));
+    }
+    assert_eq!(row_key(&app), "l/src/store.rs/0/7");
+    press(&mut app, KeyCode::Char('c'));
+    for c in "say why the store must open".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let screen = until(&mut app, "the draft on the page", |app, screen| {
+        drafts(app) == ["say why the store must open"] && !screen.contains("saving…")
+    })
+    .await;
+    assert!(screen.contains("│ Draft"), "{screen}");
+    assert!(screen.contains("│ say why the store must open"), "{screen}");
+
+    // Back in the chat, the chip comes from the laptop's copy of the row.
+    press(&mut app, KeyCode::Char('q'));
+    until(&mut app, "the review chip", |_, screen| {
+        screen.contains("[review · 1 comment ✕]")
+    })
+    .await;
+
+    // Sending carries exactly the draft, as the agent reads it.
+    for c in "have a look".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let sent = |app: &tui::App| {
+        let chat = app.chat.as_ref()?;
+        let state = chat.session.state();
+        state.inputs().iter().find_map(|input| match &input.what {
+            ui_state::InputWhat::Prompt { text, attachments } if text == "have a look" => {
+                attachments.iter().find_map(|attachment| {
+                    Some((ui_view::sent_review::entry(attachment)?, attachment.clone()))
+                })
+            }
+            _ => None,
+        })
+    };
+    until(&mut app, "the prompt carrying the review", |app, _| {
+        sent(app).is_some()
+    })
+    .await;
+    let (entry, attachment) = sent(&app).unwrap();
+    assert_eq!(entry.comment_ids.len(), 1);
+    assert_eq!(entry.round, 1);
+    let Some(wire::attachment::Of::Text(read)) = &attachment.of else {
+        panic!("a sent review is text the agent reads");
+    };
+    assert!(
+        read.text.contains("## src/store.rs, line 7"),
+        "{}",
+        read.text
+    );
+    assert!(
+        read.text.contains("say why the store must open"),
+        "{}",
+        read.text
+    );
+
+    // Starting over: asked first, then a first look again.
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('r'));
+    until(&mut app, "the page again", |app, _| {
+        review_page(app).is_some()
+    })
+    .await;
+    let before = review_page(&app)
+        .and_then(|page| page.fetched().summary.clone())
+        .map(|summary| summary.id.clone())
+        .expect("a review");
+    press(&mut app, KeyCode::Char('S'));
+    press(&mut app, KeyCode::Enter);
+    let screen = until(&mut app, "a first look after starting over", |app, _| {
+        review_page(app)
+            .and_then(|page| page.fetched().summary.clone())
+            .is_some_and(|summary| {
+                !summary.id.is_empty()
+                    && summary.id != before
+                    && summary.comments.is_empty()
+                    && summary.rounds.is_empty()
+                    && !summary.files.is_empty()
+            })
+    })
+    .await;
+    assert!(!screen.contains("Draft"), "{screen}");
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// Following the agent's row: the agent changing code after the page
+/// opened marks it stale, without the page changing under the reader, and
+/// `r` refreshes onto the code as it is now.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_open_review_follows_the_agents_row() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let (net, mut app, site) = review_from_the_laptop().await;
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('r'));
+    until(&mut app, "the review's files", |app, _| {
+        review_page(app)
+            .is_some_and(|page| page.to_fetch().is_empty() && page.page().header.is_some())
+    })
+    .await;
+    let first = review_page(&app)
+        .and_then(|page| page.fetched().summary.clone())
+        .unwrap()
+        .snapshot
+        .clone();
+
+    // The agent changes more and ends a turn: its row says the tree moved.
+    std::fs::write(site.join("src/new.rs"), "pub fn new() {}\n").unwrap();
+    let worker = net.agent("worker").unwrap();
+    net.person("desk")
+        .await
+        .unwrap()
+        .agent(worker)
+        .send_input(testnet::prompt(worker.kind, b"again-1", "again"))
+        .await
+        .unwrap();
+    let screen = until(&mut app, "the page marked stale", |_, screen| {
+        screen.contains("The agent changed code since this snapshot")
+    })
+    .await;
+    assert!(
+        !screen.contains("src/new.rs"),
+        "nothing changes under the reader:\n{screen}"
+    );
+    assert_eq!(
+        review_page(&app)
+            .and_then(|page| page.fetched().summary.clone())
+            .unwrap()
+            .snapshot,
+        first
+    );
+
+    press(&mut app, KeyCode::Char('r'));
+    let screen = until(&mut app, "the refreshed page", |app, screen| {
+        screen.contains("src/new.rs")
+            && review_page(app)
+                .and_then(|page| page.fetched().summary.clone())
+                .is_some_and(|summary| summary.snapshot != first)
+    })
+    .await;
+    assert!(!screen.contains("changed code since"), "{screen}");
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}

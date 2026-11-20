@@ -1018,13 +1018,24 @@ impl App {
                         .summary()
                         .map(|summary| summary.snapshot.clone());
                     if let Some(page) = &mut chat.view.review_page {
-                        // A since-last read the host cannot answer because the
-                        // last round's snapshot is gone shows that round's
-                        // comments with the code saved with them.
-                        let gone = view == ui_view::ReviewView::SinceLast
-                            && matches!(&error, ReviewError::Rpc(rpc) if rpc.code() == Some(wire::ErrorCode::NotFound));
-                        if gone {
-                            page.notice(ui_view::ReviewNotice::RoundGone, true);
+                        // The host answers NOT_FOUND for a snapshot it no
+                        // longer has. Since the last review, that is the last
+                        // round's: its comments show with the code saved with
+                        // them. Of all changes, it is the page's own, which a
+                        // refresh replaces.
+                        let gone = matches!(&error, ReviewError::Rpc(rpc) if rpc.code() == Some(wire::ErrorCode::NotFound));
+                        match view {
+                            ui_view::ReviewView::SinceLast if gone => {
+                                page.notice(ui_view::ReviewNotice::RoundGone, true)
+                            }
+                            ui_view::ReviewView::All if gone => page.notice(
+                                ui_view::ReviewNotice::SnapshotFailed {
+                                    message: "this snapshot is gone from the agent's computer"
+                                        .into(),
+                                },
+                                true,
+                            ),
+                            _ => {}
                         }
                         page.notice(ui_view::ReviewNotice::Unreachable, unreachable(&error));
                     }
@@ -1656,6 +1667,12 @@ impl App {
         }
         match result {
             Ok(()) => {
+                // Starting over answers a review with nothing in it, which
+                // the page shows until the first look it reopens on: no
+                // earlier round is left to be gone.
+                if reopen && let Some(page) = &mut chat.view.review_page {
+                    page.notice(ui_view::ReviewNotice::RoundGone, false);
+                }
                 sync_review_page(chat);
                 if reopen {
                     self.open_review(false, None, false);

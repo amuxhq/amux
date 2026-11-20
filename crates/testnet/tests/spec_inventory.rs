@@ -1055,9 +1055,13 @@ async fn a_push_key_reaches_the_hosts_paired_with_it_and_no_further() {
     })
     .await
     .unwrap();
-    net.spawn(AgentDecl::new("after", "desk").steps(says("a")).prompt("go"))
-        .await
-        .unwrap();
+    net.spawn(
+        AgentDecl::new("after", "desk")
+            .steps(says("a"))
+            .prompt("go"),
+    )
+    .await
+    .unwrap();
     net.current("tower", "after").await.unwrap();
     let desk = net.host("desk").unwrap().host_id;
     assert_eq!(push_key_kept_for(&net, "tower", phone).await, None);

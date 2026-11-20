@@ -1425,7 +1425,7 @@
       {"literal": "\"%.1fM\"", "context": "default: String(format: \"%.1fM\", Double(count) / 1_000_000)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\"", "context": "let plus = run.openBelow ? \"+\" : \"\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"doc.plaintext\"", "context": "case .text: \"doc.plaintext\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"text.bubble\"", "context": "case .review: \"text.bubble\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"text.bubble\"", "context": "case .review, .sentReview: \"text.bubble\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"globe\"", "context": "case .page: \"globe\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"[\\(chip(view))]\"", "context": "case .attachment(let view): \"[\\(chip(view))]\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\\(added)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},

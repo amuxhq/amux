@@ -1238,6 +1238,8 @@ beyond ACP.
 | `antigravity` | A prompt sent mid-turn is folded into the running turn, so only it is offered send-now | `agy-mid_turn` |
 | `grok` | The turn's tokens are in the prompt answer's `_meta` | `grok-prompt` |
 | `grok` | `initialize` lists the `cached_token` auth method only while signed in | `grok-catalogue`, `grok-signed_out` |
+| `grok` | `initialize`'s `_meta` lists the models with their efforts, and the commands, so the host's copy has them without a session | `grok-catalogue` |
+| each | How a call to a tool server's tool is named: `mcp_<server>_<tool>` and `Run …` (`antigravity`), `<server>_<tool>` (`opencode`), `<server>__<tool>` in `use_tool`'s input (`grok`); an added agent any of these | `agy-elicitation`, `opencode-elicitation`, `grok-elicitation` |
 
 What is generic, though only one agent shows it: a setting change's
 answer is authoritative and `config_option_update` is ignored while one is
@@ -1255,12 +1257,28 @@ opens the saved session: `session/resume` where offered, else
 conversation is never passed off as a reopened one: an agent offering
 neither cannot continue a conversation in a new process, so `holds` reports
 it (`unresumable`) once it has a session and it never suspends, and should
-its process end anyway, the next one exits at once (`Opening::Unresumable`)
-with `UNRESUMABLE` as the cause. Likewise a refused resume or load ends the
+its process end anyway, the next one exits at its `initialize` answer
+(`Opening::Unresumable`) with `UNRESUMABLE` as the cause, and the agent
+process sends no session request. Likewise a refused resume or load ends the
 incarnation and opens nothing in its place, so an agent's session never
-changes under it. A refused `initialize` or session, or a new session's
-answer naming no session, ends the incarnation with the agent's words; an
-`AUTH_REQUIRED` refusal also says signed out.
+changes under it. A refused or unreadable `initialize`, a refused session,
+or a new session's answer naming no session, ends the incarnation with the
+agent's words; an `AUTH_REQUIRED` refusal also says signed out.
+
+**What the agent process does.** It starts the agent's command and
+arguments over stdio, sends `initialize` (elicitation forms and links, no
+files or terminals) and the session request `opening` picks, each new,
+resumed or loaded session given amux's tool server as a stdio MCP entry
+and, where the agent takes more folders, the agent's blob folder. A
+prompt with attachments is an `AcpPrompt` effect: the agent process puts
+each attachment's element at its place in the text, then an image's bytes
+as an image block and a file's contents as an embedded resource where
+`initialize` said the prompt takes them. The interpreter refuses an image
+at once for an agent that said it takes none (Grok before 1.0.89,
+`grok-image`); the answer is read again from each process, as it changes
+with the agent's version. A line the agent writes on stderr reaches the
+interpreter as an `Agent`-channel fact, which is logged and never drawn:
+agents write there freely.
 
 **Replay.** `session/load` replays the whole conversation before it
 answers, with no marker (`agy-load`, `opencode-load`, `grok-load`). Until
@@ -1319,7 +1337,12 @@ reply and for cancelling: a later process may reuse a request id, and an
 answer meant for an ask of an earlier process must never reach it.
 `session/request_permission` opens an ask on the call's own row
 offering exactly the agent's options; an answer names one by id, and an
-allow-always one is a session grant (`opencode-allow_always`).
+allow-always one is a session grant (`opencode-allow_always`). A request
+for one of amux's own tools is answered allow once at once and opens no
+ask, recognised by the agent's naming quirk from the call's earlier title
+and the request's title, name and input (OpenCode retitles a call in its
+request, `opencode-allow`); `attach` asks, as it does in Claude, since it
+copies a file the agent names to where the agent reads unasked.
 `elicitation/create` opens a form or link ask row. Replying instead
 withdraws the ask, cancels the turn and queues the words.
 

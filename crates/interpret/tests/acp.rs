@@ -506,3 +506,318 @@ fn a_refused_send_now_waits_again() {
             .any(|item| item.key.contains("error"))
     );
 }
+
+/// A permission request with this tool call and amux's usual options.
+fn asked_about(id: u64, tool_call: serde_json::Value) -> Event {
+    rpc(
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "session/request_permission",
+        "params": {"sessionId": "s1", "toolCall": tool_call,
+            "options": [{"optionId": "always", "name": "Always", "kind": "allow_always"},
+                {"optionId": "once", "name": "Once", "kind": "allow_once"},
+                {"optionId": "no", "name": "Deny", "kind": "reject_once"}]}}),
+    )
+}
+
+fn update(update: serde_json::Value) -> Event {
+    rpc(
+        serde_json::json!({"jsonrpc": "2.0", "method": "session/update",
+        "params": {"sessionId": "s1", "update": update}}),
+    )
+}
+
+/// Whether the step answered permission request `id` allow once, opening
+/// no ask.
+fn allowed_unasked(state: &interpret::acp::State, stepped: &interpret::Stepped, id: u64) -> bool {
+    writes(&stepped.effects)
+        == vec![serde_json::json!({"jsonrpc": "2.0", "id": id,
+            "result": {"outcome": {"outcome": "selected", "optionId": "once"}}})]
+        && state.shared().asks().is_empty()
+}
+
+/// A call to one of amux's own tools is allowed at once, by each agent's
+/// own way of naming a tool server's tool: Antigravity's `name` and `Run`
+/// title (`agy-elicitation`), OpenCode's title on the call before its
+/// permission request retitles it (`opencode-elicitation`,
+/// `opencode-allow`), Grok's `use_tool` input (`grok-elicitation`); an
+/// agent a person added in any of those ways.
+#[test]
+fn amuxs_own_tools_are_allowed_without_asking() {
+    let cases: [(&str, Vec<Event>, serde_json::Value); 5] = [
+        (
+            "antigravity",
+            Vec::new(),
+            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_amux_spawn",
+                "name": "mcp_amux_spawn", "kind": "other", "status": "pending"}),
+        ),
+        (
+            "opencode",
+            vec![update(
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+                "title": "amux_send", "kind": "other", "status": "pending", "rawInput": {}}),
+            )],
+            serde_json::json!({"toolCallId": "c1", "title": "send a message",
+                "kind": "other", "status": "pending"}),
+        ),
+        (
+            "grok",
+            vec![update(
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+                "title": "use_tool",
+                "rawInput": {"tool_name": "amux__agents", "tool_input": {}}}),
+            )],
+            serde_json::json!({"toolCallId": "c1"}),
+        ),
+        (
+            "my-own-agent",
+            Vec::new(),
+            serde_json::json!({"toolCallId": "c1", "title": "amux__status"}),
+        ),
+        (
+            "my-own-agent",
+            Vec::new(),
+            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_amux_hosts"}),
+        ),
+    ];
+    for (agent, before, call) in cases {
+        let mut state = opened(agent, serde_json::json!({}));
+        Acp::step(&mut state, prompt("a", "go"));
+        for event in before {
+            Acp::step(&mut state, event);
+        }
+        let stepped = Acp::step(&mut state, asked_about(7, call.clone()));
+        assert!(allowed_unasked(&state, &stepped, 7), "{agent}: {call}");
+    }
+}
+
+/// Everything else asks: another server's tool, a name in another agent's
+/// form, and amux's `attach`, which copies a file the agent names where the
+/// agent reads unasked, so the agent's own settings see the read first.
+#[test]
+fn other_tools_and_attach_still_ask() {
+    let cases = [
+        (
+            "antigravity",
+            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_spec_ask_the_operator",
+            "name": "mcp_spec_ask_the_operator"}),
+        ),
+        (
+            "antigravity",
+            serde_json::json!({"toolCallId": "c1", "title": "amux_spawn"}),
+        ),
+        (
+            "opencode",
+            serde_json::json!({"toolCallId": "c1", "title": "amux__spawn"}),
+        ),
+        (
+            "opencode",
+            serde_json::json!({"toolCallId": "c1", "title": "amux_attach"}),
+        ),
+        (
+            "grok",
+            serde_json::json!({"toolCallId": "c1", "title": "use_tool",
+            "rawInput": {"tool_name": "amux__attach"}}),
+        ),
+        (
+            "my-own-agent",
+            serde_json::json!({"toolCallId": "c1", "title": "./amux-spawn.sh"}),
+        ),
+    ];
+    for (agent, call) in cases {
+        let mut state = opened(agent, serde_json::json!({}));
+        Acp::step(&mut state, prompt("a", "go"));
+        let stepped = Acp::step(&mut state, asked_about(7, call.clone()));
+        assert!(writes(&stepped.effects).is_empty(), "{agent}: {call}");
+        assert_eq!(state.shared().asks().open_asks().len(), 1, "{agent}: {call}");
+    }
+}
+
+fn image_prompt(id: &str) -> Event {
+    Event::Input(wire::Input::new(
+        id.as_bytes().to_vec(),
+        wire::AcpInput {
+            of: Some(wire::acp_input::Of::Prompt(wire::PromptInput {
+                text: format!("what colour? {}", '\u{FFFC}'),
+                attachments: vec![wire::Attachment {
+                    of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                        hash: vec![0xab; 32],
+                        name: "red.png".into(),
+                        mime: "image/png".into(),
+                        size: 8,
+                    })),
+                }],
+            })),
+        },
+    ))
+}
+
+fn rejected_detail(effects: &[Effect], id: &str) -> Option<String> {
+    effects.iter().find_map(|effect| match effect {
+        Effect::Reply { input_id, verdict } if input_id == id.as_bytes() => match &verdict.of {
+            Some(wire::send_input_response::Of::Rejected(rejected)) => rejected.detail.clone(),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// An image goes to an agent whose prompts take images, with its bytes for
+/// the agent process to put in; an agent that said its prompts take none
+/// (Grok before 1.0.89) is refused it at once, in words naming the agent.
+#[test]
+fn an_image_is_refused_at_once_by_an_agent_that_takes_none() {
+    let mut takes = opened(
+        "grok",
+        serde_json::json!({"promptCapabilities": {"image": true}}),
+    );
+    let sent = Acp::step(&mut takes, image_prompt("a"));
+    assert!(!refused(&sent.effects, "a"));
+    assert!(sent.effects.iter().any(|effect| matches!(effect,
+        Effect::AcpPrompt { attachments, .. } if attachments.len() == 1)));
+
+    let mut refuses = opened(
+        "grok",
+        serde_json::json!({"promptCapabilities": {"image": false}}),
+    );
+    let refusal = Acp::step(&mut refuses, image_prompt("a"));
+    assert_eq!(
+        rejected_detail(&refusal.effects, "a").as_deref(),
+        Some("Grok does not take images")
+    );
+    assert!(writes(&refusal.effects).is_empty());
+    assert!(
+        !refusal
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::AcpPrompt { .. }))
+    );
+}
+
+/// A conversation the agent cannot reopen ends at the next process's
+/// `initialize`, with the cause that says so; no session is opened, so no
+/// fresh conversation stands in for it.
+#[test]
+fn a_saved_conversation_no_process_can_reopen_ends_at_initialize() {
+    let mut state = opened("my-own-agent", serde_json::json!({}));
+    Acp::step(&mut state, Event::ProviderExit { code: Some(0) });
+    let mut next = spec("my-own-agent");
+    next.incarnation = 2;
+    let (mut state, _) = Acp::reincarnate(state, &next);
+    let stepped = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
+            "result": {"protocolVersion": 1, "agentCapabilities": {}}}),
+        ),
+    );
+    assert_eq!(
+        exit_cause(&stepped.effects).as_deref(),
+        Some(interpret::acp::UNRESUMABLE)
+    );
+    assert!(writes(&stepped.effects).is_empty());
+}
+
+/// An `initialize` answer amux cannot read ends the agent rather than
+/// leave it starting for good: no session request follows one.
+#[test]
+fn an_unreadable_initialize_answer_ends_the_agent() {
+    let (mut state, _) = Acp::initial(&spec("my-own-agent"));
+    let stepped = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
+            "result": {"protocolVersion": "one"}}),
+        ),
+    );
+    assert!(exit_cause(&stepped.effects).is_some());
+}
+
+/// What an agent writes on stderr is logged, never drawn, and never ends
+/// it.
+#[test]
+fn a_stderr_line_is_logged_and_drawn_nowhere() {
+    let mut state = opened("grok", serde_json::json!({}));
+    let stepped = Acp::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::acp::stderr_fact("ERROR worker quit with fatal: AuthRequired"),
+        }),
+    );
+    assert!(stepped.step.items.is_empty());
+    assert!(exit_cause(&stepped.effects).is_none());
+    assert!(stepped.effects.iter().any(|effect| matches!(effect,
+        Effect::Log { line } if line.contains("AuthRequired"))));
+}
+
+/// The `initialize` answer a recording holds.
+fn recorded_initialize(recording: &str) -> InitializeResponse {
+    let io =
+        std::fs::read_to_string(fixtures().join("live").join(recording).join("io.jsonl")).unwrap();
+    io.lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|row| row["dir"] == "stdout")
+        .filter_map(|row| serde_json::from_str::<serde_json::Value>(row["line"].as_str()?).ok())
+        .find(|message| message["id"] == 1 && message.get("result").is_some())
+        .and_then(|message| serde_json::from_value(message["result"].clone()).ok())
+        .unwrap_or_else(|| panic!("{recording} holds no initialize answer"))
+}
+
+/// The host's copy of each built-in, from its recorded `initialize` alone:
+/// Grok lists its models, efforts and commands there and shows whether it
+/// is signed in; Antigravity and OpenCode list nothing a session would, and
+/// only a session tells whether they are signed in.
+#[test]
+fn the_hosts_copy_comes_from_initialize_alone() {
+    let grok = interpret::acp::host_offer("grok", &recorded_initialize("grok-catalogue"));
+    assert_eq!(grok.version, "1.0.89");
+    assert_eq!(grok.acp.reopen, wire::AcpReopen::Resume as i32);
+    assert_eq!(grok.acp.sign_in, wire::SignInState::SignedIn as i32);
+    assert!(grok.signed_in());
+    let models: Vec<&str> = grok
+        .catalogue
+        .models
+        .iter()
+        .map(|model| model.value.as_str())
+        .collect();
+    assert!(models.contains(&"grok-4.7-build-fast"), "{models:?}");
+    assert!(
+        grok.catalogue
+            .models
+            .iter()
+            .all(|model| model.efforts.contains(&"low".to_owned()))
+    );
+    assert!(
+        grok.catalogue
+            .commands
+            .iter()
+            .any(|command| command.name == "compact")
+    );
+    let new_agent = grok.catalogue.new_agent.clone().unwrap();
+    assert!(models.contains(&new_agent.model.as_deref().unwrap()));
+    assert!(new_agent.effort.is_some());
+
+    let signed_out = interpret::acp::host_offer("grok", &recorded_initialize("grok-signed_out"));
+    assert_eq!(signed_out.acp.sign_in, wire::SignInState::SignedOut as i32);
+    assert!(!signed_out.signed_in());
+
+    for (agent, recording, name) in [
+        ("antigravity", "agy-catalogue", "Antigravity ACP Server"),
+        ("opencode", "opencode-catalogue", "OpenCode"),
+    ] {
+        let offer = interpret::acp::host_offer(agent, &recorded_initialize(recording));
+        assert_eq!(offer.acp.name, name);
+        assert!(!offer.version.is_empty());
+        assert_eq!(offer.acp.reopen, wire::AcpReopen::Resume as i32);
+        assert!(offer.acp.images && offer.acp.embedded_context);
+        assert_eq!(offer.acp.sign_in, wire::SignInState::Unspecified as i32);
+        assert!(offer.signed_in());
+        assert!(offer.catalogue.models.is_empty());
+        assert!(!offer.acp.sign_in_methods.is_empty());
+    }
+    let opencode =
+        interpret::acp::host_offer("opencode", &recorded_initialize("opencode-catalogue"));
+    assert_eq!(
+        opencode.acp.sign_in_methods[0].description,
+        "Run `opencode auth login` in the terminal"
+    );
+}

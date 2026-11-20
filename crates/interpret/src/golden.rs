@@ -550,9 +550,10 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
     report.violations.extend(check_resumes(&frames));
     report.failures = check_expectations::<I>(&frames, &script);
 
-    // The checkpoint property, at every prefix.
+    // The checkpoint property, at every prefix of a short script and at the
+    // telling ones of a long one.
     let whole = merge(&frames);
-    for at in 0..=script.len() {
+    for at in checkpoint_points(&script) {
         match execute::<I>(&spec, &script, Some(at)) {
             Ok(resumed) => {
                 if let Some(problem) = check_resumes(&resumed).into_iter().next() {
@@ -1372,6 +1373,43 @@ fn execute<I: Interpreter>(
         });
     }
     Ok(frames)
+}
+
+/// Scripts up to this many events are checked from a checkpoint after
+/// every prefix.
+const CHECK_EVERY_PREFIX: usize = 96;
+
+/// How many prefixes of a long script are checked besides those around
+/// something other than a fact: each check runs the whole script again, so
+/// checking every prefix of a recording of hundreds of streamed chunks
+/// takes minutes and finds nothing the samples do not.
+const SAMPLED_PREFIXES: usize = 48;
+
+/// The prefixes a checkpoint is taken after. A short script: every one. A
+/// long one: its first [`SAMPLED_PREFIXES`] / 2, then evenly spaced ones up
+/// to the same number again, the end, and both sides of every event that
+/// is not a provider fact (an input, an agent message, a stop, an exit, a
+/// reincarnation), where the queue, the asks and the turn change hands.
+fn checkpoint_points(script: &[Scripted]) -> Vec<usize> {
+    let len = script.len();
+    if len <= CHECK_EVERY_PREFIX {
+        return (0..=len).collect();
+    }
+    let head = SAMPLED_PREFIXES / 2;
+    let stride = (len - head).div_ceil(SAMPLED_PREFIXES - head).max(1);
+    let mut points: std::collections::BTreeSet<usize> = (0..head).collect();
+    points.extend((head..len).step_by(stride));
+    points.insert(len);
+    for (index, scripted) in script.iter().enumerate() {
+        if !matches!(
+            scripted.action,
+            Action::Event(Event::Fact(_) | Event::Tick { .. })
+        ) {
+            points.insert(index);
+            points.insert(index + 1);
+        }
+    }
+    points.into_iter().collect()
 }
 
 /// The invariants every interpreter's journal obeys, over the steps of one

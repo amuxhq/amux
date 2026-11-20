@@ -83,18 +83,27 @@ pub fn apply_request(config_id: &str) -> String {
 /// How a new process opens the agent's conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Opening {
+    /// The agent has no conversation yet: `session/new`.
     New,
     /// `session/resume`: the agent reopens it and replays nothing.
     Resume(String),
     /// `session/load`: the agent reopens it and replays it all first.
     Load(String),
+    /// The agent has a conversation and cannot reopen it in a new process.
+    /// The agent process exits for good with [`UNRESUMABLE`] as the cause:
+    /// a fresh conversation is never passed off as the old one resumed.
+    Unresumable,
 }
+
+/// The exit cause of an agent whose conversation no new process can
+/// reopen.
+pub const UNRESUMABLE: &str = "the agent cannot reopen its conversation in a new process";
 
 /// How the agent process opens the session after `initialize`: the saved
 /// one by `session/resume` where the agent offers it, which replays
-/// nothing, else by `session/load`, else a new one. An agent that offers
-/// neither cannot continue a conversation in a new process, which
-/// [`Interpreter::holds`] reports.
+/// nothing, else by `session/load`. With neither, a saved conversation is
+/// over ([`Opening::Unresumable`]), which [`Interpreter::holds`] reports
+/// while its process runs, so the agent never suspends on its own.
 pub fn opening(init: &InitializeResponse, saved: Option<&str>) -> Opening {
     let Some(saved) = saved else {
         return Opening::New;
@@ -105,7 +114,7 @@ pub fn opening(init: &InitializeResponse, saved: Option<&str>) -> Opening {
     } else if reopens.load {
         Opening::Load(saved.to_owned())
     } else {
-        Opening::New
+        Opening::Unresumable
     }
 }
 
@@ -309,7 +318,13 @@ enum Request {
         steer: bool,
     },
     /// A setting changed; the answer says what the session now has.
-    Set { category: Category, value: String },
+    /// `apply` when amux restores it itself as the session opens, which
+    /// holds the first prompt until the settings settle.
+    Set {
+        category: Category,
+        value: String,
+        apply: bool,
+    },
 }
 
 /// The agent's text being streamed, by its item key.
@@ -366,6 +381,12 @@ pub struct State {
     plan: Option<Vec<(String, i32)>>,
     #[serde(with = "serde_pb::msgs")]
     commands: Vec<OfferedCommand>,
+    /// How many permissions and elicitations the agent asked for, which
+    /// numbers each ask's key.
+    asks_seen: u64,
+    /// The agent's request id behind each open ask, by ask key, for the
+    /// answer and for the agent withdrawing it.
+    ask_requests: BTreeMap<String, String>,
     /// What the session offers changed in this step, so the catalogue is
     /// published again.
     #[serde(skip)]
@@ -376,8 +397,14 @@ fn item_body(kind: acp_item::Kind) -> Vec<u8> {
     AcpItem { kind: Some(kind) }.encode_to_vec()
 }
 
-/// A request id as an ask key: the JSON the agent sent.
-fn ask_key(id: &RequestId) -> String {
+/// The `n`th ask's key, counting every permission and elicitation the
+/// agent asked for in the agent's life.
+pub fn ask_key(n: u64) -> String {
+    format!("ask-{n}")
+}
+
+/// A request id as the agent sent it, in JSON.
+fn request_id_key(id: &RequestId) -> String {
     serde_json::to_string(id).expect("a request id serializes")
 }
 
@@ -501,6 +528,8 @@ impl State {
             sign_in: None,
             plan: None,
             commands: Vec::new(),
+            asks_seen: 0,
+            ask_requests: BTreeMap::new(),
             offers_changed: false,
         }
     }
@@ -633,12 +662,27 @@ impl State {
         );
     }
 
-    /// Answers the agent's request an ask key names.
+    /// Answers the agent's request an ask key names, once.
     fn respond(&mut self, emit: &mut Emit, key: &str, response: ClientResponse) {
-        let Ok(id) = serde_json::from_str::<RequestId>(key) else {
+        let Some(id) = self
+            .ask_requests
+            .remove(key)
+            .and_then(|id| serde_json::from_str::<RequestId>(&id).ok())
+        else {
             return;
         };
         self.write(emit, &ClientMessage::response(id, response));
+    }
+
+    /// A key for the ask the agent's request `id` opens. Keys are amux's
+    /// own and never repeat, while an agent may give a later request an id
+    /// an earlier process used: an answer to an ask from before a restart
+    /// must never reach a new one.
+    fn ask_for(&mut self, id: &RequestId) -> String {
+        self.asks_seen += 1;
+        let key = ask_key(self.asks_seen);
+        self.ask_requests.insert(key.clone(), request_id_key(id));
+        key
     }
 
     /// Refuses a request of the agent's at once, so it does not wait on
@@ -663,6 +707,7 @@ impl State {
         id: String,
         category: Category,
         value: &str,
+        apply: bool,
     ) -> bool {
         let Some(choice) = self.choice(category).cloned() else {
             return false;
@@ -688,7 +733,16 @@ impl State {
             return false;
         };
         let value = value.to_owned();
-        self.request(emit, id, request, Request::Set { category, value });
+        self.request(
+            emit,
+            id,
+            request,
+            Request::Set {
+                category,
+                value,
+                apply,
+            },
+        );
         true
     }
 
@@ -705,8 +759,15 @@ impl State {
     /// Gives a session the values amux wants it to have where it does not
     /// have them: the create config on a new session, and on a reopened one
     /// whatever the agent forgot (Antigravity reopens a session on its
-    /// defaults, `agy-load`, where Grok keeps them, `grok-load`).
+    /// defaults, `agy-load`, where Grok keeps them, `grok-load`). One at a
+    /// time, the model first: what thought levels and modes a session
+    /// offers can change with its model, so each is checked against what
+    /// the answer before it offers. Once nothing is left to restore the
+    /// agent takes its first prompt.
     fn apply_wanted(&mut self, emit: &mut Emit) {
+        if self.applying() {
+            return;
+        }
         let wanted = self.wanted.clone();
         for (category, value) in wanted {
             if self.current(category).as_deref() == Some(value.as_str()) {
@@ -719,11 +780,22 @@ impl State {
                     id => apply_request(id),
                 })
                 .unwrap_or_default();
-            if !self.send_setting(emit, id, category, &value) {
-                // Not offered here: the agent's own value stands.
-                self.wanted.remove(&category);
+            if self.send_setting(emit, id, category, &value, true) {
+                return;
             }
+            // Not offered here: the agent's own value stands.
+            self.wanted.remove(&category);
         }
+        if !self.shared.is_started() {
+            self.shared.provider_started();
+        }
+    }
+
+    /// A setting amux restores as the session opens is in flight.
+    fn applying(&self) -> bool {
+        self.requests
+            .values()
+            .any(|request| matches!(request, Request::Set { apply: true, .. }))
     }
 
     // --- items -----------------------------------------------------------
@@ -1085,6 +1157,16 @@ impl State {
                     self.submit(emit, entry, false);
                 }
             }
+            // An agent's message is its sender's to take back, not a
+            // person's.
+            acp_input::Of::Withdraw(withdraw)
+                if self
+                    .shared
+                    .pending_messages()
+                    .contains(&withdraw.queued_input_id) =>
+            {
+                self.shared.reject(emit, &id, Refusal::Unsupported)
+            }
             acp_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
@@ -1141,7 +1223,7 @@ impl State {
         }
         self.sets += 1;
         let request = set_request(self.sets);
-        if !self.send_setting(emit, request, category, &value) {
+        if !self.send_setting(emit, request, category, &value, false) {
             return self.shared.reject(emit, id, Refusal::Unsupported);
         }
         self.wanted.insert(category, value);
@@ -1262,6 +1344,23 @@ impl State {
             self.dismiss(emit, &ask);
         }
         self.settle_tools(emit);
+        // A message whose prompt the agent was given went with the process
+        // that had it: delivered, never sent again.
+        let in_flight: Vec<Vec<u8>> = self
+            .requests
+            .values()
+            .filter_map(|request| match request {
+                Request::Prompt {
+                    input_id,
+                    message: true,
+                    ..
+                } => Some(input_id.clone()),
+                _ => None,
+            })
+            .collect();
+        for envelope in in_flight {
+            self.shared.message_consumed(&envelope);
+        }
         self.forget_process();
         self.boundary(emit, wire::BoundaryKind::Exited, exit);
     }
@@ -1273,6 +1372,7 @@ impl State {
         self.prompts.clear();
         self.cancelled = false;
         self.stream = None;
+        self.ask_requests.clear();
     }
 }
 

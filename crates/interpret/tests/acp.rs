@@ -164,7 +164,10 @@ fn a_saved_session_is_resumed_before_it_is_loaded() {
     let neither = initialize(serde_json::json!({}));
     assert_eq!(opening(&both, Some("s")), Opening::Resume("s".into()));
     assert_eq!(opening(&load, Some("s")), Opening::Load("s".into()));
-    assert_eq!(opening(&neither, Some("s")), Opening::New);
+    // A conversation no new process can reopen is over: never a new one
+    // in its place.
+    assert_eq!(opening(&neither, Some("s")), Opening::Unresumable);
+    assert_eq!(opening(&neither, None), Opening::New);
     assert_eq!(opening(&both, None), Opening::New);
 }
 
@@ -272,4 +275,234 @@ fn send_now_goes_only_to_an_agent_that_steers() {
         let sent = Acp::step(&mut state, send_now("c", "b"));
         assert_eq!(refused(&sent.effects, "c"), !steers, "{provider}");
     }
+}
+
+fn writes(effects: &[Effect]) -> Vec<serde_json::Value> {
+    effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::ProviderWrite(bytes) => serde_json::from_slice(bytes).ok(),
+            _ => None,
+        })
+        .collect()
+}
+
+fn exit_cause(effects: &[Effect]) -> Option<String> {
+    effects.iter().find_map(|effect| match effect {
+        Effect::Exit { cause } => Some(cause.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_refused_reopening_ends_the_agent_and_starts_nothing() {
+    let (mut state, _) = Acp::initial(&spec("antigravity"));
+    let stepped = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::RESUME_REQUEST,
+            "error": {"code": -32002, "message": "no such session"}}),
+        ),
+    );
+    let cause = exit_cause(&stepped.effects).unwrap();
+    assert!(
+        cause.contains("refused to reopen its conversation"),
+        "{cause}"
+    );
+    assert!(writes(&stepped.effects).is_empty());
+}
+
+#[test]
+fn a_new_session_must_name_itself() {
+    let (mut state, _) = Acp::initial(&spec("antigravity"));
+    let stepped = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {}}),
+        ),
+    );
+    assert!(exit_cause(&stepped.effects).is_some());
+}
+
+fn permission(id: u64) -> Event {
+    rpc(
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "session/request_permission",
+        "params": {"sessionId": "s1", "toolCall": {"toolCallId": "c1"},
+            "options": [{"optionId": "yes", "name": "Allow", "kind": "allow_once"}]}}),
+    )
+}
+
+fn answer(id: &str, ask: &str) -> Event {
+    Event::Input(wire::Input::new(
+        id.as_bytes().to_vec(),
+        wire::AcpInput {
+            of: Some(wire::acp_input::Of::Answer(wire::AcpAnswer {
+                ask_key: ask.to_owned(),
+                of: Some(wire::acp_answer::Of::Option("yes".to_owned())),
+            })),
+        },
+    ))
+}
+
+/// An agent may reuse a request id in a later process; an answer to the
+/// earlier ask never reaches the later one.
+#[test]
+fn a_stale_answer_never_meets_an_ask_that_reused_its_request_id() {
+    let mut state = opened("opencode", serde_json::json!({"loadSession": true}));
+    Acp::step(&mut state, prompt("a", "go"));
+    Acp::step(&mut state, permission(0));
+    Acp::step(&mut state, Event::ProviderExit { code: Some(0) });
+    let mut next = spec("opencode");
+    next.incarnation = 2;
+    let (mut state, _) = Acp::reincarnate(state, &next);
+    Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::LOAD_REQUEST,
+            "result": {}}),
+        ),
+    );
+    Acp::step(&mut state, prompt("b", "again"));
+    Acp::step(&mut state, permission(0));
+    let stale = Acp::step(&mut state, answer("x", "ask-1"));
+    assert!(refused(&stale.effects, "x"));
+    assert!(writes(&stale.effects).is_empty());
+    let fresh = Acp::step(&mut state, answer("y", "ask-2"));
+    assert!(!refused(&fresh.effects, "y"));
+    assert_eq!(writes(&fresh.effects)[0]["id"], 0);
+}
+
+#[test]
+fn an_ask_while_cancelling_is_answered_cancelled_at_once() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "go"));
+    Acp::step(
+        &mut state,
+        Event::Input(wire::Input::new(
+            b"i".to_vec(),
+            wire::AcpInput {
+                of: Some(wire::acp_input::Of::Interrupt(wire::Interrupt {})),
+            },
+        )),
+    );
+    let asked = Acp::step(&mut state, permission(3));
+    assert_eq!(
+        writes(&asked.effects),
+        vec![serde_json::json!({"jsonrpc": "2.0", "id": 3,
+            "result": {"outcome": {"outcome": "cancelled"}}})]
+    );
+    assert!(state.shared().asks().is_empty());
+}
+
+#[test]
+fn an_agent_message_is_not_withdrawn() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "go"));
+    Acp::step(
+        &mut state,
+        Event::AgentMessage(wire::Envelope {
+            id: b"m".to_vec(),
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                text: "hello".into(),
+                attachments: Vec::new(),
+            })),
+            ..Default::default()
+        }),
+    );
+    let withdrawn = Acp::step(
+        &mut state,
+        Event::Input(wire::Input::new(
+            b"w".to_vec(),
+            wire::AcpInput {
+                of: Some(wire::acp_input::Of::Withdraw(wire::WithdrawQueued {
+                    queued_input_id: b"m".to_vec(),
+                })),
+            },
+        )),
+    );
+    assert!(refused(&withdrawn.effects, "w"));
+}
+
+fn select(id: &str, category: &str, current: &str, values: &[&str]) -> serde_json::Value {
+    serde_json::json!({"type": "select", "id": id, "name": id, "category": category,
+        "currentValue": current,
+        "options": values.iter().map(|value| serde_json::json!({"value": value, "name": value}))
+            .collect::<Vec<_>>()})
+}
+
+/// The model is restored first and the thought level checked against what
+/// the model offers; the first prompt waits for both.
+#[test]
+fn settings_are_restored_model_first_before_the_first_prompt() {
+    let mut created = spec("opencode");
+    created.config = Some(wire::EffectiveConfig {
+        model: Some("big".into()),
+        effort: Some("high".into()),
+        ..Default::default()
+    });
+    let (mut state, _) = Acp::initial(&created);
+    let opened = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {"sessionId": "s1",
+                "configOptions": [select("model", "model", "small", &["small", "big"])]}}),
+        ),
+    );
+    let sent = writes(&opened.effects);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["id"], "amux-apply-model");
+    let held = Acp::step(&mut state, prompt("a", "go"));
+    assert!(writes(&held.effects).is_empty());
+    let model = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": "amux-apply-model",
+            "result": {"configOptions": [select("model", "model", "big", &["small", "big"]),
+                select("effort", "thought_level", "low", &["low", "high"])]}}),
+        ),
+    );
+    let sent = writes(&model.effects);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0]["id"], "amux-apply-effort");
+    let effort = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": "amux-apply-effort",
+            "result": {"configOptions": [select("model", "model", "big", &["small", "big"]),
+                select("effort", "thought_level", "high", &["low", "high"])]}}),
+        ),
+    );
+    let sent = writes(&effort.effects);
+    assert_eq!(sent[0]["method"], "session/prompt");
+}
+
+/// A send-now the agent turns down waits its turn again, with the refusal
+/// shown, rather than standing as a steer that never landed.
+#[test]
+fn a_refused_send_now_waits_again() {
+    let mut state = opened("antigravity", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "first"));
+    Acp::step(&mut state, prompt("b", "second"));
+    let sent = Acp::step(&mut state, send_now("c", "b"));
+    assert!(!refused(&sent.effects, "c"));
+    let steer = writes(&sent.effects)
+        .into_iter()
+        .find(|write| write["method"] == "session/prompt")
+        .unwrap();
+    let turned_down = Acp::step(
+        &mut state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": steer["id"],
+            "error": {"code": -32603, "message": "busy"}})),
+    );
+    assert!(state.shared().queue().contains(b"b"));
+    assert!(!state.shared().queue().has_steered());
+    assert!(
+        turned_down
+            .step
+            .items
+            .iter()
+            .any(|item| item.key.contains("error"))
+    );
 }

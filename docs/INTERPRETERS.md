@@ -239,7 +239,9 @@ and every counter behind an item key carries on, so a later incarnation never
 reuses a key.
 
 The golden harness holds every interpreter to this: for every fixture, it
-checkpoints after every prefix of the events, resumes, runs the rest, and
+checkpoints after every prefix of the events (of a script longer than 96
+events: the first 24, evenly spaced ones up to 48 in all, the end, and both
+sides of every event that is not a provider fact), resumes, runs the rest, and
 requires the same items and final snapshot as the uninterrupted run, with a
 resume that re-emits only keys readers already have, at their current
 content.
@@ -1249,10 +1251,15 @@ session request under fixed ids (`INITIALIZE_REQUEST`,
 `NEW_SESSION_REQUEST`, `RESUME_REQUEST`, `LOAD_REQUEST`) and reads the
 answers as facts like everything else. `opening` picks how a new process
 opens the saved session: `session/resume` where offered, else
-`session/load`, else a new session. An agent offering neither cannot
-continue a conversation in a new process, so `holds` reports it
-(`unresumable`) once it has a session, and it never suspends. A refused
-`initialize` or session ends the incarnation with the agent's words; an
+`session/load`; a new session only when none is saved. A fresh
+conversation is never passed off as a reopened one: an agent offering
+neither cannot continue a conversation in a new process, so `holds` reports
+it (`unresumable`) once it has a session and it never suspends, and should
+its process end anyway, the next one exits at once (`Opening::Unresumable`)
+with `UNRESUMABLE` as the cause. Likewise a refused resume or load ends the
+incarnation and opens nothing in its place, so an agent's session never
+changes under it. A refused `initialize` or session, or a new session's
+answer naming no session, ends the incarnation with the agent's words; an
 `AUTH_REQUIRED` refusal also says signed out.
 
 **Replay.** `session/load` replays the whole conversation before it
@@ -1266,9 +1273,16 @@ only what describes the session: commands, settings, usage, title, plan.
 person makes, are what amux wants the session to have. When a session opens
 (new or reopened), each one it lacks is sent again under
 `amux-apply-<option>`, since Antigravity reopens on its defaults
-(`agy-load`) where Grok keeps them (`grok-load`). A person's change goes as
-`amux-set-<n>`; one before the session opens waits for it. A pick of none
-returns to the value the first session started with. The permission is the
+(`agy-load`) where Grok keeps them (`grok-load`). They go one at a time,
+model first, then effort, then mode, each checked against the options in
+the previous answer, since the efforts offered change with the model; a
+value no longer offered is dropped. The agent starts, and the first prompt
+goes, only once they have settled. A person's change goes as
+`amux-set-<n>`; one before the session opens waits for it. The latest pick
+for a setting is the one wanted: a refusal of an older pick leaves a newer
+one standing, and a refused pick with none newer falls back to the
+session's value. A pick of none returns to the value the first session
+started with. The permission is the
 agent's own; amux sets none and remembers no permission answer.
 
 **Queue.** The interpreter holds the queue. A prompt is `session/prompt`
@@ -1277,23 +1291,33 @@ ACP reflects no prompt. A prompt typed while one runs waits for that
 prompt's answer. Send-now is refused for an agent not known to steer; for
 one that is, the queued prompt is sent at once, and the earlier prompt's
 answer, coming first, draws the steer while the turn goes on under the
-later one. Agent messages are queued and sent as prompts the same way,
-labelled with their sender, and consumed at their prompt's answer.
+later one. A send-now the agent refuses goes back to waiting, with an error
+row giving the agent's words. Agent messages are queued and sent as prompts the same way,
+labelled with their sender, and consumed at their prompt's answer, or
+when the process ends before it. An accepted agent message cannot be
+withdrawn; only a person's queued prompt can.
 
 **Turns.** A turn ends at the answer to its last prompt: `end_turn`
 completes it, `cancelled` interrupts it (stopped, after a stop), `refusal`
 completes it with a refusal notice, `max_tokens` and `max_turn_requests`
 fail it with a notice, an error fails it with an error row. Usage comes
-from the answer (`usage`, or Grok's `_meta`) and the context meter from
-`usage_update`. Calls still running at the turn's end are cancelled and
+from the answer (`usage`, or Grok's `_meta`); an answer with neither
+clears the turn's token counts and keeps the session's cost. The context
+meter comes from `usage_update`. Calls still running at the turn's end are cancelled and
 its asks dismissed.
 
 **Cancel.** An interrupt or stop sends `session/cancel`, a notification,
-and answers every open ask of the turn cancelled at once, as ACP requires.
+and answers every open ask of the turn cancelled at once, as ACP requires;
+an ask that arrives while the turn is cancelling is answered cancelled and
+never opened.
 Chunks keep arriving until the `cancelled` answer (`agy-cancel`,
 `grok-cancel`) and are drawn.
 
-**Asks.** `session/request_permission` opens an ask on the call's own row
+**Asks.** An ask's key is amux's own (`ask-<n>`, counted across the
+agent's processes) and its JSON-RPC request id is kept beside it for the
+reply and for cancelling: a later process may reuse a request id, and an
+answer meant for an ask of an earlier process must never reach it.
+`session/request_permission` opens an ask on the call's own row
 offering exactly the agent's options; an answer names one by id, and an
 allow-always one is a session grant (`opencode-allow_always`).
 `elicitation/create` opens a form or link ask row. Replying instead

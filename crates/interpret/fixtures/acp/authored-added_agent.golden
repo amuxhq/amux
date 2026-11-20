@@ -31,9 +31,9 @@ item tool:c1 tool open at=1800000000000 text="" EXECUTE PENDING "Run cargo test"
 ## 10 fact {"channel":"rpc","json":{"id":7,"jsonrpc":"2.0","method":"session/request_permission","params":{"options":[{"kind":"allow_once","name":"Allow","optionId":"yes"},{"kind":"reject_once","name":"Reject","optionId":"no"}],"sessionId":"s1","toolCall":{"toolCallId":"c1"}}}}
 item tool:c1 tool open at=1800000000000 text="" EXECUTE PENDING "Run cargo test"
 snapshot said "Checking."
-snapshot NEEDS_YOU queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[7:permission[yes=ALLOW_ONCE,no=REJECT_ONCE]] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN
-notice ask 7 other "" "Run cargo test" why="" more=0
-## 11 input {"answer":{"answer":{"option":"maybe"},"ask":"7"},"id":"i2"}
+snapshot NEEDS_YOU queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[ask-1:permission[yes=ALLOW_ONCE,no=REJECT_ONCE]] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN
+notice ask ask-1 other "" "Run cargo test" why="" more=0
+## 11 input {"answer":{"answer":{"option":"maybe"},"ask":"ask-1"},"id":"i2"}
 effect reply i2 rejected:UNSUPPORTED
 ## 12 input {"id":"i3","interrupt":{}}
 effect write "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{\"sessionId\":\"s1\"}}"
@@ -105,13 +105,13 @@ effect log "my-own-agent sent _acme/heartbeat, which amux does not read"
 effect write "{\"error\":{\"code\":-32601,\"message\":\"amux does not handle _acme/ask\"},\"id\":\"x1\",\"jsonrpc\":\"2.0\"}"
 effect log "my-own-agent sent _acme/ask, which amux does not read"
 ## 30 fact {"channel":"rpc","json":{"id":9,"jsonrpc":"2.0","method":"elicitation/create","params":{"elicitationId":"e1","message":"Sign in to the docs server.","mode":"url","sessionId":"s1","url":"https://example.com/sign-in"}}}
-item ask:9 ask open at=1800000000000 text="" link  open
-snapshot NEEDS_YOU queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[9:link "Sign in to the docs server."] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN
-notice ask 9 other "" "Sign in to the docs server." why="" more=0
-## 31 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"9"},"id":"i6"}
+item ask:ask-2 ask open at=1800000000000 text="" link  open
+snapshot NEEDS_YOU queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[ask-2:link "Sign in to the docs server."] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN
+notice ask ask-2 other "" "Sign in to the docs server." why="" more=0
+## 31 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"ask-2"},"id":"i6"}
 effect write "{\"id\":9,\"jsonrpc\":\"2.0\",\"result\":{\"action\":\"accept\"}}"
 effect reply i6 accepted
-item ask:9 ask final at=1800000000000 text="" link  ASK_OUTCOME_ANSWERED
+item ask:ask-2 ask final at=1800000000000 text="" link  ASK_OUTCOME_ANSWERED
 snapshot IDLE queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN
 ## 32 provider_exit {"code":0}
 item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED cause=QUIT

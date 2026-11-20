@@ -39,8 +39,8 @@ item tool:call_920775116176871237 tool open at=3440 text="" OTHER RUNNING "Run m
 item tool:call_920775116176871237 tool open at=3440 text="" OTHER PENDING "Run mcp_spec_ask_the_operator" input="{\"toolSummary\":\"Confirm kiwi with operator\",\"word\":\"kiwi\"}"
 ## 28 recorded 27: fact Rpc method=session/request_permission
 item tool:call_920775116176871237 tool open at=3440 text="" OTHER PENDING "Run mcp_spec_ask_the_operator" input="{\"toolSummary\":\"Confirm kiwi with operator\",\"word\":\"kiwi\"}"
-snapshot NEEDS_YOU queue=[] working_on="Call the ask_the_operator tool from the spec tool server with the word kiwi, then reply with exactly what it returned." at=3440 agent=antigravity session=5966bbe7-45c2-48d4-9cf4-0c072dde9a53 asks=["1":permission[allow=ALLOW_ONCE,deny=REJECT_ONCE]] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9436/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
-notice ask "1" other "" "Run mcp_spec_ask_the_operator" why="" more=0
+snapshot NEEDS_YOU queue=[] working_on="Call the ask_the_operator tool from the spec tool server with the word kiwi, then reply with exactly what it returned." at=3440 agent=antigravity session=5966bbe7-45c2-48d4-9cf4-0c072dde9a53 asks=[ask-1:permission[allow=ALLOW_ONCE,deny=REJECT_ONCE]] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9436/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+notice ask ask-1 other "" "Run mcp_spec_ask_the_operator" why="" more=0
 ## 30 recorded 29: input p1-4
 effect write "{\"id\":\"1\",\"jsonrpc\":\"2.0\",\"result\":{\"outcome\":{\"optionId\":\"allow\",\"outcome\":\"selected\"}}}"
 effect reply p1-4 accepted

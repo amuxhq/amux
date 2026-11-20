@@ -543,6 +543,16 @@ struct AcpImplementation<'a> {
     version: Option<Cow<'a, str>>,
 }
 
+/// Whether ACP names this method, or a vendor's method is one agents are
+/// known to send.
+fn acp_method(method: &str) -> bool {
+    acp_protocol::AgentRequest::METHODS.contains(&method)
+        || acp_protocol::AgentNotification::METHODS.contains(&method)
+        || acp_protocol::ClientRequest::METHODS.contains(&method)
+        || acp_protocol::ClientNotification::METHODS.contains(&method)
+        || acp_protocol::EXTENSIONS.contains(&method)
+}
+
 /// The shape of an ACP agent's JSON-RPC message: its method and, for a
 /// session update, the update's tag. A tool call is named by ACP's own kind
 /// for it (`read`, `execute`), never by its title, which is the agent's free
@@ -567,13 +577,28 @@ pub fn acp_fact(fact: &Fact) -> FactShape {
             .and_then(|raw| serde_json::from_str(raw.get()).ok())
             .unwrap_or_default();
         let request = top.id.is_some().then_some("request");
-        shape.variant = join(&[request, Some(method), update.session_update.as_deref()]);
+        // Only names ACP or a known vendor gives are kept; anything else is
+        // an agent's own choice, which a record does not carry.
+        let method = if acp_method(method) {
+            method
+        } else {
+            "unknown"
+        };
+        let tag = update.session_update.as_deref().map(|tag| {
+            if acp_protocol::SessionUpdate::TAGS.contains(&tag) {
+                tag
+            } else {
+                "unknown"
+            }
+        });
+        shape.variant = join(&[request, Some(method), tag]);
         if update.raw_input.is_some() || update.kind.is_some() {
             shape.tools.push(ToolShape {
                 result: false,
                 name: update
                     .kind
                     .as_deref()
+                    .filter(|kind| acp_protocol::update::ToolKind::SPELLINGS.contains(kind))
                     .map(|kind| Name::Own(kind.to_owned())),
                 keys: names(keys(update.raw_input), true, None),
             });

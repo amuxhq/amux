@@ -194,7 +194,7 @@
       "input": {
         "id": "i2",
         "answer": {
-          "ask": "7",
+          "ask": "ask-1",
           "answer": {
             "option": "maybe"
           }
@@ -468,7 +468,7 @@
       "input": {
         "id": "i6",
         "answer": {
-          "ask": "9",
+          "ask": "ask-2",
           "answer": {
             "link": {
               "action": "accept"

@@ -1,8 +1,8 @@
 //! What the agent writes: answers, notifications and requests.
 
 use acp_protocol::agent::{
-    AuthState, InitializeResponse, PromptResponse, RequestPermissionRequest, SessionSetup,
-    SetSessionConfigOptionResponse, StopReason,
+    AuthState, InitializeResponse, NewSessionResponse, PromptResponse, RequestPermissionRequest,
+    SessionSetup, SetSessionConfigOptionResponse, StopReason,
 };
 use acp_protocol::elicitation::CreateElicitationRequest;
 use acp_protocol::session::SessionConfigOption;
@@ -19,7 +19,7 @@ use wire::{AcpAsk, AcpTool, acp_ask, acp_item};
 
 use super::{
     Category, INITIALIZE_REQUEST, LOAD_REQUEST, NEW_SESSION_REQUEST, RESUME_REQUEST, Request,
-    State, Streamed, ask_key, choices, finished, item_body, permission_kind, tool_class, tool_kind,
+    State, Streamed, choices, finished, item_body, permission_kind, tool_class, tool_kind,
 };
 use crate::{Channel, Effect, Emit, Fact, ItemDraft, ask_item, unknown};
 
@@ -196,8 +196,17 @@ impl State {
             },
             // The agent withdrew a request of its own: its ask closes.
             AgentNotification::CancelRequest(cancel) => {
-                if let Some(ask) = self.shared.close_ask(&ask_key(&cancel.request_id)) {
-                    self.dismiss(emit, &ask);
+                let id = super::request_id_key(&cancel.request_id);
+                let key = self
+                    .ask_requests
+                    .iter()
+                    .find(|(_, request)| **request == id)
+                    .map(|(key, _)| key.clone());
+                if let Some(key) = key {
+                    self.ask_requests.remove(&key);
+                    if let Some(ask) = self.shared.close_ask(&key) {
+                        self.dismiss(emit, &ask);
+                    }
                 }
             }
         }
@@ -492,6 +501,31 @@ impl State {
         request: AgentRequest,
         payload: &[u8],
     ) {
+        // An ask that comes while amux is cancelling the turn would only be
+        // answered cancelled, as every open ask was: so it is, at once.
+        let asks = matches!(
+            request,
+            AgentRequest::RequestPermission(_)
+                | AgentRequest::ElicitationCreate(
+                    CreateElicitationRequest::Form(_) | CreateElicitationRequest::Url(_)
+                )
+        );
+        if asks && self.cancelled {
+            self.asks_seen += 1;
+            let response = match request {
+                AgentRequest::RequestPermission(_) => {
+                    acp_protocol::ClientResponse::RequestPermission(
+                        acp_protocol::client::RequestPermissionResponse::cancelled(),
+                    )
+                }
+                _ => acp_protocol::ClientResponse::ElicitationCreate(
+                    acp_protocol::elicitation::CreateElicitationResponse::Cancel(
+                        acp_protocol::Empty::default(),
+                    ),
+                ),
+            };
+            return self.write(emit, &acp_protocol::ClientMessage::response(id, response));
+        }
         match request {
             AgentRequest::RequestPermission(request) => self.permission(emit, &id, request),
             AgentRequest::ElicitationCreate(CreateElicitationRequest::Form(form)) => {
@@ -556,7 +590,7 @@ impl State {
         self.tool_update(emit, &request.tool_call);
         let tool = self.tools.get(&call).cloned().unwrap_or_default();
         let ask = AcpAsk {
-            key: ask_key(id),
+            key: self.ask_for(id),
             item_key: super::tool_key(&call),
             body: Some(acp_ask::Body::Permission(wire::AcpPermission {
                 title: tool.title,
@@ -577,7 +611,7 @@ impl State {
 
     fn work_ask(&mut self, emit: &mut Emit, id: &RequestId, body: acp_ask::Body) {
         self.close_stream(emit);
-        let key = ask_key(id);
+        let key = self.ask_for(id);
         let ask = AcpAsk {
             item_key: ask_item::key(&key),
             key,
@@ -672,9 +706,11 @@ impl State {
                     message,
                     steer,
                 }) => self.prompt_answered(emit, &id, input_id, message, steer, result),
-                Some(Request::Set { category, value }) => {
-                    self.set_answered(emit, category, value, result)
-                }
+                Some(Request::Set {
+                    category,
+                    value,
+                    apply,
+                }) => self.set_answered(emit, category, value, apply, result),
                 // A request of an earlier process's, or of an earlier build.
                 None if id.starts_with("amux-") => {}
                 None => self.log(
@@ -715,8 +751,12 @@ impl State {
 
     /// The agent opened the session, or refused to. A refusal ends the
     /// incarnation with the agent's words: waiting would leave the agent
-    /// starting for good.
+    /// starting for good, and a refused reopening is never covered by a new
+    /// session, which would pass a fresh conversation off as the old one.
+    /// The session id never changes under an agent, so nothing keyed by the
+    /// agent's ids (its calls, its requests) needs the session in its key.
     fn session_opened(&mut self, emit: &mut Emit, id: &str, result: Result<Value, RpcError>) {
+        let reopened = id != NEW_SESSION_REQUEST;
         let result = match result {
             Ok(result) => result,
             Err(error) => {
@@ -724,20 +764,36 @@ impl State {
                     self.sign_in = Some(signed(wire::SignInState::SignedOut));
                     self.shared.stopped_by(crate::notice::signed_out());
                 }
+                let what = if reopened {
+                    "reopen its conversation"
+                } else {
+                    "open a session"
+                };
                 return emit.effect(Effect::Exit {
-                    cause: format!(
-                        "{} refused to open its session: {}",
-                        self.agent, error.message
-                    ),
+                    cause: format!("{} refused to {what}: {}", self.agent, error.message),
                 });
             }
         };
-        let Ok(setup) = serde_json::from_value::<SessionSetup>(result) else {
+        let setup = if reopened {
+            serde_json::from_value::<SessionSetup>(result).ok()
+        } else {
+            // A new session must name itself.
+            serde_json::from_value::<NewSessionResponse>(result)
+                .ok()
+                .map(|answer| SessionSetup {
+                    session_id: Some(answer.session_id),
+                    modes: answer.modes,
+                    models: answer.models,
+                    config_options: answer.config_options,
+                    meta: answer.meta,
+                    extra: answer.extra,
+                })
+        };
+        let Some(setup) = setup else {
             return emit.effect(Effect::Exit {
                 cause: format!("{} opened a session amux cannot read", self.agent),
             });
         };
-        let reopened = id != NEW_SESSION_REQUEST;
         if let Some(session) = setup.session_id
             && self.session_id.as_ref() != Some(&session)
         {
@@ -763,7 +819,6 @@ impl State {
         self.sign_in = Some(signed(wire::SignInState::SignedIn));
         self.shared.signed_in();
         self.opened = true;
-        self.shared.provider_started();
         self.start_boundary(
             emit,
             if reopened {
@@ -772,40 +827,64 @@ impl State {
                 wire::BoundaryKind::Started
             },
         );
+        // The agent takes input once its settings are restored.
         self.apply_wanted(emit);
     }
 
+    /// A setting's answer. What amux wants follows the newest pick of each
+    /// setting: an answer to an older one, refused or not, changes it only
+    /// while no newer pick of the same setting is in flight.
     fn set_answered(
         &mut self,
         emit: &mut Emit,
         category: Category,
         value: String,
+        apply: bool,
         result: Result<Value, RpcError>,
     ) {
+        let newer = self.requests.values().any(|request| {
+            matches!(request, Request::Set { category: pending, .. } if *pending == category)
+        });
         match result {
             Err(error) => {
                 self.log(
                     emit,
                     format!("{} refused a setting: {}", self.agent, error.message),
                 );
-                if let Some(current) = self.current(category) {
-                    self.wanted.insert(category, current);
-                }
-            }
-            Ok(result) => match serde_json::from_value::<SetSessionConfigOptionResponse>(result) {
-                Ok(answer) => self.merge_options(&answer.config_options),
-                // `session/set_mode` answers `{}` (`agy-config`): the session
-                // has the mode now.
-                Err(_) => {
-                    if let Some(choice) = self
-                        .choices
-                        .iter_mut()
-                        .find(|choice| choice.category == category)
-                    {
-                        choice.current = value;
+                if !newer {
+                    // The session keeps what it has.
+                    match self.current(category) {
+                        Some(current) if !apply => {
+                            self.wanted.insert(category, current);
+                        }
+                        _ => {
+                            self.wanted.remove(&category);
+                        }
                     }
                 }
-            },
+            }
+            Ok(result) => {
+                match serde_json::from_value::<SetSessionConfigOptionResponse>(result) {
+                    Ok(answer) => self.merge_options(&answer.config_options),
+                    // `session/set_mode` answers `{}` (`agy-config`): the
+                    // session has the mode now.
+                    Err(_) => {
+                        if let Some(choice) = self
+                            .choices
+                            .iter_mut()
+                            .find(|choice| choice.category == category)
+                        {
+                            choice.current = value.clone();
+                        }
+                    }
+                }
+                if !newer {
+                    self.wanted.insert(category, value);
+                }
+            }
+        }
+        if apply {
+            self.apply_wanted(emit);
         }
     }
 
@@ -822,8 +901,30 @@ impl State {
         if message {
             self.shared.message_consumed(&input_id);
         }
+        if steer && let Err(error) = &result {
+            // The agent would not take the prompt into its turn: it waits
+            // again, and the refusal says why.
+            self.shared.steer_refused(&input_id);
+            let key = self.local_key("error");
+            self.emit_item(
+                emit,
+                ItemDraft {
+                    key,
+                    body: item_body(acp_item::Kind::Error(wire::ApiError {
+                        error_kind: error.code.to_string(),
+                        message: error.message.clone(),
+                        ..Default::default()
+                    })),
+                    complete: true,
+                    ..Default::default()
+                },
+            );
+            if !self.prompts.is_empty() {
+                return;
+            }
+        }
         self.read_usage(&result);
-        if steer {
+        if steer && result.is_ok() {
             self.steer_reflected(emit, &input_id);
         }
         // A later prompt the agent folded into this turn: the turn goes on
@@ -886,6 +987,14 @@ impl State {
             usage.total_tokens = tokens.total_tokens;
             usage.thought_tokens = tokens.reasoning_tokens;
             usage.cached_read_tokens = tokens.cached_read_tokens;
+            usage.cached_write_tokens = None;
+        } else {
+            // The turn's tokens are unknown; the session's cost stands.
+            usage.input_tokens = None;
+            usage.output_tokens = None;
+            usage.total_tokens = None;
+            usage.thought_tokens = None;
+            usage.cached_read_tokens = None;
             usage.cached_write_tokens = None;
         }
     }
@@ -969,13 +1078,20 @@ impl State {
         self.settle_tools(emit);
         self.shared.steers_lost();
         if let Some(ended) = self.shared.turn_ended(emit, outcome) {
+            // As the turn's end records it: a stopped agent's turn ends
+            // stopped, however the agent words it.
+            let outcome = emit
+                .step
+                .turn_end
+                .as_ref()
+                .map_or(outcome as i32, |end| end.outcome);
             self.emit_item(
                 emit,
                 ItemDraft {
                     key: format!("turn:{}", ended.id),
                     body: item_body(acp_item::Kind::Turn(wire::Turn {
                         turn_id: ended.id,
-                        outcome: outcome as i32,
+                        outcome,
                         started_at_ms: ended.started_at_ms,
                     })),
                     complete: true,

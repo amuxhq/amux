@@ -106,11 +106,23 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         })
         .collect::<Result<Vec<_>, _>>()?;
     let later = process != "1";
+    // The interpreter numbers every ask the agent's life brought, earlier
+    // processes' included.
+    let earlier = |recorded: &&Recorded| {
+        recorded.dir == "stdout"
+            && recorded.process.parse::<u32>().ok() < process.parse::<u32>().ok()
+    };
+    let mut asks = lines
+        .iter()
+        .filter(earlier)
+        .filter_map(|recorded| recorded.line.as_deref())
+        .filter(|line| asked_for(line).is_some())
+        .count() as u64;
 
     let mut events = Vec::new();
     let mut now = None;
     let mut renamed = BTreeMap::<String, String>::new();
-    let mut asked = BTreeMap::<String, Asked>::new();
+    let mut asked = BTreeMap::<String, (Asked, String)>::new();
     let mut categories = BTreeMap::<String, Category>::new();
     let mut outstanding = Vec::<String>::new();
     let mut prompted = false;
@@ -156,19 +168,10 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         });
                     }
                 }
-                Ok(AgentMessage::Request { id, request, .. }) => {
-                    let what = match request {
-                        AgentRequest::RequestPermission(_) => Some(Asked::Permission),
-                        AgentRequest::ElicitationCreate(
-                            acp_protocol::elicitation::CreateElicitationRequest::Form(_),
-                        ) => Some(Asked::Form),
-                        AgentRequest::ElicitationCreate(
-                            acp_protocol::elicitation::CreateElicitationRequest::Url(_),
-                        ) => Some(Asked::Link),
-                        _ => None,
-                    };
-                    if let Some(what) = what {
-                        asked.insert(key(&id), what);
+                Ok(AgentMessage::Request { id, .. }) => {
+                    if let Some(what) = asked_for(line) {
+                        asks += 1;
+                        asked.insert(key(&id), (what, super::ask_key(asks)));
                     }
                 }
                 Ok(AgentMessage::Notification {
@@ -289,8 +292,10 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                 response: Ok(response),
                 ..
             } => {
-                let ask_key = key(&id);
-                let of = match (asked.remove(&ask_key), response) {
+                let Some((what, ask_key)) = asked.remove(&key(&id)) else {
+                    continue;
+                };
+                let of = match (Some(what), response) {
                     (Some(Asked::Permission), ClientResponse::RequestPermission(answer)) => {
                         match answer.outcome {
                             RequestPermissionOutcome::Selected(selected) => {
@@ -334,6 +339,26 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
     }
     events.push(Event::ProviderExit { code: Some(0) });
     Ok(events)
+}
+
+/// What a line of the agent's asks the person for, if it is an ask.
+fn asked_for(line: &str) -> Option<Asked> {
+    use acp_protocol::elicitation::CreateElicitationRequest;
+    match acp_protocol::decode(line.as_bytes()).ok()? {
+        AgentMessage::Request {
+            request: AgentRequest::RequestPermission(_),
+            ..
+        } => Some(Asked::Permission),
+        AgentMessage::Request {
+            request: AgentRequest::ElicitationCreate(CreateElicitationRequest::Form(_)),
+            ..
+        } => Some(Asked::Form),
+        AgentMessage::Request {
+            request: AgentRequest::ElicitationCreate(CreateElicitationRequest::Url(_)),
+            ..
+        } => Some(Asked::Link),
+        _ => None,
+    }
 }
 
 fn setting(category: Category, value: String) -> acp_input::Of {

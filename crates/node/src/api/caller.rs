@@ -13,8 +13,15 @@
 //! the peer service through the node it is attached to, with no list of
 //! services anywhere.
 
+use std::convert::Infallible;
+use std::task::{Context, Poll};
+
+use futures_util::future::Either;
+use tonic::body::Body;
 use tonic::codegen::http;
+use tonic::server::NamedService;
 use tonic::{Request, Status};
+use tower::Service;
 use wire::ErrorCode;
 
 use crate::grpc::{status, wire_error};
@@ -159,11 +166,51 @@ impl PairedDaemon {
     }
 }
 
-/// Why the entry's layer could not settle a `T` for a call: the refusal a
-/// handler that asks for one answers with. The layer settles what it can
-/// and refuses nothing itself, so a call no handler is mounted for is still
-/// answered "unimplemented", and only a handler that needs a caller it
-/// could not have refuses.
+/// `server`, answering only a call whose [`Caller`] its entry settled.
+/// Every service that answers a person or an agent is mounted through this,
+/// so a call that has none (on a link, one without the caller header: the
+/// paired daemon asking for itself) is refused with the entry's reason
+/// before any handler runs, and a handler cannot forget to check. A
+/// handler still reads who is calling with [`Caller::of`].
+pub(in crate::api) fn for_a_caller<S>(server: S) -> ForACaller<S> {
+    ForACaller(server)
+}
+
+/// A service's server behind the check that its call has a caller: see
+/// [`for_a_caller`].
+#[derive(Clone)]
+pub(in crate::api) struct ForACaller<S>(S);
+
+impl<S: NamedService> NamedService for ForACaller<S> {
+    const NAME: &'static str = S::NAME;
+}
+
+impl<S> Service<http::Request<Body>> for ForACaller<S>
+where
+    S: Service<http::Request<Body>, Response = http::Response<Body>, Error = Infallible>,
+{
+    type Response = http::Response<Body>;
+    type Error = Infallible;
+    type Future = Either<std::future::Ready<Result<http::Response<Body>, Infallible>>, S::Future>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+        self.0.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: http::Request<Body>) -> Self::Future {
+        match Caller::settled(request.extensions()) {
+            Ok(_) => Either::Right(self.0.call(request)),
+            Err(refusal) => Either::Left(std::future::ready(Ok(refusal.into_http()))),
+        }
+    }
+}
+
+/// Why the entry's layer could not settle a `T` for a call: the refusal the
+/// service that needs one answers with. The layer settles what it can and
+/// refuses nothing itself, so a call to a service no entry mounts is still
+/// answered "unimplemented", and only a service that needs a caller it
+/// could not have refuses: one that answers a person or an agent before
+/// its handlers run ([`for_a_caller`]), the peer service in each handler.
 #[derive(Clone, Debug)]
 pub(crate) struct Unsettled<T>(pub(crate) Status, std::marker::PhantomData<fn() -> T>);
 

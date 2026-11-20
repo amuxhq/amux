@@ -26,7 +26,7 @@ use wire::{
 };
 
 use crate::api::Entry;
-use crate::api::caller::{At, Caller};
+use crate::api::caller::{At, Caller, for_a_caller};
 use crate::grpc::{EventStream, agent_id, status, upgrade, wire_error};
 use crate::runtime::ProfileRuntime;
 use crate::{HostId, telemetry};
@@ -42,9 +42,9 @@ pub(in crate::api) fn mount(
         entry,
     };
     routes
-        .add_service(wire::inventory_service_server(local.clone()))
-        .add_service(wire::session_service_server(local.clone()))
-        .add_service(wire::draft_service_server(local));
+        .add_service(for_a_caller(wire::inventory_service_server(local.clone())))
+        .add_service(for_a_caller(wire::session_service_server(local.clone())))
+        .add_service(for_a_caller(wire::draft_service_server(local)));
 }
 
 /// The local services, as one entry serves them.
@@ -142,7 +142,6 @@ impl InventoryService for Local {
         &self,
         request: Request<ResolveAgentRequest>,
     ) -> Result<Response<ResolveAgentResponse>, Status> {
-        Caller::of(&request)?;
         self.runtime()?
             .resolve_agent(&request.into_inner().name)
             .await
@@ -154,7 +153,6 @@ impl InventoryService for Local {
         &self,
         request: Request<ResolveHostRequest>,
     ) -> Result<Response<ResolveHostResponse>, Status> {
-        Caller::of(&request)?;
         self.runtime()?
             .resolve_host_entry(&request.into_inner().name)
             .map(|host| Response::new(ResolveHostResponse { host: Some(host) }))

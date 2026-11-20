@@ -36,7 +36,7 @@ use wire::{
 
 use super::changes::person_or_parent;
 use crate::api::Entry;
-use crate::api::caller::{At, Caller};
+use crate::api::caller::{At, Caller, for_a_caller};
 use crate::grpc::{status, upgrade, wire_error};
 use crate::runtime::{AgentId, ProfileRuntime};
 use crate::telemetry::{self, InputShape};
@@ -54,9 +54,9 @@ pub(in crate::api) fn mount(
     runtime: &Weak<ProfileRuntime>,
     _entry: Entry,
 ) {
-    routes.add_service(wire::agent_service_server(Agents {
+    routes.add_service(for_a_caller(wire::agent_service_server(Agents {
         runtime: runtime.clone(),
-    }));
+    })));
 }
 
 /// AgentService for one profile. It holds the runtime weakly: a connection

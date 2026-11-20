@@ -447,6 +447,73 @@ async fn the_peer_service_refuses_a_call_carried_for_someone() {
     pair.stop().await;
 }
 
+/// A host service answers a person or an agent, and a call on a link
+/// without the caller header is the paired daemon asking for itself: every
+/// host service refuses it alike, before any handler runs, so none answers
+/// a paired daemon by forgetting to ask who is calling.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_service_refuses_the_paired_daemon_asking_for_itself() {
+    let pair = Pair::new().await;
+    let channel = pair.to_laptop().await;
+    let notes = pair.notes.id.as_bytes().to_vec();
+    let refusals = [
+        (
+            "GetCatalogue",
+            wire::host_service_client(channel.clone())
+                .get_catalogue(wire::GetCatalogueRequest {
+                    provider: wire::Provider::Codex as i32,
+                })
+                .await
+                .err(),
+        ),
+        (
+            "PinFolder",
+            wire::host_service_client(channel.clone())
+                .pin_folder(wire::PinFolderRequest {
+                    path: pair.laptop.path("code").display().to_string(),
+                    pinned: true,
+                })
+                .await
+                .err(),
+        ),
+        (
+            "GetChanges",
+            wire::review_service_client(channel.clone())
+                .get_changes(wire::GetChangesRequest {
+                    agent_id: notes.clone(),
+                    ..Default::default()
+                })
+                .await
+                .err(),
+        ),
+        (
+            "RenameAgent",
+            wire::agent_service_client(channel)
+                .rename_agent(wire::RenameAgentRequest {
+                    agent_id: notes,
+                    name: "renamed".to_owned(),
+                })
+                .await
+                .err(),
+        ),
+    ];
+    for (call, refused) in refusals {
+        let refused = refused.unwrap_or_else(|| panic!("{call} answered the paired daemon"));
+        assert_eq!(
+            refused.code(),
+            Code::PermissionDenied,
+            "{call}: {refused:?}"
+        );
+        assert!(
+            refused
+                .message()
+                .contains("asks for itself only on the peer service"),
+            "{call}: {refused:?}"
+        );
+    }
+    pair.stop().await;
+}
+
 /// Inventory, sessions and drafts are this node's, for the clients
 /// attached to it: none is mounted on a link, so a paired host cannot ask
 /// about third hosts, resolve a name here or read a draft.

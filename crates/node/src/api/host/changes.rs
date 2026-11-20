@@ -17,7 +17,7 @@ use wire::{
 };
 
 use crate::api::Entry;
-use crate::api::caller::Caller;
+use crate::api::caller::{Caller, for_a_caller};
 use crate::grpc::{agent_id, status, upgrade, wire_error};
 use crate::runtime::ProfileRuntime;
 
@@ -28,9 +28,9 @@ pub(in crate::api) fn mount(
     runtime: &Weak<ProfileRuntime>,
     _entry: Entry,
 ) {
-    routes.add_service(wire::review_service_server(Reviews {
+    routes.add_service(for_a_caller(wire::review_service_server(Reviews {
         runtime: runtime.clone(),
-    }));
+    })));
 }
 
 #[derive(Clone)]

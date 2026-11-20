@@ -168,8 +168,9 @@ fn settled(runtime: &Weak<ProfileRuntime>, entry: Entry, inner: Entrance) -> Ent
 
 /// The layer that settles a call's caller from its entry. It refuses
 /// nothing itself: what it cannot settle it records as the refusal, which
-/// a handler that asks for the caller answers with (see [`Caller::of`]),
-/// so a call no handler is mounted for is still answered "unimplemented".
+/// the service that needs the caller answers with (see [`Unsettled`]), so a
+/// call to a service the entry does not mount is still answered
+/// "unimplemented".
 #[derive(Clone)]
 struct Settle {
     inner: Entrance,

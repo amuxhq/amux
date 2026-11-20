@@ -11,7 +11,9 @@ public enum ReviewAction: Equatable, Sendable {
 }
 
 /// An agent's changes, uncommitted or on its branch, read and written about
-/// with a finger.
+/// with a finger, for an agent whose computer runs no reviews: the page
+/// reads the patch its host froze and the review goes into the chat's
+/// draft. With reviews offered, `ReviewScreen` is the page instead.
 ///
 /// The files come in the order the host's patch lists them, each under a
 /// heading that stays pinned while its file is read and that folds it.
@@ -21,7 +23,7 @@ public enum ReviewAction: Equatable, Sendable {
 /// and the bar's file menu lists them. Attaching puts the whole review into
 /// the chat's draft as one token that sends with the reference to the patch
 /// it was written against.
-public struct ReviewPage: View {
+public struct PatchReviewPage: View {
     @Environment(\.design) private var design
     let model: ReviewModel
     /// What the changes are counted against, as the overview words it:
@@ -400,22 +402,6 @@ private struct LineFrames: PreferenceKey {
     static let defaultValue: [ReviewLine: CGRect] = [:]
     static func reduce(value: inout [ReviewLine: CGRect], nextValue: () -> [ReviewLine: CGRect]) {
         value.merge(nextValue()) { $1 }
-    }
-}
-
-/// "+18 −28" in the diff's own green and red, leaving out a side that
-/// changed nothing.
-struct Delta: View {
-    @Environment(\.design) private var design
-    let added: UInt32
-    let removed: UInt32
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if added > 0 { Text(verbatim: "+\(added)").foregroundStyle(design.added.color) }
-            if removed > 0 { Text(verbatim: "\u{2212}\(removed)").foregroundStyle(design.removed.color) }
-        }
-        .fixedSize()
     }
 }
 

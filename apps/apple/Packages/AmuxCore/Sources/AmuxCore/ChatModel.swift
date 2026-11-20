@@ -92,6 +92,10 @@ public protocol ChatSource: AnyObject, Sendable {
     func reviewAnchor(from: Int, to: Int) -> ReviewAnchor?
     /// Closes the page: no delta carries it again.
     func closeReview()
+    /// The page of the round a review sent into the chat closed, read from
+    /// the agent's host apart from any page open on the chat; nil once the
+    /// host holds none of it, when the text the agent read is what shows.
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage?
 }
 
 extension ChatSource {
@@ -120,6 +124,26 @@ extension ChatSource {
     public func reviewPage() -> ReviewPage? { nil }
     public func reviewAnchor(from: Int, to: Int) -> ReviewAnchor? { nil }
     public func closeReview() {}
+    public func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? { nil }
+}
+
+/// A review sent into the chat, as its chip names it, for opening its
+/// round.
+public struct SentRound: Identifiable, Equatable, Sendable {
+    public let sent: SentReviewRef
+    /// What the agent read, shown when its host no longer holds the round.
+    public let text: String
+
+    public init(sent: SentReviewRef, text: String) {
+        self.sent = sent
+        self.text = text
+    }
+
+    /// The snapshot and exactly the comments sent name one round for good.
+    public var id: String {
+        ([sent.snapshot] + sent.commentIds.map { $0.map { String(format: "%02x", $0) }.joined() })
+            .joined(separator: "/")
+    }
 }
 
 /// What a client command asks of the screen: a picker or the rename card.
@@ -1176,6 +1200,20 @@ public final class ChatModel {
     public func closeReviewPage() {
         reviewPage?.close()
         reviewPage = nil
+    }
+
+    /// The round of a review sent into the chat, opened from its chip; the
+    /// screen raises it and clears this.
+    public var roundOpened: SentRound?
+
+    public func open(round: SentRound) {
+        roundOpened = round
+    }
+
+    /// The page of a sent review's round, read from the agent's host apart
+    /// from the page open on the chat; nil once the host holds none of it.
+    public func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? {
+        await source.reviewRound(sent)
     }
 
     /// The chip's ✕, once the person confirmed it: deletes the review's

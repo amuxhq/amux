@@ -243,6 +243,14 @@ public final class Chat: ChatSource, @unchecked Sendable {
         call(()) { live in amux_review_close(live) }
     }
 
+    public func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? {
+        let sent = Bridge.json(sent)
+        let answer = await loop.answer { [self] _ in
+            call(nil) { live in sent.withCString { amux_review_round(live, $0) } }
+        }
+        return Bridge.value(ReviewPage?.self, answer) ?? nil
+    }
+
     /// Starts an act on the review page on the core queue and waits for its
     /// `ReviewOutcome`; nil once the chat or the runtime has closed.
     private func reviewAct(

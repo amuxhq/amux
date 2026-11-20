@@ -253,7 +253,8 @@ public struct ChatScreen: View {
             screenWidth = $0.width
         }
         .environment(\.attachmentAccess, AttachmentAccess(
-            bytes: model.bytes(of:), failed: model.fetchFailed(of:), open: model.open(attachment:)))
+            bytes: model.bytes(of:), failed: model.fetchFailed(of:), open: model.open(attachment:),
+            openRound: model.open(round:)))
         .quickLookPreview(Binding(get: { model.opened }, set: { model.opened = $0 }))
         // The system's own way back, chevron alone: its edge swipe moves the
         // page with the finger and can be changed mid-way, as every pushed
@@ -263,6 +264,14 @@ public struct ChatScreen: View {
         .toolbar { bar }
         .accessibilityElement(children: .contain)
         .reported("chat", value: subject.name)
+        .sheet(item: Binding(get: { model.roundOpened }, set: { model.roundOpened = $0 })) { round in
+            ReviewRoundSheet(
+                round: round, read: { await model.reviewRound(round.sent) },
+                openReview: { actions(.review) }, close: { model.roundOpened = nil })
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .surface()
+        }
         .sheet(isPresented: $overviewOpen) {
             ChatOverview(model: model, subject: subject, now: Date()) {
                 overviewOpen = false
@@ -837,6 +846,9 @@ public struct ChatStanding: View {
                 }, dictate: { actions($0) }, openSettings: {
                     focused = false
                     showing = .settings
+                }, openReview: {
+                    focused = false
+                    actions(.review)
                 }, focused: $focused)
         }
     }
@@ -893,6 +905,11 @@ struct RowCellView: View {
                 toggleGroup: { if let group = row.group { model.toggleGroup(group) } },
                 openAgent: { openAgent($0) })
             .environment(\.attachmentRevision, cell.attachmentRevision)
+            // A hosted cell sits under the window, not the screen, so what
+            // its attachments open with is handed in here.
+            .environment(\.attachmentAccess, AttachmentAccess(
+                bytes: model.bytes(of:), failed: model.fetchFailed(of:), open: model.open(attachment:),
+                openRound: model.open(round:)))
         } else {
             Color.clear.frame(height: 0)
         }

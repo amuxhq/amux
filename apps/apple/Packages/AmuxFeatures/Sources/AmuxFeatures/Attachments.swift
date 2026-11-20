@@ -14,15 +14,19 @@ public struct AttachmentAccess: Sendable {
     public var bytes: @MainActor (BlobRef) -> Data?
     public var failed: @MainActor (BlobRef) -> Bool
     public var open: @MainActor (BlobRef) -> Void
+    /// Opens the round a review sent into the chat closed.
+    public var openRound: @MainActor (SentRound) -> Void
 
     public init(
         bytes: @escaping @MainActor (BlobRef) -> Data?,
         failed: @escaping @MainActor (BlobRef) -> Bool = { _ in false },
-        open: @escaping @MainActor (BlobRef) -> Void = { _ in }
+        open: @escaping @MainActor (BlobRef) -> Void = { _ in },
+        openRound: @escaping @MainActor (SentRound) -> Void = { _ in }
     ) {
         self.bytes = bytes
         self.failed = failed
         self.open = open
+        self.openRound = openRound
     }
 
     static let none = AttachmentAccess(bytes: { _ in nil })
@@ -37,7 +41,8 @@ extension EnvironmentValues {
 }
 
 /// An attachment in a message: an image's picture, or a chip that opens the
-/// file. What cannot be opened, a paste or a review, stays a plain chip.
+/// file, or for a review sent into the chat, its round. What cannot be
+/// opened, a paste or a review of a patch, stays a plain chip.
 struct MessageAttachment: View {
     @Environment(\.attachmentAccess) private var access
     let view: AttachmentView
@@ -50,6 +55,13 @@ struct MessageAttachment: View {
             Button { access.open(blob) } label: { AttachmentChip(view: view) }
                 .buttonStyle(.amuxControl)
                 .thumbTarget(y: 8)
+        case .sentReview(_, let review, let text):
+            Button { access.openRound(SentRound(sent: review, text: text)) } label: {
+                AttachmentChip(view: view)
+            }
+            .buttonStyle(.amuxControl)
+            .thumbTarget(y: 8)
+            .accessibilityHint("Opens the review it sent")
         default:
             AttachmentChip(view: view)
         }

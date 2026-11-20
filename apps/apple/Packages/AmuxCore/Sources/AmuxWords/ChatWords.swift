@@ -706,6 +706,39 @@ public enum ChatWords {
         }
     }
 
+    /// The foot of a page holding drafts, which goes back to the chat whose
+    /// next message sends them: "Done · 3 drafts".
+    public static func reviewDone(drafts: UInt32) -> String {
+        drafts == 1 ? String(localized: "Done · 1 draft") : String(localized: "Done · \(drafts) drafts")
+    }
+
+    /// A selection nothing can be written on: across files, or with no line.
+    public static let reviewOneFile = String(localized: "Select lines in one file")
+
+    /// Under a renamed file's path.
+    public static func reviewRenamedFrom(_ old: String) -> String {
+        String(localized: "Renamed from \(old)")
+    }
+
+    /// Under a file listed only for the comments on it.
+    public static let reviewOutsideChange = String(localized: "No longer part of the change")
+
+    /// Under a file that changed since the last round was sent.
+    public static let reviewChangedSinceLast = String(localized: "Changed since your last review")
+
+    /// A sent review's round, as its sheet is titled: "Round 2".
+    public static func reviewRound(_ number: UInt32) -> String {
+        String(localized: "Round \(number)")
+    }
+
+    /// Above a sent review's text, when the agent's computer no longer holds
+    /// its round.
+    public static let reviewRoundGone = String(
+        localized: "The agent’s computer no longer holds this round, so this is what the agent read.")
+
+    /// From a sent review's round to the review as it is now.
+    public static let reviewOpenReview = String(localized: "Open the Review")
+
     /// What an act on the review came to, when the page does not say it
     /// itself: nil once done, or when a banner on the page already says why.
     public static func reviewNotice(_ outcome: ReviewOutcome?) -> String? {

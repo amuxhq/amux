@@ -111,6 +111,10 @@ enum ComponentCatalog {
                 text: [.text("Here is the screen and the log."), .attachment(.image(F.photo)),
                        .attachment(.file(F.log)), .attachment(.text(name: "Pasted text", lines: 240, text: ""))],
                 steered: false))),
+            row("prompt-sent-review", height: 140, r("p5", 5, .prompt(
+                text: [.text("These two, then run the suite."),
+                       .attachment(.sentReview(comments: 2, review: ReviewStory.sent, text: ""))],
+                steered: false))),
             row("prompt-steered", r("p3", 3, .prompt(text: [.text("Use the new error table instead.")], steered: true))),
             row("prompt-quote", height: 150, r("p4", 4, .prompt(
                 text: [.text("> The retry only fires when the socket closes cleanly.\n\nOh **really**?")],
@@ -549,6 +553,14 @@ enum ComponentCatalog {
                 model.draft = "Please"
                 model.heard("tighten the retry path")
             },
+            // The agent's review holds drafts: its chip, which the next send
+            // carries, and while the agent works a send still, not Stop.
+            composer("review-chip", height: 200, frame: ScriptedChat.frame(
+                phase: .idle, reviewChip: ReviewChip(comments: 3, moved: false)),
+                     draft: "These three, then run the suite."),
+            composer("review-chip-working", height: 220, frame: ScriptedChat.frame(
+                phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 8_000, turnElapsedMs: 8_000),
+                reviewChip: ReviewChip(comments: 1, moved: true))),
             composer("review-token", height: 200, frame: ScriptedChat.frame(phase: .idle),
                      draft: "Please address these before the next run.") {
                 $0.attach(F.writtenReview())
@@ -852,37 +864,84 @@ extension ComponentCatalog {
 extension ComponentCatalog {
     // MARK: - Review
 
+    /// The agent's review page, drawn from pages the shared runtime would
+    /// hand over, with a scripted chat behind it whose acts change nothing.
     private static func review(
+        _ id: String, height: CGFloat = 844, size: DynamicTypeSize = .large,
+        page: @escaping @MainActor () -> ReviewPage, writing: Bool = false,
+        editing: (@MainActor (ReviewPage) -> ReviewCommentRow?)? = nil,
+        setUp: @escaping @MainActor (ReviewSession) -> Void = { _ in }
+    ) -> ComponentExample {
+        ComponentExample(
+            id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height),
+            dynamicTypeSize: size
+        ) {
+            // In a navigation stack, as the app pushes it, so its bar is the
+            // system's.
+            Pushed {
+                CatalogReviewPage(page: page(), setUp: setUp) { session in
+                    ReviewScreen(session: session, writing: writing, editing: editing?(session.page)) {}
+                }
+            }
+        }
+    }
+
+    /// The old page over a patch, for an agent whose computer runs no
+    /// reviews.
+    private static func patchReview(
         _ id: String, height: CGFloat = 844, writing: Bool = false, editing: Int? = nil,
         setUp: @escaping @MainActor (ReviewModel) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height)
         ) {
-            // In a navigation stack, as the app pushes it, so its bar is the
-            // system's.
             Pushed {
                 CatalogReview(setUp: setUp) { model in
-                    ReviewPage(model: model, against: "Uncommitted", writing: writing, editing: editing) { _ in }
+                    PatchReviewPage(model: model, against: "Uncommitted", writing: writing, editing: editing) { _ in }
                 }
             }
         }
     }
 
+    /// A sent review's round, raised over the chat from its chip.
+    private static func round(_ id: String, page: ReviewPage?) -> ComponentExample {
+        ComponentExample(id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: 844)) {
+            ReviewRoundSheet(
+                round: SentRound(sent: ReviewStory.sent, text: ReviewStory.sentText), page: page,
+                read: { page }, openReview: {}, close: {})
+        }
+    }
+
     fileprivate static let review: [ComponentExample] = {
         typealias F = CatalogFixtures
+        typealias R = ReviewStory
         return [
-            review("page") { F.comment($0) },
-            review("selection") { model in
+            review("page") { R.page() },
+            review("selection", page: { R.page() }, setUp: R.selectTwoLines),
+            review("comment", page: { R.page() }, writing: true, setUp: R.selectTwoLines),
+            review("editing", page: { R.page() }, editing: R.firstComment),
+            review("folded") { R.page(folded: true) },
+            review("since-last") { R.sinceLast() },
+            review("drafts-stale") { R.page(banners: [.changedSinceYouStarted]) },
+            review("moved-drafts") { R.page(banners: [.movedDrafts(count: 2)]) },
+            review("empty") { R.empty() },
+            review("nothing-since") { R.nothingSince() },
+            review("not-offered") { R.notOffered() },
+            review("opening") { ReviewSession.opening },
+            review("large-text", size: .accessibility3) { R.page() },
+            round("round", page: R.round()),
+            round("round-text", page: nil),
+            patchReview("patch-page") { F.comment($0) },
+            patchReview("patch-selection") { model in
                 model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
                 model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
             },
-            review("comment", writing: true) { model in
+            patchReview("patch-comment", writing: true) { model in
                 model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
                 model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
             },
-            review("editing", editing: 0) { F.comment($0) },
-            review("folded") { model in
+            patchReview("patch-editing", editing: 0) { F.comment($0) },
+            patchReview("patch-folded") { model in
                 F.comment(model)
                 model.toggle(file: 0)
                 model.toggle(file: 1)
@@ -898,6 +957,314 @@ extension ComponentCatalog {
                 identifier: "review"),
         ]
     }()
+}
+
+/// Holds one review page's session for as long as the example is drawn,
+/// over a scripted chat that has the page open.
+private struct CatalogReviewPage<Content: View>: View {
+    @State private var session: ReviewSession
+    let content: (ReviewSession) -> Content
+
+    init(
+        page: ReviewPage, setUp: @escaping @MainActor (ReviewSession) -> Void,
+        @ViewBuilder content: @escaping (ReviewSession) -> Content
+    ) {
+        let source = ScriptedChat(rows: [], frame: ScriptedChat.frame(phase: .idle))
+        source.anchorForAnySelection = ReviewStory.anchor
+        source.openedReview(page)
+        let session = ReviewSession(source: source)
+        setUp(session)
+        _session = State(initialValue: session)
+        self.content = content
+    }
+
+    var body: some View { content(session) }
+}
+
+/// An invented review of one agent's change to how its store opens: the
+/// pages the shared runtime would hand over for it.
+@MainActor
+enum ReviewStory {
+    static let snapshot = "5a1c0e7d9b3f42a8c6e1d0f9b7a5c3e1d2f4a6b8"
+    static let base = "b0e2d4f6a8c1e3a5c7e9b1d3f5a7c9e1b3d5f7a9"
+    static let lastRound = "3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3a5c7e9b1d"
+    static let open = "crates/store/src/open.rs"
+    static let lib = "crates/store/src/lib.rs"
+    static let lock = "Cargo.lock"
+
+    static let anchor = ReviewAnchor(commit: snapshot, path: open, start: 41, end: 42)
+
+    static let sent = SentReviewRef(
+        reviewId: [1], round: 1, snapshot: lastRound, commentIds: [[0x0a], [0x0b]])
+
+    /// What the agent read of the first round.
+    static let sentText = """
+        crates/store/src/open.rs, line 41, in impl Store › pub fn open:
+        +        let conn = Connection::open(path)?;
+        Return the store’s own error, not rusqlite’s.
+
+        crates/store/src/open.rs, line 42, in impl Store › pub fn open:
+        +        conn.busy_timeout(BUSY)?;
+        Name it for what it waits on.
+        """
+
+    /// The removed line 41 to the added line 42 of the store's open.
+    static func selectTwoLines(_ session: ReviewSession) {
+        session.select(index(of: "l/\(open)/41/0", in: session.page))
+        session.extend(to: index(of: "l/\(open)/0/42", in: session.page))
+    }
+
+    static func index(of key: String, in page: ReviewPage) -> Int {
+        page.rows.firstIndex { $0.key == key } ?? 0
+    }
+
+    nonisolated static func firstComment(_ page: ReviewPage) -> ReviewCommentRow? {
+        page.rows.lazy.compactMap { if case .comment(let comment) = $0.of { comment } else { nil } }.first
+    }
+
+    // MARK: - Pages
+
+    /// All changes on a first look: three files, the lock file folded, and
+    /// two drafts, one on the lines it is about and one on a whole file.
+    static func page(banners: [ReviewBanner] = [], folded: Bool = false) -> ReviewPage {
+        var rows: [ReviewRow] = []
+        rows.append(head(open, added: 2, removed: 1, comments: 1, folded: folded, scope: true))
+        if !folded {
+            rows += openBody(drafts: [
+                comment([0x01], open, "Why five seconds? The phone’s store waits two.", .draft, .lines(start: 42, end: 42)),
+            ])
+        }
+        rows.append(head(lib, status: .modified, added: 3, removed: 0, comments: 1, folded: folded))
+        if !folded {
+            rows.append(comment([0x02], lib, "Keep the flags beside the open that uses them.", .draft, .file))
+            rows += libBody()
+        }
+        rows.append(head(lock, added: 4, removed: 1, flags: [.lockfile], folded: true))
+        return ReviewPage(
+            banners: banners, rows: rows, toFetch: [], opening: false, empty: nil,
+            header: header(view: .all, files: 3, added: 9, removed: 2, drafts: 2, sent: 0, rounds: 0))
+    }
+
+    /// The next look, since the last round: one file changed since, an
+    /// earlier comment sent and outdated, another whose code nearby changed,
+    /// and a draft on a new line.
+    static func sinceLast() -> ReviewPage {
+        var rows: [ReviewRow] = []
+        rows.append(head(open, added: 1, removed: 1, comments: 3, changedSinceLast: true))
+        rows.append(comment(
+            [0x0a], open, "Return the store’s own error, not rusqlite’s.", .sent(round: 1), .outdated,
+            snippet: [
+                snip(open, .removed, old: 41, "        let conn = Connection::open(path)?;"),
+            ], folded: true))
+        rows.append(gap(open, hidden: 39, up: ask(open, 1, 39, "impl Store"), down: nil))
+        rows.append(hunk(open, old: 40, new: 40, ["impl Store", "pub fn open"]))
+        rows.append(code(open, .context, old: 40, new: 40, "    pub fn open(path: &Path) -> Result<Store, StoreError> {"))
+        rows.append(code(open, .context, old: 41, new: 41, "        let conn = Connection::open_with_flags(path, FLAGS)?;"))
+        rows.append(code(open, .removed, old: 42, "        conn.busy_timeout(BUSY)?;", changed: ["BUSY"]))
+        rows.append(code(open, .added, new: 42, "        conn.busy_timeout(BUSY_WAIT)?;", changed: ["BUSY_WAIT"], commented: true))
+        rows.append(comment(
+            [0x0b], open, "Name it for what it waits on.", .sent(round: 1), .lines(start: 42, end: 42),
+            changedNear: true))
+        rows.append(comment([0x03], open, "Thanks. Two seconds matches the phone.", .draft, .lines(start: 42, end: 42)))
+        rows.append(code(open, .context, old: 43, new: 43, "        migrate(&conn)?;"))
+        rows.append(gap(open, hidden: nil, up: nil, down: ask(open, 44, 63, nil)))
+        return ReviewPage(
+            banners: [], rows: rows, toFetch: [], opening: false, empty: nil,
+            header: header(view: .sinceLast, files: 1, added: 1, removed: 1, drafts: 1, sent: 2, rounds: 1))
+    }
+
+    /// Nothing left to review.
+    static func empty() -> ReviewPage {
+        ReviewPage(
+            banners: [], rows: [], toFetch: [], opening: false, empty: .nothing,
+            header: header(view: .all, files: 0, added: 0, removed: 0, drafts: 0, sent: 0, rounds: 0))
+    }
+
+    /// Nothing changed since the last round, which still lists the comment
+    /// sent in it.
+    static func nothingSince() -> ReviewPage {
+        ReviewPage(
+            banners: [], rows: [
+                head(open, added: 0, removed: 0, comments: 1),
+                comment(
+                    [0x0b], open, "Name it for what it waits on.", .sent(round: 1), .lines(start: 42, end: 42),
+                    snippet: [snip(open, .added, new: 42, "        conn.busy_timeout(BUSY)?;")]),
+            ], toFetch: [], opening: false, empty: .nothingSince,
+            header: header(view: .sinceLast, files: 0, added: 0, removed: 0, drafts: 0, sent: 1, rounds: 1))
+    }
+
+    /// An agent whose computer runs no reviews.
+    static func notOffered() -> ReviewPage {
+        ReviewPage(banners: [.notOffered], rows: [], toFetch: [], opening: false, empty: nil, header: nil)
+    }
+
+    /// The first round, as its chip opens it: each comment it sent on its
+    /// file, with the code stored with it.
+    static func round() -> ReviewPage {
+        let first = { (path: String) in
+            ReviewRow(key: "f/\(path)", of: .file(ReviewFileHead(
+                path: path, status: .modified, added: 0, removed: 0, binary: false, language: "rust",
+                flags: [], folded: false, changedSinceLast: false, inChange: false, comments: 1,
+                outline: [], oldPath: nil)))
+        }
+        return ReviewPage(
+            banners: [], rows: [
+                first(open),
+                comment(
+                    [0x0a], open, "Return the store’s own error, not rusqlite’s.", .sent(round: 1),
+                    .lines(start: 41, end: 41), snippet: [
+                        snip(open, .context, old: 38, new: 38, "impl Store {"),
+                        snip(open, .context, old: 40, new: 40, "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
+                        snip(open, .added, new: 41, "        let conn = Connection::open(path)?;"),
+                    ], scope: ["impl Store", "pub fn open"]),
+                comment(
+                    [0x0b], open, "Name it for what it waits on.", .sent(round: 1), .lines(start: 42, end: 42),
+                    snippet: [snip(open, .added, new: 42, "        conn.busy_timeout(BUSY)?;")],
+                    scope: ["impl Store", "pub fn open"]),
+            ], toFetch: [], opening: false, empty: nil,
+            header: ReviewHeader(
+                baseBranch: "main", baseCommit: base, snapshot: lastRound, view: .all, comparedWith: base,
+                views: [ReviewViewTab(view: .all, files: 0)], rounds: 0, files: 0, added: 0, removed: 0,
+                drafts: 0, sent: 2, discardDrafts: false, startOver: true))
+    }
+
+    // MARK: - Pieces
+
+    private static func header(
+        view: ReviewView, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32,
+        rounds: UInt32
+    ) -> ReviewHeader {
+        var views = [ReviewViewTab(view: .all, files: 3)]
+        if rounds > 0 { views.append(ReviewViewTab(view: .sinceLast, files: 1)) }
+        return ReviewHeader(
+            baseBranch: "main", baseCommit: base, snapshot: snapshot, view: view,
+            comparedWith: view == .all ? base : lastRound, views: views, rounds: rounds, files: files,
+            added: added, removed: removed, drafts: drafts, sent: sent, discardDrafts: drafts > 0,
+            startOver: true)
+    }
+
+    /// The change to how the store opens: a gap above, the hunk in `impl
+    /// Store › pub fn open`, and the rest of the file below.
+    private static func openBody(drafts: [ReviewRow]) -> [ReviewRow] {
+        var rows: [ReviewRow] = [
+            gap(open, hidden: 39, up: ask(open, 1, 39, "impl Store"), down: nil),
+            hunk(open, old: 40, new: 40, ["impl Store", "pub fn open"]),
+            code(open, .context, old: 40, new: 40, "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
+            code(open, .removed, old: 41, "        let conn = Connection::open(path)?;", changed: ["open"]),
+            code(open, .added, new: 41, "        let conn = Connection::open_with_flags(path, FLAGS)?;",
+                 changed: ["open_with_flags", "FLAGS"]),
+            code(open, .added, new: 42, "        conn.busy_timeout(BUSY)?;", commented: true),
+        ]
+        rows += drafts
+        rows += [
+            code(open, .context, old: 42, new: 43, "        migrate(&conn)?;"),
+            code(open, .context, old: 43, new: 44, "        Ok(Store { conn })"),
+            code(open, .context, old: 44, new: 45, "    }"),
+            gap(open, hidden: nil, up: nil, down: ask(open, 46, 65, nil)),
+        ]
+        return rows
+    }
+
+    private static func libBody() -> [ReviewRow] {
+        [
+            gap(lib, hidden: 11, up: ask(lib, 1, 11, nil), down: nil),
+            hunk(lib, old: 12, new: 12, []),
+            code(lib, .context, old: 12, new: 12, "use rusqlite::{Connection, OpenFlags};"),
+            code(lib, .added, new: 13, "const FLAGS: OpenFlags = OpenFlags::SQLITE_OPEN_READ_WRITE;"),
+            code(lib, .added, new: 14, "/// How long a write waits on another before giving up."),
+            code(lib, .added, new: 15, "const BUSY: Duration = Duration::from_secs(5);"),
+        ]
+    }
+
+    private static func head(
+        _ path: String, status: FileStatus = .modified, added: UInt32, removed: UInt32, comments: UInt32 = 0,
+        flags: [ReviewFileFlag] = [], folded: Bool = false, changedSinceLast: Bool = false, scope: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(key: "f/\(path)", of: .file(ReviewFileHead(
+            path: path, status: status, added: added, removed: removed, binary: false, language: "rust",
+            flags: flags, folded: folded || !flags.isEmpty, changedSinceLast: changedSinceLast, inChange: true,
+            comments: comments, outline: [], oldPath: nil)))
+    }
+
+    private static func hunk(_ path: String, old: UInt32, new: UInt32, _ scope: [String]) -> ReviewRow {
+        ReviewRow(key: "h/\(path)/\(old)/\(new)", of: .hunk(ReviewHunkHead(
+            path: path, oldCommit: base, oldStart: old, newStart: new, scope: scope)))
+    }
+
+    private static func gap(_ path: String, hidden: UInt32?, up: ReviewContextAsk?, down: ReviewContextAsk?) -> ReviewRow {
+        ReviewRow(
+            key: "g/\(path)/\(up?.start ?? down?.start ?? 0)",
+            of: .gap(ReviewGap(path: path, loading: false, down: down, hidden: hidden, up: up)))
+    }
+
+    private static func ask(_ path: String, _ start: UInt32, _ end: UInt32, _ definition: String?) -> ReviewContextAsk {
+        ReviewContextAsk(path: path, commit: snapshot, start: start, end: end, definition: definition)
+    }
+
+    private static func comment(
+        _ id: [UInt8], _ path: String, _ text: String, _ state: ReviewCommentState, _ at: ReviewCommentAt,
+        changedNear: Bool = false, snippet: [ReviewCodeLine] = [], scope: [String] = [], folded: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(
+            key: "c/" + id.map { String(format: "%02x", $0) }.joined(),
+            of: .comment(ReviewCommentRow(
+                id: id, path: path, text: text, state: state, at: at, changedNear: changedNear,
+                scope: scope, snippet: snippet, folded: folded)))
+    }
+
+    private static func code(
+        _ path: String, _ kind: LineKind, old: UInt32? = nil, new: UInt32? = nil, _ text: String,
+        changed: [String] = [], commented: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(key: "l/\(path)/\(old ?? 0)/\(new ?? 0)", of: .line(line(
+            path, kind, old: old, new: new, text, changed: changed, commented: commented)))
+    }
+
+    private static func snip(
+        _ path: String, _ kind: LineKind, old: UInt32? = nil, new: UInt32? = nil, _ text: String
+    ) -> ReviewCodeLine {
+        line(path, kind, old: old, new: new, text, changed: [], commented: false)
+    }
+
+    private static func line(
+        _ path: String, _ kind: LineKind, old: UInt32?, new: UInt32?, _ text: String, changed: [String],
+        commented: Bool
+    ) -> ReviewCodeLine {
+        ReviewCodeLine(
+            path: path, kind: kind, text: text, runs: runs(text, changed: changed), commented: commented,
+            extra: false, newLine: new, oldLine: old)
+    }
+
+    /// A line as the host would colour it: Rust's keywords, types, strings,
+    /// numbers and comments, and the words named changed.
+    private static func runs(_ text: String, changed: [String]) -> [ReviewRun] {
+        if text.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+            return [ReviewRun(text: text, kind: .comment, changed: false)]
+        }
+        let keywords: Set = ["pub", "fn", "let", "impl", "const", "use", "mut", "return"]
+        var out: [ReviewRun] = []
+        var word = ""
+        func flush() {
+            guard !word.isEmpty else { return }
+            let kind: TokenKind =
+                keywords.contains(word) ? .keyword
+                : word.first?.isUppercase == true && word != word.uppercased() ? .type
+                : word.first?.isNumber == true ? .number
+                : .plain
+            out.append(ReviewRun(text: word, kind: kind, changed: changed.contains(word)))
+            word = ""
+        }
+        for character in text {
+            if character.isLetter || character.isNumber || character == "_" {
+                word.append(character)
+            } else {
+                flush()
+                out.append(ReviewRun(text: String(character), kind: .plain, changed: false))
+            }
+        }
+        flush()
+        return out
+    }
 }
 
 /// Holds one review's model for as long as the example is drawn.

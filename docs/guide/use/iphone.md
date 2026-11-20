@@ -86,12 +86,49 @@ words instead.
 
 ## Reviewing changes
 
-Open an agent's changes from its chat to read every file it touched. Select a
-line, or a range of lines, and comment on it with **Add to Review**. Your
-comments go back into the composer as one review, ready to send to the agent.
-The count on the chat is of the agent's whole folder; if the folder changed
-since the agent last finished a turn, opening its changes brings the count up
-to date.
+Open an agent's changes from its chat: the changes count at the top, the
+overview's **Review changes**, or the review chip in the message box.
+
+With the reviews experiment switched on on the agent's computer, the review is
+a snapshot of the agent's folder, taken when you open it, and it stays put
+while you read. If the agent changes code meanwhile, the page says so and
+**Refresh** brings it up to date; pulling the page down does the same. Every
+file follows the next, each change under the functions it sits in, with the
+words an edited line changed marked. Lock files, generated and vendored files
+start folded; tap a file's name to fold or open it, and the list button at
+the top jumps between files. Tap the arrows on hidden lines to show more of
+the file above or below a change.
+
+- **Commenting:** tap a line to select it, and tap another line in the same
+  file to stretch the selection to it, or hold a line and drag. Then tap
+  **Comment on 3 lines** at the bottom. To comment on a whole file, hold its
+  name and choose **Comment on the File**.
+- **Changing a comment:** tap it to change its words or delete it.
+- **Sending:** comments are saved on the agent's computer as you write them,
+  so they're there from your other devices too. While you have drafts, the
+  message box shows a **Review · 3 comments** chip, and whatever you send next
+  carries them to the agent, with your message as the summary. You can send
+  the chip alone. **Done** at the bottom of the review takes you back there.
+  Tap the chip's **✕** to discard the drafts instead.
+- **The next look** opens on **Since your last review**: just what changed
+  since then, with your earlier comments where they sit now, folded away where
+  their lines changed. The switch at the top shows all the changes again.
+- **Starting over:** the **…** menu discards your drafts, or deletes the whole
+  review so the next look is a first look. Both ask first.
+
+With drafts waiting, opening the review keeps them on the code you wrote them
+on; refreshing moves them to the code as it is now, and any whose lines were
+edited become comments on their file.
+
+A review you sent shows in the chat as a chip. Tap it to see that round: each
+comment you sent, on the code you wrote it on. If the agent's computer no
+longer has the round, for example after you started over, you see the text
+the agent read instead.
+
+Where the agent's computer doesn't run reviews, the page shows the changes it
+froze when you opened them. Select a line, or a range of lines, and comment on
+it with **Add to Review**. Your comments go back into the composer as one
+review, ready to send to the agent.
 
 ## Computers
 

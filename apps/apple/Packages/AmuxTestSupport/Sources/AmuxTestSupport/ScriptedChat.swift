@@ -557,6 +557,15 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public private(set) var reviewChoices: [ReviewChoice] = []
     public private(set) var sentWithReview: [Draft] = []
 
+    /// A page already open on the chat, as a model opening on the chat
+    /// finds it: for a story drawn with no open to wait for.
+    public func openedReview(_ page: ReviewPage) {
+        lock.withLock {
+            scriptedReview = page
+            reviewShown = page
+        }
+    }
+
     /// Moves the open page, for the next delta to hand over.
     public func showReview(_ page: ReviewPage) {
         lock.withLock {
@@ -614,5 +623,21 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
 
     public func closeReview() {
         lock.withLock { reviewShown = nil }
+    }
+
+    /// What opening a sent review's round shows: nil for a host that no
+    /// longer holds it, when the review's text is what shows.
+    public var roundOnOpening: ReviewPage? {
+        get { lock.withLock { scriptedRound } }
+        set { lock.withLock { scriptedRound = newValue } }
+    }
+    private var scriptedRound: ReviewPage?
+    public private(set) var roundsOpened: [SentReviewRef] = []
+
+    public func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? {
+        lock.withLock {
+            roundsOpened.append(sent)
+            return scriptedRound
+        }
     }
 }

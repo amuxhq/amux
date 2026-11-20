@@ -11,7 +11,8 @@ public enum AttachChoice: String, Equatable, Sendable {
 }
 
 /// The composer: the activity line while the agent works, or the exited
-/// agent's head; the draft's attachments; the field; and under it the plus,
+/// agent's head; the draft's attachments and the review's chip; the field;
+/// and under it the plus,
 /// the model chip, the microphone and one round button that sends, stops,
 /// or on an exited agent resumes it with the draft. Drafting never waits;
 /// sending waits for the rows to be current and the agent live.
@@ -38,7 +39,11 @@ struct ComposerBox: View {
     let dictate: (ChatAction) -> Void
     /// Opens the settings card, from the model chip or the plus card.
     let openSettings: () -> Void
+    /// Opens the agent's review page, from the review's chip.
+    let openReview: () -> Void
     var focused: FocusState<Bool>.Binding
+    /// The chip's ✕ asks before the drafts go.
+    @State private var discarding = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -48,7 +53,9 @@ struct ComposerBox: View {
                 exitedHead(cause)
             }
             if let sentence = model.dictation.sentence { dictationLine(sentence) }
-            if !model.attachments.isEmpty || model.uploading > 0 { attachments }
+            if !model.attachments.isEmpty || model.uploading > 0 || model.reviewChip != nil {
+                attachments
+            }
             // No clear button: chat apps keep none, and one beside the words
             // wipes a long draft on a stray tap.
             TextField(placeholder, text: Binding(get: { model.draft }, set: { model.type($0) }), axis: .vertical)
@@ -262,6 +269,21 @@ struct ComposerBox: View {
                     .foregroundStyle(design.inkFaint.color)
                     .identified("chat.attaching")
             }
+            // Last, as the review goes after the message's words.
+            if let chip = model.reviewChip {
+                ReviewChipView(chip: chip, open: openReview) { discarding = true }
+                    .confirmationDialog(
+                        ChatWords.discardDrafts(chip.comments), isPresented: $discarding,
+                        titleVisibility: .visible
+                    ) {
+                        Button(String(localized: "Discard Drafts"), role: .destructive) {
+                            model.discardReviewDrafts()
+                        }
+                        .identified("chat.review.discard.confirm", label: String(localized: "Discard Drafts"))
+                    } message: {
+                        Text(ChatWords.discardDraftsDetail)
+                    }
+            }
         }
     }
 
@@ -270,9 +292,29 @@ struct ComposerBox: View {
         return false
     }
 
+    /// What the one round button under the field does.
+    enum Primary: Equatable {
+        /// Starts the exited agent again with the draft.
+        case resume
+        /// Ends the turn under way: there is nothing to send.
+        case interrupt
+        /// Sends, or queues while the agent works.
+        case send
+    }
+
+    /// A message is the draft or the review's chip alone, which goes with or
+    /// without words, so either one sends rather than interrupts.
+    static func primary(resuming: Bool, hasMessage: Bool, working: Bool) -> Primary {
+        if resuming { return .resume }
+        return !hasMessage && working ? .interrupt : .send
+    }
+
     @ViewBuilder
     private var primary: some View {
-        if model.frame?.composer.mode == .resume {
+        switch Self.primary(
+            resuming: model.frame?.composer.mode == .resume, hasMessage: model.hasMessage, working: working)
+        {
+        case .resume:
             let enabled = model.canResume && model.hasDraft
             Button { model.resume() } label: {
                 Text("Resume")
@@ -289,12 +331,12 @@ struct ComposerBox: View {
             .fixedSize()
             .disabled(!enabled)
             .identified("chat.resume", label: "Resume", enabled: enabled)
-        } else if !model.hasDraft && working {
+        case .interrupt:
             // It ends the turn, not the agent: Stop is the menu's, and ends it.
             round("stop.fill", label: String(localized: "Interrupt"), id: "chat.stop", enabled: true) {
                 model.interrupt()
             }
-        } else {
+        case .send:
             round(
                 "arrow.up",
                 label: working ? String(localized: "Queue") : String(localized: "Send"),
@@ -324,6 +366,92 @@ struct ComposerBox: View {
         .disabled(!enabled)
         .accessibilityLabel(label)
         .identified(id, label: label, enabled: enabled)
+    }
+}
+
+/// The review's chip among the draft's attachments while the agent's review
+/// holds drafts: "Review · 3 comments", and when the agent changed code
+/// after they were written, that too. A tap opens the review page; its ✕
+/// discards the drafts once the person confirms, since there is no sending
+/// without them. Accented apart from the files beside it: it is the
+/// person's own work, kept on the agent's computer, not something picked.
+struct ReviewChipView: View {
+    @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .caption) private var removeGlyph: CGFloat = 10
+    let chip: ReviewChip
+    let open: () -> Void
+    let discard: () -> Void
+
+    var body: some View {
+        let words = ChatWords.reviewChip(chip)
+        let spoken = chip.moved ? "\(words), \(ChatWords.reviewChipMoved)" : words
+        let reach = max(0, (44 - removeGlyph) / 2).rounded(.up)
+        HStack(spacing: 7) {
+            Button(action: open) {
+                HStack(spacing: 7) {
+                    Image(systemName: "text.bubble.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(design.accent.color)
+                    layout(words)
+                }
+                .thumbTarget(y: 8)
+            }
+            .buttonStyle(.amuxControl)
+            .reclaimingThumbTarget(y: 8)
+            .accessibilityLabel(spoken)
+            .accessibilityHint("Opens the review")
+            .identified("chat.review.chip", label: spoken, value: chip.moved ? "moved" : nil)
+            Button(action: discard) {
+                Image(systemName: "xmark")
+                    .font(.system(size: removeGlyph, weight: .semibold))
+                    .foregroundStyle(design.inkFaint.color)
+                    .frame(width: removeGlyph, height: removeGlyph)
+                    .thumbTarget(x: reach, y: reach)
+            }
+            .buttonStyle(.amuxControl)
+            .accessibilityLabel(String(localized: "Discard Drafts"))
+            .identified("chat.review.discard", label: String(localized: "Discard Drafts"))
+            .reclaimingThumbTarget(x: reach, y: reach)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background {
+            Capsule().fill(design.accent.color.opacity(0.12))
+                .overlay(Capsule().strokeBorder(design.accent.color.opacity(0.35), lineWidth: 1))
+        }
+    }
+
+    /// The count, then what changed: beside it where the line holds both,
+    /// else under it, rather than cutting either short.
+    @ViewBuilder
+    private func layout(_ words: String) -> some View {
+        let count = Text(verbatim: words).foregroundStyle(design.ink.color)
+        if chip.moved {
+            let moved = Text(verbatim: ChatWords.reviewChipMoved).foregroundStyle(design.inkMuted.color)
+            let stacked = VStack(alignment: .leading, spacing: 1) {
+                count.lineLimit(2)
+                moved.lineLimit(2)
+            }
+            Group {
+                if typeSize.isAccessibilitySize {
+                    stacked
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 0) {
+                            count.lineLimit(1)
+                            Text(verbatim: " · ").foregroundStyle(design.inkFaint.color)
+                            moved.lineLimit(1)
+                        }
+                        .fixedSize()
+                        stacked
+                    }
+                }
+            }
+            .designFont(.caption, design)
+        } else {
+            count.designFont(.caption, design).lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+        }
     }
 }
 

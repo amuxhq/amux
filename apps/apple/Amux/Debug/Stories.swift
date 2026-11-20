@@ -321,6 +321,8 @@ struct StoryApp: View {
                     rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: chatPhase),
                     strip: ScriptedChat.strip(model: "opus 4.6", git: CatalogFixtures.git))
                 chat.working = CatalogFixtures.review
+                chat.reviewOnOpening = ReviewStory.page()
+                chat.roundOnOpening = ReviewStory.round()
                 return chat
             })
         bundle.fleet.show(invented.view, hosts: invented.hostViews)

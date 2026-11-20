@@ -273,6 +273,65 @@ async fn an_agents_row_addresses_its_host_from_a_node_that_holds_a_copy() {
     net.shutdown().await.unwrap();
 }
 
+/// An agent's review is a host service like any other: its calls are
+/// addressed to the agent's host by the host's id and carried there by the
+/// node the client is attached to. A host that does not run reviews
+/// answers that it does not serve them; with the link down the call never
+/// leaves, and the client is told the host could not be reached.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_reviews_reach_its_host() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(
+                AgentDecl::new("far", "desk")
+                    .kind(FakeKind::ClaudeSdk)
+                    .steps(vec![Step::TurnEnd])
+                    .prompt("go"),
+            ),
+    )
+    .await
+    .unwrap();
+    net.settle("far").await.unwrap();
+    let far = net.agent("far").unwrap().id.as_bytes().to_vec();
+    for (name, client) in clients(&net, "laptop").await {
+        let row = row(&client, &far).await;
+        let refused = client
+            .agent(&row)
+            .reviews()
+            .open(None, false)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.code(),
+            Some(ErrorCode::Unimplemented),
+            "{name}: {refused}"
+        );
+        assert_eq!(refused.not_sent(), None, "{name}: the desk answered");
+    }
+
+    net.sever_link("desk", "laptop").unwrap();
+    for (name, client) in clients(&net, "laptop").await {
+        let reviews = client.agent(&row(&client, &far).await).reviews();
+        let unreached = patience::until("the laptop to find the desk unreachable", || async {
+            match reviews.open(None, false).await {
+                Err(error) if error.not_sent().is_some() => Ok(error),
+                other => Err(format!("{other:?}")),
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(unreached.not_sent(), Some(NotSent::Unreachable), "{name}");
+        assert!(
+            unreached.to_string().contains("desk"),
+            "{name}: the refusal names the host: {unreached}"
+        );
+    }
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_socket_client_says_transport_while_its_daemon_is_down_and_redials_after() {
     let mut net = Net::start(Topology::new().host("desk")).await.unwrap();

@@ -39,8 +39,8 @@ journeys = ["survive-daemon"]
 
 [[suite]]
 name = "agent-provider-hosting"
-contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe, and its Codex host its connection to the hosted app server, to their contracts."
-paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
+contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; an ACP agent reopens its session or ends for good when it cannot, gets attachments within what its prompts take and runs amux's own tools unasked; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe, and its Codex host its connection to the hosted app server, to their contracts."
+paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/acp.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
 recipe = "just suite agent-provider-hosting"
 boundary = "Provider adapter"
 oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, the thread/name/set requests the fake Codex logged, and the hosts' launch settings, forwarded payloads and decoded protocol messages."
@@ -53,7 +53,7 @@ evidence = "crates/agent/tests/replay"
 update = "Cut or rewrite a replay fixture from its recording in crates/interpret/fixtures/<kind>/live and record the change in crates/agent/tests/replay/README.md."
 cargo = [
   { package = "agent", kind = "lib", targets = ["agent"], features = [] },
-  { package = "agent", modules = ["codex_thread_name", "providers"], features = [] },
+  { package = "agent", modules = ["acp", "codex_thread_name", "providers"], features = [] },
 ]
 
 [[suite]]

@@ -304,6 +304,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   journal/0001048576          the next segment (1 MiB by default)
   pty/0000000000              raw terminal bytes, named the same way (terminal Claude only; the newest four kept)
   blobs/<sha256>              bytes the agent references, and what it offers as an encoded Catalogue the snapshot names, each named by its hash
+  review/objects/             the reviews experiment's snapshots of the working tree, as git objects kept out of the repository
   private/                    the agent's own state; the daemon never reads it
     facts/                    the ring of recent provider facts and interpreter checkpoints
     provider-session          the provider's session or thread id, so a resume continues it
@@ -332,8 +333,9 @@ the agent's directory.
 | `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |
 | `pty/*` | agent | agent | terminal clients, by position | agent, oldest first |
-| `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
+| `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
 | `private/*` | agent | agent | agent, and its part of a debug bundle | with the directory |
+| `review/*` | daemon | daemon, while the reviews experiment is on | git, with the store as an alternate object directory: the daemon, and the agent running the command its sent review names | daemon: with the directory, when the review is started over, and at the next profile open with the experiment off; never in a debug bundle |
 
 ### Everything else on disk
 
@@ -664,7 +666,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The client library every client calls its node through: the generated stubs over the profile socket, or in memory on the phone. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | The pure session and fleet model clients reduce their streams into, with the thin per-kind layer that decodes snapshot bodies, and the plain values the views and the phone bridge share ([`model.rs`](../crates/ui-state/src/model.rs)), from which the Swift mirrors are generated. |
-| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review document, and code coloured by kind of token for the code each client draws itself. |
+| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review page, and code coloured by kind of token for the code each client draws itself. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The session and fleet drivers: the only place a chat does I/O. |
 
 **Clients and binaries.**

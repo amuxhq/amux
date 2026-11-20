@@ -744,12 +744,11 @@ other agent's row counts. The daemon therefore sends `read_git` to every
 other agent of its host with a live process whose folder is the same as, or
 inside or around, the folder of an agent whose turn just ended; judging the
 checkout by path costs no git, and a folder it wrongly includes costs only
-a read that finds nothing new. When the daemon answers a `GetDiff` against
-HEAD, or against the row's base branch, and the diff's totals differ from
-the row's `uncommitted` or `on_branch`, it writes the diff's totals onto the
-row at once and sends the agent `read_git`, so the agent's next snapshot
-does not put the old totals back. An agent without a live process, such as
-a stopped or suspended one, is corrected only by a diff. A folder outside a repository, or a machine without git, has none.
+a read that finds nothing new. Only the agent's own reads write its row's
+totals: `GetChanges` compares the folder for whoever asks and stores
+nothing, so an agent without a live process, such as a stopped or suspended
+one, keeps the totals of its last read. A folder outside a repository, or a
+machine without git, has none.
 The base is the branch the agent's worktree was made from when its host
 made one (the spec's `base_branch`), else the repository's default branch:
 what `origin/HEAD` names, else the configured default, else `main` or

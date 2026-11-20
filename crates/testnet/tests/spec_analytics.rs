@@ -24,6 +24,9 @@ use crate::support;
 
 const SCOPE: &str = "analytics-test";
 
+/// The authority of a call the node behind the bridge's socket answers.
+const NODE: &str = "amux.local";
+
 /// What `host` counted, without steps that ran over their budget: a step's
 /// budget is wall-clock time, so a loaded machine counts some and an idle
 /// one none.
@@ -250,20 +253,18 @@ impl Bridge {
     async fn open(
         &mut self,
         target: &str,
-        authority: Option<&str>,
+        authority: &str,
         method: &str,
         request: &impl prost::Message,
     ) -> u64 {
         let id = self.next;
         self.next += 1;
-        let mut call = json!({
+        let call = json!({
             "target": target,
             "method": method,
             "body": STANDARD.encode(request.encode_to_vec()),
+            "authority": authority,
         });
-        if let Some(authority) = authority {
-            call["authority"] = json!(authority);
-        }
         self.send(&json!({ "id": id, "call": call })).await;
         id
     }
@@ -272,7 +273,7 @@ impl Bridge {
     async fn unary<T: prost::Message + Default>(
         &mut self,
         target: &str,
-        authority: Option<&str>,
+        authority: &str,
         method: &str,
         request: impl prost::Message,
     ) -> Result<T, Value> {
@@ -325,7 +326,7 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
     let profiles: wire::ListProfilesResponse = bridge
         .unary(
             "installation",
-            None,
+            NODE,
             "/amux.v1.InstallationService/ListProfiles",
             wire::ListProfilesRequest {},
         )
@@ -342,7 +343,7 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
     let fleet = bridge
         .open(
             &profile,
-            None,
+            NODE,
             "/amux.v1.InventoryService/SubscribeInventory",
             &wire::SubscribeInventoryRequest::default(),
         )
@@ -383,11 +384,11 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
             },
         )
     };
-    // Unaddressed, the laptop's node answers, and it owns no such agent.
+    // Addressed to the laptop's node, it answers, and it owns no such agent.
     let unaddressed = bridge
         .unary::<wire::SendInputResponse>(
             &profile,
-            None,
+            NODE,
             "/amux.v1.AgentService/SendInput",
             wire::SendInputRequest {
                 agent_id: worker.clone(),
@@ -406,7 +407,7 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
     let verdict: wire::SendInputResponse = bridge
         .unary(
             &profile,
-            Some(&to_desk),
+            &to_desk,
             "/amux.v1.AgentService/SendInput",
             wire::SendInputRequest {
                 agent_id: worker.clone(),

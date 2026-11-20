@@ -112,37 +112,35 @@ when it opens a profile's fleet), and a page review is counted once, on the
 host that owns the agent (`page_review_sent`, with the prompt counted as
 from here or from the paired host), and not on the node that carried it.
 
-**The bridge is a promise.** An installed host manifest runs it long after the
-build that wrote the manifest, for an extension at another version: its name,
-its arguments (a browser passes the extension's origin, and on Windows a
-window handle) and its framing only ever add. The command-line test in
-`crates/amux/src/main.rs` parses it. Everything the extension and amux say
-inside the framing is `amux.v1`. The bridge's greeting names the
-revision of the framing it speaks (`framing`), which goes up whenever
-the framing adds something, so an extension can tell what an older amux
-understands without reading meaning into amux's version:
+**The bridge's name and arguments are a promise.** An installed host
+manifest runs it long after the build that wrote the manifest, for an
+extension at another version: its name and its arguments (a browser passes
+the extension's origin, and on Windows a window handle) keep working. The
+command-line test in `crates/amux/src/main.rs` parses it. Everything the
+extension and amux say inside the framing is `amux.v1`. The bridge's greeting
+names the revision of the framing it speaks (`framing`), so an extension can
+tell what an amux understands without reading meaning into amux's version:
 
-| Framing | Adds |
+| Framing | Says |
 |---|---|
 | 1 | Calls by target, method and body; parts; cancelling. |
-| 2 | A call's optional `authority`. |
+| 2 | As 1, and every call names its `authority`: a host's id, or `amux.local` for the node behind the socket. |
 
-An extension sends a field only to a bridge whose framing has it. An older
-bridge ignores a field it does not know, so an `authority` sent to a framing 1
-bridge would be dropped and the call made to its node; the extension holds a
-call that names one until the greeting arrives, then sends it with the
-authority or without. A frame without the field, as an extension written for
-framing 1 sends, is read as it always was.
+Framing 2 is the one revision that did not only add. A bridge speaking it
+answers a call with no `authority`, which only an extension written for
+framing 1 makes, with "failed precondition" saying the extension needs
+updating, and then stops; that extension shows the words as why its
+connection to amux stopped. An extension that hears a framing older than its
+own says amux needs installing or updating, as it does when amux is missing.
 
-The framing is the one part of the extension's way to amux that never breaks.
-The calls inside it are `amux.v1`, deployed together with every host and app,
-which the extension cannot be: it updates through the Chrome Web Store's
-review, on the store's schedule. When the calls the extension makes move, the
-published extension stops working against the new amux until its update is
-approved; an extension built for the new calls against an older amux likewise
-gets "unimplemented". In both cases it lists the profiles and then shows no
-agents and no folders, so it has nowhere to send a review and sends nothing to
-the wrong place.
+The calls inside the framing are `amux.v1`, deployed together with every host
+and app, which the extension cannot be: it updates through the Chrome Web
+Store's review, on the store's schedule. When the calls the extension makes
+move without the framing changing, the published extension stops working
+against the new amux until its update is approved, and an extension built for
+the new calls against an older amux gets "unimplemented". In both cases it
+lists the profiles and then shows no agents and no folders, so it has nowhere
+to send a review and sends nothing to the wrong place.
 
 **Registration.** The supervisor writes, when it starts, a host manifest into
 the `NativeMessagingHosts` folder of each Chromium browser installed (Chrome,

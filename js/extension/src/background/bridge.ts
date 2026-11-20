@@ -1,9 +1,9 @@
 // The way to amux: native messaging to `amux internal browser`, which makes
 // each call as raw gRPC on the installation's socket or a profile's, and
 // streams the answers back. Calls are numbered; a response message too large
-// for one frame arrives in parts, joined here. A call may name the host it is
-// for by its authority, which the bridge passes to the node behind the
-// socket from framing 2 on; an older bridge is never sent one.
+// for one frame arrives in parts, joined here. Every call names who answers
+// it by its authority, which the bridge passes to the node behind the socket:
+// a host's id to carry it there, or `NODE` for the node itself.
 
 /** Where a call goes: the installation's front door, or a profile by its id in hex. */
 export type Target = "installation" | string;
@@ -31,8 +31,14 @@ export class CallError extends Error {
 /** gRPC's "unavailable": the daemon is not answering. */
 export const UNAVAILABLE = 14;
 
-/** The first revision of the framing whose calls may carry an authority. */
-export const AUTHORITY_FRAMING = 2;
+/**
+ * The revision of the framing this extension speaks: every call carries an
+ * authority. An amux whose bridge says less is older than this extension.
+ */
+export const FRAMING = 2;
+
+/** The authority of a call the node behind the socket answers itself. */
+export const NODE = "amux.local";
 
 interface Open {
   onMessage(message: string): void;
@@ -79,11 +85,6 @@ export class Bridge {
   version: string | null = null;
   /** The revision of the framing the bridge said it speaks, once it said. */
   framing: number | null = null;
-  /**
-   * Calls that name an authority, held until the greeting says whether the
-   * bridge reads one.
-   */
-  private waiting: Array<() => void> = [];
   /** Why the last port closed, if it did. */
   unreachable: Unreachable | null = null;
   private listeners = new Set<() => void>();
@@ -114,7 +115,6 @@ export class Bridge {
     this.port = null;
     this.version = null;
     this.framing = null;
-    this.waiting = [];
   }
 
   /** Hears when reachability or the version changes. */
@@ -150,9 +150,6 @@ export class Bridge {
       this.version = frame.hello.version;
       this.framing = frame.hello.framing;
       this.unreachable = null;
-      const held = this.waiting;
-      this.waiting = [];
-      for (const post of held) post();
       this.changed();
       return;
     }
@@ -174,17 +171,17 @@ export class Bridge {
 
   /**
    * Opens a stream: `onMessage` hears each response message (base64),
-   * `onEnd` how it ended. `authority` names the host the call is for; it is
-   * sent only to a bridge whose framing reads it, and an older one makes the
-   * call to its node. Answers a function that cancels it.
+   * `onEnd` how it ended. `authority` names who answers it: a host's id in
+   * the form every client writes it, or `NODE`. Answers a function that
+   * cancels it.
    */
   stream(
     target: Target,
+    authority: string,
     method: string,
     body: string,
     onMessage: (message: string) => void,
     onEnd: (end: End) => void,
-    authority?: string,
   ): () => void {
     const id = this.next++;
     this.open.set(id, { onMessage, onEnd, part: [] });
@@ -192,20 +189,7 @@ export class Bridge {
       if (this.open.delete(id)) onEnd({ code: UNAVAILABLE, message: String(error), details: "" });
     };
     try {
-      const port = this.connect();
-      const post = () => {
-        // Cancelled, or ended by the port closing, while it was held.
-        if (!this.open.has(id) || this.port !== port) return;
-        const call: Record<string, string> = { target, method, body };
-        if (authority !== undefined && (this.framing ?? 1) >= AUTHORITY_FRAMING) call.authority = authority;
-        try {
-          port.postMessage({ id, call });
-        } catch (error) {
-          failed(error);
-        }
-      };
-      if (authority === undefined || this.framing !== null) post();
-      else this.waiting.push(post);
+      this.connect().postMessage({ id, call: { target, method, body, authority } });
     } catch (error) {
       failed(error);
     }
@@ -217,12 +201,13 @@ export class Bridge {
     };
   }
 
-  /** A call answered by one message, for the host `authority` names when given. */
-  unary(target: Target, method: string, body: string, authority?: string): Promise<string> {
+  /** A call answered by one message, by whoever `authority` names. */
+  unary(target: Target, authority: string, method: string, body: string): Promise<string> {
     return new Promise((resolve, reject) => {
       let answer: string | null = null;
       this.stream(
         target,
+        authority,
         method,
         body,
         (message) => {
@@ -233,7 +218,6 @@ export class Bridge {
           else if (answer === null) reject(new CallError({ code: 2, message: "amux answered nothing", details: "" }));
           else resolve(answer);
         },
-        authority,
       );
     });
   }

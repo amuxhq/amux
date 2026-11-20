@@ -27,22 +27,20 @@
 //!
 //! A cancelled call ends with gRPC's "cancelled" (1).
 //!
-//! `authority` (framing 2) is optional. Without it a call is made to the
-//! node behind the target's socket, as every call was in framing 1. With it,
-//! the call is made with that authority on the same socket, and the router
-//! behind the socket decides who answers: a host's id in its canonical form
-//! is carried to that host, anything else is answered by the node. The
-//! bridge does not read what the authority says; one that cannot be an
-//! HTTP authority at all ends the call with "invalid argument". A call
-//! without the field, as an extension written for framing 1 sends, is made
-//! as before.
+//! Every call names its `authority`, and is made with it on the target's
+//! socket: the router behind the socket decides who answers. A host's id in
+//! its canonical form is carried to that host; anything else, `amux.local`
+//! included, is answered by the node. The bridge does not read what the
+//! authority says; one that cannot be an HTTP authority at all ends the call
+//! with "invalid argument".
 //!
-//! `framing` is which revision of this framing the bridge speaks. It only
-//! ever adds, and goes up when it does, so an extension can tell what an
-//! older amux understands without reading meaning into amux's version. An
-//! extension sends `authority` only to a bridge that says 2 or more: an
-//! older one ignores a field it does not know and would make the call to
-//! its node.
+//! `framing` is which revision of this framing the bridge speaks, so an
+//! extension can tell what an amux understands without reading meaning into
+//! amux's version. Framing 2 made `authority` part of every call. A call
+//! without one is from an extension written for framing 1, whose calls this
+//! build no longer serves: the bridge ends it with "failed precondition",
+//! saying the extension needs updating, and stops, so that extension shows
+//! the words as why its connection stopped.
 //!
 //! A browser refuses a message to the extension over 1 MB, so a response
 //! message is sent in parts of at most [`PART`] bytes before encoding, and
@@ -52,9 +50,8 @@
 //! the browser. A browser's own arguments (the extension's origin, and on
 //! Windows a window handle) are accepted and ignored.
 //!
-//! The framing is a promise: an installed host manifest calls this command
-//! long after the build that wrote it, from an extension at another version.
-//! Fields are only added.
+//! An installed host manifest calls this command long after the build that
+//! wrote it, from an extension at another version.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -90,9 +87,13 @@ const SURFACE: &str = "browser";
 /// The front door's target name; any other target is a profile's id in hex.
 const INSTALLATION: &str = "installation";
 
-/// The origin a call without an authority is made with: the node behind
-/// the socket answers it, as the client crate's own calls to the node.
-const NODE: &str = "http://amux.local";
+/// The authority the bridge's own call to the front door is made with: the
+/// node behind the socket answers it, as the client crate's own calls to
+/// the node.
+const NODE: &str = "amux.local";
+
+/// Why a call from an extension written for framing 1 is refused.
+const OUTDATED: &str = "this version of amux needs a newer amux browser extension: update the extension";
 
 /// Where the sockets are.
 #[derive(Clone, Debug)]
@@ -121,8 +122,8 @@ struct Call {
     method: String,
     #[serde(default)]
     body: String,
-    /// Who the call is addressed to, passed through unread; absent, the
-    /// node behind the target's socket.
+    /// Who the call is addressed to, passed through unread. Only an
+    /// extension written for framing 1 leaves it out.
     #[serde(default)]
     authority: Option<String>,
 }
@@ -173,10 +174,14 @@ where
         let Some(call) = incoming.call else {
             continue;
         };
+        let Some(authority) = call.authority.clone() else {
+            let _ = frames.send(end(id, &tonic::Status::failed_precondition(OUTDATED)));
+            break;
+        };
         let frames = frames.clone();
         let routes = routes.clone();
         let task = tokio::spawn(async move {
-            let status = match forward(&routes, &call, id, &frames).await {
+            let status = match forward(&routes, &call, &authority, id, &frames).await {
                 Ok(()) => tonic::Status::ok(""),
                 Err(status) => status,
             };
@@ -196,6 +201,7 @@ where
 async fn forward(
     routes: &Routes,
     call: &Call,
+    authority: &str,
     id: u64,
     frames: &mpsc::UnboundedSender<Value>,
 ) -> Result<(), tonic::Status> {
@@ -206,9 +212,7 @@ async fn forward(
         .method
         .parse::<tonic::codegen::http::uri::PathAndQuery>()
         .map_err(|_| tonic::Status::invalid_argument("a call's method is not a path"))?;
-    let channel = routes
-        .channel(&call.target, call.authority.as_deref())
-        .await?;
+    let channel = routes.channel(&call.target, authority).await?;
     // Sized as every other amux client is, so a blob up to the attachment
     // limit arrives (in parts) rather than failing tonic's 4 MiB default.
     let mut grpc = tonic::client::Grpc::new(channel)
@@ -265,8 +269,8 @@ fn end(id: u64, status: &tonic::Status) -> Value {
 }
 
 /// Where a channel goes: a target's socket, and the authority its calls
-/// are made with (none: the node behind the socket).
-type Route = (String, Option<String>);
+/// are made with.
+type Route = (String, String);
 
 /// The channels to the front door and each profile's socket, one per
 /// target and authority, opened on first use and kept.
@@ -283,12 +287,8 @@ impl Routes {
         }
     }
 
-    async fn channel(
-        &self,
-        target: &str,
-        authority: Option<&str>,
-    ) -> Result<Channel, tonic::Status> {
-        let route = (target.to_owned(), authority.map(str::to_owned));
+    async fn channel(&self, target: &str, authority: &str) -> Result<Channel, tonic::Status> {
+        let route = (target.to_owned(), authority.to_owned());
         if let Some(channel) = self.open.lock().await.get(&route) {
             return Ok(channel.clone());
         }
@@ -325,13 +325,13 @@ impl Routes {
     /// A profile's client socket, as the front door names it.
     async fn profile_socket(&self, profile: &str) -> Result<PathBuf, tonic::Status> {
         use wire::installation_service_client::InstallationServiceClient;
-        let door_route = (INSTALLATION.to_owned(), None);
+        let door_route = (INSTALLATION.to_owned(), NODE.to_owned());
         let open = self.open.lock().await.get(&door_route).cloned();
         let door = match open {
             Some(door) => door,
             None => {
                 let front_door = self.sockets.front_door.clone();
-                self.dial(door_route, &front_door, origin(None)?).await?
+                self.dial(door_route, &front_door, origin(NODE)?).await?
             }
         };
         let profiles = InstallationServiceClient::new(door)
@@ -351,10 +351,7 @@ impl Routes {
 /// its endpoint's authority over every request's, so an authority is a
 /// channel of its own. Only its form as an HTTP authority is looked at;
 /// what it names is the router's to decide.
-fn origin(authority: Option<&str>) -> Result<Endpoint, tonic::Status> {
-    let Some(authority) = authority else {
-        return Ok(Endpoint::from_static(NODE));
-    };
+fn origin(authority: &str) -> Result<Endpoint, tonic::Status> {
     let refused = || tonic::Status::invalid_argument("a call's authority is not an authority");
     let authority = authority
         .parse::<tonic::codegen::http::uri::Authority>()
@@ -454,45 +451,17 @@ mod tests {
         assert_eq!(parts(1, &[]), [json!({"id": 1, "message": ""})]);
     }
 
-    /// A call frame from an extension written for framing 1 has no
-    /// authority, and reads as a call to the node; one that names an
-    /// authority keeps it as it was written.
-    #[test]
-    fn a_call_reads_with_or_without_an_authority() {
-        let old: Incoming = serde_json::from_value(json!({
-            "id": 1,
-            "call": {"target": "ab01", "method": "/amux.v1.AgentService/SendInput", "body": ""},
-        }))
-        .unwrap();
-        assert_eq!(old.call.unwrap().authority, None);
-        let addressed: Incoming = serde_json::from_value(json!({
-            "id": 2,
-            "call": {
-                "target": "ab01",
-                "method": "/amux.v1.AgentService/SendInput",
-                "body": "",
-                "authority": "0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80",
-            },
-        }))
-        .unwrap();
-        assert_eq!(
-            addressed.call.unwrap().authority.as_deref(),
-            Some("0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80")
-        );
-    }
-
     /// Any authority an HTTP request can carry is passed on, the router
     /// deciding what it names; one no request can carry is refused.
     #[test]
     fn an_authority_is_passed_on_in_any_form_a_request_carries() {
-        assert_eq!(origin(None).unwrap().uri(), NODE);
         for passed in [
             "0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80",
             "0192F0C8-7A51-7C3E-9D2F-3B1C5E6A7D80",
             "amux.local",
             "desk",
         ] {
-            let endpoint = origin(Some(passed)).unwrap();
+            let endpoint = origin(passed).unwrap();
             assert_eq!(
                 endpoint.uri().authority().unwrap().as_str(),
                 passed,
@@ -500,7 +469,7 @@ mod tests {
             );
         }
         for refused in ["", "desk/agents", "two words"] {
-            let status = origin(Some(refused)).unwrap_err();
+            let status = origin(refused).unwrap_err();
             assert_eq!(status.code(), tonic::Code::InvalidArgument, "{refused:?}");
         }
     }
@@ -543,7 +512,7 @@ mod tests {
         assert_eq!(hello["hello"]["framing"], json!(2));
         write_frame(
             &mut browser,
-            &json!({"id": 1, "call": {"target": "installation", "method": "/amux.v1.InstallationService/ListProfiles", "body": ""}}),
+            &json!({"id": 1, "call": {"target": "installation", "method": "/amux.v1.InstallationService/ListProfiles", "body": "", "authority": "amux.local"}}),
         )
         .await
         .unwrap();
@@ -553,5 +522,37 @@ mod tests {
         assert_eq!(ended["end"]["code"], json!(tonic::Code::Unavailable as i32));
         drop(browser);
         served.await.unwrap().unwrap();
+    }
+
+    /// A call with no authority, as an extension written for framing 1
+    /// makes every call, ends saying the extension needs updating, and the
+    /// bridge stops, so that extension shows why its connection stopped.
+    #[tokio::test]
+    async fn a_call_from_an_extension_for_framing_1_is_refused_and_the_bridge_stops() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut browser, bridge) = tokio::io::duplex(64 * 1024);
+        let (bridge_in, bridge_out) = tokio::io::split(bridge);
+        let sockets = Sockets {
+            front_door: dir.path().join("amux.sock"),
+        };
+        let served = tokio::spawn(serve(bridge_in, bridge_out, sockets));
+        read_frame(&mut browser).await.unwrap().unwrap();
+        write_frame(
+            &mut browser,
+            &json!({"id": 1, "call": {"target": "installation", "method": "/amux.v1.InstallationService/ListProfiles", "body": ""}}),
+        )
+        .await
+        .unwrap();
+        let ended = read_frame(&mut browser).await.unwrap().unwrap();
+        let ended: Value = serde_json::from_slice(&ended).unwrap();
+        assert_eq!(
+            ended,
+            json!({"id": 1, "end": {"code": tonic::Code::FailedPrecondition as i32, "message": OUTDATED, "details": ""}})
+        );
+        served.await.unwrap().unwrap();
+        assert!(
+            read_frame(&mut browser).await.unwrap().is_none(),
+            "the bridge stopped"
+        );
     }
 }

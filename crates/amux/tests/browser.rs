@@ -70,25 +70,21 @@ impl Bridge {
     }
 
     /// Makes a call and gathers its messages, joining parts, until it ends.
-    /// Without an authority the frame is as an extension for framing 1
-    /// writes it, with no such field at all.
     async fn call(
         &mut self,
         target: &str,
-        authority: Option<&str>,
+        authority: &str,
         method: &str,
         request: impl prost::Message,
     ) -> Result<Vec<Vec<u8>>, Value> {
         let id = self.next;
         self.next += 1;
-        let mut call = json!({
+        let call = json!({
             "target": target,
             "method": method,
             "body": STANDARD.encode(request.encode_to_vec()),
+            "authority": authority,
         });
-        if let Some(authority) = authority {
-            call["authority"] = json!(authority);
-        }
         self.send(&json!({ "id": id, "call": call })).await;
         let mut messages = Vec::new();
         let mut part = Vec::new();
@@ -114,13 +110,13 @@ impl Bridge {
         method: &str,
         request: impl prost::Message,
     ) -> T {
-        self.unary_to(target, None, method, request).await
+        self.unary_to(target, NODE, method, request).await
     }
 
     async fn unary_to<T: prost::Message + Default>(
         &mut self,
         target: &str,
-        authority: Option<&str>,
+        authority: &str,
         method: &str,
         request: impl prost::Message,
     ) -> T {
@@ -132,6 +128,9 @@ impl Bridge {
         T::decode(messages[0].as_slice()).unwrap()
     }
 }
+
+/// The authority of a call the node behind the bridge's socket answers.
+const NODE: &str = "amux.local";
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -297,7 +296,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     );
 
     // Named by its own id as the authority, the desk's node answers as it
-    // does a call with none: the router carries only another host's.
+    // does a call to `amux.local`: the router carries only another host's.
     let identity: wire::GetDeviceIdentityResponse = bridge
         .unary(
             &profile,
@@ -309,7 +308,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     let addressed: wire::PutBlobResponse = bridge
         .unary_to(
             &profile,
-            Some(&wire::authority(&own)),
+            &wire::authority(&own),
             "/amux.v1.AgentService/PutBlob",
             wire::PutBlobRequest {
                 agent_id: agent.clone(),
@@ -327,7 +326,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     let carried = bridge
         .call(
             &profile,
-            Some(&stranger),
+            &stranger,
             "/amux.v1.AgentService/SendInput",
             wire::SendInputRequest {
                 agent_id: agent.clone(),
@@ -344,7 +343,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     let refused = bridge
         .call(
             &profile,
-            Some("not an authority"),
+            "not an authority",
             "/amux.v1.AgentService/SendInput",
             wire::SendInputRequest::default(),
         )
@@ -366,6 +365,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
                 "target": profile,
                 "method": "/amux.v1.InventoryService/SubscribeInventory",
                 "body": STANDARD.encode(wire::SubscribeInventoryRequest::default().encode_to_vec()),
+                "authority": NODE,
             },
         }))
         .await;

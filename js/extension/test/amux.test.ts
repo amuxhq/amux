@@ -33,7 +33,7 @@ const FAR = "22222222222222222222222222222222";
 
 interface Sent {
   id: number;
-  call?: { target: string; method: string; body: string; authority?: string };
+  call?: { target: string; method: string; body: string; authority: string };
 }
 
 /** A native port to a bridge of `framing` that answers every unary call. */
@@ -112,18 +112,21 @@ describe("what the extension asks amux", () => {
       ["/amux.v1.AgentService/PutBlob", `authority of ${FAR}`],
       ["/amux.v1.AgentService/SendInput", `authority of ${FAR}`],
     ]);
-    // Reads of the profile's own node name none.
+    // Reads of the profile's own node name the node.
     expect(calls.filter((call) => !acts.includes(call)).map((call) => [call.method, call.authority])).toEqual([
-      ["/amux.v1.InstallationService/ListProfiles", undefined],
-      ["/amux.v1.ProfileAdminService/GetDeviceIdentity", undefined],
-      ["/amux.v1.InventoryService/SubscribeInventory", undefined],
+      ["/amux.v1.InstallationService/ListProfiles", "amux.local"],
+      ["/amux.v1.ProfileAdminService/GetDeviceIdentity", "amux.local"],
+      ["/amux.v1.InventoryService/SubscribeInventory", "amux.local"],
     ]);
   });
 
-  it("names none to a bridge that would not read it", async () => {
-    const calls = (await sendToFarAgent(1)).flatMap((frame) => (frame.call ? [frame.call] : []));
-    expect(calls.every((call) => call.authority === undefined)).toBe(true);
-    expect(calls.map((call) => call.method)).toContain("/amux.v1.AgentService/SendInput");
+  it("says amux needs updating when its bridge is older than this extension", async () => {
+    fakeBridge(1);
+    const { Amux } = await import("../src/background/amux.ts");
+    const amux = new Amux("sh.amux.browser");
+    await amux.watch();
+    expect(amux.reach()).toEqual({ status: "not-installed" });
+    amux.unwatch();
   });
 
   it("makes a new agent on the profile's own host, addressed to it", async () => {

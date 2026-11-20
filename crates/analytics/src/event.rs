@@ -55,6 +55,9 @@ tokens! {
         Phone => "phone",
         Mac => "mac",
         Browser => "browser",
+        /// A client that names none of these, or names nothing: one
+        /// somebody else built on the protocol.
+        Other => "other",
     }
 }
 

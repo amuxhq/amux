@@ -215,8 +215,9 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
 /// The request header a client of a profile socket names itself in, for
-/// the usage count of clients opened: `mac` for the Mac app. The terminal
-/// sends none.
+/// the usage counts only: `terminal`, `mac`, `phone` or `browser`. It is
+/// optional: a client that sends none, or a word amux doesn't know, is
+/// counted as `other`.
 pub const SURFACE_HEADER: &str = "amux-surface";
 
 /// The request header a node writes beside a call it carries to another

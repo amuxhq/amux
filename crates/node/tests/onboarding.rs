@@ -140,7 +140,9 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     let step = |step, outcome| Event::OnboardingStep {
         step,
         outcome,
-        surface: Client::Terminal,
+        // This test's client names no surface, as one somebody else
+        // built may not.
+        surface: Client::Other,
     };
     assert_eq!(
         recording.named("onboarding_step"),

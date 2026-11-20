@@ -485,8 +485,8 @@ skips every needed step, `shown` when the client shows a step,
 `sign_in_offer_shown` when it puts a one-tap sign-in in front of the
 person (`offerer` for "Also sign in" on the signed-in side, `receiver` for
 the offer on the signed-out side). Name the client in the `amux-surface`
-request header so the answer is counted for it; with none it counts as the
-terminal. After a dismissal the steps
+request header so the answer is counted for it; with none it counts as
+`other`. After a dismissal the steps
 carry `dismissed`: every step skipped now was skipped when the person
 dismissed, so a client stops offering to finish them; a step skipped
 afterwards clears it.
@@ -494,9 +494,11 @@ Confirmations are the installation's; a skip of `pair_phone`, `sign_in` or
 `first_agent` is the profile's. A step added in a later release appears to
 existing installations on its own, needed.
 
-A client other than the terminal that opens a profile socket says which
-it is in the `amux-surface` request header (`mac` for the Mac app), so the
-fleet subscription counts it as that client opening.
+amux's own clients say which they are in the `amux-surface` request
+header (`terminal`, `mac`, `phone`, `browser`), so the fleet subscription
+counts each opening as that client's. The header is optional and only
+counts: a client of your own can leave it off, and is counted as `other`,
+as is any word amux doesn't know.
 
 ## Errors
 

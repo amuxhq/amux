@@ -279,13 +279,13 @@ impl InstallationService for FrontDoor {
         request: Request<AnswerOnboardingRequest>,
     ) -> Result<Response<AnswerOnboardingResponse>, Status> {
         let registry = self.registry.clone();
-        // Every client names itself in a header, the phone's in-memory
-        // calls too; the terminal is the one an older build left unnamed.
+        // Every client of ours names itself in a header, the phone's
+        // in-memory calls too; one that names nothing is somebody else's.
         let surface = request
             .metadata()
             .get(grpc::SURFACE_HEADER)
             .and_then(|value| value.to_str().ok())
-            .map_or(analytics::Client::Terminal, crate::api::surface_named);
+            .map_or(analytics::Client::Other, crate::api::surface_named);
         let request = request.into_inner();
         // The answer is written to disk.
         let answered =

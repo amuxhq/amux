@@ -253,10 +253,11 @@ pub(in crate::api) fn link_peer(extensions: &http::Extensions) -> Result<HostId,
 /// know reads as the terminal, the client that names itself with none.
 pub(crate) fn surface_named(word: &str) -> Surface {
     match word {
+        "terminal" => Surface::Terminal,
         "phone" => Surface::Phone,
         "mac" => Surface::Mac,
         "browser" => Surface::Browser,
-        _ => Surface::Terminal,
+        _ => Surface::Other,
     }
 }
 
@@ -380,14 +381,9 @@ mod tests {
     }
 
     #[test]
-    fn a_surface_this_build_does_not_know_reads_as_the_terminal() {
-        assert_eq!(surface_named("watch"), Surface::Terminal);
-        for surface in [
-            Surface::Terminal,
-            Surface::Phone,
-            Surface::Mac,
-            Surface::Browser,
-        ] {
+    fn a_surface_this_build_does_not_know_reads_as_another_client() {
+        assert_eq!(surface_named("watch"), Surface::Other);
+        for surface in Surface::ALL.iter().copied() {
             assert_eq!(surface_named(analytics::Token::as_str(surface)), surface);
         }
     }

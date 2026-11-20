@@ -251,7 +251,7 @@ async fn client_caller(
             headers
                 .get(wire::SURFACE_HEADER)
                 .and_then(|value| value.to_str().ok())
-                .map_or(Surface::Terminal, surface_named),
+                .map_or(Surface::Other, surface_named),
         )),
         Entry::Phone => Ok(Caller::person_here(Surface::Phone)),
         Entry::Tools(agent) => {

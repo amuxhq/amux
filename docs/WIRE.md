@@ -107,7 +107,7 @@ the request:
 
 | Arrived on | The caller |
 | --- | --- |
-| The profile socket, or the phone's entry | A person at this machine, on the client its `amux-surface` header names (`mac`, `phone`, `browser`; with none, the terminal) |
+| The profile socket, or the phone's entry | A person at this machine, on the client its `amux-surface` header names (`terminal`, `mac`, `phone`, `browser`; with none or another word, `other`) |
 | An agent's `tools.sock` | That agent |
 | A link, with an `amux-caller-bin` header | A person at, or an agent of, the paired host the link's handshake authenticated, as the header says |
 | A link, with none | The paired daemon itself, which only `PeerService` answers |

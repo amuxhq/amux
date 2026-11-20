@@ -203,13 +203,26 @@ impl Sent {
     }
 }
 
-/// `request` with its body telling the returned [`Sent`] each time the link
-/// takes more of it.
+/// The most of a carried request's body handed to the link at once.
+///
+/// The link's HTTP/2 client takes a body's next part only once its stream
+/// has room to send the last, but takes each part whole and holds what the
+/// window does not yet allow. A client in memory hands over a unary message
+/// as one part, up to a file's 64 MiB, so taken whole it would be "gone" at
+/// once and then drain for minutes. Cut to the size of HTTP/2's initial
+/// stream window (65 535 bytes, rounded up), each part is taken about when
+/// the one before it has left, so a part being taken is the upload
+/// advancing; and cutting a [`bytes::Bytes`] copies nothing.
+const PIECE: usize = 64 * 1024;
+
+/// `request` with its body cut into pieces of at most [`PIECE`], telling
+/// the returned [`Sent`] each time the link takes one.
 fn sending(request: http::Request<Body>) -> (http::Request<Body>, Sent) {
     let sent = Sent(Arc::new(std::sync::Mutex::new(tokio::time::Instant::now())));
     let request = request.map(|inner| {
         Body::new(Sending {
             inner,
+            rest: bytes::Bytes::new(),
             sent: sent.clone(),
         })
     });
@@ -235,10 +248,20 @@ async fn answer_begun<F: std::future::Future>(call: F, sent: &Sent) -> Option<F:
     }
 }
 
-/// A carried request's body, marking when the link takes each part of it.
+/// A carried request's body, handed to the link in pieces of at most
+/// [`PIECE`] and marking when the link takes each.
 struct Sending {
     inner: Body,
+    /// What is left of the data part being handed over.
+    rest: bytes::Bytes,
     sent: Sent,
+}
+
+impl Sending {
+    fn piece(&mut self) -> Frame<bytes::Bytes> {
+        let piece = self.rest.split_to(self.rest.len().min(PIECE));
+        Frame::data(piece)
+    }
 }
 
 impl http_body::Body for Sending {
@@ -249,17 +272,35 @@ impl http_body::Body for Sending {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let polled = ready!(Pin::new(&mut self.inner).poll_frame(cx));
-        self.sent.now();
-        Poll::Ready(polled)
+        if self.rest.is_empty() {
+            let polled = ready!(Pin::new(&mut self.inner).poll_frame(cx));
+            self.sent.now();
+            match polled {
+                Some(Ok(frame)) => match frame.into_data() {
+                    Ok(data) => self.rest = data,
+                    Err(frame) => return Poll::Ready(Some(Ok(frame))),
+                },
+                other => return Poll::Ready(other),
+            }
+        } else {
+            self.sent.now();
+        }
+        Poll::Ready(Some(Ok(self.piece())))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
+        self.rest.is_empty() && self.inner.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.inner.size_hint()
+        let inner = self.inner.size_hint();
+        let rest = self.rest.len() as u64;
+        let mut hint = SizeHint::new();
+        if let Some(upper) = inner.upper() {
+            hint.set_upper(upper.saturating_add(rest));
+        }
+        hint.set_lower(inner.lower().saturating_add(rest));
+        hint
     }
 }
 

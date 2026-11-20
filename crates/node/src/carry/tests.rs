@@ -59,7 +59,8 @@ type Messages = std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<Vec<u8>
 
 /// A test-only service: `Who` says who answered, with the authority and
 /// caller header it saw; `Ticks` streams until dropped; `Echo` answers
-/// each message of a two-way stream as it comes; `Hang` never answers.
+/// each message of a two-way stream as it comes; `Hang` never answers;
+/// `Size` answers how many bytes its message held.
 #[derive(Clone)]
 struct Probe {
     name: &'static str,
@@ -105,6 +106,15 @@ impl Service<http::Request<Body>> for Probe {
                         async move { Ok::<_, Status>(tonic::Response::new(seen.into_bytes())) }
                     });
                     grpc.unary(who, request).await
+                }
+                "/probe.Probe/Size" => {
+                    let size = tower::service_fn(|request: tonic::Request<Vec<u8>>| async move {
+                        let size = request.into_inner().len() as u64;
+                        Ok::<_, Status>(tonic::Response::new(size.to_be_bytes().to_vec()))
+                    });
+                    grpc.max_decoding_message_size(usize::MAX)
+                        .unary(size, request)
+                        .await
                 }
                 "/probe.Probe/Hang" => {
                     let hang = tower::service_fn(|_: tonic::Request<Vec<u8>>| {
@@ -169,10 +179,25 @@ struct Far {
     /// The pumps between each connection's two pipes: aborting them is
     /// the link failing.
     pumps: Arc<Mutex<Vec<AbortHandle>>>,
+    /// How long the link takes to carry each [`SLOW_LINK_PART`] towards
+    /// the far host, if it is slow.
+    slow: Option<Duration>,
     events: mpsc::UnboundedReceiver<&'static str>,
 }
 
+/// How much a slow link carries towards the far host at a time.
+const SLOW_LINK_PART: usize = 16 * 1024;
+
 impl Far {
+    /// A far host whose link carries [`SLOW_LINK_PART`] towards it every
+    /// `each`, and answers back at once.
+    fn slow(each: Duration) -> Self {
+        Self {
+            slow: Some(each),
+            ..Self::new()
+        }
+    }
+
     fn new() -> Self {
         let (events_tx, events) = mpsc::unbounded_channel();
         let (connections, accepted) = mpsc::channel(8);
@@ -194,13 +219,14 @@ impl Far {
             id: HostId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_3b1c_5e6a_7d80),
             connections,
             pumps: Arc::default(),
+            slow: None,
             events,
         }
     }
 
     /// A channel to the far host, built for its id as a link's is.
     fn channel(&self) -> Channel {
-        let (connections, pumps) = (self.connections.clone(), self.pumps.clone());
+        let (connections, pumps, slow) = (self.connections.clone(), self.pumps.clone(), self.slow);
         Endpoint::from_shared(format!("https://{}", wire::authority(&self.id)))
             .unwrap()
             .connect_with_connector_lazy(tower::service_fn(move |_: http::Uri| {
@@ -212,10 +238,30 @@ impl Far {
                         .send(there)
                         .await
                         .map_err(|_| std::io::Error::other("the far host is gone"))?;
-                    let pump = tokio::spawn(async move {
-                        let mut near = near;
-                        let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
-                    });
+                    let pump = match slow {
+                        None => tokio::spawn(async move {
+                            let mut near = near;
+                            let _ = tokio::io::copy_bidirectional(&mut near, &mut far).await;
+                        }),
+                        Some(each) => {
+                            let (mut near_out, mut near_in) = tokio::io::split(near);
+                            let (mut far_out, mut far_in) = tokio::io::split(far);
+                            let back = tokio::spawn(async move {
+                                let _ = tokio::io::copy(&mut far_out, &mut near_in).await;
+                            });
+                            pumps.lock().unwrap().push(back.abort_handle());
+                            tokio::spawn(async move {
+                                use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+                                let mut part = vec![0; SLOW_LINK_PART];
+                                while let Ok(read @ 1..) = near_out.read(&mut part).await {
+                                    tokio::time::sleep(each).await;
+                                    if far_in.write_all(&part[..read]).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            })
+                        }
+                    };
                     pumps.lock().unwrap().push(pump.abort_handle());
                     Ok::<_, std::io::Error>(TokioIo::new(here))
                 }
@@ -467,6 +513,34 @@ async fn a_request_still_being_sent_is_not_waiting_for_its_answer() {
     assert!(
         elapsed >= gap * 2 + ANSWER_PATIENCE && elapsed < gap * 3 + ANSWER_PATIENCE,
         "{elapsed:?}"
+    );
+}
+
+/// A message the caller hands over whole, as a file is in memory on the
+/// phone, that takes longer than the limit to cross a slow link is answered
+/// once it has: the link taking it whole and then draining it would read
+/// as the request having gone at once and its answer never beginning.
+#[tokio::test(start_paused = true)]
+async fn one_large_message_over_a_slow_link_is_not_waiting_for_its_answer() {
+    // 3 MiB at 16 KiB every 250 ms is 48 s of upload.
+    let far = Far::slow(Duration::from_millis(250));
+    let entrance = near(reaching(&far));
+    let message = vec![7u8; 3 << 20];
+    let started = tokio::time::Instant::now();
+    let answer = client(&entrance, Some(wire::authority(&far.id)))
+        .await
+        .unary(
+            tonic::Request::new(message),
+            PathAndQuery::from_static("/probe.Probe/Size"),
+            Raw,
+        )
+        .await
+        .expect("answered once the slow upload was all sent");
+    assert_eq!(answer.into_inner(), (3u64 << 20).to_be_bytes().to_vec());
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed > ANSWER_PATIENCE,
+        "the upload outlasted the limit: {elapsed:?}"
     );
 }
 

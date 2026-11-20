@@ -84,6 +84,79 @@ class StringsLintTest(unittest.TestCase):
         complaints, _ = lint.check(self.root)
         self.assertTrue(any("duplicate string key" in c for c in complaints))
 
+    def test_string_array_and_plurals_duplicate_and_empty_items_fail(self):
+        self.write(
+            self.strings_path,
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<resources>\n"
+            '    <string-array name="choices">\n'
+            "        <item>One</item>\n"
+            "        <item>   </item>\n"
+            "    </string-array>\n"
+            '    <string-array name="choices">\n'
+            "        <item>Two</item>\n"
+            "    </string-array>\n"
+            '    <plurals name="agents">\n'
+            '        <item quantity="one">One agent</item>\n'
+            '        <item quantity="other"></item>\n'
+            "    </plurals>\n"
+            '    <plurals name="agents">\n'
+            '        <item quantity="other">Many agents</item>\n'
+            "    </plurals>\n"
+            "</resources>\n",
+        )
+        complaints, _ = lint.check(self.root)
+        self.assertTrue(any("duplicate string-array key 'choices'" in c for c in complaints), complaints)
+        self.assertTrue(any("string-array 'choices'[1] is empty" in c for c in complaints), complaints)
+        self.assertTrue(any("duplicate plurals key 'agents'" in c for c in complaints), complaints)
+        self.assertTrue(any("plurals 'agents'[1] is empty" in c for c in complaints), complaints)
+
+    def test_feature_kotlin_hardcoded_ui_literals_fail_unless_exempted(self):
+        feature_kt = Path("apps/android/features/src/main/kotlin/sh/amux/features/Screen.kt")
+        self.write(
+            feature_kt,
+            "package sh.amux.features\n"
+            "fun Screen(label: String) {\n"
+            "    // Text(\"ignored in comment\")\n"
+            "    /* contentDescription = \"ignored in block comment\" */\n"
+            "    Text(text = label)\n"
+            '    Text("Hardcoded title")\n'
+            '    Icon(contentDescription = "Hardcoded icon")\n'
+            "}\n",
+        )
+        complaints, _ = lint.check(self.root)
+        self.assertEqual(len(complaints), 2, complaints)
+        self.assertTrue(any('Hardcoded title' in c for c in complaints))
+        self.assertTrue(any('Hardcoded icon' in c for c in complaints))
+
+        # Recording both literals in noncopy.json satisfies the lint.
+        self.write(
+            lint.EXEMPTIONS,
+            json.dumps(
+                {
+                    "version": 1,
+                    "files": {
+                        feature_kt.as_posix(): [
+                            {
+                                "literal": '"Hardcoded title"',
+                                "context": 'Text("Hardcoded title")',
+                                "reason": "Test literal exemption.",
+                                "count": 1,
+                            },
+                            {
+                                "literal": '"Hardcoded icon"',
+                                "context": 'Icon(contentDescription = "Hardcoded icon")',
+                                "reason": "Test contentDescription exemption.",
+                                "count": 1,
+                            },
+                        ]
+                    },
+                }
+            ),
+        )
+        complaints, _ = lint.check(self.root)
+        self.assertEqual(complaints, [])
+
     def test_xml_exemption_allows_reviewed_entry_and_detects_staleness(self):
         line = '<string name="verbatim">echo "ok"</string>'
         self.write(

@@ -3,9 +3,12 @@
 
 Enforces the mechanical punctuation rules from docs/IOS_COPY.md on every
 strings.xml resource under apps/android/ (no exclamation marks, straight double
-quotes, straight apostrophes, three-dot ellipses, em dashes, or semicolons)
-unless an exact, reasoned exemption is recorded in apps/android/tools/noncopy.json.
-Also validates noncopy.json's schema and fails on missing files or stale counts.
+quotes, straight apostrophes, three-dot ellipses, em dashes, or semicolons),
+enforces duplicate-name and empty-entry checks across <string>, <string-array>,
+and <plurals>, and flags unreviewed hardcoded UI string literals in Compose
+feature sources (`Text("...")`, `contentDescription = "..."`) unless an exact,
+reasoned exemption is recorded in apps/android/tools/noncopy.json. Also
+validates noncopy.json's schema and fails on missing files or stale counts.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[3]
 EXEMPTIONS = Path("apps/android/tools/noncopy.json")
+FEATURES_SOURCES = Path("apps/android/features/src/main")
 
 FORBIDDEN_PUNCTUATION = (
     ("!", "exclamation mark"),
@@ -31,6 +35,16 @@ FORBIDDEN_PUNCTUATION = (
 )
 
 _ANDROID_XML_ESCAPE_RE = re.compile(r"\\([\\'\"nt])")
+_UI_LITERAL_PATTERNS = (
+    (
+        "Text",
+        re.compile(r'(?<![A-Za-z0-9_])Text\s*\(\s*(?:text\s*=\s*)?("((?:[^"\\]|\\.)*)")'),
+    ),
+    (
+        "contentDescription",
+        re.compile(r'(?<![A-Za-z0-9_])contentDescription\s*=\s*("((?:[^"\\]|\\.)*)")'),
+    ),
+)
 
 
 def unescape_android_string(text: str) -> str:
@@ -43,6 +57,54 @@ def unescape_android_string(text: str) -> str:
         "t": "\t",
     }
     return _ANDROID_XML_ESCAPE_RE.sub(lambda m: mapping[m.group(1)], text)
+
+
+def strip_kotlin_comments(source: str) -> str:
+    """Replace // and /* ... */ comments with spaces while keeping line breaks."""
+    out: list[str] = []
+    i = 0
+    n = len(source)
+    in_block = False
+    in_str = False
+    while i < n:
+        ch = source[i]
+        nxt = source[i + 1] if i + 1 < n else ""
+        if in_block:
+            if ch == "*" and nxt == "/":
+                out.append("  ")
+                in_block = False
+                i += 2
+            elif ch == "\n":
+                out.append("\n")
+                i += 1
+            else:
+                out.append(" ")
+                i += 1
+        elif in_str:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(nxt)
+                i += 2
+            else:
+                if ch == '"':
+                    in_str = False
+                i += 1
+        elif ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+        elif ch == "/" and nxt == "*":
+            out.append("  ")
+            in_block = True
+            i += 2
+        elif ch == "/" and nxt == "/":
+            while i < n and source[i] != "\n":
+                out.append(" ")
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
 
 
 def read_json(path: Path):
@@ -111,6 +173,13 @@ def strings_xml_files(root: Path) -> list[Path]:
     return sorted(found)
 
 
+def feature_kotlin_files(root: Path) -> list[Path]:
+    features_root = root / FEATURES_SOURCES
+    if not features_root.is_dir():
+        return []
+    return sorted(features_root.rglob("*.kt"))
+
+
 def _find_line_context(lines: list[str], tag: str, name: str | None, raw_text: str) -> str:
     if name is not None:
         needle = f'name="{name}"'
@@ -153,16 +222,20 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
         if tree.tag != "resources":
             raise ValueError(f"{rel_path}: expected <resources> root element")
 
-        seen_names: set[str] = set()
+        seen_names: dict[str, set[str]] = {
+            "string": set(),
+            "string-array": set(),
+            "plurals": set(),
+        }
         for elem in tree:
             if elem.tag == "string":
                 name = elem.attrib.get("name")
                 if not name:
                     complaints.append(f"{rel_path}: <string> element missing name attribute")
                     continue
-                if name in seen_names:
+                if name in seen_names["string"]:
                     complaints.append(f"{rel_path}: duplicate string key {name!r}")
-                seen_names.add(name)
+                seen_names["string"].add(name)
 
                 raw_text = "".join(elem.itertext())
                 value = unescape_android_string(raw_text)
@@ -185,7 +258,15 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
                 if not name:
                     complaints.append(f"{rel_path}: <{elem.tag}> element missing name attribute")
                     continue
-                for idx, item in enumerate(elem.findall("item")):
+                if name in seen_names[elem.tag]:
+                    complaints.append(f"{rel_path}: duplicate {elem.tag} key {name!r}")
+                seen_names[elem.tag].add(name)
+
+                items = elem.findall("item")
+                if not items:
+                    complaints.append(f"{rel_path}: {elem.tag} {name!r} has no items")
+                    continue
+                for idx, item in enumerate(items):
                     raw_text = "".join(item.itertext())
                     value = unescape_android_string(raw_text)
                     entry_count += 1
@@ -194,10 +275,37 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
                     if identity in exemptions:
                         used[identity] += 1
                         continue
+                    if not value.strip():
+                        complaints.append(f"{rel_path}: {elem.tag} {name!r}[{idx}] is empty")
+                        continue
                     for issue in _check_punctuation(value):
                         complaints.append(
                             f"{rel_path}: {elem.tag} {name!r}[{idx}] ({value!r}) violates copy rules: {issue}"
                         )
+
+    # Scan Compose feature sources for hardcoded user-facing string literals.
+    kt_files = feature_kotlin_files(root)
+    for kt_file in kt_files:
+        rel_path = kt_file.relative_to(root).as_posix()
+        raw_content = kt_file.read_text(encoding="utf-8")
+        raw_lines = raw_content.splitlines()
+        cleaned = strip_kotlin_comments(raw_content)
+        for kind, pattern in _UI_LITERAL_PATTERNS:
+            for match in pattern.finditer(cleaned):
+                quoted = match.group(1)
+                unquoted = match.group(2)
+                line_no = cleaned.count("\n", 0, match.start(1)) + 1
+                context = raw_lines[line_no - 1].strip()
+                if (rel_path, quoted, context) in exemptions or (
+                    rel_path,
+                    unquoted,
+                    context,
+                ) in exemptions:
+                    continue
+                complaints.append(
+                    f"{rel_path}:{line_no}: hardcoded {kind} string literal {quoted}; "
+                    "move user-facing copy to strings.xml or record a reasoned exemption in noncopy.json"
+                )
 
     # Check Kotlin exemptions (and any XML exemptions not consumed via parsed entries)
     # against actual file lines so stale or moved exemptions always fail.
@@ -221,7 +329,7 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
 
     summary = (
         f"{len(xml_files)} strings.xml file(s), {entry_count} string entry/entries, "
-        f"{len(exemptions)} non-copy exemption(s)"
+        f"{len(kt_files)} feature Kotlin file(s), {len(exemptions)} non-copy exemption(s)"
     )
     return complaints, summary
 

@@ -35,14 +35,24 @@ class FeatureLintTest(unittest.TestCase):
             result = self._run(root)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
-    def test_forbidden_imports_and_spinners_fail(self):
+    def test_forbidden_imports_wildcards_fqns_and_spinners_fail(self):
         cases = [
             ("ActivityImport.kt", "import android.app.Activity\nclass X\n"),
+            ("AppWildcard.kt", "import android.app.*\nclass X\n"),
             ("NavigationImport.kt", "import androidx.navigation.NavHostController\nclass X\n"),
+            ("NavigationWildcard.kt", "import androidx.navigation.*\nclass X\n"),
             ("OkHttpImport.kt", "import okhttp3.OkHttpClient\nclass X\n"),
+            ("OkHttpWildcard.kt", "import okhttp3.*\nclass X\n"),
             ("ToastImport.kt", "import android.widget.Toast\nclass X\n"),
+            ("WidgetWildcard.kt", "import android.widget.*\nclass X\n"),
+            ("ToastFqn.kt", "fun X() { android.widget.Toast.makeText(null, \"\", 0) }\n"),
+            ("ActivityFqn.kt", "fun X(a: android.app.Activity) {}\n"),
+            ("NavFqn.kt", "fun X(n: androidx.navigation.NavController) {}\n"),
+            ("OkHttpFqn.kt", "fun X() { okhttp3.OkHttpClient() }\n"),
             ("CircularSpinner.kt", "fun X() { CircularProgressIndicator() }\n"),
+            ("CircularSpinnerFqn.kt", "fun X() { androidx.compose.material3.CircularProgressIndicator() }\n"),
             ("LinearSpinner.kt", "fun X() { LinearProgressIndicator() }\n"),
+            ("CodeAfterBlockComment.kt", "/* ok */ android.widget.Toast.makeText(null, \"\", 0)\n"),
         ]
         for filename, source in cases:
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
@@ -52,11 +62,15 @@ class FeatureLintTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, f"expected failure for {filename}")
                 self.assertIn(filename, result.stdout + result.stderr)
 
-    def test_comment_mentioning_spinner_does_not_fail(self):
+    def test_line_and_block_comments_mentioning_forbidden_symbols_do_not_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "Notes.kt").write_text(
                 "// Never use CircularProgressIndicator or LinearProgressIndicator here.\n"
+                "/*\n"
+                " * Also avoid android.widget.Toast, android.app.Activity,\n"
+                " * import okhttp3.*, and androidx.compose.material3.CircularProgressIndicator.\n"
+                " */\n"
                 "fun Clean() {}\n",
                 encoding="utf-8",
             )

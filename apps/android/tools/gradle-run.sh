@@ -52,12 +52,11 @@ for arg in "$@"; do
     esac
 done
 
-set -- "$@"
-if [ "$no_daemon" -eq 1 ] && [ "$has_kotlin_strategy" -eq 0 ]; then
-    set -- "$@" -Pkotlin.compiler.execution.strategy=in-process
-fi
 if [ "$has_console" -eq 0 ] && [ ! -t 1 ]; then
-    set -- "$@" --console=plain
+    set -- --console=plain "$@"
+fi
+if [ "$no_daemon" -eq 1 ] && [ "$has_kotlin_strategy" -eq 0 ]; then
+    set -- -Pkotlin.compiler.execution.strategy=in-process "$@"
 fi
 
 exec ./gradlew "$@" </dev/null

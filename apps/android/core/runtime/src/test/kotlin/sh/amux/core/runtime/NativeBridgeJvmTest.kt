@@ -2,7 +2,13 @@ package sh.amux.core.runtime
 
 import java.nio.file.Files
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -12,6 +18,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeFalse
 import org.junit.Test
 import sh.amux.push.Said
 import sh.amux.push.Wants
@@ -21,6 +28,7 @@ import sh.amux.values.AgentNameProblem
 import sh.amux.values.Catalogue
 import sh.amux.values.ChatDelta
 import sh.amux.values.FleetDelta
+import sh.amux.values.Found
 import sh.amux.values.NewAgentChoices
 import sh.amux.values.NewAgentPick
 import sh.amux.values.OfferedModel
@@ -29,6 +37,9 @@ import sh.amux.values.Roster
 import sh.amux.values.StartConfig
 
 class NativeBridgeJvmTest {
+    private val isWindows: Boolean =
+        System.getProperty("os.name").orEmpty().lowercase().contains("win")
+
     @Test
     fun versionIncludesDebugTools() {
         val version = NativeBridge.version()
@@ -122,6 +133,7 @@ class NativeBridgeJvmTest {
 
     @Test
     fun embeddedRuntimeCoreLoopAndFleetOpeningRoundTrip() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
         val tempDir = Files.createTempDirectory("amux-android-jni-test").toFile()
         try {
             val initialProfiles = CompletableFuture<List<ProfileView>>()
@@ -185,6 +197,322 @@ class NativeBridgeJvmTest {
                         NativeBridge.profileClose(profileHandle)
                     }
                 }
+            }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun watchFleetReceivesWakeDrivenFleetDelta() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
+        val tempDir = Files.createTempDirectory("amux-android-fleet-delta").toFile()
+        try {
+            val initialProfiles = CompletableFuture<List<ProfileView>>()
+            CoreLoop(
+                onProfilesMoved = { profiles ->
+                    if (!initialProfiles.isDone && profiles.isNotEmpty()) {
+                        initialProfiles.complete(profiles)
+                    }
+                },
+            ).use { loop ->
+                val runtimeHandle = loop.start(
+                    StartConfig(
+                        dataDir = tempDir.absolutePath,
+                        deviceName = "Fleet Delta Test",
+                        lan = false,
+                        telemetry = false,
+                        autoReports = false,
+                    ),
+                )
+                val defaultProfile = initialProfiles.get(10, TimeUnit.SECONDS).single()
+                val profileHandle = loop.blocking {
+                    NativeBridge.profileOpen(runtimeHandle, defaultProfile.id)
+                }
+                val fleetId = NativeBridge.profileFleetId(profileHandle)
+                assertNotNull("fleetOpening establishes delta baseline", NativeBridge.fleetOpening(profileHandle))
+                val received = CompletableFuture<FleetDelta>()
+                loop.watchFleet(fleetId) { event ->
+                    if (
+                        event is FleetEvent.Fleet &&
+                        !received.isDone &&
+                        event.delta.hosts?.any { it.name == "Desk Mac" && it.candidate && it.pairingOpen } == true
+                    ) {
+                        received.complete(event.delta)
+                    }
+                }
+
+                // Feed a discovered LAN peer and prove the wake-fd watcher delivers a FleetEvent.Fleet delta.
+                val foundJson = AmuxJson.json.encodeToString(
+                    listOf(
+                        Found(
+                            hostId = List(16) { 7 },
+                            name = "Desk Mac",
+                            addrs = listOf("127.0.0.1:41999"),
+                            scope = "",
+                            pairingOpen = true,
+                        ),
+                    ),
+                )
+                loop.blocking {
+                    NativeBridge.runtimeDiscovered(runtimeHandle, foundJson)
+                }
+
+                val delta = received.get(10, TimeUnit.SECONDS)
+                val hosts = delta.hosts
+                assertNotNull("wake-driven FleetEvent.Fleet should carry updated hosts", hosts)
+                assertTrue(
+                    "discovered host should appear in FleetEvent.Fleet delta",
+                    hosts!!.any { it.name == "Desk Mac" && it.candidate && it.pairingOpen },
+                )
+            }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun submitActThrowingStartCompletesExceptionallyPromptlyAndPostStopReturnsStopped() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
+        val tempDir = Files.createTempDirectory("amux-android-act-throw").toFile()
+        try {
+            val loop = CoreLoop()
+            loop.use {
+                it.start(
+                    StartConfig(
+                        dataDir = tempDir.absolutePath,
+                        deviceName = "Act Throw Test",
+                        lan = false,
+                        telemetry = false,
+                        autoReports = false,
+                    ),
+                )
+
+                val failing = it.submitAct {
+                    throw IllegalStateException("start boom")
+                }
+                try {
+                    failing.get(5, TimeUnit.SECONDS)
+                    fail("expected ExecutionException")
+                } catch (expected: ExecutionException) {
+                    assertTrue(
+                        "expected IllegalStateException cause, got ${expected.cause}",
+                        expected.cause is IllegalStateException,
+                    )
+                    assertEquals("start boom", expected.cause?.message)
+                }
+            }
+
+            // After stop(), submitAct must resolve immediately with STOPPED_ANSWER instead of throwing RejectedExecutionException.
+            val afterStop = loop.submitAct { 42L }.get(5, TimeUnit.SECONDS)
+            assertEquals(CoreLoop.STOPPED_ANSWER, afterStop)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun asyncDispatchAppliesDeltaStrictlyBeforeActFutureCompletes() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
+        val tempDir = Files.createTempDirectory("amux-android-delta-order").toFile()
+        val uiExecutor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "test-ui").apply { isDaemon = true }
+        }
+        try {
+            val initialProfiles = CompletableFuture<List<ProfileView>>()
+            val gateActive = AtomicBoolean(false)
+            val dispatchQueued = CountDownLatch(1)
+            val releaseDispatch = CountDownLatch(1)
+            val events = CopyOnWriteArrayList<String>()
+            val latestProfiles = AtomicReference<List<ProfileView>>(emptyList())
+
+            CoreLoop(
+                dispatch = { block ->
+                    uiExecutor.execute {
+                        if (gateActive.compareAndSet(true, false)) {
+                            dispatchQueued.countDown()
+                            releaseDispatch.await(5, TimeUnit.SECONDS)
+                        }
+                        block()
+                    }
+                },
+                onProfilesMoved = { profiles ->
+                    latestProfiles.set(profiles)
+                    if (!initialProfiles.isDone && profiles.isNotEmpty()) {
+                        initialProfiles.complete(profiles)
+                    }
+                    if (profiles.size == 2) {
+                        events.add("profiles:2")
+                    }
+                },
+            ).use { loop ->
+                loop.start(
+                    StartConfig(
+                        dataDir = tempDir.absolutePath,
+                        deviceName = "Delta Order Test",
+                        lan = false,
+                        telemetry = false,
+                        autoReports = false,
+                    ),
+                )
+                assertEquals(1, initialProfiles.get(10, TimeUnit.SECONDS).size)
+
+                gateActive.set(true)
+                val createFuture = loop.submitAct { handle ->
+                    NativeBridge.runtimeCreateProfile(handle)
+                }
+                val observedOrder = createFuture.thenApply { json ->
+                    events.add("answer")
+                    latestProfiles.get().size to json
+                }
+
+                // Once the async UI dispatcher receives the step block (and pauses at the gate),
+                // the act future MUST NOT have completed yet.
+                assertTrue("expected step dispatch to arrive on UI thread", dispatchQueued.await(10, TimeUnit.SECONDS))
+                assertFalse(
+                    "act future must not complete before queued UI dispatch applies deltas",
+                    createFuture.isDone,
+                )
+
+                releaseDispatch.countDown()
+                val (profileCountAtAnswer, answerJson) = observedOrder.get(10, TimeUnit.SECONDS)
+                assertEquals(2, profileCountAtAnswer)
+                assertTrue("expected Ok answer for createProfile, got $answerJson", answerJson.contains("\"Ok\""))
+                assertEquals(listOf("profiles:2", "answer"), events)
+            }
+        } finally {
+            uiExecutor.shutdownNow()
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun stopCalledInsideCoreCallbackCompletesPromptlyWithoutDeadlock() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
+        val tempDir = Files.createTempDirectory("amux-android-core-stop").toFile()
+        try {
+            val initialProfiles = CompletableFuture<List<ProfileView>>()
+            val stopDurationMs = CompletableFuture<Long>()
+            val loopRef = AtomicReference<CoreLoop>()
+
+            val loop = CoreLoop(
+                onProfilesMoved = { profiles ->
+                    if (!initialProfiles.isDone && profiles.isNotEmpty()) {
+                        initialProfiles.complete(profiles)
+                    }
+                },
+            )
+            loopRef.set(loop)
+            loop.use {
+                val runtimeHandle = it.start(
+                    StartConfig(
+                        dataDir = tempDir.absolutePath,
+                        deviceName = "Core Stop Test",
+                        lan = false,
+                        telemetry = false,
+                        autoReports = false,
+                    ),
+                )
+                val defaultProfile = initialProfiles.get(10, TimeUnit.SECONDS).single()
+                val profileHandle = it.blocking {
+                    NativeBridge.profileOpen(runtimeHandle, defaultProfile.id)
+                }
+                val fleetId = NativeBridge.profileFleetId(profileHandle)
+                assertNotNull(NativeBridge.fleetOpening(profileHandle))
+
+                it.watchFleet(fleetId) { event ->
+                    if (event is FleetEvent.Fleet && !stopDurationMs.isDone) {
+                        val startedAt = System.nanoTime()
+                        loopRef.get().stop()
+                        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+                        stopDurationMs.complete(elapsedMs)
+                    }
+                }
+
+                val foundJson = AmuxJson.json.encodeToString(
+                    listOf(
+                        Found(
+                            hostId = List(16) { 9 },
+                            name = "Stop Trigger Host",
+                            addrs = listOf("127.0.0.1:41998"),
+                            scope = "",
+                            pairingOpen = true,
+                        ),
+                    ),
+                )
+                it.blocking {
+                    NativeBridge.runtimeDiscovered(runtimeHandle, foundJson)
+                }
+
+                val elapsedMs = stopDurationMs.get(10, TimeUnit.SECONDS)
+                assertTrue(
+                    "stop() from inside a watcher-driven core callback should not hit the 5s watcher join timeout (took ${elapsedMs}ms)",
+                    elapsedMs < 2_000L,
+                )
+            }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun watcherSurfacesCallbackErrorsThroughOnError() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
+        val tempDir = Files.createTempDirectory("amux-android-watcher-error").toFile()
+        try {
+            val initialProfiles = CompletableFuture<List<ProfileView>>()
+            val reportedError = CompletableFuture<Throwable>()
+            CoreLoop(
+                onProfilesMoved = { profiles ->
+                    if (!initialProfiles.isDone && profiles.isNotEmpty()) {
+                        initialProfiles.complete(profiles)
+                    }
+                },
+                onError = { error ->
+                    if (!reportedError.isDone) {
+                        reportedError.complete(error)
+                    }
+                },
+            ).use { loop ->
+                val runtimeHandle = loop.start(
+                    StartConfig(
+                        dataDir = tempDir.absolutePath,
+                        deviceName = "Watcher Error Test",
+                        lan = false,
+                        telemetry = false,
+                        autoReports = false,
+                    ),
+                )
+                val defaultProfile = initialProfiles.get(10, TimeUnit.SECONDS).single()
+                val profileHandle = loop.blocking {
+                    NativeBridge.profileOpen(runtimeHandle, defaultProfile.id)
+                }
+                val fleetId = NativeBridge.profileFleetId(profileHandle)
+                assertNotNull(NativeBridge.fleetOpening(profileHandle))
+                loop.watchFleet(fleetId) { event ->
+                    if (event is FleetEvent.Fleet) {
+                        throw IllegalStateException("listener failed")
+                    }
+                }
+
+                val foundJson = AmuxJson.json.encodeToString(
+                    listOf(
+                        Found(
+                            hostId = List(16) { 11 },
+                            name = "Error Trigger Host",
+                            addrs = listOf("127.0.0.1:41997"),
+                            scope = "",
+                            pairingOpen = true,
+                        ),
+                    ),
+                )
+                loop.blocking {
+                    NativeBridge.runtimeDiscovered(runtimeHandle, foundJson)
+                }
+
+                val error = reportedError.get(10, TimeUnit.SECONDS)
+                assertTrue("expected IllegalStateException, got $error", error is IllegalStateException)
+                assertEquals("listener failed", error.message)
             }
         } finally {
             tempDir.deleteRecursively()

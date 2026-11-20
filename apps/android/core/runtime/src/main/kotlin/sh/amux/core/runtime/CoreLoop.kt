@@ -4,6 +4,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -34,11 +35,17 @@ sealed interface FleetEvent {
  * single core thread. A dedicated wake thread blocks in
  * [NativeBridge.runtimeWaitWake] and submits `step()` onto the core executor
  * whenever the wake descriptor becomes readable, waiting for each step to
- * drain the descriptor before polling again.
+ * drain the descriptor before polling again. Stepped UI deltas and act answers
+ * are delivered together in one ordered [dispatch] call so continuations
+ * awaiting an act always observe the post-delta UI state.
  */
 class CoreLoop(
     private val dispatch: (() -> Unit) -> Unit = { it() },
     private val onProfilesMoved: (List<ProfileView>) -> Unit = {},
+    private val onError: (Throwable) -> Unit = { error ->
+        System.err.println("CoreLoop watcher error: $error")
+        error.printStackTrace(System.err)
+    },
 ) : AutoCloseable {
     private val coreThreadRef = ThreadLocal.withInitial { false }
     private val executor = Executors.newSingleThreadExecutor { runnable ->
@@ -106,18 +113,30 @@ class CoreLoop(
             future.complete(STOPPED_ANSWER)
             return future
         }
-        executor.execute {
-            val live = runtimeHandle
-            if (live == 0L || stopping.get()) {
-                future.complete(STOPPED_ANSWER)
-                return@execute
+        try {
+            executor.execute {
+                val live = runtimeHandle
+                if (live == 0L || stopping.get()) {
+                    future.complete(STOPPED_ANSWER)
+                    return@execute
+                }
+                val ticket = try {
+                    start(live)
+                } catch (t: Throwable) {
+                    future.completeExceptionally(t)
+                    return@execute
+                }
+                if (ticket == 0L) {
+                    future.complete(STOPPED_ANSWER)
+                    return@execute
+                }
+                waitingTickets[ticket] = future
+                if (stopping.get()) {
+                    waitingTickets.remove(ticket)?.complete(STOPPED_ANSWER)
+                }
             }
-            val ticket = start(live)
-            if (ticket == 0L) {
-                future.complete(STOPPED_ANSWER)
-                return@execute
-            }
-            waitingTickets[ticket] = future
+        } catch (_: RejectedExecutionException) {
+            future.complete(STOPPED_ANSWER)
         }
         return future
     }
@@ -133,7 +152,8 @@ class CoreLoop(
     /**
      * Stops the wake watcher, stops the native runtime on the core thread,
      * resolves any pending act tickets as stopped, and shuts down the core
-     * executor. Safe to call more than once.
+     * executor. Safe to call more than once and safe to invoke from a core
+     * callback without self-deadlocking on the watcher thread.
      */
     fun stop() {
         if (!stopping.compareAndSet(false, true)) {
@@ -145,7 +165,8 @@ class CoreLoop(
         }
         val watcher = watcherThread
         watcherThread = null
-        if (watcher != null && watcher !== Thread.currentThread()) {
+        val onCoreThread = coreThreadRef.get() == true
+        if (!onCoreThread && watcher != null && watcher !== Thread.currentThread()) {
             try {
                 watcher.join(WATCHER_JOIN_MS)
             } catch (_: InterruptedException) {
@@ -175,18 +196,48 @@ class CoreLoop(
     private fun startWatcher(handle: Long) {
         val thread = Thread(
             {
+                var consecutiveErrors = 0
                 while (!stopping.get()) {
-                    val ready = NativeBridge.runtimeWaitWake(handle, -1)
+                    val ready = try {
+                        NativeBridge.runtimeWaitWake(handle, -1)
+                    } catch (t: Throwable) {
+                        if (!stopping.get()) {
+                            reportError(t)
+                        }
+                        break
+                    }
                     if (ready < 0 || stopping.get()) {
                         break
                     }
                     if (ready > 0) {
                         try {
                             executor.submit { stepOnCore() }.get()
-                        } catch (_: Exception) {
-                            if (stopping.get()) {
+                            consecutiveErrors = 0
+                        } catch (e: RejectedExecutionException) {
+                            if (!stopping.get()) {
+                                reportError(e)
+                            }
+                            break
+                        } catch (e: ExecutionException) {
+                            val cause = e.cause ?: e
+                            if (!stopping.get()) {
+                                reportError(cause)
+                            }
+                            consecutiveErrors += 1
+                            if (cause is Error || cause is BridgeException || consecutiveErrors >= MAX_CONSECUTIVE_WATCHER_ERRORS) {
                                 break
                             }
+                        } catch (e: InterruptedException) {
+                            if (!stopping.get()) {
+                                Thread.currentThread().interrupt()
+                                reportError(e)
+                            }
+                            break
+                        } catch (t: Throwable) {
+                            if (!stopping.get()) {
+                                reportError(t)
+                            }
+                            break
                         }
                     }
                 }
@@ -197,6 +248,14 @@ class CoreLoop(
         thread.start()
     }
 
+    private fun reportError(error: Throwable) {
+        try {
+            onError(error)
+        } catch (_: Throwable) {
+            // Never allow an error observer to break watcher cleanup.
+        }
+    }
+
     private fun stepOnCore() {
         val live = runtimeHandle
         if (live == 0L) {
@@ -205,14 +264,15 @@ class CoreLoop(
         val raw = NativeBridge.runtimeStep(live) ?: return
         val stepped = AmuxJson.json.decodeFromString<Stepped>(raw)
 
-        val hasUiMoves = stepped.profiles != null ||
+        val hasWork = stepped.profiles != null ||
             stepped.fleets.isNotEmpty() ||
             stepped.chats.isNotEmpty() ||
             stepped.signInOffers.isNotEmpty() ||
             stepped.onboarding.isNotEmpty() ||
-            stepped.pairing.isNotEmpty()
+            stepped.pairing.isNotEmpty() ||
+            stepped.answers.isNotEmpty()
 
-        if (hasUiMoves) {
+        if (hasWork) {
             dispatch {
                 for (moved in stepped.fleets) {
                     fleetListeners[moved.fleet]?.invoke(FleetEvent.Fleet(moved.delta))
@@ -230,11 +290,10 @@ class CoreLoop(
                     fleetListeners[moved.fleet]?.invoke(FleetEvent.Pairing(moved.status))
                 }
                 stepped.profiles?.let(onProfilesMoved)
+                for (answer in stepped.answers) {
+                    waitingTickets.remove(answer.ticket)?.complete(answer.json)
+                }
             }
-        }
-
-        for (answer in stepped.answers) {
-            waitingTickets.remove(answer.ticket)?.complete(answer.json)
         }
     }
 
@@ -297,5 +356,6 @@ class CoreLoop(
     companion object {
         const val STOPPED_ANSWER: String = """{"Err":"the runtime has stopped"}"""
         private const val WATCHER_JOIN_MS: Long = 5_000L
+        private const val MAX_CONSECUTIVE_WATCHER_ERRORS: Int = 3
     }
 }

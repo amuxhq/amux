@@ -21,6 +21,7 @@ mod spec_network;
 mod spec_pairing_window;
 mod spec_replication;
 mod spec_reports;
+mod spec_reviews;
 mod spec_sign_in_offers;
 mod spec_subagents;
 mod spec_suspension;

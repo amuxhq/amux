@@ -687,10 +687,40 @@ async fn raw(
     Ok(raw_files(&listed))
 }
 
+/// Most bytes of paths one git call is given as arguments: far inside what
+/// every platform takes on a command line (Windows' 32,767 characters the
+/// least), so a comparison of thousands of long paths is read in several
+/// calls rather than refused by the system.
+pub(crate) const PATHSPEC_BYTES: usize = 16 * 1024;
+
+/// `paths` in runs whose bytes, one separator each, stay within
+/// [`PATHSPEC_BYTES`]; a path longer than that alone is a run of its own.
+/// Each item's paths stay in one run.
+fn runs<'a, T>(items: &'a [T], paths: impl Fn(&'a T) -> Vec<&'a str>) -> Vec<Vec<&'a T>> {
+    let mut runs: Vec<Vec<&T>> = Vec::new();
+    let mut bytes = 0;
+    for item in items {
+        let size: usize = paths(item).iter().map(|path| path.len() + 1).sum();
+        match runs.last_mut() {
+            Some(run) if bytes + size <= PATHSPEC_BYTES => {
+                run.push(item);
+                bytes += size;
+            }
+            _ => {
+                runs.push(vec![item]);
+                bytes = size;
+            }
+        }
+    }
+    runs
+}
+
 /// The files `keep` picks from those that differ from `from` to `to`, each
-/// with its hunks at `context` lines: the list first, over the whole tree so
-/// a renamed file is found by either path, then the patch of just those
-/// files, by both their paths.
+/// with its hunks at `context` lines, in git's order: the list first, over
+/// the whole tree so a renamed file is found by either path, then the patch
+/// of just those files. When every file is picked the patch is the whole
+/// tree's, naming no path; otherwise it names both paths of each picked
+/// file, in calls of at most [`PATHSPEC_BYTES`] of them.
 async fn diffed(
     root: &Path,
     store: &ObjectStore,
@@ -699,25 +729,57 @@ async fn diffed(
     context: u32,
     keep: impl Fn(&RawFile) -> bool,
 ) -> Result<Vec<(RawFile, Vec<Hunk>)>, CompareError> {
-    let picked: Vec<RawFile> = raw(root, store, from, to, None)
-        .await?
-        .into_iter()
-        .filter(|file| keep(file))
-        .collect();
+    let listed = raw(root, store, from, to, None).await?;
+    let every = listed.len();
+    let picked: Vec<RawFile> = listed.into_iter().filter(|file| keep(file)).collect();
     if picked.is_empty() {
         return Ok(Vec::new());
     }
-    let mut pathspec: Vec<&str> = Vec::new();
-    for file in &picked {
-        pathspec.push(&file.path);
-        pathspec.extend(file.old_path.as_deref());
+    if picked.len() == every {
+        let sections = patch(root, store, from, to, context, &[]).await?;
+        return paired(picked, sections);
     }
-    pathspec.sort_unstable();
-    pathspec.dedup();
-    let picked: HashSet<&str> = picked.iter().map(|file| file.path.as_str()).collect();
-    // The list again, for exactly the files the patch shows, in its order:
-    // asking by both paths can bring in another file at one of them.
-    let listed = raw(root, store, from, to, Some(&pathspec)).await?;
+    let mut found: HashMap<String, (RawFile, Vec<Hunk>)> = HashMap::new();
+    for run in runs(&picked, |file| {
+        std::iter::once(file.path.as_str())
+            .chain(file.old_path.as_deref())
+            .collect()
+    }) {
+        let mut pathspec: Vec<&str> = Vec::new();
+        for file in &run {
+            pathspec.push(&file.path);
+            pathspec.extend(file.old_path.as_deref());
+        }
+        pathspec.sort_unstable();
+        pathspec.dedup();
+        // The list again, for exactly the files the patch shows, in its
+        // order: asking by both paths can bring in another file at one of
+        // them, which is kept from the run that picked it.
+        let listed = raw(root, store, from, to, Some(&pathspec)).await?;
+        let sections = patch(root, store, from, to, context, &pathspec).await?;
+        let own: HashSet<&str> = run.iter().map(|file| file.path.as_str()).collect();
+        for (file, hunks) in paired(listed, sections)? {
+            if own.contains(file.path.as_str()) {
+                found.insert(file.path.clone(), (file, hunks));
+            }
+        }
+    }
+    Ok(picked
+        .iter()
+        .filter_map(|file| found.remove(&file.path))
+        .collect())
+}
+
+/// The patch from `from` to `to` at `context` lines, of `pathspec` or with
+/// none of the whole tree: each file's hunks, in the patch's order.
+async fn patch(
+    root: &Path,
+    store: &ObjectStore,
+    from: &str,
+    to: &str,
+    context: u32,
+    pathspec: &[&str],
+) -> Result<Vec<Vec<Hunk>>, CompareError> {
     let unified = format!("--unified={context}");
     let mut args = vec![
         "--literal-pathspecs",
@@ -731,7 +793,18 @@ async fn diffed(
     args.extend([from, to, "--"]);
     args.extend(pathspec.iter().copied());
     let patch = read_git(root, store, &[from, to], &args).await?;
-    let sections = sections(&patch);
+    Ok(sections(&patch)
+        .into_iter()
+        .map(|section| section.iter().flat_map(|part| parse_hunks(part)).collect())
+        .collect())
+}
+
+/// Each listed file with the hunks of its section of the patch, which
+/// lists the same files in the same order.
+fn paired(
+    listed: Vec<RawFile>,
+    sections: Vec<Vec<Hunk>>,
+) -> Result<Vec<(RawFile, Vec<Hunk>)>, CompareError> {
     if sections.len() != listed.len() {
         return Err(GitError::Failed {
             command: "diff".to_owned(),
@@ -743,17 +816,7 @@ async fn diffed(
         }
         .into());
     }
-    Ok(listed
-        .into_iter()
-        .zip(sections)
-        .filter(|(file, _)| picked.contains(file.path.as_str()))
-        .map(|(file, section)| {
-            (
-                file,
-                section.iter().flat_map(|part| parse_hunks(part)).collect(),
-            )
-        })
-        .collect())
+    Ok(listed.into_iter().zip(sections).collect())
 }
 
 fn file_hunks(file: RawFile, hunks: Vec<Hunk>) -> FileHunks {
@@ -840,29 +903,35 @@ async fn readable(root: &Path, store: &ObjectStore, commit: &str) -> Result<bool
         .any(|line| line.ends_with(" missing")))
 }
 
-/// Which of `paths` `commit` holds.
+/// Which of `paths` `commit` holds, asked [`PATHSPEC_BYTES`] of paths at a
+/// time.
 async fn present(
     root: &Path,
     store: &ObjectStore,
     commit: &str,
     paths: &[&str],
 ) -> Result<HashSet<String>, CompareError> {
-    let mut args = vec![
-        "--literal-pathspecs",
-        "ls-tree",
-        "-z",
-        "--full-tree",
-        "--name-only",
-        commit,
-        "--",
-    ];
-    args.extend(paths);
-    let listed = read_git(root, store, &[commit], &args).await?;
-    Ok(listed
-        .split(|byte| *byte == 0)
-        .filter(|path| !path.is_empty())
-        .map(|path| String::from_utf8_lossy(path).into_owned())
-        .collect())
+    let mut held = HashSet::new();
+    for run in runs(paths, |path| vec![*path]) {
+        let mut args = vec![
+            "--literal-pathspecs",
+            "ls-tree",
+            "-z",
+            "--full-tree",
+            "--name-only",
+            commit,
+            "--",
+        ];
+        args.extend(run.into_iter().copied());
+        let listed = read_git(root, store, &[commit], &args).await?;
+        held.extend(
+            listed
+                .split(|byte| *byte == 0)
+                .filter(|path| !path.is_empty())
+                .map(|path| String::from_utf8_lossy(path).into_owned()),
+        );
+    }
+    Ok(held)
 }
 
 fn ls_tree<'a>(commit: &'a str, path: &'a str) -> [&'a str; 7] {

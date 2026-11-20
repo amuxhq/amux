@@ -519,6 +519,65 @@ async fn since_the_last_review_shows_the_agent_undoing_its_own_change() {
     assert_eq!(changed_lines(&asked), changed_lines(&every[1..]));
 }
 
+/// Thousands of long paths, more bytes of them than a command line holds
+/// on any platform, are compared all the same: the whole tree's since-last
+/// names no path to git, and where only some files are wanted they are
+/// asked for a bounded number of bytes at a time.
+#[tokio::test]
+async fn a_change_of_thousands_of_long_paths_is_compared_whole() {
+    const FILES: usize = 8_000;
+    let repo = repository(&[("keep.txt", "one\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    let base = git(dir, &["rev-parse", "HEAD"]);
+    std::fs::write(dir.join("keep.txt"), "two\n").unwrap();
+    let round = snapshot(dir, store.dir());
+
+    // Each path some 250 bytes: 2 MB of them, past what macOS (1 MB) or
+    // Linux (2 MB, less the environment) takes in one call's arguments.
+    let folder = format!("{}{}", "nested-folder-".repeat(8), "end");
+    std::fs::create_dir_all(dir.join(&folder)).unwrap();
+    let paths: Vec<String> = (0..FILES)
+        .map(|n| format!("{folder}/{}-{n:05}.txt", "a-long-file-name".repeat(8)))
+        .collect();
+    assert!(paths.iter().map(String::len).sum::<usize>() > 2_000_000);
+    for path in &paths {
+        std::fs::write(dir.join(path), "made\n").unwrap();
+    }
+    let now = snapshot(dir, store.dir());
+
+    let last = Shown {
+        base: &base,
+        snapshot: &round,
+    };
+    let shown = Shown {
+        base: &base,
+        snapshot: &now,
+    };
+    // Since the round, every new file; all changes holds keep.txt besides,
+    // so the files since are picked from it by path.
+    let since = compare::since_last(dir, &store, last, shown, None, 3)
+        .await
+        .unwrap();
+    assert_eq!(since.len(), FILES);
+    assert!(since.iter().all(|file| file.status == Status::Created
+        && file.counts() == (1, 0)
+        && file.hunks.len() == 1));
+    let mut listed: Vec<&str> = since.iter().map(|file| file.path.as_str()).collect();
+    listed.sort_unstable();
+    let mut expected: Vec<&str> = paths.iter().map(String::as_str).collect();
+    expected.sort_unstable();
+    assert_eq!(listed, expected);
+
+    // Asked by path, every one of them, in batches.
+    let asked: Vec<&str> = paths.iter().map(String::as_str).collect();
+    let hunks = compare::hunks(dir, &store, &base, &now, &asked, 3)
+        .await
+        .unwrap();
+    assert_eq!(hunks.len(), FILES);
+    assert!(!hunks.iter().any(|file| file.path == "keep.txt"));
+}
+
 /// The review's base follows the rule the changes list uses, except where
 /// that rule falls back to HEAD: there the review keeps the commit it began
 /// on, so the agent's commits on the base branch stay in all changes.

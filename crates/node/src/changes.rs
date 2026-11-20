@@ -295,8 +295,13 @@ fn changed_file(root: &Path, file: git_facts::ChangedFile) -> ChangedFile {
 /// extension names its language by.
 const SHEBANG_BYTES: u64 = 256;
 
-/// The file's first line, for its `#!`; none when it cannot be read.
+/// The file's first line, for its `#!`; none when it cannot be read, and
+/// none for anything but a regular file. A symbolic link is never opened:
+/// it may point outside the checkout, or at a pipe an open would wait on.
 fn first_line(path: &Path) -> Option<String> {
+    if !std::fs::symlink_metadata(path).ok()?.is_file() {
+        return None;
+    }
     let mut head = Vec::new();
     std::fs::File::open(path)
         .ok()?
@@ -310,6 +315,57 @@ fn first_line(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn created(path: &str) -> git_facts::ChangedFile {
+        git_facts::ChangedFile {
+            path: path.to_owned(),
+            old_path: None,
+            status: git_facts::Status::Created,
+            added: 1,
+            removed: 0,
+            binary: false,
+            flags: git_facts::Flags::default(),
+        }
+    }
+
+    /// A script's `#!` names its language, but only a regular file is read
+    /// for it: a link to a script outside the checkout, or to a pipe that
+    /// would hold an open forever, names none and returns at once.
+    #[cfg(unix)]
+    #[test]
+    fn only_a_regular_file_is_read_for_its_language() {
+        let checkout = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = checkout.path().to_owned();
+        std::fs::write(root.join("run"), "#!/bin/sh\necho hi\n").unwrap();
+        let script = outside.path().join("script");
+        std::fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
+        std::os::unix::fs::symlink(&script, root.join("outside")).unwrap();
+        let pipe = outside.path().join("pipe");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&pipe)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        std::os::unix::fs::symlink(&pipe, root.join("waits")).unwrap();
+
+        let (sent, named) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let languages: Vec<_> = ["run", "outside", "waits"]
+                .into_iter()
+                .map(|path| changed_file(&root, created(path)).language)
+                .collect();
+            let _ = sent.send(languages);
+        });
+        let languages = named
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("naming the languages does not wait on a pipe");
+        assert_eq!(
+            languages[0],
+            Language::from_file("run", "#!/bin/sh").unwrap().name()
+        );
+        assert_eq!(languages[1..], ["", ""]);
+    }
 
     fn key(host: u8, agent: u8) -> AgentKey {
         AgentKey::new(vec![host; 16], vec![agent; 16])

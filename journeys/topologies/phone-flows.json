@@ -448,7 +448,15 @@
             "auth_failed": {
               "message": "Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token."
             }
-          }
+          },
+          {
+            "text": {
+              "chunks": [
+                "Links checked."
+              ]
+            }
+          },
+          "turn_end"
         ]
       }
     },

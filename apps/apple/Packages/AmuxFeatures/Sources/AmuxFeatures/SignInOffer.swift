@@ -86,7 +86,7 @@ public struct SignInOfferPanel: View {
         case .unreachable(let name) where !name.isEmpty:
             String(localized: "\(name) is offline. Open amux on \(name), then try again.")
         case .unreachable:
-            String(localized: "That host is offline. Open amux on it, then try again.")
+            String(localized: "That computer is offline. Open amux on it, then try again.")
         case .refused:
             String(localized: "Signing in didn’t work. Sign in from Settings instead.")
         }

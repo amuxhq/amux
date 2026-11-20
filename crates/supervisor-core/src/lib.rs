@@ -32,11 +32,12 @@
 //!   supervisor that finds it counts failed starts against it, finishes a
 //!   rollback already recorded, or, when prev is the binary itself, removes
 //!   it.
+//! - A daemon that asks to be restarted (its experiments switched) is
+//!   stopped and started again at once, as after an install, with no
+//!   backoff and nothing on disk moved; only a serving daemon is.
 //! - Stopping the daemon is a signal, a stop deadline, then a kill.
 
 #![forbid(unsafe_code)]
-
-use std::time::Instant;
 
 use release::{Choice, Manifest, Release, Skip};
 pub use semver::Version;
@@ -80,6 +81,10 @@ pub enum Request {
     Check { retry: bool },
     /// Stop the daemon and the supervisor.
     Stop,
+    /// Stop the serving daemon and start it again at once: the daemon asks
+    /// this itself when the experiments its config switches on are not the
+    /// ones it runs.
+    Restart,
 }
 
 /// What a starting supervisor finds beside the binary.
@@ -320,7 +325,8 @@ enum Then {
     /// The staged release goes in (where the binary cannot be replaced
     /// while it runs), then the new daemon starts.
     Install,
-    /// The new binary is in place: start it.
+    /// Start the binary at the path at once: a new one installed, or the
+    /// same one when the daemon asked to be restarted.
     Restart,
     /// The supervisor exits.
     Exit,
@@ -486,7 +492,7 @@ impl Supervisor {
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
         // The step's own duration is the one reading of the world a core
         // makes: it decides nothing but whether to ask for a dump.
-        let started = Instant::now();
+        let started = core_ring::StepStart::now();
         self.touched = Touched::default();
         if !self.exited {
             self.take(input, out);
@@ -497,7 +503,7 @@ impl Supervisor {
         let checked = self.check_step_invariants();
         self.touched = Touched::default();
         out.extend(
-            core_ring::finish_step(started, self.params.step_budget, 0, checked)
+            core_ring::finish_step(started, self.params.step_budget, 0, None, checked)
                 .map(|reason| Output::Dump { reason }),
         );
     }
@@ -652,6 +658,24 @@ impl Supervisor {
                     "the daemon is restarting; try again shortly"
                 } else {
                     "the daemon is starting; try again shortly"
+                };
+                out.push(Output::Answer {
+                    ask,
+                    text: text.into(),
+                });
+            }
+            Request::Restart => {
+                // The installed build's own restart, as after an install:
+                // the daemon stops, and once it has exited the same binary
+                // starts again with no backoff. Only a serving daemon asks;
+                // one starting or stopping is on its way to a fresh start.
+                let text = match self.serving() {
+                    Some(daemon) if !self.stopping => {
+                        self.stop(daemon, Then::Restart, out);
+                        RESTARTING
+                    }
+                    _ if self.stopping => "the supervisor is stopping",
+                    _ => "the daemon is not serving; it starts afresh anyway",
                 };
                 out.push(Output::Answer {
                     ask,
@@ -970,6 +994,9 @@ impl Supervisor {
         self.next_id
     }
 }
+
+/// The answer to [`Request::Restart`] when the daemon is being restarted.
+pub const RESTARTING: &str = "restarting";
 
 /// Why nothing was installed, as `amux update` says it.
 pub fn skipped(skip: Skip, target: &str, running: &Version) -> String {

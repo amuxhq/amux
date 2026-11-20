@@ -204,7 +204,7 @@ async fn suggestions_come_from_the_session_logs_in_the_home() {
         .await
         .unwrap()
         .into_inner()
-        .suggestions;
+        .folders;
     assert_eq!(suggested.len(), 1, "{suggested:?}");
     assert_eq!(suggested[0].path, repo.to_str().unwrap());
     assert_eq!(suggested[0].name, "app");

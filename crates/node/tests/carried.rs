@@ -17,7 +17,7 @@ use support::*;
 use tonic::Request;
 use tonic::transport::Channel;
 use wire::amux::staging::{
-    self as staging, FollowAgentsRequest, ListRepositoriesRequest, PutBlobRequest, SendInputRequest,
+    self as staging, FollowAgentsRequest, PinFolderRequest, PutBlobRequest, SendInputRequest,
 };
 use wire::{SendInputResponse, send_input_response};
 
@@ -45,6 +45,7 @@ impl Pair {
         let desk = Install::new();
         let code = desk.path("code");
         std::fs::create_dir_all(code.join("site")).unwrap();
+        std::fs::create_dir_all(code.join("docs")).unwrap();
         let mut agent = SyntheticAgent::new(&desk, "coder", SEGMENTS);
         agent.register(&desk);
         agent.append(&snapshot(wire::Phase::Idle, &[], 1_000));
@@ -110,6 +111,11 @@ impl Pair {
     /// client addresses one host.
     async fn laptop_socket(&self, authority: &str) -> Channel {
         socket(&self.laptop_runtime, authority).await
+    }
+
+    /// A folder on the desk that is not pinned there yet.
+    fn desk_docs(&self) -> std::path::PathBuf {
+        self.desk.path("code").join("docs")
     }
 
     /// A channel on the laptop's socket addressed to the desk.
@@ -189,19 +195,39 @@ async fn socket(runtime: &ProfileRuntime, authority: &str) -> Channel {
         .expect("the socket answers")
 }
 
-fn listing() -> Request<ListRepositoriesRequest> {
-    Request::new(ListRepositoriesRequest {
-        query: None,
-        limit: 50,
+/// Pins `folder` on the host the call is addressed to.
+fn pinning(folder: &std::path::Path) -> Request<PinFolderRequest> {
+    Request::new(PinFolderRequest {
+        path: folder.to_string_lossy().into_owned(),
+        pinned: true,
     })
 }
 
-fn names(listed: &staging::ListRepositoriesResponse) -> Vec<String> {
-    listed
-        .repositories
-        .iter()
-        .map(|entry| entry.name.clone())
+/// The names of the folders `runtime`'s own entry says are pinned.
+fn pinned(runtime: &ProfileRuntime) -> Vec<String> {
+    runtime
+        .host_entry()
+        .folders
+        .into_iter()
+        .filter(|folder| folder.kind() == wire::FolderKind::Pinned)
+        .map(|folder| folder.name)
         .collect()
+}
+
+/// Waits for `runtime`'s own entry to say `names` are its pinned folders.
+async fn until_pinned(runtime: &ProfileRuntime, names: &[&str]) {
+    until("the entry to say the pin", || {
+        let held = pinned(runtime);
+        async move {
+            if held == names {
+                Ok(())
+            } else {
+                Err(format!("{held:?}"))
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 fn verdict(answer: &SendInputResponse) -> String {
@@ -220,37 +246,23 @@ fn reason(status: &tonic::Status) -> Option<wire::ErrorReason> {
     wire::Error::decode(status.details()).ok()?.reason()
 }
 
-/// A person on the laptop asks the desk for its repositories through the
-/// laptop's socket, and the desk answers for itself; the desk counts a
+/// A person on the laptop pins a folder on the desk through the laptop's
+/// socket, and the desk makes the change for itself; the desk counts a
 /// person's prompt sent the same way as coming from the laptop.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_person_on_the_laptop_is_answered_by_the_desk_as_a_person_there() {
     captured_log();
     let (pair, _link) = Pair::new().await;
-    let desk_listed = staging::host_service_client(socket(&pair.desk_runtime, "amux.local").await)
-        .list_repositories(listing())
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(names(&desk_listed), ["site"]);
-    let laptop_listed = staging::host_service_client(pair.laptop_socket("amux.local").await)
-        .list_repositories(listing())
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(
-        names(&laptop_listed).is_empty(),
-        "the laptop has none of its own"
-    );
+    until_pinned(&pair.desk_runtime, &["site"]).await;
 
-    let carried = staging::host_service_client(pair.to_desk().await)
-        .list_repositories(listing())
+    staging::host_service_client(pair.to_desk().await)
+        .pin_folder(pinning(&pair.desk_docs()))
         .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(
-        carried, desk_listed,
-        "the desk answered the laptop's person"
+        .unwrap();
+    until_pinned(&pair.desk_runtime, &["site", "docs"]).await;
+    assert!(
+        pinned(&pair.laptop_runtime).is_empty(),
+        "the laptop pinned nothing of its own"
     );
 
     let answer = staging::agent_service_client(pair.to_desk().await)
@@ -291,12 +303,8 @@ async fn the_phones_entry_in_memory_carries_a_call_to_the_desk() {
         .parse()
         .unwrap();
     let mut desk = staging::host_service_client::HostServiceClient::with_origin(entrance, origin);
-    let listed = desk
-        .list_repositories(listing())
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(names(&listed), ["site"]);
+    desk.pin_folder(pinning(&pair.desk_docs())).await.unwrap();
+    until_pinned(&pair.desk_runtime, &["site", "docs"]).await;
     pair.stop().await;
 }
 
@@ -330,7 +338,7 @@ async fn a_call_for_a_host_with_no_link_never_leaves_and_says_so() {
     let stranger = node::HostId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_0000_0000_0001);
     let answer =
         staging::host_service_client(pair.laptop_socket(&wire::authority(&stranger)).await)
-            .list_repositories(listing())
+            .pin_folder(pinning(&pair.desk_docs()))
             .await
             .unwrap_err();
     assert_eq!(reason(&answer), Some(wire::ErrorReason::HostUnreachable));
@@ -361,7 +369,7 @@ async fn a_call_for_a_host_that_no_longer_trusts_this_one_says_so() {
     .await
     .unwrap();
     let answer = staging::host_service_client(pair.to_desk().await)
-        .list_repositories(listing())
+        .pin_folder(pinning(&pair.desk_docs()))
         .await
         .unwrap_err();
     assert_eq!(answer.code(), tonic::Code::Unauthenticated, "{answer:?}");
@@ -518,10 +526,12 @@ async fn an_input_no_daemon_knows_is_carried_as_it_was_sent() {
 async fn the_link_log_has_one_line_per_carried_call() {
     captured_log();
     let (pair, link) = Pair::new().await;
+    let laptop_docs = pair.laptop.path("docs");
+    std::fs::create_dir_all(&laptop_docs).unwrap();
     let mut here = staging::host_service_client(pair.laptop_socket("amux.local").await);
-    here.list_repositories(listing()).await.unwrap();
+    here.pin_folder(pinning(&laptop_docs)).await.unwrap();
     let mut desk = staging::host_service_client(pair.to_desk().await);
-    desk.list_repositories(listing()).await.unwrap();
+    desk.pin_folder(pinning(&pair.desk_docs())).await.unwrap();
     let unknown =
         wire::profile_admin_service_client::ProfileAdminServiceClient::new(pair.to_desk().await)
             .cancel_pairing(Request::new(wire::CancelPairingRequest::default()))
@@ -531,11 +541,13 @@ async fn the_link_log_has_one_line_per_carried_call() {
     link.sever();
     drop(link);
     let attempts = std::sync::atomic::AtomicUsize::new(0);
+    let docs = pair.desk_docs();
     until("a call to the desk to find no link", || {
         let mut desk = desk.clone();
+        let docs = docs.clone();
         attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         async move {
-            match desk.list_repositories(listing()).await {
+            match desk.pin_folder(pinning(&docs)).await {
                 Err(status) if reason(&status) == Some(wire::ErrorReason::HostUnreachable) => {
                     Ok(())
                 }
@@ -548,7 +560,7 @@ async fn the_link_log_has_one_line_per_carried_call() {
 
     let carried = pair.carried();
     let desk_id = pair.desk_id();
-    let list = "/amux.staging.HostService/ListRepositories";
+    let list = "/amux.staging.HostService/PinFolder";
     assert!(
         carried.iter().all(|call| call.peer == desk_id),
         "{carried:?}"

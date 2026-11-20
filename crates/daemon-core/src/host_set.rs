@@ -47,6 +47,10 @@ pub struct Candidate {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Providers(#[serde(with = "codec::messages")] Vec<wire::ProviderOnHost>);
 
+/// Where a trusted host offers to start an agent, as its own entry said.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct Folders(#[serde(with = "codec::messages")] Vec<wire::Folder>);
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HostSet {
     /// This host's entry as the driver describes it.
@@ -60,6 +64,10 @@ pub struct HostSet {
     /// said.
     #[serde(default)]
     claude_kinds: BTreeMap<HostId, i32>,
+    /// Where each trusted host offers to start an agent, as its own entry
+    /// said.
+    #[serde(default)]
+    folders: BTreeMap<HostId, Folders>,
     /// The set as last published, by host id.
     #[serde(with = "codec::messages")]
     published: Vec<HostEntry>,
@@ -132,6 +140,15 @@ impl Daemon {
         let providers = Providers(providers);
         if self.host_set.providers.get(&host) != Some(&providers) {
             self.host_set.providers.insert(host, providers);
+            self.touched.host_set = true;
+        }
+    }
+
+    /// Where a trusted host's own entry said it offers to start an agent.
+    pub(crate) fn folders_said(&mut self, host: HostId, folders: Vec<wire::Folder>) {
+        let folders = Folders(folders);
+        if self.host_set.folders.get(&host) != Some(&folders) {
+            self.host_set.folders.insert(host, folders);
             self.touched.host_set = true;
         }
     }
@@ -226,6 +243,12 @@ impl Daemon {
                         .claude_kinds
                         .get(&host)
                         .copied()
+                        .unwrap_or_default(),
+                    folders: self
+                        .host_set
+                        .folders
+                        .get(&host)
+                        .map(|folders| folders.0.clone())
                         .unwrap_or_default(),
                 },
             );

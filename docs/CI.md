@@ -74,7 +74,7 @@ takes seconds shares a job, and the models run a few to a job.
 | Job | Runner | Runs |
 | --- | --- | --- |
 | Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just lint` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
+| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just store-check` |
 | Test | `ubuntu-latest`, `macos-latest`, `windows-latest`, two jobs each | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models --partition count:N/2`: each job builds every test and runs every second one |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, five jobs | `just test-crate models` filtered to one model's module of the integration test binary, for each of the job's two to four models in turn: each model at its CI bounds |

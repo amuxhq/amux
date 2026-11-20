@@ -37,7 +37,7 @@ use std::time::Duration;
 
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
-use core_ring::{DumpLimit, Ring};
+use core_ring::{DumpKind, DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerReply,
     PeerRequest, Response, Status,
@@ -209,7 +209,7 @@ impl Driver {
         store: Sqlite,
         dir: PathBuf,
         options: StartOptions,
-        dump_interval_ms: u64,
+        (dump_interval_ms, over_budget_dump_interval_ms): (u64, u64),
         cores: Option<Cores>,
     ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
@@ -266,8 +266,10 @@ impl Driver {
             link_alarm: None,
             waiting: HashMap::new(),
             ticked: None,
-            dumps: DumpLimit::new(dump_interval_ms),
+            counted: DumpLimit::new(dump_interval_ms),
+            dumps: DumpLimit::new(dump_interval_ms).with_over_budget(over_budget_dump_interval_ms),
             settings: None,
+            holding: std::collections::BTreeSet::new(),
             trust: trust.clone(),
             window: window.clone(),
             pairings: pairings.clone(),
@@ -581,10 +583,16 @@ pub(crate) struct CoreThread {
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clocks as last told to the core: policy time, then link time.
     ticked: Option<(u64, u64)>,
-    /// The dumps the core asked for that were written, by kind.
+    /// The checks that broke and were counted in usage, by check.
+    counted: DumpLimit,
+    /// The dumps the core asked for that were written, by kind: a step
+    /// over its budget by the kind of input it took.
     dumps: DumpLimit,
     /// The settings as last told to the core.
     settings: Option<Settings>,
+    /// The jobs under way that a restart waits for, published as the
+    /// runtime's `busy` once each turn is done.
+    holding: std::collections::BTreeSet<JobId>,
     trust: crate::trust::SharedTrustStore,
     window: Arc<pairing::PairWindow>,
     pairings: Arc<pairing::Carriers>,
@@ -937,6 +945,10 @@ impl CoreThread {
         if opens_pairing(&input) {
             self.step(runtime, Input::Entropy(entropy()), out);
         }
+        let done = match &input {
+            Input::JobDone { job, .. } => Some(*job),
+            _ => None,
+        };
         self.record(&input);
         self.daemon.step(input, out);
         // The call's own answers reach its queue together, where the first
@@ -970,6 +982,14 @@ impl CoreThread {
         {
             self.calls.answer_all(call, own);
         }
+        // After the step's outputs: the job a done one led to is held
+        // before this one lets go, so a chain of them (a plan, then its
+        // make) never reads as settled between its links.
+        if let Some(job) = done
+            && self.holding.remove(&job)
+        {
+            self.publish_busy(runtime);
+        }
         if let Some(outcome) = checkpointed
             && self.checkpointing.is_none()
         {
@@ -982,6 +1002,25 @@ impl CoreThread {
                     let _ = waiter.send(outcome.clone());
                 }
             }
+        }
+    }
+
+    /// Tells whoever waits for the daemon's work to settle how many of the
+    /// jobs a restart waits for are under way.
+    fn publish_busy(&self, runtime: &ProfileRuntime) {
+        let now = self.holding.len();
+        runtime.busy.send_if_modified(|under_way| {
+            let moved = *under_way != now;
+            *under_way = now;
+            moved
+        });
+    }
+
+    /// Holds `id` until its result is stepped when it is work a restart
+    /// waits for ([`holds_a_restart`]).
+    fn hold(&mut self, runtime: &ProfileRuntime, id: JobId, op: &Job) {
+        if holds_a_restart(op) && self.holding.insert(id) {
+            self.publish_busy(runtime);
         }
     }
 
@@ -1114,8 +1153,12 @@ impl CoreThread {
             Output::Job {
                 id,
                 op: Job::Workspace(job),
-            } => self.workspace_job(runtime, id, job),
+            } => {
+                self.hold(runtime, id, &Job::Workspace(job.clone()));
+                self.workspace_job(runtime, id, job);
+            }
             Output::Job { id, op } => {
+                self.hold(runtime, id, &op);
                 tokio::spawn(run_job(
                     Arc::downgrade(runtime),
                     id,
@@ -1126,14 +1169,18 @@ impl CoreThread {
             Output::Dump { reason } => {
                 // The core logged why. The bundle is written off this
                 // thread, reading the store between later steps, so a burst
-                // of the same reason is one bundle.
+                // of the same reason is one bundle. Usage counts every
+                // check on the same window whatever its dumps' window, so a
+                // count reads the same across kinds of check.
                 let now = runtime.clock_now().max(0) as u64;
                 let check = reason.check().map_or("", |check| check.id).to_owned();
+                let core = crate::reports::Core::Daemon;
+                if let Some(held_back) = self.counted.admit(DumpKind::check(&reason), now) {
+                    runtime.check_failed(core, &check, held_back);
+                }
                 let Some(admitted) = limited_dump_reason(&mut self.dumps, &reason, now) else {
                     return;
                 };
-                let core = crate::reports::Core::Daemon;
-                runtime.check_failed(core, &check, admitted.held_back);
                 runtime.dump_unasked(
                     admitted.reason,
                     crate::reports::check_id(core, &check),
@@ -1346,6 +1393,7 @@ impl CoreThread {
     fn shell_work(&mut self, runtime: &Arc<ProfileRuntime>, work: ShellWork) {
         match work {
             ShellWork::Wrote => runtime.wrote(),
+            ShellWork::RecentDirectory => runtime.refresh_folders(),
             ShellWork::Sourcing { agent, open } => runtime.sourcing(agent, open),
             ShellWork::Hosts { entries } => runtime.hosts_published(entries),
             ShellWork::ReplicaDropped { agent } => runtime.replica_dropped(&agent),
@@ -1408,6 +1456,32 @@ impl CoreThread {
         for waiter in self.waiting.remove(&agent).unwrap_or_default() {
             let _ = waiter.done.send(outcome.clone().map(|()| waiter.frames));
         }
+    }
+}
+
+/// Whether a job is the daemon's own work in progress, which a restart to
+/// apply an experiment switch waits for: cut off, a workspace being made
+/// ends its agent as could not start, a hook stops halfway, a resume or a
+/// delete is left for the next daemon to find half done. A release of a
+/// workspace claim is done at once and never answered, so it holds nothing.
+/// The rest (checkpoints, blobs, pushes, credentials, comparisons, kills)
+/// are quick or done again by the next daemon.
+fn holds_a_restart(op: &Job) -> bool {
+    use daemon_core::workspaces::WorkspaceJob;
+    match op {
+        Job::Workspace(WorkspaceJob::ReleaseClaim { .. }) => false,
+        Job::Workspace(_)
+        | Job::MakeWorktree { .. }
+        | Job::NextSpec { .. }
+        | Job::AwaitUnlocked { .. }
+        | Job::RemoveDir { .. } => true,
+        Job::Fsync { .. }
+        | Job::CheckpointWal
+        | Job::WriteBlob { .. }
+        | Job::RefreshToken { .. }
+        | Job::SendPush(_)
+        | Job::KillAgent { .. }
+        | Job::Compare { .. } => false,
     }
 }
 
@@ -1729,9 +1803,13 @@ mod tests {
         let slow = daemon_core::DumpReason::OverBudget {
             micros: 250_000,
             budget: daemon_core::StepBudget::DAEMON,
+            input: Some("Retain"),
         };
         let slow = limited_dump_reason(&mut limit, &slow, 2).unwrap().reason;
-        assert!(slow.contains("250000 µs"), "{slow}");
+        assert_eq!(
+            slow,
+            "the daemon core: a Retain step took 250000 µs, over its budget of 100000 µs"
+        );
         let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
         assert_eq!(second.held_back, 2);
         let second = second.reason;

@@ -155,7 +155,9 @@ export class Amux {
       "/amux.v1.AgentService/SubscribeInventory",
       "",
       (message) => {
-        void core({ op: "fleetApply", fleet, message }).then(() => this.changed());
+        void core({ op: "fleetApply", fleet, message })
+          .then(() => this.loadFolders())
+          .then(() => this.changed());
       },
       () => {
         // The stream ended: start the fleet again from a fresh listing.
@@ -169,21 +171,21 @@ export class Amux {
     );
   }
 
+  /** The folders each profile's own host offers, as its inventory entry says them. */
   private async loadFolders() {
     const folders: Folder[] = [];
     for (const profile of this.profiles.values()) {
       try {
-        const request = await core<string>({ op: "listRepositories" });
-        const message = await this.bridge.unary(profile.id, "/amux.v1.AgentService/ListRepositories", request);
-        const listed = await core<{ recent: Folder[]; repositories: Folder[] }>({ op: "repositories", message });
-        const seen = new Set<string>();
-        for (const folder of [...listed.repositories, ...listed.recent]) {
-          if (seen.has(folder.path)) continue;
-          seen.add(folder.path);
+        const offered = await core<{ path: string; name: string }[]>({
+          op: "folders",
+          fleet: profile.fleet,
+          localHost: profile.localHost,
+        });
+        for (const folder of offered) {
           folders.push({ profile: profile.id, path: folder.path, name: folder.name });
         }
       } catch {
-        // A host that cannot list folders offers none.
+        // A fleet dropped meanwhile offers none.
       }
     }
     this.folders = folders;

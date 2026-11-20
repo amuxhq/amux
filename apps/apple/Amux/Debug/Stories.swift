@@ -67,7 +67,7 @@ extension ComponentCatalog {
         ) { StoryApp(chatOpen: true) },
         ComponentExample(
             id: "chat.exited", family: .chat, canvas: CGSize(width: 390, height: 844)
-        ) { StoryApp(chatOpen: true, chatPhase: .exited(cause: .failed("while the daemon was away"))) },
+        ) { StoryApp(chatOpen: true, chatPhase: .exited(cause: .failed("while amux was stopped"))) },
         ComponentExample(
             id: "settings.signed-in", family: .settings, canvas: CGSize(width: 390, height: 844)
         ) { StoryApp(settingsOpen: true).settings },

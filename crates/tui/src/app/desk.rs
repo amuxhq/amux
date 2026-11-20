@@ -49,7 +49,7 @@ pub enum DeskEvent {
     SignedIn,
     SignInFailed(String),
     OfferAnswered(Result<bool, String>),
-    Suggested(Vec<wire::RepositoryEntry>),
+    Suggested(Vec<wire::Folder>),
     Confirmed(SetupStep),
     ConfirmFailed(String),
     /// A settings change was refused.

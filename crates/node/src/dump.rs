@@ -85,7 +85,7 @@ use uuid::Uuid;
 use wire::dump::ClientSessionHistory;
 use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Step, ctl_frame};
 
-use crate::driver::{AGENT_DUMP, AGENT_VIOLATION_DUMP, Captured};
+use crate::driver::{AGENT_VIOLATION_DUMP, Captured};
 use crate::runtime::ProfileRuntime;
 
 /// Where the core's record lives in a bundle, and its files.
@@ -228,19 +228,20 @@ impl ProfileRuntime {
 
     /// An agent's core asked for a dump over its control connection, after
     /// this host's own limit per kind.
+    ///
+    /// A step over its budget is counted and not dumped: the agent's core
+    /// does not keep its inputs, so its dump cannot say what made a step
+    /// slow, and on a busy machine every agent asks.
     pub(crate) fn agent_asked(self: &Arc<Self>, id: Uuid, asked: wire::DumpAsked) {
         let check = if asked.invariant.is_empty() {
             String::new()
         } else {
             asked.check.clone()
         };
-        let (kind, prefix) = if check.is_empty() {
-            (DumpKind::OverBudget, AGENT_DUMP)
+        let kind = if check.is_empty() {
+            DumpKind::OverBudget(None)
         } else {
-            (
-                DumpKind::Violation(check.clone().into()),
-                AGENT_VIOLATION_DUMP,
-            )
+            DumpKind::Violation(check.clone().into())
         };
         let now = self.clock_now().max(0) as u64;
         let Some(held_back) = self.agent_dumps.lock().unwrap().admit(kind, now) else {
@@ -250,8 +251,14 @@ impl ProfileRuntime {
         // own limit held back before asking.
         let core = crate::reports::Core::Agent;
         self.check_failed(core, &check, held_back + u64::from(asked.held_back));
-        let reason =
-            core_ring::with_suppressed(format!("{prefix}{id}: {}", asked.reason), held_back);
+        if check.is_empty() {
+            tracing::debug!(agent = %id, reason = %asked.reason, "counted, not dumped");
+            return;
+        }
+        let reason = core_ring::with_suppressed(
+            format!("{AGENT_VIOLATION_DUMP}{id}: {}", asked.reason),
+            held_back,
+        );
         self.dump_unasked_with(
             reason,
             crate::reports::check_id(core, &check),

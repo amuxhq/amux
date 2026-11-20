@@ -472,31 +472,21 @@ impl Setup {
         folders
     }
 
-    /// The host's folders, when they are for the chosen host: its repositories
-    /// first, then its recent folders.
-    pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
-        let folders = answer
-            .repositories
-            .iter()
-            .chain(&answer.recent)
-            .map(|entry| entry.path.clone())
-            .fold(Vec::new(), |mut folders: Vec<String>, path| {
-                if !folders.contains(&path) {
-                    folders.push(path);
-                }
-                folders
-            });
-        self.folders = Some((host.to_vec(), folders));
+    /// The host's folders, when they are for the chosen host, in its
+    /// order: its repositories, its recent folders, then where Claude Code
+    /// and Codex ran.
+    pub fn take_folders(&mut self, host: &[u8], folders: &[String]) {
+        self.folders = Some((host.to_vec(), folders.to_vec()));
         if host == self.host {
             self.fill_folder();
         }
     }
 
-    /// Whether the chosen host's folders are still to ask for.
-    pub fn wants_folders(&self) -> bool {
+    /// Whether the setup holds `folders` as `host`'s already.
+    pub fn holds_folders(&self, host: &[u8], folders: &[String]) -> bool {
         self.folders
             .as_ref()
-            .is_none_or(|(host, _)| *host != self.host)
+            .is_some_and(|(held, offered)| held == host && offered == folders)
     }
 
     /// The create request, with the first prompt when there is one. It is
@@ -556,7 +546,7 @@ fn host_name(fleet: &FleetState, host: &[u8]) -> String {
         .host(host)
         .map(|host| host.name().to_owned())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "this machine".into())
+        .unwrap_or_else(|| "this computer".into())
 }
 
 /// The hosts an agent can start on, the chosen one first in a list (a
@@ -1414,7 +1404,7 @@ impl Form {
                 Field::Name => "Name",
                 Field::Kind => "Agent",
                 Field::Folder => "Folder",
-                Field::Host => "Host",
+                Field::Host => "Computer",
                 Field::Worktree => "Worktree",
             };
             let label_ink = if current {
@@ -1456,7 +1446,7 @@ impl Form {
                         let hint = if field == Field::Name {
                             "named automatically"
                         } else {
-                            "a folder on that host"
+                            "a folder on that computer"
                         };
                         push(&mut line, hint, theme.faint(), wide);
                     } else {

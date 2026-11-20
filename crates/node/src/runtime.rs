@@ -130,8 +130,12 @@ pub struct Launch {
     /// dump, in microseconds; 0 leaves the agent its own budget.
     pub agent_step_budget_micros: u64,
     /// How long after a dump the profile's core asked for another of the
-    /// same kind is held back, and counted in the next.
+    /// same kind is held back, and counted in the next; and how often a
+    /// check that broke is counted in usage, a step over budget included.
     pub dump_interval_ms: u64,
+    /// The same for a dump of a step over its budget, by the kind of input
+    /// the step took.
+    pub over_budget_dump_interval_ms: u64,
     /// Where the profile's core is stepped by its caller; none gives it a
     /// thread of its own.
     pub cores: Option<crate::Cores>,
@@ -186,6 +190,7 @@ impl Default for Launch {
             step_budget: daemon_core::StepBudget::DAEMON,
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
+            over_budget_dump_interval_ms: core_ring::DumpLimit::OVER_BUDGET_DAILY_MS,
             cores: None,
             experiments: settings::experiments::Enabled::none(),
             suspension: Default::default(),
@@ -406,6 +411,12 @@ pub struct ProfileRuntime {
     /// polling: a message waiting for its acceptance item, a test fencing
     /// a host to an order.
     pub(crate) commits: watch::Sender<u64>,
+    /// How many of the jobs a restart waits for are under way: a
+    /// workspace being planned, made, started, stopped or removed (a hook
+    /// among them), a worktree being made, a resumed agent's spec being
+    /// built, an agent's directory being waited on or removed. Cut off by a
+    /// restart, a create would end its agent as could not start.
+    pub(crate) busy: watch::Sender<usize>,
     /// Journal frames committed since start: what ingest has done, so its
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
@@ -456,6 +467,11 @@ pub struct ProfileRuntime {
     onboarding: Arc<crate::onboarding::Onboarding>,
     /// Where a person's model and effort picks are kept.
     remember_pick: spec::PickKeeper,
+    /// The person's home and the repository list, as the installation keeps
+    /// them.
+    pins: crate::repositories::Pins,
+    /// Where this host offers to start an agent, as its own entry says.
+    folders: Mutex<Vec<wire::Folder>>,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict
@@ -675,6 +691,8 @@ pub struct Profile {
     pub(crate) onboarding: Arc<crate::onboarding::Onboarding>,
     /// Where a person's model and effort picks are kept.
     pub(crate) remember_pick: spec::PickKeeper,
+    /// The person's home and the repository list.
+    pub(crate) pins: crate::repositories::Pins,
 }
 
 impl ProfileRuntime {
@@ -698,6 +716,7 @@ impl ProfileRuntime {
             workspaces,
             onboarding,
             remember_pick,
+            pins,
         } = profile;
         let offers = crate::offers::Offers::load(&dir, &launch);
         let options = daemon_core::StartOptions {
@@ -720,13 +739,14 @@ impl ProfileRuntime {
                     store,
                     dir.clone(),
                     options,
-                    launch.dump_interval_ms,
+                    (launch.dump_interval_ms, launch.over_budget_dump_interval_ms),
                     launch.cores.clone(),
                 );
                 core = Some(thread);
                 driver
             },
             commits: watch::Sender::new(0),
+            busy: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
             skipped_subagent_parts: AtomicU64::new(0),
             push,
@@ -753,9 +773,13 @@ impl ProfileRuntime {
             turns: crate::telemetry::Turns::default(),
             onboarding,
             remember_pick,
+            pins,
+            folders: Mutex::new(Vec::new()),
         });
         core.expect("built with the runtime").start(&runtime.driver);
         runtime.tell_own_host();
+        runtime.refresh_folders();
+        runtime.refresh_folders_now_and_then();
         runtime
     }
 
@@ -1197,30 +1221,94 @@ impl ProfileRuntime {
         }
     }
 
-    /// Where this host offers to start an agent: see
-    /// [`crate::repositories::list`].
-    pub async fn list_repositories(
-        &self,
-        query: Option<String>,
-        limit: u32,
-    ) -> wire::ListRepositoriesResponse {
-        let repositories = self.launch().repositories;
-        let recent = self
-            .driver()
-            .read(|store| store.recent_directories())
-            .await
-            .and_then(|read| {
-                read.inspect_err(
-                    |error| tracing::warn!(%error, "cannot read the recent directories"),
-                )
-                .ok()
+    /// Where this host offers to start an agent, as its own entry says.
+    pub(crate) fn folders(&self) -> Vec<wire::Folder> {
+        self.folders.lock().unwrap().clone()
+    }
+
+    /// Works out again where this host offers to start an agent, off the
+    /// async workers, and tells the core its own entry when that moved.
+    pub(crate) fn refresh_folders(self: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let runtime = Arc::downgrade(self);
+        handle.spawn(async move {
+            let Some(held) = runtime.upgrade() else {
+                return;
+            };
+            let pinned = held.launch().repositories;
+            let home = held.pins.home().map(Path::to_owned);
+            let recent = held
+                .driver()
+                .read(|store| store.recent_directories())
+                .await
+                .and_then(|read| {
+                    read.inspect_err(
+                        |error| tracing::warn!(%error, "cannot read the recent directories"),
+                    )
+                    .ok()
+                })
+                .unwrap_or_default();
+            drop(held);
+            let Ok(folders) = tokio::task::spawn_blocking(move || {
+                let history = home
+                    .map(|home| crate::suggestions::suggest(&home, std::time::SystemTime::now()))
+                    .unwrap_or_default();
+                crate::repositories::folders(&pinned, &recent, &history)
             })
-            .unwrap_or_default();
-        tokio::task::spawn_blocking(move || {
-            crate::repositories::list(&repositories, &recent, query.as_deref(), limit)
-        })
-        .await
-        .expect("listing repositories does not panic")
+            .await
+            else {
+                return;
+            };
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            let moved = {
+                let mut held = runtime.folders.lock().unwrap();
+                let moved = *held != folders;
+                *held = folders;
+                moved
+            };
+            if moved {
+                runtime.tell_own_host();
+            }
+        });
+    }
+
+    /// Looks again every few minutes, for where Claude Code and Codex ran
+    /// outside amux and for folders that went, while the runtime lives.
+    fn refresh_folders_now_and_then(self: &Arc<Self>) {
+        const EVERY: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let runtime = Arc::downgrade(self);
+        handle.spawn(async move {
+            let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + EVERY, EVERY);
+            loop {
+                ticks.tick().await;
+                let Some(runtime) = runtime.upgrade() else {
+                    return;
+                };
+                runtime.refresh_folders();
+            }
+        });
+    }
+
+    /// Pins a folder among this host's repositories, or unpins it; the
+    /// installation applies the list to every profile, whose entries then
+    /// say it.
+    pub async fn pin_folder(
+        &self,
+        path: &str,
+        pinned: bool,
+    ) -> Result<(), crate::host_settings::SettingsError> {
+        let pins = self.pins.clone();
+        let path = path.to_owned();
+        tokio::task::spawn_blocking(move || pins.pin(&path, pinned))
+            .await
+            .map_err(|error| crate::host_settings::SettingsError::Invalid(error.to_string()))?
     }
 
     /// An agent's unsent draft, as this machine's clients last saved it.

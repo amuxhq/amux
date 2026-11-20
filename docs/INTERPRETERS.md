@@ -137,6 +137,22 @@ carry on after an error. Each kind recognises
 its own: a refused connection in terminal Claude ends its turn completed, and its
 only word of a spent limit is the error row it writes in place of an answer.
 
+A sign-in problem never takes the composer away: the person signs in outside
+amux and sends again, and that send is the retry. A running provider sees the
+new credential without a restart in the common cases, measured against a local
+stand-in for each API in November 2026 (Claude 2.1.327, Codex 0.166):
+
+- Headless Claude rereads its stored credential on the request after a refused
+  one. From a `.credentials.json` file the next send carries the new one; from
+  the macOS Keychain it reads through a cache of about 30 seconds, so a send in
+  that window fails once more.
+- Codex signed out (no `auth.json`) picks up a `codex login` on its next turn.
+  A ChatGPT token it was refused is reloaded from `auth.json` on the next 401
+  only when the account is the same one (`UnauthorizedRecovery` in Codex's
+  `login/src/auth/manager.rs`). A replaced API key, or another ChatGPT
+  account, is not read until Codex restarts: settling and resuming the agent
+  does that.
+
 ## The step rule
 
 Every event yields exactly one step: zero or more items, the snapshot when it
@@ -175,12 +191,14 @@ open asks, the set of accepted but unconsumed agent messages, `working_on`,
 the turn counter, the prompts awaiting their reflection, the items still
 open, and the last snapshot. A person's prompt goes to the provider at once
 when it is ready (started, no turn running, no ask open, no typed prompt
-still waiting for the provider to record it) and nothing waits ahead of it, and is answered accepted. A new agent's first
+still waiting for the provider to record it) and nothing waits ahead of it, and is answered accepted. An incarnation's first
 prompt, given before its provider can take input with nothing ahead of it, is
-that first turn already: it is answered accepted, drawn under the started
-boundary by the agent's first event, and held out of the queue until the
+that first turn already, whether it creates the agent, resumes it or wakes it
+from suspension: it is answered accepted, drawn by the incarnation's first
+event under the boundary the provider's start will fill in (started for a new
+agent, resumed for a later incarnation), and held out of the queue until the
 provider is ready; a slash or shell command, or another agent's message, is
-queued instead, and so is a resumed agent's first prompt. Anything else waits in
+queued instead. Anything else waits in
 the queue, answered accepted and queued, and goes when the provider next becomes
 ready.
 `Shared` also derives the phase: needs you whenever an ask is open; starting

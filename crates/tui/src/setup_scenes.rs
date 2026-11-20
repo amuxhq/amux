@@ -276,11 +276,13 @@ fn later_steps() -> wire::Onboarding {
     ])
 }
 
-fn entry(path: &str) -> wire::RepositoryEntry {
-    wire::RepositoryEntry {
+fn entry(path: &str) -> wire::Folder {
+    wire::Folder {
         path: path.to_owned(),
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
+        kind: wire::FolderKind::History as i32,
         last_used_ms: Some(NOW),
+        checkout: None,
     }
 }
 
@@ -377,12 +379,14 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
                 version: "workspaces/1".to_owned(),
                 description: settings::experiments::WORKSPACES.description.to_owned(),
                 enabled: true,
+                applying: false,
             },
             wire::Experiment {
                 name: "suspension".to_owned(),
                 version: "suspension/1".to_owned(),
                 description: settings::experiments::SUSPENSION.description.to_owned(),
                 enabled: false,
+                applying: false,
             },
         ],
         ..settings()
@@ -394,6 +398,25 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
         for _ in 0..10 {
             scene.key(KeyCode::Down);
         }
+    }
+    scene
+}
+
+/// The settings screen just after Suspension was switched on, while amux
+/// restarts to run it, scrolled to the experiments.
+pub fn settings_applying() -> SettingsScene {
+    let mut scene = settings_page(true);
+    let mut settings = scene.screen.settings().clone();
+    let suspension = settings
+        .experiments
+        .iter_mut()
+        .find(|experiment| experiment.name == "suspension")
+        .expect("the scene lists suspension");
+    suspension.enabled = true;
+    suspension.applying = true;
+    scene.screen.settings_changed(settings);
+    for _ in 0..20 {
+        scene.key(KeyCode::Down);
     }
     scene
 }

@@ -203,6 +203,35 @@ impl HostSettings {
         )
     }
 
+    /// Pins `path` at the end of the repository list, or unpins it, and
+    /// answers the settings it leaves; None when the list already says so.
+    pub(crate) fn pin(
+        &self,
+        path: &str,
+        pinned: bool,
+    ) -> Result<Option<InstallationConfig>, SettingsError> {
+        let path = PathBuf::from(repository(path, self.home())?);
+        let held = self.current().repositories;
+        let listed = held.contains(&path);
+        if listed == pinned {
+            return Ok(None);
+        }
+        let mut paths: Vec<PathBuf> = held.into_iter().filter(|held| *held != path).collect();
+        if pinned {
+            paths.push(path);
+        }
+        let request = UpdateSettingsRequest {
+            repositories: Some(wire::RepositoryList {
+                paths: paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+            }),
+            ..UpdateSettingsRequest::default()
+        };
+        self.update(&request).map(Some)
+    }
+
     /// Keeps a person's pick as what later agents of its kind start with.
     /// Answers None when the settings already say so.
     pub(crate) fn remember(
@@ -299,7 +328,9 @@ pub(crate) fn to_wire(
     config: &InstallationConfig,
     host_name: &str,
     supervised: bool,
+    running: &settings::experiments::InEffect,
 ) -> wire::Settings {
+    let wanted = config.experiments.in_effect();
     wire::Settings {
         host_name: host_name.to_owned(),
         start_at_login: supervised.then_some(config.start_at_login),
@@ -327,6 +358,7 @@ pub(crate) fn to_wire(
                 version: experiment.version.to_owned(),
                 description: experiment.description.to_owned(),
                 enabled: config.experiments.is_on(experiment),
+                applying: wanted.of_experiment(experiment) != running.of_experiment(experiment),
             })
             .collect(),
     }
@@ -469,6 +501,8 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 
 #[cfg(test)]
 mod tests {
+    use settings::experiments::{Enabled, InEffect};
+
     use super::*;
 
     fn request() -> UpdateSettingsRequest {
@@ -516,6 +550,38 @@ mod tests {
     }
 
     #[test]
+    fn a_pin_adds_a_folder_at_the_end_once_and_an_unpin_takes_it_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        let (app, lib) = (dir.path().join("src/app"), dir.path().join("src/lib"));
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: Some(dir.path().to_owned()),
+        });
+        let (app, lib) = (app.canonicalize().unwrap(), lib.canonicalize().unwrap());
+        let pinned = settings.pin("~/src/app", true).unwrap().unwrap();
+        assert_eq!(pinned.repositories, std::slice::from_ref(&app));
+        let pinned = settings.pin(lib.to_str().unwrap(), true).unwrap().unwrap();
+        assert_eq!(pinned.repositories, [app.clone(), lib.clone()]);
+        assert!(
+            settings.pin("~/src/app", true).unwrap().is_none(),
+            "a folder already pinned changes nothing"
+        );
+        let unpinned = settings.pin("~/src/app", false).unwrap().unwrap();
+        assert_eq!(unpinned.repositories, [lib]);
+        assert_eq!(
+            InstallationConfig::from_file(&path).unwrap().repositories,
+            unpinned.repositories,
+            "the file says it"
+        );
+    }
+
+    #[test]
     fn a_change_is_written_to_the_file_key_by_key_and_read_back() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
@@ -556,7 +622,7 @@ mod tests {
         );
         assert!(settings.reread().is_none(), "its own write is no news");
 
-        let wire = to_wire(&config, "desk", false);
+        let wire = to_wire(&config, "desk", false, &InEffect::default());
         assert_eq!(wire.start_at_login, None);
         assert_eq!(wire.claude_kind, wire::Kind::ClaudePty as i32);
 
@@ -593,8 +659,9 @@ mod tests {
 
     /// Switching an experiment writes `experiments.enabled` and keeps the
     /// rest of the file, comments, another build's experiment and an
-    /// experiment's own table among it; the daemon runs what the file said
-    /// when it started, so the settings answer the switch, not what runs.
+    /// experiment's own table among it. The daemon runs what the file said
+    /// when it started, so the settings answer the switch and say it is
+    /// being applied while it differs from what runs.
     #[test]
     fn switching_an_experiment_writes_the_names_and_keeps_the_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -609,7 +676,7 @@ mod tests {
             login: None,
             home: None,
         });
-        let wire = to_wire(&settings.current(), "desk", false);
+        let wire = to_wire(&settings.current(), "desk", false, &InEffect::default());
         let listed: Vec<(&str, &str, bool)> = wire
             .experiments
             .iter()
@@ -656,16 +723,45 @@ mod tests {
             read.experiments.enabled().versions(),
             ["workspaces/1", "suspension/1"]
         );
-        assert!(
-            to_wire(&config, "desk", false)
-                .experiments
-                .iter()
-                .all(|experiment| experiment.enabled)
+        let applying = |running: &[&'static settings::experiments::Experiment]| {
+            to_wire(
+                &config,
+                "desk",
+                false,
+                &InEffect::of(&Enabled::of(running), &config.experiments),
+            )
+            .experiments
+            .iter()
+            .map(|experiment| (experiment.enabled, experiment.applying))
+            .collect::<Vec<_>>()
+        };
+        // Started with neither, both are being applied; with one, the other.
+        assert_eq!(applying(&[]), [(true, true), (true, true)]);
+        assert_eq!(
+            applying(&[&settings::experiments::SUSPENSION]),
+            [(true, true), (true, false)]
         );
+        let both = [
+            &settings::experiments::WORKSPACES,
+            &settings::experiments::SUSPENSION,
+        ];
+        assert_eq!(applying(&both), [(true, false), (true, false)]);
 
         // Off again; the name this build does not know stays.
         let config = settings.update(&switch(&[])).unwrap();
         assert_eq!(config.experiments.enabled, ["teleport"]);
+        assert!(
+            to_wire(
+                &config,
+                "desk",
+                false,
+                &InEffect::of(&Enabled::of(&both), &config.experiments)
+            )
+            .experiments
+            .iter()
+            .all(|experiment| !experiment.enabled && experiment.applying),
+            "switched off while running: being applied"
+        );
         // Absent leaves the list alone.
         let config = settings
             .update(&UpdateSettingsRequest {

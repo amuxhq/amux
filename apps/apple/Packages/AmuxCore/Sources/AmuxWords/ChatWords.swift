@@ -266,7 +266,7 @@ public enum ChatWords {
         case .forked: String(localized: "Forked")
         case .restarted: String(localized: "Restarted")
         case .exited: String(localized: "Ended")
-        case .daemonLost: String(localized: "Lost its daemon")
+        case .daemonLost: String(localized: "amux stopped")
         case .unspecified: String(localized: "Session")
         }
         return cause.isEmpty ? word : "\(word) · \(cause)"
@@ -285,7 +285,7 @@ public enum ChatWords {
 
     /// "Worked 1m 42s".
     public static func turnEnd(durationMs: Int64?, failed: Bool) -> String {
-        var words = [durationMs.map { String(localized: "Worked \(duration($0))") }
+        var words = [durationMs.map { String(localized: "Worked for \(duration($0))") }
             ?? String(localized: "Turn ended")]
         if failed { words.append(String(localized: "failed")) }
         return words.joined(separator: " · ")
@@ -428,9 +428,16 @@ public enum ChatWords {
     /// name is often a whole task title.
     /// `limit` is a usage limit reached, said where the next message would
     /// be typed, which is the one place it changes anything.
+    /// The device the field is on, which a draft kept while signed out or
+    /// untrusted names.
+    public enum Device: Sendable {
+        case phone
+        case mac
+    }
+
     public static func placeholder(
         _ composer: Composer?, host: String, reach: Reach, connecting: Bool = false,
-        working: Bool, limit: String? = nil
+        working: Bool, limit: String? = nil, device: Device = .phone
     ) -> String {
         // A host still being dialled as the app comes forward is not news:
         // the field reads as it will once it answers.
@@ -453,9 +460,13 @@ public enum ChatWords {
         case .waiting(.detached)?:
             switch reach {
             case .offline(.revoked):
-                return String(localized: "\(host) no longer trusts this phone · your draft is kept")
+                return device == .mac
+                    ? String(localized: "\(host) unpaired this Mac · your draft is kept")
+                    : String(localized: "\(host) unpaired this phone · your draft is kept")
             case .offline(.signedOut):
-                return String(localized: "This phone is signed out · your draft is kept")
+                return device == .mac
+                    ? String(localized: "This Mac is signed out · your draft is kept")
+                    : String(localized: "This phone is signed out · your draft is kept")
             default:
                 return String(localized: "\(host) is out of reach · your draft is kept")
             }

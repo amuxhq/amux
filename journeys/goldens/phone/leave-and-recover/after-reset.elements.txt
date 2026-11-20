@@ -13,16 +13,16 @@ chat.row.prompt | Pick up where we left off. |  | 16,377,370,40
 chat.row.prose | Back after the restart. | final | 16,428,370,20
 chat.prose.render |  | rendered | 16,428,370,20
 chat.row.turn-end | <volatile>
-chat.exited | Exited · while the daemon was away | desk | 28,720,346,20
+chat.exited | Exited · while amux was stopped | desk | 28,720,346,20
 chat.field | keeper has exited · a message resumes it |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.header | Exited · while the daemon was away | live | 76,66,221,36
+chat.header | Exited · while amux was stopped | live | 76,66,221,36
 chat.title | keeper | keeper | 76,66,221,36
- | Exited · while the daemon was away, desk |  | 29,720,345,20
+ | Exited · while amux was stopped, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
  | claude-fake-1 |  | 71,779,117,44
  | Dictate |  | 228,779,44,44
@@ -38,6 +38,6 @@ chat.title | keeper | keeper | 76,66,221,36
  | Back after the restart. |  | 16,428,370,20
  | Worked <t> |  | 16,456,62,16
 BackButton | Agents |  | 16,62,44,44
- | keeper, Exited · while the daemon was away |  | 76,66,221,36
+ | keeper, Exited · while amux was stopped |  | 76,66,221,36
  | More |  | 350,66,28,36
  | Back |  | 16,73,44,23

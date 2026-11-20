@@ -146,6 +146,94 @@ final class RuntimeCoordinatorTests: XCTestCase {
         XCTAssertTrue(profile.listsSources, "the foreground lists every agent again")
     }
 
+    /// A signed-out phone in front of somebody, linked to a desk it paired
+    /// (another profile of the same installation), whose pushed chats open
+    /// and never catch up, so a push waits out its whole limit.
+    private func phoneLinkedToADesk() async throws -> (RuntimeCoordinator, Profile, HostId) {
+        let coordinator = RuntimeCoordinator(
+            registry: AccountRegistry(), support: support, deviceName: "Test Phone",
+            signedOut: StoreBundle(account: AccountId("signed-out"), opener: { agent in
+                let chat = CaughtUpSession(id: 1, agent: agent)
+                chat.current = false
+                return chat
+            }),
+            options: .init(discoveryScope: "unit-\(UUID().uuidString)", lanBind: "127.0.0.1:0"))
+        coordinator.start()
+        guard let runtime = await coordinator.started(), let phone = coordinator.profile else {
+            coordinator.stop()
+            throw Refused("the runtime did not start")
+        }
+        guard case .success(let desk) = await runtime.createProfile(),
+              case .success(let link) = await runtime.offerPairing(desk.id),
+              case .success(let pending) = await phone.beginPair(.link(link)),
+              case .success = await phone.confirmPair(pending),
+              let host = HostId(bytes: pending.hostId) else {
+            coordinator.stop()
+            throw Refused("the desk did not pair")
+        }
+        await eventually("the desk reached") { online(coordinator, host) }
+        return (coordinator, phone, host)
+    }
+
+    private func online(_ coordinator: RuntimeCoordinator, _ host: HostId) -> Bool {
+        coordinator.stores.fleet.machines.contains { $0.hostId == host.bytes && $0.online }
+    }
+
+    /// Somebody opens the app while a push that woke it in the background
+    /// is still waiting for its chat. Coming to the front finds the links
+    /// already up, so the push's end must not close them: the system
+    /// suspends only an app that is still in the background.
+    func testComingForwardDuringAPushKeepsTheLinksUp() async throws {
+        let (coordinator, phone, host) = try await phoneLinkedToADesk()
+        defer { coordinator.stop() }
+        let agent = AgentKey(host: host, agent: UUID())
+        let pushed = Task {
+            await coordinator.warm(agent, inBackground: true, within: .seconds(1))
+        }
+        await eventually("the pushed chat opening") { coordinator.stores.holds(agent) }
+        coordinator.setActive(true)
+        let warmed = await pushed.value
+        XCTAssertEqual(warmed, .behind, "the chat never caught up")
+        await coordinator.pushFinished()
+
+        XCTAssertEqual(coordinator.fedLifecycles?.last, .foreground)
+        XCTAssertFalse(
+            coordinator.fedLifecycles?.contains(.suspending) ?? true,
+            "a push that ended in front of somebody suspended the runtime")
+        XCTAssertTrue(online(coordinator, host), "the desk's link closed")
+        guard case .success = await phone.directories(on: host, matching: "", limit: 1) else {
+            return XCTFail("a call to the desk did not reach it")
+        }
+    }
+
+    /// A push that ends in the background suspends the runtime, as the
+    /// system is about to suspend the app; somebody opening the app just
+    /// after still finds every link dialled again.
+    func testAForegroundJustAfterAPushSuspendsResumes() async throws {
+        let (coordinator, phone, host) = try await phoneLinkedToADesk()
+        defer { coordinator.stop() }
+        let agent = AgentKey(host: host, agent: UUID())
+        _ = await coordinator.warm(agent, inBackground: true, within: .milliseconds(300))
+        let finishing = Task { await coordinator.pushFinished() }
+        await eventually("the suspend decided") { coordinator.fedLifecycles?.last == .suspending }
+        coordinator.setActive(true)
+        await finishing.value
+
+        XCTAssertEqual(coordinator.fedLifecycles.map { Array($0.suffix(2)) }, [.suspending, .foreground])
+        // The fleet can still show the link from before the suspend while
+        // the phone dials the desk again, so the call itself is what says
+        // the link is back; one made while it is down is refused at once.
+        let deadline = Date().addingTimeInterval(30)
+        var answered = await phone.directories(on: host, matching: "", limit: 1)
+        while case .failure = answered, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+            answered = await phone.directories(on: host, matching: "", limit: 1)
+        }
+        guard case .success = answered else {
+            return XCTFail("a call to the desk never reached it: \(answered)")
+        }
+    }
+
     func testTheFirstSignInTakesOverTheProfileNobodySignedInOn() async throws {
         let service = try await FakeAccountService.start()
         defer { service.stop() }

@@ -1837,7 +1837,7 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
     public var git: Git?
-    /// Only a problem; it replaces the composer with a foot card.
+    /// Only a problem; a notice above the composer, which still sends.
     public var signIn: SignInView?
 
     public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?) {
@@ -1880,6 +1880,33 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         case ended
         case git
         case signIn = "sign_in"
+    }
+}
+
+/// A working tree of a Git repository on one host. Two checkouts are of the
+/// same repository when their remotes match, or, on one host without a
+/// remote, when their main clones do.
+public struct Checkout: Codable, Hashable, Sendable {
+    /// The working tree's top directory.
+    public var root: String
+    /// The main clone's top directory, when this is a linked worktree of it.
+    public var main: String?
+    /// Where origin points, as host/owner/name: no scheme, credentials, port
+    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
+    /// Clients group checkouts of one repository by it, worktrees and other
+    /// machines' checkouts included. Absent without an origin.
+    public var remote: String?
+
+    public init(root: String, main: String?, remote: String?) {
+        self.root = root
+        self.main = main
+        self.remote = remote
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case root
+        case main
+        case remote
     }
 }
 
@@ -2627,15 +2654,19 @@ public struct DiffLine: Codable, Hashable, Sendable {
 public struct Directories: Codable, Hashable, Sendable {
     public var recent: [Directory]
     public var repositories: [Directory]
+    /// Where Claude Code and Codex ran lately on the host, outside amux.
+    public var history: [Directory]?
 
-    public init(recent: [Directory], repositories: [Directory]) {
+    public init(recent: [Directory], repositories: [Directory], history: [Directory]?) {
         self.recent = recent
         self.repositories = repositories
+        self.history = history
     }
 
     private enum CodingKeys: String, CodingKey {
         case recent
         case repositories
+        case history
     }
 }
 
@@ -2643,15 +2674,21 @@ public struct Directories: Codable, Hashable, Sendable {
 public struct Directory: Codable, Hashable, Sendable {
     public var path: String
     public var name: String
+    /// The repository it is a checkout of, marked as the agents in any
+    /// checkout of it are: by its remote where the host says it, else by
+    /// its path.
+    public var repository: Repository?
 
-    public init(path: String, name: String) {
+    public init(path: String, name: String, repository: Repository?) {
         self.path = path
         self.name = name
+        self.repository = repository
     }
 
     private enum CodingKeys: String, CodingKey {
         case path
         case name
+        case repository
     }
 }
 
@@ -2903,12 +2940,16 @@ public struct ExperimentView: Codable, Hashable, Sendable {
     public var description: String
     /// Whether the machine's settings switch it on.
     public var enabled: Bool
+    /// amux runs it otherwise than `enabled` says, and is restarting to
+    /// apply the switch: show it as being applied, neither on nor off.
+    public var applying: Bool
 
-    public init(name: String, version: String, description: String, enabled: Bool) {
+    public init(name: String, version: String, description: String, enabled: Bool, applying: Bool) {
         self.name = name
         self.version = version
         self.description = description
         self.enabled = enabled
+        self.applying = applying
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2916,6 +2957,7 @@ public struct ExperimentView: Codable, Hashable, Sendable {
         case version
         case description
         case enabled
+        case applying
     }
 }
 
@@ -3812,30 +3854,27 @@ public struct Git: Codable, Hashable, Sendable {
     public var baseBranch: String?
     /// Absent on a detached head.
     public var branch: String?
+    /// The working tree the agent's directory is in.
+    public var checkout: Checkout?
     /// From where the branch left its base to the working tree, so uncommitted
     /// work counts.
     public var onBranch: ChangeTotals?
-    /// Where origin points, as host/owner/name: no scheme, credentials, port
-    /// or ".git" ("github.com/amuxhq/amux"); a local remote is its path.
-    /// Clients group checkouts of one repository by it, worktrees and other
-    /// machines' checkouts included. Absent without an origin.
-    public var remote: String?
     /// Working tree against HEAD.
     public var uncommitted: ChangeTotals?
 
-    public init(baseBranch: String?, branch: String?, onBranch: ChangeTotals?, remote: String?, uncommitted: ChangeTotals?) {
+    public init(baseBranch: String?, branch: String?, checkout: Checkout?, onBranch: ChangeTotals?, uncommitted: ChangeTotals?) {
         self.baseBranch = baseBranch
         self.branch = branch
+        self.checkout = checkout
         self.onBranch = onBranch
-        self.remote = remote
         self.uncommitted = uncommitted
     }
 
     private enum CodingKeys: String, CodingKey {
         case baseBranch = "base_branch"
         case branch
+        case checkout
         case onBranch = "on_branch"
-        case remote
         case uncommitted
     }
 }
@@ -4446,7 +4485,8 @@ public struct MachineSettings: Codable, Hashable, Sendable {
     /// A report is sent on its own when something goes wrong.
     public var autoReports: Bool
     /// Every experiment the machine's build implements, in the order they
-    /// are listed. A switch takes effect when amux next starts.
+    /// are listed. amux restarts itself to apply a switch, and says it is
+    /// being applied until it has.
     public var experiments: [ExperimentView]
     /// Whether amux starts at login; None on an install without a
     /// supervisor, which has nothing to start.
@@ -5956,15 +5996,19 @@ public struct Repository: Codable, Hashable, Sendable {
 public struct RepositorySuggestion: Codable, Hashable, Sendable {
     public var path: String
     public var name: String
+    /// Marked as [`Directory::repository`] is.
+    public var repository: Repository?
 
-    public init(path: String, name: String) {
+    public init(path: String, name: String, repository: Repository?) {
         self.path = path
         self.name = name
+        self.repository = repository
     }
 
     private enum CodingKeys: String, CodingKey {
         case path
         case name
+        case repository
     }
 }
 

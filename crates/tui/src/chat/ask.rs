@@ -307,7 +307,7 @@ struct Typed<'a> {
 const FIELD_LINES: usize = 4;
 /// Under a link whose page is on the agent's own machine: a browser
 /// anywhere else reads `localhost` as itself.
-const LOCAL_PAGE: &str = "This page is on the agent's machine; open the link in a browser there.";
+const LOCAL_PAGE: &str = "This page is on the agent's computer; open the link in a browser there.";
 
 impl BoxLines {
     /// Pushes `row`, which ends where a typed field starts, with the

@@ -46,8 +46,10 @@ pub struct SignInView {
     pub message: String,
 }
 
-/// The agent's account, only when it needs signing in: it replaces the
-/// composer with a foot card.
+/// The agent's account, only when it needs signing in: a notice above the
+/// composer, which still sends. Nothing in amux can sign in for the
+/// provider, so sending is how someone who signed in elsewhere tries again;
+/// the provider's next good answer clears it.
 pub fn sign_in(state: &SessionState) -> Option<SignInView> {
     let agent = state.agent_state();
     match agent.sign_in.state() {

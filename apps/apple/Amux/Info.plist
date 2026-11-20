@@ -44,7 +44,7 @@
 		<string>_amux._udp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>amux finds hosts on your network so this phone can pair and connect to them directly.</string>
+	<string>amux finds computers on your network so this phone can pair and connect to them directly.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Use the microphone to dictate into your message.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

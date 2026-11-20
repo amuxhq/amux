@@ -7,11 +7,11 @@
 
 
 
-                                 ╭─ Hosts ──────────────────────────────────╮
+                                 ╭─ Devices ────────────────────────────────╮
                                  │                                          │
-                                 │ laptop   this machine                    │
+                                 │ laptop   this computer                   │
                                  │                                          │
-                                 │ Pair another machine with amux pair      │
+                                 │ Pair another computer with amux pair     │
                                  │ esc close                                │
                                  ╰──────────────────────────────────────────╯
 

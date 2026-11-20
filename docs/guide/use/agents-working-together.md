@@ -1,13 +1,13 @@
 ---
 title: Agents working together
-description: Let your agents message each other and start subagents of their own, Claude or Codex, on any of your machines.
+description: Let your agents message each other and start subagents of their own, Claude or Codex, on any of your computers.
 sidebar:
   order: 4
 ---
 
 Every agent amux runs, Claude or Codex, can see the rest of your fleet and work
 with it. An agent can message another agent, start subagents of its own on any of
-your paired machines, and hear back when they're done. You don't set anything
+your paired computers, and hear back when they're done. You don't set anything
 up. Ask for it in plain words.
 
 > Start a Codex agent on studio to review this branch, and tell me what it
@@ -23,13 +23,13 @@ up. Ask for it in plain words.
 
 amux gives every agent a small set of tools:
 
-- **See the fleet**: every agent on your machines, what each is working on,
+- **See the fleet**: every agent on your computers, what each is working on,
   and whether it's busy or needs you.
-- **See your hosts**: the machines you've paired, and which are online.
-- **Message another agent**: by name, on any of your machines. The message
+- **See your computers**: the computers you've paired, and which are online.
+- **Message another agent**: by name, on any of your computers. The message
   arrives labelled with who sent it, so the agent knows it isn't from you, and
   it can reply the same way.
-- **Start a subagent**: a new Claude or Codex agent with a task, on this machine
+- **Start a subagent**: a new Claude or Codex agent with a task, on this computer
   or another one you've paired.
 - **Settle its own subagents**, and only its own.
 - **Say what it's working on**, so you and the other agents can find the
@@ -37,7 +37,7 @@ amux gives every agent a small set of tools:
 - **Show you a file it made**, such as a screenshot or a report, as an image or
   a file in its reply.
 
-An agent only sees machines you've paired yourself. It can't pair a machine,
+An agent only sees computers you've paired yourself. It can't pair a computer,
 and it can't reach anything you couldn't.
 
 ## Subagents
@@ -58,8 +58,8 @@ starts again where it left off, with everything it knew. Only the agent that
 started a subagent can wake it this way, though you can always resume it
 yourself.
 
-To start a subagent on another machine, the agent needs a folder on that
-machine. If it doesn't know one, it asks you.
+To start a subagent on another computer, the agent needs a folder on that
+computer. If it doesn't know one, it asks you.
 
 Claude subagents always run in amux's chat, even if you usually chat in Claude
 Code's own interface, so you can read them from any device.
@@ -77,17 +77,17 @@ the agent that started it carries on without it.
 ## Settling and deleting
 
 Settling or deleting an agent does the same to its subagents, and to their
-subagents in turn, on every machine. A subagent on a machine that's offline
-follows as soon as that machine is back.
+subagents in turn, on every computer. A subagent on a computer that's offline
+follows as soon as that computer is back.
 
 With the `workspaces` experiment on, deleting the last agent in a worktree
 amux made removes the worktree too. Before you confirm, the terminal and the
-iPhone and Mac apps ask the agent's machine what the delete takes with it,
+iPhone and Mac apps ask the agent's computer what the delete takes with it,
 and say they're checking until it answers. When the worktree goes, they say
 so, with how many files have uncommitted changes and what becomes of its
 branch: it keeps its commits, or, when it has none that another branch
 doesn't hold, it goes too, so a branch you've merged elsewhere goes.
-Confirming discards the changes they named. If the machine can't be asked,
+Confirming discards the changes they named. If the computer can't be asked,
 they say so, and a worktree with changes stays. A
 worktree whose changes weren't shown to you stays on disk, no longer amux's,
 and so does one you delete from an older app or with `amux rm` without

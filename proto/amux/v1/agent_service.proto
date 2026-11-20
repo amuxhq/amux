@@ -55,7 +55,9 @@ service AgentService {
   // What a provider on a host offers with no agent running, read from the
   // host's own copy; an agent's catalogue is a blob named by its snapshot.
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
-  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  // Pins a folder among a host's repositories, or unpins it; the host's own
+  // entry says the change.
+  rpc PinFolder(PinFolderRequest) returns (PinFolderResponse);
 }
 
 message SubscribeInventoryRequest {}
@@ -225,17 +227,13 @@ message GetCatalogueResponse {
   bytes bytes = 2;
 }
 
-// Host-owned discovery; the client chooses a host, never a search root.
-message ListRepositoriesRequest {
-  optional string query = 1;
-  uint32 limit = 2;
+message PinFolderRequest {
   // Absent means the answering host.
-  optional bytes host_id = 3;
+  optional bytes host_id = 1;
+  // An absolute path on that host, or one from its home ("~/src/app").
+  string path = 2;
+  // Pinned at the end of the list, or unpinned.
+  bool pinned = 3;
 }
 
-message ListRepositoriesResponse {
-  // Folders this host's agents ran in lately that still exist.
-  repeated RepositoryEntry recent = 1;
-  // The host's repository list, as its person chose it.
-  repeated RepositoryEntry repositories = 2;
-}
+message PinFolderResponse {}

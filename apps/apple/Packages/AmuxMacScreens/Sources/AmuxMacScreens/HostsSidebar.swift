@@ -9,14 +9,24 @@ struct HostsSidebar: View {
     @Binding var place: Place
 
     var body: some View {
+        VStack(spacing: 0) {
+            WindowBar(leading: 16, rule: false) {
+                Text("Devices").font(.ui(.prose, weight: .medium))
+                Spacer()
+            }
+            list
+        }
+    }
+
+    private var list: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
+                // This Mac's row says so itself.
                 if let mac = content.thisMac {
-                    SectionTitle(text: "This Mac")
-                    item(mac)
+                    item(mac).padding(.top, 6)
                 }
                 if !content.hosts.isEmpty {
-                    SectionTitle(text: "Paired")
+                    SectionTitle(text: "Paired", first: content.thisMac == nil)
                     ForEach(content.hosts, id: \.hostId) { host in item(host) }
                 }
             }
@@ -25,7 +35,7 @@ struct HostsSidebar: View {
         }
         .overlay {
             if content.thisMac == nil, content.hosts.isEmpty {
-                Text("No hosts yet").foregroundStyle(.secondary)
+                Text("No devices yet").foregroundStyle(Palette.textSecondary)
             }
         }
     }
@@ -36,42 +46,39 @@ struct HostsSidebar: View {
     }
 }
 
-/// A machine as the agent rows are drawn: its kind on a tile, its name, and
-/// how this Mac reaches it; a badge on the tile when it cannot be reached.
+/// A machine as the agent rows are drawn: its kind's icon in the column
+/// the agents' marks take, its name, and how this Mac reaches it. One it
+/// cannot reach reads quieter.
 struct HostRow: View {
     let host: HostView
     let selected: Bool
     @State private var hovering = false
 
     var body: some View {
+        let reachable = host.local || HostWords.online(host)
         HStack(spacing: 10) {
-            HostTile(host: host, size: 30)
-                .overlay(alignment: .bottomTrailing) {
-                    if !host.local, !HostWords.online(host) {
-                        Icon("cloud-off", size: 10)
-                            .foregroundStyle(.secondary)
-                            .padding(1.5)
-                            .background(Circle().fill(Palette.sidebar))
-                            .offset(x: 4, y: 4)
-                    }
-                }
+            HostTile(host: host, size: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(PlaceNames.host(host.name))
-                    .font(.ui(.body, weight: .medium))
-                    .foregroundStyle(host.local || HostWords.online(host) ? .primary : .secondary)
+                    .font(.ui(.prose, weight: .medium))
+                    .foregroundStyle(reachable ? Palette.text : Palette.text.opacity(0.75))
                     .lineLimit(1)
+                    .frame(height: 20)
                 Text(HostWords.reach(host))
                     .font(.ui(.meta))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
+                    .frame(height: 16)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 48)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.well, style: .continuous)
-                .fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear)))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Radius.row, style: .continuous)
+            shape.fill(selected ? Palette.selection : (hovering ? Palette.hover : .clear))
+                .overlay(shape.strokeBorder(selected ? Palette.selectionRing : .clear))
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
@@ -86,7 +93,7 @@ struct HostTile: View {
 
     var body: some View {
         Icon(HostWords.symbol(host), size: size * 0.5)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Palette.textSecondary)
             .frame(width: size, height: size)
             .background(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).fill(Palette.well))
             .overlay(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous).strokeBorder(Palette.line))
@@ -107,12 +114,12 @@ enum HostWords {
         case .online(let via):
             return switch via {
             case .direct: "Connected on this network"
-            case .relay: "Connected through the relay"
+            case .relay: "Connected over the internet"
             case .ssh: "Connected over SSH"
             case .unspecified: "Connected"
             }
-        case .away: return "Away · the relay sees it"
-        case .offline(.revoked): return "No longer trusts this Mac"
+        case .away: return "Online · needs Pro"
+        case .offline(.revoked): return "Unpaired · pair again to reconnect"
         case .offline(.signedOut): return "Offline · sign in to reach it"
         case .offline: return "Offline"
         }

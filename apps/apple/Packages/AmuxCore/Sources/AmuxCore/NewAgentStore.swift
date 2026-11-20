@@ -85,6 +85,8 @@ public final class NewAgentStore {
     public private(set) var repositories: [Directory] = []
     /// Where agents on the host worked lately, newest first.
     public private(set) var recent: [Directory] = []
+    /// Where Claude Code and Codex ran on the host lately, outside amux.
+    public private(set) var history: [Directory] = []
     public private(set) var capped = false
     /// Which Claude the chosen host starts, as its settings resolve it; nil
     /// until it has said.
@@ -141,6 +143,7 @@ public final class NewAgentStore {
         listing = .none
         recent = []
         repositories = []
+        history = []
         capped = false
         claudeKind = nil
         directory = ""
@@ -168,6 +171,7 @@ public final class NewAgentStore {
         listing = .none
         recent = []
         repositories = []
+        history = []
         capped = false
         claudeKind = nil
         directory = ""
@@ -200,9 +204,15 @@ public final class NewAgentStore {
             guard !path.isEmpty, !(places[host] ?? []).contains(where: { $0.path == path })
             else { continue }
             let name = path.split(separator: "/").last.map(String.init) ?? path
-            places[host, default: []].append(Directory(path: path, name: name))
+            places[host, default: []].append(Directory(path: path, name: name, repository: nil))
         }
         worked = places
+    }
+
+    /// Numbers a listing that keeps what is shown until it answers.
+    public func askingQuietly() -> Int {
+        asked += 1
+        return asked
     }
 
     /// Marks a listing under way and answers its number.
@@ -225,18 +235,46 @@ public final class NewAgentStore {
             // A folder that is a repository is listed once, among the repositories.
             let chosen = Set(repositories.map(\.path))
             recent = lately.filter { !chosen.contains($0.path) }
-            capped = UInt32(directories.recent.count + directories.repositories.count)
-                >= Self.limit
+            let shown = chosen.union(recent.map(\.path))
+            history = (directories.history ?? []).filter { !shown.contains($0.path) }
+            capped = UInt32(
+                directories.recent.count + directories.repositories.count
+                    + (directories.history?.count ?? 0)) >= Self.limit
             listing = .ready
         case .failure:
             recent = fallback
             repositories = []
+            history = []
             capped = false
             listing = .unavailable
         }
         if directory.isEmpty, let first = last ?? repositories.first {
             directory = first.path
         }
+    }
+
+    /// Whether the host keeps the folder among its repositories.
+    public func isPinned(_ path: String) -> Bool {
+        repositories.contains { $0.path == path }
+    }
+
+    /// Moves a folder in or out of the repositories at once, ahead of the
+    /// host's entry saying so, which then lists it where the host puts it.
+    public func pinned(_ directory: Directory, _ on: Bool) {
+        let path = directory.path
+        if on {
+            recent.removeAll { $0.path == path }
+            history.removeAll { $0.path == path }
+            if !isPinned(path) { repositories.append(directory) }
+        } else {
+            repositories.removeAll { $0.path == path }
+            if !recent.contains(where: { $0.path == path }) { recent.insert(directory, at: 0) }
+        }
+    }
+
+    /// The host refused a pin: says why, until the next change.
+    public func pinRefused(_ why: String) {
+        failure = why
     }
 
     public func choose(directory path: String) {
@@ -312,7 +350,7 @@ public final class NewAgentStore {
     public var found: [Directory] {
         let wanted = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !wanted.isEmpty else { return [] }
-        return (repositories + recent).filter {
+        return (repositories + recent + history).filter {
             $0.name.lowercased().contains(wanted) || $0.path.lowercased().contains(wanted)
         }
     }

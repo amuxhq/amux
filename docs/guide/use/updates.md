@@ -48,7 +48,7 @@ The change applies at the next check, or at once with `amux update`. amux
 never installs an older version, so going back to stable keeps the preview
 release you have until stable passes it.
 
-New releases can reach machines gradually, so a machine next to yours may
+New releases can reach computers gradually, so a computer next to yours may
 update a little before or after it.
 
 ## If an update doesn't start
@@ -69,7 +69,7 @@ amux config set updates manual
 amux then updates only when you run `amux update`. `amux config unset updates`
 turns automatic updates back on.
 
-On a machine where your own service manager runs amux, amux never updates
+On a computer where your own service manager runs amux, amux never updates
 itself ([Running amux on a server](server.md#running-amux-under-your-own-service-manager)).
 
 ## How releases are checked
@@ -80,7 +80,7 @@ the download's size and checksum against the signed release. A download that
 doesn't match is never installed.
 
 The very first install is the one step that can't be checked this way, because
-there's no amux on the machine yet to do the checking. The install script
+there's no amux on the computer yet to do the checking. The install script
 downloads amux from amux.sh over HTTPS, and checks the download's checksum
 before installing it.
 

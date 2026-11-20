@@ -350,7 +350,7 @@ fn leave_and_recover(journey: &mut TerminalJourney) -> Proved {
     journey.open_chat(&pane, "keeper")?;
     journey.wait_terms(&pane, &[first, "desk away · not current"])?;
     journey.type_text(&pane, DRAFT)?;
-    journey.wait_terms(&pane, &[DRAFT, "can't send until the host is back"])?;
+    journey.wait_terms(&pane, &[DRAFT, "can't send until its computer is back"])?;
     journey.frame(&pane, "cached-offline")?;
 
     // Work goes on at the desk while the laptop is cut off; when the link
@@ -709,7 +709,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     // The running client's overlay says so, and the desk's work is there.
     journey.wait(
         &pane,
-        |frame| !frame.contains("found nearby") && spaced(frame, "desk", "direct"),
+        |frame| !frame.contains("found nearby") && spaced(frame, "desk", "on this network"),
         "the desk paired in the overlay",
     )?;
     journey.frame(&pane, "paired")?;
@@ -906,7 +906,7 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&other, &["h"])?;
     journey.wait(
         &other,
-        |frame| spaced(frame, "laptop", "this machine") && !frame.contains("desk"),
+        |frame| spaced(frame, "laptop", "this computer") && !frame.contains("desk"),
         "hosts without the desk",
     )?;
     journey.frame(&other, "other-profile")?;
@@ -935,8 +935,8 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(
         &pane,
         &[
-            "desk away · this machine is signed out",
-            "can't send until this machine signs in",
+            "desk away · this computer is signed out",
+            "can't send until this computer signs in",
         ],
     )?;
     journey.home(&pane)?;
@@ -945,16 +945,16 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
         &pane,
         &[
             "signed out · amux login",
-            "offline · this machine is signed out",
+            "offline · this computer is signed out",
         ],
     )?;
     journey.frame(&pane, "blocked-hosts")?;
     journey.keys(&pane, &["Escape"])?;
     journey.open_chat(&pane, "guarded")?;
-    journey.wait_terms(&pane, &["desk away · this machine is signed out"])?;
+    journey.wait_terms(&pane, &["desk away · this computer is signed out"])?;
     journey.type_text(&pane, unsent)?;
     journey.keys(&pane, &["Enter"])?;
-    journey.wait_terms(&pane, &[unsent, "can't send until this machine signs in"])?;
+    journey.wait_terms(&pane, &[unsent, "can't send until this computer signs in"])?;
     journey.frame(&pane, "blocked")?;
     std::thread::sleep(Duration::from_secs(2));
     let blocked = journey.chat("desk", "guarded", Some("while-signed-out"))?;
@@ -1449,7 +1449,11 @@ fn send_while_away(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["Enter"])?;
     journey.wait_terms(
         &pane,
-        &[BACKUP, "cabin is away", "can't send until the host is back"],
+        &[
+            BACKUP,
+            "cabin is away",
+            "can't send until its computer is back",
+        ],
     )?;
     journey.frame(&pane, "away")?;
     std::thread::sleep(Duration::from_secs(2));
@@ -1600,8 +1604,9 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
     )?;
     reflected_once(&limited, "Try again.")?;
 
-    // A refused credential takes the composer's box: Claude must be signed
-    // in again where it runs.
+    // A refused credential puts a notice over the composer: Claude must be
+    // signed in again where it runs. The composer still sends, and sending
+    // is the retry once Claude is signed in elsewhere.
     journey.home(&pane)?;
     journey.open_chat(&pane, "expired")?;
     journey.type_text(&pane, "Check the links.")?;
@@ -1611,15 +1616,33 @@ fn composer_limits(journey: &mut TerminalJourney) -> Proved {
         &[
             "Claude needs you to sign in",
             "Run claude and sign in with /login on desk.",
+            "Signed in elsewhere? Send a message to try again.",
+            "Message expired",
         ],
     )?;
     journey.frame(&pane, "sign-in")?;
     let refused = journey.wait_chat("desk", "expired", |chat| phase(chat) == "IDLE", "refused")?;
     reflected_once(&refused, "Check the links.")?;
+    journey.type_text(&pane, "Try them again.")?;
+    journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| at_rest(frame, &["Links checked."]) && !frame.contains("needs you to sign in"),
+        "the answer that clears the notice",
+    )?;
+    let retried = journey.wait_chat(
+        "desk",
+        "expired",
+        |chat| phase(chat) == "IDLE" && prompts(chat, "Try them again.").len() == 1,
+        "retried",
+    )?;
+    reflected_once(&retried, "Try them again.")?;
+    journey.frame(&pane, "signed-in-again")?;
     journey.quit_client(&pane)?;
     Ok(lines(&[
         "at its usage limit the composer named the window and when it resets, and a prompt still went and was answered",
-        "refused its credential, Claude's chat put sign-in in the composer's box, naming the host to sign in on",
+        "refused its credential, Claude's chat put a sign-in notice over a composer that still sends, naming the host to sign in on",
+        "signed in again, a message sent from that composer was answered and the answer took the notice away",
         "the desk holds each prompt once",
         "the client exited 0",
     ]))
@@ -1694,7 +1717,7 @@ fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
         |frame| {
             // The chat is there before its model is.
             chat_of(frame).as_deref() == Some("desk-notes")
-                && frame.contains("its terminal is on another machine")
+                && frame.contains("its terminal is on another computer")
                 && frame.contains("Fake 1")
         },
         "desk-notes' chat",
@@ -1795,11 +1818,11 @@ fn new_agent_worktree(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(&pane, &["What should the new agent work on?"])?;
     // On the desk, which offers a model the laptop does not.
     journey.keys(&pane, &["C-s", "h"])?;
-    journey.wait_terms(&pane, &["╭─ Host", ". desk"])?;
+    journey.wait_terms(&pane, &["╭─ Computer", ". desk"])?;
     pick(journey, &pane, "desk")?;
     journey.wait(
         &pane,
-        |frame| frame.contains("│ desk ─╯") && !frame.contains("╭─ Host"),
+        |frame| frame.contains("│ desk ─╯") && !frame.contains("╭─ Computer"),
         "the desk chosen",
     )?;
     journey.keys(&pane, &["C-s", "m"])?;
@@ -2186,7 +2209,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         |frame| {
             [
                 "Connect your iPhone",
-                "This machine is called desk.",
+                "This computer is called desk.",
                 "Scan with your iPhone's camera to pair.",
                 "esc later",
             ]
@@ -2288,7 +2311,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         &pane,
         &[
             "These are where Claude Code and Codex ran lately",
-            "+ Add a folder…",
+            "+ Add a repository…",
         ],
     )?;
     if !repositories.contains("[x] ") {

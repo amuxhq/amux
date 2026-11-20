@@ -16,18 +16,11 @@ const RETRY: Duration = Duration::from_millis(200);
 /// The installation config: the file named by `--config` or `AMUX_CONFIG`,
 /// else the default file when it exists, else the defaults.
 pub fn load_config(path: Option<&Path>) -> Result<InstallationConfig> {
-    let path = match path {
-        Some(path) => path.to_owned(),
-        None => {
-            let default = InstallationConfig::default_path();
-            if !default.exists() {
-                return Ok(InstallationConfig::default());
-            }
-            default
-        }
-    };
-    let config = InstallationConfig::from_file(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let config = read_config(path)?;
+    let path = config
+        .path
+        .clone()
+        .unwrap_or_else(InstallationConfig::default_path);
     for key in &config.ignored {
         eprintln!("amux: {}: ignoring unknown key `{key}`", path.display());
     }
@@ -38,6 +31,23 @@ pub fn load_config(path: Option<&Path>) -> Result<InstallationConfig> {
         );
     }
     Ok(config)
+}
+
+/// The installation config as a start reads it, saying nothing: the file
+/// named, which must be there, or else the default file, whose absence is
+/// the defaults.
+pub fn read_config(path: Option<&Path>) -> Result<InstallationConfig> {
+    let path = match path {
+        Some(path) => path.to_owned(),
+        None => {
+            let default = InstallationConfig::default_path();
+            if !default.exists() {
+                return Ok(InstallationConfig::default());
+            }
+            default
+        }
+    };
+    InstallationConfig::from_file(&path).with_context(|| format!("reading {}", path.display()))
 }
 
 /// A gRPC channel over the local socket named by `path`.

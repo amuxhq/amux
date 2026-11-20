@@ -36,6 +36,18 @@ fn after_parse(raw: &str) -> Result<toml::Value, String> {
     duration(raw).map(|_| toml::Value::String(raw.trim().to_owned()))
 }
 
+/// The settings a daemon runs with, as the module reads them: `after` in
+/// words equal exactly when the delays are.
+pub(super) fn in_effect(table: Option<&toml::Table>) -> Vec<(&'static str, String)> {
+    let after = Suspension::read(table).0.after;
+    let words = if after.subsec_nanos() == 0 {
+        words(after)
+    } else {
+        format!("{}ms", after.as_millis())
+    };
+    vec![("after", words)]
+}
+
 /// The delay when the config gives none.
 pub const DEFAULT_AFTER: Duration = Duration::from_secs(30 * 60);
 

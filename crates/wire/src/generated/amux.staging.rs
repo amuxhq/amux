@@ -3184,42 +3184,36 @@ impl ::prost::Name for GetCatalogueResponse {
         "type.googleapis.com/amux.staging.GetCatalogueResponse".into()
     }
 }
-/// The host discovers them; a client never names a folder to search.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListRepositoriesRequest {
-    /// Only folders whose name or path holds it, ignoring case.
-    #[prost(string, optional, tag = "1")]
-    pub query: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(uint32, tag = "2")]
-    pub limit: u32,
+pub struct PinFolderRequest {
+    /// An absolute path on the answering host, or one from its home
+    /// ("~/src/app").
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// Pinned at the end of the list, or unpinned.
+    #[prost(bool, tag = "2")]
+    pub pinned: bool,
 }
-impl ::prost::Name for ListRepositoriesRequest {
-    const NAME: &'static str = "ListRepositoriesRequest";
+impl ::prost::Name for PinFolderRequest {
+    const NAME: &'static str = "PinFolderRequest";
     const PACKAGE: &'static str = "amux.staging";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.staging.ListRepositoriesRequest".into()
+        "amux.staging.PinFolderRequest".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.staging.ListRepositoriesRequest".into()
+        "type.googleapis.com/amux.staging.PinFolderRequest".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListRepositoriesResponse {
-    /// Folders this host's agents ran in lately that still exist.
-    #[prost(message, repeated, tag = "1")]
-    pub recent: ::prost::alloc::vec::Vec<super::v1::RepositoryEntry>,
-    /// The host's repository list, as its person chose it.
-    #[prost(message, repeated, tag = "2")]
-    pub repositories: ::prost::alloc::vec::Vec<super::v1::RepositoryEntry>,
-}
-impl ::prost::Name for ListRepositoriesResponse {
-    const NAME: &'static str = "ListRepositoriesResponse";
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PinFolderResponse {}
+impl ::prost::Name for PinFolderResponse {
+    const NAME: &'static str = "PinFolderResponse";
     const PACKAGE: &'static str = "amux.staging";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.staging.ListRepositoriesResponse".into()
+        "amux.staging.PinFolderResponse".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.staging.ListRepositoriesResponse".into()
+        "type.googleapis.com/amux.staging.PinFolderResponse".into()
     }
 }
 /// Generated client implementations.
@@ -3330,13 +3324,15 @@ pub mod host_service_client {
                 .insert(GrpcMethod::new("amux.staging.HostService", "GetCatalogue"));
             self.inner.unary(req, path, codec).await
         }
-        /// Repositories on this host, for a new agent's folder: where its agents
-        /// worked lately, and the list its person keeps.
-        pub async fn list_repositories(
+        /// Pins a folder among this host's repositories, at the end of the list,
+        /// or unpins it. The list is the host's `repositories` setting, so this is
+        /// a person's act, refused to an agent. The host's own entry says the
+        /// change, as every client sees through its inventory.
+        pub async fn pin_folder(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListRepositoriesRequest>,
+            request: impl tonic::IntoRequest<super::PinFolderRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListRepositoriesResponse>,
+            tonic::Response<super::PinFolderResponse>,
             tonic::Status,
         > {
             self.inner
@@ -3349,11 +3345,11 @@ pub mod host_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/amux.staging.HostService/ListRepositories",
+                "/amux.staging.HostService/PinFolder",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("amux.staging.HostService", "ListRepositories"));
+                .insert(GrpcMethod::new("amux.staging.HostService", "PinFolder"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -3382,13 +3378,15 @@ pub mod host_service_server {
             tonic::Response<super::GetCatalogueResponse>,
             tonic::Status,
         >;
-        /// Repositories on this host, for a new agent's folder: where its agents
-        /// worked lately, and the list its person keeps.
-        async fn list_repositories(
+        /// Pins a folder among this host's repositories, at the end of the list,
+        /// or unpins it. The list is the host's `repositories` setting, so this is
+        /// a person's act, refused to an agent. The host's own entry says the
+        /// change, as every client sees through its inventory.
+        async fn pin_folder(
             &self,
-            request: tonic::Request<super::ListRepositoriesRequest>,
+            request: tonic::Request<super::PinFolderRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListRepositoriesResponse>,
+            tonic::Response<super::PinFolderResponse>,
             tonic::Status,
         >;
     }
@@ -3513,25 +3511,25 @@ pub mod host_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/amux.staging.HostService/ListRepositories" => {
+                "/amux.staging.HostService/PinFolder" => {
                     #[allow(non_camel_case_types)]
-                    struct ListRepositoriesSvc<T: HostService>(pub Arc<T>);
+                    struct PinFolderSvc<T: HostService>(pub Arc<T>);
                     impl<
                         T: HostService,
-                    > tonic::server::UnaryService<super::ListRepositoriesRequest>
-                    for ListRepositoriesSvc<T> {
-                        type Response = super::ListRepositoriesResponse;
+                    > tonic::server::UnaryService<super::PinFolderRequest>
+                    for PinFolderSvc<T> {
+                        type Response = super::PinFolderResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListRepositoriesRequest>,
+                            request: tonic::Request<super::PinFolderRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as HostService>::list_repositories(&inner, request).await
+                                <T as HostService>::pin_folder(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -3542,7 +3540,7 @@ pub mod host_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ListRepositoriesSvc(inner);
+                        let method = PinFolderSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

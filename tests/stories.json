@@ -190,6 +190,12 @@
       "why": "The phone has no setup steps left to finish once it is paired."
     },
     {
+      "name": "fleet.working",
+      "shows": "The agents at work shown in the list, by the toggle that otherwise keeps them out of it.",
+      "clients": ["mac"],
+      "why": "Only the Mac filters out its agents at work so far; the phone's filter is still to come."
+    },
+    {
       "name": "fleet.settled",
       "shows": "The settled agents listed in the sidebar in place of the rest, with the way back.",
       "clients": ["mac"],
@@ -281,6 +287,12 @@
       "name": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, the folder, the name, the model, effort and permission.",
       "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "new-agent.picker",
+      "shows": "The agent picker open: the providers, the chosen one's models with what each is for, and its efforts.",
+      "clients": ["mac"],
+      "why": "Only the Mac picks the agent, model and effort in one panel; the phone and the terminal use their own menus."
     },
     {
       "name": "new-agent.browsing",
@@ -426,12 +438,12 @@
     {
       "name": "review.page",
       "shows": "The review page over a diff of several files, with a comment written.",
-      "clients": ["phone", "terminal"]
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "review.no-changes",
       "shows": "The review page for an agent with nothing changed.",
-      "clients": ["phone"],
+      "clients": ["phone", "mac"],
       "why": "The terminal says there is nothing to review on its notice line instead of opening the page."
     },
     {
@@ -473,6 +485,12 @@
     {
       "name": "settings.machine-signed-out",
       "shows": "A machine's settings with the account not signed in; on the terminal the account row is chosen.",
+      "clients": ["terminal", "mac"],
+      "why": "The phone does not change a machine's settings; it has settings of its own."
+    },
+    {
+      "name": "settings.experiment-applying",
+      "shows": "A machine's experiments just after Suspension was switched on: amux restarts to run it, so its row says it is applying the change rather than on or off.",
       "clients": ["terminal", "mac"],
       "why": "The phone does not change a machine's settings; it has settings of its own."
     },

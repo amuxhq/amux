@@ -252,6 +252,11 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     let agent = own("a");
     let mut store = with_agent(store, &agent);
     let git = wire::Git {
+        checkout: Some(Box::new(wire::Checkout {
+            root: "/work/app".into(),
+            main: None,
+            remote: Some("github.com/amuxhq/amux".into()),
+        })),
         branch: Some("fix-build".into()),
         base_branch: Some("main".into()),
         uncommitted: Some(wire::ChangeTotals {
@@ -260,7 +265,6 @@ fn snapshots_copy_their_envelope_onto_the_row() {
             removed: 3,
         }),
         on_branch: None,
-        remote: Some("github.com/amuxhq/amux".into()),
     };
     let step = Step {
         items: vec![item("m1", "hi")],

@@ -643,6 +643,9 @@ pub enum IngestEnd {
 pub enum ShellWork {
     /// The core wrote items to the store: an absorb, catch-up or live.
     Wrote,
+    /// An agent was made in a directory, now the newest of the recent
+    /// ones: the folders this host offers may have moved.
+    RecentDirectory,
     /// A source opened for the replica agent, or closed.
     Sourcing { agent: AgentKey, open: bool },
     /// The host set as the core published it now, for the shell's reads.

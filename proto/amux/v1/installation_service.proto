@@ -98,8 +98,14 @@ message Experiment {
   // One line a settings screen shows beside the switch.
   string description = 3;
   // Whether the config switches it on. The daemon reads the switch when it
-  // starts, so a change takes effect at its next start.
+  // starts, and restarts itself to apply a change.
   bool enabled = 4;
+  // The daemon runs it otherwise than the config now says: the switch, or
+  // while it is on its own settings, moved since the daemon started, and the
+  // daemon restarts to apply that once its work under way settles. A client
+  // shows the switch as being applied. False from builds before it, which
+  // applied a change at their next start.
+  bool applying = 5;
 }
 
 // Where the terminal client chats with agents.
@@ -124,7 +130,8 @@ message UpdateSettingsRequest {
   optional bool telemetry = 7;
   optional bool auto_reports = 8;
   // The whole new list of experiments switched on; absent leaves it as it
-  // is. Takes effect when the daemon next starts.
+  // is. The daemon restarts itself to apply it, as `applying` shows until
+  // it has.
   optional ExperimentList experiments = 9;
 }
 
@@ -217,7 +224,11 @@ enum OfferRole {
 message SuggestRepositoriesRequest {}
 
 message SuggestRepositoriesResponse {
-  repeated RepositoryEntry suggestions = 1;
+  // Was a list of an older entry shape.
+  reserved 1;
+  reserved "suggestions";
+  // Each of kind FOLDER_KIND_HISTORY, newest first.
+  repeated Folder folders = 2;
 }
 
 message WebSignInLinkRequest {

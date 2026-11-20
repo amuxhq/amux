@@ -449,7 +449,7 @@ time:
    migration that fails is undone: the error names the file, which is left
    as it was, and the daemon does not start.
 5. Finish the sweep: resume ingest from each stored cursor, and mark
-   exited, with the cause "while the daemon was away", every agent whose
+   exited, with the cause "while amux was stopped", every agent whose
    process is gone.
 6. Refuse to start if another daemon answers on the front door. Otherwise
    bring each profile into service: its client socket, its network edge,

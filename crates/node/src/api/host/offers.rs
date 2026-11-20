@@ -1,19 +1,24 @@
 //! What this host offers before any agent exists: HostService.
 //!
-//! Answered by this host about itself, the same to every caller: what its
-//! providers offer and where it would start an agent are no one caller's.
+//! Answered by this host about itself. What its providers offer is the
+//! same to every caller. Its folders are not asked here: they ride on its
+//! own entry, which every node holds a copy of. Pinning one changes its
+//! `repositories` setting, which is its person's, as the rest of its
+//! settings are: an agent, here or on a paired host, is refused.
 
 use std::sync::Weak;
 
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
+use wire::ErrorCode;
 use wire::amux::staging::host_service_server::HostService;
 use wire::amux::staging::{
-    GetCatalogueRequest, GetCatalogueResponse, ListRepositoriesRequest, ListRepositoriesResponse,
+    GetCatalogueRequest, GetCatalogueResponse, PinFolderRequest, PinFolderResponse,
 };
 
 use crate::api::Entry;
-use crate::grpc::{status, upgrade};
+use crate::api::caller::Caller;
+use crate::grpc::{settings_status, status, upgrade, wire_error};
 use crate::offers::{ASKED, CatalogueError};
 use crate::runtime::ProfileRuntime;
 
@@ -55,18 +60,22 @@ impl HostService for Offers {
         }))
     }
 
-    async fn list_repositories(
+    async fn pin_folder(
         &self,
-        request: Request<ListRepositoriesRequest>,
-    ) -> Result<Response<ListRepositoriesResponse>, Status> {
+        request: Request<PinFolderRequest>,
+    ) -> Result<Response<PinFolderResponse>, Status> {
+        if let Caller::Agent { .. } = Caller::of(&request)? {
+            return Err(status(wire_error(
+                ErrorCode::PermissionDenied,
+                "only a person pins a folder: the list is the host's setting",
+            )));
+        }
         let runtime = upgrade(&self.runtime)?;
         let request = request.into_inner();
-        let listed = runtime
-            .list_repositories(request.query, request.limit)
-            .await;
-        Ok(Response::new(ListRepositoriesResponse {
-            recent: listed.recent,
-            repositories: listed.repositories,
-        }))
+        runtime
+            .pin_folder(&request.path, request.pinned)
+            .await
+            .map_err(settings_status)?;
+        Ok(Response::new(PinFolderResponse {}))
     }
 }

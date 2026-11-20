@@ -37,7 +37,7 @@ struct DeleteAccountCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 9) {
                 Consequence("checkmark", kept: true,
-                            "Your agents and files stay on your hosts.")
+                            "Your agents and files stay on your computers.")
                 Consequence("xmark", kept: false, "This phone can no longer reach them.")
                 if let billing {
                     Consequence("xmark", kept: false, billing)

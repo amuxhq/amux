@@ -26,11 +26,14 @@ public struct PairingContent {
 public struct SetupRepository: Identifiable, Equatable {
     public let path: String
     public var ticked: Bool
+    /// The repository it is a checkout of, as its agents will be marked.
+    public var repository: Repository?
     public var id: String { path }
 
-    public init(path: String, ticked: Bool) {
+    public init(path: String, ticked: Bool, repository: Repository? = nil) {
         self.path = path
         self.ticked = ticked
+        self.repository = repository
     }
 }
 
@@ -140,9 +143,11 @@ public struct SetupActions {
     }
 }
 
-/// Setting up, one step a screen, in the window: a symbol, the step's title
-/// and what it is for, its choices, and Later beside the step's own action.
-/// Escape is Later and Return the step's action, as on the terminal.
+/// Setting up, one step a screen, in the window: a tile with the step's
+/// glyph, the step's title and what it is for, its choices, and Later
+/// beside the step's own action. Every step is one centred column, sitting
+/// a little above the window's middle. Escape is Later and Return the
+/// step's action, as on the terminal.
 public struct SetupScreen: View {
     let content: SetupContent
     @Binding var choices: SetupChoices
@@ -157,37 +162,64 @@ public struct SetupScreen: View {
     public var body: some View {
         let step = content.step
         VStack(spacing: 0) {
-            VStack(spacing: 10) {
-                Image(systemName: symbol(step))
-                    .font(.ui(.hero, weight: .light))
-                    .foregroundStyle(.tint)
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(height: 56)
-                    .padding(.bottom, 6)
-                Text(title(step))
-                    .font(.ui(.display, weight: .bold))
-                    .multilineTextAlignment(.center)
+            // A window too short for the column scrolls it rather than
+            // crushing it.
+            ViewThatFits(in: .vertical) {
+                centred(step)
+                ScrollView { column(step).padding(.vertical, 28) }
             }
-            .padding(.top, 44)
-            stepContent(step)
-                .frame(maxWidth: 560)
-                .padding(.horizontal, 40)
-                .padding(.top, 22)
-            if let error = content.error {
-                Text(error)
-                    .foregroundStyle(Palette.failure)
-                    .font(.callout)
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 40)
-                    .padding(.top, 12)
-            }
-            Spacer(minLength: 16)
             Buttons(content: content, actions: actions)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .font(.ui(.prose))
+        .textTiers()
+        .background(Palette.content.ignoresSafeArea())
+        .windowChrome()
         .id(step)
         .transition(.opacity)
+    }
+
+    private func centred(_ step: SetupStep) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 24)
+            column(step)
+                // A little above the middle, where the eye expects it.
+                .padding(.bottom, 40)
+            Spacer(minLength: 24)
+        }
+    }
+
+    private func column(_ step: SetupStep) -> some View {
+        VStack(spacing: 0) {
+            // The pairing step's code is its picture.
+            if step != .pair_phone {
+                Icon(glyph(step), size: 28)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: 56, height: 56)
+                    .background(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).fill(Palette.well))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).strokeBorder(Palette.line))
+                    .padding(.bottom, 18)
+            }
+            Text(title(step))
+                .font(.ui(.heading, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            stepContent(step)
+                .padding(.top, 14)
+            if let error = content.error {
+                Text(error)
+                    .font(.ui(.meta))
+                    .foregroundStyle(Palette.failure)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.top, 14)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 440)
+        .padding(.horizontal, Metrics.gutter)
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -202,26 +234,26 @@ public struct SetupScreen: View {
         }
     }
 
-    private func symbol(_ step: SetupStep) -> String {
+    private func glyph(_ step: SetupStep) -> String {
         switch step {
-        case .pair_phone: "laptopcomputer.and.iphone"
-        case .keep_reachable: "powerplug"
+        case .pair_phone: "smartphone"
+        case .keep_reachable: "laptop"
         case .sign_in: "globe"
-        case .repositories: "folder"
-        case .improve: "chart.bar"
-        case .first_agent: "iphone"
+        case .repositories: "folder-git-2"
+        case .improve: "lightbulb"
+        case .first_agent: "smartphone"
         }
     }
 
-    /// What a step is called on its screen, in the terminal's words.
+    /// What a step is called on its screen.
     private func title(_ step: SetupStep) -> String {
         switch step {
         case .pair_phone: "Connect your iPhone"
-        case .keep_reachable: "Keep it connected"
-        case .sign_in: "Reach it from anywhere"
-        case .repositories: "Repositories"
+        case .keep_reachable: "Keep your Mac ready"
+        case .sign_in: "Reach your Mac from anywhere"
+        case .repositories: "Where should agents work?"
         case .improve: "Help improve amux"
-        case .first_agent: "Try starting an agent from your phone"
+        case .first_agent: "Start an agent from your phone"
         }
     }
 }
@@ -232,21 +264,23 @@ private struct Buttons: View {
     let actions: SetupActions
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button("Later") { actions.later() }
+        HStack(spacing: 8) {
+            // The last step only waits on the phone: leaving it is skipping
+            // the try, not putting a choice off.
+            Button(content.step == .first_agent ? "Skip" : "Not now") { actions.later() }
+                .buttonStyle(PillButtonStyle())
                 .keyboardShortcut(.cancelAction)
                 .disabled(content.busy)
             Spacer()
-            if content.busy || content.signingIn || content.accepting {
-                ProgressView().controlSize(.small)
+            // Signing in says it is waiting on the page itself.
+            if content.busy {
+                ProgressView().controlSize(.small).padding(.trailing, 4)
             }
             primary
         }
-        .controlSize(.large)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 18)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, 20)
+        .frame(height: 60)
+        .overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
     }
 
     @ViewBuilder
@@ -256,25 +290,91 @@ private struct Buttons: View {
             EmptyView()
         case .keep_reachable:
             Button("Continue") { actions.confirmReachable() }
+                .buttonStyle(PillButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(content.busy)
         case .sign_in:
+            // An offered account can be turned down for another one.
             if content.offer != nil {
-                Button("Not Now") { actions.declineOffer() }
-                    .disabled(content.accepting)
+                Button("Use another account") { actions.declineOffer() }
+                    .buttonStyle(PillButtonStyle())
+                    .disabled(content.signingIn || content.accepting)
             }
-            Button(content.offer == nil ? "Sign In…" : "Sign In") { actions.signIn() }
+            Button(content.offer == nil ? "Sign in…" : "Sign in") { actions.signIn() }
+                .buttonStyle(PillButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(content.signingIn || content.accepting)
         case .repositories:
             Button("Continue") { actions.confirmRepositories() }
+                .buttonStyle(PillButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(content.busy || !content.repositoriesLoaded)
         case .improve:
             Button("Continue") { actions.confirmImprove() }
+                .buttonStyle(PillButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(content.busy)
         }
+    }
+}
+
+/// What a step is for, under its title: centred, a step quieter than it.
+private struct Explain: View {
+    let words: String
+
+    init(_ words: String) { self.words = words }
+
+    var body: some View {
+        Text(words)
+            .foregroundStyle(Palette.textSecondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A note under a step's choices: the quietest words on the page.
+private struct Note: View {
+    let words: String
+
+    init(_ words: String) { self.words = words }
+
+    var body: some View {
+        Text(words)
+            .font(.ui(.meta))
+            .foregroundStyle(Palette.textSecondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Checkboxes, left-aligned in a narrower box under the centred words, so
+/// their boxes line up.
+private struct Choices<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) { content }
+            .toggleStyle(AccentCheckbox())
+            .font(.ui(.body))
+            .multilineTextAlignment(.leading)
+            .padding(14)
+            .frame(maxWidth: 360, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.raised))
+            .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.edge))
+    }
+}
+
+/// A checkbox's own words with a quieter line under them.
+private struct Choice: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -285,35 +385,46 @@ private struct PairPhone: View {
     let actions: SetupActions
 
     var body: some View {
-        VStack(spacing: 26) {
+        VStack(spacing: 0) {
             MachineName(content: content, actions: actions)
-            HStack(alignment: .center, spacing: 36) {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Scan with your iPhone's camera to pair.")
-                    pinLine
-                    status
-                    Text("Whoever scans this code or enters the PIN can run agents on this Mac as you.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .font(.title3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                code
-            }
+            code
+                .padding(.top, 20)
+            Text("Scan with your iPhone’s camera to pair.")
+                .padding(.top, 18)
+            pin
+                .padding(.top, 10)
+            status
+                .font(.ui(.meta))
+                .frame(minHeight: 18)
+                .padding(.top, 12)
+            Note("Anyone with this code can run agents on this Mac as you, so keep it to your own phone.")
+                .frame(maxWidth: 340)
+                .padding(.top, 8)
         }
         .onAppear { actions.pairingShown() }
         .onDisappear { actions.pairingHidden() }
     }
 
     @ViewBuilder
-    private var pinLine: some View {
+    private var pin: some View {
         if let pin = content.pairing.window?.pin, !pin.isEmpty {
-            Text("Or enter \(Text(spaced(pin)).monospacedDigit().fontWeight(.semibold)) in the amux app.")
-                .textSelection(.enabled)
-                .accessibilityLabel("Or enter \(pin) in the amux app.")
+            HStack(spacing: 10) {
+                Text("Or enter").foregroundStyle(Palette.textSecondary)
+                Text(spaced(pin))
+                    .font(.mono(.heading, weight: .semibold))
+                    .tracking(2)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 12)
+                    .frame(height: 40)
+                    .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+                    .accessibilityLabel(pin)
+                Text("in the amux app.").foregroundStyle(Palette.textSecondary)
+            }
+            .accessibilityElement(children: .combine)
         } else {
             Text("Or enter the code in the amux app.")
+                .foregroundStyle(Palette.textSecondary)
+                .frame(height: 40)
         }
     }
 
@@ -321,39 +432,52 @@ private struct PairPhone: View {
     private var status: some View {
         let pairing = content.pairing
         if let why = pairing.failed {
-            Label("Pairing could not open: \(why)", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(Palette.caution)
-                .font(.callout)
+            HStack(spacing: 6) {
+                Icon("triangle-alert", size: 14)
+                Text("Couldn’t start pairing: \(why)")
+            }
+            .foregroundStyle(Palette.caution)
         } else if pairing.lockedOut {
             HStack(spacing: 10) {
-                Text("Closed after too many wrong codes.").foregroundStyle(Palette.caution)
-                Button("New Code") { actions.newCode() }
+                Text("Too many wrong codes.").foregroundStyle(Palette.caution)
+                Button("New code") { actions.newCode() }
+                    .buttonStyle(PillButtonStyle(small: true))
             }
-            .font(.callout)
         } else if pairing.joining {
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
+                Working(size: 12).offset(y: 1.25)
                 Text("Your iPhone is pairing…")
             }
-            .font(.callout)
         } else if pairing.window != nil {
-            Text("Waiting for your iPhone…").font(.callout).foregroundStyle(.secondary)
+            Text("Waiting for your iPhone…").foregroundStyle(Palette.textSecondary)
         } else {
-            Text("Opening pairing…").font(.callout).foregroundStyle(.secondary)
+            Text("Getting a code…").foregroundStyle(Palette.textSecondary)
         }
     }
 
+    /// The code, dimmed under a spinner while a phone is pairing with it:
+    /// it has done its work, and scanning it again would not help.
     @ViewBuilder
     private var code: some View {
         if let link = content.pairing.window?.qrLink, !link.isEmpty {
             QRCode(link: link)
-                .frame(width: 196, height: 196)
-                .accessibilityLabel("A code that opens amux on your iPhone, or the App Store")
+                .frame(width: 168, height: 168)
+                .opacity(content.pairing.joining ? 0.3 : 1)
+                .overlay {
+                    if content.pairing.joining {
+                        Working(size: 20)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(Palette.raised))
+                            .elevation(.raised)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: content.pairing.joining)
+                .accessibilityLabel("QR code to pair your iPhone, or get amux from the App Store")
         } else {
-            RoundedRectangle(cornerRadius: Radius.sheet)
-                .fill(.quaternary)
-                .frame(width: 196, height: 196)
-                .overlay { ProgressView() }
+            RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous)
+                .fill(Palette.well)
+                .frame(width: 168, height: 168)
+                .overlay { ProgressView().controlSize(.regular) }
         }
     }
 
@@ -365,6 +489,8 @@ private struct PairPhone: View {
 }
 
 /// "This Mac is called …", with Rename: the name every paired device sees.
+/// Renaming swaps the name for a field of the same height in place, so
+/// nothing under it moves.
 private struct MachineName: View {
     let content: SetupContent
     let actions: SetupActions
@@ -379,24 +505,34 @@ private struct MachineName: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("This Mac is called").foregroundStyle(.secondary)
+            Text("This Mac is called").foregroundStyle(Palette.textSecondary)
             if let binding = Binding($editing) {
                 TextField("Name", text: binding)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.leading)
+                    .font(.ui(.prose, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .frame(width: 200, height: 26)
+                    .background(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).fill(Palette.well))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                            .strokeBorder(Palette.accent.opacity(focused ? 0.6 : 0)))
                     .focused($focused)
                     .onSubmit(save)
                     .onExitCommand { editing = nil }
                     .onAppear { focused = true }
                 Button("Save", action: save)
+                    .buttonStyle(PillButtonStyle(small: true))
             } else {
                 Text(content.machineName ?? "this Mac").fontWeight(.semibold)
                 Button("Rename…") { editing = content.machineName ?? "" }
-                    .buttonStyle(.link)
-                    .padding(.leading, 4)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.accent)
+                    .pointerStyle(.link)
+                    .padding(.leading, 2)
             }
         }
-        .font(.title3)
+        .frame(height: 28)
     }
 
     private func save() {
@@ -420,8 +556,8 @@ private struct QRCode: View {
                 .resizable()
                 .scaledToFit()
                 .padding(12)
-                .background(.white, in: RoundedRectangle(cornerRadius: Radius.sheet))
-                .overlay(RoundedRectangle(cornerRadius: Radius.sheet).strokeBorder(.separator))
+                .background(.white, in: RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).strokeBorder(Palette.line))
         }
     }
 
@@ -445,35 +581,26 @@ private struct KeepReachable: View {
     @Binding var choices: SetupChoices
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 16) {
             if let phone = content.paired {
-                Label {
+                HStack(spacing: 6) {
+                    Icon("circle-check", size: 14).foregroundStyle(Palette.accent)
                     Text("Paired with \(phone.name)")
-                } icon: {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.accent)
                 }
-                .font(.title3.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 6)
+                .font(.ui(.prose, weight: .medium))
             }
-            Text("So your phone reaches \(content.machineName ?? "this Mac") whenever you need it:")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 10) {
+            Explain("So your phone can always reach \(content.machineName ?? "this Mac"):")
+            Choices {
                 if content.canStartAtLogin {
                     Toggle("Start amux when you log in", isOn: $choices.startAtLogin)
                 }
-                Toggle("Keep this Mac awake while it’s plugged in", isOn: $choices.keepAwake)
+                Toggle(isOn: $choices.keepAwake) {
+                    Choice(
+                        title: "Keep this Mac awake while it’s plugged in",
+                        detail: "On battery, only while an agent is working.")
+                }
             }
-            .toggleStyle(.checkbox)
-            .font(.title3)
-            .padding(.leading, 4)
-            Text("On battery it stays awake only while an agent works.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -485,36 +612,48 @@ private struct SignIn: View {
 
     var body: some View {
         let name = content.machineName ?? "this Mac"
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 16) {
             if let offer = content.offer {
-                Text("Sign in as \(offer.email.isEmpty ? offer.accountName : offer.email) (from \(offer.hostName))?")
-                    .font(.title3.weight(.medium))
-                Text("\(offer.hostName) is signed in to this account. Signing in here too lets your phone reach \(name) from anywhere.")
-                    .foregroundStyle(.secondary)
+                Text("Continue as \(offer.email.isEmpty ? offer.accountName : offer.email)?")
+                    .font(.ui(.title, weight: .semibold))
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                Explain("You’re signed in on \(offer.hostName). Use the same account here to reach this Mac from anywhere.")
                 if content.accepting {
-                    Text("Signing in…").foregroundStyle(.secondary)
+                    Waiting("Signing in…")
                 }
             } else {
-                Text("Sign in to reach \(name) from your phone when you are away from this network.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Explain("Sign in so your phone can reach \(name) from any network.")
                 if let phone = content.also {
-                    Toggle("Also sign in \(phone.name)", isOn: $choices.alsoTicked)
-                        .toggleStyle(.checkbox)
-                        .padding(.leading, 4)
+                    Choices {
+                        Toggle("Sign in on \(phone.name) too", isOn: $choices.alsoTicked)
+                    }
                 }
                 if content.signingIn {
-                    Text("Waiting for you to sign in…").foregroundStyle(.secondary)
+                    Waiting("Continue in your browser…")
                 }
             }
         }
-        .font(.title3)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// MARK: - Repositories
+/// Something under way that the screen waits on.
+private struct Waiting: View {
+    let words: String
+
+    init(_ words: String) { self.words = words }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // A dot reads as a bullet, on the lowercase middle.
+            Working(size: 12).offset(y: 1.25)
+            Text(words).foregroundStyle(Palette.textSecondary)
+        }
+        .font(.ui(.meta))
+    }
+}
+
+// MARK: - Where should agents work?
 
 private struct Repositories: View {
     let content: SetupContent
@@ -522,42 +661,49 @@ private struct Repositories: View {
     let actions: SetupActions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("New agents start in a repository. These are where Claude Code and Codex ran lately:")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: 16) {
+            Explain("These are the repositories you’ve used with Claude Code and Codex lately.")
             if !content.repositoriesLoaded {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Looking for recent folders…").foregroundStyle(.secondary)
-                }
+                Waiting("Looking for recent repositories…")
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Choices {
                         if choices.repositories.isEmpty {
-                            Text("No recent folders found.").foregroundStyle(.secondary)
+                            Text("Nothing yet. Add a repository below.").foregroundStyle(Palette.textSecondary)
                         }
-                        ForEach($choices.repositories) { $row in
-                            Toggle(isOn: $row.ticked) {
-                                Text(tilde(row.path))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .help(row.path)
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach($choices.repositories) { $row in
+                                    Toggle(isOn: $row.ticked) {
+                                        HStack(spacing: 8) {
+                                            DirectoryMark(
+                                                directory: Directory(
+                                                    path: row.path, name: "", repository: row.repository),
+                                                size: 16)
+                                            Text((row.path as NSString).lastPathComponent)
+                                                .lineLimit(1)
+                                            Text(tilde((row.path as NSString).deletingLastPathComponent))
+                                                .font(.ui(.meta))
+                                                .foregroundStyle(Palette.textSecondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.head)
+                                        }
+                                        .help(row.path)
+                                    }
+                                }
                             }
-                            .toggleStyle(.checkbox)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .frame(maxHeight: 170)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 4)
+                    Button("Add repository…", action: addFolder)
+                        .buttonStyle(PillButtonStyle(small: true))
                 }
-                .frame(maxHeight: 190)
-                .fixedSize(horizontal: false, vertical: true)
-                Button("Add a Folder…", action: addFolder)
+                .frame(maxWidth: 360)
             }
         }
-        .font(.title3)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func addFolder() {
@@ -566,7 +712,7 @@ private struct Repositories: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         panel.prompt = "Add"
-        panel.message = "Choose the folders new agents can start in."
+        panel.message = "Choose folders for agents to work in."
         guard panel.runModal() == .OK else { return }
         actions.addFolders(panel.urls)
     }
@@ -578,26 +724,19 @@ private struct Improve: View {
     @Binding var choices: SetupChoices
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            Toggle(isOn: $choices.autoReports) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Send a report automatically when something goes wrong")
-                    Text("Never your chats, code, or file names.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+        VStack(spacing: 16) {
+            Choices {
+                Toggle(isOn: $choices.autoReports) {
+                    Choice(
+                        title: "Send a report automatically when something goes wrong",
+                        detail: "Reports never include your chats, code or file names.")
                 }
             }
-            .toggleStyle(.checkbox)
-            .padding(.leading, 4)
-            .font(.title3)
             // Usage counts are on unless turned off in Settings; this only
             // says so, and nothing waits for it.
-            Text("amux sends usage counts to help improve it, never your code or chats. You can turn this off in Settings.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Note("amux also sends usage counts, never your code or chats. Turn them off anytime in Settings.")
+                .frame(maxWidth: 360)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -605,15 +744,37 @@ private struct Improve: View {
 
 private struct FirstAgent: View {
     var body: some View {
-        VStack(spacing: 18) {
-            Text("On your phone, tap + and pick a repository.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Waiting for an agent from your phone…").foregroundStyle(.secondary)
-            }
+        VStack(spacing: 16) {
+            Explain("On your phone, tap + and pick a repository.")
+            Waiting("Waiting for your phone…")
         }
-        .frame(maxWidth: .infinity)
+    }
+}
+
+/// A checkbox in the accent whether or not the window is in front; the
+/// system's goes grey in a background window.
+struct AccentCheckbox: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(configuration.isOn ? Palette.accent : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(configuration.isOn ? Color.clear : Color.primary.opacity(0.3)))
+                .overlay {
+                    if configuration.isOn {
+                        Icon("check", size: 11).foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 16, height: 16)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+            configuration.label
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { configuration.isOn.toggle() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
+        .accessibilityAction { configuration.isOn.toggle() }
     }
 }

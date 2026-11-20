@@ -286,8 +286,8 @@ mod tests {
 
     fn request(authority: Option<&str>) -> http::Request<Body> {
         let uri = match authority {
-            Some(authority) => format!("http://{authority}/amux.v1.HostService/ListRepositories"),
-            None => "/amux.v1.HostService/ListRepositories".to_owned(),
+            Some(authority) => format!("http://{authority}/amux.v1.HostService/PinFolder"),
+            None => "/amux.v1.HostService/PinFolder".to_owned(),
         };
         http::Request::builder()
             .uri(uri)

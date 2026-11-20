@@ -1974,6 +1974,66 @@ fn a_first_prompt_is_drawn_while_terminal_claude_starts_and_typed_once() {
     assert!(!Kind::typed_unrecorded(&state), "the prompt was reflected");
 }
 
+/// A prompt that wakes a suspended agent opens its next incarnation as a
+/// new agent's first prompt opens its first: queued behind nothing, drawn
+/// under the resumed rule by the incarnation's first event, typed once, and
+/// the resumed session's own start adds no second rule.
+#[test]
+fn a_prompt_that_wakes_terminal_claude_is_drawn_at_once_and_typed_once() {
+    use interpret::claude_pty::ClaudePty as Kind;
+    let (mut state, _) = started_claude();
+    Kind::step(&mut state, Event::Exiting(suspended()));
+    let wake = wire::AgentSpec {
+        incarnation: 2,
+        ..first_prompt_spec()
+    };
+    let (mut state, first_frame) = Kind::reincarnate(state, &wake);
+    let drawn = Kind::step(&mut state, Event::Tick { at_ms: 1 });
+    assert_drawn_at_once(&first_frame, &drawn.step);
+    assert_eq!(
+        claude_boundary(&drawn.step.items[0]),
+        Some(wire::BoundaryKind::Resumed)
+    );
+
+    let resumed = Kind::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "SessionStart", "source": "resume", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "model": "m",
+        })),
+    );
+    assert!(
+        resumed
+            .step
+            .items
+            .iter()
+            .all(|item| claude_boundary(item).is_none()),
+        "{:?}",
+        resumed.step.items
+    );
+    let typed = resumed
+        .effects
+        .iter()
+        .filter(|effect| matches!(effect, Effect::Terminal(_)))
+        .count();
+    assert_eq!(typed, 1, "{:?}", resumed.effects);
+}
+
+fn suspended() -> wire::IncarnationEnd {
+    wire::IncarnationEnd {
+        cause: wire::ExitCause::Suspended as i32,
+        detail: None,
+    }
+}
+
+fn claude_boundary(item: &wire::Item) -> Option<wire::BoundaryKind> {
+    use prost::Message as _;
+    match wire::ClaudeItem::decode(&item.body[..]).ok()?.kind? {
+        wire::claude_item::Kind::Boundary(boundary) => Some(boundary.kind()),
+        _ => None,
+    }
+}
+
 // --- what Claude holds, for suspension --------------------------------------
 //
 // The hook payloads below are cut from live recordings of Claude Code

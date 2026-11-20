@@ -301,7 +301,7 @@ public struct YouScreen: View {
                 // browser it opens is going is said by the system as it
                 // opens: iOS names amux.sh before anything is typed, and the
                 // browser shows its address above the page.
-                Text("An account lets this phone reach your hosts from anywhere, and a subscription bought on \(CloudEndpoint.production.host) carries over.")
+                Text("An account lets this phone reach your computers from anywhere, and a subscription bought on \(CloudEndpoint.production.host) carries over.")
                     .designFont(.caption, design)
                     .foregroundStyle(design.inkFaint.color)
                     .fixedSize(horizontal: false, vertical: true)
@@ -371,7 +371,7 @@ public struct YouScreen: View {
                 // reports one says which: an account with nothing bought is
                 // not an account with nothing working.
                 row(
-                    "Relay", value: entry.entitlement.summary, id: "subscription"
+                    "Pro", value: entry.entitlement.summary, id: "subscription"
                 ) {
                     actions(.subscription)
                 }
@@ -657,7 +657,7 @@ extension View {
             Button(String(localized: "Remove"), role: .destructive) { actions(.confirmRemoval(entry.id)) }
                 .accessibilityIdentifier("remove.confirm")
         } message: {
-            Text("Your amux.sh account, its subscription, and your agents and files on your hosts stay as they are. This phone signs out and forgets the hosts it paired for this account.")
+            Text("Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account.")
         }
     }
 }

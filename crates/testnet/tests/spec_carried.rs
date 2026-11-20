@@ -8,7 +8,7 @@ use node::harness::LiveRoute;
 use prost::Message as _;
 use support::*;
 use testnet::{Net, Topology, until};
-use wire::amux::staging::{self as staging, ListRepositoriesRequest};
+use wire::amux::staging::{self as staging, PinFolderRequest};
 
 use crate::support;
 
@@ -52,14 +52,15 @@ async fn a_call_carried_to_a_host_only_a_lapsed_plan_reached_names_the_lapse() {
     until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
     let laptop = wire::authority(&host_id(&net, "laptop"));
     let mut to_laptop = staging::host_service_client(socket(&net, "desk", &laptop).await);
-    let listing = || {
-        tonic::Request::new(ListRepositoriesRequest {
-            query: None,
-            limit: 10,
+    // Unpinning a folder never pinned: answered, and it changes nothing.
+    let unpinning = || {
+        tonic::Request::new(PinFolderRequest {
+            path: "/nowhere/never-pinned".to_owned(),
+            pinned: false,
         })
     };
     to_laptop
-        .list_repositories(listing())
+        .pin_folder(unpinning())
         .await
         .expect("carried to the laptop through the relay on a paid plan");
 
@@ -67,7 +68,7 @@ async fn a_call_carried_to_a_host_only_a_lapsed_plan_reached_names_the_lapse() {
     until("the carried call to name the lapse", || {
         let mut to_laptop = to_laptop.clone();
         async move {
-            let refused = match to_laptop.list_repositories(listing()).await {
+            let refused = match to_laptop.pin_folder(unpinning()).await {
                 Err(status) => status,
                 Ok(_) => return Err("still carried".to_owned()),
             };

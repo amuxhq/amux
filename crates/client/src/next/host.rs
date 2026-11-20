@@ -48,18 +48,16 @@ impl Host {
         Ok(self.stub()?.get_catalogue(request).await?.into_inner())
     }
 
-    /// Repositories on this host a new agent may start in, those whose name
-    /// or path holds `query` when one is given.
-    pub async fn repositories(
-        &self,
-        query: Option<&str>,
-        limit: u32,
-    ) -> Result<staging::ListRepositoriesResponse, RpcError> {
-        let request = staging::ListRepositoriesRequest {
-            query: query.map(str::to_owned),
-            limit,
+    /// Pins `path` at the end of this host's repositories, or unpins it.
+    /// The folders themselves are read from the host's entry in the
+    /// inventory, which says the change once the host has made it.
+    pub async fn pin_folder(&self, path: &str, pinned: bool) -> Result<(), RpcError> {
+        let request = staging::PinFolderRequest {
+            path: path.to_owned(),
+            pinned,
         };
-        Ok(self.stub()?.list_repositories(request).await?.into_inner())
+        self.stub()?.pin_folder(request).await?;
+        Ok(())
     }
 }
 

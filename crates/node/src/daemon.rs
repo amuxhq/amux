@@ -113,6 +113,13 @@ pub(crate) struct Installation {
     edge: Mutex<EdgeOptions>,
     /// The settings as last applied.
     applied: Mutex<settings::InstallationConfig>,
+    /// The experiments the settings switch on, with their own settings as
+    /// their modules read them, as last applied: a restart follows them
+    /// when they move away from what this daemon runs.
+    wanted: watch::Sender<settings::experiments::InEffect>,
+    /// What this daemon runs: the experiments it started with, and their
+    /// settings as the settings it started with give them.
+    started: settings::experiments::InEffect,
     /// Whether an agent works while `keep_awake` is on.
     pub(crate) awake: Arc<crate::awake::Awake>,
     pub(crate) settings: crate::host_settings::HostSettings,
@@ -127,6 +134,7 @@ pub(crate) struct Installation {
     analytics: std::sync::OnceLock<Arc<dyn analytics::Sink>>,
     /// Where profiles keep a person's model and effort picks.
     pick_keeper: std::sync::OnceLock<crate::spec::PickKeeper>,
+    pins: std::sync::OnceLock<crate::repositories::Pins>,
     /// Logins refused only because their profile held data, by the token
     /// they were staged with, until bound again with adopt or forgotten.
     staged_logins: Mutex<Vec<(String, std::time::Instant, crate::edge::account::Login)>>,
@@ -135,6 +143,21 @@ pub(crate) struct Installation {
 impl Installation {
     pub(crate) fn host_name(&self) -> String {
         self.edge.lock().unwrap().host_name.clone()
+    }
+
+    /// The experiments this daemon runs and their settings: those it
+    /// started with.
+    pub(crate) fn running_experiments(&self) -> &settings::experiments::InEffect {
+        &self.started
+    }
+
+    /// Whether no profile has work under way that a restart waits for.
+    fn settled(&self) -> bool {
+        self.hosted
+            .lock()
+            .unwrap()
+            .values()
+            .all(|hosted| *hosted.runtime.busy.borrow() == 0)
     }
 
     /// Puts what changed in the settings into force: every profile's
@@ -159,6 +182,12 @@ impl Installation {
             (repositories, kind, renamed, new_agent)
         };
         self.awake.keep_awake(config.keep_awake);
+        let wanted = config.experiments.in_effect();
+        self.wanted.send_if_modified(|was| {
+            let moved = *was != wanted;
+            *was = wanted;
+            moved
+        });
         if repositories.is_none() && kind.is_none() && renamed.is_none() && new_agent.is_none() {
             return;
         }
@@ -196,6 +225,9 @@ impl Installation {
                 runtime.offers().remembered_changed(&launch);
             }
             runtime.set_launch(launch);
+            if repositories.is_some() {
+                runtime.refresh_folders();
+            }
             if let (Some(name), Some(edge)) = (&renamed, runtime.edge()) {
                 edge.rename(name);
             }
@@ -227,6 +259,36 @@ fn follow_settings(installation: std::sync::Weak<Installation>) -> JoinHandle<()
             }
         }
     })
+}
+
+/// How long the experiments switched on must stay put before the daemon
+/// restarts to run them, so several switches in a row are one restart.
+pub const RESTART_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(3);
+
+// A file that reads again is applied within a poll, inside the quiet that
+// follows it, before a restart is decided on what it said.
+const _: () = assert!(SETTINGS_POLL.as_millis() < RESTART_DEBOUNCE.as_millis());
+
+/// How long a restart to run the experiments switched on waits for the
+/// daemon's own work under way to settle (a workspace being made, a hook
+/// running) before it restarts anyway.
+pub const RESTART_SETTLE_WITHIN: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Why the daemon wants to restart: the experiments its settings switch on,
+/// or the settings of one it runs, are not what it runs, and stayed so for
+/// [`RESTART_DEBOUNCE`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RestartWanted {
+    /// The versions it runs now.
+    pub running: Vec<&'static str>,
+    /// The versions the settings switch on, which the next start runs.
+    pub wanted: Vec<&'static str>,
+    /// Their own settings, as their modules read them, which the next start
+    /// runs with (`suspension.after = 30m`).
+    pub settings: Vec<String>,
+    /// The work it waited for settled; false when the wait ran out at
+    /// [`RESTART_SETTLE_WITHIN`] with some still under way.
+    pub settled: bool,
 }
 
 /// How long a login refused for its profile's data waits to be adopted.
@@ -306,6 +368,7 @@ impl Installation {
             workspaces,
             onboarding: self.onboarding.clone(),
             remember_pick: self.pick_keeper.get().cloned().unwrap_or_default(),
+            pins: self.pins.get().cloned().unwrap_or_default(),
         }))
     }
 
@@ -545,6 +608,9 @@ pub struct Daemon {
     /// Holds the machine awake while an agent works, on a supervised
     /// install.
     awake: Option<JoinHandle<()>>,
+    /// The experiments the settings switch on and their settings, seen as
+    /// of the start: any change since reads as changed.
+    wanted: watch::Receiver<settings::experiments::InEffect>,
     // Dropped last: the lock outlives everything that writes under it.
     lock: Option<InstallationLock>,
 }
@@ -601,6 +667,7 @@ pub async fn start(
         .map_err(StartError::Generation)?;
 
     let onboarding = Arc::new(crate::onboarding::Onboarding::open(&data_dir));
+    let launch_experiments = launch.experiments.clone();
     let installation = Arc::new(Installation {
         data_dir,
         front_door,
@@ -616,6 +683,11 @@ pub async fn start(
         auto_reports,
         edge: Mutex::new(edge),
         applied: Mutex::new(settings.initial.clone()),
+        wanted: watch::Sender::new(settings.initial.experiments.in_effect()),
+        started: settings::experiments::InEffect::of(
+            &launch_experiments,
+            &settings.initial.experiments,
+        ),
         awake: Arc::new(crate::awake::Awake::new(settings.initial.keep_awake)),
         settings: crate::host_settings::HostSettings::new(settings),
         onboarding,
@@ -625,6 +697,7 @@ pub async fn start(
         shutdown: watch::Sender::new(false),
         staged_logins: Mutex::new(Vec::new()),
         pick_keeper: std::sync::OnceLock::new(),
+        pins: std::sync::OnceLock::new(),
         analytics: std::sync::OnceLock::new(),
     });
     let keeper = Arc::downgrade(&installation);
@@ -640,6 +713,19 @@ pub async fn start(
                 Err(error) => tracing::warn!(%error, "keeping a new agent default"),
             }
         }));
+    let pinner = Arc::downgrade(&installation);
+    let _ = installation.pins.set(crate::repositories::Pins::new(
+        installation.settings.home().map(std::path::Path::to_owned),
+        move |path, pinned| {
+            let Some(installation) = pinner.upgrade() else {
+                return Ok(());
+            };
+            if let Some(config) = installation.settings.pin(path, pinned)? {
+                installation.apply(&config);
+            }
+            Ok(())
+        },
+    ));
     let uploader = installation.start_analytics(telemetry);
 
     let listed = profiles::list(&installation.data_dir).map_err(StartError::Profiles)?;
@@ -707,7 +793,9 @@ pub async fn start(
         .settings
         .supervised()
         .then(|| installation.awake.hold());
+    let wanted = installation.wanted.subscribe();
     Ok(Daemon {
+        wanted,
         installation,
         generation,
         uploader,
@@ -831,6 +919,79 @@ impl Daemon {
                         "binding the link socket afresh failed"
                     );
                 }
+            }
+        }
+    }
+
+    /// Resolves once the daemon should restart to run the experiments its
+    /// settings switch on, with their own settings. It is one decision,
+    /// made again whenever anything it rests on moves, and taken only when
+    /// all of it holds at once:
+    ///
+    /// - what the settings ask (whichever way they changed: a client, `amux
+    ///   config`, an edit of the file) is not what the daemon runs;
+    /// - that ask has stayed the same for [`RESTART_DEBOUNCE`]: any change
+    ///   to it starts the quiet over, so switches in a row are one restart,
+    ///   and a change undone in time is none;
+    /// - `reads` says the next start can read its config, and has for the
+    ///   quiet: one that could not would not start at all, and the quiet
+    ///   gives the settings poll time to apply the file once it reads;
+    /// - no work that a restart would cut off is under way, unless it has
+    ///   been wanted for [`RESTART_SETTLE_WITHIN`] since the ask first
+    ///   differed from what runs.
+    ///
+    /// A daemon never restarts for the settings it started with: what it
+    /// runs is what they asked. Settings compare as each experiment's
+    /// module reads them, so a value it cannot use, a key it does not read
+    /// or the settings of an experiment that is off change nothing it runs
+    /// and restart nothing, nor does a name this build does not have. Only
+    /// `amux daemon` acts on it; an embedder runs what it was started with.
+    pub async fn restart_wanted(&self, reads: impl Fn() -> bool) -> RestartWanted {
+        /// How often the decision is made again while it waits: what it
+        /// rests on beyond the settings (work under way, the file reading)
+        /// is looked at, not watched.
+        const LOOK_AGAIN: std::time::Duration = std::time::Duration::from_millis(250);
+        let running = self.installation.running_experiments().clone();
+        let mut wanted = self.wanted.clone();
+        let mut asked_since = tokio::time::Instant::now();
+        let mut differs_since: Option<tokio::time::Instant> = None;
+        loop {
+            let now = tokio::time::Instant::now();
+            let asked = wanted.borrow_and_update().clone();
+            if asked == running {
+                differs_since = None;
+            } else {
+                let since = *differs_since.get_or_insert(now);
+                // A config that does not read also starts the quiet over:
+                // once it reads again the daemon's poll has the time to
+                // apply what it now says before anything is decided on it.
+                if !reads() {
+                    asked_since = now;
+                }
+                let settled = self.installation.settled();
+                if now.duration_since(asked_since) >= RESTART_DEBOUNCE
+                    && (settled || now.duration_since(since) >= RESTART_SETTLE_WITHIN)
+                {
+                    return RestartWanted {
+                        running: running.enabled().versions(),
+                        wanted: asked.enabled().versions(),
+                        settings: asked.describe(),
+                        settled,
+                    };
+                }
+            }
+            let changed = if differs_since.is_some() {
+                tokio::select! {
+                    changed = wanted.changed() => Some(changed),
+                    () = tokio::time::sleep(LOOK_AGAIN) => None,
+                }
+            } else {
+                Some(wanted.changed().await)
+            };
+            match changed {
+                Some(Ok(())) => asked_since = tokio::time::Instant::now(),
+                Some(Err(_)) => return std::future::pending().await,
+                None => {}
             }
         }
     }

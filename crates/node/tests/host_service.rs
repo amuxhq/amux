@@ -3,11 +3,11 @@
 //! link. Each provider's catalogue comes from `amux catalogue <provider>`
 //! run against the scripted fakes, kept as a copy per provider, asked again
 //! when the provider's version changes or a signed-out one is due, and
-//! named on the host's fleet entry; the repositories are the ones its
-//! person chose, then where its agents ran.
+//! named on the host's fleet entry. The host's folders are not asked: they
+//! ride on its entry (the registry tests), and pinning one is in the
+//! settings tests.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use prost::Message as _;
 use provider_fakes::script::{INPUT_LOG_ENV, OfferedModel, SCRIPT_ENV, Script};
@@ -16,10 +16,7 @@ use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use tonic::transport::Channel;
-use wire::amux::staging::{
-    self as staging, GetCatalogueRequest, GetCatalogueResponse, ListRepositoriesRequest,
-    ListRepositoriesResponse,
-};
+use wire::amux::staging::{self as staging, GetCatalogueRequest, GetCatalogueResponse};
 use wire::{Catalogue, ProviderOnHost, inventory_event};
 
 use crate::support;
@@ -500,103 +497,5 @@ async fn a_paired_hosts_person_is_answered_for_this_hosts_providers() {
     .unwrap();
 
     drop(on_desk);
-    pair.stop().await;
-}
-
-fn names(entries: &[wire::RepositoryEntry]) -> Vec<&str> {
-    entries.iter().map(|entry| entry.name.as_str()).collect()
-}
-
-fn listing(query: Option<&str>, limit: u32) -> ListRepositoriesRequest {
-    ListRepositoriesRequest {
-        query: query.map(str::to_owned),
-        limit,
-    }
-}
-
-async fn list(
-    channel: &Channel,
-    request: Request<ListRepositoriesRequest>,
-) -> ListRepositoriesResponse {
-    staging::host_service_client(channel.clone())
-        .list_repositories(request)
-        .await
-        .unwrap()
-        .into_inner()
-}
-
-/// Where a host offers to start an agent: its repositories, in the order
-/// its person chose them, then the folders its agents ran in, newest first
-/// and still after the agents are deleted. A paired host's person gets the
-/// same answer.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_host_lists_its_repositories_and_where_its_agents_ran() {
-    let desk = Host::new(&Script::default());
-    let code = desk.install.path("code");
-    for repository in ["site", "amux", "amux-review"] {
-        std::fs::create_dir_all(code.join(repository)).unwrap();
-    }
-    let work = desk.install.work.clone();
-    let (older, newer) = (work.join("older"), work.join("newer"));
-    std::fs::create_dir_all(&older).unwrap();
-    std::fs::create_dir_all(&newer).unwrap();
-    let mut launch = desk.launch();
-    launch.repositories = vec![
-        code.join("site"),
-        code.join("amux"),
-        desk.install.path("missing"),
-        code.join("amux-review"),
-        // A repository an agent also ran in is listed once, among the
-        // chosen ones.
-        newer.clone(),
-    ];
-    let pair = Pair::start(desk, launch).await;
-    let runtime = &pair.desk_runtime;
-    let first = id_of(
-        &runtime
-            .spawn(create(&older, "first", None), None)
-            .await
-            .unwrap(),
-    );
-    // The listing orders recent folders by the agents' creation times,
-    // which the clock stamps in milliseconds.
-    tokio::time::sleep(Duration::from_millis(5)).await;
-    runtime
-        .spawn(create(&newer, "second", None), None)
-        .await
-        .unwrap();
-    runtime.delete(first).await.unwrap();
-
-    let socket = profile_socket(runtime).await;
-    let local = list(&socket, Request::new(listing(None, 50))).await;
-    assert_eq!(
-        names(&local.repositories),
-        ["site", "amux", "amux-review", "newer"],
-        "as chosen, gone ones left out"
-    );
-    assert_eq!(
-        names(&local.recent),
-        ["older"],
-        "deleted agents' folders too, repositories once"
-    );
-    assert_eq!(
-        local.recent[0].path,
-        older.canonicalize().unwrap().to_str().unwrap()
-    );
-    let found = list(&socket, Request::new(listing(Some("REVIEW"), 50))).await;
-    assert!(found.recent.is_empty());
-    assert_eq!(names(&found.repositories), ["amux-review"]);
-    let capped = list(&socket, Request::new(listing(None, 3))).await;
-    assert_eq!(names(&capped.repositories), ["site", "amux", "amux-review"]);
-    assert!(capped.recent.is_empty(), "the limit counts both lists");
-
-    assert_eq!(
-        list(&pair.to_desk, from_a_person(listing(None, 50))).await,
-        local,
-        "the desk answers the laptop's person as it answers its own clients"
-    );
-
-    kill_all(runtime).await;
-    drop(socket);
     pair.stop().await;
 }

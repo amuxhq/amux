@@ -167,10 +167,11 @@ async fn the_socket_and_in_memory_clients_answer_alike() {
         let identity = client.admin().get_device_identity().await.unwrap();
         assert_eq!(identity.host_id, desk, "{name}");
 
-        // The node's own id is an address like any other host's.
+        // The node's own id is an address like any other host's: unpinning
+        // a folder never pinned is answered, and changes nothing.
         client
             .host(&desk)
-            .repositories(None, 10)
+            .pin_folder("/nowhere/never-pinned", false)
             .await
             .unwrap_or_else(|error| panic!("{name}: {error}"));
 

@@ -473,7 +473,7 @@ private struct AskBodyView: View {
             // The phone reads `localhost` as itself: the page opens only on
             // the agent's machine.
             if localPage {
-                why(String(localized: "This page is on the agent’s machine. Open the link in a browser there."))
+                why(String(localized: "This page is on the agent’s computer. Open the link in a browser there."))
             }
         case .access(let reason, let read, let write, let network, let hosts):
             if !reason.isEmpty { why(reason) }

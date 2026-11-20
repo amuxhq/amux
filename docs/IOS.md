@@ -297,14 +297,14 @@ profile. Discovery only supplies candidates and addresses; pairing and the
 pinned handshake establish trust.
 
 The app declares `_amux._udp` in `NSBonjourServices` and explains the
-local-network permission as "amux finds hosts on your network so this phone
-can pair and connect to them directly." When access is denied, the Hosts tab
+local-network permission as "amux finds computers on your network so this phone
+can pair and connect to them directly." When access is denied, the Computers tab
 says so, lists no machine and offers the Settings route.
 
 iOS asks for local network access the first time anything browses, so a fresh
-install does not browse at once. The empty Agents list (and the empty Hosts
+install does not browse at once. The empty Agents list (and the empty Computers
 tab) first says in one line that amux looks for computers on this network and
-that iOS asks next, with **Look for Hosts**; pressing it starts the browser,
+that iOS asks next, with **Look for Computers**; pressing it starts the browser,
 and the system's alert follows. The answer is kept in the app's defaults
 (`localNetworkExplained`). A profile that already trusts a machine counts as
 explained, so an existing install never sees the line.
@@ -313,20 +313,20 @@ A machine running `amux pair` (or onboarding's pairing step) advertises an
 open pairing window: `pair=1` in its TXT record. `LocalDiscovery` reads it
 into `Found.pairing_open`, and a change of it alone is handed over without
 resolving again. A machine found with its window open is offered as "Pair
-with laptop?", and while the Agents list is empty or the Hosts tab is in
+with laptop?", and while the Agents list is empty or the Computers tab is in
 front, the phone raises the keypad for it by itself, so a first pairing is
 opening amux there and typing six digits here. Putting the keypad away is
 remembered for that window: the phone does not raise it again until the
 window closes and another opens. A machine found with no window open says
 "Open amux on laptop to pair" and has no button.
 
-The Hosts tab is one list of paired machines, reachable first, each saying
+The Computers tab is one list of paired machines, reachable first, each saying
 how the phone reaches it; machines found and not yet paired are offered as
 cards above it. Tapping a host opens its page: how the phone reaches it and,
 when it is away or offline, what that means for its agents; its platform,
 version, providers and addresses; that its last dial failed while it is
 offline (in words, not the dial's raw error); and its key's fingerprint in
-full. A host that no longer trusts this phone offers Pair Again, which opens
+full. A host that unpaired this phone offers Pair Again, which opens
 pairing with that host.
 
 Pairing is a sheet raised over whichever tab asked for it. By code, it takes
@@ -373,9 +373,11 @@ opens each one.
 ## Starting an agent
 
 New Agent lists the host's repositories (the folders its amux settings name)
-first, then the folders its agents worked in lately that are not among them, and
-prefills where an agent worked last. Typing searches both, asking the host
-when the list it gave was cut short. A new Claude agent runs the kind the
+first, then the folders its agents worked in lately that are not among them,
+then where Claude Code and Codex ran there, all read from the host's entry in
+the inventory, and prefills where an agent worked last. Typing searches them
+all. A pin beside each folder keeps it among the host's repositories or lets it
+go; the host's entry then says so. A new Claude agent runs the kind the
 host's settings resolve to (`HostView.claude_kind`), the terminal one or the
 SDK one, so the phone starts what amux on that host would.
 
@@ -390,8 +392,11 @@ the browser again and lists every agent again.
 The runtime is told of each moment as a lifecycle input, fed on the core
 queue: Foreground on coming to the front, Background on going to the back,
 Suspending when the app is put away and the system is about to suspend it
-(and when a push that woke it in the background is done), and Woken when a
-push wakes it in the background. Suspending says goodbye on every link,
+(and when a push that woke it in the background is done, if nobody has
+brought the app to the front while it waited), and Woken when a push wakes
+it in the background. The coordinator hands them over one at a time, in the
+order it decided them, so coming to the front just after a suspend dials
+everything again rather than being overtaken by it. Suspending says goodbye on every link,
 closes them and the relay link, stops dialling and takes no connection
 until it runs again, so a host that redials the phone at once on a path of
 its own is refused rather than given a link the phone sleeps holding; then

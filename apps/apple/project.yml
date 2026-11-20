@@ -125,7 +125,7 @@ targets:
         # nothing at all, and a phone on the same network as a machine would
         # report finding none.
         NSBonjourServices: [_amux._udp]
-        NSLocalNetworkUsageDescription: amux finds hosts on your network so this phone can pair and connect to them directly.
+        NSLocalNetworkUsageDescription: amux finds computers on your network so this phone can pair and connect to them directly.
         NSSpeechRecognitionUsageDescription: Dictate messages with speech recognition on this iPhone.
         NSMicrophoneUsageDescription: Use the microphone to dictate into your message.
         UILaunchScreen: {}

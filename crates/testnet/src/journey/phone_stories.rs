@@ -332,7 +332,7 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
 /// there and the machine it names is trusted.
 fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
     let host_id = journey.host_id(host);
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     journey.wait_for(&[&format!("hosts.found.{host_id}")])?;
     let mut pairing = journey.amux(host, &["pair"])?;
     let pin = printed_pin(&mut pairing)?;
@@ -547,7 +547,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         |drawn| !drawn.has("pair-confirm"),
         "the pairing sheet closed",
     )?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let row = format!("hosts.row.{desk}");
     let drawn = journey.wait(
         |drawn| drawn.has(&row) && !drawn.has("pair-confirm"),
@@ -1146,6 +1146,7 @@ fn send_while_away(journey: &mut PhoneJourney) -> Proved {
 
 const LIMIT: &str = "5-hour limit reached · resets ";
 const SIGN_IN: &str = "Run claude and sign in with /login on desk.";
+const RETRY: &str = "Signed in elsewhere? Send a message to try again.";
 
 fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     journey.launch(Launch::plain())?;
@@ -1175,17 +1176,19 @@ fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     reflected_once(&past, "Try again.")?;
     let control = negative_control(reflected_once(&past, "Try again. (a wrong prompt)"))?;
 
-    // A refused credential takes the composer's place: Claude must be
-    // signed in again on the host it runs on.
+    // A refused credential puts a notice over the composer: Claude must be
+    // signed in again on the host it runs on. The composer still sends, and
+    // sending is the retry once Claude is signed in elsewhere.
     leave_chat(journey)?;
     let expired = open_agent(journey, "expired")?;
     send(journey, "Check the links.")?;
     let asked = |drawn: &Drawn| {
         drawn.label("chat.foot.sign-in") == "Claude needs you to sign in"
             && drawn.value("chat.foot.sign-in").contains(SIGN_IN)
-            && !drawn.has("chat.field")
+            && drawn.value("chat.foot.sign-in").contains(RETRY)
+            && drawn.has("chat.field")
     };
-    journey.wait(asked, "signing in in the composer's place")?;
+    journey.wait(asked, "the sign-in notice over the composer")?;
     let refused = journey.wait_chat("desk", "expired", |chat| phase(chat) == "IDLE", "refused")?;
     reflected_once(&refused, "Check the links.")?;
     let row = format!("home.row.{expired}");
@@ -1194,12 +1197,25 @@ fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     journey.tap(&row)?;
     journey.wait(asked, "the chat again")?;
     journey.screen("sign-in", &["chat.row.turn-end"])?;
+    send(journey, "Try them again.")?;
+    journey.wait(
+        |drawn| labelled(drawn, "Links checked.") && !drawn.has("chat.foot.sign-in"),
+        "the answer that clears the notice",
+    )?;
+    let retried = journey.wait_chat(
+        "desk",
+        "expired",
+        |chat| phase(chat) == "IDLE" && prompts(chat, "Try them again.").len() == 1,
+        "retried",
+    )?;
+    reflected_once(&retried, "Try them again.")?;
     Ok(vec![
         "at its usage limit the strip over the composer named the 5-hour window and when it resets".to_owned(),
         "a prompt still went past the limit and was answered; the desk holds it once".to_owned(),
         control,
-        "refused its credential, Claude's chat put signing in in the composer's place, naming desk to sign in on".to_owned(),
+        "refused its credential, Claude's chat put a sign-in notice over a composer that still sends, naming desk to sign in on".to_owned(),
         "the desk holds the refused turn's prompt once".to_owned(),
+        "signed in again, a message sent from that composer was answered, the answer took the notice away, and the desk holds it once".to_owned(),
     ])
 }
 
@@ -1764,7 +1780,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
         |drawn| !drawn.has(&row) && drawn.has("home"),
         "bob's empty fleet",
     )?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let drawn = journey.wait(|drawn| drawn.has("hosts"), "bob's hosts")?;
     if drawn.has(&format!("hosts.row.{desk}")) {
         return Err("bob's profile knows the desk".to_owned());
@@ -1800,7 +1816,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
     )?;
     journey.tap("you.close")?;
     journey.wait(|drawn| !drawn.has("you"), "Settings put away")?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     journey.wait(
         |drawn| labelled(drawn, "signed out"),
         "the hosts tab naming the sign-out",
@@ -2088,7 +2104,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     // Signed in, the phone reaches the desk only through the relay the
     // account service named: the desk has no network in common with it.
     pair_through_the_relay(journey, "desk")?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let desk = journey.host_id("desk");
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
@@ -2202,7 +2218,7 @@ fn one_tap_sign_in(journey: &mut PhoneJourney) -> Proved {
     journey.screen("signed-in", &[])?;
     close_settings(journey)?;
 
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let desk = journey.host_id("desk");
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
@@ -2285,7 +2301,7 @@ fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
         "the pairing sheet closed",
     )?;
     journey.screen("paired", &[])?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
     round_trip(journey, "desk-work", RELAYED, THROUGH_RELAY)?;
@@ -2495,7 +2511,7 @@ fn accessibility(journey: &mut PhoneJourney) -> Proved {
     // Hosts and Settings at the same size: every control whole across the
     // screen, and the Appearance control's choices clear of one another.
     leave_chat(journey)?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let row = format!("hosts.row.{}", journey.host_id("desk"));
     let hosts = journey.wait_for(&[&row])?;
     across_the_screen(&hosts, "hosts.")?;
@@ -2591,7 +2607,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         .record
         .actions
         .push("the system says the local network was refused".to_owned());
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let drawn = journey.wait_for(&["hosts.localNetwork.refused", "hosts.localNetwork.settings"])?;
     if drawn.has(&offer) {
         return Err("the phone offers the desk with the local network refused".to_owned());
@@ -2605,7 +2621,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         .record
         .actions
         .push("the local network granted in Settings and the app opened again".to_owned());
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     journey.wait(
         |drawn| drawn.has(&offer) && !drawn.has("hosts.localNetwork.refused"),
         "the desk found",
@@ -2642,7 +2658,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         "the pairing sheet closed",
     )?;
     pairing.wait(Duration::from_secs(30))?;
-    journey.tab("Hosts")?;
+    journey.tab("Computers")?;
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
     round_trip(

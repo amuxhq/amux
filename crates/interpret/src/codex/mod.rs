@@ -668,9 +668,10 @@ pub struct State {
     requests: BTreeMap<String, Request>,
     next_request: u64,
     next_boundary: u64,
-    /// The first prompt was drawn before Codex started, under the started
-    /// boundary, so the thread's start writes none.
-    started_drawn: bool,
+    /// The boundary drawn above a first prompt drawn before Codex started:
+    /// the thread's start fills it in rather than drawing a second.
+    #[serde(default)]
+    early_boundary: Option<crate::shared::EarlyBoundary>,
     /// Agent messages accepted while no thread was running.
     #[serde(with = "serde_pb::msgs")]
     held: Vec<Envelope>,
@@ -804,7 +805,7 @@ impl State {
             requests: BTreeMap::new(),
             next_request: 0,
             next_boundary: 0,
-            started_drawn: false,
+            early_boundary: None,
             held: Vec::new(),
             works: BTreeMap::new(),
             sent: BTreeMap::new(),
@@ -1233,17 +1234,42 @@ impl State {
         );
     }
 
-    fn boundary_item(&mut self, emit: &mut Emit, boundary: wire::Boundary) {
+    fn boundary_item(&mut self, emit: &mut Emit, boundary: wire::Boundary) -> String {
         self.next_boundary += 1;
+        let key = format!("boundary:{}", self.next_boundary);
+        self.boundary_at(emit, key.clone(), boundary);
+        key
+    }
+
+    fn boundary_at(&mut self, emit: &mut Emit, key: String, boundary: wire::Boundary) {
         self.emit_item(
             emit,
             ItemDraft {
-                key: format!("boundary:{}", self.next_boundary),
+                key,
                 body: item_body(codex_item::Kind::Boundary(boundary)),
                 complete: true,
                 ..Default::default()
             },
         );
+    }
+
+    /// A thread's start: the boundary a first prompt drawn ahead of it
+    /// already placed above itself is filled in, else one is drawn.
+    fn start_boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind) {
+        let boundary = wire::Boundary {
+            kind: kind as i32,
+            ..Default::default()
+        };
+        match self.early_boundary.take() {
+            Some(early) => {
+                if let Some(key) = early.refill(kind) {
+                    self.boundary_at(emit, key, boundary);
+                }
+            }
+            None => {
+                self.boundary_item(emit, boundary);
+            }
+        }
     }
 
     /// When an idle compaction falls due: the thread is big enough and the
@@ -1503,15 +1529,25 @@ impl State {
         }
     }
 
-    /// Draws the first prompt while Codex is still starting.
+    /// Draws the incarnation's first prompt while Codex is still starting,
+    /// under the boundary its thread's start will fill in: a later
+    /// incarnation's thread is a resume.
     fn draw_opening(&mut self, emit: &mut Emit) {
         if let Some(entry) = self.shared.opening_to_draw() {
-            self.boundary(
-                emit,
-                wire::BoundaryKind::Started,
-                wire::IncarnationEnd::default(),
-            );
-            self.started_drawn = true;
+            let kind = if self.incarnation > 1 {
+                wire::BoundaryKind::Resumed
+            } else {
+                wire::BoundaryKind::Started
+            };
+            let boundary = wire::Boundary {
+                kind: kind as i32,
+                ..Default::default()
+            };
+            let key = self.boundary_item(emit, boundary);
+            self.early_boundary = Some(crate::shared::EarlyBoundary {
+                key,
+                kind: kind as i32,
+            });
             self.prompt_row(emit, entry);
         }
     }

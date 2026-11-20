@@ -866,10 +866,6 @@ impl ChatView {
             let action = self.ask.box_key(&card, key);
             return self.ask_effects(state, &card, action);
         }
-        // Signing in happens elsewhere; the draft waits behind the box.
-        if ui_view::sign_in(state).is_some() {
-            return vec![];
-        }
         // A provider subagent takes no messages: there is no field to type
         // in, and Enter sends nothing.
         if matches!(state.composer(), Composer::Native { .. }) {
@@ -893,7 +889,6 @@ impl ChatView {
     fn offered_commands(&self, state: &SessionState) -> Vec<ui_view::CommandMatch> {
         let text = self.editor.text();
         if !self.composer_has_keys(state)
-            || ui_view::sign_in(state).is_some()
             || self.editor.cursor_chars() != text.chars().count()
             || self.menu.closed(text)
         {
@@ -2635,7 +2630,7 @@ impl ChatView {
         let host = state
             .host()
             .map(|host| host.name().to_owned())
-            .unwrap_or_else(|| "its host".into());
+            .unwrap_or_else(|| "its computer".into());
 
         let overview = self.overview(state);
         let sign_in = ui_view::sign_in(state);
@@ -2734,6 +2729,16 @@ impl ChatView {
         // brings earlier ones in; one line says how many more wait, on the
         // side they are on, so the block's height never changes as it moves.
         const QUEUED_SHOWN: usize = 3;
+        // The agent's account needs signing in: above everything that rests
+        // on the composer, a notice says how. The composer still sends,
+        // since sending is how someone who signed in elsewhere tries again;
+        // a provider subagent's takes no messages, so it is left alone.
+        if let Some(sign_in) = &sign_in
+            && !matches!(state.composer(), Composer::Native { .. })
+        {
+            bottom.extend(sign_in_notice(state.kind(), &host, sign_in, width, theme));
+            bottom.push(Line::default());
+        }
         let entries = self.queue_entries(state, &host);
         if let Some(selected) = self.tray {
             if entries.is_empty() {
@@ -2935,18 +2940,6 @@ impl ChatView {
                     }
                     None => keys(&[&[("enter", "choose")], stop, more].concat()),
                 });
-            }
-            // The agent's account needs signing in: the box says how, as an
-            // ask would, and keeps the draft for afterwards. An ask the
-            // agent exited with leaves the composer to say it exited.
-            _ if let Some(sign_in) = &sign_in => {
-                let (lines, mode) =
-                    sign_in_box(state.kind(), &host, sign_in, &summary, width, theme);
-                if let Some(cols) = mode {
-                    ask_mode = Some((bottom.len() + lines.len() - 1, cols));
-                }
-                bottom.extend(lines);
-                hint = Hint::Keys(keys(&[(&format!("ctrl+{}", self.leader), "more")]));
             }
             _ if let Composer::Native { stop } = state.composer() => {
                 bottom.extend(native_box(state.kind(), &stop, &summary, width, theme));
@@ -3757,12 +3750,16 @@ fn problem_words(
     theme: Theme,
 ) -> Option<(String, ratatui::style::Style)> {
     let away_words = || {
-        let host = if host.is_empty() { "host" } else { host };
+        let host = if host.is_empty() {
+            "its computer"
+        } else {
+            host
+        };
         match reach {
             Reach::Offline(Offline::SignedOut) => {
-                format!("{host} away · this machine is signed out")
+                format!("{host} away · this computer is signed out")
             }
-            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Offline(Offline::Revoked) => format!("{host} unpaired this computer"),
             Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
             Reach::Online(_) | Reach::Offline(Offline::Plain) => {
                 format!("{host} away · not current")
@@ -3859,23 +3856,6 @@ fn ends_with_exit(state: &SessionState) -> bool {
     })
 }
 
-/// The sign-in box in the composer's place, framed with the composer's
-/// edge, and the columns of the mode's words on that edge.
-fn sign_in_box(
-    kind: wire::Kind,
-    host: &str,
-    sign_in: &ui_view::SignInView,
-    controls: &ui_view::ControlsSummary,
-    width: usize,
-    theme: Theme,
-) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
-    const MARGIN: usize = 2;
-    let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
-    let body = sign_in_lines(kind, host, sign_in, inner, theme);
-    let (lines, mode, _) = framed(body, theme.attention(), &ROUNDED, controls, width, theme);
-    (lines, mode)
-}
-
 /// Who runs a provider subagent, by its kind.
 fn provider_name(kind: wire::Kind) -> &'static str {
     match kind {
@@ -3950,34 +3930,45 @@ pub(crate) fn native_composer_lines(
     lines
 }
 
-/// The sign-in box alone, its edge naming `model`, as the component
-/// catalogue draws it.
+/// The sign-in notice over an empty composer, as the component catalogue
+/// draws it.
 #[cfg(feature = "fixtures")]
 pub(crate) fn sign_in_composer_lines(
     kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
-    model: &str,
+    name: &str,
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let edge = ui_view::ControlsSummary {
-        model: Some(model.to_owned()),
-        ..Default::default()
-    };
-    sign_in_box(kind, host, sign_in, &edge, width, theme).0
+    let mut lines = sign_in_notice(kind, host, sign_in, width, theme);
+    lines.push(Line::default());
+    lines.extend(composer_lines(
+        &Editor::default(),
+        &Composer::Send,
+        name,
+        host,
+        Reach::Online(wire::RouteKind::Direct),
+        width,
+        theme,
+    ));
+    lines
 }
 
-/// The box for an agent whose account needs signing in: who, the account
-/// and what went wrong, then how to sign in. Nothing here can do it for
-/// you, so there are no choices.
-fn sign_in_lines(
+/// The notice for an agent whose account needs signing in: who, the
+/// account and what went wrong, how to sign in, and that sending tries
+/// again. Nothing here can sign in for you, so there are no choices; the
+/// provider's next good answer takes the notice away.
+fn sign_in_notice(
     kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
+    // The notice's words line up with the composer's text below it.
+    const INDENT: usize = 4;
+    let inner = width.saturating_sub(INDENT + 2).max(1);
     let (who, steps): (&str, Vec<(&str, bool)>) = match kind {
         wire::Kind::Codex => (
             "Codex",
@@ -3994,8 +3985,12 @@ fn sign_in_lines(
             ],
         ),
     };
+    let indented = || Line::from(" ".repeat(INDENT));
     let mut lines = Vec::new();
-    let mut head = Line::from(Span::styled("● ", theme.attention()));
+    let mut head = Line::from(vec![
+        Span::raw(" ".repeat(INDENT - 2)),
+        Span::styled("● ", theme.attention()),
+    ]);
     push(
         &mut head,
         format!("{who} needs you to sign in"),
@@ -4003,12 +3998,11 @@ fn sign_in_lines(
         width,
     );
     lines.push(head);
-    lines.push(Line::default());
     let what = match sign_in.state {
         wire::SignInState::Failed => "Sign-in failed",
         _ => "Signed out",
     };
-    let mut status = Line::default();
+    let mut status = indented();
     push(&mut status, what, theme.muted(), width);
     if !sign_in.account.is_empty() {
         push(
@@ -4019,16 +4013,15 @@ fn sign_in_lines(
         );
     }
     lines.push(status);
-    for part in text::wrap(&sign_in.message, width.max(1)) {
+    for part in text::wrap(&sign_in.message, inner) {
         if part.is_empty() {
             continue;
         }
-        let mut line = Line::default();
+        let mut line = indented();
         push(&mut line, part, theme.faint(), width);
         lines.push(line);
     }
-    lines.push(Line::default());
-    let mut how = Line::default();
+    let mut how = indented();
     for (words, code) in steps {
         push(
             &mut how,
@@ -4039,21 +4032,29 @@ fn sign_in_lines(
     }
     push(&mut how, format!("{host}."), theme.text(), width);
     lines.push(how);
+    let mut retry = indented();
+    push(
+        &mut retry,
+        "Signed in elsewhere? Send a message to try again.",
+        theme.muted(),
+        width,
+    );
+    lines.push(retry);
     lines
 }
 
 /// Why a host is away when its daemon lists it so: the relay alone sees
 /// it, and on the free plan the relay opens no connection between hosts.
-pub(crate) const FREE_PLAN_AWAY: &str = "the free plan does not relay between hosts";
+pub(crate) const FREE_PLAN_AWAY: &str = "reaching it from another network needs Pro";
 
 /// Why the composer cannot send while the link to the agent's host is
 /// down, for the box's edge; None when it can.
 fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
     Some(match composer {
         Composer::Waiting(Waiting::Detached) => match reach {
-            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Offline(Offline::Revoked) => format!("{host} unpaired this computer"),
             Reach::Offline(Offline::SignedOut) => {
-                format!("{host} is away · this machine is signed out")
+                format!("{host} is away · this computer is signed out")
             }
             Reach::Away => format!("{host} is away · {FREE_PLAN_AWAY}"),
             Reach::Online(_) | Reach::Offline(Offline::Plain) => format!("{host} is away"),
@@ -4133,8 +4134,8 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         wire::Refusal::Exited => "it had exited",
         wire::Refusal::AgentClosed => "it was settled",
         wire::Refusal::Exiting => "it was exiting",
-        wire::Refusal::Draining => "its host is shutting down",
-        wire::Refusal::HostUnreachable => "its host is away",
+        wire::Refusal::Draining => "its computer is shutting down",
+        wire::Refusal::HostUnreachable => "its computer is away",
         wire::Refusal::Unsupported => "this agent can't take it",
         wire::Refusal::ClosedAsk => "the ask had already closed",
         wire::Refusal::NotQueued => "it was no longer queued",
@@ -4483,13 +4484,13 @@ fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, leader: char) 
         Composer::Resume => pairs.push(("enter", "resume")),
         Composer::Native { .. } => {}
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
-            return waits("can't send until this machine signs in");
+            return waits("can't send until this computer signs in");
         }
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
             return waits("can't send until you pair again");
         }
         Composer::Waiting(Waiting::Detached) => {
-            return waits("can't send until the host is back");
+            return waits("can't send until its computer is back");
         }
         Composer::Waiting(Waiting::Reconnecting) => {
             return waits("can't send until amux is back");
@@ -4849,7 +4850,7 @@ fn empty_feed(
     let words = if state.has_snapshot() && state.caught_up() {
         Some("Nothing here yet.")
     } else if away {
-        Some("Its host is away, and nothing of this chat is held here yet.")
+        Some("Its computer is away, and nothing of this chat is held here yet.")
     } else if waited_ms >= LOADING_HINT_MS {
         Some("Loading…")
     } else {

@@ -6,12 +6,12 @@
 
   ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-    ○ desk-work  Claude · /tmp/jo╭─ Hosts ──────────────────────────────────╮                          now
+    ○ desk-work  Claude · /tmp/jo╭─ Devices ────────────────────────────────╮                          now
                                  │                                          │
-                                 │ desk     direct                          │
-                                 │ laptop   this machine                    │
+                                 │ desk     on this network                 │
+                                 │ laptop   this computer                   │
                                  │                                          │
-                                 │ Pair another machine with amux pair      │
+                                 │ Pair another computer with amux pair     │
                                  │ esc close                                │
                                  ╰──────────────────────────────────────────╯
 

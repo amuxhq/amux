@@ -287,7 +287,7 @@ impl Report {
         admin
             .submit_report(request)
             .await
-            .map_err(|error| format!("the daemon could not take the report: {error}"))
+            .map_err(|error| format!("amux could not take the report: {error}"))
     }
 }
 

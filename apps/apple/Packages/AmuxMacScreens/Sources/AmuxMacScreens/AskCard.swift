@@ -18,17 +18,26 @@ struct AskCardView: View {
     @State private var replying = false
     @State private var reply = ""
 
+    /// It asks a question rather than for leave.
+    private var asks: Bool {
+        switch card.body {
+        case .question, .form: true
+        default: false
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Icon("hand", size: 15).foregroundStyle(Palette.you)
-                Text(ChatWords.headline(card)).fontWeight(.semibold)
+                Icon(asks ? "message-circle-question" : "shield", size: 14)
+                    .foregroundStyle(asks ? Palette.question : Palette.you)
+                Text(ChatWords.headline(card)).foregroundStyle(Palette.textSecondary)
                 Spacer()
                 if let position = ChatWords.position(card) {
-                    Text(position).foregroundStyle(.tertiary).font(.ui(.meta))
+                    Text(position).foregroundStyle(Palette.textTertiary)
                 }
             }
-            .font(.ui(.body))
+            .font(.ui(.meta, weight: .medium))
             content
             state
             if case .question(let questions) = card.body {
@@ -37,9 +46,12 @@ struct AskCardView: View {
                 choices
             }
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.raised))
-        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(Palette.you.opacity(0.5)))
+        .font(.ui(.prose))
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.card))
+        // The hand says it waits on the person; the card itself stays calm.
+        .overlay(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).strokeBorder(Palette.edge))
+        .elevation(.floating)
         .onChange(of: card.key, initial: true) { _, _ in reset() }
     }
 
@@ -62,14 +74,13 @@ struct AskCardView: View {
         switch card.body {
         case .command(let command, let cwd, let reason, let description):
             if !description.isEmpty || !reason.isEmpty {
-                Text(description.isEmpty ? reason : description).foregroundStyle(.secondary)
+                Text(description.isEmpty ? reason : description)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Mono(text: command)
-            if !cwd.isEmpty {
-                Text("in \(PlaceNames.path(cwd))").font(.ui(.caption)).foregroundStyle(.tertiary)
-            }
+            Mono(text: command, folder: cwd.isEmpty ? nil : PlaceNames.path(cwd))
         case .edit(let path, _, let added, let removed, let patch, let reason, _, _):
-            if !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
+            if !reason.isEmpty { Text(reason).foregroundStyle(Palette.textSecondary) }
             HStack(spacing: 6) {
                 Text(path).font(.mono(.meta)).lineLimit(1).truncationMode(.head)
                 Text("+\(added)").foregroundStyle(Palette.added)
@@ -100,13 +111,13 @@ struct AskCardView: View {
             }
             .frame(maxHeight: 280)
         case .form(_, let message, let fields):
-            Text(message).foregroundStyle(.secondary)
-            Text(fields.map(\.title).joined(separator: ", ")).font(.ui(.meta)).foregroundStyle(.tertiary)
+            Text(message).foregroundStyle(Palette.textSecondary)
+            Text(fields.map(\.title).joined(separator: ", ")).font(.ui(.meta)).foregroundStyle(Palette.textTertiary)
         case .link(_, let message, let url, _):
-            Text(message).foregroundStyle(.secondary)
+            Text(message).foregroundStyle(Palette.textSecondary)
             if let link = URL(string: url) { Link(url, destination: link).font(.ui(.meta)) }
         case .access(let reason, let read, let write, let network, let hosts):
-            if !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
+            if !reason.isEmpty { Text(reason).foregroundStyle(Palette.textSecondary) }
             VStack(alignment: .leading, spacing: 2) {
                 if !read.isEmpty { Text("Read \(read.joined(separator: ", "))") }
                 if !write.isEmpty { Text("Write \(write.joined(separator: ", "))") }
@@ -114,10 +125,10 @@ struct AskCardView: View {
             }
             .font(.mono(.meta))
         case .unanswerable(let reason):
-            Text(reason).foregroundStyle(.secondary)
-            Text("Answer it in the agent's own terminal, or stop it.")
+            Text(reason).foregroundStyle(Palette.textSecondary)
+            Text("Answer this in the agent’s terminal, or stop the agent.")
                 .font(.ui(.meta))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Palette.textTertiary)
         }
     }
 
@@ -126,13 +137,13 @@ struct AskCardView: View {
         case .sending:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text("Sending…").foregroundStyle(.secondary)
+                Text("Sending…").foregroundStyle(Palette.textSecondary)
             }
             .font(.ui(.meta))
         case .rejected(let refusal):
-            Text(refusal.detail ?? "The answer was refused").font(.ui(.meta)).foregroundStyle(Palette.failure)
+            Text(refusal.detail ?? "Your answer wasn’t accepted").font(.ui(.meta)).foregroundStyle(Palette.failure)
         case .notConfirmed:
-            Text("The answer may not have arrived").font(.ui(.meta)).foregroundStyle(Palette.caution)
+            Text("Your answer may not have arrived").font(.ui(.meta)).foregroundStyle(Palette.caution)
         case .open, .dismissed:
             EmptyView()
         }
@@ -153,16 +164,104 @@ struct AskCardView: View {
                     .keyboardShortcut(.defaultAction)
             }
         } else {
-            FlowButtons {
-                ForEach(Array(card.choices.enumerated()), id: \.offset) { index, choice in
-                    let prominent = choice.primary && !card.defaultToNo
-                    Button(ChatWords.button(choice)) {
-                        if choice.takesNote { noting = index } else { chat.answer(choice: index, note: nil) }
+            // One row at the right, a refusal first and on Escape, the
+            // expected answer last and on Return, as a Mac dialog orders
+            // its buttons. The other answers ride on the expected one's
+            // chevron, so the row never wraps.
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                ForEach(refusals, id: \.self) { index in
+                    choiceButton(index, hint: "Esc")
+                }
+                if let primary {
+                    HStack(spacing: 1) {
+                        choiceButton(primary, hint: "⏎", split: !otherChoices.isEmpty)
+                        if !otherChoices.isEmpty {
+                            Menu {
+                                ForEach(otherChoices, id: \.self) { index in
+                                    Button(ChatWords.button(card.choices[index])) { pick(index) }
+                                }
+                            } label: {
+                                Icon("chevron-down", size: 12)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 26, height: 28)
+                                    .background(
+                                        UnevenRoundedRectangle(
+                                            bottomTrailingRadius: Radius.control, topTrailingRadius: Radius.control,
+                                            style: .continuous
+                                        ).fill(Palette.accent))
+                                    .contentShape(Rectangle())
+                            }
+                            .menuStyle(.button)
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help("More options")
+                            .disabled(card.state == .sending)
+                        }
                     }
-                    .buttonStyle(PillButtonStyle(prominent: prominent))
-                    .disabled(card.state == .sending)
+                } else {
+                    ForEach(otherChoices, id: \.self) { index in
+                        choiceButton(index, hint: nil)
+                    }
                 }
             }
+        }
+    }
+
+    private var refusals: [Int] { card.choices.indices.filter { Self.refuses(card.choices[$0]) } }
+
+    /// The expected answer, when the card has one the person is led to.
+    private var primary: Int? {
+        guard !card.defaultToNo else { return nil }
+        return card.choices.indices.first { card.choices[$0].primary && !Self.refuses(card.choices[$0]) }
+    }
+
+    /// The answers that are neither a refusal nor the expected one.
+    private var otherChoices: [Int] {
+        card.choices.indices.filter { !Self.refuses(card.choices[$0]) && $0 != primary }
+    }
+
+    private func pick(_ index: Int) {
+        if card.choices[index].takesNote { noting = index } else { chat.answer(choice: index, note: nil) }
+    }
+
+    /// A choice as a pill with the key that answers it.
+    private func choiceButton(_ index: Int, hint: String?, split: Bool = false) -> some View {
+        let choice = card.choices[index]
+        let prominent = index == primary
+        return Button {
+            pick(index)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(ChatWords.button(choice))
+                if let hint {
+                    Text(hint).font(.ui(.caption)).opacity(0.6)
+                }
+            }
+        }
+        .buttonStyle(PillButtonStyle(prominent: prominent, joined: split))
+        .disabled(card.state == .sending)
+        .modifier(ChoiceKey(prominent: prominent, refuses: Self.refuses(choice)))
+    }
+
+    /// The choices in a dialog's order: refusals first, the expected one
+    /// last, the rest as the provider gave them.
+    private var ordered: [Int] {
+        let indices = Array(card.choices.indices)
+        func rank(_ index: Int) -> Int {
+            let choice = card.choices[index]
+            if Self.refuses(choice) { return 0 }
+            if choice.primary && !card.defaultToNo { return 2 }
+            return 1
+        }
+        return indices.sorted { rank($0) == rank($1) ? $0 < $1 : rank($0) < rank($1) }
+    }
+
+    static func refuses(_ choice: Choice) -> Bool {
+        switch choice.outcome {
+        case .deny, .denyAndStop, .decline: return true
+        default: return false
         }
     }
 
@@ -209,7 +308,7 @@ struct AskCardView: View {
     private func answerButtons(_ questions: [QuestionView]) -> some View {
         HStack(spacing: 8) {
             if card.questionReply {
-                Button("Reply Instead") { replying = true }
+                Button("Reply instead") { replying = true }
                     .buttonStyle(PillButtonStyle())
             }
             Spacer()
@@ -249,11 +348,11 @@ private struct Question: View {
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Icon(mark(number), size: 14)
-                            .foregroundStyle(picked.contains(number) ? Palette.accent : .secondary)
+                            .foregroundStyle(picked.contains(number) ? Palette.accent : Palette.textSecondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label)
                             if !option.description.isEmpty {
-                                Text(option.description).font(.ui(.meta)).foregroundStyle(.secondary)
+                                Text(option.description).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                             }
                         }
                         Spacer(minLength: 0)
@@ -277,19 +376,67 @@ private struct Question: View {
 }
 
 /// A command or arguments in mono, a few lines at most.
+/// Code set into the card; a command with the folder it runs in before
+/// it, as a shell prompt shows it.
 private struct Mono: View {
     let text: String
+    var folder: String?
     var lines = 6
+    /// Some of the command lies past the right edge.
+    @State private var more = false
 
     var body: some View {
-        Text(text)
-            .font(.mono(.meta))
-            .lineLimit(lines)
-            .textSelection(.enabled)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+        // Scrolled sideways rather than wrapped: a command broken inside a
+        // flag misreads. A fade at the edge says there is more of it, so a
+        // cut-off flag is not read as the whole command.
+        ScrollView(.horizontal, showsIndicators: false) {
+            prompt
+                .font(.mono(.callout))
+                .lineLimit(lines)
+                .lineSpacing(3)
+                .textSelection(.enabled)
+                .fixedSize()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+        }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1
+            } action: { _, now in
+                more = now
+            }
+            .overlay(alignment: .trailing) {
+                if more {
+                    LinearGradient(colors: [Palette.inset.opacity(0), Palette.inset], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 32)
+                        .padding(1)
+                        .allowsHitTesting(false)
+                }
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+            .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.inset))
+            .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.line))
+    }
+
+    private var prompt: Text {
+        guard let folder else { return Text(text) }
+        return Text("\(folder) ❯ ").foregroundStyle(Palette.textTertiary) + Text(text)
+    }
+}
+
+/// The key a choice answers to: Return for the expected one, Escape for a
+/// refusal.
+private struct ChoiceKey: ViewModifier {
+    let prominent: Bool
+    let refuses: Bool
+
+    func body(content: Content) -> some View {
+        if prominent {
+            content.keyboardShortcut(.defaultAction)
+        } else if refuses {
+            content.keyboardShortcut(.cancelAction)
+        } else {
+            content
+        }
     }
 }
 
@@ -312,7 +459,7 @@ private struct Patch: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: 220)
-        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.well))
+        .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.inset))
     }
 }
 
@@ -365,12 +512,21 @@ struct PatchText: View {
     var runs: [CodeRun]?
 
     var body: some View {
-        HStack(spacing: 0) {
+        // Wrapped, never cut: a review that hides the end of a line hides
+        // what changed in it. The indent is a column of its own, so a
+        // wrapped line hangs under its code and keeps its shape.
+        let (indent, code) = Self.split(text)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(sign).frame(width: 16).foregroundStyle(signTint)
+            if !indent.isEmpty { Text(indent).fixedSize() }
             Group {
-                if let runs { Text(CodeText.attributed(runs, Palette.syntax)) } else { Text(text) }
+                if let runs {
+                    Text(CodeText.attributed(Self.dropping(text.count - code.count, from: runs), Palette.syntax))
+                } else {
+                    Text(code)
+                }
             }
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .font(.mono(.small))
@@ -386,11 +542,32 @@ struct PatchText: View {
         }
     }
 
+    /// The line's indent, as no-break spaces with tabs four wide, and the
+    /// code after it.
+    static func split(_ text: String) -> (indent: String, code: String) {
+        let indent = text.prefix { $0 == " " || $0 == "\t" }
+        let width = indent.reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+        return (String(repeating: "\u{00A0}", count: width), String(text.dropFirst(indent.count)))
+    }
+
+    /// `runs` without their first `count` characters: the coloured code
+    /// after an indent drawn as a column of its own.
+    static func dropping(_ count: Int, from runs: [CodeRun]) -> [CodeRun] {
+        var left = count
+        return runs.compactMap { run in
+            guard left > 0 else { return run }
+            let cut = min(left, run.text.count)
+            left -= cut
+            let rest = String(run.text.dropFirst(cut))
+            return rest.isEmpty ? nil : CodeRun(text: rest, kind: run.kind)
+        }
+    }
+
     /// How strongly a changed line's green or red lies under it: enough to
     /// read as a change, light enough that its code's colours still read.
-    static let wash = 0.09
+    static let wash = 0.1
 
-    private var tint: Color {
+    var tint: Color {
         switch kind {
         case .added: Palette.added.opacity(Self.wash)
         case .removed: Palette.removed.opacity(Self.wash)
@@ -402,7 +579,7 @@ struct PatchText: View {
         switch kind {
         case .added: Palette.added
         case .removed: Palette.removed
-        case .context: .secondary
+        case .context: Palette.textSecondary
         }
     }
 }

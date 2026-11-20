@@ -15,8 +15,6 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use wire::RepositoryEntry;
-
 /// How far back a session counts.
 pub(crate) const WITHIN: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
@@ -31,12 +29,12 @@ const LINES_READ: usize = 64;
 /// The Git repositories sessions ran in within [`WITHIN`] of `now`, newest
 /// first, at most [`MOST`]. Reads the file system: call it off the async
 /// workers.
-pub(crate) fn suggest(home: &Path, now: SystemTime) -> Vec<RepositoryEntry> {
+pub(crate) fn suggest(home: &Path, now: SystemTime) -> Vec<wire::Folder> {
     suggest_outside(home, now, &temporary_dirs())
 }
 
 /// [`suggest`], leaving out repositories under `temporary`.
-fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<RepositoryEntry> {
+fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<wire::Folder> {
     let since = now.checked_sub(WITHIN).unwrap_or(UNIX_EPOCH);
     let mut ran: Vec<(SystemTime, PathBuf)> = Vec::new();
     claude_sessions(&home.join(".claude").join("projects"), since, &mut ran);
@@ -51,7 +49,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<R
         .filter(|dir| !home.starts_with(dir))
         .collect();
     let mut repositories: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
-    let mut offered: Vec<RepositoryEntry> = Vec::new();
+    let mut offered: Vec<wire::Folder> = Vec::new();
     for (at, cwd) in ran {
         if offered.len() == MOST {
             break;
@@ -68,23 +66,21 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<R
         if root == home || temporary.iter().any(|dir| root.starts_with(dir)) {
             continue;
         }
-        let Some(path) = root.to_str() else {
-            continue;
-        };
-        if offered.iter().any(|entry| entry.path == path) {
+        if offered
+            .iter()
+            .any(|folder| Some(folder.path.as_str()) == root.to_str())
+        {
             continue;
         }
-        offered.push(RepositoryEntry {
-            path: path.to_owned(),
-            name: root.file_name().map_or_else(
-                || path.to_owned(),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            last_used_ms: at
-                .duration_since(UNIX_EPOCH)
-                .ok()
-                .and_then(|since| i64::try_from(since.as_millis()).ok()),
-        });
+        let at = at
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|since| i64::try_from(since.as_millis()).ok());
+        offered.extend(crate::repositories::folder(
+            &root,
+            wire::FolderKind::History,
+            at,
+        ));
     }
     offered
 }
@@ -174,32 +170,12 @@ fn cwd_in(path: &Path, lines: usize, cwd: impl Fn(Line) -> Option<PathBuf>) -> O
         .find_map(|line| cwd(line).filter(|dir| dir.is_absolute()))
 }
 
-/// The repository a directory is in, as it is now: the nearest directory
-/// up from it holding `.git`, and for a linked worktree the repository it
-/// was made from, which is the one a person means.
+/// The repository a directory is in, as it is now: its working tree, and
+/// for a linked worktree the clone it was made from, which is the one a
+/// person means.
 fn repository(dir: &Path) -> Option<PathBuf> {
-    let dir = dir.canonicalize().ok()?;
-    let root = dir.ancestors().find(|dir| dir.join(".git").exists())?;
-    let dot_git = root.join(".git");
-    if dot_git.is_file()
-        && let Ok(text) = std::fs::read_to_string(&dot_git)
-        && let Some(gitdir) = text.trim().strip_prefix("gitdir:")
-    {
-        // `<repository>/.git/worktrees/<name>`; a submodule's points under
-        // `.git/modules` and is a repository of its own.
-        let gitdir = root.join(gitdir.trim());
-        if let Some(worktrees) = gitdir.parent()
-            && worktrees
-                .file_name()
-                .is_some_and(|name| name == "worktrees")
-            && let Some(main) = worktrees.parent().and_then(Path::parent)
-            && let Ok(main) = main.canonicalize()
-            && main.join(".git").is_dir()
-        {
-            return Some(main);
-        }
-    }
-    Some(root.to_owned())
+    let (root, main) = git_facts::working_tree(dir)?;
+    Some(main.unwrap_or(root))
 }
 
 /// The directories whose contents are made to be thrown away.

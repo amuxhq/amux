@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use settings::ChatInSetting;
@@ -418,14 +418,14 @@ impl Home {
 
     /// The folders `host` offers, for the new agent being set up there,
     /// and its form's empty folder field.
-    pub fn take_folders(&mut self, host: &[u8], answer: &wire::ListRepositoriesResponse) {
+    pub fn take_folders(&mut self, host: &[u8], folders: &[String]) {
         if !self.draft.open {
             return;
         }
         let Some(setup) = self.draft.setup.as_mut() else {
             return;
         };
-        setup.take_folders(host, answer);
+        setup.take_folders(host, folders);
         if let Some(form) = self.draft.form.as_mut() {
             form.folders_arrived(setup);
         }
@@ -1111,7 +1111,7 @@ impl Home {
             Setting::Permission => "Permission",
             Setting::Mode => "Mode",
             Setting::Folder => "Folder",
-            Setting::Host => "Host",
+            Setting::Host => "Computer",
             Setting::Worktree => "Worktree",
         };
         let choices = setup.choices(item, fleet);
@@ -1344,7 +1344,13 @@ impl Home {
                 matches!(item, Item::Heading(section, _, true)
                     if self.selected == Some(Target::Section(*section)))
             });
-            laid.extend(self.list(&items, now_ms, width, room, area.height, theme));
+            let (rows, edge_above) = self.list(&items, now_ms, width, room, area.height, theme);
+            // The blank under the top line is the list's own line above when
+            // its first shown row is the highlighted one.
+            if let Some(edge) = edge_above {
+                laid[list_top - 1] = Laid::plain(edge);
+            }
+            laid.extend(rows);
             // Renaming: the name is a field on its own row.
             if let Some((col, row)) = self.rename_at {
                 cursor = Some((col, list_top + row));
@@ -1413,7 +1419,7 @@ impl Home {
                 let inner = crate::panel::content_width(&rows)
                     .max(40)
                     .min(width.saturating_sub(8));
-                let lines = crate::panel::bordered("Hosts", rows, inner, &[], None, theme);
+                let lines = crate::panel::bordered("Devices", rows, inner, &[], None, theme);
                 crate::panel::centre(paint, lines, area);
             }
             Some(Overlay::Confirm {
@@ -1539,7 +1545,7 @@ impl Home {
                     format!("{shown} match{}", if shown == 1 { "" } else { "es" })
                 }
                 None => {
-                    push(&mut line, "name, project or host", theme.muted(), width);
+                    push(&mut line, "name, project or computer", theme.muted(), width);
                     String::new()
                 }
             };
@@ -1599,13 +1605,13 @@ impl Home {
             [] => {}
             [(one, _)] => parts.push((
                 format!(
-                    "{one} no longer trusts this machine · amux pair {}",
+                    "{one} unpaired this computer · amux pair {}",
                     crate::hosts::shell_target(one)
                 ),
                 theme.warning(),
             )),
             many => parts.push((
-                format!("{} hosts no longer trust this machine", many.len()),
+                format!("{} computers unpaired this one", many.len()),
                 theme.warning(),
             )),
         }
@@ -1619,7 +1625,7 @@ impl Home {
         match away.as_slice() {
             [] => {}
             [one] => parts.push((format!("{one} away"), theme.muted())),
-            many => parts.push((format!("{} hosts away", many.len()), theme.muted())),
+            many => parts.push((format!("{} computers away", many.len()), theme.muted())),
         }
         if working > 0 {
             parts.push((format!("{working} working"), theme.muted()));
@@ -1659,7 +1665,7 @@ impl Home {
         room: usize,
         height: u16,
         theme: Theme,
-    ) -> Vec<Laid> {
+    ) -> (Vec<Laid>, Option<Line<'static>>) {
         let targets = Self::targets(items);
         let selected = self.settle(&targets);
         let roomy = height >= ROOMY;
@@ -1816,6 +1822,7 @@ impl Home {
             laid.pop();
         }
         pad_highlight(&mut laid, highlight, width, theme);
+        let highlighted = highlight;
         let highlight = in_view;
         if self.reveal {
             if highlight.0 < self.top {
@@ -1847,7 +1854,12 @@ impl Home {
         {
             *last = Laid::default();
         }
-        shown
+        // A highlight on the first shown row has no blank line of the list's
+        // above it, so its upper edge goes in the one the caller lays there.
+        let edge_above = (highlighted.1 > highlighted.0 && highlighted.0 == self.top)
+            .then(|| highlight_edge("▄", width, theme))
+            .flatten();
+        (shown, edge_above)
     }
 
     /// The composer of a new agent's chat, boxed, with what the agent will
@@ -2065,7 +2077,7 @@ impl Home {
                     ("e", "effort", key(KeyCode::Char('e'))),
                     ("p", "permission", key(KeyCode::Char('p'))),
                     ("d", "folder", key(KeyCode::Char('d'))),
-                    ("h", "host", key(KeyCode::Char('h'))),
+                    ("h", "computer", key(KeyCode::Char('h'))),
                     ("w", "worktree", key(KeyCode::Char('w'))),
                     ("esc", "back", key(KeyCode::Esc)),
                 ]
@@ -2275,11 +2287,11 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ("enter, click", "open the chat".into()),
         (
             "a, ctrl+enter",
-            "attach to the agent's own terminal (this machine)".into(),
+            "attach to the agent's own terminal (this computer)".into(),
         ),
         (
             "/",
-            "filter by name, agent, folder or host; esc clears".into(),
+            "filter by name, agent, folder or computer; esc clears".into(),
         ),
         (
             "n",
@@ -2287,7 +2299,7 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ),
         (
             "ctrl+s then a letter",
-            "a new agent's name, model, effort, folder, host, agent".into(),
+            "a new agent's name, model, effort, folder, computer, agent".into(),
         ),
         ("→ / ←, space", "show or hide a family's agents".into()),
         ("r", "rename, in place".into()),
@@ -2296,10 +2308,10 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
             "settle (a message resumes it), or delete once settled; asks before cutting work short or deleting".into(),
         ),
         ("p", "pin to the top, or unpin".into()),
-        ("h", "hosts".into()),
+        ("h", "devices".into()),
         (
             ",",
-            "settings: this machine, repositories, chats, usage counts, the account".into(),
+            "settings: this computer, repositories, chats, usage counts, the account".into(),
         ),
         (
             "b",
@@ -2349,16 +2361,7 @@ fn pad_highlight(laid: &mut Vec<Laid>, (start, end): (usize, usize), width: usiz
     while end > start && laid.get(end - 1).is_some_and(is_blank) {
         end -= 1;
     }
-    // The tint's own extent: the outer margin on each side.
-    let edge = |glyph: &str| {
-        Line::from(vec![
-            Span::raw(" ".repeat(MARGIN)),
-            Span::styled(
-                glyph.repeat(width.saturating_sub(2 * MARGIN)),
-                Style::default().fg(surface),
-            ),
-        ])
-    };
+    let edge = |glyph: &str| edge_line(glyph, surface, width);
     if let Some(above) = start.checked_sub(1).and_then(|at| laid.get_mut(at))
         && is_blank(above)
     {
@@ -2370,6 +2373,24 @@ fn pad_highlight(laid: &mut Vec<Laid>, (start, end): (usize, usize), width: usiz
         None => laid.push(Laid::plain(edge("▀"))),
         Some(_) => {}
     }
+}
+
+/// Half a line of the highlight's tint across the tint's own extent, the
+/// outer margin on each side.
+fn edge_line(glyph: &str, surface: Color, width: usize) -> Line<'static> {
+    Line::from(vec![
+        Span::raw(" ".repeat(MARGIN)),
+        Span::styled(
+            glyph.repeat(width.saturating_sub(2 * MARGIN)),
+            Style::default().fg(surface),
+        ),
+    ])
+}
+
+/// The highlight's edge, or nothing in a theme without a row surface.
+fn highlight_edge(glyph: &str, width: usize, theme: Theme) -> Option<Line<'static>> {
+    let surface = theme.row_surface().and_then(|style| style.bg)?;
+    Some(edge_line(glyph, surface, width))
 }
 
 /// One blank line, unless the list already ends in one.
@@ -2566,7 +2587,7 @@ fn second_words(
     // sent; `x` takes it back.
     if row.card.close_held {
         let host = match row.card.host.as_str() {
-            "" => "its host",
+            "" => "its computer",
             host => host,
         };
         return Some((
@@ -2614,13 +2635,10 @@ fn second_words(
         }
         SecondLine::HostRevoked => {
             let host = match row.card.host.as_str() {
-                "" => "its host",
+                "" => "its computer",
                 host => host,
             };
-            (
-                format!("{host} no longer trusts this machine"),
-                theme.warning(),
-            )
+            (format!("{host} unpaired this computer"), theme.warning())
         }
         SecondLine::Blank => return None,
     })

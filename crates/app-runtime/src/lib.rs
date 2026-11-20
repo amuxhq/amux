@@ -34,7 +34,7 @@ use tokio::task::JoinHandle;
 pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
 use ui_state::AgentKey;
-use ui_view::{FamilyHeader, FleetCard, FleetView};
+use ui_view::{FamilyHeader, FleetCard, FleetView, Repository};
 use values::{AgentAct, Directories, Directory, Draft, NewAgent, ProviderSignIn};
 pub use values::{FleetDelta, HostView};
 /// The provider whose catalogue `host_catalogue` reads, named here so the
@@ -42,7 +42,7 @@ pub use values::{FleetDelta, HostView};
 /// crate.
 pub use wire::Provider;
 use wire::amux::staging;
-use wire::{DumpRequest, Filing, Kind, RepositoryEntry};
+use wire::{DumpRequest, Filing, Kind};
 
 /// How many rows a chat opens with unless the host says otherwise.
 pub const DEFAULT_TAIL: u32 = 200;
@@ -348,24 +348,56 @@ impl AppRuntime {
         })
     }
 
-    /// Where a host offers to start an agent, filtered by `query` and at
-    /// most `limit` in all, recent directories first.
+    /// Where a host offers to start an agent, as its own entry in the
+    /// inventory says, filtered by `query` (by name or path, ignoring case)
+    /// and at most `limit` in all, in the host's order: its repositories,
+    /// where its agents started lately, then where Claude Code and Codex
+    /// ran. A host this device has no entry for offers nothing.
     pub async fn directories(
         &self,
         host_id: &[u8],
         query: &str,
         limit: u32,
     ) -> Result<Directories, RpcError> {
-        let query = Some(query).filter(|query| !query.is_empty());
-        let listed = self.client.host(host_id).repositories(query, limit).await?;
-        let directory = |entry: RepositoryEntry| Directory {
-            path: entry.path,
-            name: entry.name,
-        };
-        Ok(Directories {
-            recent: listed.recent.into_iter().map(directory).collect(),
-            repositories: listed.repositories.into_iter().map(directory).collect(),
-        })
+        let query = query.to_lowercase();
+        let folders: Vec<wire::Folder> = self
+            .fleet
+            .state()
+            .host(host_id)
+            .map(|entry| entry.folders.clone())
+            .unwrap_or_default();
+        let mut directories = Directories::default();
+        let matching = folders.into_iter().filter(|folder| {
+            folder.name.to_lowercase().contains(&query)
+                || folder.path.to_lowercase().contains(&query)
+        });
+        for folder in matching.take(limit as usize) {
+            let kind = folder.kind();
+            let directory = Directory {
+                repository: Repository::of_checkout(folder.checkout.as_ref(), &folder.path),
+                path: folder.path,
+                name: folder.name,
+            };
+            match kind {
+                wire::FolderKind::Pinned => directories.repositories.push(directory),
+                wire::FolderKind::History => directories.history.push(directory),
+                wire::FolderKind::Recent | wire::FolderKind::Unspecified => {
+                    directories.recent.push(directory)
+                }
+            }
+        }
+        Ok(directories)
+    }
+
+    /// Pins a folder among a host's repositories, or unpins it. The host's
+    /// entry says the change once it has made it.
+    pub async fn pin_folder(
+        &self,
+        host_id: &[u8],
+        path: &str,
+        pinned: bool,
+    ) -> Result<(), RpcError> {
+        self.client.host(host_id).pin_folder(path, pinned).await
     }
 
     /// What a delete's confirmation says of the workspace that goes with

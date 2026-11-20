@@ -510,7 +510,7 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
                 BoundaryKind::Forked => "forked",
                 BoundaryKind::Restarted => "restarted",
                 BoundaryKind::Exited => "exited",
-                BoundaryKind::DaemonLost => "lost its daemon",
+                BoundaryKind::DaemonLost => "amux stopped",
                 BoundaryKind::Unspecified => "session",
             };
             let words = if cause.is_empty() {

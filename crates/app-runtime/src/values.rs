@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use ui_view::{
     AskCard, ChatAgents, ComposerView, ContextView, ControlsSummary, FleetView, FormValue,
-    OnboardingView, Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt, Row,
-    SentPrompt, SettingChange, SettingsView, SetupStep, SignInView,
+    OnboardingView, Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt,
+    Repository, Row, SentPrompt, SettingChange, SettingsView, SetupStep, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -195,7 +195,7 @@ pub struct ChatFrame {
     /// outside a repository.
     pub git: Option<wire::Git>,
     pub context: Option<ContextView>,
-    /// Only a problem; it replaces the composer with a foot card.
+    /// Only a problem; a notice above the composer, which still sends.
     pub sign_in: Option<SignInView>,
     pub connection: Connection,
     /// The rows are current with the agent's host.
@@ -539,6 +539,10 @@ pub struct NewAgent {
 pub struct Directory {
     pub path: String,
     pub name: String,
+    /// The repository it is a checkout of, marked as the agents in any
+    /// checkout of it are: by its remote where the host says it, else by
+    /// its path.
+    pub repository: Option<Repository>,
 }
 
 /// What a host offers to start an agent in: where agents ran lately and the
@@ -547,6 +551,9 @@ pub struct Directory {
 pub struct Directories {
     pub recent: Vec<Directory>,
     pub repositories: Vec<Directory>,
+    /// Where Claude Code and Codex ran lately on the host, outside amux.
+    #[serde(default)]
+    pub history: Vec<Directory>,
 }
 
 /// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
@@ -725,7 +732,8 @@ pub struct MachineSettings {
     /// A report is sent on its own when something goes wrong.
     pub auto_reports: bool,
     /// Every experiment the machine's build implements, in the order they
-    /// are listed. A switch takes effect when amux next starts.
+    /// are listed. amux restarts itself to apply a switch, and says it is
+    /// being applied until it has.
     pub experiments: Vec<ExperimentView>,
 }
 
@@ -741,6 +749,9 @@ pub struct ExperimentView {
     pub description: String,
     /// Whether the machine's settings switch it on.
     pub enabled: bool,
+    /// amux runs it otherwise than `enabled` says, and is restarting to
+    /// apply the switch: show it as being applied, neither on nor off.
+    pub applying: bool,
 }
 
 impl From<&wire::Settings> for MachineSettings {
@@ -760,6 +771,7 @@ impl From<&wire::Settings> for MachineSettings {
                     version: experiment.version.clone(),
                     description: experiment.description.clone(),
                     enabled: experiment.enabled,
+                    applying: experiment.applying,
                 })
                 .collect(),
         }
@@ -815,6 +827,8 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
 pub struct RepositorySuggestion {
     pub path: String,
     pub name: String,
+    /// Marked as [`Directory::repository`] is.
+    pub repository: Option<Repository>,
 }
 
 /// Where one step of setting up stands, as the daemon keeps it.

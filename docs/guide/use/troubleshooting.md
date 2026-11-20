@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: What to check when amux isn't running, a machine is out of reach, or an agent can't carry on, and how to send a report.
+description: What to check when amux isn't running, a computer is out of reach, or an agent can't carry on, and how to send a report.
 sidebar:
   order: 7
 ---
@@ -16,7 +16,7 @@ It answers most questions in a few lines:
 - whether amux is running, and which version
 - how it updates, and whether a release was rolled back
 - whether it starts at login
-- each account on this machine, and whether the relay is connected
+- each account on this computer, and whether the relay is connected
 - whether usage counts are on, and where the config file is
 
 ## amux isn't running
@@ -37,19 +37,19 @@ that an agent gave up waiting, the agent shows as **stopped** with a note that
 amux was away. Send it a message, or run `amux resume <agent>`, and it picks
 up where it left off.
 
-## A machine is out of reach
+## A computer is out of reach
 
-Your fleet and the Hosts tab on your phone say why a machine can't be reached:
+Your fleet and the Computers tab on your phone say why a computer can't be reached:
 
 | What it says | What to do |
 |---|---|
-| **away** | The machine is only reachable through the relay, and your account is on the free plan. Get on the same network as the machine, or [subscribe to Pro](https://amux.sh/docs/account/plans-and-billing/). |
-| **offline** | Nothing reaches it right now. Check that the machine is on and amux is running there (`amux status`). If it's on another network, both devices need to be signed in to the same account, with Pro. |
-| **this machine is signed out** | Sign in again with `amux login`, or from Settings in the app. |
-| **no longer trusts this machine** | The other machine unpaired this one. Pair them again ([Add another computer](../get-started/add-another-computer.md)). |
+| **away** | The computer is only reachable through the relay, and your account is on the free plan. Get on the same network as the computer, or [subscribe to Pro](https://amux.sh/docs/account/plans-and-billing/). |
+| **offline** | Nothing reaches it right now. Check that the computer is on and amux is running there (`amux status`). If it's on another network, both devices need to be signed in to the same account, with Pro. |
+| **this computer is signed out** | Sign in again with `amux login`, or from Settings in the app. |
+| **unpaired this computer** | The other computer unpaired this one. Pair them again ([Add another computer](../get-started/add-another-computer.md)). |
 
-An agent on a machine that's out of reach stays in your fleet as it last was.
-Its chat fills in again when the machine is back.
+An agent on a computer that's out of reach stays in your fleet as it last was.
+Its chat fills in again when the computer is back.
 
 ## The phone doesn't find my computer
 
@@ -65,14 +65,20 @@ to pair, including when the phone and computer are on different networks.
 
 ## An agent can't carry on
 
-The line under an agent's name, and the box where you'd type to it, say what's
-in the way:
+The line under an agent's name, and the box where you type to it or the chat
+just above it, say what's in the way:
 
 - **Claude or Codex needs you to sign in.** amux can't sign in for you. On the
-  machine the agent runs on, run `claude` and sign in with `/login`, or run
-  `codex login`.
+  computer the agent runs on, run `claude` and sign in with `/login`, or run
+  `codex login`. Then send the agent a message: you don't need to stop it, and
+  sending is how it tries again. The notice goes once Claude or Codex answers.
+  Claude can take up to half a minute to notice you signed in, so if the
+  first message still fails, send another. Codex keeps the API key or ChatGPT
+  account it started with: if you signed in with a different one, run
+  `amux settle <agent>` and then `amux resume <agent>`, which starts it again
+  on the same conversation.
 - **Can't reach Claude.** The request got no answer, usually because the
-  machine the agent runs on has lost its connection. Claude keeps trying by
+  computer the agent runs on has lost its connection. Claude keeps trying by
   itself, and the chat counts down to the next attempt.
 - **A usage limit is reached.** The agent's provider has a limit on how much
   you can use it. The agent's row and its chat say when the limit resets, and
@@ -92,21 +98,21 @@ in the way:
 - **The relay refuses this version.** `amux status` says so. Run
   `amux update`.
 
-## A machine needs updating
+## A computer needs updating
 
-A newer amux can ask an older machine for something it doesn't know. Two
+A newer amux can ask an older computer for something it doesn't know. Two
 messages mean that, and neither loses your words:
 
 | What it says | What to do |
 |---|---|
-| **that host needs updating to do this** | Update amux on that machine. |
-| **not sent: one of its attachments is of a kind this host can't read** | Update amux on the agent's machine and send it again. Your words are back in the composer. |
+| **that computer needs updating to do this** | Update amux on that computer. |
+| **not sent: one of its attachments is of a kind this computer can't read** | Update amux on the agent's computer and send it again. Your words are back in the composer. |
 
 [Updates and channels](updates.md) says how.
 
 ## An update didn't happen
 
-`amux status` says if the latest release failed to start on this machine and
+`amux status` says if the latest release failed to start on this computer and
 amux went back to the version before. `amux update --retry` tries it again.
 [Updates and channels](updates.md) has more.
 
@@ -136,7 +142,7 @@ or with `amux config set auto_reports true`.
 
 ## Starting over
 
-`amux uninstall` stops this machine's agents, after asking, and removes amux.
+`amux uninstall` stops this computer's agents, after asking, and removes amux.
 Add `--delete-data` to remove its data and settings too, including your
 pairings and your agents' history.
 

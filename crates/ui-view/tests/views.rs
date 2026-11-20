@@ -1174,6 +1174,31 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
     assert!(prompts_underway(&state).is_empty());
 }
 
+/// A sign-in problem never takes the composer away: sending is how someone
+/// who signed in elsewhere tries again, and the provider's next good answer
+/// clears the notice.
+#[test]
+fn a_sign_in_problem_leaves_the_composer_sending() {
+    for kind in KINDS {
+        let mut state = SessionState::new(agent(kind, Phase::Idle), CAP);
+        state.update(Msg::Connection(ui_state::Connection::Live));
+        state.update(snapshot(
+            kind,
+            Phase::Idle,
+            full_snapshot(kind, vec![], vec![]),
+            vec![],
+        ));
+        state.update(caught_up());
+        assert!(sign_in(&state).is_some(), "{kind:?}: no sign-in problem");
+        assert_eq!(
+            composer(&state, 0).mode,
+            ui_state::Composer::Send,
+            "{kind:?}"
+        );
+        assert!(state.can_send(), "{kind:?}");
+    }
+}
+
 #[test]
 fn unknown_renders_one_way() {
     for kind in KINDS {

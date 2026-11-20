@@ -1132,7 +1132,7 @@ fn continued() -> RowKind {
 
 /// What the line over a continuation after a restart says, after the
 /// boundary's own word.
-pub const CONTINUED_WORDS: &str = "after the machine restarted";
+pub const CONTINUED_WORDS: &str = "after the computer restarted";
 
 fn agent_message(held: &Held, m: &wire::AgentMessage) -> RowKind {
     let from = match m.from.as_ref().and_then(|from| from.value.as_ref()) {

@@ -6,21 +6,26 @@ package amux.staging;
 import "amux/v1/inventory.proto";
 
 // What a host offers before any agent exists: each provider's catalogue,
-// and the repositories a new agent may start in.
+// and the folders its person pinned for a new agent to start in.
 //
 // A host service: answered by the host the call is addressed to, about
 // itself. Its node answers a call addressed to itself and passes any
 // other on, unread, to the host it names, so a request never names a
-// host. Any caller may ask.
+// host. Any caller may read a catalogue; only a person pins.
+//
+// The folders themselves are not asked of the host: they replicate on its
+// own entry (HostEntry.folders), so a client reads them from its node.
 
 service HostService {
   // What a provider offers on this host with no agent running, read from
   // the host's own copy; an agent's catalogue is a file named by its
   // snapshot instead.
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
-  // Repositories on this host, for a new agent's folder: where its agents
-  // worked lately, and the list its person keeps.
-  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  // Pins a folder among this host's repositories, at the end of the list,
+  // or unpins it. The list is the host's `repositories` setting, so this is
+  // a person's act, refused to an agent. The host's own entry says the
+  // change, as every client sees through its inventory.
+  rpc PinFolder(PinFolderRequest) returns (PinFolderResponse);
 }
 
 message GetCatalogueRequest {
@@ -34,16 +39,12 @@ message GetCatalogueResponse {
   bytes bytes = 2;
 }
 
-// The host discovers them; a client never names a folder to search.
-message ListRepositoriesRequest {
-  // Only folders whose name or path holds it, ignoring case.
-  optional string query = 1;
-  uint32 limit = 2;
+message PinFolderRequest {
+  // An absolute path on the answering host, or one from its home
+  // ("~/src/app").
+  string path = 1;
+  // Pinned at the end of the list, or unpinned.
+  bool pinned = 2;
 }
 
-message ListRepositoriesResponse {
-  // Folders this host's agents ran in lately that still exist.
-  repeated amux.v1.RepositoryEntry recent = 1;
-  // The host's repository list, as its person chose it.
-  repeated amux.v1.RepositoryEntry repositories = 2;
-}
+message PinFolderResponse {}

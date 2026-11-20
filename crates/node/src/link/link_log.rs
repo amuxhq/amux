@@ -399,14 +399,14 @@ mod tests {
         let host = HostId::from_u128(1);
         let call = CarriedCall {
             peer: HostId::from_u128(2),
-            method: "/amux.v1.HostService/ListRepositories".to_owned(),
+            method: "/amux.v1.HostService/PinFolder".to_owned(),
             outcome: CarriedOutcome::PaymentRequired,
             code: 7,
             ms: 12,
         };
         let line = format!(
             "2026-11-19T09:00:00.000000Z  INFO amux::link: carried host={host} peer={} \
-             method=/amux.v1.HostService/ListRepositories outcome=payment_required code=7 ms=12",
+             method=/amux.v1.HostService/PinFolder outcome=payment_required code=7 ms=12",
             call.peer
         );
         assert_eq!(CarriedCall::parse(&line), Some((host, call)));

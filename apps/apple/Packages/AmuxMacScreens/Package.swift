@@ -24,7 +24,7 @@ let package = Package(
             ],
             // Lucide's line icons (ISC, licence alongside), the set the
             // developer tools this app sits beside are drawn in.
-            resources: [.copy("Icons"), .copy("Brand")]),
+            resources: [.copy("Icons")]),
         // The named screens the storybook draws. The app does not link this.
         .target(
             name: "AmuxMacStories",

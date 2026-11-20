@@ -25,11 +25,10 @@ use wire::session_service_server::SessionService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DumpRequest, DumpResponse,
     Envelope, ErrorCode, FileAgentRequest, GetBlobRequest, GetBlobResponse, GetDiffRequest,
-    GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse,
-    ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest,
-    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, SessionEvent, SubscribeInventoryRequest,
-    SubscribeSessionRequest,
+    GetItemRequest, InventoryEvent, Item, ListItemsRequest, ListItemsResponse, PutBlobRequest,
+    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent,
+    SubscribeInventoryRequest, SubscribeSessionRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -96,10 +95,10 @@ pub trait Client: Send + Sync + 'static {
         &self,
         request: wire::GetCatalogueRequest,
     ) -> Result<wire::GetCatalogueResponse, RpcError>;
-    async fn list_repositories(
+    async fn pin_folder(
         &self,
-        request: ListRepositoriesRequest,
-    ) -> Result<ListRepositoriesResponse, RpcError>;
+        request: wire::PinFolderRequest,
+    ) -> Result<wire::PinFolderResponse, RpcError>;
     async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError>;
     /// Writes a person's report around a dump and sends it on when the
     /// profile is signed in.
@@ -259,11 +258,11 @@ macro_rules! client_impl {
                 Ok($call!(self, agents, get_catalogue, request).await?.into_inner())
             }
 
-            async fn list_repositories(
+            async fn pin_folder(
                 &self,
-                request: ListRepositoriesRequest,
-            ) -> Result<ListRepositoriesResponse, RpcError> {
-                Ok($call!(self, agents, list_repositories, request).await?.into_inner())
+                request: wire::PinFolderRequest,
+            ) -> Result<wire::PinFolderResponse, RpcError> {
+                Ok($call!(self, agents, pin_folder, request).await?.into_inner())
             }
 
             async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {

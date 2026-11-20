@@ -1,0 +1,34 @@
+
+  expired │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                1 │ [Diff] │ [Home]
+
+
+    Tidy the pairing section.                                                                        hh:mm
+
+
+    Tidied.
+
+    Worked <t>
+
+
+    Check the links.                                                                                 hh:mm
+
+
+▌ ✗ authentication_failed
+▌   Failed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your
+▌   existing token.
+
+    Worked <t> · failed
+
+
+    Try them again.                                                                                  hh:mm
+
+
+    Links checked.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message expired                                                                                      │
+  ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
+
+  shift+tab permission   ctrl+a more

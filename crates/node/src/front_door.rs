@@ -234,6 +234,7 @@ impl InstallationService for FrontDoor {
                 &settings.current(),
                 &installation.host_name(),
                 settings.supervised(),
+                installation.running_experiments(),
             )),
         }))
     }
@@ -257,6 +258,7 @@ impl InstallationService for FrontDoor {
                 &config,
                 &installation.host_name(),
                 installation.settings.supervised(),
+                installation.running_experiments(),
             )),
         }))
     }
@@ -316,7 +318,7 @@ impl InstallationService for FrontDoor {
         .await
         .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
         Ok(Response::new(wire::SuggestRepositoriesResponse {
-            suggestions,
+            folders: suggestions,
         }))
     }
 

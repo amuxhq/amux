@@ -250,6 +250,7 @@ async fn removing_a_profile_ends_a_dump_still_in_flight() {
     let launch = node::Launch {
         step_budget: daemon_core::StepBudget { micros: 0 },
         dump_interval_ms: 0,
+        over_budget_dump_interval_ms: 0,
         ..quiet_launch()
     };
     let daemon = install.start("boot-1", launch).await;

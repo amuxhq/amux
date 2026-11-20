@@ -19,10 +19,10 @@ struct LocalNetworkPrimer: View {
             Explain(String(localized: "amux looks for your computers on this network, so iOS asks for local network access next."))
                 .identified("\(identifier).primer")
             Button { look() } label: {
-                ActionLabel("Look for Hosts", kind: .primary)
+                ActionLabel("Look for Computers", kind: .primary)
             }
             .buttonStyle(.amuxControl)
-            .identified("\(identifier).look", label: "Look for Hosts")
+            .identified("\(identifier).look", label: "Look for Computers")
         }
         .accessibilityElement(children: .contain)
     }

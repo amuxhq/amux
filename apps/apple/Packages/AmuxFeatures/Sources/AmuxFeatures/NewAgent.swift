@@ -14,6 +14,8 @@ public enum NewAgentAction: Equatable, Sendable {
     /// Ask the machine again with what is being searched for. Only sent for a
     /// machine whose first answer stopped at the limit.
     case search
+    /// Keep a folder among the machine's repositories, or let it go.
+    case pin(Directory, Bool)
     /// Start it.
     case start
     /// Left without starting anything.
@@ -115,7 +117,7 @@ public struct NewAgent: View {
         VStack(alignment: .leading, spacing: 9) {
             SectionHead(title: "Where")
             if hosts.hosts.isEmpty {
-                Explain("Pair a host before starting an agent.")
+                Explain("Pair a computer before starting an agent.")
                     .identified("new-agent.no-hosts")
             } else {
                 Surface {
@@ -152,14 +154,14 @@ public struct NewAgent: View {
         }
         let value = chosen?.name ?? String(localized: "Choose")
         return MenuButton(
-            name: String(localized: "Host, \(value)"), identifier: "new-agent.host", items: items,
+            name: String(localized: "Computer, \(value)"), identifier: "new-agent.host", items: items,
             value: chosen?.name
         ) {
-            FieldRow(label: String(localized: "Host"), value: value)
+            FieldRow(label: String(localized: "Computer"), value: value)
         }
     }
 
-    /// "macOS · via relay", or why the machine cannot be chosen.
+    /// "macOS · via relay", or why the computer cannot be chosen.
     private func reach(_ host: HostView) -> String {
         switch host.group {
         case .away: return String(localized: "Away")
@@ -167,7 +169,7 @@ public struct NewAgent: View {
             return hosts.isConnecting(host.id) ? String(localized: "Connecting") : String(localized: "Offline")
         case .onThisNetwork, .throughTheRelay:
             let route = host.group == .onThisNetwork
-                ? String(localized: "direct") : String(localized: "via relay")
+                ? String(localized: "on this network") : String(localized: "over the internet")
             return [host.platform?.name, route].compactMap { $0 }.joined(separator: " · ")
         }
     }
@@ -261,7 +263,7 @@ public struct NewAgent: View {
                 case .offered?:
                     EmptyView()
                 case .unavailable?:
-                    Explain("\(machineName) could not say what \(model.provider.title) offers. The agent starts with the host’s defaults.")
+                    Explain("\(machineName) could not say what \(model.provider.title) offers. The agent starts with the computer’s defaults.")
                         .identified("new-agent.offer.unavailable")
                 case .asking?, nil:
                     Explain("Asking \(machineName) what \(model.provider.title) offers…")
@@ -410,7 +412,7 @@ public struct NewAgent: View {
     // MARK: - Starting it
 
     private var machineName: String {
-        model.machine.flatMap { hosts.host($0)?.name } ?? "the host"
+        model.machine.flatMap { hosts.host($0)?.name } ?? "the computer"
     }
 
     private var foot: some View {
@@ -528,7 +530,7 @@ public struct NewAgentDirectories: View {
                         row(repository, recent: false)
                     }
                 } else if model.listing != .asking {
-                    Explain("No matching folders on this host.")
+                    Explain("No matching folders on this computer.")
                         .identified("new-agent.browse.none")
                 }
             } else {
@@ -544,19 +546,25 @@ public struct NewAgentDirectories: View {
                         row(repository, recent: true)
                     }
                 }
-                if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty {
-                    // Repositories are the host's own setting, chosen where amux
-                    // runs; this phone only reads them.
-                    Explain("Add repositories in amux on this host, or type a path.")
+                if !model.history.isEmpty {
+                    SectionHead(title: "From Claude Code and Codex")
+                    RowGroup(items: model.history) { repository in
+                        row(repository, recent: true)
+                    }
+                }
+                if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty
+                    && model.history.isEmpty
+                {
+                    Explain("Nothing has started on this computer yet. Type a path below.")
                         .identified("new-agent.browse.none")
                 }
             }
             switch model.listing {
             case .asking:
-                Explain("Reading this host’s repositories…")
+                Explain("Reading this computer’s repositories…")
                     .identified("new-agent.browse.reading")
             case .unavailable:
-                Explain("This host could not list its repositories.")
+                Explain("This computer could not list its repositories.")
                     .identified("new-agent.browse.unavailable")
             case .none, .ready:
                 EmptyView()
@@ -565,6 +573,13 @@ public struct NewAgentDirectories: View {
     }
 
     private func row(_ repository: Directory, recent: Bool) -> some View {
+        HStack(spacing: 0) {
+            choice(repository, recent: recent)
+            pin(repository)
+        }
+    }
+
+    private func choice(_ repository: Directory, recent: Bool) -> some View {
         Button {
             model.choose(directory: repository.path)
             model.browsing = false
@@ -591,7 +606,7 @@ public struct NewAgentDirectories: View {
                         .foregroundStyle(design.accent.color)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.leading, 14)
             .padding(.vertical, 10)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
@@ -601,6 +616,24 @@ public struct NewAgentDirectories: View {
         .identified(
             "new-agent.repository.\(repository.name)", label: repository.path,
             value: model.directory == repository.path ? "chosen" : "")
+    }
+
+    /// Keeps the folder among the machine's repositories, or lets it go: a
+    /// filled pin for one kept.
+    private func pin(_ repository: Directory) -> some View {
+        let pinned = model.isPinned(repository.path)
+        return Button {
+            actions(.pin(repository, !pinned))
+        } label: {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(pinned ? design.accent.color : design.inkFaint.color)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(pinned ? "Remove from Repositories" : "Keep in Repositories")
+        .identified("new-agent.pin.\(repository.name)", value: pinned ? "pinned" : "")
     }
 
     /// A path typed by hand, for a directory the machine did not list. The

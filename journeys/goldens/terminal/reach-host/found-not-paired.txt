@@ -6,12 +6,12 @@
       no agents yet
 
 
-                                 ╭─ Hosts ──────────────────────────────────╮
+                                 ╭─ Devices ────────────────────────────────╮
                                  │                                          │
-                                 │ laptop   this machine                    │
+                                 │ laptop   this computer                   │
                                  │ desk     found nearby · amux pair desk   │
                                  │                                          │
-                                 │ Pair another machine with amux pair      │
+                                 │ Pair another computer with amux pair     │
                                  │ esc close                                │
                                  ╰──────────────────────────────────────────╯
 

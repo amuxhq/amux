@@ -209,15 +209,15 @@ impl Installation {
         )
     }
 
-    /// Folders worth offering as repositories.
-    pub async fn suggest_repositories(&self) -> Result<Vec<wire::RepositoryEntry>, RpcError> {
+    /// Folders worth offering as repositories, newest first.
+    pub async fn suggest_repositories(&self) -> Result<Vec<wire::Folder>, RpcError> {
         let request = wire::SuggestRepositoriesRequest {};
         Ok(self
             .stub()
             .suggest_repositories(request)
             .await?
             .into_inner()
-            .suggestions)
+            .folders)
     }
 
     /// A one-time link that signs the browser in and opens a page of the

@@ -1,17 +1,17 @@
 ---
 title: Add another computer
-description: Pair your computers so each one sees and runs the other's agents, on the same network, by address, over SSH, through the relay, or over Tailscale.
+description: Pair your computers so each one sees and runs the other's agents, on the same network, by address, over SSH, over the internet, or over Tailscale.
 sidebar:
   order: 4
 ---
 
 Pair two computers and each one sees the other's agents, opens their chats,
-and starts new agents there. A desktop and a laptop, a home machine and a
+and starts new agents there. A desktop and a laptop, a home computer and a
 server: once they're paired, you work with the agents on both from either.
 
 First [install amux](install.md) on the new computer. Then pair the two.
 Pairing is a one-time step, and a paired computer can run agents on the
-other as you, so pair only machines you control.
+other as you, so pair only computers you control.
 
 Your phone pairs with each computer on its own: pairing two computers
 doesn't pair your phone with the new one.
@@ -25,7 +25,7 @@ amux pair
 ```
 
 It shows a six-digit code and the command to run on the other computer. On
-the other computer, `amux hosts` lists the computers it can see, each with
+the other computer, `amux devices` lists the computers it can see, each with
 the command that pairs it:
 
 ```text
@@ -59,10 +59,10 @@ a password, for example with a key in your SSH agent. The two computers then
 connect through SSH from then on. This is a good fit for a server you already
 SSH into; see [Running amux on a server](../use/server.md).
 
-## Through the relay
+## Over the internet
 
 With [Pro](https://amux.sh/docs/account/plans-and-billing/), computers signed
-in to the same account reach each other from anywhere. `amux hosts` lists your
+in to the same account reach each other from anywhere. `amux devices` lists your
 account's other computers:
 
 ```text
@@ -70,7 +70,7 @@ studio   on your account · amux pair studio
 ```
 
 Run `amux pair studio`, and type the code that `amux pair` shows on the
-other computer. Without Pro, `amux hosts` still lists them, and says Pro
+other computer. Without Pro, `amux devices` still lists them, and says Pro
 pairs them.
 
 A computer that one of your paired computers can see shows up as
@@ -95,7 +95,7 @@ so pair by address, using the computer's Tailscale address:
    amux pair 100.101.102.103:53122
    ```
 
-Use the address itself: a Tailscale machine name doesn't work here.
+Use the address itself: a Tailscale computer name doesn't work here.
 
 Once paired, the two keep connecting directly over Tailscale.
 

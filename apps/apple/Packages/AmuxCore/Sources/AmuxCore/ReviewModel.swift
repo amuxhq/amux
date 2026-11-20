@@ -58,18 +58,23 @@ public final class ReviewModel {
     public init(review: FrozenReview, comments: [ReviewComment] = []) {
         self.review = review
         self.comments = comments
+        // A review is opened only once its document has been read, so the
+        // empty one stands in only for a page built without that check.
         doc = Self.document(review, comments: comments)
+            ?? ReviewDoc(base: "", head: review.diff.head, files: [], added: 0, removed: 0)
         placed = Self.places(comments, in: doc)
     }
 
-    /// The runtime's document for a frozen diff with `comments` placed.
-    public static func document(_ review: FrozenReview, comments: [ReviewComment]) -> ReviewDoc {
-        let parsed = Bridge.json(review).withCString { review in
+    /// The runtime's document for a frozen diff with `comments` placed; nil
+    /// when the runtime could not read what this build sent it, or this
+    /// build what it answered. That is never "no changes": a caller says it
+    /// could not read them.
+    public static func document(_ review: FrozenReview, comments: [ReviewComment]) -> ReviewDoc? {
+        Bridge.json(review).withCString { review in
             Bridge.json(comments).withCString { comments in
                 Bridge.read(ReviewDoc.self, amux_review_doc(review, comments))
             }
         }
-        return parsed ?? ReviewDoc(base: "", head: review.diff.head, files: [], added: 0, removed: 0)
     }
 
     /// Where the runtime's document draws each comment: on the line it
@@ -191,7 +196,9 @@ public final class ReviewModel {
 
     /// Places the comments again after they change.
     private func lay() {
-        doc = Self.document(review, comments: comments)
+        // The same patch read before: should a read fail now, the page
+        // keeps the document it has rather than going blank.
+        doc = Self.document(review, comments: comments) ?? doc
         placed = Self.places(comments, in: doc)
     }
 

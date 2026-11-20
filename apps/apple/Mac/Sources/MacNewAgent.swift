@@ -37,6 +37,9 @@ final class MacNewAgent: NewAgentSurface {
 
     var repositories: [Directory] { model.repositories }
     var recent: [Directory] { model.recent }
+    var history: [Directory] { model.history }
+    func isPinned(_ path: String) -> Bool { model.isPinned(path) }
+    func pin(_ directory: Directory, _ on: Bool) { stores.pin(directory, on) }
     var likely: [Directory] { model.likely }
     var directory: String { model.directory }
     func choose(directory: String) { model.choose(directory: directory) }

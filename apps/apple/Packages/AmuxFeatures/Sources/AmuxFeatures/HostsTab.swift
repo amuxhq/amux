@@ -117,7 +117,7 @@ public struct HostsTab: View {
                 list
             }
         }
-        .navigationTitle("Hosts")
+        .navigationTitle("Computers")
         .navigationSubtitle(subtitle)
         .toolbar {
             ToolbarItem(placement: .largeSubtitle) {
@@ -273,7 +273,7 @@ public struct HostsTab: View {
     }
 
     /// The second line: what the machine is, and how this phone stands with
-    /// it — "direct" for a link with nothing in between, "via relay" for one
+    /// it — "direct" for a link with nothing in between, "over the internet" for one
     /// that crosses it, or why it cannot be reached. An offline machine says
     /// how long it has been gone where this phone watched it go.
     func status(_ host: HostView) -> String {
@@ -281,13 +281,13 @@ public struct HostsTab: View {
         if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
         case .onThisNetwork: parts.append(String(localized: "direct"))
-        case .throughTheRelay: parts.append(String(localized: "via relay"))
+        case .throughTheRelay: parts.append(String(localized: "over the internet"))
         case .away: parts.append(String(localized: "away on the free plan"))
         case .offline:
             if model.isConnecting(host.id) {
                 parts.append(String(localized: "connecting"))
             } else if host.reach == .offline(.revoked) {
-                parts.append(String(localized: "no longer trusts this phone"))
+                parts.append(String(localized: "unpaired this phone"))
             } else if let id = host.id, model.foundButUnreachable.contains(id) {
                 parts.append(String(localized: "found, not answering"))
             // Said because it settles which of two very different things is
@@ -319,15 +319,15 @@ public struct HostsTab: View {
         if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
         case .onThisNetwork: parts.append(String(localized: "reachable on this network"))
-        case .throughTheRelay: parts.append(String(localized: "reachable through the relay"))
+        case .throughTheRelay: parts.append(String(localized: "reachable over the internet"))
         case .away:
             parts.append(String(localized: "away"))
-            parts.append(String(localized: "the free plan does not relay between hosts"))
+            parts.append(String(localized: "reaching it from another network needs Pro"))
         case .offline where model.isConnecting(host.id):
             parts.append(String(localized: "connecting"))
         case .offline:
             if host.reach == .offline(.revoked) {
-                parts.append(String(localized: "it no longer trusts this phone, pair again to reach it"))
+                parts.append(String(localized: "it unpaired this phone, pair again to reach it"))
             } else if let id = host.id, model.foundButUnreachable.contains(id) {
                 parts.append(String(localized: "found on this network and not answering"))
             } else if host.reach == .offline(.signedOut) {
@@ -363,10 +363,10 @@ public struct HostsTab: View {
                     refusedNetwork
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("No hosts yet")
+                        Text("No computers yet")
                             .designFont(.screenTitle, design)
                             .foregroundStyle(design.ink.color)
-                            .identified("hosts.empty", value: "No hosts yet")
+                            .identified("hosts.empty", value: "No computers yet")
                         Explain("A computer running amux on this network appears here, ready to pair.")
                     }
                     if !model.networkExplained {

@@ -127,7 +127,7 @@ async fn survive_daemon() {
     let listing = desk.run(&["ls"]).await;
     for name in agents.keys() {
         assert!(
-            line_of(&listing, name).contains("exited: while the daemon was away"),
+            line_of(&listing, name).contains("exited: while amux was stopped"),
             "{listing}"
         );
     }

@@ -793,7 +793,7 @@ struct Install {
     daemon: tokio::sync::Mutex<Child>,
     /// A person's client of the installation's profile, as the apps reach
     /// it over its socket.
-    client: client::next::Client,
+    client: client::Client,
     /// The profile's host id: every act on its agents is addressed to it.
     host_id: Vec<u8>,
     driver_fixture: Box<dyn Fn(Scenario) -> Option<PathBuf> + Send + Sync>,
@@ -893,12 +893,10 @@ impl Install {
         })
         .await
         .map_err(|status| status.to_string())?;
-        let client = client::next::Client::connect(
-            Path::new(&profile.socket_path),
-            client::next::Surface::Terminal,
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        let client =
+            client::Client::connect(Path::new(&profile.socket_path), client::Surface::Terminal)
+                .await
+                .map_err(|error| error.to_string())?;
         let host_id = client
             .admin()
             .get_device_identity()
@@ -1214,7 +1212,7 @@ impl Install {
     }
 
     /// The host services for one of the installation's agents.
-    fn agent(&self, agent: &[u8]) -> client::next::Agent {
+    fn agent(&self, agent: &[u8]) -> client::Agent {
         self.client.agent(&wire::AgentRef {
             host_id: self.host_id.clone(),
             agent_id: agent.to_vec(),

@@ -7,8 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use client::SystemClock;
-use client::next::Client;
+use client::{Client, SystemClock};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use prost::Message as _;
 use ratatui::Frame as Paint;

@@ -4,8 +4,7 @@
 use tonic::transport::Channel;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 
-use super::{Conn, Surface, stub};
-use crate::{EventStream, RpcError, events, held, held_events};
+use crate::{Conn, EventStream, RpcError, Surface, events, held, held_events, stub};
 
 #[derive(Clone)]
 pub struct Admin {
@@ -13,13 +12,13 @@ pub struct Admin {
 }
 
 impl Admin {
-    pub(super) fn new(conn: Conn) -> Admin {
+    pub(crate) fn new(conn: Conn) -> Admin {
         Admin { conn }
     }
 
     /// The administration on the node's channel of a socket being
     /// connected, before the client exists.
-    pub(super) fn on(node: &Channel, surface: Surface) -> Admin {
+    pub(crate) fn on(node: &Channel, surface: Surface) -> Admin {
         Admin::new(Conn::on_node(node.clone(), surface))
     }
 

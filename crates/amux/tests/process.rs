@@ -180,7 +180,7 @@ impl Install {
     }
 
     /// A client of the first profile's node.
-    async fn client(&self) -> client::next::Client {
+    async fn client(&self) -> client::Client {
         let door = self.front_door().await.expect("a daemon answers");
         let profile = InstallationServiceClient::new(door)
             .list_profiles(wire::ListProfilesRequest {})
@@ -192,7 +192,7 @@ impl Install {
             .next()
             .expect("a profile");
         let socket = Path::new(&profile.socket_path);
-        client::next::Client::connect(socket, client::next::Surface::Terminal)
+        client::Client::connect(socket, client::Surface::Terminal)
             .await
             .unwrap()
     }
@@ -243,7 +243,7 @@ async fn channel(path: &Path) -> std::io::Result<Channel> {
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-async fn chat(client: &client::next::Client, agent: &[u8]) -> Vec<(String, String)> {
+async fn chat(client: &client::Client, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
         .sessions()
         .subscribe(agent, 1000)

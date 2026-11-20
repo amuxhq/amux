@@ -201,7 +201,7 @@ pub(crate) fn install_dir() -> Result<PathBuf> {
 /// none when amux is not running.
 async fn running_agents(
     config: &InstallationConfig,
-) -> Result<Vec<(client::next::Client, Vec<wire::Agent>)>> {
+) -> Result<Vec<(client::Client, Vec<wire::Agent>)>> {
     let Some(door) = connect::front_door_now(config).await else {
         return Ok(Vec::new());
     };

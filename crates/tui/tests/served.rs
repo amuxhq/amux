@@ -24,8 +24,8 @@ fn theme() -> Theme {
 
 /// A client of `host`'s node in memory, through its router and carrier, as
 /// the fleet and its chats call it.
-fn node(net: &Net, host: &str) -> client::next::Client {
-    client::next::Client::in_memory(net.entrance(host).unwrap(), client::next::Surface::Terminal)
+fn node(net: &Net, host: &str) -> client::Client {
+    client::Client::in_memory(net.entrance(host).unwrap(), client::Surface::Terminal)
 }
 
 /// `agent` on desk, as an act on it is addressed: to desk, by its id there.
@@ -154,7 +154,7 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
 // --- the client closing, and a chat closing under the person ----------------
 
 /// A served net of idle headless Claude agents on desk, and a client of desk.
-async fn desk_of(names: &[&str]) -> (Net, client::next::Client, tui::TuiConfig) {
+async fn desk_of(names: &[&str]) -> (Net, client::Client, tui::TuiConfig) {
     let mut topology = Topology::new().host("desk");
     for name in names {
         topology = topology.agent(
@@ -184,11 +184,7 @@ async fn desk_of(names: &[&str]) -> (Net, client::next::Client, tui::TuiConfig) 
 }
 
 /// The terminal client on `node`, once its fleet lists every one of `ids`.
-async fn app_listing(
-    node: client::next::Client,
-    config: tui::TuiConfig,
-    ids: &[&[u8]],
-) -> tui::App {
+async fn app_listing(node: client::Client, config: tui::TuiConfig, ids: &[&[u8]]) -> tui::App {
     let fleet = ui_runtime::Fleet::connect(node.clone(), client::SystemClock)
         .await
         .unwrap();
@@ -243,13 +239,13 @@ async fn a_draft_outlives_the_terminal_client_closing() {
 /// still on its way. It notes the agent of every draft saved.
 #[derive(Clone)]
 struct SlowClearing {
-    inner: client::next::Client,
+    inner: client::Client,
     hold: std::sync::Arc<tokio::sync::watch::Sender<bool>>,
     saved: std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
 }
 
 impl SlowClearing {
-    fn new(inner: client::next::Client, held: bool) -> SlowClearing {
+    fn new(inner: client::Client, held: bool) -> SlowClearing {
         SlowClearing {
             inner,
             hold: std::sync::Arc::new(tokio::sync::watch::Sender::new(held)),
@@ -259,7 +255,7 @@ impl SlowClearing {
 
     /// A client of `net`'s desk whose drafts go through this, and every
     /// other call to the desk's node as it is.
-    fn client(&self, net: &Net) -> client::next::Client {
+    fn client(&self, net: &Net) -> client::Client {
         use tonic::codegen::http;
         use tower::ServiceExt as _;
         type Server = wire::amux::staging::draft_service_server::DraftServiceServer<SlowClearing>;
@@ -278,7 +274,7 @@ impl SlowClearing {
                 }
             }
         });
-        client::next::Client::in_memory(split, client::next::Surface::Terminal)
+        client::Client::in_memory(split, client::Surface::Terminal)
     }
 }
 
@@ -769,7 +765,7 @@ async fn a_chat_on_an_agent_deleted_on_its_far_host_never_offers_to_resume_it() 
 }
 
 /// The terminal client on `node`, once its fleet lists `host`.
-async fn app_seeing(node: client::next::Client, config: tui::TuiConfig, host: &[u8]) -> tui::App {
+async fn app_seeing(node: client::Client, config: tui::TuiConfig, host: &[u8]) -> tui::App {
     let fleet = ui_runtime::Fleet::connect(node.clone(), client::SystemClock)
         .await
         .unwrap();
@@ -877,7 +873,7 @@ async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
 type Calls = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
 
 /// A client of `host`'s node that notes every call it makes in [`Calls`].
-fn noting(net: &Net, host: &str) -> (client::next::Client, Calls) {
+fn noting(net: &Net, host: &str) -> (client::Client, Calls) {
     use tonic::codegen::http;
     use tower::ServiceExt as _;
     let calls = Calls::default();
@@ -895,7 +891,7 @@ fn noting(net: &Net, host: &str) -> (client::next::Client, Calls) {
         node.clone().oneshot(request)
     });
     (
-        client::next::Client::in_memory(service, client::next::Surface::Terminal),
+        client::Client::in_memory(service, client::Surface::Terminal),
         calls,
     )
 }

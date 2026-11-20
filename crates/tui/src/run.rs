@@ -10,8 +10,7 @@
 use std::io;
 
 use anyhow::Result;
-use client::SystemClock;
-use client::next::Client;
+use client::{Client, SystemClock};
 use crossterm::event::EventStream;
 use futures_util::StreamExt as _;
 use futures_util::future::BoxFuture;

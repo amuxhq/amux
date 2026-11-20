@@ -9,7 +9,7 @@
 //! reconfigures only the cells an update changed.
 //!
 //! Nothing here opens a store or knows the node: the runtime is reached
-//! through a [`client::next::Client`] of the profile's node, in memory on
+//! through a [`client::Client`] of the profile's node, in memory on
 //! the phone and over the profile's socket on the Mac. Reads ask that
 //! node; every act on an agent is addressed to the host that owns it.
 
@@ -26,8 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 pub use chat::Chat;
-use client::RpcError;
-use client::next::Client;
+use client::{Client, RpcError};
 pub use coalesce::{Batch, Coalescer, WakeFn};
 use prost::Message as _;
 use tokio::task::JoinHandle;

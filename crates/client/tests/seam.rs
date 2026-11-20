@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use client::next::{Client, Installation, NotSent, Surface};
+use client::{Client, Installation, NotSent, Surface};
 use futures_util::StreamExt as _;
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, Net, Topology};

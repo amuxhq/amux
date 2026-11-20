@@ -176,9 +176,9 @@ async fn profile_channel(profile: &wire::Profile) -> Result<Channel> {
 /// and acts addressed through it to the host that owns what they act on.
 /// Its calls name the terminal, which is what a call naming no client
 /// counts as, so the command line and the terminal client count as one.
-pub async fn client_of(profile: &wire::Profile) -> Result<client::next::Client> {
+pub async fn client_of(profile: &wire::Profile) -> Result<client::Client> {
     let socket = Path::new(&profile.socket_path);
-    client::next::Client::connect(socket, client::next::Surface::Terminal)
+    client::Client::connect(socket, client::Surface::Terminal)
         .await
         .with_context(|| format!("connecting to {}", socket.display()))
 }
@@ -190,9 +190,6 @@ pub async fn admin_of(profile: &wire::Profile) -> Result<crate::pairing::Admin> 
 }
 
 /// A client of the selected profile's node.
-pub async fn client(
-    config: &InstallationConfig,
-    profile: Option<&str>,
-) -> Result<client::next::Client> {
+pub async fn client(config: &InstallationConfig, profile: Option<&str>) -> Result<client::Client> {
     client_of(&self::profile(config, profile).await?).await
 }

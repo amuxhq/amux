@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use client::next::Client;
+use client::Client;
 use ui_state::AgentKey;
 
 #[derive(Default)]

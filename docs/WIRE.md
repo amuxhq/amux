@@ -43,10 +43,10 @@ client never opens a store and never dials another host.
 | Profile and installation management | gRPC over the installation's front-door socket | `InstallationService` |
 | A host pairing with this one | A link stream while a pairing window is open | `PairingService` |
 
-The [`client`](../crates/client/src/lib.rs) crate is the one seam both clients
-use: `GrpcClient` on the desktop and `InProcess` on the phone implement the
-same `Client` trait, so the session and fleet drivers above them are written
-once (see [the client](CLIENT.md)).
+The [`client`](../crates/client/src/lib.rs) crate is the one library every
+client calls its node through: the same generated stubs over the profile
+socket on the desktop and in memory on the phone, so the session and fleet
+drivers above them are written once (see [the client](CLIENT.md)).
 
 On `tools.sock` the caller is an agent. It may message other agents and send
 input only to its own direct children; input to any other agent is refused

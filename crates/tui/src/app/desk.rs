@@ -6,7 +6,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use client::next::Installation;
+use client::Installation;
 use futures_util::StreamExt as _;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;

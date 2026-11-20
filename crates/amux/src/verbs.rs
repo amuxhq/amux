@@ -16,7 +16,7 @@ use wire::{
     Refusal, claude_pty_input, claude_sdk_input, codex_input, inventory_event, send_input_response,
 };
 
-type Client = client::next::Client;
+type Client = client::Client;
 
 /// Every host entry and agent row, read to the inventory's CaughtUp.
 pub async fn inventory(client: &Client) -> Result<(Vec<HostEntry>, Vec<Agent>)> {

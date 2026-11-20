@@ -201,7 +201,7 @@ addresses change. See [embedding](EMBEDDED.md).
 | Caller | Where | What it speaks |
 |---|---|---|
 | CLI, terminal client, Mac app and any [other client](guide/build/build-a-client.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
-| phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
+| phone UI | in memory, through [`client::Client::in_memory`](../crates/client/src/lib.rs) and the phone's entry | the same services as the profile socket |
 | paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
 | an agent's tool server, and its agent process for a spawn | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
 
@@ -653,7 +653,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 
 | Crate | What it is |
 |---|---|
-| [`client`](../crates/client/src/lib.rs) | The one seam both clients call the local runtime through: gRPC over the profile socket, or in process on the phone. |
+| [`client`](../crates/client/src/lib.rs) | The client library every client calls its node through: the generated stubs over the profile socket, or in memory on the phone. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | The pure session and fleet model clients reduce their streams into, with the thin per-kind layer that decodes snapshot bodies, and the plain values the views and the phone bridge share ([`model.rs`](../crates/ui-state/src/model.rs)), from which the Swift mirrors are generated. |
 | [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review document, and code coloured by kind of token for the code each client draws itself. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The session and fleet drivers: the only place a chat does I/O. |

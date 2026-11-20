@@ -40,7 +40,7 @@ async fn desk(
     opens: bool,
 ) -> Option<tui::DeskConfig> {
     let installation =
-        client::next::Installation::connect(&config.front_door(), client::next::Surface::Terminal)
+        client::Installation::connect(&config.front_door(), client::Surface::Terminal)
             .await
             .ok()?;
     Some(tui::DeskConfig {

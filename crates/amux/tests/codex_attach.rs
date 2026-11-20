@@ -65,7 +65,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
         .await;
     let coder = support::created_id(&created);
     let chats = client(&desk.socket).await;
-    let phase = |chats: &client::next::Client| {
+    let phase = |chats: &client::Client| {
         let chats = chats.clone();
         async move {
             chats

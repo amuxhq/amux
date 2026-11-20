@@ -23,8 +23,7 @@ use tower::util::BoxCloneService;
 use tower::{Service, ServiceExt as _};
 use uuid::Uuid;
 
-use super::Surface;
-use crate::RpcError;
+use crate::{RpcError, Surface};
 
 /// The authority a call answered by the node itself is made with. Anything
 /// that is not a host id is answered there; this is the one clients send.

@@ -774,7 +774,6 @@ name = "client"
 version = "0.2.0"
 dependencies = [
  "agent-dir",
- "async-trait",
  "futures-util",
  "hyper-util",
  "patience",

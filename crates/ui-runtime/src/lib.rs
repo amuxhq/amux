@@ -3,7 +3,7 @@
 //! A [`Session`] owns one agent's Subscribe stream and feeds it into the
 //! pure `ui_state::SessionState`; a [`Fleet`] does the same for the
 //! inventory and holds the one session each live agent has. Both call the
-//! local runtime through a [`client::next::Client`], reconnect on
+//! local runtime through a [`client::Client`], reconnect on
 //! their own clock, and keep a bounded trace for dumps. Nothing is
 //! persisted: every open rebuilds from the runtime's rows.
 

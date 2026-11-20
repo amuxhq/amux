@@ -232,7 +232,7 @@ impl Report {
     /// the profile is signed in, and says where it went.
     pub async fn submit(
         mut self,
-        admin: client::next::Admin,
+        admin: client::Admin,
         build: String,
     ) -> Result<wire::SubmitReportResponse, String> {
         let dump = match self.dump.take() {

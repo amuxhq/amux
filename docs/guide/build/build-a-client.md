@@ -104,8 +104,7 @@ change.
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use client::next::{Installation, Surface};
-use client::{Clock, SystemClock};
+use client::{Clock, Installation, Surface, SystemClock};
 use ui_runtime::Fleet;
 use ui_view::{FleetView, SecondLine};
 

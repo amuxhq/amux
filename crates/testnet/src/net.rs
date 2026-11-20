@@ -183,7 +183,7 @@ impl NetAgent {
 }
 
 /// An agent the net knows is addressed where it lives, as its row is.
-impl client::next::AgentAddress for NetAgent {
+impl client::AgentAddress for NetAgent {
     fn host_id(&self) -> &[u8] {
         self.host_id.as_bytes()
     }
@@ -1342,15 +1342,15 @@ impl Net {
     /// phone calls its own runtime; on a process host, over the profile's
     /// socket as the terminal client dials it. A call on another host's
     /// agent is carried to that host, which answers it for this person.
-    pub async fn person(&self, host: &str) -> Result<client::next::Client, NetError> {
+    pub async fn person(&self, host: &str) -> Result<client::Client, NetError> {
         match self.process(host)?.cloned() {
             Some(process) => process.client().await.map_err(|why| NetError::Process {
                 host: host.to_owned(),
                 why,
             }),
-            None => Ok(client::next::Client::in_memory(
+            None => Ok(client::Client::in_memory(
                 self.entrance(host)?,
-                client::next::Surface::Phone,
+                client::Surface::Phone,
             )),
         }
     }
@@ -1410,9 +1410,9 @@ impl Net {
     /// `name`'s own client: its tools socket, as its tool server dials it.
     /// Every call is made as that agent, and is answered by the host that
     /// owns what it acts on, which checks it against its own rows.
-    pub async fn tools(&self, name: &str) -> Result<client::next::Client, NetError> {
+    pub async fn tools(&self, name: &str) -> Result<client::Client, NetError> {
         let socket = self.agent_dir(name)?.join(agent_dir::TOOLS_SOCK);
-        Ok(client::next::Client::connect(&socket, client::next::Surface::Terminal).await?)
+        Ok(client::Client::connect(&socket, client::Surface::Terminal).await?)
     }
 
     /// `parent` spawns `decl` as its own spawn tool does: the request goes

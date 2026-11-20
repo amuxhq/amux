@@ -11,8 +11,7 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use client::next::{Client, NotSent};
-use client::{Clock, EventStream, RpcError};
+use client::{Client, Clock, EventStream, NotSent, RpcError};
 use futures_util::{FutureExt as _, StreamExt as _};
 use prost::Message as _;
 use tokio::sync::{Notify, watch};
@@ -137,7 +136,7 @@ impl Catalogues {
 pub(crate) struct Inner {
     client: Client,
     /// The agent's host services, at its host.
-    agent: client::next::Agent,
+    agent: client::Agent,
     agent_id: Vec<u8>,
     /// The rows a (re)opened stream starts with.
     tail: AtomicU32,

@@ -10,8 +10,7 @@ use wire::{
     BlobRef, Diff, DiffBase, Filing, Input, MessageBody, PromptSubmission, SendInputResponse,
 };
 
-use super::{Addressed, Conn, stub};
-use crate::{RpcError, held};
+use crate::{Addressed, Conn, RpcError, held, stub};
 
 /// One host's services: what it offers before any agent exists, and making
 /// an agent on it.
@@ -21,7 +20,7 @@ pub struct Host {
 }
 
 impl Host {
-    pub(super) fn new(to: Addressed) -> Host {
+    pub(crate) fn new(to: Addressed) -> Host {
         Host { to }
     }
 
@@ -30,7 +29,7 @@ impl Host {
     }
 
     /// Making agents on this host. Every other act on an agent is through
-    /// its row ([`super::Client::agent`]); a new agent has none yet.
+    /// its row ([`crate::Client::agent`]); a new agent has none yet.
     pub fn agents(&self) -> HostAgents {
         HostAgents {
             to: self.to.clone(),
@@ -88,7 +87,7 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub(super) fn new(to: Addressed, agent_id: Vec<u8>) -> Agent {
+    pub(crate) fn new(to: Addressed, agent_id: Vec<u8>) -> Agent {
         Agent { to, agent_id }
     }
 

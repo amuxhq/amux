@@ -98,7 +98,7 @@ struct Shared {
     phone: Phone,
     /// The profiles, managed the same way whether the installation is
     /// hosted here or is a daemon this app attached to.
-    installation: client::next::Installation,
+    installation: client::Installation,
     outbox: Arc<Outbox>,
 }
 
@@ -312,7 +312,7 @@ impl Outbox {
 
     /// Posts the profile list as it stands now; a list that cannot be read
     /// is left for the profile stream to post.
-    async fn post_profiles(&self, installation: &client::next::Installation) {
+    async fn post_profiles(&self, installation: &client::Installation) {
         if let Ok(profiles) = installation.list_profiles().await {
             self.post_listed(&profiles);
         }
@@ -494,9 +494,7 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
     let phone = Phone::attached().map_err(|error| error.to_string())?;
     let door = front_door.to_owned();
     let installation = phone
-        .wait(async move {
-            client::next::Installation::connect(&door, client::next::Surface::Mac).await
-        })
+        .wait(async move { client::Installation::connect(&door, client::Surface::Mac).await })
         .ok_or("the runtime has stopped")?
         .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?;
     serve(phone, installation, tail)
@@ -537,7 +535,7 @@ where
 /// again whenever the installation's profile stream says it moved.
 fn serve(
     phone: Phone,
-    installation: client::next::Installation,
+    installation: client::Installation,
     tail: u32,
 ) -> Result<Box<AmuxRuntime>, String> {
     let outbox = Arc::new(Outbox {
@@ -1454,7 +1452,7 @@ unsafe fn profile_act_on_profiles<T, F, Fut>(
 ) -> u64
 where
     T: Serialize + Send + 'static,
-    F: FnOnce(client::next::Installation, ProfileId) -> Fut,
+    F: FnOnce(client::Installation, ProfileId) -> Fut,
     Fut: Future<Output = Answered<T>> + Send + 'static,
 {
     guard(0, || {

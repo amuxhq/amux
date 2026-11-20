@@ -7,8 +7,7 @@ use wire::amux::staging::session_service_client::SessionServiceClient;
 use wire::amux::staging::{self};
 use wire::{Agent, HostEntry, InventoryEvent, Item, ListItemsResponse, SessionEvent};
 
-use super::{Conn, stub};
-use crate::{EventStream, RpcError, held, held_events};
+use crate::{Conn, EventStream, RpcError, held, held_events, stub};
 
 /// The fleet as the node holds it.
 #[derive(Clone)]
@@ -17,7 +16,7 @@ pub struct Inventory {
 }
 
 impl Inventory {
-    pub(super) fn new(conn: Conn) -> Inventory {
+    pub(crate) fn new(conn: Conn) -> Inventory {
         Inventory { conn }
     }
 
@@ -48,7 +47,7 @@ impl Inventory {
     }
 
     /// A host by the name a person uses for it. Its id is what a host
-    /// service on it is addressed by ([`super::Client::host`]).
+    /// service on it is addressed by ([`crate::Client::host`]).
     pub async fn resolve_host(&self, name: &str) -> Result<HostEntry, RpcError> {
         let request = staging::ResolveHostRequest {
             name: name.to_owned(),
@@ -64,7 +63,7 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    pub(super) fn new(conn: Conn) -> Sessions {
+    pub(crate) fn new(conn: Conn) -> Sessions {
         Sessions { conn }
     }
 
@@ -137,7 +136,7 @@ pub struct Drafts {
 }
 
 impl Drafts {
-    pub(super) fn new(conn: Conn) -> Drafts {
+    pub(crate) fn new(conn: Conn) -> Drafts {
         Drafts { conn }
     }
 

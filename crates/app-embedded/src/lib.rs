@@ -28,8 +28,7 @@ use app_runtime::values::{
     Bearer, BillingInterval, Found, Identity, PairedPeer, PaywallFrom, PendingPair, Roster,
 };
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
-use client::Clock;
-use client::next::{Client, Installation, Surface};
+use client::{Client, Clock, Installation, Surface};
 use node::{
     CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions, ProfileRefusal,
     ProfileRuntime, Registry, SourcePolicy, StartError, StartOptions,

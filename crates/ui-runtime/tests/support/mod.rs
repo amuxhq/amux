@@ -13,8 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use client::next::Surface;
-use client::{EventStream, RpcError};
+use client::{EventStream, RpcError, Surface};
 use futures_util::StreamExt as _;
 use tokio::sync::{mpsc, oneshot};
 use tonic::body::Body;
@@ -117,7 +116,7 @@ pub struct Calls {
 type Addressed = Arc<Mutex<Vec<(String, String)>>>;
 
 /// A client of the fake runtime, in memory, and the test's end of it.
-pub fn runtime() -> (client::next::Client, Calls) {
+pub fn runtime() -> (client::Client, Calls) {
     let (tx, rx) = mpsc::unbounded_channel();
     let fake = FakeRuntime { calls: tx };
     let routes = Routes::default()
@@ -132,7 +131,7 @@ pub fn runtime() -> (client::next::Client, Calls) {
         addressed: addressed.clone(),
     };
     (
-        client::next::Client::in_memory(served, Surface::Terminal),
+        client::Client::in_memory(served, Surface::Terminal),
         Calls { rx, addressed },
     )
 }

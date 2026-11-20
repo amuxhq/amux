@@ -7,8 +7,7 @@
 
 use std::time::Duration;
 
-use client::SystemClock;
-use client::next::{Client, Surface};
+use client::{Client, Surface, SystemClock};
 use provider_fakes::script::Step;
 use support::until_within;
 use testnet::{AgentDecl, FakeKind, Net, Topology};

@@ -138,7 +138,7 @@ pub async fn grpc_channel(path: &Path) -> std::io::Result<GrpcChannel> {
 
 /// A client of the first profile's node, through the front door at
 /// `socket`.
-pub async fn client(socket: &Path) -> client::next::Client {
+pub async fn client(socket: &Path) -> client::Client {
     let door = grpc_channel(socket).await.expect("a daemon answers");
     let profile = InstallationServiceClient::new(door)
         .list_profiles(wire::ListProfilesRequest {})
@@ -150,7 +150,7 @@ pub async fn client(socket: &Path) -> client::next::Client {
         .next()
         .expect("a profile");
     let socket = Path::new(&profile.socket_path);
-    client::next::Client::connect(socket, client::next::Surface::Terminal)
+    client::Client::connect(socket, client::Surface::Terminal)
         .await
         .unwrap()
 }
@@ -184,7 +184,7 @@ pub fn says(chat: &[(String, String)], text: &str, n: usize) -> Result<(), Strin
 
 /// An agent's chat as a client opening it reads it: every item's key and
 /// text, in order, read to CaughtUp.
-pub async fn chat(client: &client::next::Client, agent: &[u8]) -> Vec<(String, String)> {
+pub async fn chat(client: &client::Client, agent: &[u8]) -> Vec<(String, String)> {
     let mut stream = client
         .sessions()
         .subscribe(agent, 1000)

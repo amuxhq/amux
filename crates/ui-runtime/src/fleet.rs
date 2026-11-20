@@ -13,8 +13,7 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use client::next::{AgentAddress, Client, NotSent};
-use client::{Clock, EventStream, RpcError};
+use client::{AgentAddress, Client, Clock, EventStream, NotSent, RpcError};
 use futures_util::StreamExt as _;
 use tokio::sync::{OnceCell, watch};
 use tokio::task::JoinHandle;

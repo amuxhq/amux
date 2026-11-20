@@ -1478,7 +1478,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .join(node::PROFILE_SOCKET);
     for (socket, own) in [(&socket, desk), (&work_socket, work_edge.host_id())] {
         use futures_util::StreamExt as _;
-        let client = client::next::Client::connect(socket, client::next::Surface::Terminal)
+        let client = client::Client::connect(socket, client::Surface::Terminal)
             .await
             .unwrap();
         let mut events = client.inventory().subscribe().await.unwrap();
@@ -3144,7 +3144,7 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
         net.host("desk").unwrap().profile,
     )
     .join(node::PROFILE_SOCKET);
-    let client = client::next::Client::connect(&socket, client::next::Surface::Terminal)
+    let client = client::Client::connect(&socket, client::Surface::Terminal)
         .await
         .unwrap();
     const LIMIT: usize = 64 * 1024 * 1024;

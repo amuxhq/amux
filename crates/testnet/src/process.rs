@@ -146,7 +146,7 @@ impl ProcessHost {
 
     /// A person's client of the host's one profile, as the CLI and the
     /// terminal client reach it: over the profile's socket.
-    pub(crate) async fn client(&self) -> Result<client::next::Client, String> {
+    pub(crate) async fn client(&self) -> Result<client::Client, String> {
         // A daemon between a crash and its supervisor's next start answers
         // nothing for a moment; a person's client would retry, and so does
         // this one, for as long as such a start takes.
@@ -160,7 +160,7 @@ impl ProcessHost {
         }
     }
 
-    async fn connect(&self) -> Result<client::next::Client, String> {
+    async fn connect(&self) -> Result<client::Client, String> {
         let profile = self
             .front_door()
             .await?
@@ -172,12 +172,9 @@ impl ProcessHost {
             .into_iter()
             .next()
             .ok_or("the host has no profile")?;
-        client::next::Client::connect(
-            Path::new(&profile.socket_path),
-            client::next::Surface::Terminal,
-        )
-        .await
-        .map_err(|error| format!("the profile socket does not answer: {error}"))
+        client::Client::connect(Path::new(&profile.socket_path), client::Surface::Terminal)
+            .await
+            .map_err(|error| format!("the profile socket does not answer: {error}"))
     }
 }
 

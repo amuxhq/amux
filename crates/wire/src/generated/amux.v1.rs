@@ -10360,7 +10360,8 @@ pub enum FileFlag {
     Lockfile = 2,
     /// Another project's code kept in this repository.
     Vendored = 3,
-    /// Changed by more lines than a reader is shown without asking.
+    /// Over 1 MiB at the base or in the working tree, too big to show
+    /// without asking.
     Large = 4,
 }
 impl FileFlag {

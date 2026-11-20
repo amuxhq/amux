@@ -85,6 +85,7 @@ enum FileFlag {
   FILE_FLAG_LOCKFILE = 2;
   // Another project's code kept in this repository.
   FILE_FLAG_VENDORED = 3;
-  // Changed by more lines than a reader is shown without asking.
+  // Over 1 MiB at the base or in the working tree, too big to show
+  // without asking.
   FILE_FLAG_LARGE = 4;
 }

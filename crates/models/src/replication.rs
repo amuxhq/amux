@@ -860,6 +860,9 @@ impl Transition<'_> {
     /// `link`, which its core must list to the replica. What the core lists
     /// after the step is what it listed before: a call moves no route.
     fn serve(&mut self, link: LinkId, call: CallId, request: PeerRequest) -> Vec<Output> {
+        let request = request
+            .read()
+            .expect("a replica asks its origin only to read");
         let input = Input::PeerCall {
             from: REPLICA,
             call,

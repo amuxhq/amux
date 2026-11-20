@@ -15,7 +15,8 @@ use crate::ids::{
 };
 use crate::payload::{
     AgentSpec, Answer, CarrierKind, ChannelError, ClientRequest, ControlFrame, JobResult,
-    LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response, Status,
+    LinkCloseReason, LinkFrame, PairMessage, PeerRead, PeerRequest, PublicKey, Push, Response,
+    Status,
 };
 use crate::presence::Route;
 use crate::reach::{AttemptOutcome, Plan};
@@ -96,7 +97,7 @@ pub enum Input {
     PeerCall {
         from: HostId,
         call: CallId,
-        request: PeerRequest,
+        request: PeerRead,
     },
     /// What came back of a call the core made with [`Output::Call`].
     PeerAnswer {
@@ -745,7 +746,7 @@ pub enum Job {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload::{Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest};
+    use crate::payload::{Answer, ClientRequest, JobResult, PeerFailure, PeerRead, PeerReply};
 
     #[test]
     fn every_kind_of_input_reads_back_as_written() {
@@ -799,7 +800,7 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(11),
-                request: PeerRequest::FollowSession(wire::FollowSessionRequest {
+                request: PeerRead::FollowSession(wire::FollowSessionRequest {
                     agent_id: vec![1, 2],
                     from: Some(wire::follow_session_request::From::After(wire::After {
                         revision: 3,
@@ -811,24 +812,7 @@ mod tests {
             Input::PeerCall {
                 from: HostId([1; 16]),
                 call: CallId(12),
-                request: PeerRequest::FollowAgents,
-            },
-            Input::PeerCall {
-                from: HostId([1; 16]),
-                call: CallId(13),
-                request: PeerRequest::DeliverReport(wire::DeliverReportRequest {
-                    id: vec![4],
-                    child_agent_id: vec![5],
-                    child_name: "scout".into(),
-                    parent_agent_id: vec![6],
-                    report: Some(wire::ChildReport {
-                        to_incarnation: 2,
-                        from_incarnation: 1,
-                        end: Some(wire::child_report::End::TurnEnded(
-                            wire::TurnEnded::default(),
-                        )),
-                    }),
-                }),
+                request: PeerRead::FollowAgents,
             },
             Input::PeerAnswer {
                 call: CallId(9),

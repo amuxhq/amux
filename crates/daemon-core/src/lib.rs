@@ -222,11 +222,7 @@ impl Daemon {
                 self.timers.link_ms = link_ms;
             }
             Input::ClientCall { call, request } => self.client_call(call, request, out),
-            Input::PeerCall {
-                from,
-                call,
-                request,
-            } => self.peer_call(from, call, request, out),
+            Input::PeerCall { call, request, .. } => self.peer_call(call, request, out),
             Input::PeerAnswer { call, answer } => self.peer_answered(call, answer, out),
             Input::CallCancelled { call } => {
                 self.cancelled(call);

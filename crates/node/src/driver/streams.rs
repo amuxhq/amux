@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use daemon_core::payload::{PeerRequest, Response};
+use daemon_core::payload::{PeerRead, Response};
 use wire::{InventoryEvent, SessionEvent};
 
 use super::{Answers, Ask, Delivered};
@@ -84,7 +84,7 @@ impl ProfileRuntime {
         request: wire::FollowSessionRequest,
     ) -> Result<Subscription, ServeError> {
         let room = self.launch().fanout_capacity;
-        let request = PeerRequest::FollowSession(request);
+        let request = PeerRead::FollowSession(request);
         let mut answers = self
             .driver()
             .peer_call(core_host(from), request, room)
@@ -111,7 +111,7 @@ impl ProfileRuntime {
         from: crate::HostId,
     ) -> Result<InventorySubscription, ServeError> {
         let room = self.launch().inventory_capacity;
-        let request = PeerRequest::FollowAgents;
+        let request = PeerRead::FollowAgents;
         let mut answers = self
             .driver()
             .peer_call(core_host(from), request, room)

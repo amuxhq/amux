@@ -370,6 +370,10 @@ pub enum Lane {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Delivery {
     Host(usize, Dbg<Input>),
+    /// A paired host's call of host `h`'s peer service, as it went on the
+    /// link: node's peer edge hands its reads to the core, and a child's
+    /// report as the message from the child [`report_envelope`] spells.
+    Peer(usize, HostId, CallId, Dbg<PeerRequest>),
     Agent(usize, Dbg<agent_core::Input>),
     /// The job runs when it is delivered, then its host hears its result.
     Job(usize, JobId, Dbg<Job>),
@@ -1014,7 +1018,7 @@ impl Net {
                 .is_some_and(|delivery| {
                     matches!(
                         delivery,
-                        Delivery::Host(_, Dbg(Input::PeerCall { .. } | Input::PeerAnswer { .. }))
+                        Delivery::Peer(..) | Delivery::Host(_, Dbg(Input::PeerAnswer { .. }))
                     )
                 })
     }
@@ -1326,14 +1330,17 @@ impl Transition<'_> {
                     (Input::PeerAnswer { call, answer }, _) if answer.is_last() => {
                         self.w.outgoing.remove(&(h, *call));
                     }
-                    (Input::PeerCall { .. }, Lane::Request(caller, call)) => {
-                        if let Some(outgoing) = self.w.outgoing.get_mut(&(caller, call)) {
-                            outgoing.arrived = true;
-                        }
-                    }
                     _ => {}
                 }
-                let input = self.served_by_the_shell(h, input);
+                self.feed(h, input);
+            }
+            Delivery::Peer(h, from, call, Dbg(request)) => {
+                if let Lane::Request(caller, made) = lane
+                    && let Some(outgoing) = self.w.outgoing.get_mut(&(caller, made))
+                {
+                    outgoing.arrived = true;
+                }
+                let input = self.served_by_the_shell(h, from, call, request);
                 self.feed(h, input);
             }
             Delivery::Agent(p, Dbg(input)) => self.feed_agent(p, input),
@@ -1389,13 +1396,13 @@ impl Transition<'_> {
     fn describe(&self, delivery: &Delivery) -> String {
         let host = |h: usize| self.name(h).to_owned();
         match delivery {
+            Delivery::Peer(h, from, _, Dbg(request)) => format!(
+                "{} {} from {}",
+                host(*h),
+                peer_request(request),
+                self.host_index(*from).map_or("?".to_owned(), host)
+            ),
             Delivery::Host(h, Dbg(input)) => match input {
-                Input::PeerCall { from, request, .. } => format!(
-                    "{} {} from {}",
-                    host(*h),
-                    peer_request(request),
-                    self.host_index(*from).map_or("?".to_owned(), host)
-                ),
                 Input::PeerAnswer { answer, .. } => {
                     format!("{} answered {}", host(*h), answer_kind(answer))
                 }
@@ -1875,14 +1882,7 @@ impl Transition<'_> {
         let from = self.plan.hosts[h].id;
         self.push(
             Lane::Request(h, call),
-            host(
-                to,
-                Input::PeerCall {
-                    from,
-                    call: served,
-                    request,
-                },
-            ),
+            Delivery::Peer(to, from, served, Dbg(request)),
         );
     }
 
@@ -1892,17 +1892,23 @@ impl Transition<'_> {
     /// another host never passes through a core on its way: the calling
     /// host's router carries it unread, so the net makes it on the host it
     /// is for.
-    fn served_by_the_shell(&self, h: usize, input: Input) -> Input {
-        match input {
-            Input::PeerCall {
+    fn served_by_the_shell(
+        &self,
+        h: usize,
+        from: HostId,
+        call: CallId,
+        request: PeerRequest,
+    ) -> Input {
+        match request.read() {
+            Ok(request) => Input::PeerCall {
                 from,
                 call,
-                request: PeerRequest::DeliverReport(report),
-            } => Input::ClientCall {
+                request,
+            },
+            Err(report) => Input::ClientCall {
                 call,
                 request: peer_message(report_envelope(&from.0, &self.plan.hosts[h].id.0, report)),
             },
-            other => other,
         }
     }
 
@@ -2654,7 +2660,7 @@ pub fn peer_message(envelope: wire::Envelope) -> ClientRequest {
 /// The host a delivery is for, when it is for a host's daemon.
 fn addressed_to(processes: &[Process], delivery: &Delivery) -> Option<usize> {
     match delivery {
-        Delivery::Host(h, _) | Delivery::Job(h, ..) => Some(*h),
+        Delivery::Host(h, _) | Delivery::Peer(h, ..) | Delivery::Job(h, ..) => Some(*h),
         Delivery::Dial(p) | Delivery::Frame(p, ..) | Delivery::Closed(p, _) => {
             Some(processes[*p].host)
         }
@@ -2695,9 +2701,7 @@ pub fn wire_error(error: &CallError) -> wire::Error {
         }
         CallError::Message(MessageRefusal::Lost) => ErrorCode::Aborted,
         CallError::Message(MessageRefusal::Rejected(_)) => ErrorCode::FailedPrecondition,
-        CallError::NotServed | CallError::Message(MessageRefusal::OtherHost) => {
-            ErrorCode::Unimplemented
-        }
+        CallError::Message(MessageRefusal::OtherHost) => ErrorCode::Unimplemented,
         _ => ErrorCode::Internal,
     };
     wire::Error {

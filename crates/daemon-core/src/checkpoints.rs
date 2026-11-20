@@ -28,7 +28,7 @@ use crate::Daemon;
 use crate::ids::{AgentId, JobId, TimerId};
 use crate::ingest::KEPT_SEGMENTS;
 use crate::io::{Input, Job, Output};
-use crate::payload::{ClientRequest, JobResult, PeerRequest};
+use crate::payload::{ClientRequest, JobResult};
 
 /// What the core remembers about its checkpoints.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -143,12 +143,6 @@ fn writes(input: &Input, copying: JobId) -> bool {
                 | ClientRequest::SubscribeInventory
                 | ClientRequest::GetBlob(_)
         ),
-        // A paired daemon asks this host only to read: its follows and its
-        // pages. A report it hands over reaches the core as a message.
-        Input::PeerCall { request, .. } => !matches!(
-            request,
-            PeerRequest::FollowAgents | PeerRequest::FollowSession(_) | PeerRequest::ListItems(_)
-        ),
         Input::Tick { .. }
         | Input::Timer {
             id: TimerId::Checkpoint | TimerId::Refresh(_) | TimerId::Attempt(_) | TimerId::Retry(_),
@@ -170,6 +164,9 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::Wanted { .. }
         | Input::Entropy(_)
         | Input::Configure(_)
+        // A paired daemon asks this host only to read: its follows and its
+        // pages. A report it hands over reaches the core as a message.
+        | Input::PeerCall { .. }
         | Input::Checkpointed => false,
         _ => true,
     }

@@ -18,7 +18,7 @@ use wire::follow_session_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
-use crate::payload::{Answer, CallError, Opening, PeerRequest};
+use crate::payload::{Answer, CallError, Opening, PeerRead};
 use crate::serve::Key;
 use crate::{Daemon, Pending, codec};
 
@@ -128,19 +128,13 @@ impl Pending {
 }
 
 impl Daemon {
-    /// A paired host's call. Only its reads are answered here: a report it
-    /// hands over reaches the core as a message.
-    pub(crate) fn peer_call(
-        &mut self,
-        from: HostId,
-        call: CallId,
-        request: PeerRequest,
-        out: &mut Vec<Output>,
-    ) {
+    /// A paired host's read. A report it hands over reaches the core as a
+    /// message.
+    pub(crate) fn peer_call(&mut self, call: CallId, request: PeerRead, out: &mut Vec<Output>) {
         let own = self.store.own_host().to_vec();
         let answered = match request {
-            PeerRequest::FollowAgents => self.subscribe_inventory(call, Some(own), out),
-            PeerRequest::FollowSession(request) => {
+            PeerRead::FollowAgents => self.subscribe_inventory(call, Some(own), out),
+            PeerRead::FollowSession(request) => {
                 let from = match request.from {
                     Some(follow_session_request::From::After(after)) => Opening::After {
                         revision: after.revision,
@@ -153,14 +147,9 @@ impl Daemon {
                 self.own(&request.agent_id)
                     .and_then(|()| self.subscribe_session(call, &request.agent_id, from, out))
             }
-            PeerRequest::ListItems(request) => self
+            PeerRead::ListItems(request) => self
                 .own(&request.agent_id)
                 .and_then(|()| self.list_items(call, &request, out)),
-            // The shell hands a report on as a message from the child.
-            PeerRequest::DeliverReport(_) => {
-                tracing::warn!(peer = %crate::hex(&from.0), "a peer call the core does not serve");
-                Err(CallError::NotServed)
-            }
         };
         self.end_unanswered(call, answered, out);
     }
@@ -230,7 +219,7 @@ mod tests {
         let mut daemon = daemon();
         let before = daemon.store().dump().expect("the store dumps");
         let read = || {
-            PeerRequest::FollowSession(wire::FollowSessionRequest {
+            crate::payload::PeerRead::FollowSession(wire::FollowSessionRequest {
                 agent_id: MINE.to_vec(),
                 from: Some(follow_session_request::From::Tail(8)),
             })

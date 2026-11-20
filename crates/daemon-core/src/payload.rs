@@ -260,9 +260,9 @@ pub enum MessageRefusal {
 }
 
 /// What a daemon asks a paired daemon for itself, on its PeerService,
-/// decoded: one a paired host makes of this one, or one this host makes of
-/// a paired host. A call a client makes of another host's services is
-/// carried there unread and never passes through the core.
+/// decoded, as this host makes it of a paired host. A call a client makes
+/// of another host's services is carried there unread and never passes
+/// through the core.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerRequest {
     /// PeerService.FollowAgents: a stream of this host's entry and its own
@@ -279,6 +279,32 @@ pub enum PeerRequest {
     /// PeerService.ListItems: a page of one of this host's agents' older
     /// items, whose request is this one field for field.
     ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
+}
+
+/// A paired host's call as it reaches this host's core: only its reads.
+/// A report it delivers reaches the core as a message from the child
+/// ([`report_envelope`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PeerRead {
+    /// PeerService.FollowAgents.
+    FollowAgents,
+    /// PeerService.FollowSession.
+    FollowSession(#[serde(with = "codec::message")] wire::FollowSessionRequest),
+    /// PeerService.ListItems.
+    ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
+}
+
+impl PeerRequest {
+    /// The request as the called host's core reads it, or the report it
+    /// hands on as a message instead.
+    pub fn read(self) -> Result<PeerRead, wire::DeliverReportRequest> {
+        match self {
+            PeerRequest::FollowAgents => Ok(PeerRead::FollowAgents),
+            PeerRequest::FollowSession(request) => Ok(PeerRead::FollowSession(request)),
+            PeerRequest::ListItems(request) => Ok(PeerRead::ListItems(request)),
+            PeerRequest::DeliverReport(report) => Err(report),
+        }
+    }
 }
 
 /// A child's report as the parent's host hands it on to the parent: a
@@ -409,9 +435,6 @@ pub enum CallError {
     OriginUnreachable,
     /// The store failed, in its own words.
     Store(String),
-    /// A paired host asked for what this host answers only to its own
-    /// clients.
-    NotServed,
     /// The registry refused the call or could not finish it.
     Registry(Refusal),
     /// The agent holds no blob with this hash, in hex.

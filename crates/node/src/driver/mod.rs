@@ -39,7 +39,7 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::{DumpKind, DumpLimit, Ring};
 use daemon_core::payload::{
-    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure,
+    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerRead,
     PeerRequest, Response, Status,
 };
 use daemon_core::{
@@ -95,7 +95,7 @@ pub(crate) enum Fed {
     PeerCall {
         from: HostId,
         call: CallId,
-        request: PeerRequest,
+        request: PeerRead,
     },
     /// A nudge from someone who waits for the journal to be read to its
     /// end: told the frames committed meanwhile, or why ingest failed.
@@ -327,12 +327,7 @@ impl Driver {
     }
 
     /// Hands a paired host's call to the core and returns its answers.
-    pub(crate) async fn peer_call(
-        &self,
-        from: HostId,
-        request: PeerRequest,
-        room: usize,
-    ) -> Answers {
+    pub(crate) async fn peer_call(&self, from: HostId, request: PeerRead, room: usize) -> Answers {
         self.open(room, |call| Fed::PeerCall {
             from,
             call,
@@ -497,7 +492,7 @@ impl Drop for Driver {
 /// A call as the core thread takes it, before its request is completed.
 enum Arriving {
     Client(CallId, Ask),
-    Peer(HostId, CallId, Box<PeerRequest>),
+    Peer(HostId, CallId, Box<PeerRead>),
 }
 
 /// The core's newest checkpoint and the ring's lines since, as written.
@@ -775,9 +770,9 @@ impl CoreThread {
             Some(Arriving::Peer(from, call, request)) => {
                 let request = *request;
                 let stream = match &request {
-                    PeerRequest::FollowAgents => Some("inventory"),
-                    PeerRequest::FollowSession(_) => Some("session"),
-                    PeerRequest::ListItems(_) | PeerRequest::DeliverReport(_) => None,
+                    PeerRead::FollowAgents => Some("inventory"),
+                    PeerRead::FollowSession(_) => Some("session"),
+                    PeerRead::ListItems(_) => None,
                 };
                 if let Some(stream) = stream {
                     tracing::debug!(

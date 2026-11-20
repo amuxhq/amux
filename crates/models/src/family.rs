@@ -38,8 +38,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use daemon_core::payload::{
-    Answer, CarrierKind, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest, Response,
-    Status, report_envelope,
+    Answer, CarrierKind, ClientRequest, JobResult, PeerFailure, PeerRead, PeerReply, PeerRequest,
+    Response, Status, report_envelope,
 };
 use daemon_core::{
     AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
@@ -1186,7 +1186,7 @@ impl<'a> Transition<'a> {
             );
         }
         match request {
-            request @ PeerRequest::FollowAgents => {
+            PeerRequest::FollowAgents => {
                 if let Some(old) = self.next.following.take() {
                     self.feed(PARENTS, Input::CallCancelled { call: old.call });
                 }
@@ -1200,7 +1200,7 @@ impl<'a> Transition<'a> {
                     Input::PeerCall {
                         from: HOSTS[CHILDS],
                         call,
-                        request,
+                        request: PeerRead::FollowAgents,
                     },
                 );
             }

@@ -1272,7 +1272,7 @@ async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
 /// QA: the terminal offered the phone as a host and starting there failed
 /// with a socket-path error from the phone's sandbox.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_spawn_on_a_host_that_runs_no_agents_is_refused_in_plain_words() {
+async fn spawning_on_a_host_that_runs_no_agents_is_refused_in_plain_words() {
     let mut net = Net::start_with(
         three_hosts().agent(lead()),
         testnet::NetOptions {

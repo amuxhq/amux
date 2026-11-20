@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -315,6 +316,54 @@ fn every_terminal_claude_fixture_survives_its_record() {
 fn every_codex_fixture_survives_its_record() {
     let outcome = round_trip::<Codex>("codex");
     assert!(outcome.failures.is_empty(), "{:#?}", outcome.failures);
+}
+
+/// An ACP agent's record is made up into a stream for the ACP
+/// interpreter, which runs it through with no check broken: every
+/// recording of the three built-in agents.
+#[test]
+fn every_acp_fixture_reproduces_through_the_acp_interpreter() {
+    let mut played = 0;
+    for fixture in fixtures("acp") {
+        let script = interpret::fixture_script::<Acp>(&fixture).unwrap();
+        let events: Vec<Event> = script.events.into_iter().flat_map(|(_, e)| e).collect();
+        let recorded = record::<Acp>(&script.spec, RECORDED, &events);
+        let reproduction = synthetic::reproduce(&recorded).unwrap();
+        assert_eq!(reproduction.kind, wire::Kind::Acp);
+        assert_eq!(
+            reproduction.synthetic.events.len(),
+            events.len(),
+            "{}: {:?}",
+            fixture.display(),
+            reproduction.synthetic.notes
+        );
+        assert!(
+            reproduction.broken.is_empty(),
+            "{}: {:?}",
+            fixture.display(),
+            reproduction.broken
+        );
+        played += 1;
+    }
+    assert!(played >= 52, "{played} ACP fixtures");
+}
+
+/// A made-up ACP frame is held to ACP's own types, as each provider's is.
+#[test]
+fn a_made_up_acp_frame_the_types_refuse_is_told_apart() {
+    let update = |kind: &str| {
+        json!({"jsonrpc": "2.0", "method": "session/update",
+               "params": {"sessionId": "s", "update": {"sessionUpdate": kind, "title": "t"}}})
+    };
+    assert_eq!(
+        synthetic::drift(
+            wire::Kind::Acp,
+            Channel::Rpc,
+            &update("session_info_update")
+        ),
+        None
+    );
+    assert!(synthetic::drift(wire::Kind::Acp, Channel::Rpc, &update("mood_update")).is_some());
 }
 
 fn spec(kind: wire::Kind) -> AgentSpec {

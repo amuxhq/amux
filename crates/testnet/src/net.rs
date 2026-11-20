@@ -1786,6 +1786,7 @@ impl Net {
                 commands: Commands {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
+                    acp: PathBuf::new(),
                 },
             },
         );

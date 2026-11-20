@@ -1,4 +1,4 @@
-//! The `claude` and `codex` commands a host's agents run.
+//! The `claude`, `codex` and `acp` commands a host's agents run.
 //!
 //! Every way an agent comes to exist ends with its host launching its
 //! configured provider command: a spawn from the net, a create from the
@@ -82,10 +82,16 @@ pub(crate) struct Wrappers<'a> {
     pub host_script: Option<&'a Path>,
 }
 
-/// The two commands, in the host's `bin/`.
+/// The commands, in the host's `bin/`.
 pub(crate) struct Commands {
     pub claude: PathBuf,
     pub codex: PathBuf,
+    /// The fake ACP agent with the agent's script, for an ACP agent
+    /// configured to run it. A net has no real ACP agents set up.
+    // Nothing in the net launches an ACP agent by itself: a test names
+    // this command in the agent's configuration.
+    #[allow(dead_code)]
+    pub acp: PathBuf,
 }
 
 /// Records an agent's provider for the host's commands to find when it
@@ -312,11 +318,31 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
         ),
         fake_tail(&format!("fake={}\n", fake(FakeKind::Codex))),
     );
+    let acp = format!(
+        "{}{}{}",
+        header("acp"),
+        real_branch("ACP", None, ""),
+        fake_tail(&format!(
+            "fake={}
+export {}={}
+",
+            quote(&wrappers.fakes.join(provider_fakes::Kind::Acp.binary_name())),
+            provider_fakes::acp::SESSIONS_ENV,
+            // The host's own, so an agent restarted on it reopens its
+            // session and nothing of the net's is left outside it.
+            quote(&wrappers.dir.join("acp-sessions")),
+        )),
+    );
     let commands = Commands {
         claude: bin.join("claude"),
         codex: bin.join("codex"),
+        acp: bin.join("acp"),
     };
-    for (path, text) in [(&commands.claude, claude), (&commands.codex, codex)] {
+    for (path, text) in [
+        (&commands.claude, claude),
+        (&commands.codex, codex),
+        (&commands.acp, acp),
+    ] {
         std::fs::write(path, text).map_err(|error| error.to_string())?;
         #[cfg(unix)]
         {

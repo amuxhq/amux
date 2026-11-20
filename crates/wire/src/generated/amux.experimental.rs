@@ -258,6 +258,11 @@ pub struct ReviewGetFilesRequest {
     /// what changed since it.
     #[prost(string, tag = "5")]
     pub from: ::prost::alloc::string::String,
+    /// Also answers `changed`: every file of the comparison, as the summary
+    /// lists them. With no files asked for, the answer is the list alone:
+    /// how a client shows a past round's whole diff, which no summary lists.
+    #[prost(bool, tag = "6")]
+    pub list: bool,
 }
 impl ::prost::Name for ReviewGetFilesRequest {
     const NAME: &'static str = "ReviewGetFilesRequest";
@@ -296,6 +301,11 @@ pub struct ReviewGetFilesResponse {
     /// The files asked for that fit in this answer, in the order asked.
     #[prost(message, repeated, tag = "1")]
     pub files: ::prost::alloc::vec::Vec<ReviewFileDiff>,
+    /// With `list`, what changed from `from` to `snapshot`, by path, as
+    /// ReviewSummary.files lists all changes: for REVIEW_VIEW_SINCE_LAST,
+    /// limited as its hunks are. Empty without `list`.
+    #[prost(message, repeated, tag = "2")]
+    pub changed: ::prost::alloc::vec::Vec<super::v1::ChangedFile>,
 }
 impl ::prost::Name for ReviewGetFilesResponse {
     const NAME: &'static str = "ReviewGetFilesResponse";

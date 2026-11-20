@@ -196,6 +196,10 @@ message ReviewGetFilesRequest {
   // ReviewRound.base_commit) for all changes, the last round's snapshot for
   // what changed since it.
   string from = 5;
+  // Also answers `changed`: every file of the comparison, as the summary
+  // lists them. With no files asked for, the answer is the list alone:
+  // how a client shows a past round's whole diff, which no summary lists.
+  bool list = 6;
 }
 
 message ReviewFileRequest {
@@ -210,6 +214,10 @@ message ReviewFileRequest {
 message ReviewGetFilesResponse {
   // The files asked for that fit in this answer, in the order asked.
   repeated ReviewFileDiff files = 1;
+  // With `list`, what changed from `from` to `snapshot`, by path, as
+  // ReviewSummary.files lists all changes: for REVIEW_VIEW_SINCE_LAST,
+  // limited as its hunks are. Empty without `list`.
+  repeated amux.v1.ChangedFile changed = 2;
 }
 
 message ReviewFileDiff {

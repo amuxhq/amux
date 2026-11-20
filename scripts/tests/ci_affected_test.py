@@ -21,8 +21,11 @@ CRATES = {
     "app-ffi": {"folder": "app-ffi", "built": {"app-runtime"}, "tests": set()},
     "app-runtime": {"folder": "app-runtime", "built": {"wire"}, "tests": set()},
     "tui": {"folder": "tui", "built": {"wire"}, "tests": set()},
-    "amux-app": {"folder": "amux", "built": {"tui"}, "tests": set()},
+    "amux": {"folder": "amux", "built": {"tui", "daemon-core"}, "tests": set()},
+    "testnet": {"folder": "testnet", "built": {"daemon-core"}, "tests": {"app-runtime"}},
+    "ios-tools": {"folder": "ios-tools", "built": {"wire"}, "tests": set()},
     "browser-core": {"folder": "browser-core", "built": {"wire"}, "tests": set()},
+    "named-crate": {"folder": "other-folder", "built": set(), "tests": set()},
 }
 SANITIZED = ["app-ffi", "tui"]
 
@@ -36,13 +39,26 @@ class AffectedTest(unittest.TestCase):
     def test_documentation_alone_runs_nothing_but_the_policy_job(self):
         self.assertEqual(groups("docs/CI.md", "README.md", "images/readme/home.png"), set())
 
+    def test_other_workflows_and_manual_scripts_run_only_the_policy_job(self):
+        self.assertEqual(
+            groups(
+                ".github/workflows/ios.yml",
+                ".github/workflows/nightly.yml",
+                ".github/workflows/release.yml",
+                "scripts/qa.py",
+                "scripts/release.py",
+                "scripts/tests/ci_affected_test.py",
+            ),
+            set(),
+        )
+
     def test_a_crates_own_markdown_is_that_crates(self):
         self.assertIn("product", groups("crates/tui/README.md"))
 
     def test_a_documentation_file_a_test_reads_runs_that_crates_jobs(self):
         with_reader = dict(CRATES, analytics={"folder": "analytics", "built": set(), "tests": set()})
         result = ci.affected(["docs/guide/understand/what-amux-sends.md"], with_reader, SANITIZED)
-        self.assertTrue(result["tests"] and result["product"])
+        self.assertTrue(result["tests"])
         self.assertFalse(result["models"])
 
     def test_the_phone_app_alone_runs_only_ios_tools_and_leaves_the_rest_to_its_gate(self):
@@ -51,7 +67,11 @@ class AffectedTest(unittest.TestCase):
         )
 
     def test_a_phone_fixture_read_by_a_rust_test_runs_that_crates_jobs(self):
-        with_node = dict(CRATES, node={"folder": "node", "built": {"wire"}, "tests": set()})
+        with_node = dict(
+            CRATES,
+            node={"folder": "node", "built": {"wire"}, "tests": set()},
+            amux={"folder": "amux", "built": {"tui", "node"}, "tests": set()},
+        )
         result = ci.affected(
             ["apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json"],
             with_node,
@@ -64,15 +84,17 @@ class AffectedTest(unittest.TestCase):
         self.assertEqual(groups("crates/tui/src/lib.rs"), {"tests", "product", "sanitizers"})
         self.assertEqual(groups("crates/app-runtime/src/lib.rs"), {"tests", "product", "bridge"})
         self.assertEqual(
-            groups("crates/app-ffi/src/lib.rs"), {"tests", "product", "sanitizers", "bridge"}
+            groups("crates/app-ffi/src/lib.rs"), {"tests", "sanitizers", "bridge"}
         )
+        self.assertEqual(groups("crates/ios-tools/src/lib.rs"), {"tests"})
+        self.assertEqual(groups("crates/browser-core/src/lib.rs"), {"tests", "browser"})
         self.assertEqual(groups("crates/daemon-core/src/lib.rs"), {"tests", "product", "models"})
         self.assertEqual(
             groups("crates/wire/src/lib.rs"), {"tests", "product", "models", "bridge", "browser"}
         )
 
     def test_a_crates_folder_need_not_be_its_name(self):
-        self.assertEqual(groups("crates/amux/src/main.rs"), {"tests", "product"})
+        self.assertEqual(groups("crates/other-folder/src/lib.rs"), {"tests"})
 
     def test_a_crates_own_test_dependencies_count_and_those_beneath_it_do_not(self):
         self.assertIn("models", groups("crates/provider-fakes/src/lib.rs"))

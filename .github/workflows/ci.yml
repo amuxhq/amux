@@ -22,9 +22,10 @@ env:
 
 jobs:
   # Which jobs this change can affect (scripts/ci-affected.py): a change to
-  # documentation alone runs only the policy job, the phone app alone leaves
-  # the product's jobs to the iOS gate, and the models, the sanitizers and the
-  # bridge's checks run when a crate they are built from changed.
+  # documentation, another workflow or a manual script runs only the policy
+  # job, the phone app alone runs ios-tools and leaves the rest to the iOS
+  # gate, and product, models, sanitizers, bridge and browser run when a crate
+  # they are built from changed.
   changes:
     name: What this change affects
     runs-on: ubuntu-latest
@@ -41,7 +42,7 @@ jobs:
       bridge: ${{ steps.affected.outputs.bridge }}
       browser: ${{ steps.affected.outputs.browser }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Read what changed
         id: affected
         shell: bash
@@ -72,19 +73,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Formatting is seconds of work on the pinned nightly's rustfmt, so it
       # shares this job rather than waiting for a runner of its own. The
       # stable toolchain is installed second, which leaves it the default.
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: nightly-2026-08-30
+          toolchain: nightly
           components: rustfmt
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+          cache: "false"
+          just: "false"
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
       - name: Check formatting
         run: just fmt-check
       - name: Run Clippy
@@ -98,19 +99,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
         with:
           shared-key: test
-      - uses: ./.github/actions/setup-just
-      - uses: ./.github/actions/setup-nextest
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Compile through sccache
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          save-if: "false"
+          nextest: "true"
+          sccache: "true"
       - name: Run ios-tools tests
         run: just test-crate ios-tools
 
@@ -121,13 +116,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: nightly-2026-08-30
+          toolchain: nightly
           components: miri, rust-src
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
       - name: Run the C ABI tests under the checking interpreter
         run: just miri
 
@@ -142,15 +135,12 @@ jobs:
       matrix:
         kind: [address, thread]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: nightly-2026-08-30
+          toolchain: nightly
           components: rust-src
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
           key: sanitize-${{ matrix.kind }}
-      - uses: ./.github/actions/setup-just
       - name: Run the unsafe code's tests under the sanitizer
         run: just sanitize ${{ matrix.kind }}
 
@@ -159,14 +149,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The store check reads the latest release tag's schemas.
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
-      - uses: ./.github/actions/setup-buf
+      - uses: ./.github/actions/setup-rust
       - name: Check committed protobuf code
         run: just codegen-check
       - name: Check the store only grew since the latest release
@@ -192,7 +179,7 @@ jobs:
         run: just docs-check
 
   test:
-    name: Test (${{ matrix.os }}, ${{ matrix.part }} of 2)
+    name: Test (${{ matrix.label }})
     needs: changes
     if: needs.changes.outputs.tests == 'true'
     runs-on: ${{ matrix.os }}
@@ -200,33 +187,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        # Most of this job is running the tests, on a few cores: each
-        # platform runs them as two halves side by side, nextest dealing
-        # every second test to each.
-        part: [1, 2]
+        # Linux and macOS split the suite into two halves side by side.
+        # Windows compiles out the slow Unix/PTY/system suites, so its full
+        # run fits in one job without paying a second workspace compile.
+        include:
+          - os: ubuntu-latest
+            label: "ubuntu-latest, 1 of 2"
+            partition: "--partition count:1/2"
+            save-cache: "true"
+          - os: ubuntu-latest
+            label: "ubuntu-latest, 2 of 2"
+            partition: "--partition count:2/2"
+            save-cache: "false"
+          - os: macos-latest
+            label: "macos-latest, 1 of 2"
+            partition: "--partition count:1/2"
+            save-cache: "true"
+          - os: macos-latest
+            label: "macos-latest, 2 of 2"
+            partition: "--partition count:2/2"
+            save-cache: "false"
+          - os: windows-latest
+            label: "windows-latest"
+            partition: ""
+            save-cache: "true"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refuse fixture update flags
         shell: bash
         run: scripts/no-update-flags.sh
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-      # Named, because the weekly offline tests restore the Linux one.
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Named, because the weekly offline tests, simulated stories, ios-tools
+      # and terminal journeys restore this cache read-only. Only shard 1 saves
+      # per OS to avoid concurrent cache writes.
+      - uses: ./.github/actions/setup-rust
         with:
           shared-key: test
-      - uses: ./.github/actions/setup-just
-      - uses: ./.github/actions/setup-nextest
-      # The restored cache holds the dependencies; amux's own crates are
-      # compiled on every run, because cargo judges them by file times a
-      # fresh checkout renews. sccache keeps what rustc made of each by its
-      # inputs, so a crate nothing beneath changed is fetched, not compiled.
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Compile through sccache
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          save-if: ${{ matrix.save-cache }}
+          nextest: "true"
+          sccache: "true"
       # testnet's ctl test drives the terminal client in tmux; Linux runners
       # have it already.
       - name: Install tmux on macOS
@@ -241,7 +239,7 @@ jobs:
         # suites, node's supervisor suite and the survive-daemon system
         # journey are ordinary test suites, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
-        run: just test -- --profile ci --exclude models --partition count:${{ matrix.part }}/2
+        run: just test -- --profile ci --exclude models ${{ matrix.partition }}
       - name: Say what sccache fetched and compiled
         if: always()
         shell: bash
@@ -256,19 +254,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
         with:
           shared-key: test
-      - uses: ./.github/actions/setup-just
-      - uses: ./.github/actions/setup-nextest
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Compile through sccache
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          save-if: "false"
+          nextest: "true"
+          sccache: "true"
       - name: Walk the simulated stories by seed
         # The same stories under TESTNET_MODE=simulated, a few seeds each;
         # a failure prints the seed and the `just sim --seed` that reruns
@@ -282,50 +274,34 @@ jobs:
     needs: changes
     if: needs.changes.outputs.models == 'true'
     # The protocol models explore every state of the real code at their CI
-    # bounds, minutes of every core each, so they stay off the platform test
-    # jobs. A job runs a few of them one after another: a job per model spent
-    # as long starting as checking, and twelve of them left the run's other
-    # jobs waiting for a runner.
+    # bounds, so they stay off the platform test jobs and compile under the
+    # optimised `models` profile. Three balanced jobs keep peak CI concurrency
+    # under GitHub's 20-runner free-plan limit.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         # Every protocol model, a module of the models' integration test
-        # binary: `just tests-check` fails when one is missing here. Each
-        # line is one job, sized to about eight minutes on the runner.
+        # binary: `just tests-check` fails when one is missing here.
         models:
           - family relay
-          - path lifecycle
-          - single_daemon composed
-          - replication presence
-          - client socket supervisor switch workspaces
+          - single_daemon composed presence
+          - path lifecycle replication client socket supervisor switch workspaces
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Named, because the nightly bounds restore it.
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: ./.github/actions/setup-rust
         with:
           shared-key: models
-      - uses: ./.github/actions/setup-just
-      - uses: ./.github/actions/setup-nextest
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Compile through sccache
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          nextest: "true"
+          sccache: "true"
       - name: Check each model at its CI bounds
+        shell: bash
         # Every model of the job runs, whichever fails.
         run: |
-          failed=
-          for model in ${{ matrix.models }}; do
-            just test-crate models -- -E "binary_id(models::integration) & test(/^${model}::/)" || failed="$failed $model"
-          done
-          if [ -n "$failed" ]; then
-            echo "failed:$failed"
-            exit 1
-          fi
+          pattern=$(echo "${{ matrix.models }}" | tr ' ' '|')
+          just test-crate models -- --cargo-profile models --no-fail-fast -E "binary_id(models::integration) & test(/^($pattern)::/)"
 
   terminal-journeys:
     name: Terminal journeys (${{ matrix.os }})
@@ -338,19 +314,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Compile through sccache
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-      - name: Install tmux on Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y tmux
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Shares the test job's cache read-only (`just journey terminal` uses
+      # --workspace feature unification so it reuses those rlibs directly).
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: test
+          save-if: "false"
+      # Linux runners already ship tmux; macOS installs it via Homebrew.
       - name: Install tmux on macOS
         if: runner.os == 'macOS'
         run: brew install tmux
@@ -363,7 +334,7 @@ jobs:
         # The upload has waited on a failing artifact service for twenty
         # minutes after the journeys were done.
         timeout-minutes: 5
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: terminal-journeys-${{ matrix.os }}
           path: target/journeys
@@ -377,12 +348,10 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: ./.github/actions/setup-just
       - name: Check iOS device and simulator graphs
         run: just mobile-check
 
@@ -393,14 +362,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
           shared-key: browser
-      - uses: ./.github/actions/setup-just
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -416,13 +382,17 @@ jobs:
         working-directory: js
         run: npm audit --omit=dev --audit-level=moderate
       # Types, unit tests, and the extension in Chromium against the built
-      # amux and the fake providers.
+      # amux and the fake providers. Skip re-running npm ci and playwright
+      # install inside the just recipe since the step above just ran both.
       - name: Test the browser extension
+        env:
+          AMUX_NPM_READY: "1"
+          AMUX_PLAYWRIGHT_READY: "1"
         run: just browser test
       - name: Upload the browser test's results
         if: failure()
         timeout-minutes: 5
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-test
           path: js/test-results

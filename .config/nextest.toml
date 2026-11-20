@@ -14,8 +14,9 @@ capture-stderr = true
 
 [[profile.default.scripts]]
 # Every package whose tests start amux or a fake provider depends on the
-# fakes.
-filter = "rdeps(provider-fakes)"
+# fakes, except models, which only imports provider-fakes::script types in
+# process and never spawns a binary.
+filter = "rdeps(provider-fakes) & !package(models)"
 setup = "binaries"
 
 [profile.default]

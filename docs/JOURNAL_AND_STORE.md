@@ -575,11 +575,13 @@ An experiment keeps up to three kinds of data, and they live in different places
   `exp_suspension_1_runs` (one of this host's own agents to the incarnation
   its current run began at, against which a child's report is judged; see
   [the agent process](AGENT_PROCESS.md#a-suspended-agent-on-its-host)), and
-  the reviews experiment's `exp_reviews_1_reviews`, `_snapshots`, `_rounds`
-  and `_comments` (each own agent's one review: the base it began with, the
-  snapshots it took with the base commit each is compared against, the
-  rounds sent and every comment with its anchor, snippet, round and
-  revision; [`crates/store/src/reviews.rs`](../crates/store/src/reviews.rs)).
+  the reviews experiment's `exp_reviews_1_reviews`, `_snapshots`, `_bases`,
+  `_rounds` and `_comments` (each own agent's one review: the base it began
+  with, the snapshots it keeps with the base commit each is compared
+  against and every other base each has been shown against, the rounds sent
+  and every comment with its anchor, snippet, round and revision;
+  [`crates/store/src/reviews.rs`](../crates/store/src/reviews.rs),
+  [reviews](REVIEWS.md)).
   An agent's review rows go with the agent, in the store's `remove_agent`.
 - **Files outside the store**, when an experiment needs them, sit in the
   agent's directory under a name of the experiment's own, and are

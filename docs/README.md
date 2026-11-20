@@ -17,6 +17,7 @@ people will notice updates the page that describes it.
   [What amux sends](guide/understand/what-amux-sends.md).
 - **Use:** [Terminal app](guide/use/terminal.md),
   [iPhone app](guide/use/iphone.md),
+  [Reviewing changes](guide/use/reviews.md),
   [Agents working together](guide/use/agents-working-together.md),
   [Running amux on a server](guide/use/server.md),
   [Updates and channels](guide/use/updates.md),
@@ -53,6 +54,9 @@ paths to the `.md` files, so they work both here and on the site.
   work across hosts.
 - [Workspaces](WORKSPACES.md) — where agents run: folders, git worktrees and wt trees, who made each, the
   row-first create, holding, starting and stopping, deletion and consent.
+- [Reviews](REVIEWS.md) — reviewing an agent's changes round by round: the experimental service, snapshots kept
+  out of the repository, pinned git, comparisons, comments and where they sit, rounds closing as the agent takes
+  them, what the agent reads, and the page every client draws.
 - [Supervisor](SUPERVISOR.md) — `amux supervise`, login items, stopping, updates and channels, overlap and
   rollback, keep-awake.
 
@@ -62,6 +66,8 @@ paths to the `.md` files, so they work both here and on the site.
   flows every client uses.
 - [Chat vocabulary](CHAT_VOCABULARY.md) — the client contract: the places a chat has, its rows and asks, and
   what interpreters and views must cover.
+- [Syntax highlighting](HIGHLIGHTING.md) — one tree-sitter engine for every client and the host: languages and
+  how one is picked, grammars built in the background, streaming blocks, definitions, sizes and what was left out.
 - [Terminal client](TERMINAL.md) — screens, keys, the leader, raw attach and the CLI verbs.
 - [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots and journeys.
 - [Mac app](MAC.md) — a client of the daemon: installing and attaching, sign-in, building and running.

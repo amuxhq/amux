@@ -174,7 +174,7 @@ panel, repository tiles, rows, tabs, chips, cards).
   efforts and the agent's modes on the right. A pick applies at once and
   the panel stays, so a model and its effort are chosen in one visit.
 - **Review**, the tool window's first tool, draws the shared review page
-  (`ReviewPagePane`): one snapshot of the agent's working tree, taken on its
+  (`ReviewPagePane`, [reviews](REVIEWS.md)): one snapshot of the agent's working tree, taken on its
   host, with the person's comments placed on their lines. Its bar switches
   between All changes and Since your last review once a round has been sent
   (with one view, it names what is compared, "Since main"), shows the

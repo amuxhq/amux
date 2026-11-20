@@ -282,49 +282,30 @@ their elements.
 
 A person's review of an agent's changes is written on the agent's host
 through the reviews experiment's service, and reaches the agent only when the
-person sends it. While the review holds drafts the composer shows a review
-chip, and a send with it reads the review from the host again and adds the
-attachment `attachments::sent_review::attachment(summary, comments)` builds
-(re-exported as `ui_view::sent_review`) from that answer's drafts; the
-person's message is the summary beside it. The
-client builds it because a host never rewrites a message: what the agent reads
-is what the person sent.
+person sends it ([reviews](REVIEWS.md)). While the review holds drafts the
+composer shows a review chip, and a send with it reads the review from the
+host again and adds the attachment `attachments::sent_review::attachment(summary,
+comments)` builds (re-exported as `ui_view::sent_review`) from that answer's
+drafts; the person's message is the summary beside it. The client builds it
+because a host never rewrites a message: what the agent reads is what the
+person sent.
 
-The text holds, for each comment, the path from the repository's top, its
-lines, the definition it sits in, the code it is on as a fenced `diff` and
-then the person's words; and last, that the line numbers are a snapshot's (a
-commit of the working tree kept outside the repository), with the command
-that diffs the working tree against it:
-`GIT_INDEX_FILE=<index> GIT_ALTERNATE_OBJECT_DIRECTORIES=<objects> git
---no-optional-locks -c diff.autoRefreshIndex=false -C <root> diff <snapshot>
-&& GIT_INDEX_FILE=<index> git --no-optional-locks -C <root> ls-files
---others --exclude-standard`. The index is one the host keeps of the
-snapshot beside its store, so a file that was untracked when the snapshot
-was taken is compared like any other, and the files made since are listed
-after the diff; the command writes nothing, to the repository or anywhere
-else, that index included: a plain `git diff` writes the file times it
-finds back into the index it read, which `--no-optional-locks` alone does
-not stop, so the command turns `diff.autoRefreshIndex` off as well. A comment on lines the change removed names them by the commit they
-were removed from ("line 7 of commit …"), and so does one whose lines are no
-longer on the snapshot. The model reads it as an ordinary `text` element,
-escaped as above; the `review_attachment` live recordings of headless Claude
-and Codex check that each quotes the code exactly and can run the command,
-Codex inside its read-only sandbox.
+It is a `text` attachment named `review`. Its text holds, for each comment,
+the path, the lines, the definition they sit in, the code as a fenced `diff`
+and the person's words, then the snapshot the line numbers are on and a
+command that shows what changed since, writing nothing
+([what the agent reads](REVIEWS.md#what-the-agent-reads)). The model reads
+it as an ordinary `text` element, escaped as above; the `review_attachment`
+live recordings of headless Claude and Codex check that each quotes the code
+exactly and can run the command, Codex inside its read-only sandbox.
 
-The `reviews/1` entry is a `SentReview`: the review's id, the round the
+Its `reviews/1` entry is a `SentReview`: the review's id, the round the
 client expects to close, the snapshot the text's lines are on and exactly the
-comments it sends, each with the revision the text was written from. When
-the agent takes the prompt or message (when the item it became is in the
-agent's journal, not while it waits in the queue), its host marks sent those
-comments still drafts at that revision, in a round numbered as it arrives
-and recorded on the review's latest snapshot, in the store transaction that
-commits the item and moves the journal's cursor past it, so a round never
-stays open behind a cursor that has moved on. Each comment marked keeps the
-revision it was sent at. So a draft another client wrote meanwhile stays a
-draft, as does one edited after the text was built and every comment of a
-prompt withdrawn from the queue, and a chip removed from the composer sends
-nothing.
-A client draws an attachment with the entry as a sent review
+comments it sends, each with the revision the text was written from. The
+agent's host reads it when the agent takes the prompt or message, and marks
+sent those comments still drafts at that revision, closing a round
+([rounds](REVIEWS.md#rounds)); it never rewrites the attachment. A client
+draws an attachment with the entry as a sent review
 (`AttachmentView::SentReview`) that opens the round that message closed: the
 one whose comments were sent at the revisions the entry names. A message
 whose comments were edited before the agent took it closed none, and opens

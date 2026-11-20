@@ -1129,27 +1129,10 @@ none of the promises above:
   are bytes because a file in the buf module cannot import one outside it,
   and bytes keep buf from seeing the experimental types at all. The map is
   promised; its entries are not.
-- **An experiment may add a service.** It is a host service in
-  `amux.experimental` with the experiment's version in its name, so a changed
-  shape is a new name and a mismatch anywhere answers `UNIMPLEMENTED` rather
-  than being misread. The first is `Reviews1`, the reviews experiment's
-  (`Open`, `GetFiles` and `Edit` in
-  [`reviews.proto`](../crates/wire/proto/amux/experimental/reviews.proto)),
-  which an agent's host answers for its own agents and for people only.
-  Any node carries a call to it without knowing it exists, since the
-  carrier reads no service names: the phone, whose node has no
-  experiment switch, reaches a desk's. Only the answering host needs the
-  experiment on; with it off the service is not mounted, and a client of it
-  reads `UNIMPLEMENTED` as "not offered there". The caller arrives as for any
-  service, in the same caller header; the rules on who may call are the
-  service's own: it is never mounted on an agent's tools socket, refuses an
-  agent's call that arrives another way with `PERMISSION_DENIED`, and
-  answers only for the host's own agents (a copy of another host's agent is
-  `NOT_FOUND`, naming that host). The
-  service's name, methods and messages are not promised; the address, the
-  caller header and the statuses a carried call fails with are, as the maps
-  are. Graduating it is adding its settled calls to a service in `amux.v1`
-  and deleting the experimental one.
+- **An experiment may add a service**, a host service in `amux.experimental`
+  with the experiment's version in its name, answered only where the
+  experiment is on ([experimental services](#experimental-services)). The
+  first is `Reviews1`, the reviews experiment's ([reviews](REVIEWS.md)).
 - **Each entry has a typed key** beside the generated types in the wire
   crate (`wire::experimental::WORKSPACE`, `SUSPENSION`, `REVIEW_ROW`,
   `SENT_REVIEW`), whose `get`, `put` and `clear` are the one way code
@@ -1280,6 +1263,68 @@ Rejected: a field number per version (`workspace_experimental = 1000`, then
 `workspace_experimental_2 = 1001`). Every version would edit amux.v1 and
 leave a reserved number behind at graduation, the trail experiments exist
 to avoid.
+
+#### Experimental services
+
+An experiment whose clients need calls of their own, not only data on a
+row, adds a service. Nothing between a client and the answering host knows
+it exists, so it needs no code anywhere but its own handler, its client and
+its messages. `Reviews1` is the model:
+
+- **Declared** in a file of its own under
+  [`crates/wire/proto/amux/experimental/`](../crates/wire/proto/amux/experimental/),
+  listed in `INTERNAL_PROTO_FILES` in `crates/xtask/src/main.rs` and
+  generated with `just protobuf`. It is a host service: every request names
+  the agent it acts on by id, and none names a host. Its name ends in its
+  experiment's version (`Reviews1` for `reviews/1`), so a shape a build at
+  the same version could misread is a new version and a new name, and a
+  mismatch anywhere answers `UNIMPLEMENTED` rather than being misread. Its
+  messages and enums carry the experiment's name (`ReviewSummary`,
+  `ReviewView`), since every experiment shares the package. The wire crate
+  gives it sized client and server constructors (`sized_service!` in
+  `wire::experimental`), so its messages may be as large as the channel
+  carries.
+- **Registered** in the experiment registry,
+  [`crates/settings/src/experiments.rs`](../crates/settings/src/experiments.rs),
+  whose `Experiment` gives the name a person switches on and the version, the
+  same string the experiment's map entries are keyed by.
+- **Served** by a module under `crates/node/src/api/host/` whose `mount`
+  `api::routes` calls for each entry a profile serves. It mounts the service
+  only when the daemon's launch has the experiment on, which is read once as
+  the daemon starts, and never on an agent's tools socket (`Entry::Tools`):
+  on the profile socket, the phone's entry and links. Off, nothing is
+  mounted, so the router answers `UNIMPLEMENTED` as for any service a build
+  lacks. The phone's embedded runtime starts with no experiment on, so it
+  never answers one. The handler reads the caller with `Caller::of`, as
+  every host service does, and applies the service's own rules against the
+  host's own rows: `Reviews1` refuses an agent `PERMISSION_DENIED` and
+  answers only for the host's own agents (`own_row`; a copy of another
+  host's is `NOT_FOUND`, naming that host).
+- **Routed** as any host service is: addressed by the authority of the host
+  that owns the agent, carried there unread by any node in between, the
+  caller header written by the carrier ([the address](#the-address)). The
+  carrier reads no service names, so the phone, whose node runs no
+  experiment, reaches a desk's `Reviews1`.
+- **Called** through the client library, only through `Client::host` or
+  `Client::agent`, so no call goes unaddressed: `Agent::reviews()` gives
+  `AgentReviews` ([`crates/client/src/reviews.rs`](../crates/client/src/reviews.rs)).
+  A client reads `UNIMPLEMENTED` as "not offered on that host" and says so;
+  it never decides from its own node's settings.
+- **Switched on** only at the answering host, by `experiments.enabled`
+  there; the daemon restarts itself to apply the switch, as for any
+  experiment. What the service keeps follows the experiment's rules: its
+  tables are dropped and its entries cleared from the host's own rows when
+  the host opens the profile with the experiment off, and files it keeps
+  under a name of its own in an agent's directory it removes itself then,
+  as `reviews::cleanup` removes each agent's snapshot store
+  ([experiment tables](JOURNAL_AND_STORE.md#experiment-tables)). Any of it
+  may be lost at an upgrade.
+
+The service's name, methods and messages are not promised. The address, the
+caller header and the statuses a carried call fails with are, as the maps
+are. Graduating a service is adding its settled calls to a service in
+`amux.v1`, designed afresh, and deleting the experimental one; nothing in
+between changes.
 
 ## Writing a client
 

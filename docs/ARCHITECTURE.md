@@ -305,6 +305,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   pty/0000000000              raw terminal bytes, named the same way (terminal Claude only; the newest four kept)
   blobs/<sha256>              bytes the agent references, and what it offers as an encoded Catalogue the snapshot names, each named by its hash
   review/objects/             the reviews experiment's snapshots of the working tree, as git objects kept out of the repository
+  review/indexes/<commit>     a git index of each snapshot the review keeps, which the diff command a sent review names reads
   private/                    the agent's own state; the daemon never reads it
     facts/                    the ring of recent provider facts and interpreter checkpoints
     provider-session          the provider's session or thread id, so a resume continues it
@@ -623,7 +624,7 @@ every message a provider sends or is sent.
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
 | [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, and starts it. Does not link the daemon. |
-| [`highlight`](../crates/highlight/src/lib.rs) | Syntax highlighting over tree-sitter's grammars: code and its language in, lines of runs tagged with a kind of token out, which each client maps to its own palette. Grammars are built in the background on first use, and a block still streaming is passed over at a bounded rate. The same grammars give a file's definitions, from which a diff says where a hunk sits and what a change touches. The view layer colours chat code and edit cards through it. |
+| [`highlight`](../crates/highlight/src/lib.rs) | Syntax highlighting over tree-sitter's grammars: code and its language in, lines of runs tagged with a kind of token out, which each client maps to its own palette. Grammars are built in the background on first use, and a block still streaming is passed over at a bounded rate. The same grammars give a file's definitions, from which a diff says where a hunk sits and what a change touches. The view layer colours chat code and edit cards through it, and the agent's host a review's diffs. See [highlighting](HIGHLIGHTING.md). |
 | [`analytics`](../crates/analytics/src/lib.rs) | The usage events a device may send, typed so nothing but enums, numbers and ids fits; the per-profile handle and the installation's uploader. See [what amux sends](guide/understand/what-amux-sends.md). |
 
 **The agent side** — everything that reads a provider.
@@ -634,7 +635,7 @@ every message a provider sends or is sent.
 | [`journal`](../crates/journal/src/lib.rs) | Append-only journal segments: writer, reader and reclaiming. |
 | [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the agent's record, the structure walker a report's core record is written with, and the golden harness. See [interpreters](INTERPRETERS.md). |
 | [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`), with each provider's host in a module of its own: [`claude`](../crates/agent/src/claude.rs) (launch settings, hook forwarding, the messaging socket, session files and the version probe) and [`codex`](../crates/agent/src/codex.rs) (Codex's app server started on a socket other clients can join, its messages carried as bytes). |
-| [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
+| [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch, change totals and changed files, and the commits a branch holds alone, read by running git under one pinned configuration; shared by the agent process and the daemon. Also the reviews experiment's snapshots of a working tree, kept in a store outside the repository, and the comparisons between them (see [reviews](REVIEWS.md)). |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal process hosting. |
@@ -731,8 +732,8 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `highlight`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
-| `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
+| `wire`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `highlight`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
+| `journal`, `store`, `agent-dir`, `attachments`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `preview`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
@@ -744,7 +745,7 @@ The allowed sets encode the layering above:
 | `supervisor-core` | at most `core-ring`, `release` | reads release manifests and version stamps, and shares the cores' step budget and dump reasons from the ring's crate |
 | `workspace-core` | nothing in the workspace | the daemon core composes it and runs it inside its own step, so it needs no budget or dump reason of its own |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `log-file`, `path-core`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure |
+| `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `interpret`, `journal`, `log-file`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure, and `redaction` for the table it writes the core's part by; `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `wire`; `ui-view` → `attachments`, `highlight`, `preview`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; each client colours the code it parses out of a chat through the view layer's highlighting |
 | `tui` | `attachments`, `client`, `settings`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |

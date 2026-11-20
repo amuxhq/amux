@@ -389,7 +389,8 @@ closed, and remembers its folds per agent.
 The leader then `r`, or `[Diff]` in the header, opens the agent's review, and a changed file in the overview opens it
 at that file. It needs the reviews experiment on the agent's host: where the host does not run it, the page opens on
 a banner saying reviews are not offered there, and the overview still lists the changed files. A subagent's chat
-says its changes are reviewed from its parent.
+says its changes are reviewed from its parent. How the host keeps the review, its snapshots and rounds is in
+[reviews](REVIEWS.md).
 
 The page is ui-view's `review_page`, composed from what `ui_runtime::review::Review` fetched from the agent's host
 and the person's own choices, and drawn by [`crates/tui/src/chat/review.rs`](../crates/tui/src/chat/review.rs)

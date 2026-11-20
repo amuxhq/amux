@@ -58,7 +58,7 @@ PHONE = "apps/apple/"
 JS = "js/"
 
 MODELS = ["models"]
-BRIDGE = ["app-ffi"]
+BRIDGE = ["app-ffi", "app-bridge"]
 BROWSER = ["browser-core"]
 
 

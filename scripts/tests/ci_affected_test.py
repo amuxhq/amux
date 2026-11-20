@@ -18,7 +18,8 @@ CRATES = {
     "wire": {"folder": "wire", "built": set(), "tests": set()},
     "provider-fakes": {"folder": "provider-fakes", "built": set(), "tests": set()},
     "testkit": {"folder": "testkit", "built": set(), "tests": set()},
-    "app-ffi": {"folder": "app-ffi", "built": {"app-runtime"}, "tests": set()},
+    "app-ffi": {"folder": "app-ffi", "built": {"app-bridge"}, "tests": set()},
+    "app-bridge": {"folder": "app-bridge", "built": {"app-runtime"}, "tests": set()},
     "app-runtime": {"folder": "app-runtime", "built": {"wire"}, "tests": set()},
     "tui": {"folder": "tui", "built": {"wire"}, "tests": set()},
     "amux-app": {"folder": "amux", "built": {"tui"}, "tests": set()},
@@ -51,6 +52,7 @@ class AffectedTest(unittest.TestCase):
     def test_a_crate_runs_the_jobs_built_from_it(self):
         self.assertEqual(groups("crates/tui/src/lib.rs"), {"tests", "product", "sanitizers"})
         self.assertEqual(groups("crates/app-runtime/src/lib.rs"), {"tests", "product", "bridge"})
+        self.assertEqual(groups("crates/app-bridge/src/lib.rs"), {"tests", "product", "bridge"})
         self.assertEqual(
             groups("crates/app-ffi/src/lib.rs"), {"tests", "product", "sanitizers", "bridge"}
         )

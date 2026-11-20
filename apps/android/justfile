@@ -20,9 +20,14 @@ gradle := "sh apps/android/tools/gradle-run.sh"
 default:
     @just --list android
 
+# Check the provider-free client and JNI bridge graph for Android.
+check:
+    {{bounded}} 1200 cargo ndk -t arm64-v8a -P 34 check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge -p app-jni
+
 # Check the Kotlin sources and string resources against the app's writing rules.
 lint:
     {{bounded}} 300 sh -c 'sh apps/android/tools/feature-lint.sh && sh apps/android/tools/test-waits-lint.sh && sh apps/android/tools/strings-lint.sh'
+    {{bounded}} 300 cargo run --locked -p ios-tools -- kotlin-types --check
 
 # Prove the JNI bridge graph carries no provider, host or test crate onto the
 # phone. The driving tools are the one deliberate exception and are checked

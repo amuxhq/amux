@@ -3219,7 +3219,7 @@ mod tests {
                 "kind": "text",
                 "name": "review",
                 "text": text,
-                "review": {"id": "ab", "round": 1, "snapshot": snapshot, "comments": ["cd"]},
+                "review": {"id": "ab", "round": 1, "comments": ["cd"]},
             })
         };
         let sent = json!({
@@ -3235,10 +3235,6 @@ mod tests {
             Ok((sent.clone(), snapshot.to_owned()))
         );
         assert!(reviewed(&chat, "another comment").is_err());
-        // The text names another snapshot than the entry.
-        let mut elsewhere = sent.clone();
-        elsewhere["attachments"][1] = review(review_text(COMMENT, "0000000"));
-        assert!(reviewed(&json!({"items": [elsewhere]}), COMMENT).is_err());
         // The review's text without its entry is pasted text, not a review.
         let mut plain = sent.clone();
         plain["attachments"][1]

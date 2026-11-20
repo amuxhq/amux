@@ -1080,8 +1080,8 @@ impl Install {
 
     /// Codex asks before a command only under an asking approval policy,
     /// here on-request in a read-only sandbox as its decision recording ran.
-    /// The CLI has no verb for either, so this create goes through the
-    /// client service, as the apps issue it.
+    /// The CLI has no verb for either, so this create is AgentService's
+    /// CreateAgent addressed to the host, as the apps issue it.
     async fn create_asking_codex(&self, scenario: Scenario) -> Result<Vec<u8>, String> {
         self.create_codex(
             scenario,

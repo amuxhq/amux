@@ -1612,9 +1612,10 @@ impl ProfileRuntime {
         handle
     }
 
-    /// Serves the client service on `<dir>/tools.sock` for the agent's MCP
-    /// server. The socket is its caller's identity: whatever arrives on it
-    /// is from `id`.
+    /// Serves the agent's tools socket, `<dir>/tools.sock`, for its MCP
+    /// server: the services an agent's entry serves, with the router that
+    /// carries a call addressed to another host. The socket is its caller's
+    /// identity: whatever arrives on it is from `id`.
     fn bind_tools(&self, id: AgentId, dir: &Path) -> io::Result<JoinHandle<()>> {
         let listener = LocalListener::bind(&dir.join(agent_dir::TOOLS_SOCK))?;
         Ok(crate::grpc::serve_client(

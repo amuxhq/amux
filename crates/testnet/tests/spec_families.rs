@@ -1,6 +1,7 @@
-//! Families across hosts: an agent on one host spawns a child on another
-//! by the host's name, the parent's host forwards the create there, and
-//! every host's fleet groups the family from the replica rows it holds.
+//! Families across hosts: an agent on one host spawns a child on another,
+//! naming it as a person does; the name is resolved to the host's id, the
+//! create is addressed to that id and the parent's host carries it there,
+//! and every host's fleet groups the family from the replica rows it holds.
 //! Stop and send are checked against the parent edge wherever the child
 //! lives. Each host enforces the family rule for its own agents from the
 //! parent's row as it holds it: a parent that exited stops its children, a

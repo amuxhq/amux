@@ -49,24 +49,24 @@ There are two ways to build one:
   [The protocol, step by step](#the-protocol-step-by-step) explains each of
   the five; a client on the Rust crates reads it for what the calls mean.
 
-The protocol is stable from 0.9.0: fields are added and never renumbered
+The protocol is stable from 0.11.0: fields are added and never renumbered
 ([README](../../../proto/amux/v1/README.md)), so a client built against one
-release talks to later ones. A daemon older than 0.9.0 speaks a protocol
-that changed from release to release; `GetInstallation` says which version
-is running.
+release talks to later ones. A daemon older than 0.11.0 speaks an earlier
+shape of the services that later clients cannot use; `GetInstallation` says
+which version is running.
 
 ## Building on amux's Rust crates
 
 | Crate | What it does for you |
 | --- | --- |
 | `installer` | Steps 1 and 2. Finds the installation and its front door; `ensure` starts amux, or installs it, checking the download against the release's signed manifest. It touches nothing already running, so a client calls it at every launch. |
-| `client` | Typed calls to the front door (`Installation`) and to each profile (`Client`), with every socket detail below handled. A host's own services are reached through the agent or host they act on, so every call goes to the host it is for. |
+| `client` | Typed calls to the front door (`Installation`) and to each profile (`Client`), with every socket detail below handled. What this machine's amux answers itself is `inventory()`, `sessions()`, `drafts()` and `admin()`; acting on an agent is `agent(&row)`, and on a machine, such as starting an agent there, `host(&host_id)`, so every call goes to the machine it is for. |
 | `ui-runtime` | The drivers: `Fleet` follows a profile's agents and `Session` one chat. They hold the streams, reconnect when amux restarts and start over when they fall behind. |
 | `ui-state`, `ui-view` | Optional. `ui-state` is the drivers' model; `ui-view` turns it into what a screen shows (the fleet's sections and rows, a chat's rows and ask cards) as plain values, and leaves wording, layout and theme to the client. The terminal client and the iPhone app draw these. |
 
 Take as many as the client wants. `installer` stands apart. A client with
 its own model of the fleet takes `client` alone and reads
-`SubscribeInventory` itself; `ui-runtime` on top of it handles the streams;
+`client.inventory().subscribe()` itself; `ui-runtime` on top of it handles the streams;
 `ui-view` adds the ready-made rows.
 
 The crates are not published to crates.io. Depend on them from Git, pinned
@@ -213,9 +213,11 @@ What it leaves out, and where to find it:
 - **Opening a chat.** `Fleet::open` gives the agent's `Session`, and
   `ui_view::chat_rows_for` turns its state into the chat's rows. Pair every
   open with `Fleet::close`.
-- **Acting on agents.** `Fleet::stop`, and the `Client` calls
-  (`create_agent`, `rename_agent`, `send_input` and the rest), which are
-  the protocol's calls of the same names.
+- **Acting on agents.** `Fleet::stop`, and `client.agent(&row)` for one
+  agent: `send_input`, `send_message`, `rename`, `set_filing`, `resume`,
+  `preview_delete`, `delete`, `put_blob` and `changes`, which are the
+  protocol's calls of those names. A new agent starts from the machine
+  that will run it: `client.host(&host_id).agents().create(request)`.
 
 ## The protocol, step by step
 
@@ -233,12 +235,26 @@ on a stream holds one event.
 Every socket speaks gRPC over plaintext HTTP/2, with no TLS and no
 credentials: only the person's own account can reach it.
 
-**Set the HTTP/2 `:authority` to `localhost`.** gRPC libraries built on
-gRPC's C core (Python, Ruby, PHP, C++) otherwise send the socket's path,
-which is not a valid authority. The daemon then resets the stream
-(`INTERNAL: Stream removed`, RST_STREAM error code 1), which looks like a
-broken daemon rather than a client setting. In those libraries it is the
-`grpc.default_authority` channel option.
+**Set the HTTP/2 `:authority` to `localhost`** for everything this machine's
+amux answers. gRPC libraries built on gRPC's C core (Python, Ruby, PHP, C++)
+otherwise send the socket's path, which is not a valid authority. The daemon
+then resets the stream (`INTERNAL: Stream removed`, RST_STREAM error code 1),
+which looks like a broken daemon rather than a client setting. In those
+libraries it is the `grpc.default_authority` channel option.
+
+**To act on an agent, address its machine.** Reads come from this machine's
+amux, which holds every paired machine's agents and chats. Acts (starting an
+agent, sending it a prompt or a message, renaming, settling, resuming or
+deleting it, asking what it changed) are answered by the machine the agent
+runs on, and a call says which machine that is by its authority: the
+machine's id, the UUID in its lowercase dashed form
+(`0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80`), which every agent row carries as
+`host_id` and every host as its own id. Open one channel per machine, on
+the same profile socket, with its authority set to that id; amux carries
+each call there and back, and says why when it can't. Any other authority
+is answered by this machine, so an act on another machine's agent sent that
+way is answered `NOT_FOUND`, naming the machine that owns it. A machine's
+name is never an address: resolve it with `ResolveHost` and use the id.
 
 ### 1. Find the installation
 
@@ -374,14 +390,26 @@ then on. Signing out is `SignOut` on the profile's own socket.
 
 ### 5. Agents
 
-Everything inside a profile is on its own socket, `Profile.socket_path`:
+Everything inside a profile is on its own socket, `Profile.socket_path`.
+This machine's amux answers these from what it holds, for every paired
+machine's agents alike:
 
-- `AgentService`: the fleet, and acting on agents.
-- `SessionService`: reading and writing a chat; the [wire](../../WIRE.md)
-  describes its subscriptions, items and inputs.
+- `InventoryService`: the fleet, and agents and machines found by name.
+- `SessionService`: reading a chat and the files it shows; the
+  [wire](../../WIRE.md) describes its subscriptions and items.
+- `DraftService`: what the person has typed into a chat and not sent.
 - `ProfileAdminService`: the profile's account, pairing and peers.
 
-`AgentService.SubscribeInventory` is the fleet. It sends every host the
+Three more are answered by the machine a call is addressed to
+([connecting](#connecting)):
+
+- `AgentService`: starting agents and acting on them, sending them input
+  and messages, and what deleting one would take.
+- `HostService`: what a machine's Claude and Codex offer before any agent
+  runs, and pinning its folders.
+- `ReviewService`: the files an agent changed.
+
+`InventoryService.SubscribeInventory` is the fleet. It sends every host the
 profile knows and every agent on them, then `caught_up`, and from then on
 each change as it happens:
 
@@ -397,8 +425,12 @@ each change as it happens:
 Rows from a host this machine cannot reach right now are as that host last
 reported them; the host's entry says whether it is reachable.
 
-`CreateAgent`, `SetFiling`, `ResumeAgent`, `RenameAgent` and `DeleteAgent`
-act on agents.
+`CreateAgent`, addressed to the machine that will run it, starts an agent.
+`SendInput` sends a chat its prompts and answers, and `SetFiling`,
+`ResumeAgent`, `RenameAgent` and `DeleteAgent` act on an agent, each
+addressed to the agent's machine. Before a delete, `PreviewDelete` says what
+it would take with it: the agent's workspace and branch, and any work not
+committed.
 
 ### 6. Settings and onboarding
 
@@ -415,7 +447,7 @@ file first.
 | `host_name` | What paired devices and the phone call this machine; never empty. Setting it empty returns to the machine's own name. A rename shows in discovery and in every pairing from then on; a device already paired keeps the name it paired with. |
 | `start_at_login` | Whether amux starts at login. Absent on an install without a supervisor, which has nothing to start. Turning it on writes the login item for the next login and leaves the running amux alone. |
 | `keep_awake` | On power the machine stays awake while amux runs; on battery only while an agent works. |
-| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list, and `PinFolder` adds or removes one, for a person on this machine or a paired one (an agent is refused). Every host's entry in the inventory lists them as `folders`, then the folders agents ran in lately and where Claude Code and Codex ran. |
+| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list, and `HostService.PinFolder`, addressed to the machine, adds or removes one, for a person on that machine or a paired one (an agent is refused). Every host's entry in the inventory lists them as `folders`, then the folders agents ran in lately and where Claude Code and Codex ran. |
 | `chat_in` | Where the terminal client chats: amux's chat or each agent's own interface. |
 | `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as `HostEntry.claude_kind`; create Claude agents of that kind. |
 | `telemetry`, `auto_reports` | Usage events and automatic reports. |
@@ -470,8 +502,13 @@ fleet subscription counts it as that client opening.
 
 Calls fail with ordinary gRPC status codes, the reason in the status
 message, written for a person to read: `NOT_FOUND` for an id the daemon
-does not know, `FAILED_PRECONDITION` for an agent name that matches more
-than one agent. Where a client may want to act on the reason, the status
+does not know, or for an agent another machine runs, saying which;
+`FAILED_PRECONDITION` for an agent name that matches more than one agent,
+and, with the reason `HOST_UNREACHABLE`, for a machine that can't be reached
+right now, so the call was never sent; `ABORTED` for a call that went to
+another machine and lost its answer, so it may have happened; and
+`UNIMPLEMENTED` with no message for a call the machine's amux is too old
+for. Where a client may want to act on the reason, the status
 details carry a `google.rpc.ErrorInfo` whose `reason` is one of
 `error.proto`'s `ErrorReason` names. `UNAVAILABLE` on the front door means
 amux is not running.

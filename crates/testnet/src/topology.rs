@@ -125,6 +125,10 @@ pub struct HostDecl {
     /// through is the router kind's to say. In-process hosts only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub router: Option<RouterKind>,
+    /// The experiments the host runs, by name (`reviews`), as a person
+    /// switches them on in its installation config.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub experiments: Vec<String>,
 }
 
 /// What an agent's provider is.
@@ -244,6 +248,16 @@ impl HostDecl {
             })
             .map(String::as_str)
     }
+
+    /// The experiments the host runs, as its launch carries them.
+    pub fn enabled_experiments(&self) -> settings::experiments::Enabled {
+        let named: Vec<&'static settings::experiments::Experiment> = self
+            .experiments
+            .iter()
+            .filter_map(|name| settings::experiments::named(name))
+            .collect();
+        settings::experiments::Enabled::of(&named)
+    }
 }
 
 impl AgentDecl {
@@ -343,6 +357,8 @@ pub enum TopologyError {
     ProcessLink { a: String, b: String },
     #[error("agent {0:?} has both an inline script and a script file")]
     TwoScripts(String),
+    #[error("host {host:?} runs experiment {name:?}, which this build does not implement")]
+    UnknownExperiment { host: String, name: String },
     #[error("agent {agent:?}'s script {path}: {error}")]
     Script {
         agent: String,
@@ -475,6 +491,16 @@ impl Topology {
             }
             if host.runs_as_process() && host.router.is_some() {
                 return Err(TopologyError::ProcessRouter(host.name.clone()));
+            }
+            if let Some(name) = host
+                .experiments
+                .iter()
+                .find(|name| settings::experiments::named(name).is_none())
+            {
+                return Err(TopologyError::UnknownExperiment {
+                    host: host.name.clone(),
+                    name: name.clone(),
+                });
             }
             for path in host.files.keys() {
                 if host.repository_of(path).is_none() {

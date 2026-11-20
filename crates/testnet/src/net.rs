@@ -1659,6 +1659,7 @@ impl Net {
         if let Some(k) = own.decl.tail_rows {
             launch.core.tail_rows = k;
         }
+        launch.experiments = own.decl.enabled_experiments();
         if let Some(hook) = &self.launch_hook {
             hook(&host.name, &mut launch);
         }
@@ -1849,6 +1850,15 @@ impl Net {
             text.push_str(&format!(
                 "[new_agent.claude]\nmodel = \"{SMALL_CLAUDE}\"\neffort = \"medium\"\n\
                  [new_agent.codex]\nmodel = \"{SMALL_CODEX}\"\neffort = \"medium\"\n",
+            ));
+        }
+        if !decl.experiments.is_empty() {
+            // Read by a process host's daemon at start, and by an
+            // in-process one as the config it runs, which matches its
+            // launch, so it reports nothing waiting on a restart.
+            text.push_str(&format!(
+                "[experiments]\nenabled = {:?}\n",
+                decl.experiments
             ));
         }
         Ok(text)

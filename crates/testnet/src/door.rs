@@ -259,6 +259,12 @@ pub enum Control {
         host: String,
         agent: String,
     },
+    /// The agent's review as its host holds it: its rounds and its
+    /// comments, each with the round it was sent in. In-process hosts only.
+    Review {
+        host: String,
+        agent: String,
+    },
     ProviderInput {
         agent: String,
     },
@@ -968,6 +974,36 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             }
             items.sort_by_key(|item| item["order"].as_u64());
             json!({ "items": items, "phase": phase, "model": model, "asks": asks })
+        }
+        Control::Review { host, agent } => {
+            let id = net.agent(&agent)?.id;
+            let stored = net
+                .runtime(&host)?
+                .read_store(move |store| store.review(id.as_bytes()))
+                .await
+                .map_err(|_| NetError::Down(host.clone()))?
+                .map_err(|error| NetError::Host {
+                    host: host.clone(),
+                    error: error.to_string(),
+                })?;
+            match stored {
+                None => Value::Null,
+                Some(review) => json!({
+                    "id": hex(&review.id),
+                    "rounds": review.rounds.iter().map(|round| json!({
+                        "n": round.n,
+                        "snapshot": round.snapshot,
+                    })).collect::<Vec<_>>(),
+                    "comments": review.comments.iter().map(|comment| json!({
+                        "id": hex(&comment.id),
+                        "path": comment.anchor.path,
+                        "commit": comment.anchor.commit,
+                        "lines": [comment.anchor.start, comment.anchor.end],
+                        "text": comment.text,
+                        "round": comment.round,
+                    })).collect::<Vec<_>>(),
+                }),
+            }
         }
         Control::ProviderInput { agent } => json!({ "lines": net.provider_input(&agent)? }),
         Control::Shutdown => unreachable!("the connection handles shutdown"),

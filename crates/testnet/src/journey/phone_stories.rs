@@ -283,7 +283,7 @@ fn link_done(results: &[Value]) -> Result<(), String> {
 /// The one prompt carrying the paste and the review, as the desk holds it.
 /// The phone's composer keeps a paste and a review as chips after the text,
 /// so they follow it in the order they were added.
-fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
+fn reviewed(chat: &Value, comment: &str) -> Result<(Value, String), String> {
     let sent: Vec<&Value> = items(chat)
         .iter()
         .filter(|item| {
@@ -310,19 +310,19 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
         .split_whitespace()
         .map(str::to_owned)
         .collect();
-    if words != ["Please", "check", "against"] || kinds != [&json!("text"), &json!("review")] {
+    if words != ["Please", "check", "against"]
+        || kinds != [&json!("text"), &json!("text")]
+        || !attachments[1]["review"].is_object()
+    {
         return Err(format!(
             "the prompt is not the text, then the paste, then the review: {item}"
         ));
     }
-    if attachments[0]["text"] != pasted() {
+    if attachments[0]["text"] != pasted() || attachments[0]["review"].is_object() {
         return Err("the pasted text arrived changed".to_owned());
     }
-    let comments = &attachments[1]["comments"];
-    if *comments != json!([{"path": "deploy.sh", "line": 3, "old_line": 0, "text": comment}]) {
-        return Err(format!("the review's comments are {comments}"));
-    }
-    Ok((*item).clone())
+    let snapshot = sent_review(&attachments[1], comment)?;
+    Ok(((*item).clone(), snapshot))
 }
 
 // --- acts ----------------------------------------------------------------
@@ -1419,7 +1419,8 @@ fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<(), String> {
 }
 
 fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
-    review_repository(&journey.ready.root.join("desk/work"))?;
+    let work = journey.ready.root.join("desk/work");
+    review_repository(&work)?;
     // An agent reads its folder's git facts when it starts and when a turn
     // ends, and the reviewer started before its folder was a repository:
     // start it again so the phone has changes to offer for review.
@@ -1454,26 +1455,30 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     // A review of the desk's working tree, with a comment on one line.
     journey.wait_for(&["chat.changes"])?;
     journey.tap("chat.changes")?;
+    let edit = |name: &str, element: &Value| {
+        name.starts_with("review.line")
+            && element["label"]
+                .as_str()
+                .is_some_and(|label| label.contains("rsync --delete"))
+    };
     let drawn = journey.wait(
-        |drawn| drawn.names().any(|name| name.starts_with("review.line.")),
-        "the review's lines",
+        |drawn| drawn.iter().any(|(name, element)| edit(name, element)),
+        "the review's changed line",
     )?;
     let line = drawn
         .iter()
-        .find(|(name, element)| {
-            name.starts_with("review.line.")
-                && element["label"]
-                    .as_str()
-                    .is_some_and(|label| label.contains("rsync --delete"))
-        })
+        .find(|(name, element)| edit(name, element))
         .map(|(name, _)| name.to_owned())
         .ok_or("no review line holds the edit")?;
     journey.perform(&line, "Select line")?;
-    journey.wait_for(&["review.comment"])?;
+    journey.wait(
+        |drawn| drawn.enabled("review.commentOn"),
+        "the line selected to comment on",
+    )?;
     // The chat behind the review keeps its header in the tree, undrawn, at
     // either of two offsets in its own bar.
     journey.screen("review-diff", &["chat.header", "chat.title"])?;
-    journey.tap("review.comment")?;
+    journey.tap("review.commentOn")?;
     journey.wait_for(&["review.note"])?;
     journey.type_text("review.note", COMMENT)?;
     journey.wait(
@@ -1482,14 +1487,14 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     )?;
     journey.tap("review.add")?;
     journey.wait(
-        |drawn| labelled(drawn, COMMENT) && drawn.has("review.attach"),
+        |drawn| labelled(drawn, COMMENT) && drawn.has("review.done"),
         "the comment on the line",
     )?;
     journey.screen("review-comment", &["chat.header", "chat.title"])?;
-    journey.tap("review.attach")?;
+    journey.tap("review.done")?;
     journey.wait(
-        |drawn| drawn.has("chat.field") && !drawn.has("review.attach"),
-        "the chat again",
+        |drawn| drawn.has("chat.field") && drawn.has("chat.review.chip"),
+        "the chat again, the review's chip in the composer",
     )?;
 
     // Read with the keyboard down: the draft keeps its text and both chips.
@@ -1505,8 +1510,8 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         "the reviewer's reply",
     )?;
 
-    // The desk received the text, the paste's exact text, the comment, and
-    // the patch it made itself, whose bytes are on its disk.
+    // The desk received the text, the paste's exact text, and the review as
+    // text naming its snapshot and the comment on its code.
     let received = journey.wait_chat(
         "desk",
         "reviewer",
@@ -1520,10 +1525,23 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         },
         "received",
     )?;
-    let item = reviewed(&received, COMMENT)?;
+    let (item, snapshot) = reviewed(&received, COMMENT)?;
     let control =
         negative_control(reviewed(&received, &format!("{COMMENT} (a wrong comment)")).map(drop))?;
-    patch_on_disk(&journey.ready.root, &text(&item["attachments"][1]["patch"]))?;
+    snapshot_outside(&work, &text(&item["attachments"][1]["text"]), &snapshot)?;
+
+    // The desk's review holds the comment, sent in round 1 on that
+    // snapshot.
+    let desk_review = Control::Review {
+        host: "desk".to_owned(),
+        agent: "reviewer".to_owned(),
+    };
+    wait_sent_on_desk(
+        || journey.request(desk_review.clone(), None),
+        COMMENT,
+        &snapshot,
+    )?;
+    journey.request(desk_review, Some("desk-review"))?;
 
     // Opened again, the chat shows what was sent and the reply.
     reopen(journey, &reviewer, |drawn| {
@@ -1544,9 +1562,13 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     Ok(vec![
         "the prompt reached the desk as the text, then the paste, then the review, as the composer showed them".to_owned(),
         "the paste arrived as one attachment holding exactly the twelve lines pasted".to_owned(),
-        format!("the review carries one comment on deploy.sh line 3: {}", quoted(COMMENT)),
+        format!(
+            "the review reached the agent as text: deploy.sh line 3, the changed line as diff, then {}, and the snapshot its line numbers refer to",
+            quoted(COMMENT)
+        ),
         control,
-        "the review names a patch the desk computed; its bytes on the desk hash to that name and hold the edit".to_owned(),
+        "the snapshot is a commit kept outside the repository; the command the review gives reads it and finds the tree unmoved, and it holds the edit".to_owned(),
+        "the desk's review holds the comment, sent in round 1 on that snapshot".to_owned(),
         "the chat opened again shows what was sent and the reply".to_owned(),
         "the chat's overview names the branch its folder is on, main".to_owned(),
         branch_control,
@@ -3177,19 +3199,53 @@ mod tests {
         assert!(trusted_as(&Drawn::default(), DESK, "desk").is_err());
     }
 
+    /// What the desk receives for a review with one comment on deploy.sh
+    /// line 3, as the agent reads it.
+    fn review_text(comment: &str, snapshot: &str) -> String {
+        format!(
+            "1 comment from a review of your changes.\n\n## deploy.sh, line 3\n\n```diff\n \
+             #!/bin/sh\n echo deploying\n-rsync build/ prod:/srv\n+rsync --delete build/ \
+             prod:/srv\n```\n\n{comment}\n\n---\nLine numbers are those of snapshot \
+             {snapshot}, a commit of the working tree taken for this review and kept outside \
+             the repository.\n"
+        )
+    }
+
     #[test]
     fn a_review_is_read_as_text_then_paste_then_review_with_its_one_comment() {
-        let comment = json!({"path": "deploy.sh", "line": 3, "old_line": 0, "text": COMMENT});
+        let snapshot = "4ad3b6b635913baff8282cc5a4d4db2c2811ddbe";
+        let review = |text: String| {
+            json!({
+                "kind": "text",
+                "name": "review",
+                "text": text,
+                "review": {"id": "ab", "round": 1, "snapshot": snapshot, "comments": ["cd"]},
+            })
+        };
         let sent = json!({
             "text": "Please check \u{fffc} against",
             "attachments": [
-                {"kind": "text", "text": pasted()},
-                {"kind": "review", "comments": [comment], "patch": "ab"},
+                {"kind": "text", "name": "pasted-1", "text": pasted()},
+                review(review_text(COMMENT, snapshot)),
             ],
         });
         let chat = json!({"items": [{"text": "earlier", "attachments": []}, sent]});
-        assert_eq!(reviewed(&chat, COMMENT), Ok(sent.clone()));
+        assert_eq!(
+            reviewed(&chat, COMMENT),
+            Ok((sent.clone(), snapshot.to_owned()))
+        );
         assert!(reviewed(&chat, "another comment").is_err());
+        // The text names another snapshot than the entry.
+        let mut elsewhere = sent.clone();
+        elsewhere["attachments"][1] = review(review_text(COMMENT, "0000000"));
+        assert!(reviewed(&json!({"items": [elsewhere]}), COMMENT).is_err());
+        // The review's text without its entry is pasted text, not a review.
+        let mut plain = sent.clone();
+        plain["attachments"][1]
+            .as_object_mut()
+            .expect("an attachment")
+            .remove("review");
+        assert!(reviewed(&json!({"items": [plain]}), COMMENT).is_err());
         let mut swapped = sent.clone();
         swapped["attachments"]
             .as_array_mut()

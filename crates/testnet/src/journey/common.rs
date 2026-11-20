@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 
 use super::{items, prompts, quoted};
 use crate::door::Control;
@@ -72,14 +71,6 @@ pub(crate) fn pasted() -> String {
         .map(|n| format!("deploy log {n}: rsync finished with status 0"))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// Every file under `directory` named `name`.
-pub(crate) fn files_named(directory: &Path, name: &str) -> Vec<PathBuf> {
-    walk(directory)
-        .into_iter()
-        .filter(|path| path.file_name().is_some_and(|file| file == name))
-        .collect()
 }
 
 /// Every file under `directory`, at any depth.
@@ -361,31 +352,131 @@ pub(crate) fn review_repository(work: &Path) -> Result<(), String> {
     write("#!/bin/sh\necho deploying\nrsync --delete build/ prod:/srv\necho done\n")
 }
 
-/// The patch the desk computed for a review is on its disk once, as a blob
-/// whose bytes hash to its name and hold the edit.
-pub(crate) fn patch_on_disk(net: &Path, patch: &str) -> Result<(), String> {
-    let found: Vec<PathBuf> = files_named(&net.join("desk/data"), patch)
-        .into_iter()
-        .filter(|path| {
-            path.parent()
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "blobs")
-        })
-        .collect();
-    let [blob] = found.as_slice() else {
-        return Err(format!(
-            "the desk holds the patch {patch} {} times",
-            found.len()
-        ));
+/// The sent review the desk received, as `attachment`: text named
+/// `review` with the review's entry, closing round 1 with one comment; the
+/// text says where the comment sits (deploy.sh line 3), quotes the changed
+/// line it is on as diff, then the person's `comment`, and names the
+/// snapshot the line numbers refer to. Answers the snapshot.
+pub(crate) fn sent_review(attachment: &Value, comment: &str) -> Result<String, String> {
+    let entry = &attachment["review"];
+    let snapshot = text(&entry["snapshot"]);
+    if attachment["kind"] != "text" || attachment["name"] != "review" || snapshot.is_empty() {
+        return Err(format!("the review arrived as {attachment}"));
+    }
+    if entry["round"] != 1 || entry["comments"].as_array().map_or(0, Vec::len) != 1 {
+        return Err(format!("the review's entry is {entry}"));
+    }
+    let read = text(&attachment["text"]);
+    let said = [
+        "1 comment from a review of your changes.".to_owned(),
+        "## deploy.sh, line 3\n".to_owned(),
+        "```diff\n".to_owned(),
+        "+rsync --delete build/ prod:/srv\n".to_owned(),
+        format!("```\n\n{comment}\n"),
+        format!("Line numbers are those of snapshot {snapshot}, "),
+    ];
+    let mut from = 0;
+    for words in &said {
+        match read[from..].find(words.as_str()) {
+            Some(at) => from += at + words.len(),
+            None => {
+                return Err(format!(
+                    "the review's text does not say {words:?} where it should:\n{read}"
+                ));
+            }
+        }
+    }
+    Ok(snapshot)
+}
+
+/// The snapshot a review's `text` names is a commit kept outside the
+/// repository at `work`, which holds no such object: the command the text
+/// gives the agent reads it from any folder and finds the working tree as
+/// it was snapshotted, and the snapshot holds the edit.
+pub(crate) fn snapshot_outside(work: &Path, read: &str, snapshot: &str) -> Result<(), String> {
+    let command = read
+        .lines()
+        .find(|line| line.starts_with("GIT_ALTERNATE_OBJECT_DIRECTORIES="))
+        .ok_or_else(|| format!("the review gives no command:\n{read}"))?;
+    let reading = command
+        .rsplit_once(" diff ")
+        .map(|(reading, _)| reading)
+        .ok_or_else(|| format!("the review's command is no diff: {command}"))?;
+    let shell = |script: &str| {
+        Command::new("sh")
+            .args(["-c", script])
+            .current_dir(std::env::temp_dir())
+            .output()
+            .map_err(|error| format!("sh: {error}"))
     };
-    let bytes = std::fs::read(blob).map_err(|error| error.to_string())?;
-    let digest: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    let edit = b"+rsync --delete build/ prod:/srv";
-    if digest != patch || !bytes.windows(edit.len()).any(|window| window == edit) {
-        return Err("the patch on the desk is not the reviewed diff".to_owned());
+    if !shell(&format!("{command} --exit-code --quiet"))?
+        .status
+        .success()
+    {
+        return Err(format!(
+            "the review's command finds the tree moved from the snapshot: {command}"
+        ));
+    }
+    let shown = shell(&format!("{reading} show {snapshot}:deploy.sh"))?;
+    if !String::from_utf8_lossy(&shown.stdout).contains("rsync --delete build/ prod:/srv") {
+        return Err(format!(
+            "the snapshot does not hold the edit: {}",
+            String::from_utf8_lossy(&shown.stderr)
+        ));
+    }
+    let inside = Command::new("git")
+        .arg("-C")
+        .arg(work)
+        .args(["cat-file", "-e", snapshot])
+        .output()
+        .map_err(|error| format!("git: {error}"))?;
+    if inside.status.success() {
+        return Err(format!("the repository holds the snapshot {snapshot}"));
     }
     Ok(())
+}
+
+/// Waits for the agent's review, as `observe` reads it from the desk, to
+/// have sent `comment` in round 1 on `snapshot`, as [`sent_on_desk`] says.
+/// The desk closes the round once the agent has taken the prompt, which
+/// the agent's reply can beat.
+pub(crate) fn wait_sent_on_desk(
+    observe: impl FnMut() -> Result<Value, String>,
+    comment: &str,
+    snapshot: &str,
+) -> Result<Value, String> {
+    super::poll(
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(200),
+        observe,
+        |review| sent_on_desk(review, comment, snapshot).is_ok(),
+    )
+    .map_err(|(last, why)| match last {
+        Some(review) => sent_on_desk(&review, comment, snapshot)
+            .err()
+            .unwrap_or(why),
+        None => why,
+    })
+}
+
+/// The agent's review as the desk holds it, `review`, sent `comment` in
+/// round 1 on `snapshot`, deploy.sh line 3, and holds no other comment.
+pub(crate) fn sent_on_desk(review: &Value, comment: &str, snapshot: &str) -> Result<(), String> {
+    let rounds = &review["rounds"];
+    let comments = &review["comments"];
+    let one = |list: &Value| list.as_array().map_or(0, Vec::len) == 1;
+    let sent = one(rounds)
+        && rounds[0]["n"] == 1
+        && rounds[0]["snapshot"] == snapshot
+        && one(comments)
+        && comments[0]["text"] == comment
+        && comments[0]["round"] == 1
+        && comments[0]["path"] == "deploy.sh"
+        && comments[0]["commit"] == snapshot
+        && comments[0]["lines"] == json!([3, 3]);
+    if sent {
+        Ok(())
+    } else {
+        Err(format!("the desk's review is {review}"))
+    }
 }

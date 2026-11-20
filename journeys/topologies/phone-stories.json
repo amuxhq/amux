@@ -3,6 +3,9 @@
   "hosts": [
     {
       "name": "desk",
+      "experiments": [
+        "reviews"
+      ],
       "lan": true,
       "bonjour": true,
       "script": {

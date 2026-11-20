@@ -28,6 +28,7 @@ mod push;
 mod registry;
 mod replication_calls;
 mod resumption;
+mod reviews;
 mod settings;
 mod single_daemon;
 mod subagents;

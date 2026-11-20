@@ -152,7 +152,7 @@ export class Amux {
     this.profiles.set(id, profile);
     profile.cancel = this.bridge.stream(
       id,
-      "/amux.v1.AgentService/SubscribeInventory",
+      "/amux.v1.InventoryService/SubscribeInventory",
       "",
       (message) => {
         void core({ op: "fleetApply", fleet, message })
@@ -239,13 +239,16 @@ export class Amux {
         agent,
         cwd: destination.cwd,
       });
-      await this.bridge.unary(profile.id, "/amux.v1.AgentService/CreateAgent", request);
+      await this.bridge.unary(profile.id, "/amux.v1.AgentService/CreateAgent", request, await this.authority(host));
       created({ kind: "agent", profile: profile.id, host, agent });
       await this.until(profile, host, agent);
     } else {
       host = destination.host;
       agent = destination.agent;
     }
+    // Every act on the agent goes to the host that owns it, which may be a
+    // paired one the profile's node carries the call to.
+    const authority = await this.authority(host);
 
     const pages = [];
     for (const page of byPage(review.comments)) {
@@ -253,7 +256,7 @@ export class Amux {
       for (const [index, comment] of page.comments.entries()) {
         // Named by its pin's number on its page.
         const name = `region-${index + 1}.png`;
-        comments.push(await this.anchored(profile.id, agent, comment, images.get(comment.id), name));
+        comments.push(await this.anchored(profile.id, authority, agent, comment, images.get(comment.id), name));
       }
       pages.push({ url: page.url, title: page.title, comments });
     }
@@ -270,7 +273,7 @@ export class Amux {
       pages,
       texts: review.snippets.map(({ name, text }) => ({ name, text })),
     });
-    const answer = await this.bridge.unary(profile.id, "/amux.v1.SessionService/SendInput", request);
+    const answer = await this.bridge.unary(profile.id, "/amux.v1.AgentService/SendInput", request, authority);
     const verdict = await core<{ accepted: boolean; refusal?: string; detail?: string }>({
       op: "verdict",
       message: answer,
@@ -285,6 +288,7 @@ export class Amux {
   /** A comment as the wire carries it, its screenshot stored with the agent first. */
   private async anchored(
     profile: string,
+    authority: string,
     agent: string,
     comment: PendingReview["comments"][number],
     shot: Image | undefined,
@@ -299,10 +303,15 @@ export class Amux {
         mime: "image/png",
         bytes: toBase64(shot.png),
       });
-      const stored = await this.bridge.unary(profile, "/amux.v1.AgentService/PutBlob", request);
+      const stored = await this.bridge.unary(profile, "/amux.v1.AgentService/PutBlob", request, authority);
       image = await core({ op: "blob", message: stored });
     }
     return { text: comment.text, element: comment.element, quote: comment.quote, image };
+  }
+
+  /** The authority a call to `host` (an id in hex) is made with. */
+  private async authority(host: string): Promise<string> {
+    return core<string>({ op: "authority", host });
   }
 
   /** This machine's host id in a profile, or empty when amux does not say. */

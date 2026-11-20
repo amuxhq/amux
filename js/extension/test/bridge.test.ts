@@ -64,7 +64,7 @@ describe("the native port", () => {
     bridge.hold(true);
     const cancel = bridge.stream(
       "installation",
-      "/amux.v1.AgentService/SubscribeInventory",
+      "/amux.v1.InventoryService/SubscribeInventory",
       "",
       () => {},
       () => {},
@@ -74,5 +74,79 @@ describe("the native port", () => {
     expect(ports[0]!.disconnected).toBe(false);
     bridge.hold(false);
     expect(ports[0]!.disconnected).toBe(true);
+  });
+
+  it("sends an authority only to a bridge whose framing reads it", async () => {
+    for (const [framing, expected] of [
+      [2, { authority: "far" }],
+      [1, {}],
+    ] as const) {
+      const ports = fakeChrome();
+      const { Bridge } = await import("../src/background/bridge.ts");
+      const bridge = new Bridge("sh.amux.browser");
+      bridge.hold(true);
+      bridge.stream(
+        "ab01",
+        "/amux.v1.AgentService/SendInput",
+        "AA==",
+        () => {},
+        () => {},
+        "far",
+      );
+      // Held until the greeting says what the bridge reads.
+      expect(ports[0]!.sent).toEqual([]);
+      ports[0]!.deliver({ hello: { version: "0.12.0", framing } });
+      expect(ports[0]!.sent).toEqual([
+        { id: 1, call: { target: "ab01", method: "/amux.v1.AgentService/SendInput", body: "AA==", ...expected } },
+      ]);
+      // Once greeted, a call goes at once, with or without one.
+      bridge.stream(
+        "ab01",
+        "/amux.v1.AgentService/PutBlob",
+        "",
+        () => {},
+        () => {},
+        "far",
+      );
+      bridge.stream(
+        "installation",
+        "/amux.v1.InstallationService/ListProfiles",
+        "",
+        () => {},
+        () => {},
+      );
+      expect(ports[0]!.sent.slice(1)).toEqual([
+        { id: 2, call: { target: "ab01", method: "/amux.v1.AgentService/PutBlob", body: "", ...expected } },
+        { id: 3, call: { target: "installation", method: "/amux.v1.InstallationService/ListProfiles", body: "" } },
+      ]);
+    }
+  });
+
+  it("sends a call without an authority before the greeting, and never one cancelled while held", async () => {
+    const ports = fakeChrome();
+    const { Bridge } = await import("../src/background/bridge.ts");
+    const bridge = new Bridge("sh.amux.browser");
+    bridge.hold(true);
+    bridge.stream(
+      "installation",
+      "/amux.v1.InstallationService/ListProfiles",
+      "",
+      () => {},
+      () => {},
+    );
+    const cancel = bridge.stream(
+      "ab01",
+      "/amux.v1.AgentService/SendInput",
+      "",
+      () => {},
+      () => {},
+      "far",
+    );
+    cancel();
+    ports[0]!.deliver({ hello: { version: "0.12.0", framing: 2 } });
+    expect(ports[0]!.sent).toEqual([
+      { id: 1, call: { target: "installation", method: "/amux.v1.InstallationService/ListProfiles", body: "" } },
+      { id: 2, cancel: true },
+    ]);
   });
 });

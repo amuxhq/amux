@@ -578,7 +578,11 @@ async fn several_switches_in_a_row_want_one_restart_once_they_stay_put() {
     let settings = switch(&daemon, &["workspaces", "suspension"]).await;
     assert_eq!(
         experiments(&settings),
-        [("workspaces", true, true), ("suspension", true, true)]
+        [
+            ("workspaces", true, true),
+            ("suspension", true, true),
+            ("reviews", false, false)
+        ]
     );
 
     let wanted = tokio::time::timeout(PATIENCE, &mut restart)
@@ -615,7 +619,11 @@ async fn a_switch_flipped_back_or_an_unknown_name_wants_no_restart() {
     let settings = switch(&daemon, &[]).await;
     assert_eq!(
         experiments(&settings),
-        [("workspaces", false, false), ("suspension", false, false)]
+        [
+            ("workspaces", false, false),
+            ("suspension", false, false),
+            ("reviews", false, false)
+        ]
     );
     // A name another build has, as `amux config set` or an editor writes it;
     // the daemon reads the file again within its poll.
@@ -636,7 +644,11 @@ async fn a_switch_flipped_back_or_an_unknown_name_wants_no_restart() {
         .unwrap();
     assert_eq!(
         experiments(&settings),
-        [("workspaces", false, false), ("suspension", false, false)]
+        [
+            ("workspaces", false, false),
+            ("suspension", false, false),
+            ("reviews", false, false)
+        ]
     );
 
     // A hand edit that does switch one on is noticed like a client's switch.
@@ -690,9 +702,14 @@ async fn a_running_experiments_own_settings_want_a_restart_as_its_module_reads_t
             .settings
             .unwrap();
         let listed = experiments(&settings);
-        (listed == [("workspaces", false, false), ("suspension", true, true)])
-            .then_some(())
-            .ok_or(format!("{listed:?}"))
+        (listed
+            == [
+                ("workspaces", false, false),
+                ("suspension", true, true),
+                ("reviews", false, false),
+            ])
+        .then_some(())
+        .ok_or(format!("{listed:?}"))
     })
     .await
     .unwrap();

@@ -120,9 +120,19 @@ pub const SUSPENSION: Experiment = Experiment {
     in_effect: suspension::in_effect,
 };
 
+/// An agent's changes are reviewed round by round on snapshots of its
+/// working tree, with comments carried from one round to the next.
+pub const REVIEWS: Experiment = Experiment {
+    name: "reviews",
+    version: wire::experimental::REVIEW_ROW.version(),
+    description: "Review an agent's changes round by round, with comments that follow the code.",
+    keys: &[],
+    in_effect: |_| Vec::new(),
+};
+
 /// Every experiment this build implements, in the order settings screens
 /// list them.
-pub const EXPERIMENTS: &[&Experiment] = &[&WORKSPACES, &SUSPENSION];
+pub const EXPERIMENTS: &[&Experiment] = &[&WORKSPACES, &SUSPENSION, &REVIEWS];
 
 /// The experiment this build implements under `name`.
 pub fn named(name: &str) -> Option<&'static Experiment> {
@@ -407,6 +417,9 @@ mod tests {
             assert!(!experiment.description.contains('\n'));
         }
         assert_eq!(WORKSPACES.table_prefix(), "exp_workspaces_1_");
+        assert_eq!(REVIEWS.table_prefix(), "exp_reviews_1_");
+        // The reviews experiment keys an entry on two maps by its one version.
+        assert_eq!(REVIEWS.version, wire::experimental::SENT_REVIEW.version());
         for experiment in EXPERIMENTS {
             for (index, known) in experiment.keys.iter().enumerate() {
                 assert!(

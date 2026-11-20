@@ -18,8 +18,11 @@
 //! running prompt's answer, and only an agent known to fold one in is sent
 //! one early.
 
+mod agents;
 mod facts;
 mod recording;
+
+pub use agents::{BUILT_INS, BuiltIn, built_in};
 
 use std::collections::BTreeMap;
 

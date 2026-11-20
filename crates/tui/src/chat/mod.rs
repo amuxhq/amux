@@ -2083,6 +2083,15 @@ impl ChatView {
         Some((key, base))
     }
 
+    /// The changed files the agent's host last listed for `comparison`,
+    /// when they are held.
+    pub fn listed(&self, comparison: Comparison) -> Option<GetChangesResponse> {
+        self.changes
+            .as_ref()
+            .filter(|fetched| fetched.key.comparison == comparison)
+            .map(|fetched| fetched.changes.clone())
+    }
+
     /// Takes in a fetch of the changed files, unless the person has moved
     /// to another comparison since it was asked for.
     pub fn changes_fetched(&mut self, key: FetchKey, changes: GetChangesResponse) {

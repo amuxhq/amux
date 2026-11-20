@@ -34,8 +34,9 @@ pub struct Chat {
     changes: Coalescer<Key>,
     watcher: OnceLock<JoinHandle<()>>,
     clock: Arc<dyn client::Clock>,
-    /// The changed files the overview last fetched.
-    changed_files: Mutex<Option<GetChangesResponse>>,
+    /// The changed files the overview last fetched, with the comparison
+    /// they answer.
+    changed_files: Mutex<Option<(Comparison, GetChangesResponse)>>,
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
@@ -267,7 +268,10 @@ impl Chat {
     /// fetched.
     pub fn overview(&self) -> Overview {
         let files = self.changed_files.lock().unwrap().clone();
-        ui_view::overview(&self.session.state(), files.as_ref())
+        ui_view::overview(
+            &self.session.state(),
+            files.as_ref().map(|(_, files)| files),
+        )
     }
 
     /// Asks the agent's host which files changed for `comparison`, and
@@ -279,7 +283,7 @@ impl Chat {
         comparison: Comparison,
     ) -> Result<Overview, client::RpcError> {
         let files = if ui_view::lists_changes(&self.session.state()) {
-            Some(self.session.changes(comparison.base()).await?)
+            Some((comparison, self.session.changes(comparison.base()).await?))
         } else {
             None
         };
@@ -370,7 +374,10 @@ impl Chat {
             ask: sent
                 .ask(ui_view::ask_card(&state))
                 .map(|card| AskMoved { card }),
-            overview: sent.overview(ui_view::overview(&state, files.as_ref())),
+            overview: sent.overview(ui_view::overview(
+                &state,
+                files.as_ref().map(|(_, files)| files),
+            )),
             settings: sent.settings(ui_view::settings(&state)),
             agents: sent.agents(match self.fleet.upgrade() {
                 Some(fleet) => ui_view::chat_agents(&state, &fleet.state()),
@@ -617,14 +624,17 @@ impl Chat {
     }
 
     /// The agent's diff for `comparison` and its patch, frozen for a
-    /// review. A branch with no known base is reviewed as its uncommitted
-    /// work.
+    /// review, against the base the host reported for the overview's list
+    /// when it holds one for `comparison`, so the two show the same change.
     pub async fn review(&self, comparison: Comparison) -> Result<FrozenReview, client::RpcError> {
-        let base =
-            ui_view::review_base(&self.session.state(), comparison).unwrap_or(wire::DiffBase {
-                base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-            });
-        let (diff, patch) = self.session.review(base).await?;
+        let listed = self
+            .changed_files
+            .lock()
+            .unwrap()
+            .clone()
+            .filter(|(listed, _)| *listed == comparison)
+            .map(|(_, files)| files);
+        let (diff, patch) = self.session.review(comparison, listed).await?;
         Ok(FrozenReview { diff, patch })
     }
 

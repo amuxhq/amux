@@ -2859,8 +2859,10 @@ fn the_overview_holds_the_changes_it_is_given() {
 
 /// The overview asks the agent's host for HEAD when it counts the
 /// uncommitted work, and for nothing on the branch, so the base is the
-/// host's to pick. The review page, still built on the diff's patch, names
-/// a base itself: the row's base branch, else HEAD.
+/// host's to pick. The review page, still built on the diff's patch, asks
+/// for the base the host reported for the list, never the row's: on its
+/// base branch with an upstream the host counts from the upstream, where
+/// the row's base branch would show nothing the agent has not pushed.
 #[test]
 fn the_overview_leaves_the_branchs_base_to_the_host() {
     use wire::get_changes_request::Base;
@@ -2872,19 +2874,22 @@ fn the_overview_leaves_the_branchs_base_to_the_host() {
 
     let mut row = agent(Kind::Codex, Phase::Working);
     row.git = Some(wire::Git {
-        branch: Some("fix".into()),
+        branch: Some("main".into()),
         base_branch: Some("main".into()),
         ..Default::default()
     });
     let state = SessionState::new(row, CAP);
     assert!(Comparison::OnBranch.offered(&state));
-    let branch = |base: Option<wire::DiffBase>| base.and_then(|base| base.base);
+    let listed = |base: &str| wire::GetChangesResponse {
+        base_branch: base.into(),
+        ..Default::default()
+    };
     assert_eq!(
-        branch(review_base(&state, Comparison::OnBranch)),
-        Some(wire::diff_base::Base::Branch("main".into()))
+        review_base(&listed("origin/main")).base,
+        Some(wire::diff_base::Base::Branch("origin/main".into()))
     );
     assert!(matches!(
-        branch(review_base(&state, Comparison::Uncommitted)),
+        review_base(&listed("")).base,
         Some(wire::diff_base::Base::Head(_))
     ));
 }

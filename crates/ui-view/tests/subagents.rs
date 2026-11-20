@@ -562,8 +562,4 @@ fn a_subagents_composer_offers_only_its_own_stop() {
     assert_eq!(settings.changeable, ui_view::Changeability::default());
     assert!(settings.commands.is_empty());
     assert!(!ui_view::lists_changes(&state));
-    assert_eq!(
-        ui_view::review_base(&state, ui_view::Comparison::Uncommitted),
-        None
-    );
 }

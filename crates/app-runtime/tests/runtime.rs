@@ -784,6 +784,79 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
     net.shutdown().await.unwrap();
 }
 
+/// An agent working on its base branch, with commits not yet pushed to
+/// the branch's upstream: the host counts the branch from the upstream,
+/// and the review page shows the same commits the overview lists, whether
+/// the overview fetched its list first or not.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_review_shows_what_the_overview_lists_on_a_branch_with_an_upstream() {
+    let topology = Topology::new().host("desk").agent(
+        AgentDecl::new("worker", "desk")
+            .kind(FakeKind::ClaudeSdk)
+            .cwd("project")
+            .branch("main")
+            .steps(vec![text("turn one"), Step::TurnEnd])
+            .prompt("go"),
+    );
+    let net = Net::start(topology).await.unwrap();
+    let work = net.host("desk").unwrap().work.clone();
+    let folder = work.join("project");
+    let git = |dir: &std::path::Path, args: &[&str]| {
+        let ran = std::process::Command::new("git")
+            .args(["-c", "user.name=amux", "-c", "user.email=amux@example.com"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(ran.status.success(), "git {args:?}: {ran:?}");
+    };
+    std::fs::write(folder.join("README.md"), "hello\n").unwrap();
+    git(&folder, &["add", "README.md"]);
+    git(&folder, &["commit", "--quiet", "-m", "pushed"]);
+    git(&work, &["init", "--quiet", "--bare", "remote.git"]);
+    git(&folder, &["remote", "add", "origin", "../remote.git"]);
+    git(&folder, &["push", "--quiet", "-u", "origin", "main"]);
+    std::fs::write(folder.join("plan.md"), "one\ntwo\n").unwrap();
+    git(&folder, &["add", "plan.md"]);
+    git(&folder, &["commit", "--quiet", "-m", "not pushed"]);
+
+    let (runtime, mut host) = open(&net).await;
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    until(&mut host, &chat, "the first turn", |chat| {
+        chat.frame().caught_up && says(chat, "turn one")
+    })
+    .await;
+    fn reviewed(patch: &str) -> Vec<&str> {
+        patch
+            .lines()
+            .filter_map(|line| line.strip_prefix("+++ b/"))
+            .collect()
+    }
+    let unlisted = chat.review(Comparison::OnBranch).await.unwrap();
+    assert_eq!(
+        reviewed(&unlisted.patch),
+        vec!["plan.md"],
+        "{}",
+        unlisted.patch
+    );
+    let listed = chat
+        .open_overview(Comparison::OnBranch)
+        .await
+        .unwrap()
+        .changes
+        .expect("the files were fetched");
+    assert_eq!(listed.base.as_deref(), Some("origin/main"), "{listed:?}");
+    let paths: Vec<&str> = listed
+        .folders
+        .iter()
+        .flat_map(|folder| folder.files.iter().map(|file| file.path.as_str()))
+        .collect();
+    assert_eq!(paths, vec!["plan.md"]);
+    let review = chat.review(Comparison::OnBranch).await.unwrap();
+    assert_eq!(reviewed(&review.patch), paths, "{}", review.patch);
+    net.shutdown().await.unwrap();
+}
+
 /// A delete's warning is the agent's host's preview: an agent in a folder
 /// of its own takes no workspace with it, and one whose host cannot be
 /// asked gets a warning that says so.

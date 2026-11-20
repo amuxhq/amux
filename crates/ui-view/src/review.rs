@@ -3,34 +3,23 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ui_state::SessionState;
-use wire::{Diff, DiffBase, ReviewComment, diff_base};
+use wire::{Diff, DiffBase, GetChangesResponse, ReviewComment, diff_base};
 
-use crate::overview::{Comparison, FileStatus, lists_changes};
+use crate::overview::FileStatus;
 
-/// The base the review page's diff is asked against: HEAD for the
-/// uncommitted work, the base branch the agent's row names for everything
-/// on the branch, and HEAD when it names none. The page is built on the
-/// diff call's patch, which takes an explicit base, unlike the overview's
-/// list of changed files; None for a provider subagent, whose changes are
-/// its parent's to review.
-pub fn review_base(state: &SessionState, comparison: Comparison) -> Option<DiffBase> {
-    if !lists_changes(state) {
-        return None;
-    }
-    let branch = match comparison {
-        Comparison::Uncommitted => None,
-        Comparison::OnBranch => state
-            .agent()
-            .git
-            .as_ref()
-            .and_then(|git| git.base_branch.clone()),
+/// The base the review page's diff is asked against: the one the agent's
+/// host reported comparing with when it listed the same comparison's
+/// changed files. The host's rule picks it, as the branch's upstream when
+/// the agent works on its base branch, so the page and the overview's list
+/// never disagree about what the agent changed. A reported branch, else
+/// HEAD: the uncommitted work alone, or a branch with no base found.
+pub fn review_base(listed: &GetChangesResponse) -> DiffBase {
+    let base = if listed.base_branch.is_empty() {
+        diff_base::Base::Head(wire::Empty {})
+    } else {
+        diff_base::Base::Branch(listed.base_branch.clone())
     };
-    let base = match branch {
-        Some(branch) => diff_base::Base::Branch(branch),
-        None => diff_base::Base::Head(wire::Empty {}),
-    };
-    Some(DiffBase { base: Some(base) })
+    DiffBase { base: Some(base) }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]

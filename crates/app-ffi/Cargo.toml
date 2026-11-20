@@ -32,7 +32,7 @@ wire = { workspace = true }
 
 # Installing amux is a desktop app's first call; the phone hosts its own
 # runtime and has nothing to install.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 installer = { workspace = true }
 
 [dev-dependencies]

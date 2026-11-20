@@ -15,11 +15,11 @@ use crate::HostId;
 
 // The phone has none: only the system may browse its local network, and
 // the app hands over what the system resolves.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod mdns;
 mod scripted;
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use mdns::{MdnsDiscovery, MdnsShared};
 pub use scripted::ScriptedDiscovery;
 
@@ -59,7 +59,7 @@ pub(crate) const EVENT_CAPACITY: usize = 128;
 /// The addresses of both families a listener on every interface answers
 /// at. IPv6 link-local addresses are left out: one names a peer only with
 /// its interface, which differs on the dialling machine.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) fn local_pairing_addrs(port: u16) -> Vec<SocketAddr> {
     let mut addrs = if_addrs::get_if_addrs()
         .unwrap_or_default()
@@ -72,12 +72,12 @@ pub(crate) fn local_pairing_addrs(port: u16) -> Vec<SocketAddr> {
     addrs
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn is_ipv6_link_local(ip: std::net::IpAddr) -> bool {
     matches!(ip, std::net::IpAddr::V6(ip) if ip.segments()[0] & 0xffc0 == 0xfe80)
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 pub(crate) fn local_pairing_addrs(_port: u16) -> Vec<SocketAddr> {
     Vec::new()
 }
@@ -86,7 +86,7 @@ pub(crate) fn local_pairing_addrs(_port: u16) -> Vec<SocketAddr> {
 /// without one. Connecting a UDP socket only asks the routing table; no
 /// datagram is sent. The destination is a documentation address, which no
 /// route but the default one covers.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
     let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).ok()?;
     socket
@@ -98,7 +98,7 @@ pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
     }
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 pub(crate) fn default_route_ipv4() -> Option<std::net::Ipv4Addr> {
     None
 }
@@ -224,7 +224,7 @@ impl FoundHosts {
 
 /// The browser's clock and its sleep detector, desktop only: the phone
 /// has no browser of its own, and the app hears about sleep from the system.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod wake {
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
@@ -269,7 +269,7 @@ mod wake {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) use wake::{MonotonicClock, SystemClock, WakeMonitor};
 
 #[cfg(test)]

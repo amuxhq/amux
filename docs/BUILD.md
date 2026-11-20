@@ -11,6 +11,7 @@
 | Target | Used for |
 | --- | --- |
 | `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios` | The iPhone app's Rust bridge and `just mobile-check` |
+| `aarch64-linux-android`, `x86_64-linux-android` | The Android app's Rust bridge and `just mobile-check` |
 | `x86_64-pc-windows-msvc` | The Windows release build and the [Windows cross-check](CI.md) |
 | `x86_64-unknown-linux-gnu` | The Linux release build |
 | `wasm32-unknown-unknown` | The browser extension's WebAssembly, `browser-core` ([Browser extension](BROWSER.md)) |
@@ -41,9 +42,10 @@ Other tools a full checkout uses:
 ### The Nix dev shell
 
 On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
-`nix develop` at the root opens a shell with everything above except Xcode:
+`nix develop` at the root opens a shell with everything above except Xcode and
+the Android SDK:
 the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
-`tmux`, Python, `git`, `gitleaks`, the dependency checkers `just deny` and
+`tmux`, Python, `git`, `gitleaks`, JDK 21 and `cargo-ndk`, the dependency checkers `just deny` and
 `just shear` run and, on Linux, a C compiler. `nix develop -c just test`
 runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
@@ -125,7 +127,7 @@ The recipes a build or change usually needs:
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
-| `just mobile-check` | Check the provider-free client graph for iOS |
+| `just mobile-check` | Check the provider-free client graph for iOS and Android |
 | `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 

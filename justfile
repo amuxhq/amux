@@ -141,10 +141,11 @@ release-check *ARGS:
 hooks:
     scripts/hooks/install
 
-# Check the provider-free graph for iOS devices and simulators.
+# Check the provider-free graph for iOS and Android.
 mobile-check:
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios
     {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios-sim
+    {{bounded}} 1200 cargo ndk -t arm64-v8a -P 34 check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded
 
 # Run workspace tests with isolated user configuration and no external network,
 # on Linux, through sudo. The workspace test script bounds its own compile and

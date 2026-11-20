@@ -301,7 +301,7 @@ fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
 }
 
 /// The wt backend, against a wt home and trees folder of the test's own.
-#[cfg(all(unix, not(target_os = "ios")))]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 mod wt {
     use super::*;
 

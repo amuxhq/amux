@@ -16,7 +16,7 @@ fn advert(name: &str) -> Advertisement {
 }
 
 #[test]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn txt_encoding_carries_host_id_name_and_scope() {
     let advert = Advertisement {
         scope: "worktree-a".to_owned(),
@@ -53,7 +53,7 @@ fn txt_encoding_carries_host_id_name_and_scope() {
 /// than this crate, so a spelling only this crate accepts would pass every
 /// Rust round trip and still hide the Mac from every phone.
 #[test]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn txt_encoding_matches_the_record_the_phone_reads() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../tests/fixtures/discovery/advertisement.json"
@@ -80,7 +80,7 @@ fn txt_encoding_matches_the_record_the_phone_reads() {
 }
 
 #[test]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn txt_decoding_builds_an_advertisement() {
     let expected = Advertisement {
         scope: "run-7".to_owned(),
@@ -100,7 +100,7 @@ fn txt_decoding_builds_an_advertisement() {
 /// one's instance "Studio (2)". The machine is still called Studio, and its
 /// own record says so.
 #[test]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn a_renamed_instance_is_known_by_the_name_its_record_carries() {
     let advert = advert("Studio");
     let properties = txt_properties(&advert);
@@ -122,7 +122,7 @@ fn a_renamed_instance_is_known_by_the_name_its_record_carries() {
 
 /// A name printed by `amux hosts` must not carry what a terminal acts on.
 #[test]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn a_host_advertising_no_host_name_is_ignored() {
     let resolved = mdns::service_info_for_test(&advert("Studio\u{1b}]52;c;aGk=\u{7}"))
         .unwrap()
@@ -133,10 +133,12 @@ fn a_host_advertising_no_host_name_is_ignored() {
     assert!(error.contains("no host name"), "{error}");
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct MockClock {
     now: Mutex<Instant>,
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl MockClock {
     fn advance(&self, duration: Duration) {
         let mut now = self.now.lock().unwrap();
@@ -144,6 +146,7 @@ impl MockClock {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl MonotonicClock for MockClock {
     fn now(&self) -> Instant {
         *self.now.lock().unwrap()
@@ -151,6 +154,7 @@ impl MonotonicClock for MockClock {
 }
 
 #[test]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn wake_gap_requeries_after_a_monotonic_pause() {
     let clock = Arc::new(MockClock {
         now: Mutex::new(Instant::now()),

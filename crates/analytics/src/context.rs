@@ -105,6 +105,7 @@ pub enum Platform {
     Linux,
     Windows,
     Ios,
+    Android,
     Other,
 }
 
@@ -112,6 +113,8 @@ impl Platform {
     pub fn current() -> Self {
         if cfg!(target_os = "ios") {
             Platform::Ios
+        } else if cfg!(target_os = "android") {
+            Platform::Android
         } else if cfg!(target_os = "macos") {
             Platform::MacOs
         } else if cfg!(target_os = "linux") {
@@ -130,6 +133,7 @@ impl Platform {
             Platform::Linux => "Linux",
             Platform::Windows => "Windows",
             Platform::Ios => "ios",
+            Platform::Android => "android",
             Platform::Other => "other",
         }
     }
@@ -195,7 +199,7 @@ fn token(text: &str) -> String {
 }
 
 /// The operating system's version: the product version on Apple systems,
-/// the kernel release on Linux. Windows reports none.
+/// the kernel release on Linux and Android. Windows reports none.
 fn os_version() -> Option<String> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
@@ -290,5 +294,15 @@ mod tests {
         assert_eq!(json["version"], "0.8.0");
         assert_eq!(json["channel"], "preview");
         assert_eq!(json["arch"], std::env::consts::ARCH);
+    }
+
+    #[test]
+    fn platform_names_match_contract() {
+        assert_eq!(Platform::MacOs.as_str(), "macOS");
+        assert_eq!(Platform::Linux.as_str(), "Linux");
+        assert_eq!(Platform::Windows.as_str(), "Windows");
+        assert_eq!(Platform::Ios.as_str(), "ios");
+        assert_eq!(Platform::Android.as_str(), "android");
+        assert_eq!(Platform::Other.as_str(), "other");
     }
 }

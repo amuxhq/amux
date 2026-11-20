@@ -6,6 +6,9 @@ targets = [
     "aarch64-apple-ios",
     "aarch64-apple-ios-sim",
     "x86_64-apple-ios",
+    # The Android app's Rust bridge (arm64 phones and Apple Silicon emulator, plus x86_64 emulators).
+    "aarch64-linux-android",
+    "x86_64-linux-android",
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
     # The browser extension's WebAssembly (crates/browser-core).

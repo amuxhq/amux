@@ -19,15 +19,15 @@ use wire::inventory_event::Of;
 
 use crate::profiles::ProfileId;
 use crate::runtime::ProfileRuntime;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::supervisor::KeepAwake;
 
-/// A phone keeps nothing awake: it runs no agents of its own, and iOS
-/// decides when it sleeps.
-#[cfg(target_os = "ios")]
+/// A phone keeps nothing awake: it runs no agents of its own, and the mobile
+/// OS decides when it sleeps.
+#[cfg(any(target_os = "ios", target_os = "android"))]
 struct KeepAwake;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 impl KeepAwake {
     fn while_working() -> Self {
         KeepAwake

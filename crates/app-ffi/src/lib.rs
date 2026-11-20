@@ -1016,7 +1016,7 @@ pub unsafe extern "C" fn amux_runtime_start(
 ///
 /// # Safety
 /// `config` is a NUL-terminated string; `error` is null or writable.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_runtime_attach(
     config: *const c_char,
@@ -1053,7 +1053,7 @@ pub unsafe extern "C" fn amux_runtime_attach(
 ///
 /// # Safety
 /// `options` is a NUL-terminated string; `error` is null or writable.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_install(
     options: *const c_char,

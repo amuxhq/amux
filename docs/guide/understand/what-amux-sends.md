@@ -75,8 +75,8 @@ app, forgets them.
 | Field | What it is |
 |---|---|
 | `installation_id`, `host_id` | As above. |
-| `platform` | `macOS`, `Linux`, `Windows` or `ios`. |
-| `os_version` | The operating system's version: the product version on macOS and iOS, the kernel release on Linux; none on Windows. |
+| `platform` | `macOS`, `Linux`, `Windows`, `ios` or `android`. |
+| `os_version` | The operating system's version: the product version on macOS and iOS, the kernel release on Linux and Android; none on Windows. |
 | `arch` | The processor architecture, such as `aarch64`. |
 | `version` | amux's version. |
 | `channel` | The release channel the computer follows: `stable` or `preview`. |

@@ -79,7 +79,7 @@ pub struct LinkLiveness {
 mod liveness_tests {
     /// A desktop notices a silently dead link within forty seconds: its
     /// keepalive and idle timeout sum to that bound.
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     #[test]
     fn a_desktop_notices_a_dead_link_within_forty_seconds() {
         let liveness = super::LinkLiveness::default();
@@ -95,9 +95,9 @@ impl Default for LinkLiveness {
     /// and costs a few packets a minute. A phone keeps a longer pair for
     /// its battery.
     fn default() -> Self {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         let (keep_alive, idle_timeout) = (20, 60);
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         let (keep_alive, idle_timeout) = (10, 30);
         Self {
             keep_alive: std::time::Duration::from_secs(keep_alive),

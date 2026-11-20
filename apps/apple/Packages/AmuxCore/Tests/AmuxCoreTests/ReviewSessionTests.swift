@@ -150,7 +150,7 @@ final class ReviewSessionTests: XCTestCase {
         let none = ReviewSession(source: ReviewChat())
         XCTAssertEqual(none.page, ReviewSession.opening)
         XCTAssertTrue(none.page.opening)
-        XCTAssertNil(none.header)
+        XCTAssertNil(none.page.header)
 
         let chat = ReviewChat()
         let open = P.page([P.file("src/lib.rs")])

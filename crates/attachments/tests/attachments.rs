@@ -193,7 +193,56 @@ fn the_canonical_elements() {
             },
             None
         ),
-        "<amux-attachment kind=\"text\" name=\"n\">a &lt; b</amux-attachment>"
+        "<amux-attachment kind=\"text\" name=\"n\">a < b</amux-attachment>"
+    );
+}
+
+/// A body escapes only what the parser would read as markup: code reads as
+/// written, and an element's tags or a character reference inside it stay
+/// text.
+#[test]
+fn a_body_escapes_only_what_reads_as_markup() {
+    let body = |text: &str| {
+        let attachment = Attachment {
+            of: Some(Of::Text(InlineText {
+                name: "n<&>".into(),
+                text: text.into(),
+            })),
+            ..Default::default()
+        };
+        let element = element(&attachment, None);
+        assert_eq!(parse(&element).positioned.attachments, vec![attachment]);
+        element
+            .strip_prefix("<amux-attachment kind=\"text\" name=\"n&lt;&amp;&gt;\">")
+            .and_then(|rest| rest.strip_suffix("</amux-attachment>"))
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(
+        body("if a < b && c > d { Vec::<u8>::new() } & done;"),
+        "if a < b && c > d { Vec::<u8>::new() } & done;"
+    );
+    assert_eq!(
+        body("<amux-attachment kind=\"x\"/> and </amux-attachment>"),
+        "&lt;amux-attachment kind=\"x\"/> and &lt;/amux-attachment>"
+    );
+    assert_eq!(
+        body("&amp; &lt; &#10; &nbsp;"),
+        "&amp;amp; &amp;lt; &amp;#10; &amp;nbsp;"
+    );
+    // An element written by an earlier build, every character escaped,
+    // reads the same.
+    assert_eq!(
+        parse("<amux-attachment kind=\"text\" name=\"n\">a &lt; b &amp;&amp; c &gt; d</amux-attachment>")
+            .positioned
+            .attachments,
+        vec![Attachment {
+            of: Some(Of::Text(InlineText {
+                name: "n".into(),
+                text: "a < b && c > d".into(),
+            })),
+            ..Default::default()
+        }]
     );
 }
 

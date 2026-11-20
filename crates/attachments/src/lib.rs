@@ -17,7 +17,9 @@
 //!
 //! `path` is where the bytes are on the host that formats the element; the
 //! parser accepts and ignores it, since a blob is identified by its hash.
-//! Attribute values and bodies escape XML-significant characters. A
+//! Attribute values escape XML-significant characters. A body escapes only
+//! what would read as markup, so code in it reads as written: `<` opening or
+//! closing an element, and `&` starting a character reference. A
 //! candidate element that does not parse stays in the text exactly as
 //! written and is reported; the parser never drops text.
 
@@ -783,13 +785,22 @@ fn parse_opening(opening: &str) -> Result<(bool, BTreeMap<String, String>), Prob
     Ok((self_closing, attributes))
 }
 
+/// `value` as an attribute value (`attribute`) or a body. An attribute
+/// escapes every XML-significant character. A body escapes only what would
+/// read as markup to the parser: `<` opening or closing an element, and `&`
+/// starting what reads as a character reference. Code reaches the model as
+/// written (`if a < b && c > d`), not as `&lt;` and `&amp;`, which a model
+/// asked to quote it copies or misreads.
 fn escape(value: &str, attribute: bool) -> String {
     let mut out = String::with_capacity(value.len());
-    for character in value.chars() {
+    for (at, character) in value.char_indices() {
+        let rest = &value[at + character.len_utf8()..];
         match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
+            '&' if attribute || reference(rest).is_some() => out.push_str("&amp;"),
+            '<' if attribute || rest.starts_with(&OPEN[1..]) || rest.starts_with(&CLOSE[1..]) => {
+                out.push_str("&lt;")
+            }
+            '>' if attribute => out.push_str("&gt;"),
             '"' if attribute => out.push_str("&quot;"),
             '\n' if attribute => out.push_str("&#10;"),
             _ => out.push(character),
@@ -798,14 +809,28 @@ fn escape(value: &str, attribute: bool) -> String {
     out
 }
 
+/// The name of the character reference `after` an `&` starts, as in
+/// `amp` for `&amp;`: letters, digits or `#`, then `;`. None when what
+/// follows is not shaped like one, so the `&` is itself.
+fn reference(after: &str) -> Option<&str> {
+    let end = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '#'))?;
+    (end > 0 && after[end..].starts_with(';')).then(|| &after[..end])
+}
+
+/// `value` with its character references read. An `&` that starts no
+/// reference is itself, as a body writes it; one that starts a reference
+/// this parser does not know fails.
 fn decode(value: &str) -> Option<String> {
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         let after = &rest[amp + 1..];
-        let semi = after.find(';')?;
-        let entity = &after[..semi];
+        let Some(entity) = reference(after) else {
+            out.push('&');
+            rest = after;
+            continue;
+        };
         match entity {
             "amp" => out.push('&'),
             "lt" => out.push('<'),
@@ -817,7 +842,7 @@ fn decode(value: &str) -> Option<String> {
                 out.push(char::from_u32(code)?);
             }
         }
-        rest = &after[semi + 1..];
+        rest = &after[entity.len() + 1..];
     }
     out.push_str(rest);
     Some(out)

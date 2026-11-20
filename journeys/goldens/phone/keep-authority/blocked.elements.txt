@@ -4,12 +4,12 @@ chat.row.prompt | hello |  | 16,124,370,40
 chat.prose.render |  | rendered | 336,134,36,20
 chat.row.prose | Ready. | final | 16,176,370,20
 chat.prose.render |  | rendered | 16,176,370,20
-chat.row.turn-end | Worked <t> |  | 16,203,62,16
+chat.row.turn-end | Worked for <t> |  | 16,203,81,16
 chat.row.prompt | Are you there? |  | 16,233,370,40
 chat.prose.render |  | rendered | 265,243,107,20
 chat.row.prose | Only this account reaches me. | final | 16,285,370,20
 chat.prose.render |  | rendered | 16,285,370,20
-chat.row.turn-end | Worked <t> |  | 16,313,62,16
+chat.row.turn-end | Worked for <t> |  | 16,313,81,16
 chat.field | This phone is signed out · your draft is kept | Still there? | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
@@ -24,10 +24,10 @@ chat.title | guarded | guarded | 76,66,225,36
  | Send |  | 335,779,44,44 (disabled)
  | hello |  | 16,124,370,40
  | Ready. |  | 16,176,370,20
- | Worked <t> |  | 16,203,62,16
+ | Worked for <t> |  | 16,203,81,16
  | Are you there? |  | 16,233,370,40
  | Only this account reaches me. |  | 16,285,370,20
- | Worked <t> |  | 16,313,62,16
+ | Worked for <t> |  | 16,313,81,16
 BackButton | Agents |  | 16,62,44,44
  | guarded, desk · this phone is signed out |  | 76,66,225,36
  | More |  | 350,66,28,36

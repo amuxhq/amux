@@ -24,10 +24,10 @@ chat.title | helper | helper | 76,66,165,36
  | Send |  | 335,779,44,44 (disabled)
  | Say hello. |  | 16,124,370,40
  | Ready when you are. |  | 16,176,370,20
- | Worked <t> |  | 16,203,62,16
+ | Worked for <t> |  | 16,203,81,16
  | Welcome back. |  | 16,233,370,40
  | Ready when you are. |  | 16,285,370,20
- | Worked <t> |  | 16,313,62,16
+ | Worked for <t> |  | 16,313,81,16
 BackButton | Agents |  | 16,62,44,44
  | helper, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

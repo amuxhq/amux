@@ -42,10 +42,11 @@ paths to the `.md` files, so they work both here and on the site.
   the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
 - [Journal and store](JOURNAL_AND_STORE.md) — journal segments, commit and revisions, durability, ingest, the
   store schema, own and replica rows, retention and disk-full.
-- [The wire](WIRE.md) — the amux.v1 service: subscriptions, items and appends, inputs and the queue, blobs,
-  inventory, and how the schema only grows.
-- [Network protocol](PROTOCOL.md) — carriers, links, streams, channels, routing, pairing, discovery, the relay
-  and the front door.
+- [The wire](WIRE.md) — the amux.v1 services and who answers each, how a call is addressed to a host and who it
+  is for, subscriptions, items and appends, inputs and the queue, blobs and changes, inventory, and how the schema
+  only grows.
+- [Network protocol](PROTOCOL.md) — carriers, links, streams, channels, routing, pairing, discovery, the relay,
+  the front door, and calls carried to another host.
 - [Attachments](ATTACHMENTS.md) — blobs and attachments: shape, bytes and metadata, lifetimes, deletion and the
   review document.
 - [Agent tools](AGENT_TOOLS.md) — the seven tools agents call, messaging, families, delivery, completion and

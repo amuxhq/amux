@@ -945,6 +945,45 @@ async fn a_branch_moved_up_to_its_base_does_not_count_the_bases_commits() {
     assert_eq!(row.on_branch, row.uncommitted);
 }
 
+/// Deleted files are read for their headers from their base side, each
+/// only to the header window: several large ones, below the large-file
+/// size, are each flagged by their own first lines.
+#[tokio::test]
+async fn several_large_deleted_files_are_each_flagged_by_their_own_header() {
+    let repo = repository();
+    let dir = repo.path();
+    let size = 700 * 1024;
+    let names = ["a.rs", "b.rs", "c.rs", "d.rs"];
+    for (at, name) in names.iter().enumerate() {
+        let first = if at % 2 == 0 {
+            "// @generated\n"
+        } else {
+            "fn main() {}\n"
+        };
+        let mut text = first.to_owned();
+        text.push_str(&"x".repeat(size));
+        // A header past the window is not one.
+        text.push_str("\n// DO NOT EDIT\n");
+        std::fs::write(dir.join(name), text).unwrap();
+    }
+    git(dir, &["add", "."]);
+    git(dir, &["commit", "-q", "-m", "large files"]);
+    for name in names {
+        std::fs::remove_file(dir.join(name)).unwrap();
+    }
+    let found = changes(dir, &Base::Head).await.unwrap();
+    let flagged: Vec<_> = names
+        .iter()
+        .map(|name| {
+            let file = changed(&found, name);
+            assert_eq!(file.status, Status::Deleted, "{name}");
+            assert!(!file.flags.large, "{name}");
+            file.flags.generated
+        })
+        .collect();
+    assert_eq!(flagged, [true, false, true, false]);
+}
+
 /// Before the first commit the default rule has nothing to run from but the
 /// empty tree; a named branch cannot be found.
 #[tokio::test]

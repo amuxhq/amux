@@ -1256,34 +1256,74 @@ async fn base_sizes(
         .collect())
 }
 
-/// The first bytes of each object in `ids`, in order; empty for one git
-/// cannot find.
+/// The first bytes of each object in `ids`, in order, up to the header
+/// window; empty for one git cannot find. Read as `cat-file --batch` writes
+/// them, so only the window of each is ever held: the rest of an object is
+/// dropped as it arrives.
 async fn objects(cwd: &Path, ids: &[&str]) -> Result<Vec<Vec<u8>>, GitError> {
+    use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _};
+
+    let args = ["cat-file", "--batch"];
     let input: String = ids.iter().map(|id| format!("{id}\n")).collect();
-    let output =
-        checked_with_input(cwd, None, &["cat-file", "--batch"], input.into_bytes()).await?;
-    // Each object is `id type size LF`, its bytes, then LF; one missing is
-    // `id missing LF`.
-    let mut rest = output.as_slice();
-    let mut contents = Vec::with_capacity(ids.len());
-    while !rest.is_empty() && contents.len() < ids.len() {
-        let Some(end) = rest.iter().position(|byte| *byte == b'\n') else {
-            break;
-        };
-        let header = String::from_utf8_lossy(&rest[..end]).into_owned();
-        rest = &rest[end + 1..];
-        let size = header
-            .rsplit(' ')
-            .next()
-            .and_then(|size| size.parse::<usize>().ok())
-            .filter(|_| !header.ends_with(" missing"));
-        let Some(size) = size.filter(|size| *size <= rest.len()) else {
-            contents.push(Vec::new());
-            continue;
-        };
-        contents.push(rest[..size.min(HEADER_BYTES)].to_vec());
-        rest = rest.get(size + 1..).unwrap_or_default();
-    }
+    let mut child = command(cwd, None, &args)
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(GitError::Spawn)?;
+    let mut stdin = child.stdin.take().expect("standard input is piped");
+    let mut stdout = tokio::io::BufReader::new(child.stdout.take().expect("output is piped"));
+    let mut stderr = child.stderr.take().expect("errors are piped");
+    // Written while the output is read, so neither side waits on a full
+    // pipe; closing it when done is what lets git finish.
+    let write = async move {
+        let _ = stdin.write_all(input.as_bytes()).await;
+    };
+    let read = async {
+        // Each object is `id type size LF`, its bytes, then LF; one missing
+        // is `id missing LF`.
+        let mut contents = Vec::with_capacity(ids.len());
+        let mut header = Vec::new();
+        while contents.len() < ids.len() {
+            header.clear();
+            if stdout.read_until(b'\n', &mut header).await? == 0 {
+                break;
+            }
+            let header = String::from_utf8_lossy(&header);
+            let header = header.trim_end();
+            let size = header
+                .rsplit(' ')
+                .next()
+                .and_then(|size| size.parse::<u64>().ok())
+                .filter(|_| !header.ends_with(" missing"));
+            let Some(size) = size else {
+                contents.push(Vec::new());
+                continue;
+            };
+            let window = size.min(HEADER_BYTES as u64);
+            let mut head = Vec::with_capacity(window as usize);
+            (&mut stdout).take(window).read_to_end(&mut head).await?;
+            tokio::io::copy(
+                &mut (&mut stdout).take(size - window + 1),
+                &mut tokio::io::sink(),
+            )
+            .await?;
+            contents.push(head);
+        }
+        // Drained, so git never waits on a pipe no one reads.
+        tokio::io::copy(&mut stdout, &mut tokio::io::sink()).await?;
+        Ok::<_, std::io::Error>(contents)
+    };
+    let mut errors = Vec::new();
+    let (_, read, _) = tokio::join!(write, read, stderr.read_to_end(&mut errors));
+    let status = child.wait().await.map_err(GitError::Spawn)?;
+    succeeded(
+        &args,
+        Output {
+            status,
+            stdout: Vec::new(),
+            stderr: errors,
+        },
+    )?;
+    let mut contents = read.map_err(GitError::Spawn)?;
     contents.resize(ids.len(), Vec::new());
     Ok(contents)
 }
@@ -1335,21 +1375,9 @@ async fn run(
     args: &[&str],
     input: Option<Vec<u8>>,
 ) -> Result<Output, GitError> {
-    let mut command = tokio::process::Command::new("git");
-    command
-        .args(args)
-        .current_dir(cwd)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .kill_on_drop(true);
-    if let Some(index) = index {
-        command.env("GIT_INDEX_FILE", index);
+    let mut command = command(cwd, index, args);
+    if input.is_some() {
+        command.stdin(Stdio::piped());
     }
     let Some(input) = input else {
         return command.output().await.map_err(GitError::Spawn);
@@ -1363,6 +1391,24 @@ async fn run(
     };
     let (_, output) = tokio::join!(write, child.wait_with_output());
     output.map_err(GitError::Spawn)
+}
+
+/// Git with `args` in `cwd`, on the scratch `index` when given: its output
+/// and errors piped, nothing on its input, and killed if dropped.
+fn command(cwd: &Path, index: Option<&Path>, args: &[&str]) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("git");
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .kill_on_drop(true);
+    if let Some(index) = index {
+        command.env("GIT_INDEX_FILE", index);
+    }
+    command
 }
 
 /// Git run on the calling thread, for the callers that are on a thread of
@@ -1457,6 +1503,62 @@ mod tests {
             r"C:\Users\ada\src\amux"
         );
         assert_eq!(super::remote_identity("C:/src/amux"), "C:/src/amux");
+    }
+
+    /// Objects are read in order, each to the header window and no more,
+    /// however large: one far past the window does not shift the next, an
+    /// empty one and one git cannot find read empty, and a short one whole.
+    #[tokio::test]
+    async fn objects_are_read_to_the_header_window_in_order() {
+        let repo = tempfile::tempdir().unwrap();
+        let git = |args: &[&str], input: Option<&[u8]>| {
+            use std::io::Write as _;
+            let mut child = std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let mut stdin = child.stdin.take().unwrap();
+            if let Some(input) = input {
+                stdin.write_all(input).unwrap();
+            }
+            drop(stdin);
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success(), "git {args:?}");
+            super::text(&output.stdout)
+        };
+        git(&["init", "-q"], None);
+        let blob = |fill: u8, size: usize, first: &[u8]| {
+            let mut bytes = vec![fill; size];
+            bytes[..first.len()].copy_from_slice(first);
+            git(&["hash-object", "-w", "--stdin"], Some(&bytes))
+        };
+        let large = 3 * 1024 * 1024;
+        let first = blob(b'a', large, b"// @generated\n");
+        let second = blob(b'b', large + 1, b"plain\n");
+        let empty = blob(b'c', 0, b"");
+        let short = blob(b'd', 12, b"short");
+        let missing = "0".repeat(first.len());
+        let third = blob(b'e', large - 1, b"// DO NOT EDIT\n");
+        let ids = [&first, &second, &empty, &missing, &short, &third];
+        let ids: Vec<&str> = ids.iter().map(|id| id.as_str()).collect();
+
+        let read = super::objects(repo.path(), &ids).await.unwrap();
+        let lengths: Vec<_> = read.iter().map(Vec::len).collect();
+        let window = super::HEADER_BYTES;
+        assert_eq!(lengths, [window, window, 0, 0, 12, window]);
+        assert!(read[0].starts_with(b"// @generated\n"));
+        assert!(read[1].starts_with(b"plain\n") && read[1][6..].iter().all(|b| *b == b'b'));
+        assert!(read[4].starts_with(b"short") && read[4][5..].iter().all(|b| *b == b'd'));
+        assert!(read[5].starts_with(b"// DO NOT EDIT\n"));
+        assert!(read[5][15..].iter().all(|b| *b == b'e'));
+        let generated: Vec<_> = read
+            .iter()
+            .map(|head| super::generated_header(head))
+            .collect();
+        assert_eq!(generated, [true, false, false, false, false, true]);
     }
 
     /// The scratch index holds the repository's file names, so it is made

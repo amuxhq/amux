@@ -43,9 +43,9 @@ KINDS = ["address", "thread"]
 # Every test target of these crates.
 WHOLE = ["app-ffi", "app-runtime", "app-embedded", "store", "journal", "pty-host", "agent-dir"]
 # Only the library tests: the node's and the terminal client's integration
-# suites build amux mid-run with a cargo of their own, which takes the
-# sanitizer flags without the target that keeps them off build scripts and
-# proc macros, and fails to build.
+# suites start full testnets and would blow past the sanitizer job's runtime
+# budget; the daemon and provider processes are already exercised under the
+# sanitizer by WHOLE's integration suites via TESTNET_BINARIES.
 LIBRARY = ["node", "tui"]
 
 

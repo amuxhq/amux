@@ -190,7 +190,7 @@ journey CLIENT NAME *ARGS:
     if [ "${3-}" = -- ]; then shift 3; else shift 2; fi
     case "{{CLIENT}}" in
     terminal)
-        {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet --bins
+        {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin testnet
         if [ "{{NAME}}" = all ]; then
             {{bounded}} 3000 target/debug/testnet journey terminal all
         else
@@ -300,7 +300,7 @@ script-tests:
 # hour of its six for the build; the single daemon's peer alone took two hours
 # on the twelve-core Mac.
 models-nightly *MODELS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked -p models --profile nightly --run-ignored only --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
+    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked --cargo-profile models -p models --profile nightly --run-ignored only --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per

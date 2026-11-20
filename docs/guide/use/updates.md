@@ -56,6 +56,10 @@ It picks up the same conversation where it left off. An agent that has
 already stopped needs nothing: it starts with its tools the next time it
 resumes.
 
+The browser extension updates itself from the Chrome Web Store, a little
+after amux does. Until its update arrives, its picker lists your profiles
+but none of their agents, and it can't send a page.
+
 ## Channels
 
 There are two channels:

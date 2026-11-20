@@ -66,7 +66,6 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::FamilyHeader,
         ui_view::Offline,
         ui_view::ReviewPage,
-        ui_view::ReviewPageState,
         ui_view::ReviewChip,
         ui_view::ReviewAnchor,
         ui_view::SettingsView,
@@ -851,6 +850,11 @@ mod tests {
             // What a typed draft is to the terminal; the phone asks the
             // bridge's command call, which answers a CommandOutcome.
             "Slash",
+            // What a review page is composed with: app-runtime keeps it and
+            // hands the apps the page it composes, with its notices drawn
+            // as banners.
+            "ReviewPageState",
+            "ReviewNotice",
         ];
         let definitions = definitions();
         let root = repository();

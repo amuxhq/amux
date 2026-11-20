@@ -6636,94 +6636,6 @@ public enum ReviewNoLines: String, Codable, Hashable, Sendable, CaseIterable {
     case tooLarge = "TooLarge"
 }
 
-/// Something the client learned about the review that its summary does not
-/// carry: from the agent's row, or from a call that failed.
-public enum ReviewNotice: Codable, Hashable, Sendable {
-    /// The working tree changed after the summary was read: the agent's
-    /// row says so, or a newer summary was held back so the page does not
-    /// change under the reader.
-    case moved
-    /// The agent's host does not run the reviews experiment.
-    case notOffered
-    /// The agent's folder is not a git repository, so it has no review.
-    case notARepository
-    /// A round's snapshot is gone from the agent's host, which keeps only
-    /// its latest two, or from the repository, as after a rebase and garbage
-    /// collection: since your last review, or the round's own page, shows
-    /// each comment with the code stored with it instead.
-    case roundGone
-    /// A snapshot of the working tree could not be taken; what the host
-    /// said.
-    case snapshotFailed(message: String)
-    /// The agent's host cannot be reached: the page reads what was loaded,
-    /// and changes wait for the host.
-    case unreachable
-
-    private enum Tag: String, CodingKey {
-        case snapshotFailed = "SnapshotFailed"
-    }
-
-    private enum SnapshotFailedKeys: String, CodingKey {
-        case message
-    }
-
-    public init(from decoder: any Decoder) throws {
-        if let _single = try? decoder.singleValueContainer(),
-           let _name = try? _single.decode(String.self)
-        {
-            switch _name {
-            case "Moved": self = .moved
-            case "NotOffered": self = .notOffered
-            case "NotARepository": self = .notARepository
-            case "RoundGone": self = .roundGone
-            case "Unreachable": self = .unreachable
-            default:
-                throw DecodingError.dataCorruptedError(
-                    in: _single, debugDescription: "no ReviewNotice is named \(_name)")
-            }
-            return
-        }
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a ReviewNotice names exactly one variant"))
-        }
-        switch _tag {
-        case .snapshotFailed:
-            let _fields = try _container.nestedContainer(
-                keyedBy: SnapshotFailedKeys.self, forKey: .snapshotFailed)
-            self = .snapshotFailed(
-                message: try _fields.decode(String.self, forKey: .message))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .moved:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Moved")
-        case .notOffered:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("NotOffered")
-        case .notARepository:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("NotARepository")
-        case .roundGone:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("RoundGone")
-        case .snapshotFailed(let message):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: SnapshotFailedKeys.self, forKey: .snapshotFailed)
-            try _fields.encode(message, forKey: .message)
-        case .unreachable:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Unreachable")
-        }
-    }
-}
-
 /// What a call on the review came to. The page says what it learned too:
 /// a host it could not reach, or why there is no review.
 public enum ReviewOutcome: Codable, Hashable, Sendable {
@@ -6864,41 +6776,6 @@ public struct ReviewPage: Codable, Hashable, Sendable {
         case opening
         case empty
         case header
-    }
-}
-
-/// The person's own choices on a page, which the client keeps and hands
-/// back each time the page is composed. Everything else comes from the
-/// agent's host.
-public struct ReviewPageState: Codable, Hashable, Sendable {
-    /// Files the person folded or opened, by path: each flips how the file
-    /// starts. Generated files, lock files, vendored code and large changes
-    /// start folded; every other file starts open.
-    public var toggledFiles: [String]
-    /// Outdated comments the person opened, by id; they start folded.
-    public var openedComments: [[UInt8]]
-    /// More context asked for, from the gaps' asks, answered or not.
-    public var asked: [ReviewContextAsk]
-    /// What the client learned that the summary does not say.
-    public var notices: [ReviewNotice]
-    /// The view switched to; none for the one a look opens on: since your
-    /// last review once a round has been sent, all changes before.
-    public var view: ReviewView?
-
-    public init(toggledFiles: [String], openedComments: [[UInt8]], asked: [ReviewContextAsk], notices: [ReviewNotice], view: ReviewView?) {
-        self.toggledFiles = toggledFiles
-        self.openedComments = openedComments
-        self.asked = asked
-        self.notices = notices
-        self.view = view
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case toggledFiles = "toggled_files"
-        case openedComments = "opened_comments"
-        case asked
-        case notices
-        case view
     }
 }
 

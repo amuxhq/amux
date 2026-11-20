@@ -180,7 +180,7 @@ final class ReviewSessionTests: XCTestCase {
         XCTAssertEqual(session.page, first)
         session.apply(second)
         XCTAssertEqual(session.page, second)
-        XCTAssertEqual(session.header, second.header)
+        XCTAssertEqual(session.page.header, second.header)
     }
 
     /// What the page still needs is asked for once, in page order, however

@@ -68,8 +68,6 @@ public final class ReviewSession {
 
     // MARK: - Reading
 
-    public var header: ReviewHeader? { page.header }
-
     public func isSelected(_ row: Int) -> Bool {
         selected?.contains(row) ?? false
     }

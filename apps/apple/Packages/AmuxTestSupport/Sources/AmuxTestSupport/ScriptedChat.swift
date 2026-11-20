@@ -518,16 +518,11 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
 
     // MARK: - The review page
 
-    /// The page opening the review shows, and what each act on it answers.
-    /// The script's page never composes itself: what it shows moves only by
-    /// `showReview`.
+    /// The page opening the review shows. The script's page never composes
+    /// itself, and every act on it is done.
     public var reviewOnOpening: ReviewPage? {
         get { lock.withLock { scriptedReview } }
         set { lock.withLock { scriptedReview = newValue } }
-    }
-    public var reviewOutcome: ReviewOutcome {
-        get { lock.withLock { answering } }
-        set { lock.withLock { answering = newValue } }
     }
     /// Where any selection's comment goes.
     public var anchorForAnySelection: ReviewAnchor? {
@@ -535,16 +530,13 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         set { lock.withLock { anchoring = newValue } }
     }
     private var scriptedReview: ReviewPage?
-    private var answering: ReviewOutcome = .done
+    private let answering: ReviewOutcome = .done
     private var anchoring: ReviewAnchor?
     /// The page open on the chat, as handed over last.
     private var reviewShown: ReviewPage?
     /// What was asked of the review, in order, for a test to read back.
     public private(set) var reviewOpens: [(base: String?, refresh: Bool)] = []
-    public private(set) var reviewFetches: [[String]] = []
-    public private(set) var reviewContexts: [ReviewContextAsk] = []
     public private(set) var reviewEdits: [[ReviewChange]] = []
-    public private(set) var reviewChoices: [ReviewChoice] = []
     public private(set) var sentWithReview: [Draft] = []
 
     /// A page already open on the chat, as a model opening on the chat
@@ -553,16 +545,6 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         lock.withLock {
             scriptedReview = page
             reviewShown = page
-        }
-    }
-
-    /// Moves the open page, for the next delta to hand over.
-    public func showReview(_ page: ReviewPage) {
-        lock.withLock {
-            scriptedReview = page
-            guard reviewShown != nil else { return }
-            reviewShown = page
-            pending.review = true
         }
     }
 
@@ -581,17 +563,11 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     }
 
     public func reviewFiles(_ paths: [String]) async -> ReviewOutcome? {
-        lock.withLock {
-            reviewFetches.append(paths)
-            return answering
-        }
+        answering
     }
 
     public func reviewContext(_ ask: ReviewContextAsk) async -> ReviewOutcome? {
-        lock.withLock {
-            reviewContexts.append(ask)
-            return answering
-        }
+        answering
     }
 
     public func editReview(_ changes: [ReviewChange]) async -> ReviewOutcome? {
@@ -601,9 +577,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         }
     }
 
-    public func chooseInReview(_ choice: ReviewChoice) {
-        lock.withLock { reviewChoices.append(choice) }
-    }
+    public func chooseInReview(_ choice: ReviewChoice) {}
 
     public func reviewPage() -> ReviewPage? { lock.withLock { reviewShown } }
 

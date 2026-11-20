@@ -253,7 +253,6 @@ async fn a_person_on_another_host_reviews_an_agent_through_the_carrier() {
             MessageBody {
                 text: "Two small things.".to_owned(),
                 attachments: vec![sending],
-                ..MessageBody::default()
             },
         )
         .await

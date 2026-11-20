@@ -812,7 +812,6 @@ mod sent {
             message: Some(MessageBody {
                 text: text.to_owned(),
                 attachments,
-                ..MessageBody::default()
             }),
         };
         agents.send_message(request).await.map(drop)

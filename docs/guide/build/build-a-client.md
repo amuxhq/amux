@@ -416,7 +416,7 @@ file first.
 | `host_name` | What paired devices and the phone call this machine; never empty. Setting it empty returns to the machine's own name. A rename shows in discovery and in every pairing from then on; a device already paired keeps the name it paired with. |
 | `start_at_login` | Whether amux starts at login. Absent on an install without a supervisor, which has nothing to start. Turning it on writes the login item for the next login and leaves the running amux alone. |
 | `keep_awake` | On power the machine stays awake while amux runs; on battery only while an agent works. |
-| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list, and `PinFolder` adds or removes one, from this machine or a paired one. Every host's entry in the inventory lists them as `folders`, then the folders agents ran in lately and where Claude Code and Codex ran. |
+| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list, and `PinFolder` adds or removes one, for a person on this machine or a paired one (an agent is refused). Every host's entry in the inventory lists them as `folders`, then the folders agents ran in lately and where Claude Code and Codex ran. |
 | `chat_in` | Where the terminal client chats: amux's chat or each agent's own interface. |
 | `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as `HostEntry.claude_kind`; create Claude agents of that kind. |
 | `telemetry`, `auto_reports` | Usage events and automatic reports. |

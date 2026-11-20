@@ -881,7 +881,7 @@ command again.
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
-| `PinFolder` | Pins a folder among a host's repositories (the `repositories` setting), or unpins it. The host applies it to its config file and its own entry's `folders` says the change, which every client sees through the inventory. A paired host may pin only on the answering host's own list. |
+| `PinFolder` | Pins a folder among a host's repositories (the `repositories` setting), or unpins it. The host applies it to its config file and its own entry's `folders` says the change, which every client sees through the inventory. Only a person pins, here or on a paired host, and only on the answering host's own list: the list is the host's setting, so an agent is refused. |
 
 `SessionService` is one agent's conversation:
 

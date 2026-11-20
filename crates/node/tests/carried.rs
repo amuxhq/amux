@@ -44,15 +44,13 @@ impl Pair {
     async fn new() -> (Self, LoopbackLink) {
         let desk = Install::new();
         let code = desk.path("code");
-        std::fs::create_dir_all(code.join("site")).unwrap();
         std::fs::create_dir_all(code.join("docs")).unwrap();
         let mut agent = SyntheticAgent::new(&desk, "coder", SEGMENTS);
         agent.register(&desk);
         agent.append(&snapshot(wire::Phase::Idle, &[], 1_000));
         agent.go_live();
         let recording = Recording::new();
-        let mut launch = quiet_launch();
-        launch.repositories = vec![code.join("site")];
+        let launch = quiet_launch();
         let desk_daemon = node::start(
             StartOptions {
                 analytics: Telemetry::Record(recording.clone()),
@@ -253,13 +251,13 @@ fn reason(status: &tonic::Status) -> Option<wire::ErrorReason> {
 async fn a_person_on_the_laptop_is_answered_by_the_desk_as_a_person_there() {
     captured_log();
     let (pair, _link) = Pair::new().await;
-    until_pinned(&pair.desk_runtime, &["site"]).await;
+    assert!(pinned(&pair.desk_runtime).is_empty());
 
     staging::host_service_client(pair.to_desk().await)
         .pin_folder(pinning(&pair.desk_docs()))
         .await
         .unwrap();
-    until_pinned(&pair.desk_runtime, &["site", "docs"]).await;
+    until_pinned(&pair.desk_runtime, &["docs"]).await;
     assert!(
         pinned(&pair.laptop_runtime).is_empty(),
         "the laptop pinned nothing of its own"
@@ -304,7 +302,7 @@ async fn the_phones_entry_in_memory_carries_a_call_to_the_desk() {
         .unwrap();
     let mut desk = staging::host_service_client::HostServiceClient::with_origin(entrance, origin);
     desk.pin_folder(pinning(&pair.desk_docs())).await.unwrap();
-    until_pinned(&pair.desk_runtime, &["site", "docs"]).await;
+    until_pinned(&pair.desk_runtime, &["docs"]).await;
     pair.stop().await;
 }
 

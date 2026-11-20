@@ -135,15 +135,15 @@ impl Checkpoints {
 fn writes(input: &Input, copying: JobId) -> bool {
     match input {
         Input::JobDone { job, .. } => *job != copying,
-        Input::ClientCall { request, .. } => match request {
+        Input::ClientCall { request, .. } => !matches!(
+            request,
             ClientRequest::SubscribeSession { .. }
-            | ClientRequest::ListItems(_)
-            | ClientRequest::GetItem(_)
-            | ClientRequest::SubscribeInventory
-            | ClientRequest::GetBlob(_)
-            | ClientRequest::GetDiff(_) => false,
-            _ => true,
-        },
+                | ClientRequest::ListItems(_)
+                | ClientRequest::GetItem(_)
+                | ClientRequest::SubscribeInventory
+                | ClientRequest::GetBlob(_)
+                | ClientRequest::GetDiff(_)
+        ),
         // A paired daemon asks this host only to read: its follows and its
         // pages. A report it hands over reaches the core as a message.
         Input::PeerCall { request, .. } => !matches!(

@@ -749,10 +749,10 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     );
     let client = install.client().await;
     until("the agent is mid-turn", || {
-        let mut client = client.clone();
+        let client = client.clone();
         let sdk = &sdk;
         async move {
-            let chat = chat(&mut client, sdk).await;
+            let chat = chat(&client, sdk).await;
             texts(&chat)
                 .contains(&"started")
                 .then_some(())
@@ -814,12 +814,12 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
 
     // The turn the agent was in finishes, and the restarted daemon has it.
     std::fs::write(&gate, b"").unwrap();
-    let mut client = install.client().await;
+    let client = install.client().await;
     until("the agent finishes its turn", || {
-        let mut client = client.clone();
+        let client = client.clone();
         let sdk = &sdk;
         async move {
-            let chat = chat(&mut client, sdk).await;
+            let chat = chat(&client, sdk).await;
             (count(&chat, "finished") == 1)
                 .then_some(())
                 .ok_or_else(|| format!("chat: {chat:?}"))
@@ -827,7 +827,7 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     })
     .await
     .unwrap();
-    assert_eq!(count(&chat(&mut client, &sdk).await, "first task"), 1);
+    assert_eq!(count(&chat(&client, &sdk).await, "first task"), 1);
 
     // A name only another build has changes nothing this daemon runs.
     install

@@ -573,9 +573,9 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
     );
     let chats = support::client(&desk.socket).await;
     support::until("the agent is mid-turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let id = &id;
-        async move { support::says(&support::chat(&mut chats, id).await, "started", 1) }
+        async move { support::says(&support::chat(&chats, id).await, "started", 1) }
     })
     .await
     .unwrap();
@@ -652,9 +652,9 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
     std::fs::write(&gate, b"").unwrap();
     let chats = support::client(&desk.socket).await;
     support::until("the turn finishes under the new daemon", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let id = &id;
-        async move { support::says(&support::chat(&mut chats, id).await, "finished", 1) }
+        async move { support::says(&support::chat(&chats, id).await, "finished", 1) }
     })
     .await
     .unwrap();

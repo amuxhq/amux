@@ -4320,7 +4320,6 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
- "sha2 0.10.9",
  "shot",
  "store",
  "tempfile",

@@ -91,8 +91,6 @@ pub struct FrontDoor {
     /// Sign-ins waiting for their client to say whether to adopt a profile
     /// that holds data.
     asking: Arc<Mutex<HashMap<Uuid, oneshot::Sender<bool>>>>,
-    /// The client a call counts as when it does not name one.
-    client: analytics::Client,
 }
 
 impl FrontDoor {
@@ -100,15 +98,7 @@ impl FrontDoor {
         FrontDoor {
             registry,
             asking: Arc::default(),
-            client: analytics::Client::Terminal,
         }
-    }
-
-    /// Counts a call that names no client as `client`: the phone, which
-    /// hosts this door in process.
-    pub fn answering(mut self, client: analytics::Client) -> FrontDoor {
-        self.client = client;
-        self
     }
 }
 
@@ -289,7 +279,13 @@ impl InstallationService for FrontDoor {
         request: Request<AnswerOnboardingRequest>,
     ) -> Result<Response<AnswerOnboardingResponse>, Status> {
         let registry = self.registry.clone();
-        let surface = grpc::surface_named(request.metadata(), self.client);
+        // Every client names itself in a header, the phone's in-memory
+        // calls too; the terminal is the one an older build left unnamed.
+        let surface = request
+            .metadata()
+            .get(grpc::SURFACE_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map_or(analytics::Client::Terminal, crate::api::surface_named);
         let request = request.into_inner();
         // The answer is written to disk.
         let answered =

@@ -60,23 +60,6 @@ pub(crate) fn upgrade(runtime: &Weak<ProfileRuntime>) -> Result<Arc<ProfileRunti
         .ok_or_else(|| Status::unavailable("the profile is no longer running"))
 }
 
-/// The client a call says it is in [`SURFACE_HEADER`], else `otherwise`:
-/// the Mac app and the browser extension open the same sockets as the
-/// terminal and say which they are in a header.
-pub(crate) fn surface_named(
-    metadata: &tonic::metadata::MetadataMap,
-    otherwise: analytics::Client,
-) -> analytics::Client {
-    match metadata
-        .get(SURFACE_HEADER)
-        .and_then(|value| value.to_str().ok())
-    {
-        Some("mac") => analytics::Client::Mac,
-        Some("browser") => analytics::Client::Browser,
-        _ => otherwise,
-    }
-}
-
 pub(crate) fn agent_id(bytes: &[u8]) -> Result<AgentId, Status> {
     Uuid::from_slice(bytes).map_err(|_| {
         status(wire_error(

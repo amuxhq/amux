@@ -204,7 +204,7 @@ pub(in crate::api) fn link_peer(extensions: &http::Extensions) -> Result<HostId,
 
 /// The client a person's surface word names. A word this build does not
 /// know reads as the terminal, the client that names itself with none.
-pub(in crate::api) fn surface_named(word: &str) -> Surface {
+pub(crate) fn surface_named(word: &str) -> Surface {
     match word {
         "phone" => Surface::Phone,
         "mac" => Surface::Mac,

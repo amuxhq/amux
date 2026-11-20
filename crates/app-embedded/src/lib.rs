@@ -377,7 +377,7 @@ impl EmbeddedRuntime {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
             .as_ref()
-            .map(|daemon| daemon.front_door().answering(analytics::Client::Phone))
+            .map(|daemon| daemon.front_door())
             .ok_or(ProfileRefusal::Stopping)?;
         let registry = self.registry.clone();
         let open = move |id: &[u8]| {

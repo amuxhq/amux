@@ -16,9 +16,10 @@ its agent was deleted.
 
 Three rules shape the library:
 
-- **A client talks only to its local runtime.** It calls the client service of the profile on its own machine,
-  which answers from its rows and reaches other hosts itself. A client never opens a store, never dials another
-  host, never holds a cursor, and never reads disk.
+- **A client talks only to its local runtime.** It calls the services of the profile on its own machine: it reads
+  from that node's copy of the fleet, and addresses every act to the host that owns the agent, which the node
+  carries there unread. A client never opens a store, never dials another host, never holds a cursor, and never
+  reads disk.
 - **Per-kind knowledge lives in one thin layer.** The model knows an agent's kind (terminal Claude, headless
   Claude, Codex) only where it decodes a snapshot or item body. Everything above that works on kind-neutral
   facts; the views read the decoded bodies to produce typed rows and cards.
@@ -324,7 +325,7 @@ host did. It also holds the sessions:
 | `set_foreground(foreground)` | The phone leaving or returning to the foreground: every session's stream is dropped, or reopened with a tail. |
 | `sessions()` | Every session held. |
 | `on_screen_records()` | The record of every chat on screen, which a report carries. |
-| `stop(agent)` | A person's stop. One whose host cannot be reached (`UNAVAILABLE`, or reason `HOST_UNREACHABLE`: the daemon wrote nothing) never left: it is held, `FleetState::stop_held` and the card's `stop_held` say so, and it goes the next time the agent's host is listed online, the failed call counting as the host away even while its row still read online (as when this client's own daemon restarts). `Stop::Held` says it was held. Rename and delete are never held. |
+| `stop(agent)` | A person's stop, addressed to the agent's host. One whose host cannot be reached (`UNAVAILABLE`, or reason `HOST_UNREACHABLE` or `PAYMENT_REQUIRED`: the node sent nothing) never left: it is held, `FleetState::stop_held` and the card's `stop_held` say so, and it goes the next time the agent's host is listed online, the failed call counting as the host away even while its row still read online (as when this client's own daemon restarts). `Stop::Held` says it was held. Rename and delete are never held. |
 | `cancel_stop(agent)` | Takes a held stop back. |
 
 **The trace.** Each driver keeps a bounded trace (between 200 and `TRACE_EVENTS` = 400 events, memory only) of

@@ -218,7 +218,7 @@ that ticket; nothing in the library calls into the client.
 | --- | --- | --- |
 | `amux_install` | none | A desktop app's first call: finds amux, installs the app's copy or a checked download when it is missing, and starts it ([the installer](../crates/installer/src/lib.rs)); blocks |
 | `amux_runtime_*` | `AmuxRuntime` | The installation: start (hosted) or attach (a daemon on this machine) and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
-| `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
+| `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents, where a host offers to start one and pinning its folders, a host's catalogue, renaming, stopping and deleting agents and the host's delete warning, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
 | `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |
 

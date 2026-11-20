@@ -229,10 +229,12 @@ pub fn chip(view: &AttachmentView) -> String {
         AttachmentView::Text { name, lines, .. } => {
             format!("[{name} · {}]", super::feed::lines_words(*lines))
         }
-        AttachmentView::Review { comments, .. } => match comments {
-            1 => "[review · 1 comment]".into(),
-            n => format!("[review · {n} comments]"),
-        },
+        AttachmentView::Review { comments, .. } | AttachmentView::SentReview { comments, .. } => {
+            match comments {
+                1 => "[review · 1 comment]".into(),
+                n => format!("[review · {n} comments]"),
+            }
+        }
         AttachmentView::Page {
             title, comments, ..
         } => match comments {

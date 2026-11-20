@@ -1,6 +1,6 @@
 //! Text with attachments at their positions, for rows and the composer.
 
-use attachments::PLACEHOLDER;
+use attachments::{PLACEHOLDER, sent_review};
 use schemars::JsonSchema;
 use serde::Serialize;
 use wire::{Attachment, BlobRef};
@@ -32,6 +32,14 @@ pub enum AttachmentView {
         patch: Option<BlobRef>,
         comments: u32,
     },
+    /// A review sent into the chat: the comments it sent, the review and
+    /// round it names, and the text the agent read, which is what opening
+    /// it shows when the agent's host no longer has the round.
+    SentReview {
+        comments: u32,
+        review: SentReviewRef,
+        text: String,
+    },
     /// Comments on a web page: the page's title, or its address when it
     /// has none, the comment count, and the screenshots of the regions the
     /// comments were made on.
@@ -56,6 +64,18 @@ impl AttachmentView {
         match &attachment.of {
             Some(Of::Image(blob)) => AttachmentView::Image(named(blob)),
             Some(Of::File(blob)) => AttachmentView::File(named(blob)),
+            Some(Of::Text(text)) if let Some(sent) = sent_review::entry(attachment) => {
+                AttachmentView::SentReview {
+                    comments: sent.comment_ids.len() as u32,
+                    review: SentReviewRef {
+                        review_id: sent.review_id,
+                        round: sent.round,
+                        snapshot: sent.snapshot,
+                        comment_ids: sent.comment_ids,
+                    },
+                    text: text.text.clone(),
+                }
+            }
             Some(Of::Text(text)) => AttachmentView::Text {
                 name: without_direction_controls(&text.name),
                 lines: text.text.lines().count() as u32,
@@ -81,6 +101,19 @@ impl AttachmentView {
             None => AttachmentView::Empty,
         }
     }
+}
+
+/// The review a sent review's attachment names, for opening its round.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct SentReviewRef {
+    pub review_id: Vec<u8>,
+    /// The round the sending client expected it to be; the agent's host
+    /// numbers rounds as they arrive, so the snapshot names the round.
+    pub round: u32,
+    /// The snapshot the comments were made on.
+    pub snapshot: String,
+    /// Exactly the comments it sent.
+    pub comment_ids: Vec<Vec<u8>>,
 }
 
 /// The largest image a client downloads by itself to draw its thumbnail. A

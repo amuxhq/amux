@@ -931,7 +931,7 @@ evidence = ""
 update = "Rerun with UI_VIEW_UPDATE_GOLDENS=1 and review the golden diff."
 cargo = [
   { package = "ui-view", kind = "lib", targets = ["ui_view"], features = [] },
-  { package = "ui-view", modules = ["answers", "goldens", "runs", "subagents", "turns", "views"], features = [] },
+  { package = "ui-view", modules = ["answers", "goldens", "reviews", "runs", "subagents", "turns", "views"], features = [] },
 ]
 
 [[suite]]

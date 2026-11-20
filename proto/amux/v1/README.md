@@ -18,7 +18,7 @@ application channels on separate native streams.
 | `inventory.proto` | Hosts and agent rows |
 | `records.proto` | The kind-neutral session records |
 | `chat.proto` | What the kinds share inside a body |
-| `claude.proto`, `codex.proto` | The per-kind bodies |
+| `claude.proto`, `codex.proto`, `acp.proto` | The per-kind bodies |
 | `agent_process.proto` | The agent process's spec and its `ctl.sock` and `pty.sock` frames |
 | `link.proto` | Host-to-host link control |
 | `dump.proto` | The diagnostic dump |

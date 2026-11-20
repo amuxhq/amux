@@ -11,6 +11,7 @@ chat shows. There is one per agent kind, in
 | `claude_pty` | Claude Code in a terminal | [`interpret::claude_pty`](../crates/interpret/src/claude_pty/mod.rs) |
 | `claude_sdk` | Headless Claude over stream-JSON | [`interpret::claude_sdk`](../crates/interpret/src/claude_sdk/mod.rs) |
 | `codex` | The Codex app server over JSON-RPC | [`interpret::codex`](../crates/interpret/src/codex/mod.rs) |
+| `acp` | Any agent that speaks the Agent Client Protocol over stdio (Antigravity, OpenCode, Grok, or one a person adds) | [`interpret::acp`](../crates/interpret/src/acp/mod.rs) |
 
 The two Claude kinds write the same item and snapshot messages and share
 everything about drawing a call, a boundary and an agent message
@@ -26,7 +27,7 @@ committed by the daemon and served to clients unchanged (see
 described from the client's side in [the chat vocabulary](CHAT_VOCABULARY.md).
 
 Provider messages reach an interpreter only as types. Every fact is decoded
-by its provider's protocol crate (`codex_protocol` for Codex,
+by its provider's protocol crate (`acp_protocol` for ACP agents, `codex_protocol` for Codex,
 `claude_protocol::stream` for headless Claude, `claude_protocol::transcript`
 and `claude_protocol::hooks` for terminal Claude) and every line an
 interpreter writes is built from the same crate's types and encoded by it;
@@ -50,15 +51,16 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 |---|---|
 | `type State: Checkpoint` | Everything it holds; serialized as the checkpoint |
 | `const KIND` | The kind tag its items and snapshots carry |
-| `initial(spec, version)` | The starting state and the first journal frame: a snapshot with phase starting and every field at its explicit unknown |
+| `initial(spec)` | The starting state and the first journal frame: a snapshot with phase starting and every field at its explicit unknown |
 | `step(state, event)` | One event in; a `Stepped` out: the journal `Step` and the `Effect`s to perform |
-| `reincarnate(state, spec, version)` | Continues a checkpointed state in the agent's next incarnation |
-| `redact(target)` | Removes secrets from a body, a facts-ring entry, a checkpoint, a spec, a step or an inventory row, keeping its structure |
+| `reincarnate(state, spec)` | Continues a checkpointed state in the agent's next incarnation |
 | `unknown_snapshot()` | The snapshot body with every field unknown |
 | `pending_messages(state)` | Agent messages the provider accepted and has not consumed yet; a one-shot agent waits for this to be empty |
 | `wake_at(state)` | When it next wants a `Tick` that no event would bring; the agent process arms a timer for it. None by default |
 | `typed_unrecorded(state)` | A prompt typed that the provider has not recorded yet, where the record starts the turn (terminal Claude); a one-shot agent waits for it too |
-| `holds(state)` | What the provider process holds that ending it would lose or cut short: its background jobs (for Codex, also a command known to run on past its turn before Codex lists it), Codex's subagent threads still running, a turn it owes for a job that ended between turns (both Claudes report one in a turn they start themselves), its scheduled wake-ups (terminal Claude's Stop `session_crons`; headless Claude's kept from ScheduleWakeup, CronCreate and CronDelete), and a grant amux sent for the session (a rule or a directory: a permission mode for the session, as approving a plan sends Claude, is the agent's permission from then on, recorded on its snapshot at once, and a resume starts in it). An agent suspends only while it holds nothing; each new process starts holding nothing |
+| `holds(state)` | What the provider process holds that ending it would lose or cut short: its background jobs (for Codex, also a command known to run on past its turn before Codex lists it), Codex's subagent threads still running, a turn it owes for a job that ended between turns (both Claudes report one in a turn they start themselves), its scheduled wake-ups (terminal Claude's Stop `session_crons`; headless Claude's kept from ScheduleWakeup, CronCreate and CronDelete), an ACP session the agent cannot reopen in a new process, and a grant amux sent for the session (a rule or a directory: a permission mode for the session, as approving a plan sends Claude, is the agent's permission from then on, recorded on its snapshot at once, and a resume starts in it). An agent suspends only while it holds nothing; each new process starts holding nothing |
+| `housekeeping(state)` | Where the housekeeping it does on its own while idle (an idle compaction) stands: due, running or settled. Settled by default |
+| `fact_shape(fact)`, `input_shape(input)`, `item_shape(body)`, `structure(state)` | What the agent's record keeps of a fact, an input, an item body and the state: shapes and keys, never content. `fact_shape` has no default, so a new kind says which reader its provider needs |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
 An `Event` is a provider `Fact`, a person's `Input`, a person's input to one
@@ -67,7 +69,7 @@ agent message with the envelope its daemon set, the daemon's word that a Codex a
 a `Tick`, the provider's exit, the daemon being lost, a stop request, the process
 exiting, or the agent folder's git facts (`Git`, none outside a repository),
 which the shared core publishes on the snapshot. A fact carries its `Channel`: `Transcript`, `Hook` and `Agent` for
-terminal Claude, `Stream` for headless Claude, `Rpc` for Codex.
+terminal Claude, `Stream` for headless Claude, `Rpc` for Codex and ACP agents.
 
 An `Effect` is something the agent process does on the interpreter's behalf,
 in order: write bytes to the provider (`ProviderWrite`), reply to an input
@@ -75,7 +77,9 @@ in order: write bytes to the provider (`ProviderWrite`), reply to an input
 (`Inject`), type a semantic input into terminal Claude (`Terminal`), send a
 headless user message (`UserMessage`), follow a transcript file
 (`FollowTranscript`), send a Codex turn whose input carries attachments
-(`CodexTurnInput`), write a blob an item refers to (`WriteBlob`), or end the
+(`CodexTurnInput`), send an ACP prompt whose content carries attachments
+(`AcpPrompt`), save the provider's session id for the next incarnation
+(`ProviderSession`), log a line for amux's developers (`Log`), write a blob an item refers to (`WriteBlob`), or end the
 process (`Exit`).
 
 ## Idle compaction
@@ -1212,6 +1216,99 @@ answer.
   thread as well (a spawn's task), the held messages are injected and ride
   that prompt's turn instead of an empty one, so the model reads its task
   with them.
+
+## ACP agents
+
+One interpreter serves every agent that speaks the
+[Agent Client Protocol](https://agentclientprotocol.com): JSON-RPC over the
+agent's stdio, one session per agent. Its envelope (`AcpItem`,
+`AcpSnapshot`, `AcpInput`, in `proto/amux/v1/acp.proto`) is its own and is
+shared by no other kind. Which agent runs is a plain string id
+(`AcpCreateConfig.agent`, the spec's `provider`), never a closed list.
+
+**Quirks.** Where agents differ inside the protocol, `interpret::acp::quirks`
+picks a `Quirks` by the agent's id, each field citing the recording that
+shows it; an agent a person adds gets the default, which assumes nothing
+beyond ACP.
+
+| Agent | Quirk | Recording |
+|---|---|---|
+| `antigravity` | A prompt sent mid-turn is folded into the running turn, so only it is offered send-now | `agy-mid_turn` |
+| `grok` | The turn's tokens are in the prompt answer's `_meta` | `grok-prompt` |
+| `grok` | `initialize` lists the `cached_token` auth method only while signed in | `grok-catalogue`, `grok-signed_out` |
+
+What is generic, though only one agent shows it: a setting change's
+answer is authoritative and `config_option_update` is ignored while one is
+in flight (Antigravity echoes the old value first, `agy-config`);
+`session/set_mode` is called only where the agent offers modes (Grok
+accepts it without, `grok-config`); a thought level is found by its
+option's category, not its id.
+
+**Handshake and reopening.** The agent process sends `initialize` and the
+session request under fixed ids (`INITIALIZE_REQUEST`,
+`NEW_SESSION_REQUEST`, `RESUME_REQUEST`, `LOAD_REQUEST`) and reads the
+answers as facts like everything else. `opening` picks how a new process
+opens the saved session: `session/resume` where offered, else
+`session/load`, else a new session. An agent offering neither cannot
+continue a conversation in a new process, so `holds` reports it
+(`unresumable`) once it has a session, and it never suspends. A refused
+`initialize` or session ends the incarnation with the agent's words; an
+`AUTH_REQUIRED` refusal also says signed out.
+
+**Replay.** `session/load` replays the whole conversation before it
+answers, with no marker (`agy-load`, `opencode-load`, `grok-load`). Until
+this process's session answer comes, the interpreter draws nothing of the
+conversation (messages, thoughts, calls, notices, compactions) and applies
+only what describes the session: commands, settings, usage, title, plan.
+`session/resume` replays nothing.
+
+**Settings.** The create config's model, effort and mode, and every pick a
+person makes, are what amux wants the session to have. When a session opens
+(new or reopened), each one it lacks is sent again under
+`amux-apply-<option>`, since Antigravity reopens on its defaults
+(`agy-load`) where Grok keeps them (`grok-load`). A person's change goes as
+`amux-set-<n>`; one before the session opens waits for it. A pick of none
+returns to the value the first session started with. The permission is the
+agent's own; amux sets none and remembers no permission answer.
+
+**Queue.** The interpreter holds the queue. A prompt is `session/prompt`
+under `amux-prompt-<input id>`, and its row is drawn as it is sent, since
+ACP reflects no prompt. A prompt typed while one runs waits for that
+prompt's answer. Send-now is refused for an agent not known to steer; for
+one that is, the queued prompt is sent at once, and the earlier prompt's
+answer, coming first, draws the steer while the turn goes on under the
+later one. Agent messages are queued and sent as prompts the same way,
+labelled with their sender, and consumed at their prompt's answer.
+
+**Turns.** A turn ends at the answer to its last prompt: `end_turn`
+completes it, `cancelled` interrupts it (stopped, after a stop), `refusal`
+completes it with a refusal notice, `max_tokens` and `max_turn_requests`
+fail it with a notice, an error fails it with an error row. Usage comes
+from the answer (`usage`, or Grok's `_meta`) and the context meter from
+`usage_update`. Calls still running at the turn's end are cancelled and
+its asks dismissed.
+
+**Cancel.** An interrupt or stop sends `session/cancel`, a notification,
+and answers every open ask of the turn cancelled at once, as ACP requires.
+Chunks keep arriving until the `cancelled` answer (`agy-cancel`,
+`grok-cancel`) and are drawn.
+
+**Asks.** `session/request_permission` opens an ask on the call's own row
+offering exactly the agent's options; an answer names one by id, and an
+allow-always one is a session grant (`opencode-allow_always`).
+`elicitation/create` opens a form or link ask row. Replying instead
+withdraws the ask, cancels the turn and queues the words.
+
+**What is not read.** A vendor method (`_` prefix) that is a request is
+answered "method not found" at once, Grok's questions and tool-server forms
+included (`grok-question`, `grok-elicitation`), since the answer they would
+take was never recorded. A vendor notification on
+`acp_protocol::EXTENSIONS` is dropped by name, except Grok's automatic
+compaction report (`grok-compact`), which draws a compaction; one not on the
+list is logged and never drawn. Requests for files or terminals, which amux
+does not offer, are refused and logged. Anything else unknown draws an
+unrecognized row, and a request is refused. A test replays every recording
+and fails on an unrecognized row or a vendor method off the list.
 
 ## Provider transport
 

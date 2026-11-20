@@ -17,7 +17,7 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
 | [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs, and the streams' `CaughtUp` and `Lagged` |
 | [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
-| [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
+| [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto), [`acp.proto`](../proto/amux/v1/acp.proto) | The per-kind item, snapshot and input bodies |
 | [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, the `ctl.sock` and `pty.sock` frames, and what an agent's tool server asks its agent process on `private/agent.sock` |
 | [`error.proto`](../proto/amux/v1/error.proto) | `ErrorReason`, the amux reasons an error's `google.rpc.ErrorInfo` names |
 | [`link.proto`](../proto/amux/v1/link.proto), [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto) | Host-to-host link control, and pairing |
@@ -141,6 +141,7 @@ message CreateAgentRequest {
     ClaudeCreateConfig claude_pty = 6;
     ClaudeCreateConfig claude_sdk = 7;
     CodexCreateConfig codex = 8;
+    AcpCreateConfig acp = 13;                 // an ACP agent, by its id
   }
   optional PromptSubmission initial_prompt = 9;
   bool new_workspace = 10;                    // named new_worktree until 0.9.1

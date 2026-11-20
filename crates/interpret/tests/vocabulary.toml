@@ -22,6 +22,7 @@ item = "Your message"
 claude_pty = { mark = "full", carriers = ["item:prompt"], golden = [" prompt final "] }
 claude_sdk = { mark = "full", carriers = ["item:prompt"], golden = [" prompt final "] }
 codex = { mark = "full", carriers = ["item:prompt"], golden = [" prompt final "] }
+acp = { mark = "full", carriers = ["item:prompt"], golden = [" prompt final "] }
 
 [[row]]
 id = "C2"
@@ -30,6 +31,7 @@ item = "Agent reply"
 claude_pty = { mark = "partial", carriers = ["item:message"], golden = [" message open "] }
 claude_sdk = { mark = "full", carriers = ["item:message"], golden = [" message open "] }
 codex = { mark = "full", carriers = ["item:message", "item:working_note"], golden = [" working_note "] }
+acp = { mark = "full", carriers = ["item:message"], golden = [" message open "] }
 
 [[row]]
 id = "C3"
@@ -37,6 +39,7 @@ item = "Thinking"
 claude_pty = { mark = "partial", carriers = ["item:thinking"], golden = [" thinking final "] }
 claude_sdk = { mark = "full", carriers = ["item:thinking"], golden = [" thinking ", "text=\"The user"] }
 codex = { mark = "full", carriers = ["item:reasoning"], golden = [" reasoning ", " summary"] }
+acp = { mark = "full", carriers = ["item:thought"], golden = [" thought open "] }
 
 [[row]]
 id = "C4"
@@ -44,6 +47,8 @@ item = "Message between agents"
 claude_pty = { mark = "full", carriers = ["item:agent_message"], golden = [" agent_message "] }
 claude_sdk = { mark = "full", carriers = ["item:agent_message"], golden = [" agent_message "] }
 codex = { mark = "full", carriers = ["item:agent_message"], golden = [" agent_message "] }
+# An agent message is sent as a prompt of its own, labelled with its sender.
+acp = { mark = "full", carriers = ["item:agent_message"], golden = [" agent_message final "] }
 
 # ------------------------------------------------------------------------ Work
 
@@ -53,6 +58,7 @@ item = "Exploring"
 claude_pty = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "\" Read TOOL_STATE_SUCCEEDED"] }
 claude_sdk = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "\" Read TOOL_STATE_SUCCEEDED", " read"] }
 codex = { mark = "partial", carriers = ["item:work.web_search", "item:work.command"], golden = [" work ", " web_search "] }
+acp = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", " READ SUCCEEDED "] }
 
 [[row]]
 id = "C6"
@@ -60,6 +66,8 @@ item = "Command"
 claude_pty = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", "\" Bash TOOL_STATE_SUCCEEDED"] }
 claude_sdk = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", "\" Bash TOOL_STATE_SUCCEEDED"] }
 codex = { mark = "full", carriers = ["item:work.command"], golden = [" work final ", " command ", " exit="] }
+# The command is in the call's title and input, as each agent writes them.
+acp = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", " EXECUTE SUCCEEDED "] }
 
 [[row]]
 id = "C7"
@@ -67,6 +75,7 @@ item = "File edit"
 claude_pty = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "\" Edit TOOL_STATE_SUCCEEDED"] }
 claude_sdk = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "\" Edit TOOL_STATE_SUCCEEDED"] }
 codex = { mark = "partial", carriers = ["item:work.file_change"], golden = [" work final ", " file_change "] }
+acp = { mark = "full", carriers = ["item:tool.diffs"], golden = [" tool final ", " EDIT ", " diff="] }
 
 [[row]]
 id = "C8"
@@ -74,6 +83,9 @@ item = "File created, deleted, moved"
 claude_pty = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", "\" Write TOOL_STATE_SUCCEEDED"] }
 claude_sdk = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", "\" Write TOOL_STATE_SUCCEEDED"] }
 codex = { mark = "full", carriers = ["item:work.file_change"], golden = [" work final ", " file_change ", " -> "] }
+# ACP's diffs mark a new file (no old text); a delete or a move is only its
+# call's kind.
+acp = { mark = "partial", carriers = ["item:tool.diffs", "item:tool.kind"], golden = [" tool final ", "(new)"] }
 
 [[row]]
 id = "C9"
@@ -81,6 +93,8 @@ item = "Tool call"
 claude_pty = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", "\" github·create_issue TOOL_STATE_SUCCEEDED"] }
 claude_sdk = { mark = "full", carriers = ["item:tool"], golden = [" tool final ", "·ask_the_operator TOOL_STATE_SUCCEEDED"] }
 codex = { mark = "full", carriers = ["item:work.mcp"], golden = [" work final ", " mcp "] }
+# A tool server's call is a call of kind other, named as each agent names it.
+acp = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", " OTHER SUCCEEDED "] }
 
 [[row]]
 id = "C10"
@@ -90,6 +104,8 @@ item = "Subagent"
 claude_pty = { mark = "partial", carriers = ["item:tool", "item:tool.child_agent_id"], golden = ["\" Agent TOOL_STATE_SUCCEEDED", " opens=sub-", " out=\""] }
 claude_sdk = { mark = "full", carriers = ["item:tool", "item:tool.child_agent_id"], golden = [" Agent TOOL_STATE_", " opens=sub-"] }
 codex = { mark = "partial", carriers = ["item:work.collab"], golden = [" work ", " collab "] }
+# ACP's subagents are not typed yet.
+acp = { mark = "none" }
 
 [[row]]
 id = "C11"
@@ -97,6 +113,7 @@ item = "Background process"
 claude_pty = { mark = "partial", carriers = ["item:tool", "snapshot:background_jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
 claude_sdk = { mark = "partial", carriers = ["item:tool", "snapshot:background_jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
 codex = { mark = "partial", carriers = ["item:work.command", "snapshot:background_jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
+acp = { mark = "none" }
 
 [[row]]
 id = "C12"
@@ -104,6 +121,7 @@ item = "Image"
 claude_pty = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", " image=image/"] }
 claude_sdk = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", " image=image/"] }
 codex = { mark = "full", carriers = ["item:work.image"], golden = [" work ", " image "] }
+acp = { mark = "none" }
 
 [[row]]
 id = "C13"
@@ -111,6 +129,8 @@ item = "Slash command output"
 claude_pty = { mark = "partial", carriers = ["item:slash"], golden = [" slash final "] }
 claude_sdk = { mark = "partial", carriers = ["item:slash"], golden = [" slash final "] }
 codex = { mark = "partial", carriers = ["item:command_output"], golden = [" command_output final "] }
+# An agent's slash command answers in its reply.
+acp = { mark = "none" }
 
 # ------------------------------------------------------------------- Decisions
 
@@ -120,6 +140,7 @@ item = "Permission to use a tool"
 claude_pty = { mark = "partial", carriers = ["ask:permission", "item:tool.decision"], golden = ["asks=[", " permission:"] }
 claude_sdk = { mark = "full", carriers = ["ask:permission", "item:tool.decision"], golden = ["asks=[", " permission:"] }
 codex = { mark = "full", carriers = ["ask:command", "ask:file_change", "ask:mcp_tool"], golden = ["asks=[", " command "] }
+acp = { mark = "full", carriers = ["ask:permission"], golden = ["asks=[", ":permission["] }
 
 [[row]]
 id = "C15"
@@ -127,6 +148,9 @@ item = "Question"
 claude_pty = { mark = "full", carriers = ["ask:question", "item:ask.question", "item:ask.closed.answers"], golden = [" ask final ", " question×", " ASK_OUTCOME_ANSWERED answered "] }
 claude_sdk = { mark = "full", carriers = ["ask:question", "item:ask.question", "item:ask.closed.answers"], golden = [" ask final ", " question×", " ASK_OUTCOME_ANSWERED answered "] }
 codex = { mark = "partial", carriers = ["ask:question", "item:ask.question", "item:ask.closed.answers"], golden = [" ask final ", " question×", " ASK_OUTCOME_ANSWERED answered "] }
+# Antigravity asks its questions as a form (C17); Grok's own question
+# request is refused, as the answer it takes was never recorded.
+acp = { mark = "none" }
 
 [[row]]
 id = "C16"
@@ -134,6 +158,7 @@ item = "Plan review"
 claude_pty = { mark = "full", carriers = ["item:plan", "ask:plan"], golden = [" plan final ", " PLAN_VERDICT_SENT_BACK"] }
 claude_sdk = { mark = "full", carriers = ["item:plan", "ask:plan"], golden = [" plan final ", " PLAN_VERDICT_APPROVED"] }
 codex = { mark = "full", carriers = ["item:plan", "ask:plan"], golden = [" plan final ", " PLAN_VERDICT_APPROVED"] }
+acp = { mark = "none" }
 
 [[row]]
 id = "C17"
@@ -141,6 +166,7 @@ item = "Form from a tool server"
 claude_pty = { mark = "full", carriers = ["ask:form", "ask:link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
 claude_sdk = { mark = "full", carriers = ["ask:form", "ask:link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
 codex = { mark = "full", carriers = ["ask:mcp_form", "ask:mcp_link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
+acp = { mark = "full", carriers = ["ask:form", "ask:link", "item:ask.form", "item:ask.link", "item:ask.closed.fields"], golden = [" ask final ", " form ", " ASK_OUTCOME_ANSWERED fields=["] }
 
 [[row]]
 id = "C18"
@@ -148,6 +174,7 @@ item = "Access grant"
 claude_pty = { mark = "na" }
 claude_sdk = { mark = "na" }
 codex = { mark = "full", carriers = ["ask:access", "item:ask.access", "item:ask.closed.grant"], golden = [" ask final ", " access ", " ASK_OUTCOME_ANSWERED granted "] }
+acp = { mark = "none" }
 
 [[row]]
 id = "C19"
@@ -155,6 +182,7 @@ item = "Automatic review"
 claude_pty = { mark = "na" }
 claude_sdk = { mark = "na" }
 codex = { mark = "partial", carriers = ["item:verdict"], golden = [" verdict "] }
+acp = { mark = "none" }
 
 # -------------------------------------------------------------- Session events
 
@@ -164,6 +192,7 @@ item = "Turn finished"
 claude_pty = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
 claude_sdk = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
 codex = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
+acp = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_COMPLETED"] }
 
 [[row]]
 id = "C21"
@@ -171,6 +200,7 @@ item = "Stopped"
 claude_pty = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
 claude_sdk = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
 codex = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
+acp = { mark = "full", carriers = ["item:turn"], golden = [" turn final ", "TURN_OUTCOME_INTERRUPTED"] }
 
 [[row]]
 id = "C22"
@@ -178,6 +208,8 @@ item = "Compaction"
 claude_pty = { mark = "full", carriers = ["item:compaction"], golden = [" compaction final "] }
 claude_sdk = { mark = "full", carriers = ["item:compaction"], golden = [" compaction final "] }
 codex = { mark = "partial", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_COMPACTED"] }
+# Tokens before and after only where the agent says (Grok's own report).
+acp = { mark = "partial", carriers = ["item:compaction"], golden = [" compaction final "] }
 
 [[row]]
 id = "C23"
@@ -185,6 +217,8 @@ item = "Error"
 claude_pty = { mark = "full", carriers = ["item:api_error"], golden = [" api_error "] }
 claude_sdk = { mark = "full", carriers = ["item:api_error"], golden = [" api_error "] }
 codex = { mark = "full", carriers = ["item:error"], golden = [" error ", " retry"] }
+# An error answers a prompt once; ACP has no retries to show.
+acp = { mark = "partial", carriers = ["item:error"], golden = [" error final "] }
 
 [[row]]
 id = "C24"
@@ -194,6 +228,7 @@ claude_sdk = { mark = "full", carriers = ["item:model_switch"], golden = [" mode
 # Codex keeps the chosen model and says it routed one request elsewhere in a
 # warning, which is all its own app shows.
 codex = { mark = "partial", carriers = ["item:error"], golden = [" warning ", "routed to"] }
+acp = { mark = "none" }
 
 [[row]]
 id = "C25"
@@ -201,6 +236,7 @@ item = "Session boundaries"
 claude_pty = { mark = "full", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_CLEARED"] }
 claude_sdk = { mark = "full", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_CLEARED"] }
 codex = { mark = "full", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_RESUMED"] }
+acp = { mark = "full", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_RESUMED"] }
 
 # --------------------------------------------------------------- Session state
 
@@ -210,6 +246,7 @@ item = "Task list"
 claude_pty = { mark = "partial", carriers = ["snapshot:tasks"], golden = ["snapshot ", " tasks=", "!tasks=?"] }
 claude_sdk = { mark = "partial", carriers = ["snapshot:tasks"], golden = ["snapshot ", " tasks=", "!tasks=?"] }
 codex = { mark = "full", carriers = ["snapshot:plan"], golden = ["snapshot ", " plan=", "!plan=?"] }
+acp = { mark = "full", carriers = ["snapshot:plan"], golden = ["snapshot ", " plan=", "!plan=?"] }
 
 [[row]]
 id = "C27"
@@ -217,6 +254,7 @@ item = "Context used"
 claude_pty = { mark = "partial", carriers = ["snapshot:context"], golden = ["snapshot ", " context=", "!context=?"] }
 claude_sdk = { mark = "full", carriers = ["snapshot:context"], golden = ["snapshot ", " context=", "!context=?"] }
 codex = { mark = "full", carriers = ["snapshot:context"], golden = ["snapshot ", " context=", "!context=?"] }
+acp = { mark = "full", carriers = ["snapshot:context"], golden = ["snapshot ", " context=", "!context=?"] }
 
 [[row]]
 id = "C28"
@@ -224,6 +262,7 @@ item = "Model, effort, mode"
 claude_pty = { mark = "partial", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:permission"], golden = ["snapshot ", " mode=", "!mode=?", "!model_name=?"] }
 claude_sdk = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:permission"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
 codex = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:approval_policy"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
+acp = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:mode"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
 
 [[row]]
 id = "C29"
@@ -231,6 +270,8 @@ item = "Usage limits"
 claude_pty = { mark = "none" }
 claude_sdk = { mark = "full", carriers = ["snapshot:usage"], golden = ["snapshot ", " usage=", "!usage=?"] }
 codex = { mark = "full", carriers = ["snapshot:usage"], golden = ["snapshot ", " usage=", "!usage=?"] }
+# ACP reports a session's tokens and cost, not its limits.
+acp = { mark = "none" }
 
 [[row]]
 id = "C30"
@@ -238,6 +279,7 @@ item = "Tool server health"
 claude_pty = { mark = "none" }
 claude_sdk = { mark = "full", carriers = ["snapshot:servers"], golden = ["snapshot ", " servers=", "!servers=?"] }
 codex = { mark = "full", carriers = ["snapshot:servers"], golden = ["snapshot ", " servers=", "!servers=?"] }
+acp = { mark = "none" }
 
 [[row]]
 id = "C31"
@@ -245,3 +287,4 @@ item = "Sign-in problem"
 claude_pty = { mark = "partial", carriers = ["item:api_error"], golden = [" api_error ", " authentication_failed "] }
 claude_sdk = { mark = "full", carriers = ["snapshot:sign_in"], golden = ["snapshot ", " sign_in=", "!sign_in=?", "!SIGN_IN_STATE_SIGNED_IN"] }
 codex = { mark = "full", carriers = ["snapshot:sign_in"], golden = ["snapshot ", " sign_in=", "!sign_in=?", "!SIGN_IN_STATE_SIGNED_IN"] }
+acp = { mark = "full", carriers = ["snapshot:sign_in"], golden = ["snapshot ", " sign_in=SIGNED_OUT"] }

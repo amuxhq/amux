@@ -11,6 +11,11 @@ The three agent kinds are named by their `wire::Kind`: `claude_pty` (Claude in i
 transcript and hooks), `claude_sdk` (headless Claude over stream-JSON) and `codex` (Codex over its app-server
 protocol). [INTERPRETERS.md](INTERPRETERS.md) covers how each one's native events become items.
 
+A fourth kind, `acp`, runs any agent that speaks the Agent Client Protocol (Antigravity, OpenCode, Grok, or one a
+person adds). Its interpreter's availability for every row is the `acp` column of
+[`vocabulary.toml`](../crates/interpret/tests/vocabulary.toml), held by the same coverage test; the clients do not
+draw its bodies yet, so the tables below leave it out until they do.
+
 The pictures on this page are the terminal client's own renderings of each component, drawn from authored view
 values at 100 columns. The phone draws the same facts in its own idiom; neither is a pixel spec for the other.
 

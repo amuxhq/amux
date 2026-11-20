@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Topology};
 use wire::{Empty, StartPairingRequest, start_pairing_request};
 
+use super::review::*;
 use super::*;
 
 const PATIENCE: Duration = Duration::from_secs(30);
@@ -92,6 +93,8 @@ struct Mirror {
     frame: Value,
     ask: Value,
     overview: Value,
+    /// The review page open on the chat, as the deltas last carried it.
+    review: Value,
 }
 
 impl Mirror {
@@ -101,6 +104,7 @@ impl Mirror {
             frame: Value::Null,
             ask: Value::Null,
             overview: Value::Null,
+            review: Value::Null,
         };
         assert!(opening["keys"]["Reload"].is_array(), "{opening}");
         mirror.apply(opening);
@@ -127,6 +131,9 @@ impl Mirror {
         }
         if !delta["overview"].is_null() {
             self.overview = delta["overview"].clone();
+        }
+        if !delta["review"].is_null() {
+            self.review = delta["review"].clone();
         }
     }
 }
@@ -1402,6 +1409,96 @@ fn every_stop_leaves_the_installation_marked_clean() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
+fn the_review_page_moves_with_the_chats_deltas_through_the_c_abi() {
+    let tokio = tokio::runtime::Runtime::new().unwrap();
+    let net = tokio.block_on(Net::start(topology())).unwrap();
+    let phone = Phone::start();
+    pair_desk(&phone, &net, &tokio);
+    let worker = net.agent("worker").unwrap();
+    let agent = c(&json!({
+        "host": worker.host_id.as_bytes().to_vec(),
+        "agent": worker.id.as_bytes().to_vec(),
+    })
+    .to_string());
+    phone.until("the desk's agent", || {
+        phone.view()["sections"][0]["rows"]
+            .as_array()
+            .is_some_and(|rows| rows.len() == 1)
+    });
+    let chat = phone.open_chat(phone.profile, &agent, 0);
+    assert!(!chat.is_null());
+    phone.until("the chat's frame", || {
+        phone.chat(chat, |mirror| !mirror.frame.is_null())
+    });
+    assert!(
+        phone.chat(chat, |mirror| mirror.frame["review_chip"].is_null()),
+        "the row has no review"
+    );
+    // SAFETY: the chat is open.
+    assert_eq!(take(unsafe { amux_review_page(chat) }), Value::Null);
+    // With no page open there is nothing to fetch or to draw.
+    // SAFETY: the chat is open.
+    phone.started(unsafe { amux_review_files(chat, std::ptr::null()) });
+    assert!(phone.result()["Failed"].is_string());
+    // SAFETY: the chat is open.
+    assert_eq!(take(unsafe { amux_review_anchor(chat, 0, 0) }), Value::Null);
+
+    // The desk runs no reviews: the page says so, from the chat's deltas,
+    // and before the open's answer.
+    // SAFETY: the chat is open.
+    phone.started(unsafe { amux_review_open(chat, std::ptr::null(), false) });
+    assert_eq!(phone.result(), json!("Unavailable"));
+    let page = phone.chat(chat, |mirror| mirror.review.clone());
+    assert_eq!(page["banners"], json!(["NotOffered"]), "{page}");
+    assert_eq!(page["opening"], false);
+    // SAFETY: the chat is open.
+    assert_eq!(take(unsafe { amux_review_page(chat) }), page);
+    // SAFETY: the chat is open.
+    assert_eq!(take(unsafe { amux_review_anchor(chat, 0, 3) }), Value::Null);
+    let choice = c(&json!({"View": "All"}).to_string());
+    // SAFETY: the chat is open; the string lives for the call.
+    unsafe { amux_review_choose(chat, choice.as_ptr()) };
+    // SAFETY: the chat is open; the string lives for the call.
+    unsafe { amux_review_choose(chat, c"not json".as_ptr()) };
+    let discard = c(&json!(["DiscardDrafts"]).to_string());
+    // SAFETY: the chat is open; the string lives for the call.
+    phone.started(unsafe { amux_review_edit(chat, discard.as_ptr()) });
+    assert_eq!(phone.result(), json!("Unavailable"));
+    // SAFETY: the chat is open; the string lives for the call.
+    phone.started(unsafe { amux_review_edit(chat, c"[\"Nonsense\"]".as_ptr()) });
+    assert!(phone.result()["Failed"].is_string());
+    // SAFETY: the chat is open; the string lives for the call.
+    phone.started(unsafe { amux_review_context(chat, c"{}".as_ptr()) });
+    assert!(phone.result()["Failed"].is_string());
+
+    // A send with the review sends nothing when there is none to read.
+    phone.started(chat_act(
+        chat,
+        json!({"SendWithReview": {"parts": [{"Text": "see the review"}]}}),
+    ));
+    assert!(phone.result()["Err"].is_string());
+    assert!(phone.chat(chat, |mirror| {
+        mirror.frame["underway"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    }));
+
+    // SAFETY: the chat is open.
+    unsafe { amux_review_close(chat) };
+    // SAFETY: the chat is open.
+    assert_eq!(take(unsafe { amux_review_page(chat) }), Value::Null);
+    // SAFETY: the chat is open, and closed once.
+    unsafe { amux_session_close(chat) };
+    assert_eq!(CAUGHT.with(std::cell::Cell::get), 0, "a call panicked");
+    drop(phone);
+    tokio.block_on(net.shutdown()).unwrap();
+}
+
+#[test]
 fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     // SAFETY: null chats and fleets read as nothing.
     assert!(unsafe { amux_session_opening(std::ptr::null()) }.is_null());
@@ -1418,6 +1515,24 @@ fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     // SAFETY: as above.
     let blob = unsafe { amux_session_blob(std::ptr::null(), c"[1]".as_ptr()) };
     assert!(blob.data.is_null() && blob.len == 0);
+    // SAFETY: a null chat has no review page.
+    assert!(unsafe { amux_review_page(std::ptr::null()) }.is_null());
+    // SAFETY: as above.
+    assert!(unsafe { amux_review_anchor(std::ptr::null(), 0, 0) }.is_null());
+    // SAFETY: as above.
+    unsafe { amux_review_choose(std::ptr::null(), c"{\"View\":\"All\"}".as_ptr()) };
+    // SAFETY: as above.
+    unsafe { amux_review_close(std::ptr::null()) };
+    // SAFETY: a null chat starts no act.
+    assert_eq!(
+        unsafe { amux_review_open(std::ptr::null(), std::ptr::null(), false) },
+        0
+    );
+    // SAFETY: as above.
+    assert_eq!(
+        unsafe { amux_review_files(std::ptr::null(), std::ptr::null()) },
+        0
+    );
     // SAFETY: a null profile is ignored.
     unsafe { amux_profile_set_foreground(std::ptr::null(), false) };
     // SAFETY: as above.

@@ -55,6 +55,7 @@ use tokio::runtime::Handle;
 use ui_state::{AgentKey, Key};
 use ui_view::Comparison;
 
+mod review;
 // The tests drive real agent processes, which run on Unix.
 #[cfg(all(test, unix))]
 mod tests;
@@ -3110,6 +3111,9 @@ pub unsafe extern "C" fn amux_session_act(chat: *const AmuxChat, act: *const c_c
 async fn acted(chat: &Chat, act: ChatAct) -> serde_json::Value {
     match act {
         ChatAct::Send(draft) => answer(Answered::Ok(chat.send(&draft).await)),
+        ChatAct::SendWithReview(draft) => {
+            answer(Answered::from(chat.send_with_review(&draft).await))
+        }
         ChatAct::Command(draft) => answer(chat.command(&draft).await),
         ChatAct::Answer { ask, choice, note } => {
             answer(chat.answer_choice(&ask, choice as usize, &note).await)

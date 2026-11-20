@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome,
+    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome, ReviewChange,
+    ReviewOutcome,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::SystemClock;
@@ -16,7 +17,9 @@ use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
 use ui_state::{AgentKey, InputState, PhaseView, Refusal};
-use ui_view::{AskBody, ChoiceOutcome, Comparison, QuestionResponse, RowKind, SettingChange};
+use ui_view::{
+    AskBody, ChoiceOutcome, Comparison, QuestionResponse, ReviewBanner, RowKind, SettingChange,
+};
 
 const PATIENCE: Duration = Duration::from_secs(20);
 
@@ -1132,5 +1135,59 @@ async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
         "{:?}",
         delta.rows
     );
+    net.shutdown().await.unwrap();
+}
+
+/// The review page through a chat, on a host that does not offer reviews:
+/// the page comes with the chat's deltas and says so, and neither an edit
+/// nor a send with the review reaches the agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_page_on_a_host_without_reviews_says_so_and_sends_nothing() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    until(&mut host, &chat, "the first turn to end", |chat| {
+        chat.frame().caught_up && says(chat, "TurnEnd")
+    })
+    .await;
+    host.settle(&chat);
+    assert_eq!(chat.frame().review_chip, None, "the row has no review");
+
+    assert_eq!(
+        chat.open_review(None, false).await,
+        ReviewOutcome::Unavailable
+    );
+    let page = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Some(page) = host.turn(&chat).await.and_then(|delta| delta.review) {
+                return page;
+            }
+        }
+    })
+    .await
+    .expect("a delta carries the page");
+    assert_eq!(page.banners, vec![ReviewBanner::NotOffered], "{page:?}");
+    assert!(page.header.is_none() && page.rows.is_empty() && !page.opening);
+    let open = chat.review_page().expect("the page is open");
+    assert_eq!(open.anchor(0, 0), None, "no row to comment on");
+    assert_eq!(
+        chat.edit_review(vec![ReviewChange::DiscardDrafts]).await,
+        ReviewOutcome::Unavailable
+    );
+
+    let keys = chat.keys();
+    let refused = chat.send_with_review(&Draft::words("see the review")).await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(chat.frame().underway.is_empty(), "nothing was sent");
+    assert_eq!(chat.keys(), keys);
+
+    chat.close_review();
+    assert!(chat.review_page().is_none());
+    assert!(
+        chat.opening().review.is_none(),
+        "a closed page is not handed over"
+    );
+    drop(open);
+    drop(chat);
     net.shutdown().await.unwrap();
 }

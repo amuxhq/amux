@@ -16,6 +16,7 @@
 mod chat;
 mod coalesce;
 mod delta;
+mod review;
 #[cfg(test)]
 mod schedules;
 pub mod values;
@@ -29,6 +30,7 @@ pub use chat::Chat;
 use client::{Client, RpcError};
 pub use coalesce::{Batch, Coalescer, WakeFn};
 use prost::Message as _;
+pub use review::ReviewSession;
 use tokio::task::JoinHandle;
 pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};

@@ -298,6 +298,7 @@ dependencies = [
  "serde_json",
  "testnet",
  "tokio",
+ "tonic",
  "ui-runtime",
  "ui-state",
  "ui-view",

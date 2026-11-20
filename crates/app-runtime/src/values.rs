@@ -11,7 +11,8 @@ use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
 use ui_view::{
     AskCard, ChatAgents, ComposerView, ContextView, ControlsSummary, FleetView, FormValue,
     OnboardingView, Overview, PLACEHOLDER, QuestionResponse, QueuedRow, Reach, RefusedPrompt,
-    Repository, Row, SentPrompt, SettingChange, SettingsView, SetupStep, SignInView,
+    Repository, ReviewAnchor, ReviewChip, ReviewPage, ReviewView, Row, SentPrompt, SettingChange,
+    SettingsView, SetupStep, SignInView,
 };
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
@@ -155,6 +156,9 @@ pub struct ChatDelta {
     /// each group of them comes to: a row that opens an agent draws its
     /// state from here, since the fleet moving changes no row.
     pub agents: Option<ChatAgents>,
+    /// The review page open on the chat, whole, when it moved: the rows an
+    /// anchor's indices count are those of the page handed over last.
+    pub review: Option<ReviewPage>,
 }
 
 /// How the window's keys moved. Row ids are item keys and never move, so
@@ -217,6 +221,9 @@ pub struct ChatFrame {
     pub ask_input: Option<Vec<u8>>,
     /// The runtime no longer serves this chat: the agent is gone.
     pub ended: Option<String>,
+    /// The chip the composer shows while the agent's review holds drafts,
+    /// from the review's entry on the agent's row.
+    pub review_chip: Option<ReviewChip>,
 }
 
 /// A prompt as the composer holds it: runs of words and attachments in
@@ -287,6 +294,12 @@ impl DraftAttachment {
         Some(match attachment.of.as_ref()? {
             Of::Image(blob) => DraftAttachment::Image(blob.clone()),
             Of::File(blob) => DraftAttachment::File(blob.clone()),
+            // A sent review names exactly the comments its text holds, and
+            // only that entry lets the agent's host mark them sent; a draft
+            // cannot carry the entry, so it does not carry the review. The
+            // comments are still drafts on the review until a send of it
+            // is accepted.
+            Of::Text(_) if ui_view::sent_review::entry(attachment).is_some() => return None,
             Of::Text(inline) => DraftAttachment::Text {
                 name: inline.name.clone(),
                 text: inline.text.clone(),
@@ -564,13 +577,20 @@ pub struct Directories {
     pub history: Vec<Directory>,
 }
 
-/// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
-/// `{"Ok": SendOutcome}`), a `CommandOutcome` for `Command`, a `SendOutcome`
+/// An act on an open chat. Its answer is a `SendOutcome` for `Send` and
+/// `SendWithReview` (as `{"Ok": SendOutcome}`), a `CommandOutcome` for
+/// `Command`, a `SendOutcome`
 /// or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
 /// `ActOutcome` for every other.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub enum ChatAct {
     Send(Draft),
+    /// Sends the draft with the review's drafts after its words, as the
+    /// review's text attachment naming exactly those comments: the round
+    /// closes when the agent's host accepts the message. Answers
+    /// `{"Ok": SendOutcome}`, or `{"Err": ..}` without sending when the
+    /// review cannot be read or holds no drafts.
+    SendWithReview(Draft),
     /// A draft that names a command the client handles itself (`/model`,
     /// `/effort`, `/rename`) or one the agent does not run; the outcome's
     /// `Send` says to send it as typed.
@@ -624,6 +644,54 @@ pub enum ChatAct {
     /// Up to this many rows older than the oldest held; they arrive below
     /// the oldest.
     PageOlder(u32),
+}
+
+/// A change to the review open on a chat, made at the agent's host, all of
+/// a call's changes or none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReviewChange {
+    /// A new draft on the lines `anchor` names, as `amux_review_anchor`
+    /// gives them for a selection of the page's rows.
+    Comment { anchor: ReviewAnchor, text: String },
+    /// New words for a comment, draft or sent, by its id; it stays where
+    /// it was written.
+    Reword { id: Vec<u8>, text: String },
+    /// Deletes a comment, draft or sent, by its id; the chat keeps a sent
+    /// one.
+    Delete(Vec<u8>),
+    /// Deletes every draft, leaving sent comments: the chip's ✕, once the
+    /// person confirmed it.
+    DiscardDrafts,
+    /// Deletes the review: the next look is a first look.
+    StartOver,
+}
+
+/// A choice the person makes on the review page, kept by the chat and
+/// drawn at once.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReviewChoice {
+    /// Switches to a view the page's header offers.
+    View(ReviewView),
+    /// Folds an open file or opens a folded one, by path.
+    ToggleFile(String),
+    /// Opens a folded outdated comment or folds it again, by id.
+    ToggleComment(Vec<u8>),
+}
+
+/// What a call on the review came to. The page says what it learned too:
+/// a host it could not reach, or why there is no review.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReviewOutcome {
+    Done,
+    /// The agent's host could not be reached: nothing changed there.
+    Unreachable,
+    /// The connection dropped before the host answered: a change may have
+    /// been made, and the page shows the review as the host says next.
+    NotConfirmed,
+    /// The agent has no review to be had: its host does not offer reviews,
+    /// or its folder is not a repository.
+    Unavailable,
+    Failed(String),
 }
 
 /// A change to one agent from outside its chat.
@@ -1261,6 +1329,29 @@ mod tests {
                 ..Default::default()
             }),
             None
+        );
+    }
+
+    /// A sent review taken back into a draft, by a withdraw or an edit,
+    /// leaves only the words: sending its text again without its entry
+    /// would give the agent comments its host never marks sent.
+    #[test]
+    fn a_sent_review_does_not_come_back_into_a_draft() {
+        let summary = wire::experimental::ReviewSummary {
+            id: b"review".to_vec(),
+            snapshot: "5".repeat(40),
+            ..Default::default()
+        };
+        let comment = wire::experimental::ReviewerComment {
+            id: b"one".to_vec(),
+            text: "Keep it.".into(),
+            ..Default::default()
+        };
+        let review = ui_view::sent_review::attachment(&summary, &[comment]);
+        let text = format!("look{PLACEHOLDER}");
+        assert_eq!(
+            Draft::of(&text, &[review]).parts,
+            vec![DraftPart::Text("look".into())]
         );
     }
 }

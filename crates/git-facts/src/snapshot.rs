@@ -19,7 +19,6 @@
 //! commit for it instead, worked out here from the file.
 
 use std::collections::{BTreeSet, HashSet};
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -735,7 +734,7 @@ fn nul_separated(paths: &[&[u8]]) -> Vec<u8> {
 /// Where a path git names from the top folder is on disk.
 fn on_disk(root: &Path, path: &[u8]) -> PathBuf {
     #[cfg(unix)]
-    let path = <OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(path).to_owned();
+    let path = <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(path).to_owned();
     #[cfg(not(unix))]
     let path = std::ffi::OsString::from(String::from_utf8_lossy(path).into_owned());
     root.join(path)

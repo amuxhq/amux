@@ -453,7 +453,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "store", kind = "lib", targets = ["store"] },
-  { package = "store", modules = ["conformance", "explore", "retention", "sqlite"] },
+  { package = "store", modules = ["conformance", "explore", "retention", "reviews", "sqlite"] },
 ]
 
 [[suite]]

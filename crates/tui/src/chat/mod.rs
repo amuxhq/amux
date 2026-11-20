@@ -13,6 +13,7 @@ pub mod composer;
 pub mod feed;
 pub mod layout;
 pub mod pane;
+pub mod patch_review;
 pub mod review;
 pub mod rows;
 pub mod selection;
@@ -42,7 +43,7 @@ use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};
 use self::feed::FeedHit;
 pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
-use self::review::{ReviewAction, ReviewPage};
+use self::patch_review::{ReviewAction, ReviewPage};
 use self::selection::{FeedSelection, Point, ScreenCells, ScreenSelection};
 use crate::clipboard::{Clip, ClipboardContent};
 use crate::editor::Editor;
@@ -125,6 +126,25 @@ pub enum ChatEffect {
     Review,
     /// The review page, at this changed file.
     ReviewAt(String),
+    /// Open the agent's review again; `refresh` takes a new snapshot even
+    /// with drafts, moving them onto it.
+    ReviewOpen {
+        refresh: bool,
+    },
+    /// Make these edits to the agent's review, all or none, and open it
+    /// again afterwards when `reopen` says.
+    ReviewEdit {
+        edits: Vec<wire::experimental::ReviewEdit>,
+        reopen: bool,
+    },
+    /// Read these lines for more context on the review page.
+    ReviewContext(ui_view::ReviewContextAsk),
+    /// A prompt that carries the review's drafts, which the agent's host
+    /// marks sent when it accepts the message.
+    PromptWithReview {
+        text: String,
+        attachments: Vec<Attachment>,
+    },
     /// Open a link from the agent's text in the person's browser.
     OpenUrl(String),
     /// Open an attachment in the app the system picks for it.
@@ -301,9 +321,23 @@ pub struct ChatView {
     pub ask: AskUi,
     /// The selected entry of the queue block while it has the keys.
     pub tray: Option<usize>,
-    /// The review page, kept behind its draft token while the chat shows.
+    /// The review page over a patch, for a host that does not run
+    /// reviews, kept behind its draft token while the chat shows.
     pub review: Option<ReviewPage>,
     pub review_open: bool,
+    /// The review page of the agent's review, kept while the chat is open
+    /// so returning to it draws at once.
+    pub review_page: Option<review::Page>,
+    pub review_page_open: bool,
+    /// The window asking before the review chip's drafts are discarded.
+    discard_ask: Option<review::Asking>,
+    /// The review chip on the composer's edge on the last frame: its row,
+    /// its columns, and the columns of its ✕.
+    chip_spot: Option<ChipSpot>,
+    /// The review entry's counter when this composer last sent the drafts:
+    /// the chip waits for the row to move past it, so the same drafts are
+    /// not sent twice while the host marks them.
+    review_sent: Option<u64>,
     /// Whether the agent's own interface can be attached from here.
     pub attach: bool,
     /// How this machine reaches the agent's host, kept current by the app
@@ -474,6 +508,11 @@ impl ChatView {
             tray: None,
             review: None,
             review_open: false,
+            review_page: None,
+            review_page_open: false,
+            discard_ask: None,
+            chip_spot: None,
+            review_sent: None,
             attach,
             // Nothing is known against the host until the app reads the
             // fleet, before the chat is first drawn.
@@ -621,7 +660,15 @@ impl ChatView {
                 .find(|sent| sent.id == refused.input_id)
                 .map(|sent| &sent.what)
             {
-                self.editor.restore(text, attachments.clone());
+                // A review it carried is the chip's again, read afresh
+                // when it next goes.
+                let attachments: Vec<Attachment> = attachments
+                    .iter()
+                    .filter(|attachment| ui_view::sent_review::entry(attachment).is_none())
+                    .cloned()
+                    .collect();
+                self.editor.restore(text, attachments);
+                self.review_sent = None;
                 self.draft_owed = true;
             }
             self.not_sent = Some(format!("not sent: {}", refusal_words(&refused.reason)));
@@ -652,6 +699,9 @@ impl ChatView {
     }
 
     pub fn field_text(&self, state: &SessionState) -> bool {
+        if self.review_page_open {
+            return self.review_page.as_ref().is_some_and(review::Page::editing);
+        }
         if self.review_open {
             return self.review.as_ref().is_some_and(ReviewPage::editing);
         }
@@ -670,6 +720,7 @@ impl ChatView {
     pub fn opens_help(&self, state: &SessionState, key: KeyEvent) -> bool {
         key.code == KeyCode::Char('?')
             && !self.review_open
+            && !self.review_page_open
             && self.live_card(state).is_none()
             && self.tray.is_none()
             && self.editor.is_empty()
@@ -678,6 +729,12 @@ impl ChatView {
     /// Ctrl+C on a field with text: clears it as a kill. Only the field
     /// with the keys: a draft hidden behind a card stays.
     pub fn kill_field(&mut self, state: &SessionState) -> bool {
+        if self.review_page_open {
+            return self
+                .review_page
+                .as_mut()
+                .is_some_and(review::Page::kill_field);
+        }
         if self.review_open {
             return self.review.as_mut().is_some_and(ReviewPage::kill_field);
         }
@@ -690,6 +747,12 @@ impl ChatView {
     /// A bracketed paste goes to the field with the keys, and nowhere when
     /// none has them.
     pub fn paste_text(&mut self, state: &SessionState, text: &str) {
+        if self.review_page_open {
+            if let Some(page) = &mut self.review_page {
+                page.paste(text);
+            }
+            return;
+        }
         if self.review_open {
             if let Some(page) = &mut self.review {
                 page.paste(text);
@@ -761,6 +824,36 @@ impl ChatView {
         {
             self.editor.remove_chars(from, to);
             return vec![];
+        }
+        if let Some(mut ask) = self.discard_ask.take() {
+            return match ask.key(key) {
+                Some(true) => vec![ChatEffect::ReviewEdit {
+                    edits: vec![ask.edit()],
+                    reopen: false,
+                }],
+                Some(false) => vec![],
+                None => {
+                    self.discard_ask = Some(ask);
+                    vec![]
+                }
+            };
+        }
+        if self.review_page_open
+            && let Some(page) = &mut self.review_page
+        {
+            return match page.key(key) {
+                review::ReviewAction::None => vec![],
+                review::ReviewAction::Close => {
+                    self.review_page_open = false;
+                    vec![]
+                }
+                review::ReviewAction::Open { refresh } => vec![ChatEffect::ReviewOpen { refresh }],
+                review::ReviewAction::Edit { edits, reopen } => {
+                    vec![ChatEffect::ReviewEdit { edits, reopen }]
+                }
+                review::ReviewAction::Context(ask) => vec![ChatEffect::ReviewContext(ask)],
+                review::ReviewAction::Notice(words) => vec![ChatEffect::Notice(words.into())],
+            };
         }
         if self.review_open
             && let Some(page) = &mut self.review
@@ -1120,8 +1213,12 @@ impl ChatView {
     /// exited agent with the draft, and otherwise keep the draft.
     fn submit(&mut self, state: &SessionState) -> Vec<ChatEffect> {
         // Enter on an exited agent resumes it, with or without a message.
-        // A draft of only blanks is no message: it would spend a turn.
-        let blank = self.editor.attachments().is_empty() && self.editor.text().trim().is_empty();
+        // A draft of only blanks is no message: it would spend a turn. The
+        // review chip's drafts are one.
+        let reviewed = self.review_chip(state).is_some();
+        let blank = self.editor.attachments().is_empty()
+            && self.editor.text().trim().is_empty()
+            && !reviewed;
         if blank && state.composer() != Composer::Resume {
             return vec![];
         }
@@ -1143,12 +1240,16 @@ impl ChatView {
                 ))]
             }
             Composer::Send => {
-                if let Some(effects) = self.slash_command(state) {
+                if !reviewed && let Some(effects) = self.slash_command(state) {
                     return effects;
                 }
                 let (text, attachments) = self.editor.take_prompt();
                 self.not_sent = None;
                 self.follow();
+                if reviewed {
+                    self.review_sent = review_counter(state);
+                    return vec![ChatEffect::PromptWithReview { text, attachments }];
+                }
                 vec![ChatEffect::Prompt { text, attachments }]
             }
             Composer::Resume => {
@@ -1547,6 +1648,31 @@ impl ChatView {
             MouseEventKind::Up(MouseButton::Left) => return self.release(state, theme),
             _ => {}
         }
+        if self.review_page_open
+            && let Some(page) = &mut self.review_page
+        {
+            match event.kind {
+                MouseEventKind::ScrollUp => {
+                    self.selection = None;
+                    page.scroll_by(-wheel_lines(Direction::Up));
+                }
+                MouseEventKind::ScrollDown => {
+                    self.selection = None;
+                    page.scroll_by(wheel_lines(Direction::Down));
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.selection = None;
+                    self.copied = false;
+                    page.click(event.column, event.row);
+                    let rect = page.stream_area();
+                    if rect.contains(Position::new(event.column, event.row)) {
+                        self.press = Some(Press::new(event, Pressed::Stream(rect)));
+                    }
+                }
+                _ => {}
+            }
+            return vec![];
+        }
         if self.review_open
             && let Some(page) = &mut self.review
         {
@@ -1664,6 +1790,21 @@ impl ChatView {
                 }
                 let (x, y) = (event.column, event.row);
                 let on = |row: u16, (from, to): (u16, u16)| row == y && (from..to).contains(&x);
+                // The review chip: its ✕ asks to discard the drafts, the rest
+                // of it opens the review.
+                if let Some((row, chip, close)) = self.chip_spot
+                    && let Some(found) = self.review_chip(state)
+                {
+                    if on(row, close) {
+                        self.discard_ask = Some(review::Asking::new(review::Confirm::Discard {
+                            drafts: found.comments,
+                        }));
+                        return vec![];
+                    }
+                    if on(row, chip) {
+                        return vec![ChatEffect::Review];
+                    }
+                }
                 if let Some(spot) = self
                     .ask_spots
                     .iter()
@@ -1963,6 +2104,8 @@ impl ChatView {
     /// Whether keys typed now reach the composer.
     fn composer_has_keys(&self, state: &SessionState) -> bool {
         !self.review_open
+            && !self.review_page_open
+            && self.discard_ask.is_none()
             && self.picker.is_none()
             && !self.setting_prefix
             && self.tray.is_none()
@@ -2437,6 +2580,35 @@ impl ChatView {
         &self.attaching
     }
 
+    /// The agent's review page, made when first wanted, shown at the file
+    /// `at` when one is named. The old page over a patch closes.
+    pub fn open_review_page(&mut self, at: Option<&str>) -> &mut review::Page {
+        self.review_open = false;
+        self.review_page_open = true;
+        let page = self.review_page.get_or_insert_with(review::Page::new);
+        if let Some(path) = at {
+            page.show_file(path);
+        }
+        page
+    }
+
+    /// The review chip the composer shows: from the agent's row, unless
+    /// this composer has just sent those drafts.
+    fn review_chip(&self, state: &SessionState) -> Option<ui_view::ReviewChip> {
+        let chip = ui_view::review_chip(state.agent())?;
+        (self.review_sent.is_none() || self.review_sent != review_counter(state)).then_some(chip)
+    }
+
+    /// A send of the review's drafts did not go: the chip is back.
+    pub fn review_unsent(&mut self) {
+        self.review_sent = None;
+    }
+
+    /// Asks before the review chip's drafts are discarded.
+    pub fn ask_discard_drafts(&mut self, drafts: u32) {
+        self.discard_ask = Some(review::Asking::new(review::Confirm::Discard { drafts }));
+    }
+
     /// `<leader> r` with a review already in the draft: back to its page.
     /// False when there is none, and a fresh diff is wanted.
     pub fn resume_review(&mut self) -> bool {
@@ -2507,6 +2679,28 @@ impl ChatView {
             self.focus = None;
             self.page_asked = None;
         }
+        if self.review_page_open
+            && let Some(page) = &mut self.review_page
+        {
+            let name = ui_state::shown_name(state.agent()).to_owned();
+            let cwd = &state.agent().cwd;
+            let place = if self.local {
+                text::tilde(cwd)
+            } else {
+                cwd.clone()
+            };
+            page.set_owner(&name, &place);
+            let footer = footer.or_else(|| self.screen_footer(usize::from(area.width), theme));
+            let page = self.review_page.as_mut().expect("open");
+            page.draw(paint, area, footer, theme);
+            let cells = ScreenCells::capture(
+                paint.buffer_mut(),
+                page.stream_area(),
+                page.stream_gutters().to_vec(),
+            );
+            self.keep_screen(paint, cells, theme);
+            return None;
+        }
         if self.review_open
             && let Some(page) = &mut self.review
         {
@@ -2519,22 +2713,8 @@ impl ChatView {
                 cwd.clone()
             };
             page.set_owner(&name, &place);
-            let in_screen = matches!(self.selection, Some(Selection::Screen(_)));
-            let footer = footer.or_else(|| {
-                in_screen.then(|| {
-                    let mut pairs = Vec::new();
-                    if !self.copy_on_select && !self.copied {
-                        pairs.push(("c", "copy"));
-                    }
-                    pairs.push(("esc", "clear"));
-                    let hint = if self.copied {
-                        Hint::Noted("copied", keys(&pairs))
-                    } else {
-                        Hint::Keys(keys(&pairs))
-                    };
-                    hint_line(&hint, usize::from(area.width), theme).0
-                })
-            });
+            let footer = footer.or_else(|| self.screen_footer(usize::from(area.width), theme));
+            let page = self.review.as_mut().expect("open");
             page.draw(paint, area, footer, theme);
             let cells = ScreenCells::capture(
                 paint.buffer_mut(),
@@ -2548,7 +2728,80 @@ impl ChatView {
         if let Some(ask) = &self.stop_ask {
             stop_window(paint, area, ask, theme);
         }
+        if let Some(ask) = &self.discard_ask {
+            ask.draw(paint, area, theme);
+        }
         page
+    }
+}
+
+/// Where the review chip was drawn: its row, its columns, and its ✕'s.
+type ChipSpot = (u16, (u16, u16), (u16, u16));
+
+/// The agent's review entry's change counter, from its row.
+fn review_counter(state: &SessionState) -> Option<u64> {
+    wire::experimental::REVIEW_ROW
+        .get(&state.agent().experimental)
+        .map(|entry| entry.counter)
+}
+
+/// The review chip laid on the composer box's top edge, from the review's
+/// entry on the agent's row: "[review · 3 comments ✕]", and after it, when
+/// the code changed since the drafts were written, that it did. Returns the
+/// edge with it, and the columns of the chip and of its ✕.
+fn review_chip_line(
+    top: &Line<'static>,
+    chip: ui_view::ReviewChip,
+    width: usize,
+    theme: Theme,
+) -> (Line<'static>, (usize, usize), (usize, usize)) {
+    // The box's corner sits two columns in; the chip after one rule.
+    const AT: usize = 4;
+    let words = match chip.comments {
+        1 => "[review · 1 comment ".to_owned(),
+        n => format!("[review · {n} comments "),
+    };
+    let mut over = Line::from(Span::raw(" "));
+    over.spans.push(Span::styled(words, theme.chip()));
+    let close_from = AT + text::line_width(&over);
+    over.spans.push(Span::styled("✕", theme.chip()));
+    let close_to = AT + text::line_width(&over);
+    over.spans.push(Span::styled("]", theme.chip()));
+    let chip_to = AT + text::line_width(&over);
+    if chip.moved {
+        over.spans
+            .push(Span::styled(" code changed since ", theme.faint()));
+    } else {
+        over.spans.push(Span::raw(" "));
+    }
+    // Never over the box's far corner.
+    if AT + text::line_width(&over) + 3 > width {
+        return (top.clone(), (0, 0), (0, 0));
+    }
+    (
+        text::overlay(top, AT, over, width),
+        (AT + 1, chip_to),
+        (close_from, close_to),
+    )
+}
+
+impl ChatView {
+    /// The key line while text dragged over on a full-screen page is held.
+    fn screen_footer(&self, width: usize, theme: Theme) -> Option<Line<'static>> {
+        if !matches!(self.selection, Some(Selection::Screen(_))) {
+            return None;
+        }
+        let mut pairs = Vec::new();
+        if !self.copy_on_select && !self.copied {
+            pairs.push(("c", "copy"));
+        }
+        pairs.push(("esc", "clear"));
+        let hint = if self.copied {
+            Hint::Noted("copied", keys(&pairs))
+        } else {
+            Hint::Keys(keys(&pairs))
+        };
+        Some(hint_line(&hint, width, theme).0)
     }
 }
 
@@ -3219,6 +3472,19 @@ impl ChatView {
         };
         if let Some((row, (from, to))) = ask_mode {
             self.mode_spot = Some((bottom_y(row), (area.x + from as u16, area.x + to as u16)));
+        }
+        self.chip_spot = None;
+        if let Some((at, _)) = &boxed_at
+            && let Some(found) = self.review_chip(state)
+            && let Some(top) = bottom.get_mut(*at)
+        {
+            let (line, chip, close) = review_chip_line(top, found, width, theme);
+            *top = line;
+            self.chip_spot = Some((
+                bottom_y(*at),
+                (area.x + chip.0 as u16, area.x + chip.1 as u16),
+                (area.x + close.0 as u16, area.x + close.1 as u16),
+            ));
         }
         if let Some((at, boxed)) = &boxed_at {
             if let Some((from, to)) = boxed.mode {

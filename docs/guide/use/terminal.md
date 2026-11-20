@@ -222,18 +222,47 @@ one at a time and end on a review of your answers.
 
 ## Reviewing changes
 
-Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review: the
-files the agent changed on the left, and every change on the right.
+Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review.
+
+With the reviews experiment switched on on the agent's computer, the review is
+a snapshot of the agent's folder, taken when you open it, and it stays put
+while you read: if the agent changes code meanwhile, the page says so and `r`
+refreshes it. Every file follows the next, each change under the functions it
+sits in; lock files, generated and vendored files start folded.
 
 | Key | What it does |
 |---|---|
 | `j` `k` | Next or previous line |
+| `J` `K` | Next or previous change |
 | `]` `[` | Next or previous file |
-| `c` | Comment on the line, or on the whole file from its heading |
+| `c` or Enter | Comment on the line, or on the whole file from its heading |
+| `v`, or Shift+↓ ↑ | Select several lines, then `c` to comment on all of them |
+| Enter on a draft | Change its words; empty them to delete it |
+| `d` | Delete the comment under the cursor |
+| Enter on a file's heading, or `f` | Fold or open the file |
+| Enter or `e` on hidden lines | Show more lines above or below |
+| Tab | Switch between All changes and Since your last review |
+| `r` | Refresh to the code as it is now |
+| `D` | Discard your draft comments, asking first |
+| `S` | Start the review over, asking first |
 | `q` | Back to the chat |
 
-Your comments go into the message box as one review, ready to send to the
-agent with anything else you want to say.
+Comments are saved on the agent's computer as you write them, so they're there
+from your other devices too. While you have drafts, the message box shows
+`[review · 3 comments ✕]`: whatever you send next carries them to the agent,
+with your message as the summary. Click the ✕ to discard them instead. With
+drafts waiting, opening the review keeps them on the code you wrote them on;
+refreshing moves them to the code as it is now, and any whose lines were edited
+become comments on their file.
+
+Once you've sent a review, the next look opens on **Since your last review**:
+just what changed since then, with your earlier comments where they sit now,
+folded away where their lines changed. Tab shows all the changes again.
+
+Where the agent's computer doesn't run reviews, the page instead shows the
+changed files on the left and every change on the right, and your comments go
+into the message box as one review, ready to send with anything else you want
+to say.
 
 The header can count either your uncommitted changes, or everything since the
 branch left its base. Ctrl+A then `c` switches between the two. For an agent

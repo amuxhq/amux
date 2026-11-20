@@ -1,4 +1,5 @@
-//! The review page: a full-screen reading of the agent's working-tree diff,
+//! The review page over a patch, for an agent whose host does not run
+//! reviews: a full-screen reading of the agent's working-tree diff,
 //! frozen when the page opened, with the person's comments on its lines.
 //!
 //! The changed files are listed on the left, the shared changes list the

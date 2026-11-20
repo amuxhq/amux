@@ -1554,6 +1554,456 @@ fn an_answered_question_row_reads_the_question_and_what_was_picked() {
     }
 }
 
+// --- the agent's review page -----------------------------------------------
+
+mod review_page {
+    use ui_view::{ReviewCommentAt, ReviewRowOf, ReviewView};
+    use wire::experimental::{REVIEW_ROW, ReviewRowEntry, review_edit};
+
+    use super::*;
+    use crate::chat::review::{Page, ReviewAction};
+
+    fn press(page: &mut Page, code: KeyCode) -> ReviewAction {
+        page.key(key(code))
+    }
+
+    fn type_words(page: &mut Page, words: &str) {
+        for c in words.chars() {
+            assert_eq!(press(page, KeyCode::Char(c)), ReviewAction::None);
+        }
+    }
+
+    fn row_key(page: &Page) -> String {
+        page.page().rows[page.cursor()].key.clone()
+    }
+
+    /// Steps down until the cursor is on the row `wanted` names.
+    fn down_to(page: &mut Page, wanted: &str) {
+        for _ in 0..200 {
+            if row_key(page) == wanted {
+                return;
+            }
+            press(page, KeyCode::Char('j'));
+        }
+        panic!("no row {wanted}: the cursor stopped on {}", row_key(page));
+    }
+
+    fn rows(page: &Page) -> Vec<&str> {
+        page.page()
+            .rows
+            .iter()
+            .map(|row| row.key.as_str())
+            .collect()
+    }
+
+    fn screen(page: &mut Page) -> String {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(W, H)).unwrap();
+        terminal
+            .draw(|frame| page.draw(frame, frame.area(), None, theme()))
+            .unwrap();
+        text(terminal.backend().buffer())
+    }
+
+    fn put(action: &ReviewAction) -> &wire::experimental::ReviewPutComment {
+        let ReviewAction::Edit { edits, .. } = action else {
+            panic!("not an edit: {action:?}");
+        };
+        let [edit] = edits.as_slice() else {
+            panic!("one edit: {edits:?}");
+        };
+        match &edit.of {
+            Some(review_edit::Of::Put(put)) => put,
+            other => panic!("not a put: {other:?}"),
+        }
+    }
+
+    /// A range selected with `v` and the cursor becomes one comment on the
+    /// snapshot's lines it covers; the editor closes once the host has it.
+    #[test]
+    fn a_range_of_lines_is_commented_as_one() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        down_to(&mut page, "l/src/store.rs/0/41");
+        press(&mut page, KeyCode::Char('v'));
+        press(&mut page, KeyCode::Char('j'));
+        // The draft under line 41 is passed over on the way to line 42.
+        down_to(&mut page, "l/src/store.rs/0/42");
+        assert_eq!(press(&mut page, KeyCode::Char('c')), ReviewAction::None);
+        type_words(&mut page, "log after the open, not before");
+        let saved = press(&mut page, KeyCode::Enter);
+        let put = put(&saved);
+        let anchor = put.anchor.as_ref().expect("anchored");
+        assert_eq!(anchor.commit, "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d");
+        assert_eq!(anchor.path, "src/store.rs");
+        let lines = anchor.lines.expect("lines");
+        assert_eq!((lines.start, lines.end), (41, 42));
+        assert_eq!(put.text, "log after the open, not before");
+        assert_eq!(put.id.len(), 16, "a fresh id for a new comment");
+        // While the host has it the words wait; once it does they close.
+        assert!(screen(&mut page).contains("saving…"));
+        page.edited(Ok(()));
+        assert!(!screen(&mut page).contains("log after the open"));
+    }
+
+    /// A comment that did not land keeps its words open, with why.
+    #[test]
+    fn a_comment_that_did_not_save_stays_open() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        down_to(&mut page, "l/src/store.rs/0/42");
+        press(&mut page, KeyCode::Char('c'));
+        type_words(&mut page, "why log here");
+        press(&mut page, KeyCode::Enter);
+        page.edited(Err("the agent's computer can't be reached".into()));
+        let shown = screen(&mut page);
+        assert!(shown.contains("why log here"), "{shown}");
+        assert!(shown.contains("not saved: the agent's computer"), "{shown}");
+        // Enter tries again.
+        assert!(matches!(
+            press(&mut page, KeyCode::Enter),
+            ReviewAction::Edit { .. }
+        ));
+    }
+
+    /// A file's head alone is the whole file; Enter on a draft edits it by
+    /// its id, and emptied it deletes it; a sent comment is not edited.
+    #[test]
+    fn whole_files_drafts_and_sent_comments() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        page.show_file("src/store.rs");
+        press(&mut page, KeyCode::Char('c'));
+        type_words(&mut page, "split this file");
+        let action = press(&mut page, KeyCode::Enter);
+        let lines = put(&action).anchor.as_ref().unwrap().lines.unwrap();
+        assert_eq!((lines.start, lines.end), (0, 0));
+        page.edited(Ok(()));
+
+        down_to(&mut page, "c/64726166742d6f70656e");
+        press(&mut page, KeyCode::Enter);
+        for _ in 0.."open_with_flags creates the file.".len() {
+            press(&mut page, KeyCode::Backspace);
+        }
+        type_words(&mut page, "it creates the file.");
+        let action = press(&mut page, KeyCode::Enter);
+        assert_eq!(put(&action).id, b"draft-open");
+        assert!(put(&action).text.ends_with("it creates the file."));
+        page.edited(Ok(()));
+
+        press(&mut page, KeyCode::Enter);
+        for _ in 0..200 {
+            press(&mut page, KeyCode::Backspace);
+        }
+        let ReviewAction::Edit { edits, .. } = press(&mut page, KeyCode::Enter) else {
+            panic!("an emptied draft is deleted");
+        };
+        assert_eq!(
+            edits[0].of,
+            Some(review_edit::Of::Delete(b"draft-open".to_vec()))
+        );
+
+        let mut page = crate::vocabulary::review_since_last();
+        down_to(&mut page, "c/73656e742d6f70656e");
+        assert!(matches!(
+            press(&mut page, KeyCode::Enter),
+            ReviewAction::Notice(_)
+        ));
+        let ReviewAction::Edit { edits, .. } = press(&mut page, KeyCode::Char('d')) else {
+            panic!("d deletes a sent comment");
+        };
+        assert_eq!(
+            edits[0].of,
+            Some(review_edit::Of::Delete(b"sent-open".to_vec()))
+        );
+    }
+
+    /// The next look opens on since your last review; Tab switches to all
+    /// changes, which lists every file, and back.
+    #[test]
+    fn tab_switches_between_the_views() {
+        let mut page = crate::vocabulary::review_since_last();
+        assert_eq!(page.view(), ReviewView::SinceLast);
+        let shown = screen(&mut page);
+        assert!(
+            shown.contains("All changes 3   Since your last review 1"),
+            "{shown}"
+        );
+        assert!(!rows(&page).contains(&"f/src/flags.rs"));
+        press(&mut page, KeyCode::Tab);
+        assert_eq!(page.view(), ReviewView::All);
+        assert!(rows(&page).contains(&"f/src/flags.rs"));
+        assert!(screen(&mut page).contains("review · since main"));
+        press(&mut page, KeyCode::Tab);
+        assert_eq!(page.view(), ReviewView::SinceLast);
+
+        // A first look has one view to show.
+        let mut first = crate::vocabulary::review_drafts_stale();
+        assert!(matches!(
+            press(&mut first, KeyCode::Tab),
+            ReviewAction::Notice(_)
+        ));
+    }
+
+    /// A lock file starts folded; Enter on a head folds or opens it, and
+    /// `f` folds the file the cursor is in from any of its lines.
+    #[test]
+    fn files_fold_and_open() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        let folded = |page: &Page, path: &str| {
+            page.page().rows.iter().any(|row| {
+                matches!(&row.of, ReviewRowOf::File(head) if head.path == path && head.folded)
+            })
+        };
+        assert!(folded(&page, "Cargo.lock"));
+        page.show_file("Cargo.lock");
+        press(&mut page, KeyCode::Enter);
+        assert!(!folded(&page, "Cargo.lock"));
+        assert!(
+            page.to_fetch().contains(&"Cargo.lock".to_owned()),
+            "an opened file is fetched"
+        );
+
+        down_to(&mut page, "l/src/store.rs/0/42");
+        press(&mut page, KeyCode::Char('f'));
+        assert!(folded(&page, "src/store.rs"));
+        assert_eq!(
+            row_key(&page),
+            "f/src/store.rs",
+            "the cursor goes to its head"
+        );
+        assert!(
+            !rows(&page)
+                .iter()
+                .any(|key| key.starts_with("l/src/store.rs"))
+        );
+        press(&mut page, KeyCode::Char('f'));
+        assert!(!folded(&page, "src/store.rs"));
+    }
+
+    /// Enter on a gap asks for the lines up to the definition below it; the
+    /// gap says it is loading, and the answer draws the lines.
+    #[test]
+    fn more_context_loads_into_the_gap() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        down_to(&mut page, "g/src/store.rs/0");
+        let ReviewAction::Context(ask) = press(&mut page, KeyCode::Enter) else {
+            panic!("a gap asks for more lines");
+        };
+        assert_eq!((ask.start, ask.end), (38, 38));
+        assert_eq!(ask.definition.as_deref(), Some("fn open"));
+        assert_eq!(page.asks(), std::slice::from_ref(&ask));
+        assert!(screen(&mut page).contains("loading…"));
+
+        let answer = wire::experimental::ReviewLine {
+            kind: wire::experimental::ReviewLineKind::Context as i32,
+            old_line: 38,
+            new_line: 38,
+            text: "    /// Opens the store under `path`.".into(),
+            runs: Vec::new(),
+        };
+        let mut fetched = page.fetched().clone();
+        fetched.context = vec![(ask, vec![answer])];
+        page.update(fetched);
+        let shown = screen(&mut page);
+        assert!(
+            shown.contains("38       /// Opens the store under `path`."),
+            "{shown}"
+        );
+        assert!(shown.contains("37 lines"), "{shown}");
+
+        // `e` on the gap after the first hunk reads downward.
+        down_to(&mut page, "g/src/store.rs/44");
+        let ReviewAction::Context(down) = press(&mut page, KeyCode::Char('e')) else {
+            panic!("e asks downward");
+        };
+        assert_eq!(down.start, 45);
+    }
+
+    /// Discarding drafts and starting over each ask first; going ahead is
+    /// one edit, and starting over opens the review again after it.
+    #[test]
+    fn discard_drafts_and_start_over_ask_first() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        assert_eq!(press(&mut page, KeyCode::Char('D')), ReviewAction::None);
+        assert!(screen(&mut page).contains("Discard your draft comment?"));
+        assert_eq!(press(&mut page, KeyCode::Esc), ReviewAction::None);
+        assert!(!screen(&mut page).contains("Discard your draft comment?"));
+        press(&mut page, KeyCode::Char('D'));
+        assert_eq!(
+            press(&mut page, KeyCode::Enter),
+            ReviewAction::Edit {
+                edits: vec![wire::experimental::ReviewEdit {
+                    of: Some(review_edit::Of::DiscardDrafts(wire::Empty {})),
+                }],
+                reopen: false,
+            }
+        );
+
+        press(&mut page, KeyCode::Char('S'));
+        assert!(screen(&mut page).contains("Start the review over?"));
+        // Cancel is a key away, and Enter presses it there.
+        press(&mut page, KeyCode::Right);
+        assert_eq!(press(&mut page, KeyCode::Enter), ReviewAction::None);
+        press(&mut page, KeyCode::Char('S'));
+        assert_eq!(
+            press(&mut page, KeyCode::Enter),
+            ReviewAction::Edit {
+                edits: vec![wire::experimental::ReviewEdit {
+                    of: Some(review_edit::Of::StartOver(wire::Empty {})),
+                }],
+                reopen: true,
+            }
+        );
+
+        let mut empty = crate::vocabulary::review_empty();
+        assert!(matches!(
+            press(&mut empty, KeyCode::Char('D')),
+            ReviewAction::Notice(_)
+        ));
+    }
+
+    /// The page says the tree moved, and `r` refreshes; an outdated comment
+    /// opens and folds with Enter.
+    #[test]
+    fn refresh_and_outdated_comments() {
+        let mut page = crate::vocabulary::review_drafts_stale();
+        assert!(screen(&mut page).contains("Changed since you started"));
+        assert_eq!(
+            press(&mut page, KeyCode::Char('r')),
+            ReviewAction::Open { refresh: true }
+        );
+
+        let mut page = crate::vocabulary::review_since_last();
+        let outdated = |page: &Page| {
+            page.page().rows.iter().find_map(|row| match &row.of {
+                ReviewRowOf::Comment(comment) if comment.at == ReviewCommentAt::Outdated => {
+                    Some(comment.folded)
+                }
+                _ => None,
+            })
+        };
+        assert_eq!(outdated(&page), Some(true));
+        down_to(&mut page, "c/73656e742d636c6f7365");
+        press(&mut page, KeyCode::Enter);
+        assert_eq!(outdated(&page), Some(false));
+        assert!(screen(&mut page).contains("sync_all can fail"));
+    }
+
+    /// The composer's chip comes from the agent's row alone, saying how many
+    /// drafts it would send; Enter sends them with the words, even with
+    /// none; its ✕ asks before discarding them.
+    #[test]
+    fn the_chip_follows_the_row() {
+        let mut state = chat(replies(1, 3));
+        let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(!shown.contains("[review"), "{shown}");
+        assert_eq!(view.key(&state, key(KeyCode::Enter), theme()), vec![]);
+
+        let mut agent = state.agent().clone();
+        REVIEW_ROW.put(
+            &mut agent.experimental,
+            &ReviewRowEntry {
+                drafts: 3,
+                counter: 4,
+                moved: false,
+            },
+        );
+        state.update(Msg::Entry(agent.clone()));
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(shown.contains("[review · 3 comments ✕]"), "{shown}");
+        assert!(!shown.contains("code changed since"), "{shown}");
+        assert_eq!(
+            view.key(&state, key(KeyCode::Enter), theme()),
+            vec![ChatEffect::PromptWithReview {
+                text: String::new(),
+                attachments: Vec::new(),
+            }]
+        );
+
+        // Sent, the chip waits for the row to move, so the same drafts do
+        // not go twice while the host marks them.
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(!shown.contains("[review"), "{shown}");
+        assert_eq!(view.key(&state, key(KeyCode::Enter), theme()), vec![]);
+        REVIEW_ROW.put(
+            &mut agent.experimental,
+            &ReviewRowEntry {
+                drafts: 3,
+                counter: 5,
+                moved: true,
+            },
+        );
+        state.update(Msg::Entry(agent.clone()));
+
+        // The ✕ asks first.
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(
+            shown.contains("[review · 3 comments ✕] code changed since"),
+            "{shown}"
+        );
+        let row = shown.lines().position(|line| line.contains("✕]")).unwrap();
+        let line = shown.lines().nth(row).unwrap();
+        let column = crate::text::str_width(&line[..line.find('✕').unwrap()]);
+        use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+        let effects = view.mouse(
+            &state,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: column as u16,
+                row: row as u16,
+                modifiers: KeyModifiers::NONE,
+            },
+            theme(),
+        );
+        assert!(effects.is_empty());
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(shown.contains("Discard your 3 draft comments?"), "{shown}");
+        assert_eq!(
+            view.key(&state, key(KeyCode::Enter), theme()),
+            vec![ChatEffect::ReviewEdit {
+                edits: vec![wire::experimental::ReviewEdit {
+                    of: Some(review_edit::Of::DiscardDrafts(wire::Empty {})),
+                }],
+                reopen: false,
+            }]
+        );
+
+        // The row's drafts gone, the chip goes with them.
+        REVIEW_ROW.put(
+            &mut agent.experimental,
+            &ReviewRowEntry {
+                drafts: 0,
+                counter: 6,
+                moved: false,
+            },
+        );
+        state.update(Msg::Entry(agent));
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(!shown.contains("[review"), "{shown}");
+    }
+
+    /// Open in the chat, the page has the keys: its own back to the chat,
+    /// and its asks turned into the chat's effects.
+    #[test]
+    fn the_page_takes_the_chats_keys_until_it_closes() {
+        let state = chat(replies(1, 3));
+        let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+        let page = view.open_review_page(Some("src/store.rs"));
+        page.update(crate::vocabulary::review_drafts_stale().fetched().clone());
+        page.show_file("src/store.rs");
+        assert_eq!(
+            view.key(&state, key(KeyCode::Char('r')), theme()),
+            vec![ChatEffect::ReviewOpen { refresh: true }]
+        );
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(shown.contains("review · since main"), "{shown}");
+        assert!(!view.opens_help(&state, key(KeyCode::Char('?'))));
+        view.key(&state, key(KeyCode::Char('q')), theme());
+        assert!(!view.review_page_open);
+        let (shown, _) = review_screen(&mut view, &state);
+        assert!(!shown.contains("review · since main"), "{shown}");
+    }
+}
+
 // --- the review page -------------------------------------------------------
 
 const PATCH: &str = "\

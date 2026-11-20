@@ -32,4 +32,32 @@ if [ -z "${ANDROID_HOME:-}" ]; then
 fi
 
 cd "$repo_root/apps/android"
-exec ./gradlew "$@"
+
+# `scripts/bounded` runs Gradle under `timeout`, which moves it into a
+# background process group while keeping stdin on the caller's TTY. On exit
+# Gradle's console restores termios on stdin, triggering SIGTTOU and leaving
+# the wrapper stopped (`T`) after `BUILD SUCCESSFUL`. Detaching stdin prevents
+# that hang, and running Kotlin compilation in-process under `--no-daemon`
+# prevents a detached KotlinCompileDaemon from outliving the invocation.
+no_daemon=0
+has_kotlin_strategy=0
+has_console=0
+for arg in "$@"; do
+    case "$arg" in
+        --no-daemon) no_daemon=1 ;;
+        -Pkotlin.compiler.execution.strategy=*|-Dkotlin.compiler.execution.strategy=*)
+            has_kotlin_strategy=1 ;;
+        --console=*|--console)
+            has_console=1 ;;
+    esac
+done
+
+set -- "$@"
+if [ "$no_daemon" -eq 1 ] && [ "$has_kotlin_strategy" -eq 0 ]; then
+    set -- "$@" -Pkotlin.compiler.execution.strategy=in-process
+fi
+if [ "$has_console" -eq 0 ] && [ ! -t 1 ]; then
+    set -- "$@" --console=plain
+fi
+
+exec ./gradlew "$@" </dev/null

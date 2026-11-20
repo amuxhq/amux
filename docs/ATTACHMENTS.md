@@ -15,8 +15,10 @@ The pieces are:
 - The [`attachments`](../crates/attachments/src/lib.rs) crate: positioned
   text and the `<amux-attachment>` element a model sees.
 - The daemon's blob calls in
-  [`crates/node/src/blobs.rs`](../crates/node/src/blobs.rs): `PutBlob`,
-  `GetBlob` and `GetDiff`.
+  [`crates/node/src/blobs.rs`](../crates/node/src/blobs.rs): `PutBlob` and
+  `GetDiff`, which the agent's own host answers (`AgentService`), and
+  `GetBlob`, which the node a client is attached to answers from its copy
+  (`SessionService`).
 - The review document in
   [`crates/ui-view/src/review.rs`](../crates/ui-view/src/review.rs), drawn by
   the terminal's review page and the phone's.
@@ -170,8 +172,9 @@ draft at the cursor, and the prompt goes out through `SendInput` with the
 reference in its attachments. The terminal attaches a clipboard image or a
 copied file path with Ctrl+V, and both clients turn a paste of eight lines or
 1000 characters into a `text` attachment (`ui_view::pastes_as_attachment`);
-the phone stores bytes with `amux_session_put_blob`. `PutBlob` for another host's agent is forwarded to
-that host, since only the agent's own host writes its directory.
+the phone stores bytes with `amux_session_put_blob`. `PutBlob` for another host's agent is addressed to
+that host and carried there, since only the agent's own host writes its directory; that host holds the
+attachment limit.
 
 **What counts as an image.** One rule, `attachments::native_image`: an
 attachment is an image only if its bytes are PNG, JPEG, GIF or WebP, the
@@ -199,11 +202,12 @@ interpreter decodes the base64 image block, hashes it, and emits a blob write
 with the step; the agent process writes the blob before it journals the step,
 and the tool's item carries the reference. The daemon does nothing at ingest.
 
-**Reading.** `GetBlob(agent, hash)` reads the file whenever a client asks. On
-a host holding a replica, a blob fetched before is read from the replica
-directory; otherwise the call goes to the agent's own host, the bytes are
-checked against the hash, and they are kept under the replica for the next
-reader. So a blob behaves like an item: written locally by the agent side,
+**Reading.** `GetBlob(agent, hash)` reads the file whenever a client asks, from
+the node it is attached to. On a host holding a replica, a blob fetched
+before is read from the replica directory; otherwise the node asks the
+agent's own host for it with `PeerService.GetBlob`, as itself, checks the
+bytes against the hash, and keeps them under the replica for the next
+reader. The client's call is never passed on. So a blob behaves like an item: written locally by the agent side,
 readable once the reference reaches a client, and the agent can keep
 attaching while its daemon is away.
 
@@ -265,7 +269,7 @@ attachments. The `send` tool moves each element the model wrote (the
 file by its path on the sender's host. Before the recipient's daemon hands
 the message to its agent, it puts each file's bytes into the recipient's own
 blobs: copied from the sending agent's directory when both run on that host,
-else fetched with `GetBlob` from the sender's host and checked against the
+else fetched with `PeerService.GetBlob` from the sender's host and checked against the
 hash; a file that cannot be brought refuses the message in words. The
 recipient's interpreter hands the attachments on with the message, and its
 agent process writes each element at its place with the path of the
@@ -293,8 +297,9 @@ that agent:
 
 `GetDiff` answers with the `Diff` value: the patch reference, the base, the head
 commit and, for a branch, the merge base. A client freezes that value when its
-review page opens: `ui_runtime::review::working_tree_review` makes the call
-and fetches the patch, so the review a person sends names the same patch the
+review page opens: `ui_runtime::Session::review` makes the call on the
+agent's host, asked against the base `ui_view::review_base` names, and
+fetches the patch through the node's copy of the agent's files, so the review a person sends names the same patch the
 page showed, however the tree changes afterwards.
 
 The document itself is `ui_view::review_doc(diff, patch, comments)`: it parses

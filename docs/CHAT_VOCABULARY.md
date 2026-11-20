@@ -257,7 +257,7 @@ row or the row failed.
 
 ## Session facts
 
-`overview(state, diff)` returns the `Overview`, what is still in flight around the chat; each part is empty or
+`overview(state, changed)` returns the `Overview`, what is still in flight around the chat; each part is empty or
 `None` when there is nothing to show. The composer's edge reads it folded and the overview reads it whole:
 
 | Field | Shown | claude_pty | claude_sdk | codex |

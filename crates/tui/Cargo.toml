@@ -12,14 +12,16 @@ default = []
 # Named frames over interpreter fixtures, for goldens and screenshots.
 fixtures = []
 
-# Views come from ui-view over the state ui-runtime's drivers keep; the TUI
-# owns layout, keys and ephemeral view state only.
+# Views come from ui-view over the state ui-runtime's drivers keep, and code
+# is coloured by ui-code; the TUI owns layout, keys and ephemeral view state
+# only.
 [dependencies]
 attachments = { workspace = true }
 client = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
 settings = { workspace = true }
+ui-code = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }
 anyhow = { workspace = true }

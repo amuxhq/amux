@@ -667,7 +667,8 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The client library every client calls its node through: the generated stubs over the profile socket, or in memory on the phone. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | The pure session and fleet model clients reduce their streams into, with the thin per-kind layer that decodes snapshot bodies, and the plain values the views and the phone bridge share ([`model.rs`](../crates/ui-state/src/model.rs)), from which the Swift mirrors are generated. |
-| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review page, and code coloured by kind of token for the code each client draws itself. |
+| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review page, and code coloured by kind of token as the values a client draws. No highlighter, so it builds without a C compiler. |
+| [`ui-code`](../crates/ui-code/src/lib.rs) | The colouring of those code values, for the code each client draws itself: a chat's fenced blocks and an edit card's hunks, through `highlight`. Linked by the clients that draw code, not by the browser extension. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The session and fleet drivers: the only place a chat does I/O. |
 
 **Clients and binaries.**
@@ -712,7 +713,7 @@ workspace crates, and ignores dev-dependencies. Its rules:
    `qualification`, `provider-fakes`, `fake-amux`, `shot`, `models` and
    `replay-support` may be depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `client`, `ui-state`,
-   `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
+   `ui-view`, `ui-code`, `ui-runtime`, `tui` and `app-runtime` may not
    reach `node`, `store`, `interpret`, `agent`, `claude-protocol`,
    `codex-protocol` or `pty-host`, directly or through any chain of
    dependencies.
@@ -747,11 +748,11 @@ The allowed sets encode the layering above:
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
 | `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `interpret`, `journal`, `log-file`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the walker that writes a report's core record as its structure, and `redaction` for the table it writes the core's part by; `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
-| `ui-state` → `wire`; `ui-view` → `attachments`, `highlight`, `preview`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; each client colours the code it parses out of a chat through the view layer's highlighting |
-| `tui` | `attachments`, `client`, `settings`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
+| `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-code` → `highlight`, `ui-view`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; `ui-view` holds no highlighter, since tree-sitter's grammars are C and the browser extension builds the views to WebAssembly without a C compiler; each client that draws code colours what it parses out of a chat through `ui-code` |
+| `tui` | `attachments`, `client`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer`, `node`, `ui-state`, `ui-view`, `wire` | the C ABI over both; the installer only off the phone, for a desktop app's first call |
+| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer`, `node`, `ui-code`, `ui-state`, `ui-view`, `wire` | the C ABI over both; the installer only off the phone, for a desktop app's first call |
 | `browser-core` | `attachments`, `ui-state`, `ui-view`, `wire` | the pure client crates, with no runtime, socket or driver, since the extension does its own I/O |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire`, `workspace-core` | the properties, explored over the real cores, store and session state |

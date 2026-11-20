@@ -984,8 +984,8 @@ pub unsafe extern "C" fn amux_highlight_block(
     // SAFETY: the caller's contract.
     let info = unsafe { text(info) }.unwrap_or_default();
     guard(std::ptr::null_mut(), || match code {
-        Some(code) => owned(&ui_view::highlight_block(
-            ui_view::Highlighter::shared(),
+        Some(code) => owned(&ui_code::highlight_block(
+            ui_code::Highlighter::shared(),
             code,
             info,
             streaming,
@@ -1013,8 +1013,8 @@ pub unsafe extern "C" fn amux_highlight_patch(
     // SAFETY: the caller's contract.
     let hunks: Option<Vec<ui_view::PatchHunk>> = unsafe { parse(hunks) };
     guard(std::ptr::null_mut(), || match hunks {
-        Some(hunks) => owned(&ui_view::highlight_patch(
-            ui_view::Highlighter::shared(),
+        Some(hunks) => owned(&ui_code::highlight_patch(
+            ui_code::Highlighter::shared(),
             path,
             &hunks,
         )),

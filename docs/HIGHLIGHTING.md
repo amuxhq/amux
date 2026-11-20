@@ -158,21 +158,28 @@ parsed tree, and keeps both by object id.
 
 ## Where it runs
 
-**The view layer.** `ui_view::highlight_block(highlighter, code, info,
+**The view layer.** `ui_code::highlight_block(highlighter, code, info,
 streaming)` colours a fenced block, its language from the fence's info
-string, and `ui_view::highlight_patch(highlighter, path, hunks)` an edit
+string, and `ui_code::highlight_patch(highlighter, path, hunks)` an edit
 card's hunks as the file at `path` reads
-([`crates/ui-view/src/code.rs`](../crates/ui-view/src/code.rs)). The ask
-card and a landed edit both carry a file's change as hunks, so one function
+([`crates/ui-code/src/lib.rs`](../crates/ui-code/src/lib.rs)). The ask card
+and a landed edit both carry a file's change as hunks, so one function
 serves both. Each hunk is coloured as a fragment of its own, since a block
 comment or string one hunk leaves open does not reach the next; within a
 hunk the old side (context and removed lines) and the new side (context and
 added lines) are coloured apart, so a removed line that opens a string does
-not swallow the added line after it. Both answer `HighlightedCode`, the view
-layer's own serializable value with `settled`, which crosses the bridge as
-JSON. The values are the view layer's rather than the crate's so that the
-crate stays free of serialization and its names never collide with view
-values in the generated Swift.
+not swallow the added line after it. Both answer `HighlightedCode`,
+`ui-view`'s own serializable value with `settled`
+([`crates/ui-view/src/code.rs`](../crates/ui-view/src/code.rs)), which
+crosses the bridge as JSON. The values are the view layer's rather than
+`highlight`'s so that `highlight` stays free of serialization and its names
+never collide with view values in the generated Swift. The functions are in
+`ui-code` rather than `ui-view` so that a client that draws no code links no
+tree-sitter: the browser extension builds `ui-view` to WebAssembly for its
+agent picker with no C compiler
+([browser](BROWSER.md#webassembly-is-optional)). `ui-code` depends on
+`ui-view`, never the reverse, and the clients that draw code (the terminal,
+the bridge and `shot`) depend on both.
 
 **The terminal** colours every piece of code it draws through
 [`crates/tui/src/code.rs`](../crates/tui/src/code.rs), with the shared
@@ -248,7 +255,8 @@ the grammar list.
 | --- | --- | --- |
 | A snippet per language with chosen tokens' kinds; fence words, extensions, names and `#!` lines; diff prefixes; a grammar plain until its held build runs; HTML waiting for JavaScript and CSS; the content cache; the streaming throttle with held jobs and stepped instants; every query compiles | [`crates/highlight/src/tests.rs`](../crates/highlight/src/tests.rs), `language.rs` | `just test-crate highlight` |
 | Each language's definitions against its sample file: labels, kinds, lines, parents, chains and outlines | [`crates/highlight/src/definitions/tests.rs`](../crates/highlight/src/definitions/tests.rs) | `just test-crate highlight` |
-| A block plain until its grammar is built, unknown and diff fences, streaming, both sides of a hunk coloured apart, hunks coloured apart, a script's later hunks, the JSON shape | `crates/ui-view/src/code.rs` | `just test-crate ui-view` |
+| A block plain until its grammar is built, unknown and diff fences, streaming, both sides of a hunk coloured apart, hunks coloured apart, a script's later hunks | [`crates/ui-code/src/lib.rs`](../crates/ui-code/src/lib.rs) | `just test-crate ui-code` |
+| The JSON shape of `HighlightedCode` | `crates/ui-view/src/code.rs` | `just test-crate ui-view` |
 | Which fenced block is still open, a streaming message keeping only settled renders, tokens over diff tints; every token kind readable on every surface (`code_reads_on_every_surface_it_is_drawn_on`) | `crates/tui/src/` | `just test-tui` |
 | The bridge's answers (`code_is_coloured_by_the_shared_view`) | [`crates/app-ffi/src/tests.rs`](../crates/app-ffi/src/tests.rs) | `just test-crate app-ffi` |
 | The Swift side: `CodeHighlightingTests`, `MarkdownTests` and the phone palette's `SyntaxContrastTests`; the Mac palette's `SyntaxContrast` | `apps/apple/` | `just ios unit`, `just mac test` |

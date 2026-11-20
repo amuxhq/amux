@@ -3495,15 +3495,13 @@ fn a_multi_file_patch_ask_names_every_file_and_its_change() {
     }
 }
 
-/// An edit ask's separate places in the file are coloured apart: a block
-/// comment that one replacement of a Claude edit, or one hunk of a Codex
-/// patch, leaves open does not colour the next, as it would were the two
-/// read as one stretch of code.
+/// An edit ask's separate places in the file are hunks of their own: one
+/// replacement of a Claude edit, or one hunk of a Codex patch, each, so the
+/// code a client colours (`ui-code`, which colours each hunk as a fragment
+/// of its own) does not read a block comment the first leaves open into the
+/// next.
 #[test]
-fn an_edit_asks_hunks_are_coloured_apart() {
-    let queue = HeldJobs::default();
-    let highlighter = queue.highlighter();
-    highlighter.prepare(highlight::Language::Rust);
+fn an_edit_asks_places_are_hunks_of_their_own() {
     let path = format!("{QA_CWD}/src/lib.rs");
     let claude = card_of(
         Kind::ClaudeSdk,
@@ -3537,34 +3535,28 @@ fn an_edit_asks_hunks_are_coloured_apart() {
         }],
     );
     for (who, card) in [("claude", claude), ("codex", codex)] {
-        let AskBody::Edit { path, patch, .. } = &card.body else {
+        let AskBody::Edit { patch, .. } = &card.body else {
             panic!("{who}: not an edit card: {:?}", card.body);
         };
         let [file] = patch.as_slice() else {
             panic!("{who}: one file: {patch:?}");
         };
-        assert_eq!(file.hunks.len(), 2, "{who}: each place is its own hunk");
-        let lines: Vec<PatchLine> = file
+        let texts: Vec<Vec<&str>> = file
             .hunks
             .iter()
-            .flat_map(|hunk| hunk.lines.clone())
+            .map(|hunk| {
+                hunk.lines
+                    .iter()
+                    .filter(|line| line.kind == LineKind::Added)
+                    .map(|line| line.text.as_str())
+                    .collect()
+            })
             .collect();
-        let far = lines
-            .iter()
-            .position(|line| line.text == "fn far() {}")
-            .expect("the second place's added line");
-        let keyword = |code: &HighlightedCode| {
-            code.lines[far]
-                .iter()
-                .any(|run| run.text == "fn" && run.kind == TokenKind::Keyword)
-        };
-        let code = highlight_patch(&highlighter, path, &file.hunks);
-        assert!(code.settled);
-        assert_eq!(code.lines.len(), lines.len(), "{who}: a line for each");
-        assert!(keyword(&code), "{who}: {:?}", code.lines);
-        // Read as one stretch, the second place would be inside the comment.
-        let joined = highlight_patch(&highlighter, path, &[PatchHunk { start: None, lines }]);
-        assert!(!keyword(&joined), "{who}: the test no longer tells");
+        assert_eq!(
+            texts,
+            [vec!["/* opened here"], vec!["fn far() {}"]],
+            "{who}: each place is its own hunk"
+        );
     }
 }
 

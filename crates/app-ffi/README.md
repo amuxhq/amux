@@ -208,7 +208,8 @@ already holds: `amux_agent_name_problem` (why a name cannot name an agent),
 from a host's catalogue), and `amux_form_problems` (each field's
 `FieldProblem` for a form's `FormField`s and the `FormValue`s entered).
 
-Code is coloured the same way, by the shared view's highlighting:
+Code is coloured the same way, by the shared view's highlighting
+(`ui-code`, beside `ui-view`):
 `amux_highlight_block(code, info, streaming)` for a fenced block of an
 agent's markdown, which the app parses itself, and
 `amux_highlight_patch(path, hunks)` for one file's `[PatchHunk]` in an edit

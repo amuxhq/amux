@@ -1703,7 +1703,7 @@ fn the_composers_rules_come_from_the_shared_view() {
 fn code_is_coloured_by_the_shared_view() {
     // Grammars build in the background on first use; built here, every
     // answer is settled and coloured.
-    ui_view::Highlighter::shared().preload();
+    ui_code::Highlighter::shared().preload();
     let code = c("fn main() {}\n// done\n");
     let info = c("rust title=main.rs");
     // SAFETY: the strings live for the call.

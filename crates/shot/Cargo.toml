@@ -12,6 +12,7 @@ tui = { workspace = true, features = ["fixtures"] }
 # the client itself never links.
 interpret = { workspace = true }
 settings = { workspace = true }
+ui-code = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }

@@ -57,7 +57,7 @@ const SIZES: [(u16, u16); 3] = [(80, 24), (110, 34), (60, 24)];
 
 fn main() -> anyhow_free::Result {
     let cli = Cli::parse();
-    ui_view::Highlighter::shared().preload();
+    ui_code::Highlighter::shared().preload();
     match cli.command {
         Some(Capture::Capture { out, only }) => capture(&out, only.as_deref()),
         None => browse(cli.story, cli.watch),

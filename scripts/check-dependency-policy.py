@@ -74,9 +74,14 @@ ALLOWED_LOCAL = {
     # phone bridge share, from which the Swift mirrors are generated. Those
     # hold the wire's own enums (a refusal reason) rather than copies.
     "ui-state": {"wire"},
-    # highlight: each client colours the code it parses out of a chat
-    # itself, through the view layer's highlighting functions.
-    "ui-view": {"attachments", "highlight", "preview", "ui-state", "wire"},
+    # The view values, code coloured by kind of token among them, with no
+    # highlighter: tree-sitter's grammars are C, and a client that draws no
+    # code (the browser extension) builds the views without a C compiler.
+    "ui-view": {"attachments", "preview", "ui-state", "wire"},
+    # The colouring of those values: each client colours the code it parses
+    # out of a chat itself, and an edit card's hunks, through these
+    # functions.
+    "ui-code": {"highlight", "ui-view"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
     # The browser extension's WebAssembly: the pure client crates, with no
     # runtime, socket or driver, since the extension does its own I/O.
@@ -88,10 +93,11 @@ ALLOWED_LOCAL = {
     # The C ABI over both.
     # The installer only off the phone, for a desktop app's first call.
     "app-ffi": {
-        "app-embedded", "app-runtime", "client", "installer", "node", "ui-state", "ui-view", "wire",
+        "app-embedded", "app-runtime", "client", "installer", "node", "ui-code", "ui-state", "ui-view",
+        "wire",
     },
     # The terminal client composes the views over the drivers' state.
-    "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "tui": {"attachments", "client", "settings", "ui-code", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},
@@ -121,7 +127,7 @@ CORES_ALLOWED_LOCAL = {
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
-UI_CRATES = {"client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
+UI_CRATES = {"client", "ui-state", "ui-view", "ui-code", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
     "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
 }
@@ -174,7 +180,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
-    "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
+    "shot": {"interpret", "settings", "tui", "ui-code", "ui-state", "ui-view", "wire"},
     # Replays a report's records with the models' properties judged at every
     # step: the daemon core from its checkpoint over its store, and each
     # chat's record through the session model. A debugging tool: nothing

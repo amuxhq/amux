@@ -44,6 +44,7 @@ members = [
     "crates/testnet",
     "crates/tui",
     "crates/ui-runtime",
+    "crates/ui-code",
     "crates/ui-state",
     "crates/ui-view",
     "crates/release",
@@ -88,6 +89,7 @@ preview = { path = "crates/preview" }
 git-facts = { path = "crates/git-facts" }
 highlight = { path = "crates/highlight" }
 ui-runtime = { path = "crates/ui-runtime" }
+ui-code = { path = "crates/ui-code" }
 ui-state = { path = "crates/ui-state" }
 ui-view = { path = "crates/ui-view" }
 tui = { path = "crates/tui" }

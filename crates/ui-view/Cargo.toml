@@ -9,7 +9,6 @@ autotests = false
 
 [dependencies]
 attachments = { workspace = true }
-highlight = { workspace = true }
 preview = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

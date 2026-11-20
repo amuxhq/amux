@@ -35,7 +35,7 @@ pub use ask::{
 pub use attachments::PLACEHOLDER;
 pub use attachments::sent_review;
 pub use changed_words::*;
-pub use code::{CodeRun, HighlightedCode, LineKind, TokenKind, highlight_block, highlight_patch};
+pub use code::{CodeRun, HighlightedCode, LineKind, TokenKind};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
@@ -51,10 +51,6 @@ pub use form::{
     FieldProblem, FormField, FormFieldKind, FormProblem, FormValue, form_answer, form_fields,
     form_problems,
 };
-/// What the code functions highlight with: a client passes the one the
-/// process shares, [`Highlighter::shared`], and a test one built on
-/// [`HeldJobs`], whose background work it runs when it chooses.
-pub use highlight::{HeldJobs, Highlighter};
 pub use onboarding::{OnboardingView, SetupStep, next_step, onboarding_view, step_open};
 pub use overview::{
     ChangeTotals, ChangedFile, Changes, Comparison, FileStatus, Folder, JobRow, JobStop, Overview,

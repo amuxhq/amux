@@ -280,6 +280,7 @@ dependencies = [
  "tempfile",
  "testnet",
  "tokio",
+ "ui-code",
  "ui-state",
  "ui-view",
  "wire",
@@ -4030,6 +4031,7 @@ dependencies = [
  "settings",
  "thiserror 2.0.20",
  "tui",
+ "ui-code",
  "ui-state",
  "ui-view",
  "wire",
@@ -5008,6 +5010,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tower",
+ "ui-code",
  "ui-runtime",
  "ui-state",
  "ui-view",
@@ -5039,6 +5042,14 @@ name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "ui-code"
+version = "0.1.0"
+dependencies = [
+ "highlight",
+ "ui-view",
+]
 
 [[package]]
 name = "ui-runtime"
@@ -5079,7 +5090,6 @@ name = "ui-view"
 version = "0.1.0"
 dependencies = [
  "attachments",
- "highlight",
  "interpret",
  "preview",
  "proptest",

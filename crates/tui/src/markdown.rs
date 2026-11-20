@@ -1242,7 +1242,7 @@ mod tests {
     fn a_streaming_message_streams_only_its_open_block() {
         // The background work is held and run here, so what each frame
         // shows does not hang on a thread's speed.
-        let held = ui_view::HeldJobs::default();
+        let held = ui_code::HeldJobs::default();
         crate::code::draw_with(held.highlighter());
         let theme = Theme::default();
         let keyword = theme.syntax(ui_view::TokenKind::Keyword);

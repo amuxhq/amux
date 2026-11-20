@@ -14,7 +14,8 @@
 use std::cell::{Cell, RefCell};
 
 use ratatui::style::Style;
-use ui_view::{CodeRun, HighlightedCode, Highlighter, PatchHunk};
+use ui_code::Highlighter;
+use ui_view::{CodeRun, HighlightedCode, PatchHunk};
 
 use crate::theme::Theme;
 
@@ -42,7 +43,7 @@ pub(crate) fn highlighter() -> Highlighter {
 }
 
 /// Draws this thread's code with `highlighter` from now on: for a test,
-/// one built on [`ui_view::HeldJobs`].
+/// one built on [`ui_code::HeldJobs`].
 #[cfg(test)]
 pub(crate) fn draw_with(highlighter: Highlighter) {
     HIGHLIGHTER.with(|held| *held.borrow_mut() = highlighter);
@@ -61,9 +62,9 @@ fn noted(code: HighlightedCode) -> Vec<Vec<CodeRun>> {
 
 /// A code block's lines as styled runs, and whether they are settled.
 /// `streaming` is for the block still being written; see
-/// [`ui_view::highlight_block`].
+/// [`ui_code::highlight_block`].
 pub(crate) fn block(code: &str, info: &str, streaming: bool, theme: Theme) -> (Vec<Runs>, bool) {
-    let highlighted = ui_view::highlight_block(&highlighter(), code, info, streaming);
+    let highlighted = ui_code::highlight_block(&highlighter(), code, info, streaming);
     let settled = highlighted.settled;
     let lines = noted(highlighted)
         .into_iter()
@@ -81,9 +82,9 @@ pub(crate) fn block(code: &str, info: &str, streaming: bool, theme: Theme) -> (V
 
 /// A file's change's code, for an edit card or a landed edit's head: one
 /// line for each of its hunks' lines, hunk after hunk; see
-/// [`ui_view::highlight_patch`].
+/// [`ui_code::highlight_patch`].
 pub(crate) fn patch(path: &str, hunks: &[PatchHunk]) -> Vec<Vec<CodeRun>> {
-    noted(ui_view::highlight_patch(&highlighter(), path, hunks))
+    noted(ui_code::highlight_patch(&highlighter(), path, hunks))
 }
 
 /// A diff line's runs in the line's style, each token in its colour.
@@ -164,7 +165,7 @@ mod tests {
     /// and a landed edit's patch.
     #[test]
     fn an_edit_still_being_coloured_asks_for_another_frame() {
-        let held = ui_view::HeldJobs::default();
+        let held = ui_code::HeldJobs::default();
         draw_with(held.highlighter());
         let theme = Theme::default();
         let line = |number, kind, text: &str| PatchLine {

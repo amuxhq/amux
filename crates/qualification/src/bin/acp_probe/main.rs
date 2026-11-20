@@ -3,12 +3,16 @@
 //! sanitizes a capture into the ACP corpus.
 //!
 //! Run in place of an agent, it starts the real agent and carries its
-//! stdin, stdout and stderr through unchanged, recording each JSON-RPC
-//! line as the corpus records it (`stdin` for what the client sent,
+//! stdin, stdout and stderr through byte for byte, recording each
+//! newline-framed line (as text, invalid UTF-8 replaced, a CR before the
+//! newline dropped) as the corpus records it (`stdin` for what the client sent,
 //! `stdout` for what the agent sent) in `$ACP_CAPTURE_DIR/io.jsonl`, the
 //! process's command and folder in `spawn.jsonl`, and the agent's stderr
 //! in `stderr.jsonl` (kept for reading, never joined). Every line carries
 //! the proxy's `process` id, so one capture folder can hold many runs.
+//! The files are opened before the agent starts, and a line that cannot be
+//! recorded ends the run with a failure. When the agent exits the probe
+//! exits with its status, whether or not the client has closed its stdin.
 //!
 //! It knows nothing of any one agent. The real command is, in order:
 //! `$ACP_REAL_PATH` with every argument the probe was given (a host that
@@ -18,13 +22,14 @@
 //! PATH), the next program of that name on the PATH past the probe.
 
 use std::ffi::OsString;
-use std::io::Write as _;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use qualification::recording::{acp, live};
-use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWriteExt as _, BufReader};
 
 /// Names the folder a capture is written to; without it the probe refuses
 /// to run, so an agent is never driven unrecorded by mistake.
@@ -66,17 +71,17 @@ fn main() -> ExitCode {
         eprintln!("acp-probe: {CAPTURE_DIR} is not set\n{USAGE}");
         return ExitCode::from(2);
     };
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime");
-    match runtime.block_on(capture(program, args, dir)) {
-        Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+    // Exited explicitly, with the agent's status: the thread reading the
+    // client's stdin may still be blocked in a read.
+    let code = match capture(program, args, dir) {
+        Ok(code) => code,
         Err(error) => {
             eprintln!("acp-probe: {error}");
-            ExitCode::FAILURE
+            1
         }
-    }
+    };
+    let _ = std::io::stdout().flush();
+    std::process::exit(code)
 }
 
 /// The program to run and its arguments, as the module comment orders them.
@@ -111,35 +116,73 @@ fn real_command(args: Vec<OsString>) -> Result<(OsString, Vec<OsString>), String
     Ok((real.into_os_string(), args))
 }
 
+/// How often the probe looks at whether the agent has exited.
+const POLL: Duration = Duration::from_millis(20);
+/// How long the agent's output may keep flowing after it exits (a process
+/// it left behind holding its stdout) before the probe stops waiting.
+const DRAIN: Duration = Duration::from_secs(2);
+
+/// One of the capture's files, opened before the agent starts so a capture
+/// that cannot be written never runs the agent.
+#[derive(Clone)]
+struct Log(Arc<Mutex<File>>);
+
+impl Log {
+    fn open(path: &Path) -> std::io::Result<Log> {
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        Ok(Log(Arc::new(Mutex::new(file))))
+    }
+
+    /// Appends one row in a single write, so probes sharing the folder
+    /// never interleave.
+    fn append(&self, row: &serde_json::Value) -> std::io::Result<()> {
+        let mut file = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        file.write_all(format!("{row}\n").as_bytes())
+    }
+}
+
 #[derive(Clone)]
 struct Recorder {
-    dir: PathBuf,
-    process: String,
+    log: Log,
+    direction: &'static str,
+    process: Arc<str>,
     started: Instant,
+    /// The first failure to record, which ends the run: a capture that
+    /// silently lost frames would pass for a complete one.
+    failed: Arc<Mutex<Option<String>>>,
 }
 
 impl Recorder {
-    /// One recorded line, written in a single append so proxies sharing the
-    /// folder never interleave.
-    fn record(&self, file: &str, direction: &str, line: &str) {
+    fn record(&self, line: &[u8]) -> bool {
+        // The record frames lines; a CR before the newline is the line
+        // ending's, not the message's.
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
         let row = serde_json::json!({
             "us": self.started.elapsed().as_micros() as u64,
-            "dir": direction,
-            "line": line,
+            "dir": self.direction,
+            "line": String::from_utf8_lossy(line),
             "transport_id": acp::CLIENT,
-            "process": self.process,
+            "process": &*self.process,
         });
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(self.dir.join(file))
-        {
-            let _ = file.write_all(format!("{row}\n").as_bytes());
+        match self.log.append(&row) {
+            Ok(()) => true,
+            Err(error) => {
+                let mut failed = self
+                    .failed
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                failed
+                    .get_or_insert_with(|| format!("recording a {} line: {error}", self.direction));
+                false
+            }
         }
     }
 }
 
-async fn capture(
+fn capture(
     program: OsString,
     args: Vec<OsString>,
     dir: PathBuf,
@@ -151,94 +194,122 @@ async fn capture(
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
     );
     let started = Instant::now();
-    let spawn = serde_json::json!({
+    let open =
+        |name: &str| Log::open(&dir.join(name)).map_err(|error| format!("opening {name}: {error}"));
+    let (spawns, io, errors) = (
+        open("spawn.jsonl")?,
+        open("io.jsonl")?,
+        open("stderr.jsonl")?,
+    );
+    spawns.append(&serde_json::json!({
         "us": 0,
         "transport_id": process,
         "process": process,
         "command": program.to_string_lossy(),
         "argv": args.iter().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>(),
         "cwd": std::env::current_dir()?,
-    });
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("spawn.jsonl"))?
-        .write_all(format!("{spawn}\n").as_bytes())?;
-    let recorder = Recorder {
-        dir,
-        process,
+    }))?;
+    let failed = Arc::new(Mutex::new(None));
+    let recorder = |log: &Log, direction| Recorder {
+        log: log.clone(),
+        direction,
+        process: process.as_str().into(),
         started,
+        failed: failed.clone(),
     };
 
-    let mut child = tokio::process::Command::new(&program)
+    let mut child = std::process::Command::new(&program)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("starting {}: {error}", program.to_string_lossy()))?;
-    let mut to_agent = child.stdin.take().ok_or("no stdin")?;
+    let to_agent = child.stdin.take().ok_or("no stdin")?;
     let from_agent = child.stdout.take().ok_or("no stdout")?;
     let agent_errors = child.stderr.take().ok_or("no stderr")?;
 
-    // The client's lines, carried to the agent. When the client closes its
-    // end the agent's is closed too: an ACP agent ends when its stdin does.
-    let input = tokio::spawn({
-        let recorder = recorder.clone();
-        async move {
-            let mut lines = BufReader::new(tokio::io::stdin()).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                recorder.record("io.jsonl", "stdin", &line);
-                if to_agent
-                    .write_all(format!("{line}\n").as_bytes())
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                let _ = to_agent.flush().await;
-            }
+    // Plain threads, each carrying one stream as it comes. The one reading
+    // the client is never joined: it may sit in a read of a stdin the
+    // client holds open after the agent has gone, and the probe still has
+    // to exit then, with the agent's status.
+    {
+        let recorder = recorder(&io, "stdin");
+        std::thread::spawn(move || carry(std::io::stdin().lock(), to_agent, &recorder));
+    }
+    let output = {
+        let recorder = recorder(&io, "stdout");
+        std::thread::spawn(move || carry(from_agent, std::io::stdout().lock(), &recorder))
+    };
+    let errors = {
+        let recorder = recorder(&errors, "stderr");
+        std::thread::spawn(move || carry(agent_errors, std::io::stderr().lock(), &recorder))
+    };
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
         }
-    });
-    let output = tokio::spawn(carry(
-        from_agent,
-        tokio::io::stdout(),
-        recorder.clone(),
-        "io.jsonl",
-        "stdout",
-    ));
-    let errors = tokio::spawn(carry(
-        agent_errors,
-        tokio::io::stderr(),
-        recorder,
-        "stderr.jsonl",
-        "stderr",
-    ));
-    let status = child.wait().await?;
-    // The client may hold its end open until the agent is gone.
-    input.abort();
-    let _ = output.await;
-    let _ = errors.await;
-    Ok(status.code().unwrap_or(1))
+        if failed.lock().unwrap_or_else(|p| p.into_inner()).is_some() {
+            let _ = child.kill();
+            break child.wait()?;
+        }
+        std::thread::sleep(POLL);
+    };
+    let drained = Instant::now() + DRAIN;
+    while !(output.is_finished() && errors.is_finished()) && Instant::now() < drained {
+        std::thread::sleep(POLL);
+    }
+    if let Some(error) = failed.lock().unwrap_or_else(|p| p.into_inner()).take() {
+        return Err(error.into());
+    }
+    Ok(code_of(status))
 }
 
-/// Carries one of the agent's output streams to ours line by line,
-/// recording each line in `file`.
-async fn carry(
-    from: impl AsyncRead + Unpin,
-    mut to: impl tokio::io::AsyncWrite + Unpin,
-    recorder: Recorder,
-    file: &'static str,
-    direction: &'static str,
-) {
-    let mut lines = BufReader::new(from).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        recorder.record(file, direction, &line);
-        if to.write_all(format!("{line}\n").as_bytes()).await.is_err() {
+/// The exit code the probe passes on: the agent's, or for an agent ended by
+/// a signal, the shell's 128 plus the signal.
+fn code_of(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt as _;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    1
+}
+
+/// Carries one stream byte for byte, as it arrives, and records it framed
+/// on newlines. A final line without one is recorded when the stream ends.
+fn carry(mut from: impl Read, mut to: impl Write, recorder: &Recorder) {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut pending = Vec::new();
+    loop {
+        let read = match from.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => read,
+        };
+        let chunk = &buffer[..read];
+        let mut rest = chunk;
+        while let Some(at) = rest.iter().position(|byte| *byte == b'\n') {
+            pending.extend_from_slice(&rest[..at]);
+            if !recorder.record(&pending) {
+                return;
+            }
+            pending.clear();
+            rest = &rest[at + 1..];
+        }
+        pending.extend_from_slice(rest);
+        if to.write_all(chunk).and_then(|()| to.flush()).is_err() {
             break;
         }
-        let _ = to.flush().await;
     }
+    if !pending.is_empty() {
+        recorder.record(&pending);
+    }
+    // Dropping `to` closes it: the agent's stdin, once the client's ends.
 }
 
 /// `join <capture dir> <name> <provider>`: the capture, sanitized, as

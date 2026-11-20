@@ -96,6 +96,10 @@ pub const AGENTS: &[Agent] = &[
 ];
 
 const DRIVEN_BY: &str = "the scripted ACP client, in the live qualification lane";
+/// What a scenario's error starts with when it stopped before spending
+/// anything it should not (the agent would not take the cheap model), so
+/// the run is not_run rather than fail.
+pub const SKIPPED: &str = "skipped: ";
 /// How long a whole scenario may take before it is a hang.
 const SCENARIO: Duration = Duration::from_secs(480);
 
@@ -272,13 +276,22 @@ async fn run(agent: &Agent, scenario: Scenario) -> (Verdict, Notes) {
     }
     let verdict = match tokio::time::timeout(SCENARIO, scenario.run(&cx, &mut notes)).await {
         Ok(Ok(verdict)) => verdict,
-        Ok(Err(error)) => Verdict::Fail(error),
+        Ok(Err(error)) => match error.strip_prefix(SKIPPED) {
+            Some(why) => Verdict::NotRun(why.to_owned()),
+            None => Verdict::Fail(error),
+        },
         Err(_) => Verdict::Fail(format!("the scenario took over {}s", SCENARIO.as_secs())),
     };
-    if matches!(verdict, Verdict::NotRun(_)) {
+    // Only a run that went to its end joins: a failed one never replaces a
+    // complete recording, and its capture stays where it was written for
+    // diagnosis.
+    if !matches!(verdict, Verdict::Pass | Verdict::Finding) {
+        if capture.join("spawn.jsonl").is_file() {
+            notes.add(format!("capture kept, not joined: {}", capture.display()));
+        }
         return (verdict, notes);
     }
-    if capture.join("spawn.jsonl").is_file() {
+    {
         let mut extra = serde_json::Map::new();
         extra.insert("scenario".into(), scenario.describe().into());
         if let Some(asking) = agent.asking.filter(|_| scenario.asks()) {
@@ -297,9 +310,6 @@ async fn run(agent: &Agent, scenario: Scenario) -> (Verdict, Notes) {
                 }),
             );
         }
-        if let Verdict::Fail(why) = &verdict {
-            extra.insert("incomplete".into(), why.clone().into());
-        }
         match qualification::recording::acp::join(
             &capture,
             &qualification::recording::acp::corpus_root(),
@@ -309,7 +319,17 @@ async fn run(agent: &Agent, scenario: Scenario) -> (Verdict, Notes) {
             extra,
         ) {
             Ok(destination) => notes.add(format!("joined as {}", short(&destination))),
-            Err(error) => notes.add(format!("not joined: {error}")),
+            // A run whose recording cannot join has not produced what the
+            // lane exists for.
+            Err(error) => {
+                return (
+                    Verdict::Fail(format!(
+                        "not joined ({error}); capture kept at {}",
+                        capture.display()
+                    )),
+                    notes,
+                );
+            }
         }
     }
     (verdict, notes)

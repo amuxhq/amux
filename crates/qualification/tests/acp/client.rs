@@ -26,12 +26,15 @@ pub enum Permission {
 }
 
 impl Permission {
-    /// The option kinds this answer picks, best first.
+    /// The option kinds this answer picks, best first. A one-time answer
+    /// never widens to an "always" one: under the owner's real login that
+    /// would leave a rule behind no scenario asked for. Where the agent
+    /// offers no such option the request is cancelled instead.
     fn kinds(self) -> &'static [&'static str] {
         match self {
-            Permission::AllowOnce => &["allow_once", "allow_always"],
+            Permission::AllowOnce => &["allow_once"],
             Permission::AllowAlways => &["allow_always", "allow_once"],
-            Permission::RejectOnce => &["reject_once", "reject_always"],
+            Permission::RejectOnce => &["reject_once"],
         }
     }
 }
@@ -39,6 +42,11 @@ impl Permission {
 /// One agent process, with its probe in front of it.
 pub struct Conn {
     child: Child,
+    /// The probe's process group, which is its own pid. Kept from the
+    /// start: once the child is reaped tokio no longer knows its pid, and
+    /// the agent it started may still be running in the group.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    group: Option<u32>,
     stdin: Option<ChildStdin>,
     incoming: mpsc::UnboundedReceiver<Value>,
     next_id: u64,
@@ -114,6 +122,7 @@ impl Conn {
             }
         });
         Ok(Conn {
+            group: child.id(),
             child,
             stdin,
             incoming,
@@ -271,7 +280,7 @@ impl Conn {
 
     fn kill_group(&mut self) {
         #[cfg(unix)]
-        if let Some(pid) = self.child.id() {
+        if let Some(pid) = self.group {
             // SAFETY: signalling a process group this client created.
             unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
         }

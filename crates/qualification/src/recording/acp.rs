@@ -96,6 +96,16 @@ pub fn join(
     driven_by: &str,
     extra: serde_json::Map<String, Value>,
 ) -> Result<PathBuf, Box<dyn Error>> {
+    // The name becomes a folder this replaces whole, so it must be one
+    // plain folder name inside the corpus and nothing that reaches out.
+    let mut parts = Path::new(name).components();
+    if !matches!(
+        (parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(part)), None) if part == std::ffi::OsStr::new(name)
+    ) || name.starts_with('.')
+    {
+        return Err(format!("{name:?} is not a recording name (one plain folder name)").into());
+    }
     let spawns = read_rows(&capture.join("spawn.jsonl"))?;
     let rows = read_rows(&capture.join("io.jsonl"))?;
     let ordinals: BTreeMap<String, String> = spawns
@@ -122,6 +132,7 @@ pub fn join(
         let mut line = row["line"].as_str().unwrap_or_default().to_owned();
         if let Ok(mut frame) = serde_json::from_str::<Value>(&line) {
             account.personal_identifiers += scrub_account(&mut frame).personal_identifiers;
+            scrub_pairs(&mut frame, &rules, &mut account);
             line = frame.to_string();
         }
         events.push(IoEvent {
@@ -190,6 +201,13 @@ pub fn join(
         .provider_extra
         .insert("driven_by".to_owned(), driven_by.into());
     manifest.provider_extra.extend(extra);
+    // What the lane notes about a run (an agent's error, the environment it
+    // was started with) is redacted like the traffic.
+    let mut notes = Value::Object(std::mem::take(&mut manifest.provider_extra));
+    redaction::redact_value(&mut notes, &rules, &mut manifest.redaction);
+    if let Value::Object(notes) = notes {
+        manifest.provider_extra = notes;
+    }
     write_manifest(&stage.join("manifest.json"), &manifest)?;
     load_recording(&stage)?;
 
@@ -212,6 +230,76 @@ pub fn scrub_account(frame: &mut Value) -> RedactionSummary {
     let mut summary = RedactionSummary::default();
     scrub_tiers(frame, false, &mut summary);
     summary
+}
+
+/// ACP passes a tool server's environment and HTTP headers as `env` and
+/// `headers` lists of `{name, value}` pairs, where the shared rules, which
+/// judge a value by its own key, would see only `value`. Each pair's value
+/// is judged as if `name` were its key, and a name that reads as a
+/// credential's makes its value secret. (Config option choices are
+/// `{name, value}` too, which is why only those two lists are read so.)
+fn scrub_pairs(value: &mut Value, rules: &Redaction, summary: &mut RedactionSummary) {
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object.iter_mut() {
+                if matches!(key.as_str(), "env" | "headers")
+                    && let Value::Array(pairs) = value
+                {
+                    for pair in pairs {
+                        scrub_pair(pair, rules, summary);
+                    }
+                } else {
+                    scrub_pairs(value, rules, summary);
+                }
+            }
+        }
+        Value::Array(values) => values
+            .iter_mut()
+            .for_each(|value| scrub_pairs(value, rules, summary)),
+        _ => {}
+    }
+}
+
+fn scrub_pair(pair: &mut Value, rules: &Redaction, summary: &mut RedactionSummary) {
+    let Value::Object(pair) = pair else { return };
+    let Some(Value::String(name)) = pair.get("name").cloned() else {
+        return;
+    };
+    let Some(paired) = pair.get_mut("value") else {
+        return;
+    };
+    // The shared rules know key spellings (`token`, `apiKey`); variable
+    // names wrap them (`GITHUB_TOKEN`, `X_API_KEY`), so a name holding any
+    // of these words marks its value secret.
+    let normalized = redaction::normalized_key(&name);
+    if [
+        "token",
+        "key",
+        "secret",
+        "password",
+        "passwd",
+        "auth",
+        "credential",
+        "cookie",
+    ]
+    .iter()
+    .any(|word| normalized.contains(word))
+        && !paired.is_null()
+    {
+        if paired.as_str() != Some(redaction::SECRET_PLACEHOLDER) {
+            *paired = Value::String(redaction::SECRET_PLACEHOLDER.to_owned());
+            summary.secrets += 1;
+        }
+        return;
+    }
+    let mut keyed = Value::Object(serde_json::Map::from_iter([(
+        name.clone(),
+        std::mem::take(paired),
+    )]));
+    redaction::redact_value(&mut keyed, rules, summary);
+    if let Value::Object(mut keyed) = keyed {
+        *paired = keyed.remove(&name).unwrap_or_default();
+    }
 }
 
 fn names_account(key: &str) -> bool {

@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::client::{Conn, Permission, initialize_params, text};
-use super::{Agent, Cx, Notes, Verdict};
+use super::{Agent, Cx, Notes, SKIPPED, Verdict};
 
 /// How long `initialize` may take; a first start can download or index.
 const INITIALIZE: Duration = Duration::from_secs(90);
@@ -314,7 +314,20 @@ async fn cheapen(
             continue;
         }
         let id = option["id"].clone();
-        set_option(conn, session, &id, value, notes).await?;
+        let answer = set_option(conn, session, &id, value, notes).await?;
+        // A turn on the agent's default model could cost many times what
+        // the scenario budgets, so a refused switch skips the scenario.
+        let now = session
+            .option(category)
+            .map(|option| option["currentValue"].clone())
+            .unwrap_or_default();
+        if now != value {
+            return Err(format!(
+                "{SKIPPED}{} kept {category} at {now} when asked for {value} ({})",
+                agent.name,
+                answer.get("error").unwrap_or(&Value::Null)
+            ));
+        }
     }
     Ok(())
 }

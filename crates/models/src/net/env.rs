@@ -1907,7 +1907,7 @@ impl Transition<'_> {
             },
             Err(report) => Input::ClientCall {
                 call,
-                request: peer_message(report_envelope(&from.0, &self.plan.hosts[h].id.0, report)),
+                request: peer_message(report_envelope(&from.0, &self.plan.hosts[h].id.0, *report)),
             },
         }
     }

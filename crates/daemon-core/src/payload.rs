@@ -297,12 +297,12 @@ pub enum PeerRead {
 impl PeerRequest {
     /// The request as the called host's core reads it, or the report it
     /// hands on as a message instead.
-    pub fn read(self) -> Result<PeerRead, wire::DeliverReportRequest> {
+    pub fn read(self) -> Result<PeerRead, Box<wire::DeliverReportRequest>> {
         match self {
             PeerRequest::FollowAgents => Ok(PeerRead::FollowAgents),
             PeerRequest::FollowSession(request) => Ok(PeerRead::FollowSession(request)),
             PeerRequest::ListItems(request) => Ok(PeerRead::ListItems(request)),
-            PeerRequest::DeliverReport(report) => Err(report),
+            PeerRequest::DeliverReport(report) => Err(Box::new(report)),
         }
     }
 }

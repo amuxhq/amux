@@ -225,8 +225,8 @@ impl ProfileRuntime {
     /// Relays a person's input and returns the interpreter's verdict. An
     /// exited agent is answered here; one that refuses as exiting is from
     /// then on treated as leaving, so a resume waits for it. Every way a
-    /// person sends input comes here, from this host's clients or forwarded
-    /// by another's, so this is where input to an agent with no process,
+    /// person sends input comes here, from this host's clients or carried
+    /// from another's, so this is where input to an agent with no process,
     /// or to one leaving of its own accord, wakes it if it is or ends up
     /// suspended (see [`Self::wake_with`]).
     pub async fn send_input(

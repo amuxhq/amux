@@ -496,7 +496,6 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
 /// its worktree goes.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phone_keeps_the_workspace_a_desks_row_says() {
-
     let net = Net::start_with(
         Topology::new().host_decl(HostDecl {
             name: "desk".into(),

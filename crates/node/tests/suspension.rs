@@ -199,7 +199,7 @@ fn prompt(id: &[u8], text: &str) -> wire::Input {
 }
 
 /// What a person typing to the agent sends, as `amux send`, a chat's
-/// composer and a far host's forwarded send all do.
+/// composer and a call carried from a far host all do.
 fn typed(agent: &SyntheticAgent, id: &[u8], text: &str) -> wire::SendInputRequest {
     wire::SendInputRequest {
         agent_id: agent.id.as_bytes().to_vec(),

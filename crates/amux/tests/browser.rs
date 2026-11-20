@@ -1,6 +1,9 @@
 //! `amux internal browser` against a real daemon, as the browser extension
 //! drives it: the profiles from the front door, a screenshot stored with an
-//! agent, a page review sent to it, and the review read back from its chat.
+//! agent, a page review sent to it, and the review read back from its chat;
+//! and a call's authority passed to the router behind the socket. A call
+//! carried to a paired host through the bridge is the testnet's analytics
+//! story, which has the pair.
 
 #![cfg(unix)]
 
@@ -67,19 +70,26 @@ impl Bridge {
     }
 
     /// Makes a call and gathers its messages, joining parts, until it ends.
+    /// Without an authority the frame is as an extension for framing 1
+    /// writes it, with no such field at all.
     async fn call(
         &mut self,
         target: &str,
+        authority: Option<&str>,
         method: &str,
         request: impl prost::Message,
     ) -> Result<Vec<Vec<u8>>, Value> {
         let id = self.next;
         self.next += 1;
-        self.send(&json!({
-            "id": id,
-            "call": {"target": target, "method": method, "body": STANDARD.encode(request.encode_to_vec())},
-        }))
-        .await;
+        let mut call = json!({
+            "target": target,
+            "method": method,
+            "body": STANDARD.encode(request.encode_to_vec()),
+        });
+        if let Some(authority) = authority {
+            call["authority"] = json!(authority);
+        }
+        self.send(&json!({ "id": id, "call": call })).await;
         let mut messages = Vec::new();
         let mut part = Vec::new();
         loop {
@@ -104,8 +114,18 @@ impl Bridge {
         method: &str,
         request: impl prost::Message,
     ) -> T {
+        self.unary_to(target, None, method, request).await
+    }
+
+    async fn unary_to<T: prost::Message + Default>(
+        &mut self,
+        target: &str,
+        authority: Option<&str>,
+        method: &str,
+        request: impl prost::Message,
+    ) -> T {
         let messages = self
-            .call(target, method, request)
+            .call(target, authority, method, request)
             .await
             .unwrap_or_else(|end| panic!("{method} ended {end}"));
         assert_eq!(messages.len(), 1, "{method} answers once");
@@ -147,6 +167,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     let mut bridge = Bridge::start(&desk);
     let hello = bridge.read().await;
     assert_eq!(hello["hello"]["version"], json!(node::version()));
+    assert_eq!(hello["hello"]["framing"], json!(2));
 
     let profiles: wire::ListProfilesResponse = bridge
         .unary(
@@ -271,6 +292,66 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
         [wire::Attachment {
             of: Some(wire::attachment::Of::Page(review)),
         }]
+    );
+
+    // Named by its own id as the authority, the desk's node answers as it
+    // does a call with none: the router carries only another host's.
+    let identity: wire::GetDeviceIdentityResponse = bridge
+        .unary(
+            &profile,
+            "/amux.v1.ProfileAdminService/GetDeviceIdentity",
+            wire::GetDeviceIdentityRequest {},
+        )
+        .await;
+    let own = uuid::Uuid::from_slice(&identity.identity.unwrap().host_id).unwrap();
+    let addressed: wire::PutBlobResponse = bridge
+        .unary_to(
+            &profile,
+            Some(&wire::authority(&own)),
+            "/amux.v1.AgentService/PutBlob",
+            wire::PutBlobRequest {
+                agent_id: agent.clone(),
+                name: "region-2.png".into(),
+                mime: "image/png".into(),
+                bytes: b"\x89PNG\r\n\x1a\nsmall".to_vec(),
+            },
+        )
+        .await;
+    assert_eq!(addressed.blob.expect("a stored blob").name, "region-2.png");
+
+    // Named by a host it does not know, the call goes to the carrier, which
+    // says the host cannot be reached: the bridge passed the authority on.
+    let stranger = wire::authority(&uuid::Uuid::new_v4());
+    let carried = bridge
+        .call(
+            &profile,
+            Some(&stranger),
+            "/amux.v1.AgentService/SendInput",
+            wire::SendInputRequest {
+                agent_id: agent.clone(),
+                input: None,
+            },
+        )
+        .await
+        .expect_err("no host to carry it to");
+    assert_eq!(
+        carried["code"],
+        json!(tonic::Code::FailedPrecondition as i32),
+        "{carried}"
+    );
+    let refused = bridge
+        .call(
+            &profile,
+            Some("not an authority"),
+            "/amux.v1.AgentService/SendInput",
+            wire::SendInputRequest::default(),
+        )
+        .await
+        .expect_err("not an authority");
+    assert_eq!(
+        refused["code"],
+        json!(tonic::Code::InvalidArgument as i32),
+        "{refused}"
     );
 
     // A stream is cancelled by its id, and ends.

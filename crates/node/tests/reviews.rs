@@ -759,3 +759,204 @@ async fn edits_are_all_or_none_and_each_refusal_says_why() {
     assert_eq!(empty_base.code(), Code::InvalidArgument);
     host.stop().await;
 }
+
+/// Sending a review: the host marks sent exactly the comments the message
+/// it accepted names, in a round on the snapshot they were made on.
+mod sent {
+    use std::collections::BTreeMap;
+
+    use wire::{Attachment, InlineText, MessageBody, SendMessageRequest};
+
+    use super::*;
+
+    /// An agent whose process is running, so it takes messages, working in
+    /// the installation's work folder on a branch made from `main`.
+    fn live_agent(install: &Install) -> SyntheticAgent {
+        let mut agent = SyntheticAgent::new(install, "coder", SEGMENTS);
+        agent.register(install);
+        let spec = wire::AgentSpec {
+            agent_id: agent.id.as_bytes().to_vec(),
+            kind: KIND as i32,
+            cwd: install.work.to_string_lossy().into_owned(),
+            name: agent.name.clone(),
+            incarnation: 1,
+            base_branch: Some("main".to_owned()),
+            ..wire::AgentSpec::default()
+        };
+        std::fs::write(
+            agent.dir.join("spec.1"),
+            prost::Message::encode_to_vec(&spec),
+        )
+        .unwrap();
+        agent.go_live();
+        agent
+    }
+
+    /// The person sends `agent` a message saying `text` with
+    /// `attachments`, under an id of its own.
+    async fn message(
+        host: &Host,
+        agent: &SyntheticAgent,
+        text: &str,
+        attachments: Vec<Attachment>,
+    ) -> Result<(), tonic::Status> {
+        let mut agents = wire::agent_service_client(served_as(
+            &host.runtime,
+            Served::Profile,
+            Calling::PersonHere(analytics::Client::Terminal),
+        ));
+        let request = SendMessageRequest {
+            id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            agent_id: agent.id.as_bytes().to_vec(),
+            context: None,
+            message: Some(MessageBody {
+                text: text.to_owned(),
+                attachments,
+                ..MessageBody::default()
+            }),
+        };
+        agents.send_message(request).await.map(drop)
+    }
+
+    /// The sent review of the comments `ids` of the review as `summary`
+    /// shows it, as a client attaches it.
+    fn review(summary: &ReviewSummary, ids: &[&str]) -> Attachment {
+        let comments: Vec<ReviewerComment> =
+            ids.iter().map(|id| comment(summary, id).clone()).collect();
+        attachments::sent_review::attachment(summary, &comments)
+    }
+
+    /// The round each comment of `summary` was sent in, by its id.
+    fn rounds(summary: &ReviewSummary) -> BTreeMap<String, Option<u32>> {
+        summary
+            .comments
+            .iter()
+            .map(|comment| {
+                (
+                    String::from_utf8(comment.id.clone()).unwrap(),
+                    comment.round,
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_accepted_message_marks_exactly_the_drafts_it_names_sent() {
+        let install = Install::new();
+        feature_branch(&install.work);
+        let agent = live_agent(&install);
+        let host = Host::start(install).await;
+        let snapshot = host.open(&agent).await.snapshot;
+        let mine = host
+            .edit(
+                &agent,
+                vec![
+                    put("one", &snapshot, "notes.txt", 25, 25),
+                    put("two", &snapshot, "notes.txt", 0, 0),
+                ],
+            )
+            .await;
+        // A second client writes a draft after the first last read the
+        // review, so the first's send does not name it.
+        host.edit(&agent, vec![put("theirs", &snapshot, "notes.txt", 2, 2)])
+            .await;
+        assert_eq!(host.entry(&agent).await.unwrap().drafts, 3);
+        let sending = review(&mine, &["one", "two"]);
+        let counter = host.entry(&agent).await.unwrap().counter;
+
+        // The agent refuses the message: nothing is sent.
+        agent.answer_with(Answer::Reject(wire::Refusal::Unsupported));
+        message(&host, &agent, "Two things.", vec![sending.clone()])
+            .await
+            .unwrap_err();
+        assert_eq!(host.entry(&agent).await.unwrap().counter, counter);
+
+        // A message carrying no review sends nothing, nor one carrying a
+        // review the agent no longer has.
+        agent.answer_with(Answer::Accept);
+        let plain = Attachment {
+            of: Some(wire::attachment::Of::Text(InlineText {
+                name: "notes".to_owned(),
+                text: "not a review".to_owned(),
+            })),
+            ..Attachment::default()
+        };
+        message(&host, &agent, "Just a note.", vec![plain])
+            .await
+            .unwrap();
+        let mut started_over = mine.clone();
+        started_over.id = uuid::Uuid::new_v4().as_bytes().to_vec();
+        message(
+            &host,
+            &agent,
+            "From before.",
+            vec![review(&started_over, &["one"])],
+        )
+        .await
+        .unwrap();
+        assert_eq!(host.entry(&agent).await.unwrap().counter, counter);
+        assert!(host.open(&agent).await.rounds.is_empty());
+
+        message(&host, &agent, "Two things.", vec![sending.clone()])
+            .await
+            .unwrap();
+        let entry = host.entry(&agent).await.unwrap();
+        assert_eq!(entry.drafts, 1, "the row's draft count drops");
+        assert_eq!(entry.counter, counter + 1);
+        let sent = host.open(&agent).await;
+        assert_eq!(
+            rounds(&sent),
+            BTreeMap::from([
+                ("one".to_owned(), Some(1)),
+                ("theirs".to_owned(), None),
+                ("two".to_owned(), Some(1)),
+            ])
+        );
+        let [round] = sent.rounds.as_slice() else {
+            panic!("one round: {:?}", sent.rounds);
+        };
+        assert_eq!(round.snapshot, snapshot);
+        assert_eq!(round.base_commit, mine.base_commit);
+        assert!(round.sent_at_ms > 0);
+        // The agent was handed the review as it was sent: once when it
+        // refused it, and once when it took it.
+        let handed = agent
+            .inputs()
+            .into_iter()
+            .filter_map(|handed| match handed {
+                Handed::Message(envelope) => Some(envelope),
+                Handed::Input(_) => None,
+            })
+            .filter_map(|envelope| match envelope.body {
+                Some(wire::envelope::Body::Message(message)) => Some(message),
+                _ => None,
+            })
+            .filter(|message| message.attachments.contains(&sending))
+            .count();
+        assert_eq!(handed, 2);
+
+        // Sent again, as a person resends a message, under a new id: its
+        // comments went with the first, so no second round closes.
+        message(&host, &agent, "Two things.", vec![sending])
+            .await
+            .unwrap();
+        let again = host.open(&agent).await;
+        assert_eq!(again.rounds.len(), 1, "{:?}", again.rounds);
+        assert_eq!(host.entry(&agent).await.unwrap().counter, counter + 1);
+
+        // The second client's draft goes in a round of its own.
+        message(
+            &host,
+            &agent,
+            "And one more.",
+            vec![review(&again, &["theirs"])],
+        )
+        .await
+        .unwrap();
+        let second = host.open(&agent).await;
+        assert_eq!(second.rounds.len(), 2);
+        assert_eq!(rounds(&second)["theirs"], Some(2));
+        assert_eq!(host.entry(&agent).await.unwrap().drafts, 0);
+        host.stop().await;
+    }
+}

@@ -1475,6 +1475,27 @@ fn the_review_page_moves_with_the_chats_deltas_through_the_c_abi() {
     phone.started(unsafe { amux_review_context(chat, c"{}".as_ptr()) });
     assert!(phone.result()["Failed"].is_string());
 
+    // A sent review's round opens apart from the page; a host with no
+    // reviews holds no round, so the chip shows its text.
+    let sent = c(&json!({
+        "review_id": [1, 2],
+        "round": 1,
+        "snapshot": "5".repeat(40),
+        "comment_ids": [[3]],
+    })
+    .to_string());
+    // SAFETY: the chat is open; the string lives for the call.
+    phone.started(unsafe { amux_review_round(chat, sent.as_ptr()) });
+    assert_eq!(phone.result(), Value::Null);
+    // SAFETY: the chat is open; the string lives for the call.
+    phone.started(unsafe { amux_review_round(chat, c"{}".as_ptr()) });
+    assert_eq!(phone.result(), Value::Null);
+    assert_eq!(
+        phone.chat(chat, |mirror| mirror.review.clone()),
+        page,
+        "the open page did not move"
+    );
+
     // A send with the review sends nothing when there is none to read.
     phone.started(chat_act(
         chat,
@@ -1531,6 +1552,11 @@ fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
     // SAFETY: as above.
     assert_eq!(
         unsafe { amux_review_files(std::ptr::null(), std::ptr::null()) },
+        0
+    );
+    // SAFETY: as above.
+    assert_eq!(
+        unsafe { amux_review_round(std::ptr::null(), c"{}".as_ptr()) },
         0
     );
     // SAFETY: a null profile is ignored.

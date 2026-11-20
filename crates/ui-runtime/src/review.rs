@@ -452,6 +452,56 @@ impl Review {
     }
 }
 
+/// The review as one round sent it, from `summary`, the review as its host
+/// holds it now: the snapshot the round's comments were made on, compared
+/// with the base commit the round was shown against, and of the comments
+/// the round sent, `comment_ids`, those still on the review, each on the
+/// lines it was written on. A sent review's attachment names the review,
+/// the snapshot and the comments, and the host numbered the round as the
+/// message arrived, so the round is the one its comments were sent in.
+///
+/// The host lists changed files only for its latest snapshot, so the
+/// round lists none: each comment shows on its file with the code stored
+/// with it. None when `summary` is of another review, as after starting
+/// over, or holds none of the comments, all deleted since.
+pub fn round(
+    summary: &ReviewSummary,
+    review_id: &[u8],
+    snapshot: &str,
+    comment_ids: &[Vec<u8>],
+) -> Option<ReviewSummary> {
+    if summary.id != review_id {
+        return None;
+    }
+    let comments: Vec<_> = summary
+        .comments
+        .iter()
+        .filter(|comment| comment.round.is_some() && comment_ids.contains(&comment.id))
+        .map(|comment| wire::experimental::ReviewerComment {
+            // Where it sits on a later snapshot is not where it was sent:
+            // with no placement it shows on its anchor's lines.
+            placement: None,
+            ..comment.clone()
+        })
+        .collect();
+    let number = comments.iter().filter_map(|comment| comment.round).min()?;
+    let base_commit = (number as usize)
+        .checked_sub(1)
+        .and_then(|at| summary.rounds.get(at))
+        .map_or(&summary.base_commit, |round| &round.base_commit);
+    Some(ReviewSummary {
+        id: summary.id.clone(),
+        base_branch: summary.base_branch.clone(),
+        base_commit: base_commit.clone(),
+        snapshot: snapshot.to_owned(),
+        comments,
+        objects: summary.objects.clone(),
+        root: summary.root.clone(),
+        began_at: summary.began_at.clone(),
+        ..ReviewSummary::default()
+    })
+}
+
 /// Which answers replace the summary the page shows.
 #[derive(Clone, Copy)]
 enum Taking {

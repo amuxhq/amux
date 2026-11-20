@@ -487,3 +487,80 @@ async fn a_chats_review_is_addressed_to_the_agents_host() {
     assert_eq!(calls.addressed("Open"), [wire::authority(&host)]);
     drop(feed);
 }
+
+/// A sent review opens its round from the review as the host holds it now:
+/// the round's snapshot against the base it was shown against, and of the
+/// comments it sent those still on the review, each on the lines it was
+/// written on rather than where a later snapshot placed it.
+#[test]
+fn a_round_is_its_snapshot_and_the_comments_it_sent() {
+    use wire::experimental::{ReviewAnchor, ReviewPlacement, ReviewRound, review_placement};
+    let first = "1".repeat(40);
+    let comment = |id: &[u8], round: Option<u32>| ReviewerComment {
+        id: id.to_vec(),
+        anchor: Some(ReviewAnchor {
+            commit: first.clone(),
+            path: "src/lib.rs".into(),
+            lines: Some(ReviewLineRange { start: 4, end: 5 }),
+        }),
+        text: "why".into(),
+        round,
+        placement: Some(ReviewPlacement {
+            at: Some(review_placement::At::Outdated(wire::Empty {})),
+            changed_near: true,
+        }),
+        ..ReviewerComment::default()
+    };
+    let mut now = summary(&"9".repeat(40), &paths(2));
+    now.rounds = vec![
+        ReviewRound {
+            snapshot: first.clone(),
+            base_commit: "a".repeat(40),
+            sent_at_ms: 1,
+        },
+        ReviewRound {
+            snapshot: "2".repeat(40),
+            base_commit: "b".repeat(40),
+            sent_at_ms: 2,
+        },
+    ];
+    now.stale = true;
+    now.comments = vec![
+        comment(b"sent", Some(1)),
+        comment(b"other round", Some(2)),
+        comment(b"draft", None),
+    ];
+    let sent = vec![b"sent".to_vec(), b"deleted since".to_vec()];
+
+    let round = ui_runtime::review::round(&now, b"review-1", &first, &sent).expect("held");
+    assert_eq!(round.snapshot, first);
+    assert_eq!(
+        round.base_commit,
+        "a".repeat(40),
+        "the base it was shown against"
+    );
+    assert!(round.rounds.is_empty() && round.files.is_empty() && !round.stale);
+    assert_eq!(round.comments.len(), 1);
+    assert_eq!(round.comments[0].id, b"sent");
+    assert_eq!(round.comments[0].round, Some(1));
+    assert_eq!(
+        round.comments[0].placement, None,
+        "on the lines it was written on"
+    );
+
+    // Started over since, or every comment it sent deleted: the host holds
+    // none of the round.
+    assert_eq!(
+        ui_runtime::review::round(&now, b"review-2", &first, &sent),
+        None
+    );
+    assert_eq!(
+        ui_runtime::review::round(&now, b"review-1", &first, &[b"deleted since".to_vec()]),
+        None
+    );
+    // A draft is not sent, whatever names it.
+    assert_eq!(
+        ui_runtime::review::round(&now, b"review-1", &first, &[b"draft".to_vec()]),
+        None
+    );
+}

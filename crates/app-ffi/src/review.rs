@@ -7,13 +7,16 @@
 //! asks, and turns a selection of rows into an anchor here. Acts answer by
 //! ticket with a `ReviewOutcome`, after the step that hands over what they
 //! moved. The chip comes with the chat's frame (`review_chip`), and a send
-//! with the review is the chat's `SendWithReview` act.
+//! with the review is the chat's `SendWithReview` act. A review sent
+//! into the chat opens its round by `amux_review_round`, apart from the
+//! page.
 
 use std::ffi::c_char;
 use std::sync::Arc;
 
 use app_runtime::ReviewSession;
 use app_runtime::values::{ReviewChange, ReviewChoice, ReviewOutcome};
+use serde::Deserialize;
 use ui_view::ReviewContextAsk;
 
 use crate::{AmuxChat, Chat, act, guard, held_chat, owned, parse, text};
@@ -83,6 +86,38 @@ pub unsafe extern "C" fn amux_review_open(
     unsafe {
         act(chat, move |chat| async move {
             chat.open_review(base_branch, refresh).await
+        })
+    }
+}
+
+/// What a sent review's attachment names of its round, as the chat's rows
+/// carry it (`SentReviewRef`).
+#[derive(Deserialize)]
+struct SentRound {
+    review_id: Vec<u8>,
+    snapshot: String,
+    comment_ids: Vec<Vec<u8>>,
+}
+
+/// Opens the round a review sent into the chat closed: `sent` is the
+/// `SentReviewRef` its attachment draws with, as JSON. The ticket answers
+/// the round's `ReviewPage`, read from the agent's host (or with the host
+/// out of reach, from what was loaded, saying so), or JSON null when the
+/// host no longer holds the round and the chip shows its text instead. It
+/// opens no page on the chat and moves none open there.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `sent` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_review_round(chat: *const AmuxChat, sent: *const c_char) -> u64 {
+    // SAFETY: the caller's contract.
+    let sent: Option<SentRound> = unsafe { parse(sent) };
+    // SAFETY: the caller's contract.
+    unsafe {
+        act(chat, move |chat| async move {
+            let sent = sent?;
+            chat.review_round(&sent.review_id, &sent.snapshot, &sent.comment_ids)
+                .await
         })
     }
 }

@@ -444,6 +444,30 @@ pub(crate) async fn edit_closed(review: &Review, changes: Vec<ReviewChange>) -> 
     }
 }
 
+/// The page of the round a sent review closed: `review_id`, `snapshot` and
+/// `comment_ids` as its attachment names them. The review is read from the
+/// agent's host, as any look at it is; with the host out of reach, from
+/// what this process loaded of it, and the page says so. None when neither
+/// holds the round, and the chat shows the text the agent read instead.
+pub(crate) async fn round_page(
+    review: &Review,
+    review_id: &[u8],
+    snapshot: &str,
+    comment_ids: &[Vec<u8>],
+) -> Option<ReviewPage> {
+    let mut state = ReviewPageState::default();
+    let summary = match review.open(None, false).await {
+        Ok(summary) => summary,
+        Err(ReviewError::Rpc(error)) if error.not_sent().is_some() || error.uncertain() => {
+            state.notices.push(ReviewNotice::Unreachable);
+            review.summary()?
+        }
+        Err(_) => return None,
+    };
+    let round = ui_runtime::review::round(&summary, review_id, snapshot, comment_ids)?;
+    Some(ui_view::review_page(Some(&round), &[], &[], &state))
+}
+
 /// What a call came to, as the app hears it.
 fn outcome(answer: &Result<(), ReviewError>) -> ReviewOutcome {
     match answer {
@@ -1052,5 +1076,88 @@ mod tests {
         };
         assert!(text.text.contains("comment one") && text.text.contains("comment two"));
         assert!(!text.text.contains("comment sent"));
+    }
+
+    /// A sent review opens its round from the agent's host: the comments it
+    /// sent that are still on the review, on the lines they were written
+    /// on, each with the code stored with it; with the host out of reach,
+    /// from what was loaded, saying so; and nothing once the review holds
+    /// none of it.
+    #[tokio::test]
+    async fn a_sent_review_opens_its_round() {
+        let fake = reviewed();
+        let opened = page(&fake);
+        let review = opened.page.review().clone();
+        {
+            let mut host = fake.host();
+            host.summary.rounds.push(ReviewRound {
+                snapshot: SNAPSHOT.into(),
+                base_commit: BASE.into(),
+                sent_at_ms: 1,
+            });
+            host.summary.comments.push(ReviewerComment {
+                id: b"sent".to_vec(),
+                anchor: Some(wire::experimental::ReviewAnchor {
+                    commit: SNAPSHOT.into(),
+                    path: "src/lib.rs".into(),
+                    lines: Some(ReviewLineRange { start: 41, end: 41 }),
+                }),
+                text: "why two".into(),
+                snippet: vec![line(ReviewLineKind::Added, 0, 41, "    let a = 2;")],
+                round: Some(1),
+                placement: Some(ReviewPlacement {
+                    at: Some(review_placement::At::Outdated(wire::Empty {})),
+                    changed_near: false,
+                }),
+                ..ReviewerComment::default()
+            });
+        }
+        let sent = [b"sent".to_vec()];
+        let round = round_page(&review, b"review-1", SNAPSHOT, &sent)
+            .await
+            .expect("the host holds the round");
+        assert!(round.banners.is_empty(), "{:?}", round.banners);
+        let header = round.header.as_ref().expect("a header");
+        assert_eq!(header.snapshot, SNAPSHOT);
+        assert_eq!((header.sent, header.drafts, header.rounds), (1, 0, 0));
+        let comment = round
+            .rows
+            .iter()
+            .find_map(|row| match &row.of {
+                ReviewRowOf::Comment(comment) => Some(comment),
+                _ => None,
+            })
+            .expect("the comment it sent");
+        assert_eq!(
+            comment.at,
+            ui_view::ReviewCommentAt::Lines { start: 41, end: 41 }
+        );
+        assert_eq!(comment.snippet.len(), 1, "with the code stored with it");
+        assert!(round.to_fetch.is_empty(), "it asks for no file");
+
+        fake.host().failing = Some(RpcError::Refused(wire::Error::because(
+            wire::ErrorReason::HostUnreachable,
+            "the desk is away",
+        )));
+        let away = round_page(&review, b"review-1", SNAPSHOT, &sent)
+            .await
+            .expect("what was loaded still reads");
+        assert_eq!(away.banners, vec![ReviewBanner::Unreachable]);
+
+        fake.host().failing = None;
+        assert_eq!(
+            round_page(&review, b"review-2", SNAPSHOT, &sent).await,
+            None,
+            "the review was started over"
+        );
+        fake.host()
+            .summary
+            .comments
+            .retain(|comment| comment.id != b"sent");
+        assert_eq!(
+            round_page(&review, b"review-1", SNAPSHOT, &sent).await,
+            None,
+            "every comment it sent is deleted"
+        );
     }
 }

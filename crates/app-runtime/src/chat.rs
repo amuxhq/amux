@@ -483,6 +483,20 @@ impl Chat {
         }
     }
 
+    /// The page of the round a sent review in the chat closed, named as its
+    /// attachment names it; none when the agent's host no longer holds the
+    /// round, and the chat shows the text the agent read instead. It is
+    /// read apart from the review page open on the chat, so the snapshot
+    /// that page shows never moves under it.
+    pub async fn review_round(
+        &self,
+        review_id: &[u8],
+        snapshot: &str,
+        comment_ids: &[Vec<u8>],
+    ) -> Option<ui_view::ReviewPage> {
+        crate::review::round_page(&self.session.reviews(), review_id, snapshot, comment_ids).await
+    }
+
     /// The agent's review: the open page's, or one read for a send.
     fn reviews(&self) -> Arc<ui_runtime::review::Review> {
         match self.review_page() {

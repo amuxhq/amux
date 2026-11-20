@@ -620,3 +620,258 @@ fn an_image_is_native_by_its_bytes() {
     std::fs::remove_file(&path).unwrap();
     assert_eq!(native_image_at(&path), None);
 }
+
+mod sent_review {
+    use std::path::Path;
+
+    use attachments::sent_review::{NAME, attachment, entry, text};
+    use attachments::{PLACEHOLDER, Positioned, format, parse};
+    use wire::attachment::Of;
+    use wire::experimental::review_placement::At;
+    use wire::experimental::{
+        ReviewAnchor, ReviewDefinition, ReviewDefinitionKind, ReviewLine, ReviewLineKind,
+        ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSummary, ReviewerComment, SentReview,
+    };
+    use wire::{Empty, InlineText};
+
+    const SNAPSHOT: &str = "4f2a9c1e0b7d3a5f6e8c9b0a1d2e3f4a5b6c7d8e";
+    const BASE: &str = "9e465b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a";
+    const ROOT: &str = "/work/shop";
+    const OBJECTS: &str = "/data/profiles/p/agents/a1/review/objects";
+
+    fn line(kind: ReviewLineKind, old_line: u32, new_line: u32, text: &str) -> ReviewLine {
+        ReviewLine {
+            kind: kind as i32,
+            old_line,
+            new_line,
+            text: text.into(),
+            runs: Vec::new(),
+        }
+    }
+
+    fn definition(kind: ReviewDefinitionKind, name: &str, label: &str) -> ReviewDefinition {
+        ReviewDefinition {
+            kind: kind as i32,
+            name: name.into(),
+            label: label.into(),
+            start_line: 1,
+            end_line: 40,
+            parent: None,
+        }
+    }
+
+    fn lines(start: u32, end: u32) -> ReviewLineRange {
+        ReviewLineRange { start, end }
+    }
+
+    fn placed(at: At) -> Option<ReviewPlacement> {
+        Some(ReviewPlacement {
+            at: Some(at),
+            changed_near: false,
+        })
+    }
+
+    /// A comment on two lines of code holding `<`, `>` and `&`, one on a
+    /// removed line, and one on a whole file.
+    fn comments() -> Vec<ReviewerComment> {
+        use ReviewLineKind::{Added, Context, Removed};
+        vec![
+            ReviewerComment {
+                id: b"c1".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: SNAPSHOT.into(),
+                    path: "src/store.rs".into(),
+                    lines: Some(lines(13, 14)),
+                }),
+                text: "Keep the strict comparison: a store at its limit is full.".into(),
+                snippet: vec![
+                    line(Context, 10, 11, "    let path = dir.join(\"store\");"),
+                    line(Removed, 11, 0, "    if size < limit && open {"),
+                    line(Added, 0, 12, "    if size <= limit && open {"),
+                    line(
+                        Added,
+                        0,
+                        13,
+                        "        return Ok(Store::<File> { path, size });",
+                    ),
+                    line(Context, 12, 14, "    }"),
+                ],
+                scope: vec![
+                    definition(ReviewDefinitionKind::Impl, "Store", "impl Store"),
+                    definition(ReviewDefinitionKind::Method, "open", "fn open"),
+                ],
+                round: None,
+                placement: placed(At::Lines(lines(13, 14))),
+            },
+            ReviewerComment {
+                id: b"c2".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: BASE.into(),
+                    path: "src/limits.rs".into(),
+                    lines: Some(lines(7, 7)),
+                }),
+                text: "Why did this go?".into(),
+                snippet: vec![
+                    line(Context, 6, 6, "pub const LIMIT: u64 = 1 << 20;"),
+                    line(Removed, 7, 0, "pub const SOFT: u64 = LIMIT >> 1;"),
+                ],
+                scope: Vec::new(),
+                round: None,
+                placement: None,
+            },
+            ReviewerComment {
+                id: b"c3".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: SNAPSHOT.into(),
+                    path: "docs/notes & limits.md".into(),
+                    lines: Some(lines(0, 0)),
+                }),
+                text: "Say what the limit is.\n".into(),
+                snippet: Vec::new(),
+                scope: Vec::new(),
+                round: None,
+                placement: placed(At::File(Empty {})),
+            },
+        ]
+    }
+
+    fn summary() -> ReviewSummary {
+        ReviewSummary {
+            id: b"review-1".to_vec(),
+            base_branch: "main".into(),
+            base_commit: BASE.into(),
+            snapshot: SNAPSHOT.into(),
+            rounds: vec![ReviewRound {
+                snapshot: BASE.into(),
+                base_commit: BASE.into(),
+                sent_at_ms: 1,
+            }],
+            objects: OBJECTS.into(),
+            root: ROOT.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Per comment: where it is, the definition it is in, the code in diff
+    /// form and then the words; last, what the numbers refer to and the
+    /// command that diffs against the snapshot.
+    #[test]
+    fn the_text_the_agent_reads() {
+        assert_eq!(
+            text(ROOT, OBJECTS, SNAPSHOT, &comments()),
+            format!(
+                "3 comments from a review of your changes.\n\
+                 \n\
+                 ## src/store.rs, lines 13–14, in impl Store › fn open\n\
+                 \n\
+                 ```diff\n\
+                 \x20    let path = dir.join(\"store\");\n\
+                 -    if size < limit && open {{\n\
+                 +    if size <= limit && open {{\n\
+                 +        return Ok(Store::<File> {{ path, size }});\n\
+                 \x20    }}\n\
+                 ```\n\
+                 \n\
+                 Keep the strict comparison: a store at its limit is full.\n\
+                 \n\
+                 ## src/limits.rs, line 7 of commit {BASE}\n\
+                 \n\
+                 ```diff\n\
+                 \x20pub const LIMIT: u64 = 1 << 20;\n\
+                 -pub const SOFT: u64 = LIMIT >> 1;\n\
+                 ```\n\
+                 \n\
+                 Why did this go?\n\
+                 \n\
+                 ## docs/notes & limits.md, the whole file\n\
+                 \n\
+                 Say what the limit is.\n\
+                 \n\
+                 ---\n\
+                 Line numbers are those of snapshot {SNAPSHOT} unless a comment names another \
+                 commit, a commit of the working tree taken for this review and kept outside the \
+                 repository, so the files may have changed since. Paths are relative to the \
+                 repository's top, {ROOT}. To see what has changed since the snapshot, run:\n\
+                 \n\
+                 ```sh\n\
+                 GIT_ALTERNATE_OBJECT_DIRECTORIES={OBJECTS} git -C {ROOT} diff {SNAPSHOT}\n\
+                 ```\n"
+            )
+        );
+    }
+
+    #[test]
+    fn a_path_the_shell_would_split_is_quoted_in_the_command() {
+        assert_eq!(
+            attachments::sent_review::command("/Users/me/my shop", "/d/it's/objects", SNAPSHOT),
+            format!(
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES='/d/it'\\''s/objects' git -C '/Users/me/my shop' diff {SNAPSHOT}"
+            )
+        );
+    }
+
+    #[test]
+    fn a_snippet_holding_backticks_gets_a_longer_fence() {
+        let mut comment = comments().remove(0);
+        comment.snippet = vec![line(ReviewLineKind::Added, 0, 3, "let s = \"```\";")];
+        let read = text(ROOT, OBJECTS, SNAPSHOT, &[comment]);
+        assert!(
+            read.contains("````diff\n+let s = \"```\";\n````\n"),
+            "{read}"
+        );
+    }
+
+    /// The attachment is text named `review`, with the entry naming exactly
+    /// the comments sent, the round its sender expects and the snapshot.
+    #[test]
+    fn the_attachment_carries_its_text_and_its_entry() {
+        let sent = attachment(&summary(), &comments()[..2]);
+        assert_eq!(
+            sent.of,
+            Some(Of::Text(InlineText {
+                name: NAME.into(),
+                text: text(ROOT, OBJECTS, SNAPSHOT, &comments()[..2]),
+            }))
+        );
+        assert_eq!(
+            entry(&sent),
+            Some(SentReview {
+                review_id: b"review-1".to_vec(),
+                round: 2,
+                snapshot: SNAPSHOT.into(),
+                comment_ids: vec![b"c1".to_vec(), b"c2".to_vec()],
+            })
+        );
+        let plain = wire::Attachment {
+            of: sent.of.clone(),
+            ..Default::default()
+        };
+        assert_eq!(entry(&plain), None);
+    }
+
+    /// The element the model reads holds the code as written, and parses
+    /// back to the same text.
+    #[test]
+    fn code_in_a_snippet_survives_the_element() {
+        let sent = attachment(&summary(), &comments());
+        let p = Positioned {
+            text: format!("Please look at these.\n{PLACEHOLDER}"),
+            attachments: vec![sent.clone()],
+        };
+        let formatted = format(&p, Path::new("/blobs"));
+        assert!(
+            formatted.contains("-    if size < limit && open {\n"),
+            "{formatted}"
+        );
+        assert!(
+            formatted.contains("+        return Ok(Store::<File> { path, size });\n"),
+            "{formatted}"
+        );
+        let parsed = parse(&formatted);
+        assert_eq!(parsed.reported, Vec::new());
+        // The element carries the text; the entry travels on the attachment.
+        let mut expected = p;
+        expected.attachments[0].experimental.clear();
+        assert_eq!(parsed.positioned, expected);
+    }
+}

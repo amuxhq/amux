@@ -5,13 +5,16 @@
 //! it was built for over every request's, so a call cannot name another
 //! host on the node's channel. Addressing a host is opening a channel for
 //! it on the same socket path, built for that host's id. Those channels are
-//! kept, one per host, and the node's own id rides the node's channel. In
+//! kept, one per host. A call addressed to the node's own id rides the
+//! node's channel instead, which needs the node's id: it is asked for on
+//! the first call addressed to a host, not when the client connects, so a
+//! client that only reads the node's own services never pays for it. In
 //! memory the stub's origin is the authority, so one service serves every
 //! address.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
@@ -63,14 +66,15 @@ impl Transport {
     /// The service a call to `address` rides, naming the client as
     /// `surface` on every request.
     pub(crate) fn conn(&self, address: Address, surface: Surface) -> Conn {
-        let via = match self {
-            Transport::Socket(socket) => Via::Channel(socket.channel(address)),
-            Transport::Memory(memory) => Via::Memory(memory.clone()),
+        let via = match (self, address) {
+            (Transport::Socket(socket), Address::Node) => Via::Channel(socket.node()),
+            (Transport::Socket(socket), Address::Host(host)) => Via::Host(socket.clone(), host),
+            (Transport::Memory(memory), _) => Via::Memory(memory.clone()),
         };
         Conn {
             via,
             origin: address.origin(),
-            surface: HeaderValue::from_static(surface.word()),
+            surface,
         }
     }
 }
@@ -79,9 +83,11 @@ impl Transport {
 pub(crate) struct Socket {
     path: PathBuf,
     node: Channel,
-    /// The node's own host id, when it said: calls addressed to it ride the
-    /// node's channel.
-    own: Option<Uuid>,
+    /// The node's own host id, once a call addressed to a host asked for
+    /// it: calls addressed to it ride the node's channel.
+    own: OnceLock<Uuid>,
+    /// The channels of hosts other than the node's own, or of every host
+    /// addressed while the node's id could not be learned.
     hosts: Mutex<HashMap<Uuid, Channel>>,
 }
 
@@ -96,7 +102,7 @@ impl Socket {
         Ok(Socket {
             path: path.to_owned(),
             node,
-            own: None,
+            own: OnceLock::new(),
             hosts: Mutex::new(HashMap::new()),
         })
     }
@@ -105,22 +111,47 @@ impl Socket {
         self.node.clone()
     }
 
-    pub(crate) fn knowing_own(mut self, own: Uuid) -> Socket {
-        self.own = Some(own);
-        self
-    }
-
-    fn channel(&self, address: Address) -> Channel {
-        let host = match address {
-            Address::Host(host) if Some(host) != self.own => host,
-            Address::Host(_) | Address::Node => return self.node.clone(),
-        };
+    /// The channel a call addressed to `host` rides: the node's own when
+    /// `host` is the node, else one of its own for that host. A node that
+    /// does not say who it is leaves its own id on a channel of its own,
+    /// which the node answers all the same.
+    async fn channel(&self, host: Uuid, surface: Surface) -> Channel {
+        if let Some(channel) = self.held(host) {
+            return channel;
+        }
+        if self.own(surface).await == Some(host) {
+            return self.node.clone();
+        }
         self.hosts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .entry(host)
-            .or_insert_with(|| endpoint(address).connect_with_connector_lazy(connector(&self.path)))
+            .or_insert_with(|| {
+                endpoint(Address::Host(host)).connect_with_connector_lazy(connector(&self.path))
+            })
             .clone()
+    }
+
+    fn held(&self, host: Uuid) -> Option<Channel> {
+        self.hosts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&host)
+            .cloned()
+    }
+
+    /// The node's own host id, asked of it once. A failed ask is not kept,
+    /// so the next call addressed to a host asks again.
+    async fn own(&self, surface: Surface) -> Option<Uuid> {
+        if let Some(own) = self.own.get() {
+            return Some(*own);
+        }
+        let identity = crate::Admin::on(&self.node, surface)
+            .get_device_identity()
+            .await
+            .ok()?;
+        let own = Uuid::from_slice(&identity.host_id).ok()?;
+        Some(*self.own.get_or_init(|| own))
     }
 }
 
@@ -186,6 +217,8 @@ impl Memory {
 #[derive(Clone)]
 enum Via {
     Channel(Channel),
+    /// A host on the socket, whose channel is settled at the call.
+    Host(Arc<Socket>, Uuid),
     Memory(Memory),
 }
 
@@ -196,7 +229,7 @@ pub struct Conn {
     via: Via,
     /// What a stub on it is built with: the authority it addresses.
     origin: Uri,
-    surface: HeaderValue,
+    surface: Surface,
 }
 
 impl Conn {
@@ -205,7 +238,7 @@ impl Conn {
         Conn {
             via: Via::Channel(channel),
             origin: Address::Node.origin(),
-            surface: HeaderValue::from_static(surface.word()),
+            surface,
         }
     }
 
@@ -225,13 +258,21 @@ impl Service<http::Request<Body>> for Conn {
     }
 
     fn call(&mut self, mut request: http::Request<Body>) -> Self::Future {
-        request
-            .headers_mut()
-            .insert(wire::SURFACE_HEADER, self.surface.clone());
+        request.headers_mut().insert(
+            wire::SURFACE_HEADER,
+            HeaderValue::from_static(self.surface.word()),
+        );
         match &self.via {
             Via::Channel(channel) => {
                 let channel = channel.clone();
                 Box::pin(async move { channel.oneshot(request).await.map_err(Into::into) })
+            }
+            Via::Host(socket, host) => {
+                let (socket, host, surface) = (socket.clone(), *host, self.surface);
+                Box::pin(async move {
+                    let channel = socket.channel(host, surface).await;
+                    channel.oneshot(request).await.map_err(Into::into)
+                })
             }
             Via::Memory(memory) => Box::pin(memory.service().oneshot(request)),
         }

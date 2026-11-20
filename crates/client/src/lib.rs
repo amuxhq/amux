@@ -140,19 +140,6 @@ impl Client {
     /// open at the time ends, and its reader subscribes again.
     pub async fn connect(path: &Path, surface: Surface) -> Result<Client, RpcError> {
         let socket = Socket::connect(path).await?;
-        // The node's own id rides the node's channel. A node that does not
-        // say leaves calls addressed to it on a channel of their own, which
-        // the node answers all the same.
-        let identity = admin::Admin::on(&socket.node(), surface)
-            .get_device_identity()
-            .await;
-        let socket = match identity
-            .ok()
-            .and_then(|identity| host_id(&identity.host_id))
-        {
-            Some(own) => socket.knowing_own(own),
-            None => socket,
-        };
         Ok(Client {
             transport: Transport::Socket(std::sync::Arc::new(socket)),
             surface,

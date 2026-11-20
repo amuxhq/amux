@@ -779,6 +779,7 @@ dependencies = [
  "patience",
  "prost",
  "provider-fakes",
+ "tempfile",
  "testnet",
  "thiserror 2.0.20",
  "tokio",

@@ -330,3 +330,120 @@ async fn a_profile_opened_from_the_front_door_answers() {
     );
     net.shutdown().await.unwrap();
 }
+
+/// Each call a socket client makes, as it reaches the node: its method and
+/// the authority it names.
+type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+
+/// A socket at `path` in front of the node's socket at `node`, passing
+/// every call on to it and writing down each one.
+async fn recorded(node: &std::path::Path, path: &std::path::Path) -> Seen {
+    use tonic::codegen::http;
+
+    #[derive(Clone)]
+    struct Recording {
+        node: tonic::transport::Channel,
+        seen: Seen,
+    }
+
+    impl tower::Service<http::Request<tonic::body::Body>> for Recording {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = tonic::transport::Error;
+        type Future = futures_util::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(
+            &mut self,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, request: http::Request<tonic::body::Body>) -> Self::Future {
+            let authority = request
+                .uri()
+                .authority()
+                .map(|authority| authority.to_string())
+                .unwrap_or_default();
+            let method = request
+                .uri()
+                .path()
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_owned();
+            self.seen.lock().unwrap().push((method, authority));
+            let node = self.node.clone();
+            Box::pin(tower::ServiceExt::oneshot(node, request))
+        }
+    }
+
+    let node = client::local_channel(node).await.unwrap();
+    let seen = Seen::default();
+    let recording = Recording {
+        node,
+        seen: seen.clone(),
+    };
+    let listener = tokio::net::UnixListener::bind(path).unwrap();
+    let incoming = futures_util::stream::unfold(listener, |listener| async move {
+        let accepted = listener.accept().await.map(|(stream, _)| stream);
+        Some((accepted, listener))
+    });
+    tokio::spawn(
+        tonic::transport::Server::builder()
+            .layer(tower::layer::layer_fn(move |_| recording.clone()))
+            .add_routes(tonic::service::Routes::default())
+            .serve_with_incoming(incoming),
+    );
+    seen
+}
+
+/// A socket client asks its node who it is only when a call is addressed
+/// to a host, and only once, so a client that reads the node's own
+/// services pays no round trip for it. A call addressed to the node's own
+/// id then rides the node's channel.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_socket_client_asks_its_nodes_id_only_once_a_call_is_addressed_to_a_host() {
+    let net = Net::start(
+        Topology::new().host("desk").agent(
+            AgentDecl::new("worker", "desk")
+                .kind(FakeKind::Codex)
+                .steps(vec![Step::TurnEnd])
+                .prompt("go"),
+        ),
+    )
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let front = dir.path().join("front.sock");
+    let seen = recorded(&socket(&net, "desk").await, &front).await;
+    let asked = |seen: &Seen| {
+        seen.lock()
+            .unwrap()
+            .iter()
+            .filter(|(method, _)| method == "GetDeviceIdentity")
+            .count()
+    };
+
+    let client = Client::connect(&front, Surface::Terminal).await.unwrap();
+    let worker = net.agent("worker").unwrap().id.as_bytes().to_vec();
+    let row = row(&client, &worker).await;
+    assert_eq!(asked(&seen), 0, "{:?}", seen.lock().unwrap());
+
+    for name in ["first", "second"] {
+        client.agent(&row).rename(name).await.unwrap();
+    }
+    assert_eq!(asked(&seen), 1, "{:?}", seen.lock().unwrap());
+    let renames: Vec<String> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == "RenameAgent")
+        .map(|(_, authority)| authority.clone())
+        .collect();
+    assert_eq!(
+        renames,
+        ["amux.local", "amux.local"],
+        "a call to the node's own id rides the node's channel"
+    );
+    net.shutdown().await.unwrap();
+}

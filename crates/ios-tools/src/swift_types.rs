@@ -26,7 +26,7 @@ pub const OUTPUT: &str = "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values
 pub const PUSH_OUTPUT: &str = "apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift";
 
 /// Which definitions go to `PUSH_OUTPUT`: what a push says and what that holds.
-const PUSH_VALUES: &[&str] = &["Said", "Wants"];
+pub(crate) const PUSH_VALUES: &[&str] = &["Said", "Wants"];
 
 /// Every value the bridge hands over or takes, by its root types; what
 /// they hold comes along.
@@ -150,7 +150,7 @@ pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-fn repository() -> PathBuf {
+pub(crate) fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
@@ -686,7 +686,7 @@ fn referenced(owner: &str, reference: &str) -> Result<String> {
 
 // --- names and docs --------------------------------------------------------
 
-fn camel(snake: &str) -> String {
+pub(crate) fn camel(snake: &str) -> String {
     let mut out = String::new();
     let mut upper = false;
     for c in snake.chars() {
@@ -710,7 +710,7 @@ fn lower_first(name: &str) -> String {
         .unwrap_or_default()
 }
 
-fn upper_first(name: &str) -> String {
+pub(crate) fn upper_first(name: &str) -> String {
     let mut chars = name.chars();
     chars
         .next()
@@ -812,6 +812,63 @@ fn undoc(doc: &str) -> String {
 }
 
 #[cfg(test)]
+pub(crate) fn missing_public_view_values(definitions: &Map<String, Value>) -> Vec<String> {
+    const STAY_IN_RUST: &[&str] = &[
+        // The answer body a choice sends: the phone names the choice.
+        "Answer",
+        // Borrowed option types; the chat holds its own open runs.
+        "ToolRows",
+        // A landed edit's first patch lines, which only the terminal
+        // draws: ui_view::patch_head is called by no bridge function.
+        "PatchHead",
+        // What a session knows for its fleet row: the runtime reads it
+        // and hands it to ui_view::fleet_view, which returns the cards
+        // the phone draws.
+        "SessionLine",
+        // What a typed draft is to the terminal; the phone asks the
+        // bridge's command call, which answers a CommandOutcome.
+        "Slash",
+    ];
+    let root = repository();
+    let mut missing = Vec::new();
+    for dir in [
+        "crates/ui-state/src/model.rs",
+        "crates/ui-view/src",
+        "crates/app-runtime/src/values.rs",
+    ] {
+        let path = root.join(dir);
+        let files = if path.is_dir() {
+            std::fs::read_dir(&path)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect()
+        } else {
+            vec![path]
+        };
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap();
+            for line in text.lines() {
+                let line = line.trim_start();
+                let Some(rest) = line
+                    .strip_prefix("pub struct ")
+                    .or_else(|| line.strip_prefix("pub enum "))
+                else {
+                    continue;
+                };
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                if !STAY_IN_RUST.contains(&name.as_str()) && !definitions.contains_key(&name) {
+                    missing.push(format!("{name} ({})", file.display()));
+                }
+            }
+        }
+    }
+    missing
+}
+
+#[cfg(test)]
 mod tests {
     use serde_json::json;
 
@@ -830,59 +887,7 @@ mod tests {
     /// mirror, except the ones that never cross it.
     #[test]
     fn every_public_view_value_has_a_swift_mirror() {
-        const STAY_IN_RUST: &[&str] = &[
-            // The answer body a choice sends: the phone names the choice.
-            "Answer",
-            // Borrowed option types; the chat holds its own open runs.
-            "ToolRows",
-            // A landed edit's first patch lines, which only the terminal
-            // draws: ui_view::patch_head is called by no bridge function.
-            "PatchHead",
-            // What a session knows for its fleet row: the runtime reads it
-            // and hands it to ui_view::fleet_view, which returns the cards
-            // the phone draws.
-            "SessionLine",
-            // What a typed draft is to the terminal; the phone asks the
-            // bridge's command call, which answers a CommandOutcome.
-            "Slash",
-        ];
-        let definitions = definitions();
-        let root = repository();
-        let mut missing = Vec::new();
-        for dir in [
-            "crates/ui-state/src/model.rs",
-            "crates/ui-view/src",
-            "crates/app-runtime/src/values.rs",
-        ] {
-            let path = root.join(dir);
-            let files = if path.is_dir() {
-                std::fs::read_dir(&path)
-                    .unwrap()
-                    .map(|entry| entry.unwrap().path())
-                    .collect()
-            } else {
-                vec![path]
-            };
-            for file in files {
-                let text = std::fs::read_to_string(&file).unwrap();
-                for line in text.lines() {
-                    let line = line.trim_start();
-                    let Some(rest) = line
-                        .strip_prefix("pub struct ")
-                        .or_else(|| line.strip_prefix("pub enum "))
-                    else {
-                        continue;
-                    };
-                    let name: String = rest
-                        .chars()
-                        .take_while(|c| c.is_alphanumeric() || *c == '_')
-                        .collect();
-                    if !STAY_IN_RUST.contains(&name.as_str()) && !definitions.contains_key(&name) {
-                        missing.push(format!("{name} ({})", file.display()));
-                    }
-                }
-            }
-        }
+        let missing = missing_public_view_values(&definitions());
         assert!(missing.is_empty(), "no Swift mirror for: {missing:#?}");
     }
 

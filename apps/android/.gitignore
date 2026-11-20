@@ -1,0 +1,8 @@
+.gradle/
+**/build/
+local.properties
+core/runtime/src/main/jniLibs/
+.idea/
+*.iml
+.DS_Store
+*.hprof

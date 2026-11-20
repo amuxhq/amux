@@ -104,10 +104,10 @@ pub enum ReviewNotice {
     NotOffered,
     /// The agent's folder is not a git repository, so it has no review.
     NotARepository,
-    /// A round's snapshot is gone from the agent's host, which keeps only
-    /// its latest two, or from the repository, as after a rebase and garbage
-    /// collection: since your last review, or the round's own page, shows
-    /// each comment with the code stored with it instead.
+    /// A round's commits can no longer be read on the agent's host, as
+    /// after a rebase and garbage collection: since your last review, or the
+    /// round's own page, shows each comment with the code stored with it
+    /// instead.
     RoundGone,
     /// A snapshot of the working tree could not be taken; what the host
     /// said.

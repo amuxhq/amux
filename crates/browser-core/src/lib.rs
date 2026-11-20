@@ -9,7 +9,10 @@
 //! the views it draws ship with it, at its own version.
 //!
 //! One entry point, [`handle`]: a JSON request naming an operation, and a
-//! JSON answer. Bytes travel as base64, ids as lowercase hex. The WebAssembly
+//! JSON answer. Bytes travel as base64, ids as lowercase hex. No request
+//! this crate encodes names a host: a call is addressed to the host that
+//! answers it by its authority, which [`Request::Authority`] gives for a
+//! host id. The WebAssembly
 //! module exports it as `call`, with `alloc` and `free` for the memory a
 //! request and its answer pass through.
 //!
@@ -57,6 +60,11 @@ enum Request {
     DeviceIdentity {
         message: String,
     },
+    /// The authority a call to a host is made with, in the one form every
+    /// client writes it (`wire::authority`).
+    Authority {
+        host: String,
+    },
     /// A new, empty fleet model.
     FleetNew,
     FleetDrop {
@@ -100,7 +108,8 @@ enum Request {
     },
     /// A `SendInputRequest` carrying a prompt in the agent's kind: the words,
     /// with one U+FFFC where each attachment goes, a review of each page
-    /// first and then each piece of text sent from a page.
+    /// first and then each piece of text sent from a page. `host` finds the
+    /// agent's kind in the fleet; the call is addressed to it.
     SendPrompt {
         fleet: u32,
         host: String,
@@ -126,7 +135,8 @@ enum Request {
     },
     /// A `CreateAgentRequest` for a Claude agent on this host in `cwd`,
     /// of the kind the host publishes, with no first prompt: the review's
-    /// screenshots are stored with it once it exists, then sent to it.
+    /// screenshots are stored with it once it exists, then sent to it. The
+    /// request names no host; the call is addressed to this one.
     CreateAgent {
         fleet: u32,
         #[serde(rename = "localHost")]
@@ -171,6 +181,11 @@ fn answer(request: Request) -> Result<Value, String> {
             let response: wire::GetDeviceIdentityResponse = decode(&message)?;
             let identity = response.identity.unwrap_or_default();
             json!({ "hostId": hex(&identity.host_id), "name": identity.name })
+        }
+        Request::Authority { host } => {
+            let host = uuid::Uuid::from_slice(&unhex(&host)?)
+                .map_err(|_| format!("{host:?} is not a host id"))?;
+            json!(wire::authority(&host))
         }
         Request::FleetNew => {
             let id = NEXT.with(|next| {

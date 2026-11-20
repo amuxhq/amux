@@ -17,4 +17,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
+uuid = { workspace = true }
 wire = { workspace = true }
+
+# A browser is the only source of randomness WebAssembly has here; ids are
+# never made in this crate, but the uuid crate refuses to build without one.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }

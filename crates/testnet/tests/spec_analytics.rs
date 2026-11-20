@@ -14,9 +14,9 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use node::harness::LiveRoute;
 use provider_fakes::script::Step;
+use serde_json::{Value, json};
 use support::*;
 use testnet::{AgentDecl, Net, NetOptions, Topology, until};
-use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use wire::{ClaudeSdkInput, PromptInput, begin_pair_request, claude_sdk_input};
 

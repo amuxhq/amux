@@ -161,9 +161,10 @@ fn a_host_is_addressed_by_its_authority() {
         call(json!({"op": "authority", "host": host})),
         "0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80"
     );
-    let short: Value =
-        serde_json::from_str(&handle(&json!({"op": "authority", "host": "ab"}).to_string()))
-            .unwrap();
+    let short: Value = serde_json::from_str(&handle(
+        &json!({"op": "authority", "host": "ab"}).to_string(),
+    ))
+    .unwrap();
     assert!(short["error"].as_str().unwrap().contains("not a host id"));
 }
 

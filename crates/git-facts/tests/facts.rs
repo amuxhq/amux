@@ -1056,3 +1056,71 @@ fn a_folders_origin_names_its_repository_as_facts_do() {
     let outside = tempfile::tempdir().unwrap();
     assert_eq!(origin(outside.path()), None);
 }
+
+/// Every file and folder under `.git`, with its kind, size, modification
+/// time and bytes: a read that writes, renames, freshens or creates
+/// anything there changes it.
+fn manifest(
+    repo: &Path,
+) -> std::collections::BTreeMap<std::path::PathBuf, (bool, u64, std::time::SystemTime, Vec<u8>)> {
+    let mut found = std::collections::BTreeMap::new();
+    let mut folders = vec![repo.join(".git")];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let entry = entry.unwrap();
+            let meta = std::fs::symlink_metadata(entry.path()).unwrap();
+            let bytes = match meta.is_file() {
+                true => std::fs::read(entry.path()).unwrap(),
+                false => Vec::new(),
+            };
+            if meta.is_dir() {
+                folders.push(entry.path());
+            }
+            found.insert(
+                entry.path().strip_prefix(repo).unwrap().to_owned(),
+                (meta.is_dir(), meta.len(), meta.modified().unwrap(), bytes),
+            );
+        }
+    }
+    found
+}
+
+/// Reading what changed marks untracked files in a copy of the index,
+/// which writes the empty blob. None of it reaches the repository: not a
+/// new object, nor the time of the pack that already holds the empty
+/// blob, whether listing changes, reading the facts or comparing.
+#[tokio::test]
+async fn reading_changes_writes_nothing_to_the_repository() {
+    let repo = repository();
+    let dir = repo.path();
+    std::fs::write(dir.join("empty.txt"), "").unwrap();
+    git(dir, &["add", "empty.txt"]);
+    git(dir, &["commit", "-q", "-m", "an empty file"]);
+    git(dir, &["gc", "-q"]);
+    std::fs::write(dir.join("untracked-empty.txt"), "").unwrap();
+    std::fs::write(dir.join("untracked.txt"), "new\n").unwrap();
+    write(dir, "base.txt", 12);
+    // Old enough that a freshened time could not go unseen.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let before = manifest(dir);
+
+    let found = changes(
+        dir,
+        &Base::Default {
+            recorded_branch: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(found.files.len(), 3, "{:?}", found.files);
+    facts(dir, None).await.unwrap().unwrap();
+    compare(dir, &Comparison::Uncommitted, true).await.unwrap();
+
+    let after = manifest(dir);
+    let differ: Vec<_> = before
+        .keys()
+        .chain(after.keys())
+        .filter(|path| before.get(*path) != after.get(*path))
+        .collect();
+    assert!(differ.is_empty(), "reading changed .git: {differ:?}");
+}

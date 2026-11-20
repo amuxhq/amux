@@ -890,17 +890,26 @@ impl<'a> Scratch<'a> {
         // a folder's untracked paths can together pass the platform's
         // command-line limit, and are not always valid UTF-8.
         if !untracked.is_empty() {
-            checked_with_input(
-                cwd,
-                Some(&scratch.index()),
-                &[
-                    "--literal-pathspecs",
-                    "add",
-                    "--intent-to-add",
-                    "--pathspec-from-file=-",
-                    "--pathspec-file-nul",
-                ],
-                untracked,
+            // Marking a file writes the empty blob; into the repository it
+            // would create a file there, or freshen the pack already holding
+            // it, on every read. It goes to a store of the scratch's own,
+            // which the reads below search.
+            let throwaway = scratch.throwaway();
+            std::fs::create_dir_all(throwaway.dir()).map_err(GitError::Scratch)?;
+            objects::checked(
+                "add",
+                throwaway.writing(
+                    cwd,
+                    Some(&scratch.index()),
+                    &[
+                        "--literal-pathspecs",
+                        "add",
+                        "--intent-to-add",
+                        "--pathspec-from-file=-",
+                        "--pathspec-file-nul",
+                    ],
+                ),
+                Some(untracked),
             )
             .await?;
         }
@@ -949,8 +958,25 @@ impl<'a> Scratch<'a> {
         self.dir.path().join(INDEX)
     }
 
+    /// Where the objects marking untracked files go, never the repository.
+    fn throwaway(&self) -> objects::ObjectStore {
+        objects::ObjectStore::at(self.dir.path().join("objects"))
+    }
+
+    /// Git on the scratch index, the throwaway objects readable beside the
+    /// repository's.
     async fn checked(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {
-        checked(self.cwd, Some(&self.index()), args).await
+        let throwaway = self.throwaway();
+        let mut command = throwaway.reading(self.cwd, args);
+        command.env("GIT_INDEX_FILE", self.index());
+        objects::checked(
+            args.iter()
+                .find(|arg| !arg.starts_with('-'))
+                .unwrap_or(&"git"),
+            command,
+            None,
+        )
+        .await
     }
 
     /// Each file that differs between `against` and the working tree,

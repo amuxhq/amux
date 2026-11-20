@@ -1,3 +1,5 @@
+import org.gradle.internal.os.OperatingSystem
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -20,6 +22,17 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all { test ->
+                val os = OperatingSystem.current()
+                val libName = when {
+                    os.isMacOsX -> "libamux_app.dylib"
+                    os.isWindows -> "amux_app.dll"
+                    else -> "libamux_app.so"
+                }
+                val repoRoot = rootProject.projectDir.parentFile.parentFile
+                val hostLib = repoRoot.resolve("target/android/host-jni/$libName")
+                test.systemProperty("amux.jni.lib", hostLib.absolutePath)
+            }
         }
     }
 }

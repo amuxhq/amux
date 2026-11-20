@@ -345,6 +345,7 @@ fn replica_file(profile: &Path, host: node::HostId, agent: uuid::Uuid, hash: &[u
 /// not found, in the desk's own words.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_not_fetched_yet_is_asked_of_its_host_checked_and_kept() {
+    captured_log();
     let pair = Pair::new().await;
     let desk = pair.desk_runtime.host();
     let coder = pair.coder.id;
@@ -367,8 +368,21 @@ async fn a_file_not_fetched_yet_is_asked_of_its_host_checked_and_kept() {
         hash: hash.to_vec(),
     };
 
+    // The fetch is a call to a paired host like every other this daemon
+    // makes for itself, so its link channel logs it as one.
+    let fetches = || {
+        let log = String::from_utf8_lossy(&captured_log().lock().unwrap()).into_owned();
+        log.lines()
+            .filter(|line| {
+                line.contains("a call to a paired host")
+                    && line.contains("/amux.v1.PeerService/GetBlob")
+            })
+            .count()
+    };
+    let before = fetches();
     let fetched = sessions.get_blob(read(&blob.hash)).await.unwrap();
     assert_eq!(fetched.into_inner().bytes, photo);
+    assert_eq!(fetches(), before + 1, "one call to the desk, logged");
     assert_eq!(
         std::fs::read(&kept).unwrap(),
         photo,

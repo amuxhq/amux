@@ -28,11 +28,9 @@ use wire::{
     GetDiffRequest, PutBlobRequest, diff_base,
 };
 
-use crate::HostId;
 use crate::api::Owner;
 use crate::driver::{Ask, Delivered};
 use crate::install::REPLICAS;
-use crate::reach::{ANSWER_PATIENCE, Unreached};
 use crate::runtime::ProfileRuntime;
 
 #[derive(Debug, thiserror::Error)]
@@ -114,29 +112,6 @@ pub(crate) fn within_limit(request: &PutBlobRequest) -> Result<(), BlobError> {
     Ok(())
 }
 
-/// Why `name`, the host holding a file, could not be asked for it, as the
-/// wire says it: the reason a client tells apart, in words a person reads.
-fn unreached(name: &str, why: Unreached) -> wire::Error {
-    match why {
-        Unreached::Unreachable => wire::Error::because(
-            wire::ErrorReason::HostUnreachable,
-            format!("{name} holds the file and cannot be reached"),
-        ),
-        Unreached::Lapsed => wire::Error::because(
-            wire::ErrorReason::PaymentRequired,
-            format!(
-                "{name} holds the file and can be reached only through the relay, and this \
-                 account's subscription has lapsed to the free plan, which carries no calls \
-                 between hosts; renew it to reach {name}"
-            ),
-        ),
-        Unreached::Revoked => wire::Error::new(
-            ErrorCode::Unauthenticated,
-            format!("{name} holds the file and no longer trusts this host"),
-        ),
-    }
-}
-
 fn is_full(error: &io::Error) -> bool {
     matches!(
         error.kind(),
@@ -198,63 +173,9 @@ impl ProfileRuntime {
             Owner::Peer(host) => host,
             Owner::Here | Owner::Unknown => return Err(BlobError::NoBlob(hex(hash))),
         };
-        let bytes = self.fetch_blob(host, agent_id, hash).await?;
+        let bytes = self.peer_blob(host, agent_id, hash).await?;
         self.keep_replica_blob(agent_id, hash, &bytes).await?;
         Ok(bytes)
-    }
-
-    /// Asks `host`'s peer service for a file of one of its agents. The call
-    /// carries no caller: it is this daemon asking for its own copy.
-    async fn fetch_blob(
-        &self,
-        host: HostId,
-        agent_id: &[u8],
-        hash: &[u8],
-    ) -> Result<Vec<u8>, BlobError> {
-        let channel = self
-            .reach(host)
-            .await
-            .map_err(|why| BlobError::Unreached(unreached(&self.host_name(host), why)))?;
-        let mut owner = wire::peer_service_client(channel);
-        let asked = owner.get_blob(wire::PeerServiceGetBlobRequest {
-            agent_id: agent_id.to_vec(),
-            hash: hash.to_vec(),
-        });
-        let stopped = || {
-            wire::Error::new(
-                ErrorCode::Aborted,
-                format!(
-                    "{} stopped answering while sending a file",
-                    self.host_name(host)
-                ),
-            )
-        };
-        let answered = match tokio::time::timeout(ANSWER_PATIENCE, asked).await {
-            Ok(answered) => answered,
-            Err(_) => return Err(BlobError::Owner(stopped())),
-        };
-        answered
-            .map(|answer| answer.into_inner().bytes)
-            .map_err(|status| {
-                BlobError::Owner(match crate::net_error::from_status(&status) {
-                    Some(error) => error,
-                    None => match status.code() {
-                        tonic::Code::Unimplemented => {
-                            wire::Error::new(ErrorCode::Unimplemented, wire::HOST_NEEDS_UPDATE)
-                        }
-                        tonic::Code::Unavailable
-                        | tonic::Code::Unknown
-                        | tonic::Code::Cancelled
-                        | tonic::Code::DeadlineExceeded => stopped(),
-                        // A status code is the wire's error code.
-                        code => wire::Error {
-                            code: code as i32,
-                            message: status.message().to_owned(),
-                            details: Vec::new(),
-                        },
-                    },
-                })
-            })
     }
 
     /// Keeps the bytes of a replica's blob its origin sent, once they are

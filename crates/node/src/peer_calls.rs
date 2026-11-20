@@ -14,7 +14,8 @@ use tonic::{Code, Status};
 use wire::{ErrorCode, PeerServiceGetBlobRequest, PeerServiceListItemsRequest};
 
 use crate::HostId;
-use crate::reach::{ANSWER_PATIENCE, Unreached};
+use crate::blobs::BlobError;
+use crate::reach::{ANSWER_PATIENCE, Unreached, uncertain};
 use crate::runtime::ProfileRuntime;
 
 impl ProfileRuntime {
@@ -63,48 +64,36 @@ impl ProfileRuntime {
     }
 
     /// The bytes of the file `hash` names in one of `host`'s agents'
-    /// directories, as that host's peer service gives them. The caller
-    /// checks them against the hash.
+    /// directories, as that host's peer service gives them: the one way
+    /// this daemon fetches a file from the host that holds it, for its copy
+    /// of a conversation and for a message it delivers. The caller checks
+    /// the bytes against the hash.
     pub(crate) async fn peer_blob(
         &self,
         host: HostId,
         agent_id: &[u8],
         hash: &[u8],
-    ) -> Result<Vec<u8>, String> {
-        let name = || self.host_name(host);
-        let uncertain = || {
-            format!(
-                "{} stopped answering; the call may or may not have arrived",
-                name()
-            )
-        };
+    ) -> Result<Vec<u8>, BlobError> {
         let mut client = match self.reach(host).await {
             Ok(channel) => crate::link::peer_client(channel),
-            Err(Unreached::Lapsed) => {
-                let name = name();
-                return Err(format!(
-                    "{name} can be reached only through the relay, and this account's \
-                     subscription has lapsed to the free plan, which carries no calls between \
-                     hosts; renew it to reach {name}"
-                ));
+            Err(unreached) => {
+                return Err(BlobError::Unreached(unreached.error(&self.host_name(host))));
             }
-            Err(Unreached::Revoked) => {
-                return Err(format!("{} no longer trusts this machine", name()));
-            }
-            Err(Unreached::Unreachable) => return Err(format!("{} cannot be reached", name())),
         };
         let request = PeerServiceGetBlobRequest {
             agent_id: agent_id.to_vec(),
             hash: hash.to_vec(),
         };
-        match tokio::time::timeout(ANSWER_PATIENCE, client.peer.get_blob(request)).await {
-            Ok(Ok(blob)) => Ok(blob.into_inner().bytes),
-            Ok(Err(status)) => Err(match failure(&status) {
-                PeerFailure::Refused(error) => error.message,
-                _ => uncertain(),
-            }),
-            Err(_) => Err(uncertain()),
-        }
+        let failed =
+            match tokio::time::timeout(ANSWER_PATIENCE, client.peer.get_blob(request)).await {
+                Ok(Ok(blob)) => return Ok(blob.into_inner().bytes),
+                Ok(Err(status)) => failure(&status),
+                Err(_) => PeerFailure::Uncertain,
+            };
+        Err(BlobError::Owner(match failed {
+            PeerFailure::Refused(error) => error,
+            _ => uncertain(&self.host_name(host)),
+        }))
     }
 }
 

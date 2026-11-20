@@ -578,7 +578,7 @@ impl ProfileRuntime {
                     .map_err(|_| failed("its sender names no host".to_owned()))?;
                 self.peer_blob(host, sender_agent, &blob.hash)
                     .await
-                    .map_err(failed)?
+                    .map_err(|error| failed(error.to_string()))?
             };
             use sha2::Digest as _;
             if sha2::Sha256::digest(&bytes)[..] != blob.hash[..] {

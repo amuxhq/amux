@@ -11,7 +11,7 @@ use std::time::Duration;
 use tonic::transport::Channel;
 
 use crate::HostId;
-use crate::link::ChannelError;
+use crate::link::{ChannelError, TRUST_REVOKED};
 use crate::runtime::ProfileRuntime;
 
 /// How long reaching a host may take: finding its link and opening a
@@ -34,6 +34,40 @@ pub(crate) enum Unreached {
     Lapsed,
     /// It refused this host's certificate: it no longer trusts this one.
     Revoked,
+}
+
+impl Unreached {
+    /// What a call to the host named `name` says when it never left for
+    /// this reason: the same words for every call, the reason a client
+    /// tells apart beside them.
+    pub(crate) fn error(self, name: &str) -> wire::Error {
+        match self {
+            Self::Unreachable => wire::Error::because(
+                wire::ErrorReason::HostUnreachable,
+                format!("{name} cannot be reached"),
+            ),
+            // Said as such, so no surface blames the network.
+            Self::Lapsed => wire::Error::because(
+                wire::ErrorReason::PaymentRequired,
+                format!(
+                    "{name} can be reached only through the relay, and this account's \
+                     subscription has lapsed to the free plan, which carries no calls between \
+                     hosts; renew it to reach {name}"
+                ),
+            ),
+            Self::Revoked => wire::Error::new(wire::ErrorCode::Unauthenticated, TRUST_REVOKED),
+        }
+    }
+}
+
+/// What a call to the host named `name` says when it went out and no
+/// answer came: within [`ANSWER_PATIENCE`], or before the link failed under
+/// it. Whether it arrived, nobody here can know.
+pub(crate) fn uncertain(name: &str) -> wire::Error {
+    wire::Error::new(
+        wire::ErrorCode::Aborted,
+        format!("{name} stopped answering; the call may or may not have arrived"),
+    )
 }
 
 impl ProfileRuntime {

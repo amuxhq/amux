@@ -42,13 +42,12 @@ use tonic::body::Body;
 use tonic::codegen::http::{self, HeaderMap, HeaderValue};
 use tonic::transport::Channel;
 use tower::{Service, ServiceExt as _};
-use wire::{ErrorCode, ErrorReason};
 
 use crate::HostId;
 use crate::api::Caller;
-use crate::grpc::{status, wire_error};
+use crate::grpc::status;
 use crate::link::link_log::{CarriedCall, CarriedOutcome};
-use crate::reach::{ANSWER_PATIENCE, Unreached};
+use crate::reach::{ANSWER_PATIENCE, Unreached, uncertain};
 use crate::runtime::ProfileRuntime;
 
 /// How the carrier reaches a host: the channel this node keeps to it, and
@@ -133,37 +132,17 @@ impl Carrier {
         let channel = match self.reach.channel(host).await {
             Ok(channel) => channel,
             Err(unreached) => {
-                let (outcome, refusal) = match unreached {
-                    Unreached::Unreachable => (
-                        CarriedOutcome::Unreachable,
-                        status(wire::Error::because(
-                            ErrorReason::HostUnreachable,
-                            format!("{} cannot be reached", name()),
-                        )),
-                    ),
-                    Unreached::Lapsed => (
-                        CarriedOutcome::PaymentRequired,
-                        status(wire::Error::because(
-                            ErrorReason::PaymentRequired,
-                            lapsed(&name()),
-                        )),
-                    ),
-                    Unreached::Revoked => (
-                        CarriedOutcome::Revoked,
-                        crate::link::ChannelError::Revoked.status(),
-                    ),
+                let outcome = match unreached {
+                    Unreached::Unreachable => CarriedOutcome::Unreachable,
+                    Unreached::Lapsed => CarriedOutcome::PaymentRequired,
+                    Unreached::Revoked => CarriedOutcome::Revoked,
                 };
+                let refusal = status(unreached.error(&name()));
                 line.end(outcome, refusal.code());
                 return refusal.into_http();
             }
         };
-        let aborted = status(wire_error(
-            ErrorCode::Aborted,
-            format!(
-                "{} stopped answering; the call may or may not have arrived",
-                name()
-            ),
-        ));
+        let aborted = status(uncertain(&name()));
         match tokio::time::timeout(ANSWER_PATIENCE, channel.oneshot(request)).await {
             Ok(Ok(response)) => {
                 let (parts, body) = response.into_parts();
@@ -203,15 +182,6 @@ impl Service<http::Request<Body>> for Carrier {
         let carrier = self.clone();
         Box::pin(async move { Ok(carrier.carry(request).await) })
     }
-}
-
-/// What a call to `name` says when only the relay reaches it and the plan
-/// lapsed: said as such, so no surface blames the network.
-fn lapsed(name: &str) -> String {
-    format!(
-        "{name} can be reached only through the relay, and this account's subscription has \
-         lapsed to the free plan, which carries no calls between hosts; renew it to reach {name}"
-    )
 }
 
 /// The link log's line for one carried call, written once, when it ends:

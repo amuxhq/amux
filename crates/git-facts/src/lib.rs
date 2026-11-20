@@ -1148,15 +1148,20 @@ async fn flagged(
     let regular = |mode: &str| mode.starts_with("100");
     let hashed =
         |id: &str| store.is_some() && !id.is_empty() && id.bytes().any(|byte| byte != b'0');
-    let sized = files.iter().flat_map(|file| {
-        let old =
-            (file.status != Status::Created && regular(&file.old_mode)).then_some(&file.old_id);
-        let new =
-            (file.status != Status::Deleted && regular(&file.new_mode) && hashed(&file.new_id))
-                .then_some(&file.new_id);
-        old.into_iter().chain(new).map(String::as_str)
-    });
-    let sizes = sizes(root, store, sized).await?;
+    // Collected first: an iterator of borrowing closures held across the
+    // await below would keep the future from being sent between threads.
+    let sized: Vec<&str> = files
+        .iter()
+        .flat_map(|file| {
+            let old =
+                (file.status != Status::Created && regular(&file.old_mode)).then_some(&file.old_id);
+            let new =
+                (file.status != Status::Deleted && regular(&file.new_mode) && hashed(&file.new_id))
+                    .then_some(&file.new_id);
+            old.into_iter().chain(new).map(String::as_str)
+        })
+        .collect();
+    let sizes = sizes(root, store, &sized).await?;
     let mut flagged = Vec::with_capacity(files.len());
     // The sides whose header is in an object rather than the working tree,
     // read in one go.
@@ -1313,7 +1318,7 @@ fn read_with(
 async fn sizes(
     cwd: &Path,
     store: Option<&objects::ObjectStore>,
-    ids: impl Iterator<Item = &str>,
+    ids: &[&str],
 ) -> Result<std::collections::HashMap<String, u64>, GitError> {
     let mut input = String::new();
     for id in ids {

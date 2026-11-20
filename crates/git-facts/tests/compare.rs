@@ -552,3 +552,20 @@ async fn binary_and_created_files_have_their_sides_named() {
     assert_eq!(file("a.txt").new_blob, None);
     assert_eq!(file("a.txt").hunks[0].lines[0].old_line, 1);
 }
+
+/// Every comparison can run on a multi-threaded runtime's handler, as the
+/// host's review calls do.
+#[test]
+fn every_comparison_can_be_sent_between_threads() {
+    fn sent<T: Send>(_: T) {}
+    let (dir, store) = (Path::new("."), ObjectStore::at("store"));
+    sent(compare::base_for_review(dir, None, None, None));
+    sent(compare::files(dir, &store, "a", "b"));
+    sent(compare::hunks(dir, &store, "a", "b", &["p"], 3));
+    sent(compare::read(dir, &store, "a", "p"));
+    sent(compare::lines(dir, &store, "a", "p", &[range(1, 1)]));
+    sent(compare::blobs(dir, &store, &["a"]));
+    sent(LineMap::between(dir, &store, "a", "b", "p"));
+    sent(LineMap::for_paths(dir, &store, "a", "b", &["p"]));
+    sent(changes(dir, &Base::Head));
+}

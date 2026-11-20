@@ -720,6 +720,43 @@ impl Sqlite {
         self.write(|rows| commit(rows, agent, frames, clock))
     }
 
+    /// [`Sqlite::commit`], and then `then` on the agent's review inside the
+    /// same transaction: what the committed records ask of the review lands
+    /// with them and with the cursor past them, or none of it does. An
+    /// error from `then` rolls the whole commit back, so the frames are read
+    /// again. With the reviews experiment off, `then` is not run.
+    pub fn commit_reviewed<T, E: From<StoreError>>(
+        &mut self,
+        agent: &AgentKey,
+        frames: &[(u64, Step)],
+        clock: CommitClock,
+        then: impl FnOnce(&Committed, &crate::reviews::ReviewWriter<'_>) -> Result<T, E>,
+    ) -> Result<(Committed, Option<T>), E> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn.into());
+        }
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::from)?;
+        let rows = Rows {
+            conn: &tx,
+            own_host: &self.own_host,
+            suspension_1: self.suspension_1,
+            reviews_1: self.reviews_1,
+        };
+        let committed = commit(&rows, agent, frames, clock)?;
+        let then = match self.reviews_1 {
+            true => Some(then(
+                &committed,
+                &crate::reviews::ReviewWriter::new(&rows, agent),
+            )?),
+            false => None,
+        };
+        tx.commit().map_err(StoreError::from)?;
+        Ok((committed, then))
+    }
+
     /// Moves an own row's ingest cursor back to where its journal now
     /// ends, after a power cut took the journal's tail but not the store's
     /// commit of it. Everything committed stays, and so does the next

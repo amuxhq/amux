@@ -248,7 +248,7 @@ impl Sqlite {
             suspension_1: self.suspension_1,
             reviews_1: self.reviews_1,
         };
-        let value = write(&ReviewWriter { rows: &rows, agent })?;
+        let value = write(&ReviewWriter::new(&rows, agent))?;
         tx.commit().map_err(StoreError::from)?;
         Ok(value)
     }
@@ -260,6 +260,12 @@ impl Sqlite {
 pub struct ReviewWriter<'a> {
     rows: &'a Rows<'a>,
     agent: &'a AgentKey,
+}
+
+impl<'a> ReviewWriter<'a> {
+    pub(crate) fn new(rows: &'a Rows<'a>, agent: &'a AgentKey) -> Self {
+        ReviewWriter { rows, agent }
+    }
 }
 
 impl ReviewWriter<'_> {

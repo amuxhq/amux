@@ -628,6 +628,58 @@ fn a_round_closes_when_the_agent_takes_the_prompt_not_when_it_queues() {
     assert_eq!(rig.entry(LEAD), Some(entry(1, 2, false)));
 }
 
+/// The round a taken prompt closes is written in the transaction that
+/// commits the prompt's item and moves the journal's cursor past it: when
+/// the round cannot be written, nothing of the batch is, and the journal is
+/// read again from where it was, so a delivered review never stays a draft
+/// behind a cursor that has moved on.
+#[test]
+fn a_round_lands_with_the_cursor_or_neither_does() {
+    let mut rig = lead();
+    rig.written(LEAD, vec![begin(), snapshot("s1"), put(1, "s1", "a")]);
+    let key = AgentKey::new(OWN, LEAD.0);
+    // The round's write fails, as a full disk or a crash between two
+    // transactions would leave it.
+    rig.daemon
+        .store()
+        .connection()
+        .execute_batch(
+            "CREATE TEMP TRIGGER no_rounds BEFORE INSERT ON exp_reviews_1_rounds \
+             BEGIN SELECT RAISE(ABORT, 'the disk is full'); END;",
+        )
+        .unwrap();
+    let out = rig.journal(LEAD, &taken_prompt(b"taken", &[1]));
+    let failed = out.iter().any(|output| {
+        matches!(output, Output::Ingested { report, .. }
+            if matches!(&report.end, crate::io::IngestEnd::Failed(why) if why.contains("the disk is full")))
+    });
+    assert!(failed, "the batch fails: {out:?}");
+    assert_eq!(
+        rig.daemon.store().cursor(&key).unwrap(),
+        0,
+        "the cursor stays"
+    );
+    assert!(published(&rig, &out).is_empty());
+    assert_eq!(rig.entry(LEAD), Some(entry(1, 1, false)), "still a draft");
+
+    // Once the round can be written, the same item is read again and
+    // closes it, with the cursor past it.
+    rig.daemon
+        .store()
+        .connection()
+        .execute_batch("DROP TRIGGER no_rounds;")
+        .unwrap();
+    let out = rig.step(Input::Nudge { agent: LEAD });
+    assert_eq!(
+        published(&rig, &out),
+        [(LEAD.0.to_vec(), Some(entry(0, 2, false)))]
+    );
+    assert!(rig.daemon.store().cursor(&key).unwrap() > 0);
+    let review = rig.daemon.store().review(&LEAD.0).unwrap().unwrap();
+    assert_eq!(review.rounds.len(), 1);
+    assert_eq!(review.comments[0].round, Some(1));
+}
+
 #[test]
 fn moved_drafts_take_their_new_anchors_and_sent_ones_stay() {
     let mut rig = lead();

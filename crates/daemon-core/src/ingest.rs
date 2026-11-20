@@ -41,6 +41,9 @@ pub struct Journals {
 enum IngestError {
     Store(store::StoreError),
     Journal(std::io::Error),
+    /// A round the committed items close could not be written, so neither
+    /// were they.
+    Review(String),
 }
 
 impl From<store::StoreError> for IngestError {
@@ -60,6 +63,7 @@ impl std::fmt::Display for IngestError {
         match self {
             IngestError::Store(error) => write!(f, "the store: {error}"),
             IngestError::Journal(error) => write!(f, "the journal: {error}"),
+            IngestError::Review(error) => write!(f, "closing a review's round: {error}"),
         }
     }
 }
@@ -163,7 +167,23 @@ impl Daemon {
                 now_ms: self.timers.now_ms as i64,
                 notify_delay_ms: self.settings.notify_delay_ms,
             };
-            let committed = self.store.commit(&key, &batch.frames, clock)?;
+            // The rounds the prompts and messages the agent took send close
+            // in the commit that takes them.
+            let reviews = self.options.reviews;
+            let (committed, reviewed) =
+                self.store
+                    .commit_reviewed(
+                        &key,
+                        &batch.frames,
+                        clock,
+                        |committed, writer| match reviews {
+                            true => {
+                                crate::reviews::rounds_delivered(writer, committed, clock.now_ms)
+                                    .map_err(IngestError::Review)
+                            }
+                            false => Ok(false),
+                        },
+                    )?;
             self.committed(agent);
             report.turn_ends = batch
                 .frames
@@ -182,14 +202,6 @@ impl Daemon {
             // Only now, with the transaction committed: a subscriber never
             // sees a revision the store could not serve it.
             let mut envelope = false;
-            // The reviews the prompts and messages the agent took send.
-            let sent =
-                crate::reviews::sent_in(committed.records.iter().filter_map(
-                    |record| match record {
-                        Record::Item(item) => Some(item),
-                        _ => None,
-                    },
-                ));
             let mut agents = vec![(key.clone(), committed.records)];
             agents.extend(committed.subagents);
             for (owner, records) in agents {
@@ -233,7 +245,11 @@ impl Daemon {
             }
             // After the items: a subscriber hears of the prompt before its
             // round closing on the row.
-            self.review_items_committed(agent, sent, out);
+            if reviewed == Some(true)
+                && let Err(error) = self.publish_row(&key, out)
+            {
+                tracing::warn!(%error, "publishing an agent's review failed");
+            }
             self.touched.after_end.extend(committed.after_end);
             self.subagents_committed(&key, &made, committed.changes, out)?;
             // A message waiting for its acceptance item is answered after

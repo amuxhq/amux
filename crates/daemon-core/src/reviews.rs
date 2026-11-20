@@ -16,8 +16,10 @@
 //! one rise of the counter, one row published.
 //!
 //! A round closes when the agent takes the message sending it: when the
-//! item its prompt or message became is ingested from its journal. A prompt
-//! still queued, and so one a person can withdraw, has closed nothing.
+//! item its prompt or message became is ingested from its journal, in the
+//! transaction that commits the item and moves the journal's cursor past
+//! it. A prompt still queued, and so one a person can withdraw, has closed
+//! nothing.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -203,6 +205,45 @@ pub(crate) fn sent_in<'a>(items: impl IntoIterator<Item = &'a wire::Item>) -> Ve
         .collect()
 }
 
+/// Inside the transaction that commits items of an own agent, `committed`:
+/// each sent review in a prompt or message the agent took closes a round of
+/// its review, in that same transaction, so the round lands with the items
+/// and the cursor past them or not at all. Whether the agent's row changed,
+/// for it to be published once the items are. An agent with no review, or
+/// one started over, has nothing to close: the message is the agent's
+/// already either way. Any other failure is the store's, and fails the
+/// commit, which ingest reads again.
+pub(crate) fn rounds_delivered(
+    writer: &ReviewWriter<'_>,
+    committed: &store::Committed,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let sent = sent_in(committed.records.iter().filter_map(|record| match record {
+        store::Record::Item(item) => Some(item),
+        _ => None,
+    }));
+    if sent.is_empty() {
+        return Ok(false);
+    }
+    let changes: Vec<Change> = sent
+        .into_iter()
+        .map(|sent| Change::Sent {
+            review: sent.review_id,
+            comments: sent
+                .comments
+                .into_iter()
+                .map(|comment| (comment.id, comment.revision))
+                .collect(),
+        })
+        .collect();
+    match apply(writer, &changes, now_ms) {
+        Ok((_, changed)) => Ok(changed),
+        Err(CallError::Review(_) | CallError::NoAgent) => Ok(false),
+        Err(CallError::Store(error)) => Err(error),
+        Err(other) => Err(format!("{other:?}")),
+    }
+}
+
 /// The experiment's work off the core thread: [`crate::io::Job::Review`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Job {
@@ -288,35 +329,6 @@ impl Daemon {
                     omitted: taken.omitted,
                 }),
             });
-        }
-    }
-
-    /// Items of the own agent `agent` were committed: each sent review in
-    /// a prompt or message it took closes a round of its review.
-    pub(crate) fn review_items_committed(
-        &mut self,
-        agent: AgentId,
-        sent: Vec<SentReview>,
-        out: &mut Vec<Output>,
-    ) {
-        if !self.options.reviews || sent.is_empty() {
-            return;
-        }
-        let changes: Vec<Change> = sent
-            .into_iter()
-            .map(|sent| Change::Sent {
-                review: sent.review_id,
-                comments: sent
-                    .comments
-                    .into_iter()
-                    .map(|comment| (comment.id, comment.revision))
-                    .collect(),
-            })
-            .collect();
-        // An agent with no review, or one started over, has nothing to
-        // close: the message is the agent's already either way.
-        if let Err(error) = self.apply_review(agent, &changes, out) {
-            tracing::debug!(?error, "a sent review closed no round");
         }
     }
 

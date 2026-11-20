@@ -3,7 +3,7 @@
 
 By default, builds `app-jni` for `arm64-v8a` (Android API 34) with the driving
 tools feature (`debug-tools`) under the `phone-dev` profile via `cargo-ndk`,
-staging `libamux_app.so` into `apps/android/core/runtime/src/main/jniLibs/`.
+staging `libamux_app.so` into `target/android/debug-jniLibs/`.
 
 Flags:
 - `--host`: build `app-jni` (with `debug-tools` under `phone-dev`) for the host
@@ -16,7 +16,8 @@ Flags:
 
 When no Rust input has changed since the last run and every expected output
 library is present, Cargo is not invoked and output timestamps are left
-untouched so Gradle remains up-to-date.
+untouched so Gradle remains up-to-date. Stale ABI directories outside the
+requested `--abi` set are always pruned, including on cache hits.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-import sys
 
 CRATE = "app-jni"
 LIB_STEM = "amux_app"
@@ -46,16 +46,18 @@ OUTPUT = Path("target/android")
 RUST_TARGETS = OUTPUT / "rust-cargo"
 HOST_JNI_DIR = OUTPUT / "host-jni"
 RELEASE_JNI_LIBS = OUTPUT / "release-jniLibs"
-DEV_JNI_LIBS = Path("apps/android/core/runtime/src/main/jniLibs")
+DEV_JNI_LIBS = OUTPUT / "debug-jniLibs"
 
 SOURCE_ROOTS = ("crates", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo")
 SOURCE_ENVIRONMENT = (
+    "AMUX_GIT_SHA",
     "RUSTFLAGS",
     "CARGO_ENCODED_RUSTFLAGS",
     "CARGO_BUILD_RUSTFLAGS",
     "RUSTC",
     "RUSTUP_TOOLCHAIN",
     "ANDROID_NDK_HOME",
+    "ANDROID_NDK_ROOT",
 )
 
 
@@ -103,6 +105,21 @@ def find_android_ndk() -> str | None:
     return None
 
 
+def ndk_identity(ndk_path: str | None) -> str:
+    if not ndk_path:
+        return "none"
+    resolved = Path(ndk_path).resolve()
+    props = resolved / "source.properties"
+    revision = ""
+    if props.is_file():
+        for line in props.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() == "Pkg.Revision":
+                revision = value.strip()
+                break
+    return f"{resolved}:{revision or resolved.name}"
+
+
 def source_fingerprint(root: Path = Path(".")) -> str:
     summary = hashlib.sha256()
     for name in SOURCE_ENVIRONMENT:
@@ -118,13 +135,26 @@ def source_fingerprint(root: Path = Path(".")) -> str:
     return summary.hexdigest()
 
 
-def build_fingerprint(mode: str, abis: list[str]) -> str:
+def build_fingerprint(mode: str, abis: list[str], *, ndk: str | None = None) -> str:
+    git_sha = os.environ.get("AMUX_GIT_SHA", "")
     if mode == "host":
-        spec = f"host:{platform.system()}:{platform.machine()}:{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}"
-    elif mode == "release":
-        spec = f"release:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:{SHIPPING_PROFILE}:"
+        spec = (
+            f"host:{platform.system()}:{platform.machine()}:"
+            f"{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}:sha={git_sha}"
+        )
     else:
-        spec = f"dev:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}"
+        resolved_ndk = ndk if ndk is not None else find_android_ndk()
+        ndk_id = ndk_identity(resolved_ndk)
+        if mode == "release":
+            spec = (
+                f"release:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:"
+                f"{SHIPPING_PROFILE}::ndk={ndk_id}:sha={git_sha}"
+            )
+        else:
+            spec = (
+                f"dev:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:"
+                f"{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}:ndk={ndk_id}:sha={git_sha}"
+            )
     return f"{source_fingerprint()}:{spec}"
 
 
@@ -135,6 +165,22 @@ def copy_if_changed(src: Path, dst: Path) -> bool:
         return False
     dst.write_bytes(src_bytes)
     return True
+
+
+def prune_stale_abis(jni_root: Path, abis: list[str]) -> list[str]:
+    if not jni_root.is_dir():
+        return []
+    keep = set(abis)
+    removed: list[str] = []
+    for entry in sorted(jni_root.iterdir()):
+        if entry.name in keep:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+        removed.append(entry.name)
+    return removed
 
 
 def build_host(fingerprint: str) -> None:
@@ -166,7 +212,13 @@ def build_host(fingerprint: str) -> None:
     stamp.write_text(fingerprint + "\n")
 
 
-def build_android(abis: list[str], *, release: bool, fingerprint: str) -> None:
+def build_android(
+    abis: list[str],
+    *,
+    release: bool,
+    fingerprint: str,
+    ndk: str | None = None,
+) -> None:
     profile = SHIPPING_PROFILE if release else DRIVING_PROFILE
     features = () if release else DRIVING_FEATURES
     jni_root = RELEASE_JNI_LIBS if release else DEV_JNI_LIBS
@@ -174,16 +226,17 @@ def build_android(abis: list[str], *, release: bool, fingerprint: str) -> None:
     expected = [jni_root / abi / f"lib{LIB_STEM}.so" for abi in abis]
 
     if stamp.is_file() and stamp.read_text().strip() == fingerprint and all(p.is_file() for p in expected):
+        prune_stale_abis(jni_root, abis)
         label = "shipping Android" if release else "Android"
         print(f"Rust sources unchanged; {label} JNI bridge is current and cargo was not run", flush=True)
         return
     stamp.unlink(missing_ok=True)
 
     cargo_ndk = find_cargo_ndk()
-    ndk = find_android_ndk()
+    resolved_ndk = ndk if ndk is not None else find_android_ndk()
     env = os.environ.copy()
-    if ndk:
-        env["ANDROID_NDK_HOME"] = ndk
+    if resolved_ndk:
+        env["ANDROID_NDK_HOME"] = resolved_ndk
     env["CARGO_TARGET_DIR"] = str((RUST_TARGETS / "android").resolve())
     # Ensure cargo-ndk's directory is on PATH so `cargo ndk` finds it.
     ndk_bin_dir = str(Path(cargo_ndk).parent)
@@ -218,6 +271,7 @@ def build_android(abis: list[str], *, release: bool, fingerprint: str) -> None:
         dst = jni_root / abi / f"lib{LIB_STEM}.so"
         copy_if_changed(built, dst)
         print(f"{abi}: {dst.stat().st_size} bytes ({dst})", flush=True)
+    prune_stale_abis(jni_root, abis)
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     stamp.write_text(fingerprint + "\n")
@@ -251,7 +305,8 @@ def main() -> int:
 
     abis = args.abis if args.abis else ["arm64-v8a"]
     mode = "host" if args.host else ("release" if args.release else "dev")
-    fp = build_fingerprint(mode, abis)
+    ndk = None if args.host else find_android_ndk()
+    fp = build_fingerprint(mode, abis, ndk=ndk)
 
     if args.fingerprint:
         print(hashlib.sha256(fp.encode()).hexdigest())
@@ -260,7 +315,7 @@ def main() -> int:
     if args.host:
         build_host(fp)
     else:
-        build_android(abis, release=args.release, fingerprint=fp)
+        build_android(abis, release=args.release, fingerprint=fp, ndk=ndk)
     return 0
 
 

@@ -675,6 +675,20 @@ queue behind calls at the amux layer. Channel payloads are bounded by
 `ATTACHMENT_SIZE_LIMIT` (64 MiB), with room for the `PutBlobRequest` framing
 around it.
 
+A link allows 64 bidirectional streams (`quic_transport_base` in
+`crates/node/src/identity.rs`), and the two classes use two. A call that
+finds no channel to a host within 10 s (`REACH_PATIENCE` in
+`crates/node/src/reach.rs`) closes the host's links it had to use and
+redials: on a link that looks up but has gone silent, as one does just after
+a laptop sleeps or a phone wakes, that is noticed in 10 s rather than at the
+idle timeout (40 s on a desktop, 80 s on the phone). It is right only because
+opening a stream on a live link never waits. A class that opens a channel per
+call, as a tunnel giving each connection a stream of its own would, must keep
+its streams within a budget below the link's limit and refuse a call past it
+as too busy; a wait for a free stream counted against `REACH_PATIENCE` would
+read a busy host as gone and close every link to it, ending every call on
+them.
+
 ### Compression
 
 Every channel to a paired host is compressed, in both classes, on every

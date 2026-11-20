@@ -4,6 +4,7 @@ members = [
     "crates/agent",
     "crates/agent-core",
     "crates/analytics",
+    "crates/app-bridge",
     "crates/app-embedded",
     "crates/app-ffi",
     "crates/app-runtime",
@@ -68,6 +69,7 @@ supervisor-core = { path = "crates/supervisor-core" }
 workspace-core = { path = "crates/workspace-core" }
 agent-dir = { path = "crates/agent-dir" }
 analytics = { path = "crates/analytics" }
+app-bridge = { path = "crates/app-bridge" }
 app-embedded = { path = "crates/app-embedded" }
 app-runtime = { path = "crates/app-runtime" }
 node = { path = "crates/node" }

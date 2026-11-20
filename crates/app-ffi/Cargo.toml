@@ -15,32 +15,24 @@ crate-type = ["staticlib"]
 [features]
 default = []
 # Affordances a driving build carries and a shipping build must not.
-debug-tools = []
+debug-tools = ["app-bridge/debug-tools"]
 
 [dependencies]
-app-embedded = { workspace = true }
-app-runtime = { workspace = true }
-client = { workspace = true }
-futures-util = { workspace = true }
-ui-state = { workspace = true }
-node = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
-ui-view = { workspace = true }
-wire = { workspace = true }
-
-# Installing amux is a desktop app's first call; the phone hosts its own
-# runtime and has nothing to install.
-[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-installer = { workspace = true }
+app-bridge = { workspace = true }
 
 [dev-dependencies]
 analytics = { workspace = true }
+app-runtime = { workspace = true }
+client = { workspace = true }
 libc = { workspace = true }
+node = { workspace = true }
 provider-fakes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
+tokio = { workspace = true }
+wire = { workspace = true }
 
 [build-dependencies]
 cbindgen = { version = "0.29", default-features = false }

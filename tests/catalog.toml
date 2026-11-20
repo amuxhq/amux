@@ -560,7 +560,7 @@ cargo = [{ package = "client", modules = ["seam"], features = [] }]
 [[suite]]
 name = "phone-bridge-library-units"
 contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts."
-paths = ["crates/app-ffi/src"]
+paths = ["crates/app-bridge/src", "crates/app-ffi/src"]
 recipe = "just suite phone-bridge-library-units"
 boundary = "Store, effects, bridge"
 oracle = "C-boundary results, callback records and runtime state."
@@ -572,6 +572,7 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
+  { package = "app-bridge", kind = "lib", targets = ["app_bridge"], features = [] },
   { package = "app-ffi", kind = "lib", targets = ["app_ffi"], features = [] },
 ]
 

@@ -234,6 +234,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "app-bridge"
+version = "0.2.0"
+dependencies = [
+ "app-embedded",
+ "app-runtime",
+ "client",
+ "futures-util",
+ "installer",
+ "node",
+ "serde",
+ "serde_json",
+ "tokio",
+ "ui-state",
+ "ui-view",
+ "wire",
+]
+
+[[package]]
 name = "app-embedded"
 version = "0.2.0"
 dependencies = [
@@ -265,12 +283,10 @@ name = "app-ffi"
 version = "0.2.0"
 dependencies = [
  "analytics",
- "app-embedded",
+ "app-bridge",
  "app-runtime",
  "cbindgen",
  "client",
- "futures-util",
- "installer",
  "libc",
  "node",
  "provider-fakes",
@@ -279,8 +295,6 @@ dependencies = [
  "tempfile",
  "testnet",
  "tokio",
- "ui-state",
- "ui-view",
  "wire",
 ]
 

@@ -10,7 +10,8 @@ app layer splits those into three crates:
 | --- | --- |
 | `app-runtime` | The chats and fleet over a local runtime: session and fleet drivers, views asked for by row key, changes gathered until the host's next main-thread turn, and the values a host passes in and gets back |
 | `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link; and `Phone`, the driver that steps its cores on the client's queue and confines its transport to one thread |
-| `app-ffi` | The C ABI over both: exported `amux_*` functions, JSON in and out, a wake descriptor and a step, tickets for acts, opaque handles, the `staticlib`, and the header `cbindgen` generates |
+| `app-bridge` | The language-neutral bridge over both: `AmuxRuntime`, `AmuxProfile`, `AmuxChat`, JSON in and out, the wake descriptor and step, and ticketed acts |
+| `app-ffi` | The C ABI facade over `app-bridge`: exported `amux_*` functions, opaque handles, the `staticlib`, and the header `cbindgen` generates |
 
 The iPhone app is the one client built on them. How the Swift side uses
 them is on [the iPhone page](IOS.md).
@@ -37,12 +38,13 @@ local edge to a fixed list:
 | --- | --- |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer` (not on iOS), `node`, `ui-state`, `ui-view`, `wire` |
+| `app-bridge` | `app-embedded`, `app-runtime`, `client`, `installer` (not on iOS or Android), `node`, `ui-state`, `ui-view`, `wire` |
+| `app-ffi` | `app-bridge` |
 
 `app-runtime` is also one of the UI crates, which may not reach `node`,
 `store`, `interpret`, `agent` or `pty-host` directly or through anything
 else, and no production crate may depend on test support.
-`app-embedded` and `app-ffi` host the runtime in process and are the
+`app-embedded`, `app-bridge` and `app-ffi` host the runtime in process and are the
 deliberate exception to "no UI crate links the daemon".
 
 What ships on a phone is checked from the other end too. `just ios
@@ -50,8 +52,8 @@ graph-check` walks `cargo tree -p app-ffi` for the iOS simulator target and
 fails if `pty-host`, `agent`, `testnet`, `qualification` or
 `replay-support` appears, with and without the driving
 tools. `just mobile-check` checks `node`, `client`, `ui-state`,
-`ui-runtime`, `app-runtime` and `app-embedded` for the iOS device and
-simulator targets.
+`ui-runtime`, `app-runtime`, `app-embedded` and `app-bridge` for the iOS device,
+iOS simulator and Android targets.
 
 ## What a client reuses
 

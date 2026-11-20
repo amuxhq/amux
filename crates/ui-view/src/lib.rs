@@ -32,6 +32,7 @@ pub use ask::{
 };
 /// The character that marks an attachment's place in text.
 pub use attachments::PLACEHOLDER;
+pub use attachments::sent_review;
 pub use code::{CodeRun, HighlightedCode, TokenKind, highlight_block, highlight_patch};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,

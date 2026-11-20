@@ -101,6 +101,11 @@ impl Agent {
         self.agent_id.clone()
     }
 
+    /// The agent's review, under the reviews experiment.
+    pub fn reviews(&self) -> crate::reviews::AgentReviews {
+        crate::reviews::AgentReviews::new(self.to.clone(), self.id_owned())
+    }
+
     /// Input for the agent's interpreter, answered with its verdict.
     pub async fn send_input(&self, input: Input) -> Result<SendInputResponse, RpcError> {
         let request = wire::SendInputRequest {

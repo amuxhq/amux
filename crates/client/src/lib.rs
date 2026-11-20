@@ -45,6 +45,7 @@ mod admin;
 mod host;
 mod installation;
 mod local;
+mod reviews;
 mod status;
 mod transport;
 
@@ -57,6 +58,7 @@ use futures_util::{Stream, StreamExt as _};
 pub use host::{Agent, Host, HostAgents};
 pub use installation::Installation;
 pub use local::{Drafts, Inventory, Sessions};
+pub use reviews::AgentReviews;
 pub use status::NotSent;
 use tonic::Status;
 use tonic::body::Body;

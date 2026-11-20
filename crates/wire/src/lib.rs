@@ -852,6 +852,7 @@ mod tests {
             drafts: 3,
             counter: 41,
             moved: true,
+            review_id: b"review".to_vec(),
         };
         let mut agent = Agent {
             agent_id: b"agent".to_vec(),
@@ -868,7 +869,16 @@ mod tests {
             review_id: b"review".to_vec(),
             round: 2,
             snapshot: "4b825dc642cb6eb9a060e54bf8d69288fbee4904".into(),
-            comment_ids: vec![b"first".to_vec(), b"second".to_vec()],
+            comments: vec![
+                experimental::ReviewSentComment {
+                    id: b"first".to_vec(),
+                    revision: 1,
+                },
+                experimental::ReviewSentComment {
+                    id: b"second".to_vec(),
+                    revision: 3,
+                },
+            ],
         };
         let mut attachment = Attachment {
             of: Some(attachment::Of::Text(InlineText {
@@ -913,7 +923,10 @@ mod tests {
                 review_id: b"review".to_vec(),
                 round: 1,
                 snapshot: "4b825dc642cb6eb9a060e54bf8d69288fbee4904".into(),
-                comment_ids: vec![b"first".to_vec()],
+                comments: vec![experimental::ReviewSentComment {
+                    id: b"first".to_vec(),
+                    revision: 1,
+                }],
             },
         );
         let before = AttachmentBefore::decode(attachment.encode_to_vec().as_slice()).unwrap();

@@ -3,19 +3,23 @@
 /// carries it, so every client that has the row knows what the review holds
 /// without asking. Written by the agent's host; absent while the agent has
 /// no review.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReviewRowEntry {
     /// Comments not yet sent.
     #[prost(uint32, tag = "1")]
     pub drafts: u32,
     /// Goes up by one on every change to the review: a client that read the
-    /// review at an earlier counter reads it again.
+    /// review at an earlier counter reads it again. A review started over
+    /// counts afresh, so a client compares the id and the counter together.
     #[prost(uint64, tag = "2")]
     pub counter: u64,
     /// The working tree has changed since the latest snapshot, worked out when
     /// the agent's turn ends.
     #[prost(bool, tag = "3")]
     pub moved: bool,
+    /// The review the entry describes: ReviewSummary.id.
+    #[prost(bytes = "vec", tag = "4")]
+    pub review_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for ReviewRowEntry {
     const NAME: &'static str = "ReviewRowEntry";
@@ -31,22 +35,26 @@ impl ::prost::Name for ReviewRowEntry {
 /// `Attachment.experimental\["reviews/1"\]` carries it. The attachment itself
 /// is text the agent reads; this entry lets a client draw it as a review and
 /// lets the agent's host mark the comments it names sent.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SentReview {
     /// The review the comments belong to: ReviewSummary.id.
     #[prost(bytes = "vec", tag = "1")]
     pub review_id: ::prost::alloc::vec::Vec<u8>,
     /// The round the sending client expected it to be. The host numbers
-    /// rounds as messages arrive, so two clients sending at once never claim
-    /// one number; the snapshot names the round for good.
+    /// rounds as the agent takes the messages, so two clients sending at once
+    /// never claim one number.
     #[prost(uint32, tag = "2")]
     pub round: u32,
-    /// The snapshot the comments were made on.
+    /// The snapshot the text's line numbers are on. The host records the round
+    /// on the review's latest snapshot when the agent takes the message, which
+    /// a refresh in between may have made a later one: a client finds the
+    /// round a sent review closed by its comments, not by this.
     #[prost(string, tag = "3")]
     pub snapshot: ::prost::alloc::string::String,
-    /// Exactly the comments sent: the host marks these sent and no others.
-    #[prost(bytes = "vec", repeated, tag = "4")]
-    pub comment_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// Exactly the comments sent, each as it was when the text was written:
+    /// the host marks sent those still drafts at that revision, and no others.
+    #[prost(message, repeated, tag = "4")]
+    pub comments: ::prost::alloc::vec::Vec<ReviewSentComment>,
 }
 impl ::prost::Name for SentReview {
     const NAME: &'static str = "SentReview";
@@ -56,6 +64,26 @@ impl ::prost::Name for SentReview {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.experimental.SentReview".into()
+    }
+}
+/// A comment a sent review carries.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReviewSentComment {
+    /// ReviewerComment.id.
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    /// ReviewerComment.revision, as the text was written from it.
+    #[prost(uint64, tag = "2")]
+    pub revision: u64,
+}
+impl ::prost::Name for ReviewSentComment {
+    const NAME: &'static str = "ReviewSentComment";
+    const PACKAGE: &'static str = "amux.experimental";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.experimental.ReviewSentComment".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.experimental.ReviewSentComment".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -69,6 +97,12 @@ pub struct ReviewOpenRequest {
     /// Takes a snapshot even with drafts, moving the drafts onto it.
     #[prost(bool, tag = "3")]
     pub refresh: bool,
+    /// Reads the review without changing it: never begins one, never takes a
+    /// snapshot, never picks a base. What a client opens with when it follows
+    /// the row or builds a message, rather than a person opening the page. Set
+    /// with base_branch or refresh, INVALID_ARGUMENT.
+    #[prost(bool, tag = "4")]
+    pub read_only: bool,
 }
 impl ::prost::Name for ReviewOpenRequest {
     const NAME: &'static str = "ReviewOpenRequest";
@@ -80,7 +114,8 @@ impl ::prost::Name for ReviewOpenRequest {
         "type.googleapis.com/amux.experimental.ReviewOpenRequest".into()
     }
 }
-/// A review as of one snapshot.
+/// A review as of one snapshot. An agent with no review answers a summary
+/// whose id is empty.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReviewSummary {
     /// Made by the host when the review begins; a review started over has a
@@ -89,7 +124,8 @@ pub struct ReviewSummary {
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub base_branch: ::prost::alloc::string::String,
-    /// The commit the snapshot is compared against for all changes.
+    /// The commit the snapshot is compared against for all changes, recorded
+    /// with the snapshot when it was taken.
     #[prost(string, tag = "3")]
     pub base_commit: ::prost::alloc::string::String,
     /// The snapshot this summary describes.
@@ -131,6 +167,12 @@ pub struct ReviewSummary {
     /// upstream, all changes are those since it.
     #[prost(string, tag = "14")]
     pub began_at: ::prost::alloc::string::String,
+    /// A git index of the snapshot, an absolute path on the agent's host,
+    /// kept in the review's own folder: with it as GIT_INDEX_FILE and the
+    /// store as an alternate, git diffs the working tree against the snapshot,
+    /// and lists the files made since, writing nothing to the repository.
+    #[prost(string, tag = "15")]
+    pub index: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ReviewSummary {
     const NAME: &'static str = "ReviewSummary";
@@ -144,10 +186,13 @@ impl ::prost::Name for ReviewSummary {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReviewRound {
-    /// The snapshot the round's comments were made on.
+    /// The snapshot the round was recorded on: the review's latest when the
+    /// agent took the message sending it.
     #[prost(string, tag = "1")]
     pub snapshot: ::prost::alloc::string::String,
-    /// The commit that snapshot was shown against.
+    /// The commit that snapshot is compared against for all changes. A
+    /// round's whole diff is GetFiles with this as `from`, the snapshot as
+    /// `snapshot`, and REVIEW_VIEW_ALL.
     #[prost(string, tag = "2")]
     pub base_commit: ::prost::alloc::string::String,
     /// When the host accepted the message that sent it, in milliseconds since
@@ -165,7 +210,8 @@ impl ::prost::Name for ReviewRound {
         "type.googleapis.com/amux.experimental.ReviewRound".into()
     }
 }
-/// One file's change since the last round's snapshot.
+/// One file's change since the last round's snapshot, counted from the same
+/// comparison REVIEW_VIEW_SINCE_LAST shows.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReviewFileState {
     #[prost(string, tag = "1")]
@@ -189,17 +235,29 @@ impl ::prost::Name for ReviewFileState {
         "type.googleapis.com/amux.experimental.ReviewFileState".into()
     }
 }
+/// One comparison the review handed out, and the files of it wanted. The
+/// host diffs exactly `from` to `snapshot`, after checking both are this
+/// review's: `snapshot` one it keeps (a summary's snapshot, the one before
+/// it, or a round's), and `from` that snapshot's base commit for
+/// REVIEW_VIEW_ALL, or a round's snapshot for REVIEW_VIEW_SINCE_LAST.
+/// Anything else is INVALID_ARGUMENT; a snapshot no longer kept, NOT_FOUND.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReviewGetFilesRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    /// The snapshot the files are read from: a ReviewSummary.snapshot.
+    /// The commit the files are shown at: a ReviewSummary.snapshot, or a
+    /// ReviewRound.snapshot.
     #[prost(string, tag = "2")]
     pub snapshot: ::prost::alloc::string::String,
     #[prost(enumeration = "ReviewView", tag = "3")]
     pub view: i32,
     #[prost(message, repeated, tag = "4")]
     pub files: ::prost::alloc::vec::Vec<ReviewFileRequest>,
+    /// The commit the view compares against: ReviewSummary.base_commit (or
+    /// ReviewRound.base_commit) for all changes, the last round's snapshot for
+    /// what changed since it.
+    #[prost(string, tag = "5")]
+    pub from: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ReviewGetFilesRequest {
     const NAME: &'static str = "ReviewGetFilesRequest";
@@ -278,9 +336,8 @@ impl ::prost::Name for ReviewFileDiff {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReviewHunk {
-    /// The commit this view compared against: the base commit, or the last
-    /// round's snapshot. A removed line belongs to it; every other line to the
-    /// snapshot.
+    /// The commit this view compared against: the request's `from`. A removed
+    /// line belongs to it; every other line to the snapshot.
     #[prost(string, tag = "1")]
     pub old_commit: ::prost::alloc::string::String,
     /// The first line of each side, counted from 1.
@@ -289,7 +346,9 @@ pub struct ReviewHunk {
     #[prost(uint32, tag = "3")]
     pub new_start: u32,
     /// Where the hunk's changed lines sit in the code, outermost first; empty
-    /// where no definition encloses them, or for a language with none.
+    /// where no definition encloses them, or for a language with none. Taken
+    /// from the added lines, or for a hunk that only removes, from the removed
+    /// ones: each definition says which.
     #[prost(message, repeated, tag = "4")]
     pub scope: ::prost::alloc::vec::Vec<ReviewDefinition>,
     #[prost(message, repeated, tag = "5")]
@@ -373,6 +432,9 @@ pub struct ReviewDefinition {
     /// the top.
     #[prost(uint32, optional, tag = "6")]
     pub parent: ::core::option::Option<u32>,
+    /// Which commit its lines are numbered in.
+    #[prost(enumeration = "ReviewSide", tag = "7")]
+    pub side: i32,
 }
 impl ::prost::Name for ReviewDefinition {
     const NAME: &'static str = "ReviewDefinition";
@@ -428,6 +490,10 @@ pub struct ReviewerComment {
     /// Where it sits on the summary's snapshot.
     #[prost(message, optional, tag = "7")]
     pub placement: ::core::option::Option<ReviewPlacement>,
+    /// Goes up each time a person puts it; a sent review names the revision
+    /// its text was written from.
+    #[prost(uint64, tag = "8")]
+    pub revision: u64,
 }
 impl ::prost::Name for ReviewerComment {
     const NAME: &'static str = "ReviewerComment";
@@ -464,18 +530,23 @@ impl ::prost::Name for ReviewAnchor {
 }
 /// Where a comment sits on a later snapshot, found by one diff from its
 /// anchor's commit to that snapshot, following renames.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReviewPlacement {
     /// A sent comment whose enclosing definition (or, with none, a line
     /// within three of it) changed since the round it was sent in.
     #[prost(bool, tag = "4")]
     pub changed_near: bool,
-    #[prost(oneof = "review_placement::At", tags = "1, 2, 3")]
+    /// The file it sits in, as the snapshot names it: its anchor's path, or
+    /// the one a rename took it to. Empty for a comment whose commit can no
+    /// longer be read, which is shown by its anchor and snippet.
+    #[prost(string, tag = "6")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(oneof = "review_placement::At", tags = "1, 2, 3, 5")]
     pub at: ::core::option::Option<review_placement::At>,
 }
 /// Nested message and enum types in `ReviewPlacement`.
 pub mod review_placement {
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum At {
         /// No change touched its lines: here they are now, in the snapshot.
         #[prost(message, tag = "1")]
@@ -488,6 +559,10 @@ pub mod review_placement {
         /// written on the whole file.
         #[prost(message, tag = "3")]
         File(super::super::v1::Empty),
+        /// On removed lines of a commit a view of the summary still compares
+        /// against: drawn on those lines, on the removed side of that view.
+        #[prost(message, tag = "5")]
+        Compared(super::ReviewComparedLines),
     }
 }
 impl ::prost::Name for ReviewPlacement {
@@ -498,6 +573,27 @@ impl ::prost::Name for ReviewPlacement {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.experimental.ReviewPlacement".into()
+    }
+}
+/// Lines of a commit a view compares against, which the snapshot no longer
+/// holds.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReviewComparedLines {
+    /// The commit: ReviewHunk.old_commit of the view that shows them.
+    #[prost(string, tag = "1")]
+    pub commit: ::prost::alloc::string::String,
+    /// As the anchor gave them, numbered in that commit.
+    #[prost(message, optional, tag = "2")]
+    pub lines: ::core::option::Option<ReviewLineRange>,
+}
+impl ::prost::Name for ReviewComparedLines {
+    const NAME: &'static str = "ReviewComparedLines";
+    const PACKAGE: &'static str = "amux.experimental";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.experimental.ReviewComparedLines".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.experimental.ReviewComparedLines".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -690,6 +786,40 @@ impl ReviewTokenKind {
         }
     }
 }
+/// Which of a comparison's two commits a definition's lines belong to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReviewSide {
+    Unspecified = 0,
+    /// The snapshot shown: numbered as a line's new_line.
+    Snapshot = 1,
+    /// The commit compared against, where only removed lines remain: numbered
+    /// as a line's old_line. A comment's scope is on the commit its anchor
+    /// names.
+    Compared = 2,
+}
+impl ReviewSide {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "REVIEW_SIDE_UNSPECIFIED",
+            Self::Snapshot => "REVIEW_SIDE_SNAPSHOT",
+            Self::Compared => "REVIEW_SIDE_COMPARED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REVIEW_SIDE_UNSPECIFIED" => Some(Self::Unspecified),
+            "REVIEW_SIDE_SNAPSHOT" => Some(Self::Snapshot),
+            "REVIEW_SIDE_COMPARED" => Some(Self::Compared),
+            _ => None,
+        }
+    }
+}
 /// What a definition is, across languages. The numbers are the highlight
 /// crate's own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -851,11 +981,12 @@ pub mod reviews1_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// The agent's review, begun on the first look. Takes a snapshot when the
-        /// tree changed since the latest one and there are no drafts (or a
-        /// refresh is asked for), and answers what it describes without file
-        /// bodies. FAILED_PRECONDITION when the agent's folder is not a
-        /// repository.
+        /// The agent's review. A person's open begins it on the first look, and
+        /// takes a snapshot when the tree changed since the latest one and there
+        /// are no drafts (or a refresh is asked for); a read-only open does
+        /// neither, and answers the review as it stands, or an empty summary for
+        /// an agent with none. Answers without file bodies. FAILED_PRECONDITION
+        /// when the agent's folder is not a repository.
         pub async fn open(
             &mut self,
             request: impl tonic::IntoRequest<super::ReviewOpenRequest>,
@@ -877,10 +1008,11 @@ pub mod reviews1_client {
                 .insert(GrpcMethod::new("amux.experimental.Reviews1", "Open"));
             self.inner.unary(req, path, codec).await
         }
-        /// The bodies of files of a snapshot: hunks with their lines highlighted,
-        /// where each hunk sits in the code, the file's outline, and more context
-        /// on request. A batch answers the files that fit; the rest are absent
-        /// from the answer, for the client to ask for again.
+        /// The bodies of files of one comparison the review handed out: hunks with
+        /// their lines highlighted, where each hunk sits in the code, the file's
+        /// outline, and more context on request. A batch answers the files that
+        /// fit; the rest are absent from the answer, for the client to ask for
+        /// again.
         pub async fn get_files(
             &mut self,
             request: impl tonic::IntoRequest<super::ReviewGetFilesRequest>,
@@ -944,19 +1076,21 @@ pub mod reviews1_server {
     /// Generated trait containing gRPC methods that should be implemented for use with Reviews1Server.
     #[async_trait]
     pub trait Reviews1: std::marker::Send + std::marker::Sync + 'static {
-        /// The agent's review, begun on the first look. Takes a snapshot when the
-        /// tree changed since the latest one and there are no drafts (or a
-        /// refresh is asked for), and answers what it describes without file
-        /// bodies. FAILED_PRECONDITION when the agent's folder is not a
-        /// repository.
+        /// The agent's review. A person's open begins it on the first look, and
+        /// takes a snapshot when the tree changed since the latest one and there
+        /// are no drafts (or a refresh is asked for); a read-only open does
+        /// neither, and answers the review as it stands, or an empty summary for
+        /// an agent with none. Answers without file bodies. FAILED_PRECONDITION
+        /// when the agent's folder is not a repository.
         async fn open(
             &self,
             request: tonic::Request<super::ReviewOpenRequest>,
         ) -> std::result::Result<tonic::Response<super::ReviewSummary>, tonic::Status>;
-        /// The bodies of files of a snapshot: hunks with their lines highlighted,
-        /// where each hunk sits in the code, the file's outline, and more context
-        /// on request. A batch answers the files that fit; the rest are absent
-        /// from the answer, for the client to ask for again.
+        /// The bodies of files of one comparison the review handed out: hunks with
+        /// their lines highlighted, where each hunk sits in the code, the file's
+        /// outline, and more context on request. A batch answers the files that
+        /// fit; the rest are absent from the answer, for the client to ask for
+        /// again.
         async fn get_files(
             &self,
             request: tonic::Request<super::ReviewGetFilesRequest>,

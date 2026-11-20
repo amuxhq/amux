@@ -15,6 +15,7 @@ use support::created_id;
 use support::desk::{Desk, LONG_GRACE_SECS};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::process::{ChildStdin, ChildStdout};
+use wire::amux::staging;
 
 use crate::support;
 
@@ -161,11 +162,11 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     // parts.
     let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
     png.extend((0..5_000_000u32).map(|n| (n % 251) as u8));
-    let stored: wire::PutBlobResponse = bridge
+    let stored: staging::PutBlobResponse = bridge
         .unary(
             &profile,
-            "/amux.v1.AgentService/PutBlob",
-            wire::PutBlobRequest {
+            "/amux.staging.AgentService/PutBlob",
+            staging::PutBlobRequest {
                 agent_id: agent.clone(),
                 name: "region-1.png".into(),
                 mime: "image/png".into(),
@@ -174,11 +175,11 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
         )
         .await;
     let image = stored.blob.expect("a stored blob");
-    let fetched: wire::GetBlobResponse = bridge
+    let fetched: staging::GetBlobResponse = bridge
         .unary(
             &profile,
-            "/amux.v1.AgentService/GetBlob",
-            wire::GetBlobRequest {
+            "/amux.staging.SessionService/GetBlob",
+            staging::GetBlobRequest {
                 agent_id: agent.clone(),
                 hash: image.hash.clone(),
             },
@@ -228,8 +229,8 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
     let verdict: wire::SendInputResponse = bridge
         .unary(
             &profile,
-            "/amux.v1.SessionService/SendInput",
-            wire::SendInputRequest {
+            "/amux.staging.AgentService/SendInput",
+            staging::SendInputRequest {
                 agent_id: agent.clone(),
                 input: Some(input),
             },
@@ -242,11 +243,11 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
 
     let deadline = tokio::time::Instant::now() + support::PATIENCE;
     let sent = loop {
-        let listed: wire::ListItemsResponse = bridge
+        let listed: staging::ListItemsResponse = bridge
             .unary(
                 &profile,
-                "/amux.v1.SessionService/ListItems",
-                wire::ListItemsRequest {
+                "/amux.staging.SessionService/ListItems",
+                staging::ListItemsRequest {
                     agent_id: agent.clone(),
                     before_order: None,
                     page_size: 50,
@@ -281,8 +282,8 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
             "id": id,
             "call": {
                 "target": profile,
-                "method": "/amux.v1.AgentService/SubscribeInventory",
-                "body": STANDARD.encode(wire::SubscribeInventoryRequest::default().encode_to_vec()),
+                "method": "/amux.staging.InventoryService/SubscribeInventory",
+                "body": STANDARD.encode(staging::SubscribeInventoryRequest::default().encode_to_vec()),
             },
         }))
         .await;

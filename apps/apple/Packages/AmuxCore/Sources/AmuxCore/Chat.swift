@@ -190,6 +190,67 @@ public final class Chat: ChatSource, @unchecked Sendable {
         }
     }
 
+    // MARK: - The review page
+
+    /// Sends the draft with the review's drafts after its words, naming
+    /// exactly those, so the agent's host marks them sent when it accepts
+    /// the message. Nothing is sent when the review cannot be read or holds
+    /// no drafts.
+    public func sendWithReview(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
+        let act = Bridge.json(ChatAct.sendWithReview(draft))
+        return await self.act(SendOutcome.self) { live in act.withCString { amux_session_act(live, $0) } }
+    }
+
+    /// Opens the agent's review page on the chat, or opens the open one
+    /// again; from then the chat's deltas carry the page whenever it moves.
+    public func openReview(baseBranch: String?, refresh: Bool) async -> ReviewOutcome? {
+        await reviewAct { live in Bridge.optional(baseBranch) { amux_review_open(live, $0, refresh) } }
+    }
+
+    /// Fetches the bodies of `paths` for the view the page shows; the page
+    /// moves as each batch lands.
+    public func reviewFiles(_ paths: [String]) async -> ReviewOutcome? {
+        let paths = Bridge.json(paths)
+        return await reviewAct { live in paths.withCString { amux_review_files(live, $0) } }
+    }
+
+    public func reviewContext(_ ask: ReviewContextAsk) async -> ReviewOutcome? {
+        let ask = Bridge.json(ask)
+        return await reviewAct { live in ask.withCString { amux_review_context(live, $0) } }
+    }
+
+    public func editReview(_ changes: [ReviewChange]) async -> ReviewOutcome? {
+        let changes = Bridge.json(changes)
+        return await reviewAct { live in changes.withCString { amux_review_edit(live, $0) } }
+    }
+
+    public func chooseInReview(_ choice: ReviewChoice) {
+        call(()) { live in Bridge.json(choice).withCString { amux_review_choose(live, $0) } }
+    }
+
+    public func reviewPage() -> ReviewPage? {
+        call(nil) { live in Bridge.read(ReviewPage?.self, amux_review_page(live)) ?? nil }
+    }
+
+    public func reviewAnchor(from: Int, to: Int) -> ReviewAnchor? {
+        guard let from = UInt32(exactly: from), let to = UInt32(exactly: to) else { return nil }
+        return call(nil) { live in
+            Bridge.read(ReviewAnchor?.self, amux_review_anchor(live, from, to)) ?? nil
+        }
+    }
+
+    public func closeReview() {
+        call(()) { live in amux_review_close(live) }
+    }
+
+    /// Starts an act on the review page on the core queue and waits for its
+    /// `ReviewOutcome`; nil once the chat or the runtime has closed.
+    private func reviewAct(
+        _ start: @escaping @Sendable (OpaquePointer) -> UInt64
+    ) async -> ReviewOutcome? {
+        Bridge.value(ReviewOutcome.self, await loop.answer { [self] _ in call(nil) { start($0) } })
+    }
+
     /// Fetches the files changed for `comparison`, without a patch; the
     /// overview lists them from then on.
     public func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {

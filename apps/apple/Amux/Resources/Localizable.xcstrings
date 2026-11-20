@@ -11340,6 +11340,594 @@
           }
         }
       }
+    },
+    "Review · %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review · %@"
+          }
+        }
+      }
+    },
+    "Code changed since" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code changed since"
+          }
+        }
+      }
+    },
+    "Discard 1 draft?" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard 1 draft?"
+          }
+        }
+      }
+    },
+    "Discard %@ drafts?" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard %@ drafts?"
+          }
+        }
+      }
+    },
+    "Comments not yet sent are deleted. Sent comments stay." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comments not yet sent are deleted. Sent comments stay."
+          }
+        }
+      }
+    },
+    "Start the review over?" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start the review over?"
+          }
+        }
+      }
+    },
+    "Every comment on it is deleted, sent or not, and the next look is a first look. The chat keeps what was sent." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every comment on it is deleted, sent or not, and the next look is a first look. The chat keeps what was sent."
+          }
+        }
+      }
+    },
+    "All changes" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All changes"
+          }
+        }
+      }
+    },
+    "Since your last review" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since your last review"
+          }
+        }
+      }
+    },
+    "Since %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since %@"
+          }
+        }
+      }
+    },
+    "1 draft" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 draft"
+          }
+        }
+      }
+    },
+    "%@ drafts" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ drafts"
+          }
+        }
+      }
+    },
+    "%@ sent" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sent"
+          }
+        }
+      }
+    },
+    "Changed since you started. Refreshing moves your drafts to the code as it is now." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changed since you started. Refreshing moves your drafts to the code as it is now."
+          }
+        }
+      }
+    },
+    "The agent changed code since this snapshot." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The agent changed code since this snapshot."
+          }
+        }
+      }
+    },
+    "Refreshing moved 1 draft. If its lines were edited, it is now on its file." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing moved 1 draft. If its lines were edited, it is now on its file."
+          }
+        }
+      }
+    },
+    "Refreshing moved %@ drafts. Any whose lines were edited are now on their files." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing moved %@ drafts. Any whose lines were edited are now on their files."
+          }
+        }
+      }
+    },
+    "A merge or rebase was under way, so conflicted files hold their markers." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A merge or rebase was under way, so conflicted files hold their markers."
+          }
+        }
+      }
+    },
+    "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews."
+          }
+        }
+      }
+    },
+    "This agent’s folder isn’t a git repository, so it has no review." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This agent’s folder isn’t a git repository, so it has no review."
+          }
+        }
+      }
+    },
+    "Your last review’s snapshot is gone from the repository. Its comments show with the code saved with them." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your last review’s snapshot is gone from the repository. Its comments show with the code saved with them."
+          }
+        }
+      }
+    },
+    "Couldn’t take a snapshot of the working tree: %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t take a snapshot of the working tree: %@"
+          }
+        }
+      }
+    },
+    "This agent’s computer can’t be reached. What was loaded still reads, and changes wait for it." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This agent’s computer can’t be reached. What was loaded still reads, and changes wait for it."
+          }
+        }
+      }
+    },
+    "Refresh" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh"
+          }
+        }
+      }
+    },
+    "Opening the review…" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opening the review…"
+          }
+        }
+      }
+    },
+    "Nothing to review: no changes and no comments." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to review: no changes and no comments."
+          }
+        }
+      }
+    },
+    "Nothing changed since your last review." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing changed since your last review."
+          }
+        }
+      }
+    },
+    "A binary file, with no lines to show" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A binary file, with no lines to show"
+          }
+        }
+      }
+    },
+    "Too large a change to show here" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too large a change to show here"
+          }
+        }
+      }
+    },
+    "Generated" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated"
+          }
+        }
+      }
+    },
+    "Lock file" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock file"
+          }
+        }
+      }
+    },
+    "Vendored" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vendored"
+          }
+        }
+      }
+    },
+    "Large" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Large"
+          }
+        }
+      }
+    },
+    "Draft" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draft"
+          }
+        }
+      }
+    },
+    "Sent in round %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent in round %@"
+          }
+        }
+      }
+    },
+    "On the file" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the file"
+          }
+        }
+      }
+    },
+    "Outdated" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outdated"
+          }
+        }
+      }
+    },
+    "The code near it changed" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The code near it changed"
+          }
+        }
+      }
+    },
+    "Lines %@–%@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lines %@–%@"
+          }
+        }
+      }
+    },
+    "The rest of the file" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The rest of the file"
+          }
+        }
+      }
+    },
+    "1 hidden line" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 hidden line"
+          }
+        }
+      }
+    },
+    "%@ hidden lines" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hidden lines"
+          }
+        }
+      }
+    },
+    "Up to %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to %@"
+          }
+        }
+      }
+    },
+    "Down to the end of %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Down to the end of %@"
+          }
+        }
+      }
+    },
+    "%@ up" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ up"
+          }
+        }
+      }
+    },
+    "%@ down" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ down"
+          }
+        }
+      }
+    },
+    "This agent’s computer can’t be reached, so nothing changed." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This agent’s computer can’t be reached, so nothing changed."
+          }
+        }
+      }
+    },
+    "The connection dropped before the agent’s computer answered. The page shows what it says next." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The connection dropped before the agent’s computer answered. The page shows what it says next."
+          }
+        }
+      }
+    },
+    "This agent has no review to send." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This agent has no review to send."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

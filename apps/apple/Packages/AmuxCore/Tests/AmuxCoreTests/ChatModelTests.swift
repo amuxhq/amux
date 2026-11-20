@@ -64,6 +64,19 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     var following = true
     /// Rows the session holds apart while the reader is in history.
     var held: [Row] = []
+    /// The review page opening it shows, and the page open on the chat.
+    var reviewToShow: ReviewPage?
+    var reviewOpen: ReviewPage?
+    /// The open page moved since the last delta.
+    var reviewMoved = false
+    var reviewOpens = 0
+    var reviewCloses = 0
+    var reviewEdits: [[ReviewChange]] = []
+    /// What every edit of the review answers.
+    var editAnswer: ReviewOutcome = .done
+    /// Drafts sent with the review's, and what such a send comes to.
+    var sentWithReview: [Draft] = []
+    var withReview: Result<SendOutcome, RuntimeFailure> = .success(SendOutcome(inputId: [7], state: .sent))
 
     /// What the model was last handed.
     private var sentKeys: [String] = []
@@ -114,12 +127,14 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         sentOffered = offered
         let agents = sentAgents == self.agents ? nil : self.agents
         sentAgents = self.agents
+        let review = reviewMoved ? reviewOpen : nil
+        reviewMoved = false
         guard keys != nil || !rows.isEmpty || frame != nil || ask != nil || overview != nil
-            || settings != nil || agents != nil
+            || settings != nil || agents != nil || review != nil
         else { return nil }
         return ChatDelta(
             chat: 0, rows: rows, agents: agents, ask: ask, frame: frame, keys: keys, overview: overview,
-            review: nil, settings: settings)
+            review: review, settings: settings)
     }
 
     /// Hands the model what moved since the last delta, if anything did.
@@ -313,6 +328,30 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return .success(working)
     }
 
+    func sendWithReview(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
+        sentWithReview.append(draft)
+        return withReview
+    }
+
+    func openReview(baseBranch: String?, refresh: Bool) async -> ReviewOutcome? {
+        reviewOpens += 1
+        reviewOpen = reviewToShow
+        reviewMoved = reviewToShow != nil
+        return .done
+    }
+
+    func editReview(_ changes: [ReviewChange]) async -> ReviewOutcome? {
+        reviewEdits.append(changes)
+        return editAnswer
+    }
+
+    func reviewPage() -> ReviewPage? { reviewOpen }
+
+    func closeReview() {
+        reviewCloses += 1
+        reviewOpen = nil
+    }
+
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {
         listings.append(comparison)
         var overview = facts ?? Overview(jobs: [], failedServers: [], changes: nil, tasks: nil, usageNearLimit: nil)
@@ -350,13 +389,13 @@ private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? =
 
 private func frame(
     mode: Composer = .send, caughtUp: Bool = true, hasOlder: Bool = false,
-    phase: PhaseView = .idle, kind: Kind = .claudeSdk
+    phase: PhaseView = .idle, kind: Kind = .claudeSdk, reviewChip: ReviewChip? = nil
 ) -> ChatFrame {
     ChatFrame(
         agent: AgentKey(host: [1], agent: [2]), name: "a", kind: kind, phase: phase,
         composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
-        reviewChip: nil, signIn: nil)
+        reviewChip: reviewChip, signIn: nil)
 }
 
 /// Prose rows "m<first>" through "m<last>", in order.
@@ -1341,6 +1380,133 @@ final class ChatModelTests: XCTestCase {
 
         await model.send()?.value
         XCTAssertEqual(source.sent.first?.attachments, [.review(diff: ReviewFixtures.frozen.diff, comments: comments)])
+    }
+
+    // MARK: - The agent's review
+
+    /// The chip is the agent's row's: while it shows, a send carries the
+    /// review's drafts, with or without words of its own, and it is held
+    /// back from then until the row says something new of them.
+    func testTheChipFromTheRowSendsTheReviewsDrafts() async {
+        let chip = ReviewChip(comments: 2, moved: false)
+        let source = FakeChat(rows: [row("a", 1)], frame: frame(reviewChip: chip))
+        let model = ChatModel(source: source)
+        XCTAssertEqual(model.reviewChip, chip)
+        XCTAssertFalse(model.hasDraft)
+        XCTAssertTrue(model.hasMessage, "the chip's drafts are a message")
+        XCTAssertTrue(model.canSend)
+
+        model.draft = "Look at these first."
+        await model.send()?.value
+        XCTAssertEqual(source.sentWithReview, [Draft(words: "Look at these first.", attachments: [])])
+        XCTAssertTrue(source.sent.isEmpty)
+        XCTAssertNil(model.reviewChip, "the drafts just sent are not offered again")
+        XCTAssertFalse(model.canSend)
+
+        // Before the row says they were sent, a send carries words alone.
+        model.draft = "And the docs."
+        await model.send()?.value
+        XCTAssertEqual(source.sent, [Draft(words: "And the docs.", attachments: [])])
+
+        // The host marked them sent: the row has no chip. A draft written
+        // after brings it back.
+        source.current.reviewChip = nil
+        source.deliver(to: model)
+        XCTAssertNil(model.reviewChip)
+        source.current.reviewChip = chip
+        source.deliver(to: model)
+        XCTAssertEqual(model.reviewChip, chip, "a chip like the one sent is new drafts")
+
+        // Drafts written on another client meanwhile show at once.
+        await model.send()?.value
+        XCTAssertEqual(source.sentWithReview.count, 2, "the chip alone sends")
+        source.current.reviewChip = ReviewChip(comments: 3, moved: true)
+        source.deliver(to: model)
+        XCTAssertEqual(model.reviewChip, ReviewChip(comments: 3, moved: true))
+    }
+
+    func testASendWithTheReviewThatFailsKeepsTheWordsAndTheChip() async {
+        let chip = ReviewChip(comments: 1, moved: false)
+        let source = FakeChat(rows: [row("a", 1)], frame: frame(reviewChip: chip))
+        source.withReview = .failure(RuntimeFailure("the review holds no drafts to send"))
+        let model = ChatModel(source: source)
+        model.draft = "Summary."
+        await model.send()?.value
+        XCTAssertEqual(model.draft, "Summary.")
+        XCTAssertEqual(model.notice, "the review holds no drafts to send")
+        XCTAssertEqual(model.reviewChip, chip)
+
+        // Refused by the agent: nothing was marked sent, so the chip stays.
+        source.withReview = .success(SendOutcome(inputId: [7], state: .rejected(Refusal(reason: .exited, detail: nil))))
+        await model.send()?.value
+        XCTAssertEqual(model.reviewChip, chip)
+    }
+
+    func testWithoutAChipASendCarriesNoReview() async {
+        let source = FakeChat(rows: [row("a", 1)], frame: frame())
+        let model = ChatModel(source: source)
+        XCTAssertNil(model.reviewChip)
+        XCTAssertFalse(model.canSend, "nothing to send")
+        model.draft = "Hello."
+        await model.send()?.value
+        XCTAssertEqual(source.sent.count, 1)
+        XCTAssertTrue(source.sentWithReview.isEmpty)
+    }
+
+    /// The page opens for a look, moves with the chat's deltas while it is
+    /// open, and stops when it closes; each look opens the review again.
+    func testTheReviewPageFollowsTheChatsDeltasWhileOpen() async {
+        let source = FakeChat(rows: [row("a", 1)], frame: frame())
+        let page = ReviewPage(
+            banners: [.changedSince], rows: [], toFetch: [], opening: false, empty: .nothing, header: nil)
+        source.reviewToShow = page
+        let model = ChatModel(source: source)
+        XCTAssertNil(model.reviewPage)
+        let session = model.openReviewPage()
+        XCTAssertTrue(model.reviewPage === session)
+        _ = await session.latest?.value
+        XCTAssertEqual(source.reviewOpens, 1)
+        source.deliver(to: model)
+        XCTAssertEqual(session.page, page)
+
+        var moved = page
+        moved.banners = []
+        source.reviewOpen = moved
+        source.reviewMoved = true
+        source.deliver(to: model)
+        XCTAssertEqual(session.page, moved)
+
+        let again = model.openReviewPage()
+        XCTAssertTrue(again === session, "the page open on the chat is the one looked at again")
+        _ = await again.latest?.value
+        XCTAssertEqual(source.reviewOpens, 2)
+
+        model.closeReviewPage()
+        XCTAssertNil(model.reviewPage)
+        XCTAssertTrue(session.closed)
+        XCTAssertEqual(source.reviewCloses, 1)
+        source.reviewOpen = page
+        source.reviewMoved = true
+        source.deliver(to: model)
+        XCTAssertEqual(session.page, moved, "a closed page is handed nothing")
+
+        source.reviewOpen = nil
+        let next = model.openReviewPage()
+        XCTAssertFalse(next === session)
+        XCTAssertEqual(next.page, ReviewSession.opening)
+    }
+
+    func testTheChipsCrossDiscardsTheDraftsAtTheHost() async {
+        let source = FakeChat(rows: [row("a", 1)], frame: frame(reviewChip: ReviewChip(comments: 2, moved: false)))
+        let model = ChatModel(source: source)
+        await model.discardReviewDrafts().value
+        XCTAssertEqual(source.reviewEdits, [[.discardDrafts]])
+        XCTAssertNil(model.notice)
+        XCTAssertNil(model.reviewPage, "no page opens for it")
+
+        source.editAnswer = .unreachable
+        await model.discardReviewDrafts().value
+        XCTAssertEqual(model.notice, "This agent’s computer can’t be reached, so nothing changed.")
     }
 
     func testDictationStreamsIntoTheDraftAndStopsOnSend() async {

@@ -1430,6 +1430,7 @@
       {"literal": "\"[\\(chip(view))]\"", "context": "case .attachment(let view): \"[\\(chip(view))]\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"+\\(added)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"\\u{2212}\\(removed)\"", "context": "[added > 0 ? \"+\\(added)\" : nil, removed > 0 ? \"\\u{2212}\\(removed)\" : nil]", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"+\\(header.added) \\u{2212}\\(header.removed)\"", "context": "let lines = \"+\\(header.added) \\u{2212}\\(header.removed)\"", "reason": "A count of lines added and removed drawn as numerals with their signs, not a sentence.", "count": 1},
       {"literal": "\"—\"", "context": "guard let used = window.usedPercent else { return \"—\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/ReviewModel.swift": [

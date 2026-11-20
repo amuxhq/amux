@@ -78,7 +78,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         name: String = "refactor-auth", kind: Kind = .claudeSdk, phase: PhaseView = .idle,
         mode: Composer = .send, activity: Activity? = nil, caughtUp: Bool = true,
         hasOlder: Bool = false, queue: [QueuedRow] = [], underway: [SentPrompt] = [],
-        refused: [RefusedPrompt] = [], switchedAway: Bool = false
+        refused: [RefusedPrompt] = [], switchedAway: Bool = false, reviewChip: ReviewChip? = nil
     ) -> ChatFrame {
         ChatFrame(
             agent: agent, name: name, kind: kind, phase: phase,
@@ -86,7 +86,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             caughtUp: caughtUp, hasOlder: hasOlder, arrivalsHeld: false, queue: queue,
             underway: underway, refused: refused, askInput: nil, context: nil,
             ended: nil,
-            git: nil, reviewChip: nil, signIn: nil)
+            git: nil, reviewChip: reviewChip, signIn: nil)
     }
 
     /// The facts around a chat's rows: what the frame reports of the agent,
@@ -180,6 +180,8 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         var dropped = 0
         var rows: [String] = []
         var session = false
+        /// The review page moved.
+        var review = false
 
         /// Keys arriving at the newest edge, whose rows are read when drawn.
         mutating func arrived(_ keys: [String]) {
@@ -253,12 +255,13 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             let rows = ordered.filter { wanted.contains($0.id) }.map {
                 Self.folding($0, open: openRuns, groups: openGroups)
             }
-            guard keys != nil || !rows.isEmpty || pending.session else { return nil }
+            let review = pending.review ? reviewShown : nil
+            guard keys != nil || !rows.isEmpty || pending.session || review != nil else { return nil }
             let session = pending.session
             return ChatDelta(
                 chat: 0, rows: rows, agents: session ? agents : nil, ask: session ? AskMoved(card: card) : nil,
                 frame: session ? current : nil, keys: keys, overview: session ? facts : nil,
-                review: nil, settings: session ? offered : nil)
+                review: review, settings: session ? offered : nil)
         }
     }
 
@@ -293,7 +296,8 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             pending = Pending()
             return ChatDelta(
                 chat: 0, rows: [], agents: agents, ask: AskMoved(card: card), frame: current,
-                keys: .reload(ordered.map(\.id)), overview: facts, review: nil, settings: offered)
+                keys: .reload(ordered.map(\.id)), overview: facts, review: reviewShown,
+                settings: offered)
         }
     }
 
@@ -520,5 +524,95 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             facts.changes = files
             return facts
         })
+    }
+
+    // MARK: - The review page
+
+    /// The page opening the review shows, and what each act on it answers.
+    /// The script's page never composes itself: what it shows moves only by
+    /// `showReview`.
+    public var reviewOnOpening: ReviewPage? {
+        get { lock.withLock { scriptedReview } }
+        set { lock.withLock { scriptedReview = newValue } }
+    }
+    public var reviewOutcome: ReviewOutcome {
+        get { lock.withLock { answering } }
+        set { lock.withLock { answering = newValue } }
+    }
+    /// Where any selection's comment goes.
+    public var anchorForAnySelection: ReviewAnchor? {
+        get { lock.withLock { anchoring } }
+        set { lock.withLock { anchoring = newValue } }
+    }
+    private var scriptedReview: ReviewPage?
+    private var answering: ReviewOutcome = .done
+    private var anchoring: ReviewAnchor?
+    /// The page open on the chat, as handed over last.
+    private var reviewShown: ReviewPage?
+    /// What was asked of the review, in order, for a test to read back.
+    public private(set) var reviewOpens: [(base: String?, refresh: Bool)] = []
+    public private(set) var reviewFetches: [[String]] = []
+    public private(set) var reviewContexts: [ReviewContextAsk] = []
+    public private(set) var reviewEdits: [[ReviewChange]] = []
+    public private(set) var reviewChoices: [ReviewChoice] = []
+    public private(set) var sentWithReview: [Draft] = []
+
+    /// Moves the open page, for the next delta to hand over.
+    public func showReview(_ page: ReviewPage) {
+        lock.withLock {
+            scriptedReview = page
+            guard reviewShown != nil else { return }
+            reviewShown = page
+            pending.review = true
+        }
+    }
+
+    public func sendWithReview(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
+        lock.withLock { sentWithReview.append(draft) }
+        return .success(SendOutcome(inputId: [1], state: .sent))
+    }
+
+    public func openReview(baseBranch: String?, refresh: Bool) async -> ReviewOutcome? {
+        lock.withLock {
+            reviewOpens.append((baseBranch, refresh))
+            reviewShown = scriptedReview
+            pending.review = scriptedReview != nil
+            return answering
+        }
+    }
+
+    public func reviewFiles(_ paths: [String]) async -> ReviewOutcome? {
+        lock.withLock {
+            reviewFetches.append(paths)
+            return answering
+        }
+    }
+
+    public func reviewContext(_ ask: ReviewContextAsk) async -> ReviewOutcome? {
+        lock.withLock {
+            reviewContexts.append(ask)
+            return answering
+        }
+    }
+
+    public func editReview(_ changes: [ReviewChange]) async -> ReviewOutcome? {
+        lock.withLock {
+            reviewEdits.append(changes)
+            return answering
+        }
+    }
+
+    public func chooseInReview(_ choice: ReviewChoice) {
+        lock.withLock { reviewChoices.append(choice) }
+    }
+
+    public func reviewPage() -> ReviewPage? { lock.withLock { reviewShown } }
+
+    public func reviewAnchor(from: Int, to: Int) -> ReviewAnchor? {
+        lock.withLock { reviewShown == nil ? nil : anchoring }
+    }
+
+    public func closeReview() {
+        lock.withLock { reviewShown = nil }
     }
 }

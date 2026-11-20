@@ -2083,6 +2083,7 @@ dependencies = [
 name = "interpret"
 version = "0.1.0"
 dependencies = [
+ "acp-protocol",
  "attachments",
  "base64 0.22.1",
  "chrono",

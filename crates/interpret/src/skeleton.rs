@@ -1103,7 +1103,14 @@ const OWN_SERVERS: &[&str] = &[crate::AMUX_TOOL_SERVER, "codex_apps"];
 const MODEL: &[&str] = &["model", "modelId", "defaultModel"];
 
 /// The fields a protocol tags its messages with.
-const TAGS: &[&str] = &["type", "subtype", "method", "hook_event_name"];
+const TAGS: &[&str] = &[
+    "type",
+    "subtype",
+    "method",
+    "hook_event_name",
+    // ACP's kind of session update.
+    "sessionUpdate",
+];
 
 /// Fields amux itself adds to what a provider writes, before the
 /// interpreter reads it: a notebook cell's source beside its edit, and the
@@ -1305,7 +1312,13 @@ impl Frame {
                 items: codex_protocol::ITEM_LISTS,
                 maps: codex_protocol::DATA_MAPS,
             },
-            _ => Frame {
+            wire::Kind::Acp => Frame {
+                data: acp_protocol::DATA_SUBTREES,
+                items: acp_protocol::ITEM_LISTS,
+                maps: acp_protocol::DATA_MAPS,
+            },
+            // No provider speaks for no kind.
+            wire::Kind::Unspecified => Frame {
                 data: &[],
                 items: &[],
                 maps: &[],
@@ -1441,7 +1454,30 @@ impl Skeleton {
             }
             (wire::Kind::Codex, Some(Channel::Rpc)) => codex_protocol::fields(payload),
             (wire::Kind::Codex, None) => codex_protocol::client_fields(payload),
-            _ => Some(Fields::new()),
+            (wire::Kind::Acp, Some(Channel::Rpc)) => acp_protocol::fields(payload),
+            (wire::Kind::Acp, None) => acp_protocol::client_fields(payload),
+            // A channel the kind's provider does not write on, or no kind:
+            // nothing on it is typed, so every name is aliased.
+            (
+                wire::Kind::ClaudeSdk,
+                Some(
+                    Channel::Transcript
+                    | Channel::SubagentTranscript
+                    | Channel::Hook
+                    | Channel::Rpc,
+                ),
+            )
+            | (wire::Kind::ClaudePty, Some(Channel::Stream | Channel::Rpc))
+            | (
+                wire::Kind::Codex | wire::Kind::Acp,
+                Some(
+                    Channel::Transcript
+                    | Channel::SubagentTranscript
+                    | Channel::Hook
+                    | Channel::Stream,
+                ),
+            )
+            | (wire::Kind::Unspecified, _) => Some(Fields::new()),
         };
         let names = match &typed {
             None => Names::Own,
@@ -1536,7 +1572,13 @@ impl Skeleton {
                         None => {
                             let above = path;
                             let path = child(path, name);
-                            let entered = at.frame.data.iter().find(|subtree| **subtree == path);
+                            // A subtree is a path, or `*.<name>`: any
+                            // field of that name at any depth.
+                            let entered = at
+                                .frame
+                                .data
+                                .iter()
+                                .find(|subtree| codex_protocol::is_map(&[subtree], &path));
                             match entered {
                                 // The protocol crate names its data's place.
                                 Some(subtree) => (
@@ -2064,8 +2106,12 @@ fn server_tool(fields: &Map<String, Value>, kind: Option<&str>) -> bool {
 pub fn input_message(kind: wire::Kind) -> &'static str {
     match kind {
         wire::Kind::ClaudePty => "amux.v1.ClaudePtyInput",
+        wire::Kind::ClaudeSdk => "amux.v1.ClaudeSdkInput",
         wire::Kind::Codex => "amux.v1.CodexInput",
-        wire::Kind::ClaudeSdk | wire::Kind::Unspecified => "amux.v1.ClaudeSdkInput",
+        wire::Kind::Acp => "amux.v1.AcpInput",
+        // No interpreter has no kind, so no input message is its; the
+        // skeleton of a name the schema lacks is null.
+        wire::Kind::Unspecified => "",
     }
 }
 

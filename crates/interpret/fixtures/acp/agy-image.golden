@@ -1,0 +1,46 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 63
+snapshot STARTING queue=[] working_on=- at=63 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"antigrav…
+effect session "b8fc3572-edf0-482e-bf7f-694380d0bafb"
+effect catalogue 069aaf4f models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+item boundary:1 boundary final at=966 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 069aaf4f
+snapshot IDLE queue=[] working_on=- at=966 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-4-neon model_name=Gemini 4 Neon effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 6 recorded 5: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"b8fc3572-edf0-482e-bf7f-694380d0bafb\",\"value\":\"gemini-3.8-flash\"}}"
+effect reply p1-1 accepted
+## 7 recorded 6: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 8e359670 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 8e359670
+snapshot IDLE queue=[] working_on=- at=967 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 9 recorded 8: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"thought_level\",\"sessionId\":\"b8fc3572-edf0-482e-bf7f-694380d0bafb\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 11 recorded 10: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=968 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 13 recorded 12: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"What is the main colour of the attached image? Reply with one word.\",\"type\":\"text\"}],\"sessionId\":\"b8fc3572-edf0-482e-bf7f-694380d0bafb\"}}" attachments=1
+item prompt:70312d33 prompt final input=p1-3 at=969 text="What is the main colour of the attached image? Reply with one word." attachments=1
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=969 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 16 recorded 15: fact Rpc method=session/update
+effect catalogue 32f299c3 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 32f299c3
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=973 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 17 recorded 16: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=973 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 25 recorded 24: fact Rpc method=session/update
+item message:1 message open at=3017 text="Red"
+## 27 recorded 26: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=3018 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=10135/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 29 recorded 28: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+item message:1 message final at=3017 text="Red"
+item turn:1 turn final at=3020 text="" #1 TURN_OUTCOME_COMPLETED started=969
+snapshot said "Red"
+snapshot IDLE queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=3020 agent=antigravity session=b8fc3572-edf0-482e-bf7f-694380d0bafb asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=10135/1048576 plan=? usage=in:10134/out:1/thought:0/total:10135 cost=? sign_in=SIGNED_IN
+turn_end 1 last=message:1
+## 32 recorded 31: provider_exit Some(0)
+item boundary:2 boundary final at=5022 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

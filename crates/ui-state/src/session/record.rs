@@ -265,7 +265,10 @@ fn queued(queued: QueuedInput) -> QueuedInput {
 /// An input by its arm, with the ask it answers and the queued input it
 /// withdraws or sends now; a prompt's text and attachments are emptied.
 fn input(input: Input) -> Input {
-    use wire::{KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex};
+    use wire::{
+        KindInput, acp_input as acp, claude_pty_input as pty, claude_sdk_input as sdk,
+        codex_input as codex,
+    };
     let prompt = || wire::PromptInput::default();
     let claude_answer = |answer: wire::ClaudeAnswer| wire::ClaudeAnswer {
         ask_key: answer.ask_key,
@@ -313,6 +316,21 @@ fn input(input: Input) -> Input {
                 codex::Of::Model(_) => codex::Of::Model(Default::default()),
                 codex::Of::Effort(_) => codex::Of::Effort(Default::default()),
                 codex::Of::StopJob(_) => codex::Of::StopJob(Default::default()),
+            }),
+        }),
+        Some(KindInput::Acp(held)) => KindInput::Acp(wire::AcpInput {
+            of: held.of.map(|of| match of {
+                acp::Of::Prompt(_) => acp::Of::Prompt(prompt()),
+                acp::Of::Answer(answer) => acp::Of::Answer(wire::AcpAnswer {
+                    ask_key: answer.ask_key,
+                    of: None,
+                }),
+                // Each names the queued input it acts on by its id.
+                named @ (acp::Of::Withdraw(_) | acp::Of::SendNow(_)) => named,
+                acp::Of::Interrupt(_) => acp::Of::Interrupt(Default::default()),
+                acp::Of::Mode(_) => acp::Of::Mode(Default::default()),
+                acp::Of::Model(_) => acp::Of::Model(Default::default()),
+                acp::Of::Effort(_) => acp::Of::Effort(Default::default()),
             }),
         }),
         None => {

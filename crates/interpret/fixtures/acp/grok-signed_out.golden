@@ -1,0 +1,13 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 692
+snapshot STARTING queue=[] working_on=- at=692 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
+snapshot STARTING queue=[] working_on=- at=692 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_OUT
+## 18 recorded 17: fact Rpc "{\"error\":{\"code\":-32000,\"data\":\"no auth method id provided\",\"message\"…
+effect exit "grok refused to open its session: Authentication required"
+snapshot STARTING queue=[] working_on=- at=805 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_OUT
+notice blocked signed-out
+## 21 recorded 20: provider_exit Some(0)
+item boundary:1 boundary final at=806 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

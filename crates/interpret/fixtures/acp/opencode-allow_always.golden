@@ -1,0 +1,182 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 1347
+snapshot STARTING queue=[] working_on=- at=1347 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\…
+effect session "ses_e05978b1cffefWPIhKFo1pmg03"
+effect catalogue 864ad183 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
+item boundary:1 boundary final at=2110 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 864ad183
+snapshot IDLE queue=[] working_on=- at=2110 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/big-pickle model_name=OpenCode/Big Pickle effort=? mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 6 recorded 5: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"ses_e05978b1cffefWPIhKFo1pmg03\",\"value\":\"opencode/deepseek-v4.1-flash-free\"}}"
+effect reply p1-1 accepted
+## 9 recorded 8: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 49985977 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
+snapshot catalogue 49985977
+snapshot IDLE queue=[] working_on=- at=2126 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 11 recorded 10: input p1-2
+effect reply p1-2 accepted
+effect write "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done.\",\"type\":\"text\"}],\"sessionId\":\"ses_e05978b1cffefWPIhKFo1pmg03\"}}"
+item prompt:70312d32 prompt final input=p1-2 at=2127 text="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done."
+snapshot WORKING queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=2127 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 12 recorded 11: fact Rpc method=session/update
+effect catalogue d192fa3d models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
+snapshot catalogue d192fa3d
+snapshot WORKING queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=2127 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 14 recorded 13: fact Rpc method=session/update
+item thought:1 thought open at=4828 text="The"
+## 16 recorded 15: fact Rpc method=session/update
+append thought:1 " user wants me to run a"
+## 18 recorded 17: fact Rpc method=session/update
+append thought:1 " shell"
+## 20 recorded 19: fact Rpc method=session/update
+append thought:1 " command. Let me look"
+## 22 recorded 21: fact Rpc method=session/update
+append thought:1 " at the files"
+## 24 recorded 23: fact Rpc method=session/update
+append thought:1 " first?"
+## 26 recorded 25: fact Rpc method=session/update
+append thought:1 " The instruction is to"
+## 28 recorded 27: fact Rpc method=session/update
+append thought:1 " run the exact command. But"
+## 30 recorded 29: fact Rpc method=session/update
+append thought:1 " there's a security consideration"
+## 32 recorded 31: fact Rpc method=session/update
+append thought:1 ":"
+## 34 recorded 33: fact Rpc method=session/update
+append thought:1 " running"
+## 36 recorded 35: fact Rpc method=session/update
+append thought:1 " an arbitrary script. Let me"
+## 38 recorded 37: fact Rpc method=session/update
+append thought:1 " check what's"
+## 40 recorded 39: fact Rpc method=session/update
+append thought:1 " there. The task"
+## 42 recorded 41: fact Rpc method=session/update
+append thought:1 " is explicit"
+## 44 recorded 43: fact Rpc method=session/update
+append thought:1 "."
+## 46 recorded 45: fact Rpc method=session/update
+append thought:1 " I should"
+## 48 recorded 47: fact Rpc method=session/update
+append thought:1 " probably inspect"
+## 50 recorded 49: fact Rpc method=session/update
+append thought:1 " the script contents"
+## 52 recorded 51: fact Rpc method=session/update
+append thought:1 " before running since it"
+## 54 recorded 53: fact Rpc method=session/update
+append thought:1 " could be"
+## 56 recorded 55: fact Rpc method=session/update
+append thought:1 " malicious. But the user explicitly"
+## 58 recorded 57: fact Rpc method=session/update
+append thought:1 " asked. Still"
+## 60 recorded 59: fact Rpc method=session/update
+append thought:1 ", let me at"
+## 62 recorded 61: fact Rpc method=session/update
+append thought:1 " least list the directory"
+## 64 recorded 63: fact Rpc method=session/update
+append thought:1 ".\n\nLet"
+## 66 recorded 65: fact Rpc method=session/update
+append thought:1 " me read the"
+## 68 recorded 67: fact Rpc method=session/update
+append thought:1 " files quickly."
+## 70 recorded 69: fact Rpc method=session/update
+item thought:1 thought final at=4828 text="The user wants me to run a shell command. Let me look at the files first? The instruction is to run the exact command. But there's a security consideration: running an arbitrary script. Let me check what's there. The task is explicit. I should probably inspect the script contents before running since it could be malicious. But the user explicitly asked. Still, let me at least list the directory.\n\nLet me read the files quickly."
+item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="" EXECUTE PENDING "bash" at=<MACHINE_PATH> input="{\"cwd\":\"<MACHINE_PATH>\"}"
+## 72 recorded 71: fact Rpc method=session/update
+item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="" EXECUTE RUNNING "ls -la" at=<MACHINE_PATH> input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
+## 74 recorded 73: fact Rpc method=session/update
+item tool:call_715991cb03f84cd48a09c205 tool open at=5469 text="" READ PENDING "read" input="{}"
+## 76 recorded 75: fact Rpc method=session/request_permission
+item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="" EXECUTE PENDING "ls -la" input="{\"command\":\"ls -la\"}"
+snapshot NEEDS_YOU queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=5494 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[0:permission[once=ALLOW_ONCE,always=ALLOW_ALWAYS,reject=REJECT_ONCE]] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+notice ask 0 other "" "ls -la" why="" more=0
+## 77 recorded 76: input p1-3
+effect write "{\"id\":0,\"jsonrpc\":\"2.0\",\"result\":{\"outcome\":{\"optionId\":\"always\",\"outcome\":\"selected\"}}}"
+effect reply p1-3 accepted
+item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="" EXECUTE PENDING "ls -la" decision=ALLOWED input="{\"command\":\"ls -la\"}"
+snapshot WORKING queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=5494 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 79 recorded 78: fact Rpc method=session/update
+item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="" EXECUTE RUNNING "ls -la" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
+## 80 recorded 79: fact Rpc method=session/update
+item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="total 8\ndrwxr-xr-x@ 3 ###  staff   96 20 Nov 20:21 .\ndrwxr-xr-x@ 4 ###  staff  128 20 Nov 20:21 ..\n-rwxr-xr-x@ 1 ###  staff   27 20 Nov 20:21 amux-acp-allow-always.sh\n" EXECUTE RUNNING "ls -la" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
+## 82 recorded 81: fact Rpc method=session/update
+item tool:call_9b4e415249a24fc19bade5b0 tool final at=5385 text="total 8\ndrwxr-xr-x@ 3 ###  staff   96 20 Nov 20:21 .\ndrwxr-xr-x@ 4 ###  staff  128 20 Nov 20:21 ..\n-rwxr-xr-x@ 1 ###  staff   27 20 Nov 20:21 amux-acp-allow-always.sh\n" EXECUTE SUCCEEDED "ls -la" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
+## 84 recorded 83: fact Rpc method=session/update
+item tool:call_715991cb03f84cd48a09c205 tool open at=5469 text="" READ RUNNING "read" at=<MACHINE_PATH> input="{\"filePath\":\"<MACHINE_PATH>\"}"
+## 86 recorded 85: fact Rpc method=session/update
+item tool:call_715991cb03f84cd48a09c205 tool final at=5469 text="#!/bin/sh\necho made > \"$1\"" READ SUCCEEDED "private<MACHINE_PATH>" at=<MACHINE_PATH> input="{\"filePath\":\"<MACHINE_PATH>\"}"
+## 88 recorded 87: fact Rpc method=session/update
+item thought:2 thought open at=7407 text="Simple"
+## 90 recorded 89: fact Rpc method=session/update
+append thought:2 " script writes \""
+## 91 recorded 90: fact Rpc method=session/update
+append thought:2 "made\" to file"
+## 93 recorded 92: fact Rpc method=session/update
+append thought:2 ". Run it."
+## 95 recorded 94: fact Rpc method=session/update
+item thought:2 thought final at=7407 text="Simple script writes \"made\" to file. Run it."
+item tool:call_4da0c0d3663244ebad595b60 tool open at=7502 text="" EXECUTE PENDING "bash" at=<MACHINE_PATH> input="{\"cwd\":\"<MACHINE_PATH>\"}"
+## 97 recorded 96: fact Rpc method=session/request_permission
+item tool:call_4da0c0d3663244ebad595b60 tool open at=7502 text="" EXECUTE PENDING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\"}"
+snapshot NEEDS_YOU queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=7688 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[1:permission[once=ALLOW_ONCE,always=ALLOW_ALWAYS,reject=REJECT_ONCE]] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+notice ask 1 other "" "./amux-acp-allow-always.sh amux-acp-allow-always.txt" why="" more=0
+## 99 recorded 98: fact Rpc method=session/update
+item tool:call_4da0c0d3663244ebad595b60 tool open at=7502 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+## 100 recorded 99: input p1-4
+effect write "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":{\"outcome\":{\"optionId\":\"always\",\"outcome\":\"selected\"}}}"
+effect reply p1-4 accepted
+item tool:call_4da0c0d3663244ebad595b60 tool open at=7502 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+snapshot WORKING queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=7689 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 102 recorded 101: fact Rpc method=session/update
+item tool:call_4da0c0d3663244ebad595b60 tool open at=7502 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+## 104 recorded 103: fact Rpc method=session/update
+item tool:call_4da0c0d3663244ebad595b60 tool final at=7502 text="(no output)" EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+## 106 recorded 105: fact Rpc method=session/update
+item message:3 message open at=9322 text="done"
+## 108 recorded 107: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=9326 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13441/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN
+## 110 recorded 109: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item message:3 message final at=9322 text="done"
+item turn:1 turn final at=9327 text="" #1 TURN_OUTCOME_COMPLETED started=2127
+snapshot said "done"
+snapshot IDLE queue=[] working_on="Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=9327 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13441/200000 plan=? usage=in:129/out:3/thought:?/total:13444 cost=0USD sign_in=SIGNED_IN
+turn_end 1 last=message:3
+## 111 recorded 110: input p1-5
+effect reply p1-5 accepted
+effect write "{\"id\":\"amux-prompt-70312d35\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Run exactly the same shell command again: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done.\",\"type\":\"text\"}],\"sessionId\":\"ses_e05978b1cffefWPIhKFo1pmg03\"}}"
+item prompt:70312d35 prompt final input=p1-5 at=9327 text="Run exactly the same shell command again: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done."
+snapshot WORKING queue=[] working_on="Run exactly the same shell command again: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=9327 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13441/200000 plan=? usage=in:129/out:3/thought:?/total:13444 cost=0USD sign_in=SIGNED_IN
+## 113 recorded 112: fact Rpc method=session/update
+item thought:4 thought open at=11077 text="The"
+## 115 recorded 114: fact Rpc method=session/update
+append thought:4 " instruction says"
+## 116 recorded 115: fact Rpc method=session/update
+append thought:4 " \"Run exactly"
+## 118 recorded 117: fact Rpc method=session/update
+append thought:4 " the same shell command again\"."
+## 120 recorded 119: fact Rpc method=session/update
+append thought:4 " Just run it"
+## 122 recorded 121: fact Rpc method=session/update
+append thought:4 " again."
+## 124 recorded 123: fact Rpc method=session/update
+item thought:4 thought final at=11077 text="The instruction says \"Run exactly the same shell command again\". Just run it again."
+item tool:call_64f46e970aa649089b069a36 tool open at=11169 text="" EXECUTE PENDING "bash" at=<MACHINE_PATH> input="{\"cwd\":\"<MACHINE_PATH>\"}"
+## 126 recorded 125: fact Rpc method=session/update
+item tool:call_64f46e970aa649089b069a36 tool open at=11169 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+## 127 recorded 126: fact Rpc method=session/update
+item tool:call_64f46e970aa649089b069a36 tool open at=11169 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+## 129 recorded 128: fact Rpc method=session/update
+item tool:call_64f46e970aa649089b069a36 tool final at=11169 text="(no output)" EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+## 131 recorded 130: fact Rpc method=session/update
+item message:5 message open at=12468 text="done"
+## 133 recorded 132: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Run exactly the same shell command again: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=12503 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13569/200000 plan=? usage=in:129/out:3/thought:?/total:13444 cost=0USD sign_in=SIGNED_IN
+## 135 recorded 134: fact Rpc "{\"id\":\"amux-prompt-70312d35\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item message:5 message final at=12468 text="done"
+item turn:2 turn final at=12504 text="" #2 TURN_OUTCOME_COMPLETED started=9327
+snapshot IDLE queue=[] working_on="Run exactly the same shell command again: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done." at=12504 agent=opencode session=ses_e05978b1cffefWPIhKFo1pmg03 asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13569/200000 plan=? usage=in:129/out:3/thought:?/total:13572 cost=0USD sign_in=SIGNED_IN
+turn_end 2 last=message:5
+## 138 recorded 137: provider_exit Some(0)
+item boundary:2 boundary final at=14510 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

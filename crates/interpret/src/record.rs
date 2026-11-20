@@ -609,7 +609,8 @@ impl Alias {
 }
 
 /// The provider command's file name when it is a provider's own (`claude`,
-/// `codex`), else its alias: a wrapper's name is the person's.
+/// `codex`, the built-in ACP agents' `agy`, `opencode` and `grok`), else its
+/// alias: a wrapper's name, or an ACP agent a person added, is the person's.
 fn provider(skeleton: &Skeleton, command: &str) -> Option<String> {
     let name = command
         .rsplit(['/', '\\'])
@@ -617,7 +618,7 @@ fn provider(skeleton: &Skeleton, command: &str) -> Option<String> {
         .filter(|name| !name.is_empty())?;
     let stem = name.strip_suffix(".exe").unwrap_or(name);
     Some(match stem {
-        "claude" | "codex" => name.to_owned(),
+        "claude" | "codex" | "agy" | "opencode" | "grok" => name.to_owned(),
         _ => skeleton.alias("", name),
     })
 }
@@ -759,6 +760,15 @@ fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
             attachments,
         } => json!({
             "effect": "codex_turn_input",
+            "bytes": request.len(),
+            "shape": json_shape(alias, kind, request),
+            "attachments": attachments.len(),
+        }),
+        Effect::AcpPrompt {
+            request,
+            attachments,
+        } => json!({
+            "effect": "acp_prompt",
             "bytes": request.len(),
             "shape": json_shape(alias, kind, request),
             "attachments": attachments.len(),

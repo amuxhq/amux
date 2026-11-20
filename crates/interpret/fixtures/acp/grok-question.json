@@ -1,0 +1,10 @@
+{
+  "about": "grok 1.0.89, recorded live: a prompt asking the agent to put a question to the person with its own question tool rather than in chat",
+  "spec": {
+    "provider": "grok"
+  },
+  "recording": {
+    "path": "live/grok-question/io.jsonl",
+    "format": "acp_io"
+  }
+}

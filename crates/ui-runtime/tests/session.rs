@@ -384,6 +384,13 @@ fn act_arm(request: &SendInputRequest) -> String {
             codex_input::Of::Answer(_) => "answer",
             _ => "other",
         },
+        wire::KindInput::Acp(acp) => match acp.of.as_ref().unwrap() {
+            wire::acp_input::Of::Withdraw(_) => "withdraw",
+            wire::acp_input::Of::SendNow(_) => "send_now",
+            wire::acp_input::Of::Interrupt(_) => "interrupt",
+            wire::acp_input::Of::Answer(_) => "answer",
+            _ => "other",
+        },
     }
     .into()
 }

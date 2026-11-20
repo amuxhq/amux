@@ -184,6 +184,7 @@ pub enum KindInput {
     ClaudePty(ClaudePtyInput),
     ClaudeSdk(ClaudeSdkInput),
     Codex(CodexInput),
+    Acp(AcpInput),
 }
 
 impl KindInput {
@@ -192,6 +193,7 @@ impl KindInput {
             Self::ClaudePty(_) => Kind::ClaudePty,
             Self::ClaudeSdk(_) => Kind::ClaudeSdk,
             Self::Codex(_) => Kind::Codex,
+            Self::Acp(_) => Kind::Acp,
         }
     }
 
@@ -201,6 +203,7 @@ impl KindInput {
             Self::ClaudePty(input) => input.encode_to_vec(),
             Self::ClaudeSdk(input) => input.encode_to_vec(),
             Self::Codex(input) => input.encode_to_vec(),
+            Self::Acp(input) => input.encode_to_vec(),
         }
     }
 }
@@ -220,6 +223,12 @@ impl From<ClaudeSdkInput> for KindInput {
 impl From<CodexInput> for KindInput {
     fn from(input: CodexInput) -> Self {
         Self::Codex(input)
+    }
+}
+
+impl From<AcpInput> for KindInput {
+    fn from(input: AcpInput) -> Self {
+        Self::Acp(input)
     }
 }
 
@@ -244,19 +253,21 @@ impl Input {
             Kind::ClaudePty => ClaudePtyInput::decode(body).ok().map(KindInput::ClaudePty),
             Kind::ClaudeSdk => ClaudeSdkInput::decode(body).ok().map(KindInput::ClaudeSdk),
             Kind::Codex => CodexInput::decode(body).ok().map(KindInput::Codex),
+            Kind::Acp => AcpInput::decode(body).ok().map(KindInput::Acp),
             Kind::Unspecified => None,
         }
     }
 }
 
 impl create_agent_request::Agent {
-    /// The kind with its default settings; None for no kind.
+    /// The kind with its default settings; None for no kind, and for an
+    /// ACP agent, which has no default: which agent it is must be named.
     pub fn defaults(kind: Kind) -> Option<Self> {
         match kind {
             Kind::ClaudePty => Some(Self::ClaudePty(ClaudeCreateConfig::default())),
             Kind::ClaudeSdk => Some(Self::ClaudeSdk(ClaudeCreateConfig::default())),
             Kind::Codex => Some(Self::Codex(CodexCreateConfig::default())),
-            Kind::Unspecified => None,
+            Kind::Acp | Kind::Unspecified => None,
         }
     }
 
@@ -266,6 +277,7 @@ impl create_agent_request::Agent {
             Self::ClaudePty(_) => Kind::ClaudePty,
             Self::ClaudeSdk(_) => Kind::ClaudeSdk,
             Self::Codex(_) => Kind::Codex,
+            Self::Acp(_) => Kind::Acp,
         }
     }
 }
@@ -602,6 +614,9 @@ mod tests {
         "CodexItem",
         "CodexInput",
         "CodexSnapshot",
+        "AcpItem",
+        "AcpInput",
+        "AcpSnapshot",
     ];
 
     /// Every message, nested ones included, and every enum, by full name.

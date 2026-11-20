@@ -525,7 +525,8 @@ pub fn settings(state: &SessionState) -> SettingsView {
             }
             changeable
         }
-        Kind::Unspecified => Changeability::default(),
+        // This build's views offer no ACP agent's settings yet.
+        Kind::Acp | Kind::Unspecified => Changeability::default(),
     };
     SettingsView {
         models,

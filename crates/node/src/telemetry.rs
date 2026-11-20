@@ -74,7 +74,10 @@ pub(crate) fn kind(kind: wire::Kind) -> Option<Kind> {
         wire::Kind::ClaudePty => Some(Kind::ClaudePty),
         wire::Kind::ClaudeSdk => Some(Kind::ClaudeSdk),
         wire::Kind::Codex => Some(Kind::Codex),
-        wire::Kind::Unspecified => None,
+        // Analytics names no ACP agent yet: an agent's id is the person's
+        // own for one they added, so none is counted until built-in ids
+        // can be told from theirs.
+        wire::Kind::Acp | wire::Kind::Unspecified => None,
     }
 }
 
@@ -149,6 +152,8 @@ impl InputShape {
                     _ => return None,
                 }
             }
+            // Not counted, as `kind` says.
+            KindInput::Acp(_) => return None,
         })
     }
 

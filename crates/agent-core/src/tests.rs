@@ -1773,6 +1773,10 @@ mod hosting {
             Kind::initial(spec)
         }
 
+        fn fact_shape(fact: &interpret::Fact) -> interpret::shape::FactShape {
+            Kind::fact_shape(fact)
+        }
+
         fn step(state: &mut Self::State, event: Event) -> Stepped {
             let part = match &event {
                 Event::Fact(fact) if fact.channel == Channel::Stream => {

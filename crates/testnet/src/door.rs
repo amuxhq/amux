@@ -983,6 +983,7 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
             wire::ClaudeSnapshot::decode(body).ok()?.model
         }
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
+        wire::Kind::Acp => wire::AcpSnapshot::decode(body).ok()?.model,
         wire::Kind::Unspecified => None,
     }
 }
@@ -1003,6 +1004,7 @@ fn item_body(item: &wire::Item) -> String {
         Ok(wire::Kind::Codex) => {
             wire::CodexItem::decode(body).map(|item| format!("{:?}", item.kind))
         }
+        Ok(wire::Kind::Acp) => wire::AcpItem::decode(body).map(|item| format!("{:?}", item.kind)),
         _ => return String::new(),
     }
     .unwrap_or_else(|error| format!("undecodable: {error}"));
@@ -1021,6 +1023,9 @@ fn pending_asks(snapshot: &wire::Snapshot) -> Vec<String> {
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
         Ok(wire::Kind::Codex) => wire::CodexSnapshot::decode(body)
+            .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
+            .unwrap_or_default(),
+        Ok(wire::Kind::Acp) => wire::AcpSnapshot::decode(body)
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
         _ => Vec::new(),

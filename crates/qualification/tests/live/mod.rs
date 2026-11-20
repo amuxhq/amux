@@ -482,6 +482,7 @@ impl Driver {
             Kind::ClaudePty => "claude_pty",
             Kind::ClaudeSdk => "claude_sdk",
             Kind::Codex => "codex",
+            Kind::Acp => "acp",
             Kind::Unspecified => "unknown",
         }
     }

@@ -763,6 +763,9 @@ fn kind_word(kind: Kind) -> String {
         Kind::Unspecified => "unknown".to_owned(),
         Kind::ClaudePty | Kind::ClaudeSdk => "claude".to_owned(),
         Kind::Codex => "codex".to_owned(),
+        // Every ACP agent is named by its own id, which the row does not
+        // carry yet; none is spawnable from here.
+        Kind::Acp => "acp".to_owned(),
     }
 }
 

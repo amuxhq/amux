@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a second prompt sent as soon as the first turn's answer arrives",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-queued/io.jsonl",
+    "format": "acp_io"
+  }
+}

@@ -1,0 +1,82 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 156
+snapshot STARTING queue=[] working_on=- at=156 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
+snapshot STARTING queue=[] working_on=- at=156 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 20 recorded 19: fact Rpc method=session/update
+effect catalogue daef34d7 models=[] commands=63 permissions=[] modes=[]
+snapshot catalogue daef34d7
+snapshot STARTING queue=[] working_on=- at=266 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 29 recorded 28: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
+effect session "01a1fa62-4f96-7cb1-934f-e89eb12d95ad"
+effect catalogue 1ee2ee4d models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
+item boundary:1 boundary final at=285 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 1ee2ee4d
+snapshot IDLE queue=[] working_on=- at=285 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 32 recorded 31: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fa62-4f96-7cb1-934f-e89eb12d95ad\",\"value\":\"grok-4.7-build-fast\"}}"
+effect reply p1-1 accepted
+## 38 recorded 37: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=340 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 39 recorded 38: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fa62-4f96-7cb1-934f-e89eb12d95ad\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 40 recorded 39: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=340 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 42 recorded 41: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Write a 500-word story about a lighthouse keeper. Do not use any tools.\",\"type\":\"text\"}],\"sessionId\":\"01a1fa62-4f96-7cb1-934f-e89eb12d95ad\"}}"
+item prompt:70312d33 prompt final input=p1-3 at=340 text="Write a 500-word story about a lighthouse keeper. Do not use any tools."
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=340 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 76 recorded 75: fact Rpc method=session/update
+item thought:1 thought open at=2346 text="I'm beginning to write"
+## 78 recorded 77: fact Rpc method=session/update
+append thought:1 " a 500-word story about"
+## 79 recorded 78: input p1-4
+effect write "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{\"sessionId\":\"01a1fa62-4f96-7cb1-934f-e89eb12d95ad\"}}"
+effect reply p1-4 accepted
+## 80 recorded 79: fact Rpc method=session/update
+append thought:1 " a lighthouse keeper."
+## 81 recorded 80: fact Rpc method=session/update
+append thought:1 " The user has explicitly"
+## 83 recorded 82: fact Rpc method=session/update
+append thought:1 " forbidden the use of any tools."
+## 84 recorded 83: fact Rpc method=session/update
+item thought:1 thought final at=2346 text="I'm beginning to write a 500-word story about a lighthouse keeper. The user has explicitly forbidden the use of any tools."
+item message:2 message open at=2348 text="M"
+## 85 recorded 84: fact Rpc method=session/update
+append message:2 "ara"
+## 86 recorded 85: fact Rpc method=session/update
+append message:2 " kept"
+## 87 recorded 86: fact Rpc method=session/update
+append message:2 " the"
+## 88 recorded 87: fact Rpc method=session/update
+append message:2 " light"
+## 93 recorded 92: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+item message:2 message final at=2348 text="Mara kept the light"
+item turn:1 turn final at=2349 text="" #1 TURN_OUTCOME_INTERRUPTED started=340
+snapshot said "Mara kept the light"
+snapshot IDLE queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2349 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:1325 cost=? sign_in=SIGNED_IN
+turn_end 1 last=message:2
+## 95 recorded 94: input p1-5
+effect reply p1-5 accepted
+effect write "{\"id\":\"amux-prompt-70312d35\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Reply with exactly the word: after\",\"type\":\"text\"}],\"sessionId\":\"01a1fa62-4f96-7cb1-934f-e89eb12d95ad\"}}"
+item prompt:70312d35 prompt final input=p1-5 at=4355 text="Reply with exactly the word: after"
+snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=4355 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:1325 cost=? sign_in=SIGNED_IN
+## 105 recorded 104: fact Rpc method=session/update
+item thought:3 thought open at=5718 text="The reply will be exactly"
+## 106 recorded 105: fact Rpc method=session/update
+append thought:3 " the word \"after\"."
+## 108 recorded 107: fact Rpc method=session/update
+item thought:3 thought final at=5718 text="The reply will be exactly the word \"after\"."
+item message:4 message open at=6396 text="after"
+## 120 recorded 119: fact Rpc "{\"id\":\"amux-prompt-70312d35\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+item message:4 message final at=6396 text="after"
+item turn:2 turn final at=6524 text="" #2 TURN_OUTCOME_COMPLETED started=4355
+snapshot said "after"
+snapshot IDLE queue=[] working_on="Reply with exactly the word: after" at=6524 agent=grok session=01a1fa62-4f96-7cb1-934f-e89eb12d95ad asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20987/out:225/thought:224/total:21219 cost=? sign_in=SIGNED_IN
+turn_end 2 last=message:4
+## 125 recorded 124: provider_exit Some(0)
+item boundary:2 boundary final at=9021 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

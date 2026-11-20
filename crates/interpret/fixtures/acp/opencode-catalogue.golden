@@ -1,0 +1,7 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 659
+snapshot STARTING queue=[] working_on=- at=659 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 3 recorded 2: provider_exit Some(0)
+item boundary:1 boundary final at=659 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

@@ -2490,7 +2490,7 @@ fn provider_word(kind: Kind) -> &'static str {
     match kind {
         Kind::ClaudeSdk | Kind::ClaudePty => "Claude",
         Kind::Codex => "Codex",
-        Kind::Unspecified => "the provider",
+        Kind::Acp | Kind::Unspecified => "the provider",
     }
 }
 

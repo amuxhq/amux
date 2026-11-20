@@ -1,0 +1,70 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 162
+snapshot STARTING queue=[] working_on=- at=162 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
+snapshot STARTING queue=[] working_on=- at=162 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 21 recorded 20: fact Rpc method=session/update
+effect catalogue daef34d7 models=[] commands=63 permissions=[] modes=[]
+snapshot catalogue daef34d7
+snapshot STARTING queue=[] working_on=- at=311 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 31 recorded 30: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
+effect session "01a1fa63-3aa8-7e91-8049-b0478e86003d"
+effect catalogue 1ee2ee4d models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
+item boundary:1 boundary final at=331 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 1ee2ee4d
+snapshot IDLE queue=[] working_on=- at=331 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 33 recorded 32: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fa63-3aa8-7e91-8049-b0478e86003d\",\"value\":\"grok-4.7-build-fast\"}}"
+effect reply p1-1 accepted
+## 47 recorded 46: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=410 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 48 recorded 47: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fa63-3aa8-7e91-8049-b0478e86003d\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 50 recorded 49: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=411 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 52 recorded 51: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Remember the word kiwi. Reply with exactly the word: ok\",\"type\":\"text\"}],\"sessionId\":\"01a1fa63-3aa8-7e91-8049-b0478e86003d\"}}"
+item prompt:70312d33 prompt final input=p1-3 at=411 text="Remember the word kiwi. Reply with exactly the word: ok"
+snapshot WORKING queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=411 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 76 recorded 75: fact Rpc method=session/update
+item thought:1 thought open at=2656 text="I will remember the "
+## 77 recorded 76: fact Rpc method=session/update
+append thought:1 "word \"kiwi\" and reply"
+## 79 recorded 78: fact Rpc method=session/update
+append thought:1 " with exactly \"ok\"."
+## 84 recorded 83: fact Rpc method=session/update
+item thought:1 thought final at=2656 text="I will remember the word \"kiwi\" and reply with exactly \"ok\"."
+item message:2 message open at=3775 text="ok"
+## 95 recorded 94: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+item message:2 message final at=3775 text="ok"
+item turn:1 turn final at=4039 text="" #1 TURN_OUTCOME_COMPLETED started=411
+snapshot said "ok"
+snapshot IDLE queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=4039 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20824/out:201/thought:200/total:21032 cost=? sign_in=SIGNED_IN
+turn_end 1 last=message:2
+## 96 recorded 95: provider_exit Some(0)
+item boundary:2 boundary final at=4039 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT
+## 97 reincarnate
+snapshot STARTING queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=4039 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20824/out:201/thought:200/total:21032 cost=? sign_in=SIGNED_IN
+## 111 recorded 13: fact Rpc "{\"id\":\"agent-resume\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebaseI…
+item boundary:3 boundary final at=4039 text="" BOUNDARY_KIND_RESUMED
+snapshot IDLE queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=4039 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20824/out:201/thought:200/total:21032 cost=? sign_in=SIGNED_IN
+## 129 recorded 31: input p2-1
+effect reply p2-1 accepted
+effect write "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Which word did I ask you to remember? Reply with that word only.\",\"type\":\"text\"}],\"sessionId\":\"01a1fa63-3aa8-7e91-8049-b0478e86003d\"}}"
+item prompt:70322d31 prompt final input=p2-1 at=4164 text="Which word did I ask you to remember? Reply with that word only."
+snapshot WORKING queue=[] working_on="Which word did I ask you to remember? Reply with that word only." at=4164 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20824/out:201/thought:200/total:21032 cost=? sign_in=SIGNED_IN
+## 140 recorded 42: fact Rpc method=session/update
+item message:3 message open at=5685 text="kiwi"
+## 153 recorded 55: fact Rpc "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+item message:3 message final at=5685 text="kiwi"
+item turn:2 turn final at=5773 text="" #2 TURN_OUTCOME_COMPLETED started=4164
+snapshot said "kiwi"
+snapshot IDLE queue=[] working_on="Which word did I ask you to remember? Reply with that word only." at=5773 agent=grok session=01a1fa63-3aa8-7e91-8049-b0478e86003d asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:21198/out:22/thought:21/total:21227 cost=? sign_in=SIGNED_IN
+turn_end 2 last=message:3
+## 164 recorded 66: provider_exit Some(0)
+item boundary:4 boundary final at=10403 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a prompt asking the agent to put a question to the person with its own question tool rather than in chat",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-question/io.jsonl",
+    "format": "acp_io"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "about": "opencode 1.18.33, recorded live: a prompt, the process ended, then session/resume in a new process and a prompt",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-resume/io.jsonl",
+    "format": "acp_io"
+  },
+  "incarnations": [
+    {
+      "path": "live/opencode-resume/io.jsonl",
+      "format": "acp_io:2"
+    }
+  ]
+}

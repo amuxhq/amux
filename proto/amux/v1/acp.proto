@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/chat.proto";
+
+// The bodies of an agent program that speaks the Agent Client Protocol
+// (ACP): the item and snapshot messages encoded into Item.body and
+// Snapshot.body for kind acp, the inputs it accepts, and the answers inside
+// them. One envelope serves every ACP agent, built in or added by a person;
+// which agent it is, is a plain string id, never a closed list.
+
+message AcpCreateConfig {
+  // The agent's id: "antigravity", "opencode", "grok", or one a person
+  // added to their config.
+  string agent = 1;
+  // A value the agent's model option offers; absent leaves the agent's own
+  // default.
+  optional string model = 2;
+  // A value the agent's thought-level option offers.
+  optional string effort = 3;
+  // A value the agent's mode option, or its modes, offer. Absent, the
+  // agent starts in the mode its own settings name.
+  optional string mode = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Items and snapshots
+// ---------------------------------------------------------------------------
+
+message AcpItem {
+  oneof kind {
+    Prompt prompt = 1;
+    // The agent's reply, streamed.
+    Text message = 2;
+    // The agent's reasoning, streamed; the text is the envelope's.
+    Thinking thought = 3;
+    AcpTool tool = 4;
+    Turn turn = 5;
+    // A queued prompt sent into the running turn, which the agent folded
+    // into it; the text is the envelope's.
+    Steer steer = 6;
+    Compaction compaction = 7;
+    // Something the agent or the turn's end says to the person that is not
+    // the conversation; its words are the envelope text.
+    AcpNotice notice = 8;
+    AgentMessage agent_message = 9;
+    // A request amux made that the agent refused.
+    ApiError error = 10;
+    // A form or link: an ask that is the work.
+    AskItem ask = 11;
+    Boundary boundary = 12;
+    Unrecognized unrecognized = 13;
+  }
+}
+
+// One tool call, keyed by the agent's id for it. What the call printed is
+// the envelope text.
+message AcpTool {
+  // The agent's words for the call ("Read notes.txt", "read_file").
+  string title = 1;
+  AcpToolKind kind = 2;
+  ToolState state = 3;
+  ToolClass class = 4;
+  // A permission decision on the call's own row.
+  ToolDecision decision = 5;
+  // The files it touches.
+  repeated AcpLocation locations = 6;
+  // The changes it makes, whole file texts as the agent gives them.
+  repeated AcpDiff diffs = 7;
+  // What the call was given, as the agent wrote it; empty until it says.
+  bytes input_json = 8;
+  // When the call finished, by amux's clock.
+  optional int64 ended_at_ms = 9;
+}
+
+enum AcpToolKind {
+  // The agent has not said, or said a kind this build does not know.
+  ACP_TOOL_KIND_UNSPECIFIED = 0;
+  ACP_TOOL_KIND_READ = 1;
+  ACP_TOOL_KIND_EDIT = 2;
+  ACP_TOOL_KIND_DELETE = 3;
+  ACP_TOOL_KIND_MOVE = 4;
+  ACP_TOOL_KIND_SEARCH = 5;
+  ACP_TOOL_KIND_EXECUTE = 6;
+  ACP_TOOL_KIND_THINK = 7;
+  ACP_TOOL_KIND_FETCH = 8;
+  ACP_TOOL_KIND_SWITCH_MODE = 9;
+  // ACP's own "other".
+  ACP_TOOL_KIND_OTHER = 10;
+}
+
+message AcpLocation {
+  string path = 1;
+  optional uint32 line = 2;
+}
+
+message AcpDiff {
+  string path = 1;
+  // Absent for a new file.
+  optional string old_text = 2;
+  string new_text = 3;
+}
+
+message AcpNotice {
+  AcpNoticeKind kind = 1;
+  AcpNoticeSeverity severity = 2;
+  // The agent's own title for its notice; empty for the others.
+  string title = 3;
+}
+
+enum AcpNoticeKind {
+  ACP_NOTICE_KIND_UNSPECIFIED = 0;
+  // The agent's own notice.
+  ACP_NOTICE_KIND_AGENT = 1;
+  // The model refused to go on; the turn is over.
+  ACP_NOTICE_KIND_REFUSAL = 2;
+  // The turn reached the model's token limit.
+  ACP_NOTICE_KIND_MAX_TOKENS = 3;
+  // The turn reached the agent's limit on model requests in one turn.
+  ACP_NOTICE_KIND_MAX_TURN_REQUESTS = 4;
+}
+
+enum AcpNoticeSeverity {
+  ACP_NOTICE_SEVERITY_UNSPECIFIED = 0;
+  ACP_NOTICE_SEVERITY_INFO = 1;
+  ACP_NOTICE_SEVERITY_WARNING = 2;
+  ACP_NOTICE_SEVERITY_ERROR = 3;
+}
+
+// Phase lives in the Snapshot envelope, once. What the agent offers is in
+// the catalogue the Snapshot names.
+message AcpSnapshot {
+  // The agent's id, as AcpCreateConfig names it; absent only in the first
+  // frame, before the interpreter has read the spec.
+  optional string agent = 1;
+  repeated AcpAsk asks = 2;
+  ContextMeter context = 3;
+  // The model, thought level and mode the session runs with, by the values
+  // the agent's options offer; absent until the agent says.
+  optional string model = 4;
+  // The running model as a person reads it: its name in the agent's list,
+  // else its id. Absent while the model is.
+  optional string model_name = 5;
+  optional string effort = 6;
+  optional string mode = 7;
+  AcpUsage usage = 8;
+  SignIn sign_in = 9;
+  // The agent's plan, entry by entry.
+  TaskList plan = 10;
+  // The agent's id for the conversation; absent until it names one.
+  optional string session_id = 11;
+}
+
+// What the agent says the session has used. Every field is absent until it
+// says.
+message AcpUsage {
+  // What the session has cost so far, in `currency`.
+  optional double cost = 1;
+  string currency = 2;
+  // The newest turn's tokens.
+  optional uint64 input_tokens = 3;
+  optional uint64 output_tokens = 4;
+  optional uint64 thought_tokens = 5;
+  optional uint64 cached_read_tokens = 6;
+  optional uint64 cached_write_tokens = 7;
+  optional uint64 total_tokens = 8;
+}
+
+message AcpAsk {
+  // The agent's request id, JSON-encoded as the agent sent it ("\"1\"",
+  // "0").
+  string key = 1;
+  // The tool call a permission would let run; for a form or link, its own
+  // AskItem.
+  string item_key = 2;
+  oneof body {
+    AcpPermission permission = 3;
+    FormAsk form = 4;
+    LinkAsk link = 5;
+  }
+}
+
+// A tool call that waits for the person. An answer names one of the
+// options, exactly as the agent offered them.
+message AcpPermission {
+  // The call's title, as the agent wrote it.
+  string title = 1;
+  AcpToolKind kind = 2;
+  // In the agent's order.
+  repeated AcpPermissionOption options = 3;
+}
+
+message AcpPermissionOption {
+  // What an answer names.
+  string option_id = 1;
+  // The agent's words for it ("Allow", "Allow always").
+  string name = 2;
+  AcpPermissionKind kind = 3;
+}
+
+enum AcpPermissionKind {
+  // A kind this build does not know; the option is still offered by name.
+  ACP_PERMISSION_KIND_UNSPECIFIED = 0;
+  ACP_PERMISSION_KIND_ALLOW_ONCE = 1;
+  // Allow, and the agent remembers it as it decides: for as long as its
+  // process runs, or longer.
+  ACP_PERMISSION_KIND_ALLOW_ALWAYS = 2;
+  ACP_PERMISSION_KIND_REJECT_ONCE = 3;
+  ACP_PERMISSION_KIND_REJECT_ALWAYS = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Inputs and answers
+// ---------------------------------------------------------------------------
+
+message AcpInput {
+  oneof of {
+    PromptInput prompt = 1;
+    AcpAnswer answer = 2;
+    Interrupt interrupt = 3;
+    SetModel model = 4;
+    SetEffort effort = 5;
+    SetMode mode = 6;
+    WithdrawQueued withdraw = 7;
+    // Refused REFUSAL_UNSUPPORTED for an agent not known to fold a prompt
+    // into its running turn.
+    SendQueuedNow send_now = 8;
+  }
+}
+
+// Rejected REFUSAL_CLOSED_ASK if ask_key is not open, and
+// REFUSAL_UNSUPPORTED when the answer does not fit the ask.
+message AcpAnswer {
+  // AcpAsk.key.
+  string ask_key = 1;
+  oneof of {
+    // A permission's option, by its option_id.
+    string option = 2;
+    FormAnswer form = 3;
+    LinkAnswer link = 4;
+    // The person's words instead: the turn is cancelled, which closes the
+    // ask, and the words go as the next prompt.
+    ReplyInstead reply = 5;
+  }
+}

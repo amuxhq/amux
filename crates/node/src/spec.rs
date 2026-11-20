@@ -41,6 +41,9 @@ pub fn prompt_bootstrap(prompt: PromptSubmission) -> Result<Bootstrap, RegistryE
 /// agent's configuration. Carried from one incarnation's spec to the next.
 #[derive(Clone, Debug, Default)]
 pub struct Resolved {
+    /// The agent program's id, for a kind that runs one of many: an ACP
+    /// agent's. Empty for the others.
+    pub provider: String,
     pub provider_args: Vec<String>,
     pub model: Option<String>,
     pub permission: Option<String>,
@@ -77,12 +80,20 @@ pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
             permission,
             mode,
         })),
-        _ => resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
-            args,
+        Kind::Acp => resolve(&Agent::Acp(wire::AcpCreateConfig {
+            agent: previous.provider.clone(),
             model,
             effort,
-            permission,
+            mode,
         })),
+        Kind::ClaudePty | Kind::ClaudeSdk | Kind::Unspecified => {
+            resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
+                args,
+                model,
+                effort,
+                permission,
+            }))
+        }
     }
 }
 
@@ -126,6 +137,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 args.extend(["--effort".to_owned(), effort.clone()]);
             }
             Resolved {
+                provider: String::new(),
                 provider_args: args,
                 model: claude.model,
                 permission: claude.permission,
@@ -157,6 +169,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 }
             }
             Resolved {
+                provider: String::new(),
                 provider_args: args,
                 model: codex.model,
                 permission: codex.permission,
@@ -164,6 +177,17 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 effort: codex.effort,
             }
         }
+        // An ACP agent takes its settings in its session, from the
+        // interpreter, never as arguments; its mode's default is the
+        // agent's own.
+        Agent::Acp(acp) => Resolved {
+            provider: acp.agent.clone(),
+            provider_args: Vec::new(),
+            model: acp.model.clone(),
+            permission: None,
+            mode: acp.mode.clone(),
+            effort: acp.effort.clone(),
+        },
     }
 }
 
@@ -199,7 +223,9 @@ impl Picked {
                 codex::Of::Effort(set) => (Kind::Codex, None, set.effort),
                 _ => return None,
             },
-            KindInput::ClaudePty(_) => return None,
+            // Remembering an ACP agent's picks needs them kept by its
+            // id, which the settings do not do yet.
+            KindInput::ClaudePty(_) | KindInput::Acp(_) => return None,
         };
         Self {
             kind,
@@ -219,6 +245,7 @@ pub fn picked_at_creation(
     let (model, effort) = match agent {
         Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (&claude.model, &claude.effort),
         Agent::Codex(codex) => (&codex.model, &codex.effort),
+        Agent::Acp(_) => return None,
     };
     Picked {
         kind: agent.kind(),
@@ -265,7 +292,8 @@ pub fn with_remembered(
     };
     let mut filled = agent.clone();
     let (model, effort, defaults, passed_model, passed_effort) = match &mut filled {
-        Agent::ClaudePty(_) => return filled,
+        // No pick is remembered for an ACP agent yet.
+        Agent::ClaudePty(_) | Agent::Acp(_) => return filled,
         Agent::ClaudeSdk(claude) => {
             let passed_model = named(&claude.args, "--model");
             let passed_effort = named(&claude.args, "--effort");
@@ -310,7 +338,10 @@ pub fn with_remembered(
 pub fn provider_command(launch: &Launch, kind: Kind) -> String {
     match kind {
         Kind::Codex => launch.codex_command.clone(),
-        _ => launch.claude_command.clone(),
+        Kind::ClaudePty | Kind::ClaudeSdk => launch.claude_command.clone(),
+        // No ACP agent's command is configured yet; its agent process
+        // refuses to run one. No agent has no kind.
+        Kind::Acp | Kind::Unspecified => String::new(),
     }
 }
 
@@ -344,6 +375,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         name_given: false,
         title: None,
         parent: at.parent,
+        provider: at.resolved.provider.clone(),
         provider_args: at.resolved.provider_args.clone(),
         provider_env: launch
             .provider_env

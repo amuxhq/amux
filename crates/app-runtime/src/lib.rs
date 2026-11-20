@@ -303,7 +303,9 @@ impl AppRuntime {
             })),
             Kind::ClaudeSdk => Some(Agent::ClaudeSdk(claude())),
             Kind::ClaudePty => Some(Agent::ClaudePty(claude())),
-            Kind::Unspecified => None,
+            // An ACP agent is created by naming its program, which this
+            // app does not offer to pick yet.
+            Kind::Acp | Kind::Unspecified => None,
         };
         let created = self
             .client

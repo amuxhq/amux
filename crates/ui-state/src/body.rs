@@ -32,7 +32,9 @@ impl ItemBody {
                 .ok()
                 .and_then(|item| item.kind)
                 .map(ItemBody::Codex),
-            Kind::Unspecified => None,
+            // This build's views do not draw an ACP agent's items yet: each
+            // reads as one they cannot draw, never as another kind's.
+            Kind::Acp | Kind::Unspecified => None,
         };
         decoded.unwrap_or(ItemBody::Undecodable)
     }
@@ -584,6 +586,21 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.sign_in = snapshot.sign_in.unwrap_or_default();
             state.background = snapshot.background_jobs.unwrap_or_default();
         }
+        // What every kind shares; this build's views do not yet draw an
+        // ACP agent's asks or usage, which read as none known.
+        Kind::Acp => {
+            let Ok(snapshot) = wire::AcpSnapshot::decode(body) else {
+                return state;
+            };
+            state.tasks = snapshot.plan.unwrap_or_default();
+            state.context = snapshot.context.unwrap_or_default();
+            state.model = snapshot.model;
+            state.model_name = snapshot.model_name;
+            state.effort = snapshot.effort;
+            state.mode = snapshot.mode;
+            state.provider_session = snapshot.session_id;
+            state.sign_in = snapshot.sign_in.unwrap_or_default();
+        }
         Kind::Unspecified => {}
     }
     state
@@ -643,6 +660,24 @@ pub fn snapshot_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
                     .asks
                     .into_iter()
                     .map(|ask| CodexAsk {
+                        key: ask.key,
+                        item_key: ask.item_key,
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }
+            .encode_to_vec()
+        }
+        Kind::Acp => {
+            let Ok(snapshot) = wire::AcpSnapshot::decode(body) else {
+                return Vec::new();
+            };
+            wire::AcpSnapshot {
+                asks: snapshot
+                    .asks
+                    .into_iter()
+                    .map(|ask| wire::AcpAsk {
                         key: ask.key,
                         item_key: ask.item_key,
                         ..Default::default()

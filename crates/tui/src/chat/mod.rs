@@ -201,7 +201,8 @@ fn refused_command_words(
     let agent = match state.kind() {
         wire::Kind::Codex => "Codex",
         wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => "Claude",
-        wire::Kind::Unspecified => "This agent",
+        // Which ACP agent it is, the session does not say here.
+        wire::Kind::Acp | wire::Kind::Unspecified => "This agent",
     };
     if let Some(hint) = hint {
         return format!("{agent} takes a skill as a mention: type {hint}");

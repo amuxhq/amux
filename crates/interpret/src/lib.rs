@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod acp;
 mod ask_item;
 pub mod checks;
 mod claude_answers;
@@ -37,8 +38,8 @@ pub mod testkind;
 pub use claude_common::{FileStep, HOOK_ANSWER_FIELD, NOTEBOOK_OLD_SOURCE, file_step, tool_input};
 pub use golden::{
     Committer, EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
-    check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
-    render_steps, replay, run_golden, run_until,
+    acp_input, check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script,
+    render_item, render_steps, replay, run_golden, run_until,
 };
 pub use redact::{redact_text, structure_message};
 use serde::Serialize;
@@ -111,10 +112,9 @@ pub trait Interpreter {
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
 
-    /// What the agent's record keeps of a provider fact.
-    fn fact_shape(fact: &Fact) -> shape::FactShape {
-        shape::fact(fact)
-    }
+    /// What the agent's record keeps of a provider fact. No default: each
+    /// kind says which reader its provider's facts need.
+    fn fact_shape(fact: &Fact) -> shape::FactShape;
 
     /// What the agent's record keeps of a person's input: its arm, and the
     /// ask or queued input it names.
@@ -174,6 +174,10 @@ pub struct Holds {
     /// amux granted it something for the rest of its session, which no
     /// resume restores.
     pub session_grant: bool,
+    /// The provider cannot reopen its conversation in a new process, so
+    /// ending this one ends the conversation (an ACP agent that offers
+    /// neither to resume nor to load a session).
+    pub unresumable: bool,
 }
 
 impl Holds {
@@ -297,7 +301,7 @@ pub enum Channel {
     Hook,
     /// A line of stream-JSON from headless Claude's stdout.
     Stream,
-    /// A JSON-RPC message from the Codex app server.
+    /// A JSON-RPC message from the Codex app server, or from an ACP agent.
     Rpc,
     /// What the agent process itself observed about the provider it
     /// launched: for Claude in a terminal, the version it found.
@@ -380,8 +384,9 @@ pub enum Effect {
         agent_id: String,
         last_reply: Option<String>,
     },
-    /// Headless Claude: the provider's session is now `id`, which the next
-    /// incarnation resumes and later user messages name.
+    /// Headless Claude or an ACP agent: the provider's session is now `id`,
+    /// which the next incarnation resumes (and, for Claude, later user
+    /// messages name).
     ProviderSession { id: String },
     /// Codex: a `turn/start`, `turn/steer` or `thread/inject_items`
     /// request whose input carries attachments. The agent process appends
@@ -389,6 +394,15 @@ pub enum Effect {
     /// the agent's blob directory, inline text and files as text; an
     /// injected message's as its element) and writes the request.
     CodexTurnInput {
+        request: Vec<u8>,
+        attachments: Vec<wire::Attachment>,
+    },
+    /// An ACP agent: a `session/prompt` request whose prompt carries
+    /// attachments. The agent process appends each attachment to the
+    /// request's prompt as a content block (an image blob as an image block,
+    /// inline text and files as embedded resources, or as text where the
+    /// agent offers no embedded context) and writes the request.
+    AcpPrompt {
         request: Vec<u8>,
         attachments: Vec<wire::Attachment>,
     },

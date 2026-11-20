@@ -30,7 +30,10 @@ ALLOWED_LOCAL = {
     # The pure per-kind step, and the per-kind body redactor beside it;
     # core-ring for the check type its every-step checks report as, and for
     # reading the facts ring an agent's record is built from.
-    "interpret": {"attachments", "claude-protocol", "codex-protocol", "core-ring", "preview", "redaction", "wire"},
+    "interpret": {
+        "acp-protocol", "attachments", "claude-protocol", "codex-protocol", "core-ring", "preview",
+        "redaction", "wire",
+    },
     # The agent process: its lock, journal and sockets, the interpreter,
     # and the provider hosts, each in a module of its own (`claude`, `codex`).
     "agent": {

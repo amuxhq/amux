@@ -473,6 +473,9 @@ pub fn kind_name(kind: Kind) -> &'static str {
         Kind::ClaudeSdk => "Claude",
         Kind::ClaudePty => "Claude (terminal)",
         Kind::Codex => "Codex",
+        // Which ACP agent it is is its provider id, which rows do not carry
+        // yet.
+        Kind::Acp => "ACP agent",
         Kind::Unspecified => "",
     }
 }

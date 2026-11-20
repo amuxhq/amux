@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a second prompt sent as soon as the first turn's answer arrives",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-queued/io.jsonl",
+    "format": "acp_io"
+  }
+}

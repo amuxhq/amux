@@ -45,7 +45,8 @@ pub enum InputWhat {
 impl InputWhat {
     pub fn of(input: &Input) -> InputWhat {
         use wire::{
-            KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex,
+            KindInput, acp_input as acp, claude_pty_input as pty, claude_sdk_input as sdk,
+            codex_input as codex,
         };
         let prompt = |prompt: &wire::PromptInput| InputWhat::Prompt {
             text: prompt.text.clone(),
@@ -101,6 +102,16 @@ impl InputWhat {
                     | codex::Of::StopJob(_),
                 )
                 | None => InputWhat::Other,
+            },
+            Some(KindInput::Acp(input)) => match &input.of {
+                Some(acp::Of::Prompt(p)) => prompt(p),
+                Some(acp::Of::Answer(a)) => answer(&a.ask_key),
+                Some(acp::Of::Withdraw(w)) => withdraw(w),
+                Some(acp::Of::SendNow(n)) => send_now(n),
+                Some(acp::Of::Interrupt(_)) => InputWhat::Interrupt,
+                Some(acp::Of::Mode(_) | acp::Of::Model(_) | acp::Of::Effort(_)) | None => {
+                    InputWhat::Other
+                }
             },
             None => InputWhat::Other,
         }

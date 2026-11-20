@@ -47,6 +47,15 @@ impl OpenAsk for wire::CodexAsk {
     }
 }
 
+impl OpenAsk for wire::AcpAsk {
+    fn key(&self) -> &str {
+        &self.key
+    }
+    fn item_key(&self) -> &str {
+        &self.item_key
+    }
+}
+
 /// The person's queue: prompts waiting for the provider to go idle, in
 /// arrival order, whichever client sent them. Nothing is edited in place;
 /// an edit is a withdraw and a new prompt.
@@ -1025,6 +1034,7 @@ impl<A: OpenAsk> Shared<A> {
             turn_owed: self.held.turn_owed,
             wakeups: self.held.wakeups.len(),
             session_grant: self.held.session_grant,
+            unresumable: false,
         }
     }
 

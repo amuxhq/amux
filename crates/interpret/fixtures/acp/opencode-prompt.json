@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: one plain prompt and its answer",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-prompt/io.jsonl",
+    "format": "acp_io"
+  }
+}

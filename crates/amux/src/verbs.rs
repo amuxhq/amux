@@ -81,6 +81,7 @@ fn kind_word(kind: i32) -> &'static str {
         Kind::Unspecified => "unknown",
         Kind::ClaudePty | Kind::ClaudeSdk => "claude",
         Kind::Codex => "codex",
+        Kind::Acp => "acp",
     }
 }
 
@@ -290,6 +291,9 @@ pub fn prompt(kind: i32, text: &str) -> Input {
         }),
         Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Prompt(prompt)),
+        }),
+        Kind::Acp => wire::KindInput::Acp(wire::AcpInput {
+            of: Some(wire::acp_input::Of::Prompt(prompt)),
         }),
         Kind::ClaudePty | Kind::Unspecified => wire::KindInput::ClaudePty(ClaudePtyInput {
             of: Some(claude_pty_input::Of::Prompt(prompt)),

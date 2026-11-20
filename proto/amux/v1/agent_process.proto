@@ -57,6 +57,11 @@ message AgentSpec {
   bool name_given = 15;
   // The inventory row's title when this incarnation was spawned.
   optional string title = 16;
+  // Which agent program the kind runs, by its id: for kind acp, the ACP
+  // agent's ("antigravity", "opencode", "grok", or one a person added).
+  // Empty for the other kinds, whose kind names their program, and in a
+  // spec an earlier build wrote.
+  string provider = 17;
   // What experiments tell the agent process, each entry keyed by an
   // experiment's version (e.g. "suspension/1") and holding an encoded
   // amux.experimental message. A process reads only the entries of the

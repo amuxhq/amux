@@ -1,0 +1,65 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 1 recorded 0: tick 151
+snapshot STARTING queue=[] working_on=- at=151 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"antigrav…
+effect session "9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff"
+effect catalogue 069aaf4f models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+item boundary:1 boundary final at=1417 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 069aaf4f
+snapshot IDLE queue=[] working_on=- at=1417 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-4-neon model_name=Gemini 4 Neon effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 6 recorded 5: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff\",\"value\":\"gemini-3.8-flash\"}}"
+effect reply p1-1 accepted
+## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 8e359670 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 8e359670
+snapshot IDLE queue=[] working_on=- at=1421 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 11 recorded 10: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"thought_level\",\"sessionId\":\"9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 12 recorded 11: fact Rpc method=session/update
+effect catalogue 32f299c3 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 32f299c3
+snapshot IDLE queue=[] working_on=- at=1422 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 14 recorded 13: fact Rpc method=session/update
+snapshot IDLE queue=[] working_on=- at=1423 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 15 recorded 14: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=1423 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 18 recorded 17: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word.\",\"type\":\"text\"}],\"sessionId\":\"9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff\"}}"
+item prompt:70312d33 prompt final input=p1-3 at=1424 text="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word."
+snapshot WORKING queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=1424 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 26 recorded 25: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=3475 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9012/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 28 recorded 27: fact Rpc method=session/update
+item tool:call_4107950908435498325 tool open at=3477 text="" OTHER RUNNING "Run ask_question" input="{\"questions\":[{\"is_multi_select\":false,\"options\":[\"Tea\",\"Coffee\"],\"question\":\"Do…"
+## 30 recorded 29: fact Rpc method=session/update
+item tool:call_4107950908435498325 tool open at=3477 text="" OTHER PENDING "Run ask_question" input="{\"questions\":[{\"is_multi_select\":false,\"options\":[\"Tea\",\"Coffee\"],\"question\":\"Do…"
+## 31 recorded 30: fact Rpc method=elicitation/create
+item ask:"1" ask open at=3478 text="" form  open
+snapshot NEEDS_YOU queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=3478 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=["1":form "The agent has a question."] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9012/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+notice ask "1" other "" "The agent has a question." why="" more=0
+## 33 recorded 32: input p1-4
+effect write "{\"id\":\"1\",\"jsonrpc\":\"2.0\",\"result\":{\"action\":\"accept\",\"content\":{\"q1\":\"kiwi\",\"q1_other\":\"kiwi\"}}}"
+effect reply p1-4 accepted
+item ask:"1" ask final at=3478 text="" form  ASK_OUTCOME_ANSWERED fields=["q1", "q1_other"]
+snapshot WORKING queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=3479 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9012/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 35 recorded 34: fact Rpc method=session/update
+item tool:call_4107950908435498325 tool open at=3477 text="" OTHER RUNNING "Run ask_question" input="{\"questions\":[{\"is_multi_select\":false,\"options\":[\"Tea\",\"Coffee\"],\"question\":\"Do…"
+## 36 recorded 35: fact Rpc method=session/update
+item tool:call_4107950908435498325 tool final at=3477 text="" OTHER SUCCEEDED "Run ask_question" input="{\"questions\":[{\"is_multi_select\":false,\"options\":[\"Tea\",\"Coffee\"],\"question\":\"Do…"
+## 38 recorded 37: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=5402 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9091/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+## 40 recorded 39: fact Rpc method=session/update
+item message:1 message open at=5403 text="kiwi"
+## 42 recorded 41: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+item message:1 message final at=5403 text="kiwi"
+item turn:1 turn final at=5404 text="" #1 TURN_OUTCOME_COMPLETED started=1424
+snapshot said "kiwi"
+snapshot IDLE queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=5404 agent=antigravity session=9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9091/1048576 plan=? usage=in:11130/out:45/thought:0/total:18103 cost=? sign_in=SIGNED_IN
+turn_end 1 last=message:1
+## 45 recorded 44: provider_exit Some(0)
+item boundary:2 boundary final at=7408 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

@@ -534,7 +534,9 @@ impl Values {
                     self.bind_alias(&recorded["id"], uuid.as_bytes())
                 }
                 Effect::ProviderSession { id } => self.bind_alias(&recorded["id"], id.as_bytes()),
-                Effect::ProviderWrite(bytes) | Effect::CodexTurnInput { request: bytes, .. } => {
+                Effect::ProviderWrite(bytes)
+                | Effect::CodexTurnInput { request: bytes, .. }
+                | Effect::AcpPrompt { request: bytes, .. } => {
                     if let Ok(actual) = serde_json::from_slice::<Value>(bytes) {
                         self.bind_shape(&recorded["shape"], &actual);
                     }

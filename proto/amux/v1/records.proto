@@ -348,6 +348,9 @@ enum Kind {
   KIND_CLAUDE_PTY = 1;
   KIND_CLAUDE_SDK = 2;
   KIND_CODEX = 3;
+  // An agent program that speaks the Agent Client Protocol; which one is
+  // the agent's provider id.
+  KIND_ACP = 4;
 }
 
 // Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a

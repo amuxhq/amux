@@ -483,7 +483,8 @@ pub fn stoppable_job(row: &AgentRow) -> Option<String> {
                 .ok()?
                 .background_jobs
         }
-        wire::Kind::Unspecified => None,
+        // An ACP agent's own subagents are not amux agents: none is a job.
+        wire::Kind::Acp | wire::Kind::Unspecified => None,
     }?;
     jobs.jobs
         .iter()
@@ -512,7 +513,8 @@ fn stop_job_body(kind: i32, key: &str) -> Option<Vec<u8>> {
             }
             .encode_to_vec(),
         ),
-        wire::Kind::ClaudePty | wire::Kind::Unspecified => None,
+        // ACP has no way to stop one job of an agent's.
+        wire::Kind::ClaudePty | wire::Kind::Acp | wire::Kind::Unspecified => None,
     }
 }
 

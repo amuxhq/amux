@@ -74,6 +74,7 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/agent_process.proto",
     "amux/v1/claude.proto",
     "amux/v1/codex.proto",
+    "amux/v1/acp.proto",
     "google/rpc/code.proto",
     "google/rpc/status.proto",
     "google/rpc/error_details.proto",

@@ -192,7 +192,9 @@ impl Provider {
             Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
             Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
             Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Unspecified) | Err(_) => unreachable!("run refuses any other kind"),
+            Ok(wire::Kind::Acp | wire::Kind::Unspecified) | Err(_) => {
+                unreachable!("run refuses any other kind")
+            }
         }
     }
 

@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: initialize alone, with no session opened",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-catalogue/io.jsonl",
+    "format": "acp_io"
+  }
+}

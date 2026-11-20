@@ -382,6 +382,9 @@ fn prompt(
         wire::Kind::Codex => wire::KindInput::Codex(wire::CodexInput {
             of: Some(wire::codex_input::Of::Prompt(prompt)),
         }),
+        wire::Kind::Acp => wire::KindInput::Acp(wire::AcpInput {
+            of: Some(wire::acp_input::Of::Prompt(prompt)),
+        }),
         wire::Kind::Unspecified => return None,
     };
     Some(wire::Input::new(input_id, of))

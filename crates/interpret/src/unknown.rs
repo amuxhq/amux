@@ -8,8 +8,8 @@
 //! is present with its own unknown state.
 
 use wire::{
-    BackgroundJobs, ClaudeSnapshot, ClaudeUsage, CodexSnapshot, CodexUsage, ContextMeter, SignIn,
-    SignInState, TaskList, UsageState,
+    AcpSnapshot, AcpUsage, BackgroundJobs, ClaudeSnapshot, ClaudeUsage, CodexSnapshot, CodexUsage,
+    ContextMeter, SignIn, SignInState, TaskList, UsageState,
 };
 
 pub fn task_list() -> TaskList {
@@ -98,6 +98,35 @@ pub fn codex() -> CodexSnapshot {
     }
 }
 
+pub fn acp_usage() -> AcpUsage {
+    AcpUsage {
+        cost: None,
+        currency: String::new(),
+        input_tokens: None,
+        output_tokens: None,
+        thought_tokens: None,
+        cached_read_tokens: None,
+        cached_write_tokens: None,
+        total_tokens: None,
+    }
+}
+
+pub fn acp() -> AcpSnapshot {
+    AcpSnapshot {
+        agent: None,
+        asks: Vec::new(),
+        context: Some(context_meter()),
+        model: None,
+        model_name: None,
+        effort: None,
+        mode: None,
+        usage: Some(acp_usage()),
+        sign_in: Some(sign_in()),
+        plan: Some(task_list()),
+        session_id: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -170,5 +199,6 @@ mod tests {
     fn every_snapshot_field_has_an_explicit_unknown() {
         assert_total("ClaudeSnapshot", claude().encode_to_vec());
         assert_total("CodexSnapshot", codex().encode_to_vec());
+        assert_total("AcpSnapshot", acp().encode_to_vec());
     }
 }

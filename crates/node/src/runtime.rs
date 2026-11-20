@@ -305,6 +305,7 @@ fn kind_not_run_words(host: &str, kind: Kind, runs_none: bool) -> String {
         Kind::ClaudePty => "terminal Claude",
         Kind::ClaudeSdk => "headless Claude",
         Kind::Codex => "Codex",
+        Kind::Acp => "ACP",
         Kind::Unspecified => "these",
     };
     format!("{host} does not run {kind} agents")
@@ -2319,6 +2320,16 @@ fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
                 model: snapshot.model,
                 permission: snapshot.permission,
                 mode: snapshot.mode,
+                effort: snapshot.effort,
+            })
+            .unwrap_or_default(),
+        // An ACP agent's permission is its mode, whose default comes from
+        // the agent's own settings and is never carried over.
+        Kind::Acp => wire::AcpSnapshot::decode(body)
+            .map(|snapshot| spec::Settings {
+                model: snapshot.model,
+                permission: None,
+                mode: None,
                 effort: snapshot.effort,
             })
             .unwrap_or_default(),

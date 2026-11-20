@@ -331,7 +331,7 @@ cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], fe
 [[suite]]
 name = "interpreter-emissions"
 contract = "Each kind's interpreter turns its recorded and authored facts into the reviewed items, snapshots and effects, and every chat-vocabulary row a kind can show has a place in its bodies and a golden that shows it."
-paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/checks.rs", "crates/interpret/tests/record.rs", "crates/interpret/tests/vocabulary.toml"]
+paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/acp.rs", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/checks.rs", "crates/interpret/tests/record.rs", "crates/interpret/tests/vocabulary.toml"]
 recipe = "just suite interpreter-emissions"
 boundary = "Interpreter"
 oracle = "Reviewed emission goldens, explicit intermediate outcomes, and the vocabulary catalogue checked against every kind's goldens."
@@ -344,7 +344,7 @@ evidence = "crates/interpret/fixtures"
 update = "INTERPRET_UPDATE_GOLDENS=1 just test-crate interpret, then review the golden diff."
 cargo = [
   { package = "interpret", kind = "lib", targets = ["interpret"], features = [] },
-  { package = "interpret", modules = ["checks", "claude_pty", "claude_sdk", "codex", "coverage", "record"], features = [] },
+  { package = "interpret", modules = ["acp", "checks", "claude_pty", "claude_sdk", "codex", "coverage", "record"], features = [] },
 ]
 
 [[suite]]

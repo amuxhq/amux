@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a prompt that has the agent edit a file, its permission allowed once",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-edit/io.jsonl",
+    "format": "acp_io"
+  }
+}

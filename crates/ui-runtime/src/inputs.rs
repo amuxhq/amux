@@ -46,6 +46,14 @@ fn wrap(kind: Kind, act: Act) -> Option<Input> {
                 Act::Interrupt => codex_input::Of::Interrupt(Interrupt {}),
             }),
         }),
+        Kind::Acp => wire::KindInput::Acp(wire::AcpInput {
+            of: Some(match act {
+                Act::Prompt(prompt) => wire::acp_input::Of::Prompt(prompt),
+                Act::Withdraw(withdraw) => wire::acp_input::Of::Withdraw(withdraw),
+                Act::SendNow(now) => wire::acp_input::Of::SendNow(now),
+                Act::Interrupt => wire::acp_input::Of::Interrupt(Interrupt {}),
+            }),
+        }),
         Kind::Unspecified => return None,
     };
     Some(Input::new(input_id(), of))

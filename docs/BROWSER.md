@@ -289,9 +289,9 @@ main, so a change elsewhere pays nothing for it.
 - **Image and text attachments** instead of a kind of its own: clients would
   draw loose images and pasted text instead of a review, and each comment's
   pairing with its anchor would survive only as prose.
-- **Extending the `review` kind**: it is built around a diff, and an older
-  build would take a page review for a review and format it broken instead of
-  refusing it.
+- **Extending the diff review's kind** (since retired): it was built around a
+  diff, and an older build would have taken a page review for a review and
+  formatted it broken instead of refusing it.
 - **Separate anchor kinds** for a phrase, a block and a box: every gesture
   lands on a block, so one element with an optional quote and image covers all
   three.

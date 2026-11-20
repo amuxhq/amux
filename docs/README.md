@@ -47,8 +47,8 @@ paths to the `.md` files, so they work both here and on the site.
   only grows.
 - [Network protocol](PROTOCOL.md) — carriers, links, streams, channels, routing, pairing, discovery, the relay,
   the front door, and calls carried to another host.
-- [Attachments](ATTACHMENTS.md) — blobs and attachments: shape, bytes and metadata, lifetimes, deletion and the
-  review document.
+- [Attachments](ATTACHMENTS.md) — blobs and attachments: shape, bytes and metadata, lifetimes, deletion and sent
+  reviews.
 - [Agent tools](AGENT_TOOLS.md) — the seven tools agents call, messaging, families, delivery, completion and
   work across hosts.
 - [Workspaces](WORKSPACES.md) — where agents run: folders, git worktrees and wt trees, who made each, the

@@ -1,6 +1,6 @@
 # Attachments and blobs
 
-*For developers changing how images, files, pasted text, diff reviews and page reviews travel between people, agents and clients.*
+*For developers changing how images, files, pasted text, sent reviews and page reviews travel between people, agents and clients.*
 
 amux has one attachment type, one store of bytes and one way in. An
 attachment sits at a position in text, on a person's prompt and on an agent's
@@ -22,14 +22,13 @@ The pieces are:
 
 ## Shape
 
-An attachment is one of five kinds:
+An attachment is one of four kinds:
 
 | Kind | Carries | Bytes |
 | --- | --- | --- |
 | `image` | a `BlobRef` | a blob |
 | `file` | a `BlobRef` | a blob |
 | `text` | an `InlineText`: a name and the text | inline, no blob |
-| `review` | a `Review`: a `Diff` and a person's comments | the diff's patch, a blob |
 | `page` | a `PageReview`: a web page's address and title, and a person's comments on it | each dragged box's screenshot, a blob |
 
 A `BlobRef` is the SHA-256 of the bytes (32 bytes), a name, a mime type and a
@@ -43,16 +42,18 @@ placeholder per attachment, and `attachments`. A client splits the text at its
 placeholders (`ui_view::segments`) and draws each attachment from its
 reference alone (`ui_view::AttachmentView`): the name, type and size of an
 image or file, the line count of pasted text, and the comment count of a
-review. No bytes are needed to draw a row.
+sent review or a page review. No bytes are needed to draw a row.
 
-A review's `Diff` is exactly what the `GetDiff` call returned when asked for the
-patch: the patch as a `text/x-diff` blob, the base (the working tree or a
-branch), the head commit, the merge base for a branch, and the call's file
-list. The review document parses files, hunks and per-file identity from the
-patch, because a git patch already holds them in its index lines; the element a
-model reads does not repeat the file list either. A
-`ReviewComment` is a path, a new-side line, an old-side line for a comment on a
-removed line, and the text; line zero comments on the file as a whole.
+An attachment also carries an `experimental` map, as an agent row does
+([experiments](WIRE.md#experiments)): entries an experiment adds, each keyed
+by its version, which a build that knows none of them ignores, so the
+attachment still reads as its kind. A **sent review** is the one use today: a
+`text` attachment named `review`, holding what the agent reads, with a
+`reviews/1` entry saying which review's comments it sends
+([below](#sent-reviews)). There is no review kind; a field the kinds once
+used for a review built on a patch is reserved: a journal item holding one
+still opens, that attachment drawn as empty, and a kept draft holding one
+loads without it.
 
 A `PageComment` is anchored on a block of the page, a `PageElement`: a CSS
 selector, its visible text cut short, and where the page says it was drawn
@@ -73,7 +74,6 @@ element syntax or a host-local path.
 <amux-attachment kind="image" hash="sha256:…" name="shot.png" mime="image/png" size="1204" path="/…/blobs/…"/>
 <amux-attachment kind="file" hash="sha256:…" name="trace.json" mime="application/json" size="8192" path="/…"/>
 <amux-attachment kind="text" name="pasted-1">the pasted text…</amux-attachment>
-<amux-attachment kind="review" hash="sha256:…" name="working-tree.diff" mime="text/x-diff" size="512" base="working-tree" head="4f2a9c1" comments="1" path="/…">…</amux-attachment>
 <amux-attachment kind="page" url="http://localhost:5173/pricing" title="Pricing" comments="2">…</amux-attachment>
 ```
 
@@ -81,15 +81,6 @@ element syntax or a host-local path.
 - `path` is where the bytes are on the host that formatted the element, so a
   provider can open the file. The parser accepts it and ignores it: a blob is
   identified by its hash.
-- A review's `base` is `working-tree` or `branch:<name>`; a branch review also
-  has `merge-base`. Its body is the comments, each framed by byte counts so no
-  path or comment text can be mistaken for the next heading:
-
-  ```text
-  ## path-bytes=10 line=12 old-line=0 text-bytes=11
-  src/lib.rsUse helper.
-  ```
-
 - A page review's body is its comments, each a heading that counts the bytes
   of every line it has, then those lines in a fixed order as `label: value`,
   so the model reads labelled fields and no value can be taken for the next
@@ -110,7 +101,15 @@ element syntax or a host-local path.
   text: Tighter
   ```
 
-- Attribute values and bodies escape XML-significant characters.
+- Attribute values escape every XML-significant character (`&`, `<`, `>`,
+  `"` and a newline). A body escapes only what the parser would read as
+  markup: a `<` that opens or closes an `amux-attachment` element, and an `&`
+  followed by what is shaped like a character reference (letters, digits or
+  `#`, then `;`). Everything else reaches the model as written, so code reads
+  `if a < b && c > d` rather than `&lt;` and `&amp;`: models quoted entities
+  back literally when asked to quote the code, or stopped to explain
+  decoding them. A body written by an older build, which escaped every
+  character, parses to the same text.
 
 `attachments::format` turns positioned text into the text a model reads, each
 placeholder replaced by its element with blob paths under the agent's blob
@@ -238,8 +237,11 @@ with the directory it sits in:
   children follow by the family rule), or when own retention removes the agent: settled
   agents that have exited are removed whole, least recently active first, when the profile's
   own rows pass their budget (`OWN_BUDGET_BYTES`, 2 GiB).
-- A patch written by `GetDiff` goes into the requesting agent's directory and
-  lives with that agent whether or not a review is ever sent.
+- A review's snapshots are not blobs: they are git objects in
+  `<agent dir>/review/objects` on the agent's host, which go with the agent's
+  directory, when the review is started over, and when the host next opens
+  the profile with the reviews experiment off
+  ([experiment data](JOURNAL_AND_STORE.md#experiment-tables)).
 - A replica's directory, blobs included, goes when its host stops listing the
   agent or is untrusted. Replica blob files also have a byte budget of their
   own, independent of rows, `REPLICA_BLOB_BUDGET_BYTES` (512 MiB), evicted least recently read first: a replica blob can always be
@@ -276,51 +278,39 @@ and in the injected message's text for Codex. The message's item, in the
 sender's chat and in the recipient's, carries the attachments rather than
 their elements.
 
-## The review document
+## Sent reviews
 
-A review starts with the `GetDiff` call. The daemon runs git in the agent's
-working directory on the agent's own host and writes the patch as a blob of
-that agent:
+A person's review of an agent's changes is written on the agent's host
+through the reviews experiment's service, and reaches the agent only when the
+person sends it. While the review holds drafts the composer shows a review
+chip, and a send with it reads the review from the host again and adds the
+attachment `attachments::sent_review::attachment(summary, comments)` builds
+(re-exported as `ui_view::sent_review`) from that answer's drafts; the
+person's message is the summary beside it. The
+client builds it because a host never rewrites a message: what the agent reads
+is what the person sent.
 
-- The `head` base diffs HEAD against the working tree, untracked files
-  included. A temporary index holds HEAD plus intent-to-add entries for the
-  untracked files, so the person's own index is never touched. The patch is
-  named `working-tree.diff`.
-- A branch base diffs the merge base of that branch and HEAD against HEAD,
-  named `<branch>.diff`.
-- Every diff runs with `--full-index` (index lines carry full object ids,
-  each file's identity), `--no-renames`, and no external diff or text
-  conversion.
+The text holds, for each comment, the path from the repository's top, its
+lines, the definition it sits in, the code it is on as a fenced `diff` and
+then the person's words; and last, that the line numbers are a snapshot's (a
+commit of the working tree kept outside the repository), with the command
+that diffs the working tree against it,
+`GIT_ALTERNATE_OBJECT_DIRECTORIES=<objects> git -C <root> diff <snapshot>`.
+A comment whose lines are no longer on the snapshot names the commit its
+lines belong to. The model reads it as an ordinary `text` element, escaped
+as above; the `review_attachment` live recordings of headless Claude and
+Codex check that each quotes the code exactly and can run the command, Codex
+inside its read-only sandbox.
 
-`GetDiff` answers with the `Diff` value: the patch reference, the base, the head
-commit and, for a branch, the merge base. A client freezes that value when its
-review page opens: `ui_runtime::Session::review` makes the call on the
-agent's host, asked against the base `ui_view::review_base` names, and
-fetches the patch through the node's copy of the agent's files, so the review a person sends names the same patch the
-page showed, however the tree changes afterwards.
-
-The document itself is `ui_view::review_doc(diff, patch, comments)`: it parses
-the patch into files (path, old path for a rename, status, added and removed
-counts, whether it is binary) and hunks of context, added and removed lines
-with their old and new line numbers (each hunk with whether lines are left out
-before it and git's name for where it is), and places each comment on its line, on
-an old-side line for a removed one, or on the file as a whole. Both clients
-draw that one document, so they agree on where a comment sits:
-
-- The terminal's review page is
-  [`crates/tui/src/chat/review.rs`](../crates/tui/src/chat/review.rs), opened
-  with `<leader> r` from a chat. It owns the cursor, scroll and comment
-  editor; the comments become one `review` attachment in the chat's draft,
-  inserted with the first comment, updated as comments are saved and
-  deleted, and removed with the last. `<leader> r` with that attachment still
-  in the draft goes back to the same page.
-- The phone gets the frozen diff through `amux_session_review` and the
-  document through `amux_review_doc(review, comments)`, which parses again
-  every time a comment is added (`ReviewModel` in
-  `apps/apple/Packages/AmuxCore`).
-
-Sent, a review is an ordinary attachment on the prompt: the model receives
-its element, with the path to the patch and the comments in its body.
+The `reviews/1` entry is a `SentReview`: the review's id, the round the
+client expects to close, the snapshot and exactly the comment ids it sends.
+When the agent's host accepts the prompt or message, it marks those comments
+sent and numbers the round as it arrives, so a draft another client wrote
+meanwhile stays a draft, and a chip removed from the composer sends nothing.
+A client draws an attachment with the entry as a sent review
+(`AttachmentView::SentReview`) that opens its round, or the text the agent
+read once the host no longer holds the round; a build that reads no entry
+draws it as pasted text.
 
 ## Tests
 
@@ -328,8 +318,11 @@ its element, with the path to the patch and the comments in its body.
   every kind round-trips through its element, the canonical spellings, and
   every way a candidate stays text.
 - [`crates/node/tests/blobs.rs`](../crates/node/tests/blobs.rs): `PutBlob`
-  writes the agent's directory, `GetBlob` reads own and replica files, a
-  failed write leaves nothing behind, and `GetDiff` writes the patch as the
-  agent's blob.
+  writes the agent's directory, `GetBlob` reads own and replica files, and a
+  failed write leaves nothing behind.
+- The same attachments test file holds the body escaping
+  (`a_body_escapes_only_what_reads_as_markup`) and a sent review's text;
+  [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) proves
+  that an accepted send marks exactly the comments its entry names.
 - [`crates/agent/tests/tools.rs`](../crates/agent/tests/tools.rs): the `attach`
   tool stores the file by its hash and answers its element without a daemon.

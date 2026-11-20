@@ -256,6 +256,29 @@ it, answering a `ReportSent`).
 `amux_profile_set_foreground(profile, foreground)` closes every agent's
 stream as the app leaves the foreground and reopens them on its return.
 
+## The review page
+
+`amux_review_*` act on the review page open on an `AmuxChat`, which needs
+the reviews experiment on the agent's host. `amux_review_open(chat,
+base_branch, refresh)` opens it, or opens it again (`base_branch` picks the
+base anew, `refresh` takes a snapshot even with drafts); from then the
+chat's deltas carry the page whole (`review`) whenever it moved, until
+`amux_review_close`. The app draws it as handed: `amux_review_files(chat,
+paths)` fetches the bodies the page lists in `to_fetch` (null for all of
+them), `amux_review_context(chat, ask)` loads a gap's `ReviewContextAsk`,
+and `amux_review_edit(chat, changes)` makes a JSON array of
+`ReviewChange`s all or none, with no page open too, as the chip's ✕ does.
+Those return tickets answered with a `ReviewOutcome`; `amux_review_round(
+chat, sent)` returns one answered with the `ReviewPage` of the round a sent
+review closed, or null once the host no longer holds it. Three return at
+once: `amux_review_choose(chat, choice)` takes a `ReviewChoice` (a view, a
+file folded or opened, an outdated comment opened or folded),
+`amux_review_page(chat)` answers the open page, and
+`amux_review_anchor(chat, from, to)` the `ReviewAnchor` a selection of the
+last page's rows comments on, or null for one with no line or across
+files. The composer's chip comes with the chat's frame (`review_chip`), and
+a send with it is the `SendWithReview` act.
+
 ## Ownership
 
 Every returned string is the caller's to free with `amux_string_free`, and

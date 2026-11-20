@@ -278,8 +278,9 @@ Beside it, read from the same state:
 
 `Comparison::base()` names what the changed files are counted against: the uncommitted work against HEAD, or
 nothing, so the agent's host picks the base for everything on the branch by its own rule.
-`Comparison::offered(state)` offers the branch once the row names a base branch. The review page, still built on
-`GetDiff`'s patch, asks with `review_base(state, comparison)`.
+`Comparison::offered(state)` offers the branch once the row names a base branch. The review page takes no
+comparison from the overview: a review keeps the base branch it began with, picked by the default rule `GetChanges`
+uses unless the page names another.
 
 `settings(state)` is the settings view, read from the agent's catalogue: the offered models with their efforts,
 the permissions (how much the agent may do without asking), the modes (how it works: Codex's default and plan;

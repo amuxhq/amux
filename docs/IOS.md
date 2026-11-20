@@ -120,8 +120,9 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   what a Reset's swap and the reload of a head that moved on do: the rows on
   screen stay until the rebuilt transcript replaces them, and the cells kept
   are read again in place.
-- It keeps the head ask's unsent answers and a review in progress for as
-  long as the chat is open, so leaving the page loses none of them. The
+- It keeps the head ask's unsent answers for as long as the chat is open,
+  so leaving the page loses none of them; a review's comments are saved on
+  the agent's host as they are written. The
   draft and its attachments last longer: the chat hands each one, as it
   changes, to the profile's own daemon on the phone, as the terminal hands
   its drafts to its machine's (docs/CLIENT.md), so a draft outlives its
@@ -597,9 +598,11 @@ top, the tabs and each sheet, carries `surface()`, which hands its
 elements to the door as well as drawing the report over the top one; a
 named element is looked for on the top surface first.
 
-Three gestures have no in-process way in: drawing a box on a report,
-scrubbing the review page's file strip, and swiping back from the screen's
-edge. They have no accessibility action either, so they are checked by eye.
+Two gestures have no in-process way in: drawing a box on a report, and
+swiping back from the screen's edge. They have no accessibility action
+either, so they are checked by eye. A range on the review page is
+selected in process through each line's "Select line" action, which acts as
+a tap does.
 
 `open` goes where a person would tap to: a tab (`home`, `hosts`, `you`), or
 a page (`conversation`, `pin`, `new-agent`, ...) about a machine or agent the
@@ -968,7 +971,7 @@ The hit test is SwiftUI's. Each line reports its frame in the list's named
 coordinate space through a preference key as it lays out, into a dictionary
 keyed by row that the page holds without observing; the finger's place is
 looked up there. Because the stack is lazy, that is the screenful plus
-whatever the reader has scrolled past, not the patch. The edge run moves the
+whatever the reader has scrolled past, not the whole change. The edge run moves the
 list through `ScrollPosition`, whose `scrollTo(y:)` measures from the top of
 what the list shows under the bar rather than from its content offset.
 

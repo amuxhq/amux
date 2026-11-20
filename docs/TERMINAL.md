@@ -380,30 +380,38 @@ comparison the header counts, root files first and then each folder with its fil
 removed, each opening the review page at that file; its tool servers that need signing in or failed; and, near a
 usage limit, every usage window with its name (`5-hour limit`, `Weekly limit`, `Fable weekly limit`), how full it
 is (`—` when the provider has not said), its state and when it resets, and Codex's credits. A window whose use is
-unknown is never the one the composer names as nearest the limit or reached. The changed files are asked for without a patch while the
+unknown is never the one the composer names as nearest the limit or reached. The changed files are asked for (`GetChanges`) while the
 overview shows, again when the row's totals move or the comparison changes. It stays open across chats until
 closed, and remembers its folds per agent.
 
 ### The review page
 
-The leader then `r`, or `[Diff]` in the header, asks the agent's host for the diff the header counts and opens it as a
-full-screen review page, frozen as it was when the page opened. The header names the agent and the folder, with
-`review · working tree at 3f2a1c9 │ 42 files · +109 −74` at the right. The changed files are listed on the left,
-grouped by directory with each file's lines added and removed; beside them one stream of every file in that order,
-each under its own landmark, with one column of line numbers (a removed line by its old number, every other by its
-new one, as on the phone), and its added and removed lines tinted. Where the patch leaves lines out before a hunk,
-the hunk opens on a break: `⋯` in the number column, the line git names as where the hunk is (usually the enclosing
-function, as after a hunk header's second `@@`; git's ranges are not shown), and a hairline to the margin. The phone
-draws the same break as a band.
-The file the stream is in is highlighted in the list; picking a file in the list takes the stream to it. Tab moves
-the keys between the list and the stream, and `/` filters the list and the stream with it. Below 100 columns the
-list shows only while it has the keys.
+The leader then `r`, or `[Diff]` in the header, opens the agent's review, and a changed file in the overview opens it
+at that file. It needs the reviews experiment on the agent's host: where the host does not run it, the page opens on
+a banner saying reviews are not offered there, and the overview still lists the changed files. A subagent's chat
+says its changes are reviewed from its parent.
 
-You move line by line, leave comments on lines or on whole files, and go back to the chat; the comments ride in the
-draft as one review chip, which the page keeps in step as comments are saved and deleted. The leader then `r` again
-with a review already in the draft returns to that page rather than reading a fresh diff. The page opens only while
-the chat is current, and says so when the working tree has no changes. [ATTACHMENTS.md](ATTACHMENTS.md) describes
-the review attachment and how the agent receives it.
+The page is ui-view's `review_page`, composed from what `ui_runtime::review::Review` fetched from the agent's host
+and the person's own choices, and drawn by [`crates/tui/src/chat/review.rs`](../crates/tui/src/chat/review.rs)
+exactly as the rows are placed. The module owns only the cursor, the lines being selected, the scroll, the comment
+editor and the windows that ask before discarding drafts or starting over; keys answer a `ReviewAction`, which the
+app carries out against the review. The header names the agent and the folder, with what is compared and the
+counts at the right (`review · since main at 4f2a1c9 │ 3 files · +12 −4 · 2 drafts`). Below it come the banners
+(the tree changed since the snapshot, drafts a refresh moved, a merge under way, a round's snapshot gone, or why
+nothing could be opened), then every file in turn: its head, each hunk under the definitions it sits in, its lines
+with the words an edited line changed marked, the gaps between hunks with their asks for more lines, and the
+comments where they are placed. Lock files, generated, vendored and
+large files start folded. File bodies are fetched in batches as the page needs them.
+
+The page shows one snapshot and holds still while the agent works; when the agent's row says the tree moved, the
+page says so and `r` takes a new snapshot. With drafts waiting, opening keeps the page on their snapshot; `r` moves
+them onto the new one, and a draft whose lines were edited becomes a comment on its file. Tab switches between **All changes** and, once a round has been sent,
+**Since your last review**. Comments are saved on the agent's host as they are written. While the review holds
+drafts the composer shows `[review · 3 comments ✕]`, read from the review's entry on the agent's row; a send then
+reads the review again and carries its drafts as a sent review ([ATTACHMENTS.md](ATTACHMENTS.md#sent-reviews)),
+with the typed words as the summary, and the ✕ discards the drafts after asking. A sent review in the feed reads
+`[review · 3 comments]`; clicking it, or the leader then `o` on its message, opens that round on the same page to
+read only, or the text the agent read once the host no longer holds the round.
 
 ### Reporting a problem
 
@@ -555,19 +563,25 @@ may not have arrived, resend or discard it. Esc or typing returns to the compose
 
 | Key | Action |
 |---|---|
-| `j` `k`, ↓ ↑ | Next or previous line |
+| `j` `k`, ↓ ↑ | Next or previous row |
 | Page Down, Space, Page Up | A screen at a time |
-| `g` `G`, Home End | First or last line |
+| `g` `G`, Home End | First or last row |
 | `J` `K` | Next or previous hunk |
 | `]` `[` | Next or previous file |
-| `c` | Comment on the line (on a file's landmark, the whole file) |
-| Enter | Edit the newest comment here |
-| `d` | Delete the newest comment here |
-| Tab | Move the keys between the file list and the stream |
-| `/` | Filter the files |
-| `q`, Esc | Back out: the filter, the list, then the page |
+| `v`, Shift+↓ ↑ | Start or end selecting lines; Esc ends it |
+| `c` | Comment on the selected lines, or the line; on a file's head, the whole file |
+| Enter | On a file's head, fold or open it; on a draft, change its words; on a folded or outdated comment, open or fold it; on a gap, more lines up from the code below; elsewhere, comment |
+| `e` | On a gap, more lines down from the code above |
+| `f` | Fold or open the file the cursor is in |
+| `d` | Delete the comment under the cursor |
+| Tab | All changes or Since your last review |
+| `r` | Refresh to a new snapshot, moving drafts onto it |
+| `D` | Discard the drafts, asking first |
+| `S` | Start the review over, asking first |
+| `q`, Esc | Back to the chat |
 
-While writing a comment, Enter saves it, Ctrl+J adds a line, and Esc cancels.
+While writing a comment, Enter saves it, Ctrl+J or Shift+Enter adds a line, and Esc cancels; a draft saved empty is
+deleted. A sent round's page moves, folds and goes back, and changes nothing.
 
 ## The leader key
 
@@ -585,7 +599,7 @@ clicked.
 | `<leader> ,` | Settings |
 | `<leader> d` | Leave for the shell; agents keep running |
 | `<leader> ?` | Every key |
-| `<leader> r` | Review the working tree; comments go in the draft |
+| `<leader> r` | Review the agent's changes |
 | `<leader> a` | Attach to the agent's own terminal, when it is on this machine |
 | `<leader> k`, `<leader> j` | Focus an older or newer row |
 | `<leader> o` | Open or close the focused row, run or group of subagents |

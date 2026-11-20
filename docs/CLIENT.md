@@ -33,7 +33,7 @@ Three rules shape the library:
 |---|---|
 | [`client`](../crates/client/src/lib.rs) | The client library every client calls its node through: the generated stubs, over the profile socket on the desktop or in memory on the phone, sorted by who answers. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | `SessionState` (one open chat) and `FleetState` (the inventory), updated by messages. No I/O, no clock, no handles. Also the plain shared values ([`model.rs`](../crates/ui-state/src/model.rs)): `Key`, `AgentKey`, `Attention`, `Connection`, `BlobStatus`, `Composer`, `Waiting`, `JobStop`, `PhaseView`, `Activity`, `InputState`, from which the Swift mirrors are generated. |
-| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review document, and onboarding's: which step opens, which comes next and how many are left to finish. |
+| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure functions from the state to content values: chat rows, the ask card, the composer and overview, the settings view, fleet rows and cards, the review page, and onboarding's: which step opens, which comes next and how many are left to finish. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The drivers, `Session` and `Fleet`: subscribe, reconnect, page, send, fetch blobs, and keep a bounded trace for reports. The fleet holds the one session each live agent has. The only place a chat does I/O. |
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replaying a report's records through the daemon core and the session state. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in our logs and in provider recordings. |
@@ -291,7 +291,7 @@ host, and from its replica for another host's agent even while that host is away
 | `rename(name)` | amux's rename: an unreachable host fails it at once with its reason. |
 | `discard(id)` | Forget an input that was not confirmed. |
 | `blob(hash)`, `fetch_blob(hash)`, `put_blob(name, mime, bytes)` | Attachment bytes; see [attachments](#attachments). |
-| `working_tree_review()` | The agent's working-tree `Diff` and the patch it names, for a review page. |
+| `reviews()` | The agent's review (`ui_runtime::review::Review`), for its review page: open, file bodies fetched in batches of `BATCH_FILES` (16), more context, edits all or none, and `follow(row)` on every row update, which reads the review again when its entry's counter moves and marks the page stale when only the tree moved. What it fetched is kept in a process-wide cache (`ReviewCache`, 32 MiB), so a review already loaded reads with the host asleep. |
 | `ended()` | Set when the runtime refuses to serve the chat again, as when the agent was deleted. |
 | `suspended()` | Whether the stream is dropped because the phone left the foreground. |
 | `trace()`, `history()`, `record()` | The bounded trace, the same as wire values, and that with nothing anybody wrote: the form a report carries it in. |
@@ -380,7 +380,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `opened_agent(fleet, agent_id)`, `group_state(fleet, agents)`, `chat_agents(state, fleet)` | The agent a call row opens as its fleet row has it (its key to open, its title else its name, its kind, its `PhaseView`), or None when the fleet does not hold it; what a group's agents come to (`GroupState`: running, needing you, idle, finished, ended, failed, unknown); and every agent a chat's held rows open with each group's state, which the phone is handed when the fleet moves. |
 | `toggle_group(state, member, open)`, `subagent_rows_moved(state, changed)` | Opens or closes the group a call belongs to, in the set that holds open runs; and the calls whose group a change moved without touching them (a call joining, a turn bound, a cut taking the first), for a client holding rows by key. |
 | `reach(fleet, local_host, host)` | How this machine reaches a host: online over a route; away, meaning only that the relay refused it for the account's free plan and upgrading reaches it; or offline, for a reason this machine can name (this machine is signed out, or the host no longer trusts it) or for none. |
-| `review_doc(diff, patch, comments)` | A patch parsed into files, hunks and lines, with review comments placed. |
+| `review_page(summary, files, context, state)`, `anchor(page, from, to)`, `review_chip(agent)` | The review page as rows (file heads, hunk heads, lines with their changed words, gaps that load more context, comments where they are placed), banners and the files still to fetch, from the summary and bodies the agent's host answered and the person's choices; the commit and lines a selection of rows comments on; and the composer's chip from the review's entry on the agent's row while it holds drafts. |
 | `patch_head(state, key, max)` | The first lines of an edit's patch. |
 
 A few facts exist so that a client can say what happened without reading further: an edit's ask says whether it
@@ -553,7 +553,7 @@ its place.
 Rows that show an attachment draw a placeholder from the reference's name, type and size. The first
 `Session::blob(hash)` for a missing hash starts a `GetBlob`; when the bytes land (or fail), `Msg::Blob` marks
 every row referencing that hash as changed, and the rows redraw. Bytes are cached for the life of the session
-only. [ATTACHMENTS.md](ATTACHMENTS.md) covers blobs, review attachments and delivery to providers.
+only. [ATTACHMENTS.md](ATTACHMENTS.md) covers blobs, sent reviews and delivery to providers.
 
 ### The fleet
 

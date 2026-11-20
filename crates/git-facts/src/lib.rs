@@ -20,6 +20,7 @@ use std::process::{Output, Stdio};
 
 use tokio::io::AsyncWriteExt;
 
+pub mod compare;
 pub mod objects;
 pub mod snapshot;
 
@@ -642,7 +643,7 @@ pub async fn changes(cwd: &Path, base: &Base) -> Result<Changes, GitError> {
     };
     let scratch = Scratch::new(cwd).await?;
     let raw = scratch.diff(&against, true).await?;
-    let files = flagged(cwd, raw).await?;
+    let files = flagged(cwd, None, raw).await?;
     Ok(Changes {
         root,
         base: used,
@@ -1024,8 +1025,10 @@ struct RawFile {
     /// for a submodule, `000000` for a side that is not there).
     old_mode: String,
     new_mode: String,
-    /// The base side's object id.
+    /// Each side's object id; all zeros for a side that is not there, and
+    /// for a working tree's side, which git does not hash.
     old_id: String,
+    new_id: String,
     added: u32,
     removed: u32,
     binary: bool,
@@ -1075,6 +1078,7 @@ fn raw_files(output: &[u8]) -> Vec<RawFile> {
                 old_mode: parts.first().copied().unwrap_or_default().to_owned(),
                 new_mode: parts.get(1).copied().unwrap_or_default().to_owned(),
                 old_id: parts.get(2).copied().unwrap_or_default().to_owned(),
+                new_id: parts.get(3).copied().unwrap_or_default().to_owned(),
                 added: 0,
                 removed: 0,
                 binary: false,
@@ -1102,21 +1106,41 @@ fn raw_files(output: &[u8]) -> Vec<RawFile> {
 }
 
 /// `files` with their flags, read from the repository's top folder.
-async fn flagged(root: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, GitError> {
+/// With a `store`, both sides are commits, read from their objects in the
+/// repository and the store; without one, the later side is the working
+/// tree, read from its files, since an object id git shows for a file there
+/// is the index's, which may not be what the file holds.
+async fn flagged(
+    root: &Path,
+    store: Option<&objects::ObjectStore>,
+    files: Vec<RawFile>,
+) -> Result<Vec<ChangedFile>, GitError> {
     if files.is_empty() {
         return Ok(Vec::new());
     }
     let attributes = attributes(root, &files).await?;
-    let base_sizes = base_sizes(root, &files).await?;
     let regular = |mode: &str| mode.starts_with("100");
+    let hashed =
+        |id: &str| store.is_some() && !id.is_empty() && id.bytes().any(|byte| byte != b'0');
+    let sized = files.iter().flat_map(|file| {
+        let old =
+            (file.status != Status::Created && regular(&file.old_mode)).then_some(&file.old_id);
+        let new =
+            (file.status != Status::Deleted && regular(&file.new_mode) && hashed(&file.new_id))
+                .then_some(&file.new_id);
+        old.into_iter().chain(new).map(String::as_str)
+    });
+    let sizes = sizes(root, store, sized).await?;
     let mut flagged = Vec::with_capacity(files.len());
-    // The base side of deleted files, read for their headers in one go.
-    let mut deleted_heads = Vec::new();
+    // The sides whose header is in an object rather than the working tree,
+    // read in one go.
+    let mut object_heads = Vec::new();
     for file in files {
         let (generated, vendored) = attributes.get(&file.path).copied().unwrap_or_default();
-        let base_size = base_sizes.get(&file.old_id).copied();
+        let base_size = sizes.get(&file.old_id).copied();
         let tree_size = match file.status {
             Status::Deleted => None,
+            _ if hashed(&file.new_id) => sizes.get(&file.new_id).copied(),
             _ => std::fs::symlink_metadata(root.join(&file.path))
                 .ok()
                 .filter(std::fs::Metadata::is_file)
@@ -1131,7 +1155,13 @@ async fn flagged(root: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, G
             None if !readable => false,
             None if file.status == Status::Deleted => {
                 if regular(&file.old_mode) {
-                    deleted_heads.push((flagged.len(), file.old_id.clone()));
+                    object_heads.push((flagged.len(), file.old_id.clone()));
+                }
+                false
+            }
+            None if hashed(&file.new_id) => {
+                if regular(&file.new_mode) {
+                    object_heads.push((flagged.len(), file.new_id.clone()));
                 }
                 false
             }
@@ -1152,10 +1182,10 @@ async fn flagged(root: &Path, files: Vec<RawFile>) -> Result<Vec<ChangedFile>, G
             binary: file.binary,
         });
     }
-    if !deleted_heads.is_empty() {
-        let ids: Vec<&str> = deleted_heads.iter().map(|(_, id)| id.as_str()).collect();
-        let contents = objects(root, &ids).await?;
-        for ((at, _), content) in deleted_heads.iter().zip(contents) {
+    if !object_heads.is_empty() {
+        let ids: Vec<&str> = object_heads.iter().map(|(_, id)| id.as_str()).collect();
+        let contents = objects(root, store, &ids).await?;
+        for ((at, _), content) in object_heads.iter().zip(contents) {
             flagged[*at].flags.generated = generated_header(&content);
         }
     }
@@ -1239,29 +1269,39 @@ async fn attributes(
     Ok(said)
 }
 
-/// The size of each file's base side, by its object id, for the files
-/// that have one.
-async fn base_sizes(
+/// Git with `args` reading the snapshot store's objects too when there is
+/// one, through [`objects::ObjectStore::reading`].
+fn read_with(
     cwd: &Path,
-    files: &[RawFile],
+    store: Option<&objects::ObjectStore>,
+    args: &[&str],
+) -> tokio::process::Command {
+    match store {
+        Some(store) => store.reading(cwd, args),
+        None => command(cwd, None, args),
+    }
+}
+
+/// The size of each object in `ids`, by its id, with `store` searched as
+/// well as the repository's own objects; one git cannot find has none.
+async fn sizes(
+    cwd: &Path,
+    store: Option<&objects::ObjectStore>,
+    ids: impl Iterator<Item = &str>,
 ) -> Result<std::collections::HashMap<String, u64>, GitError> {
     let mut input = String::new();
-    for file in files {
-        if file.status != Status::Created && file.old_mode.starts_with("100") {
-            input.push_str(&file.old_id);
-            input.push('\n');
-        }
+    for id in ids {
+        input.push_str(id);
+        input.push('\n');
     }
     if input.is_empty() {
         return Ok(Default::default());
     }
-    let output = checked_with_input(
-        cwd,
-        None,
-        &["cat-file", "--batch-check=%(objectname) %(objectsize)"],
-        input.into_bytes(),
-    )
-    .await?;
+    let args = ["cat-file", "--batch-check=%(objectname) %(objectsize)"];
+    let output = succeeded(
+        &args,
+        objects::finish(read_with(cwd, store, &args), Some(input.into_bytes())).await?,
+    )?;
     Ok(text(&output)
         .lines()
         .filter_map(|line| {
@@ -1272,15 +1312,20 @@ async fn base_sizes(
 }
 
 /// The first bytes of each object in `ids`, in order, up to the header
-/// window; empty for one git cannot find. Read as `cat-file --batch` writes
-/// them, so only the window of each is ever held: the rest of an object is
-/// dropped as it arrives.
-async fn objects(cwd: &Path, ids: &[&str]) -> Result<Vec<Vec<u8>>, GitError> {
+/// window, with `store` searched as well as the repository's own objects;
+/// empty for one git cannot find. Read as `cat-file --batch` writes them, so
+/// only the window of each is ever held: the rest of an object is dropped as
+/// it arrives.
+async fn objects(
+    cwd: &Path,
+    store: Option<&objects::ObjectStore>,
+    ids: &[&str],
+) -> Result<Vec<Vec<u8>>, GitError> {
     use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _};
 
     let args = ["cat-file", "--batch"];
     let input: String = ids.iter().map(|id| format!("{id}\n")).collect();
-    let mut child = command(cwd, None, &args)
+    let mut child = read_with(cwd, store, &args)
         .stdin(Stdio::piped())
         .spawn()
         .map_err(GitError::Spawn)?;
@@ -1560,7 +1605,7 @@ mod tests {
         let ids = [&first, &second, &empty, &missing, &short, &third];
         let ids: Vec<&str> = ids.iter().map(|id| id.as_str()).collect();
 
-        let read = super::objects(repo.path(), &ids).await.unwrap();
+        let read = super::objects(repo.path(), None, &ids).await.unwrap();
         let lengths: Vec<_> = read.iter().map(Vec::len).collect();
         let window = super::HEADER_BYTES;
         assert_eq!(lengths, [window, window, 0, 0, 12, window]);

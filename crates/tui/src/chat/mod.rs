@@ -2614,11 +2614,6 @@ impl ChatView {
         self.review_sent = None;
     }
 
-    /// Asks before the review chip's drafts are discarded.
-    pub fn ask_discard_drafts(&mut self, drafts: u32) {
-        self.discard_ask = Some(review::Asking::new(review::Confirm::Discard { drafts }));
-    }
-
     /// A page was asked for; another waits until the window grows.
     pub fn page_sent(&mut self, state: &SessionState) {
         self.page_asked = state.oldest_order();

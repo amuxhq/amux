@@ -151,8 +151,6 @@ pub struct DeleteFacts {
     /// The branch's [`branch_own_commits`]: None on a detached head, before
     /// the first commit, or when they could not be counted.
     pub own_commits: Option<u32>,
-    /// Whether the removal takes the branch with it ([`branch_goes`]).
-    pub branch_goes: bool,
     /// The working tree against HEAD, untracked files included.
     pub uncommitted: ChangeTotals,
 }
@@ -580,7 +578,6 @@ pub async fn delete_facts(cwd: &Path) -> Result<Option<DeleteFacts>, GitError> {
     Ok(Some(DeleteFacts {
         branch,
         own_commits,
-        branch_goes: branch_goes(own_commits),
         uncommitted,
     }))
 }

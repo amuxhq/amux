@@ -928,7 +928,6 @@ async fn delete_facts_say_what_a_delete_takes() {
         Some(DeleteFacts {
             branch: Some("fix".into()),
             own_commits: Some(0),
-            branch_goes: true,
             uncommitted: totals(1, 2, 0).unwrap(),
         })
     );
@@ -939,7 +938,6 @@ async fn delete_facts_say_what_a_delete_takes() {
         Some(DeleteFacts {
             branch: Some("fix".into()),
             own_commits: Some(1),
-            branch_goes: false,
             uncommitted: ChangeTotals::default(),
         })
     );

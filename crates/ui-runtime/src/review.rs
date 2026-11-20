@@ -61,9 +61,6 @@ impl std::fmt::Display for Unavailable {
 pub enum ReviewError {
     #[error("{0}")]
     Unavailable(Unavailable),
-    /// The review has not been opened, so there is no snapshot to read.
-    #[error("the review has not been opened")]
-    NotOpen,
     /// The call failed: [`RpcError::not_sent`] says when the host could not
     /// be reached, and [`RpcError::uncertain`] when an edit may have landed.
     #[error(transparent)]

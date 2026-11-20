@@ -295,11 +295,6 @@ impl Page {
         }
     }
 
-    /// Whether this is a sent round's page, to read only.
-    pub fn is_round(&self) -> bool {
-        self.round.is_some()
-    }
-
     /// The text the agent read, shown when the round is gone.
     fn gone(&self) -> Option<&str> {
         self.round.as_ref().and_then(|round| round.gone.as_deref())

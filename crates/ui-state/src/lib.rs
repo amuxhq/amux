@@ -25,7 +25,7 @@ pub use fleet::{
     WorkspaceGoes, agent_key, attention, exit_cause, exit_words, parent_key, shown_name,
 };
 pub use inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, kept_draft, refusal,
+    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, refusal,
 };
 pub use model::Key;
 pub use session::{

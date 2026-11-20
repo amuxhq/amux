@@ -426,45 +426,6 @@ fn attachments_keep_their_positions() {
     }
 }
 
-/// A prompt a release sent with a review of a patch, a kind since retired
-/// whose number stays reserved: the review draws as an empty attachment at
-/// its place, and the image after it as itself.
-#[test]
-fn a_retired_review_in_a_journal_draws_as_an_empty_attachment() {
-    // Field 4: a review holding an empty diff.
-    let review = wire::Attachment::decode([0x22, 0x02, 0x0a, 0x00].as_slice()).unwrap();
-    let image = wire::Attachment {
-        of: Some(wire::attachment::Of::Image(wire::BlobRef {
-            hash: vec![1; 32],
-            name: "a.png".into(),
-            mime: "image/png".into(),
-            size: 10,
-        })),
-        ..Default::default()
-    };
-    for kind in KINDS {
-        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
-        let mut prompt = item(kind, 1, 1, None);
-        prompt.body = body(kind, None, false);
-        prompt.text = "see \u{FFFC} and \u{FFFC}".into();
-        prompt.attachments = vec![review.clone(), image.clone()];
-        state.update(event(session_event::Of::Item(prompt)));
-        let rows = all_rows(&state, ToolRows::ShowAll);
-        assert_eq!(
-            rows[0].kind,
-            RowKind::Prompt {
-                text: vec![
-                    Segment::Text("see ".into()),
-                    Segment::Attachment(AttachmentView::Empty),
-                    Segment::Text(" and ".into()),
-                    Segment::Attachment(AttachmentView::of(&image)),
-                ],
-                steered: false
-            }
-        );
-    }
-}
-
 fn fleet_entry(
     host: &str,
     id: &str,

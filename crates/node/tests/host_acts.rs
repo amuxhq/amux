@@ -694,38 +694,13 @@ async fn the_owner_holds_the_attachment_limit() {
     host.stop().await;
 }
 
-/// A message's id is the caller's, sixteen bytes. A send of any other
-/// length is refused, and so is one of the shape before this one, whose
-/// envelope decodes where the id is.
+/// A message's id is the caller's, sixteen bytes: a send of any other
+/// length is refused.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_id_is_sixteen_bytes() {
     let mut setup = Setup::new();
     let recipient = setup.agent("recipient", None, true);
     let host = setup.start().await;
-    let old_shape = {
-        use prost::Message as _;
-        /// A send as builds before the caller was its sender wrote it.
-        #[derive(Clone, PartialEq, prost::Message)]
-        struct OldSend {
-            #[prost(message, optional, tag = "1")]
-            envelope: Option<wire::Envelope>,
-        }
-        let old = OldSend {
-            envelope: Some(wire::Envelope {
-                id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                to: Some(wire::AgentRef {
-                    host_id: host.runtime.host().as_bytes().to_vec(),
-                    agent_id: recipient.as_bytes().to_vec(),
-                }),
-                body: Some(wire::envelope::Body::Message(wire::MessageBody {
-                    text: "from an older tool server".into(),
-                    ..Default::default()
-                })),
-                ..Default::default()
-            }),
-        };
-        wire::SendMessageRequest::decode(old.encode_to_vec().as_slice()).unwrap()
-    };
     for who in EVERYONE {
         for length in [0, 4, 15, 17, 32] {
             let refused = host
@@ -738,12 +713,6 @@ async fn a_message_id_is_sixteen_bytes() {
                 .unwrap_err();
             assert_eq!(refused.code(), Code::InvalidArgument, "{who:?} {length}");
         }
-        let refused = host
-            .agents(who)
-            .send_message(old_shape.clone())
-            .await
-            .unwrap_err();
-        assert_eq!(refused.code(), Code::InvalidArgument, "{who:?} old shape");
         let sent = message(recipient, "hello");
         let answer = host
             .agents(who)

@@ -356,14 +356,6 @@ fn malformed_candidates_stay_text_and_are_reported() {
             "<amux-attachment kind=\"text\" name=\"x\">&bogus;</amux-attachment>".into(),
             Problem::BadBody,
         ),
-        // The retired review kind, as a provider's transcript from before
-        // its retirement still reflects it: it stays text.
-        (
-            format!(
-                "<amux-attachment kind=\"review\" hash=\"{hash}\" comments=\"0\"></amux-attachment>"
-            ),
-            Problem::UnknownKind,
-        ),
         (
             "<amux-attachment kind=\"page\" url=\"u\" comments=\"1\"></amux-attachment>".into(),
             Problem::BadBody,

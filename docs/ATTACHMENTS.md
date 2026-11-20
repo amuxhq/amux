@@ -50,10 +50,8 @@ by its version, which a build that knows none of them ignores, so the
 attachment still reads as its kind. A **sent review** is the one use today: a
 `text` attachment named `review`, holding what the agent reads, with a
 `reviews/1` entry saying which review's comments it sends
-([below](#sent-reviews)). There is no review kind; a field the kinds once
-used for a review built on a patch is reserved: a journal item holding one
-still opens, that attachment drawn as empty, and a kept draft holding one
-loads without it.
+([below](#sent-reviews)). There is no review kind; the field the kinds once
+used for a review built on a patch is reserved.
 
 A `PageComment` is anchored on a block of the page, a `PageElement`: a CSS
 selector, its visible text cut short, and where the page says it was drawn

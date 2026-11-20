@@ -5,39 +5,6 @@ use wire::{Attachment, Input, Rejected, SendInputResponse};
 
 pub use crate::model::{InputId, InputState, Refusal};
 
-/// Marks one attachment's position in a draft's or a prompt's text.
-const PLACEHOLDER: char = '\u{FFFC}';
-
-/// A draft this machine kept, as a composer loads it: an attachment of no
-/// kind this build reads, such as a review of a patch from before the
-/// review service, goes with its placeholder, so the rest of the draft
-/// still sends. Attachments past the last placeholder follow the words, as
-/// a prompt's do.
-pub fn kept_draft(draft: wire::Draft) -> wire::Draft {
-    let mut attachments = draft.attachments.into_iter();
-    let mut text = String::with_capacity(draft.text.len());
-    let mut kept = Vec::new();
-    for character in draft.text.chars() {
-        if character != PLACEHOLDER {
-            text.push(character);
-            continue;
-        }
-        match attachments.next() {
-            Some(attachment) if attachment.of.is_some() => {
-                text.push(PLACEHOLDER);
-                kept.push(attachment);
-            }
-            // One of no kind, or a placeholder with no attachment left.
-            _ => {}
-        }
-    }
-    kept.extend(attachments.filter(|attachment| attachment.of.is_some()));
-    wire::Draft {
-        text,
-        attachments: kept,
-    }
-}
-
 /// Why an input was refused, from its `Rejected` reply.
 pub fn refusal(rejected: &Rejected) -> Refusal {
     Refusal {

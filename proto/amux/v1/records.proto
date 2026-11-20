@@ -499,7 +499,7 @@ message Attachment {
   // outside experiments.
   map<string, bytes> experimental = 1000;
   // A review of a patch the host built, retired for the review service's
-  // pages; a journal holding one still opens, its attachment kind empty.
+  // pages.
   reserved 4;
   reserved "review";
 }

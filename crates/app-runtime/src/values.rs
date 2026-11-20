@@ -274,7 +274,10 @@ impl DraftAttachment {
             }),
             DraftAttachment::Page(page) => Of::Page(page.clone()),
         };
-        wire::Attachment { of: Some(of) }
+        wire::Attachment {
+            of: Some(of),
+            ..Default::default()
+        }
     }
 
     /// The draft's form of an attachment a prompt carried; None for one
@@ -1253,7 +1256,10 @@ mod tests {
             "attachments with no placeholder follow the words"
         );
         assert_eq!(
-            DraftAttachment::from_wire(&wire::Attachment { of: None }),
+            DraftAttachment::from_wire(&wire::Attachment {
+                of: None,
+                ..Default::default()
+            }),
             None
         );
     }

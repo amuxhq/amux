@@ -381,12 +381,14 @@ fn attachments_keep_their_positions() {
             mime: "image/png".into(),
             size: 10,
         })),
+        ..Default::default()
     };
     let text = wire::Attachment {
         of: Some(wire::attachment::Of::Text(wire::InlineText {
             name: "pasted".into(),
             text: "x\ny".into(),
         })),
+        ..Default::default()
     };
     let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
     assert_eq!(
@@ -2423,6 +2425,7 @@ fn a_reply_opening_with_an_attachment_still_says_something_on_its_row() {
             mime: "text/plain".into(),
             size: 16,
         })),
+        ..Default::default()
     };
     let reply = Item {
         attachments: vec![file],
@@ -2454,6 +2457,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
             mime: "text/plain".into(),
             size: 27,
         })),
+        ..Default::default()
     };
     let message = Item {
         attachments: vec![file.clone()],
@@ -3929,6 +3933,7 @@ fn direction_controls_in_names_are_not_drawn_as_direction_changes() {
             mime: "application/octet-stream".into(),
             size: 16,
         })),
+        ..Default::default()
     };
     let reply = Item {
         attachments: vec![file],

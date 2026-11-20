@@ -337,6 +337,7 @@ mod tests {
                 comments,
                 ..Default::default()
             })),
+            ..Default::default()
         };
         let prompt = input(wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {

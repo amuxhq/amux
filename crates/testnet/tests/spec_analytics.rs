@@ -377,6 +377,7 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
                                 image: None,
                             }],
                         })),
+                        ..Default::default()
                     }],
                 })),
             },

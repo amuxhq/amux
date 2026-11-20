@@ -491,6 +491,14 @@ message Attachment {
     // Comments a person made on a web page, sent from the browser extension.
     PageReview page = 5;
   }
+  // What experiments say about the attachment, each entry keyed by an
+  // experiment's version (e.g. "reviews/1") and holding an encoded
+  // amux.experimental message. The attachment reads as what `of` holds to a
+  // build that knows none of its entries, so an entry only adds to it. A
+  // build reads only the entries of the versions it implements and ignores
+  // every other key. The map is promised; its entries are not. Empty
+  // outside experiments.
+  map<string, bytes> experimental = 1000;
 }
 
 // Content-addressed bytes in the owning agent's directory. The name belongs

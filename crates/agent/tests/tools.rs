@@ -1069,6 +1069,7 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
             mime: "image/png".into(),
             size: bytes.len() as u64,
         })),
+        ..Default::default()
     };
     assert_eq!(element, attachments::element(&expected, Some(&stored)));
     let parsed = attachments::parse(&element);
@@ -1157,6 +1158,7 @@ async fn send_refuses_an_attachment_stored_over_the_limit() {
                 mime: "application/octet-stream".into(),
                 size: 10,
             })),
+            ..Default::default()
         },
         Some(&stored),
     );

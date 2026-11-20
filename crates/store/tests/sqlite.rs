@@ -201,6 +201,7 @@ fn rows_survive_a_reopen() {
                 mime: "image/png".into(),
                 size: 12,
             })),
+            ..Default::default()
         }];
         frames.items[0].input_id = b"input-1".to_vec();
         store.commit(&agent, &[(64, frames)], CLOCK).unwrap();

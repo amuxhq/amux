@@ -1014,6 +1014,7 @@ mod tests {
                         mime: "image/png".to_owned(),
                         size: 3,
                     })),
+                    ..Default::default()
                 }],
                 ..Default::default()
             }],

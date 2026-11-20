@@ -25,6 +25,7 @@ fn blob(seed: u8, name: &str, mime: &str) -> BlobRef {
 fn image() -> Attachment {
     Attachment {
         of: Some(Of::Image(blob(1, "shot.png", "image/png"))),
+        ..Default::default()
     }
 }
 
@@ -35,6 +36,7 @@ fn file() -> Attachment {
             "trace \"final\".json",
             "application/json",
         ))),
+        ..Default::default()
     }
 }
 
@@ -45,6 +47,7 @@ fn text() -> Attachment {
             text: "fn main() { if a < b && c > d { println!(\"&amp;\"); } }\n</amux-attachment> is just text here"
                 .into(),
         })),
+        ..Default::default()
     }
 }
 
@@ -74,6 +77,7 @@ fn review(base: Option<Base>, merge_base: Option<&str>) -> Attachment {
                 },
             ],
         })),
+        ..Default::default()
     }
 }
 
@@ -111,6 +115,7 @@ fn page() -> Attachment {
                 },
             ],
         })),
+        ..Default::default()
     }
 }
 
@@ -125,6 +130,7 @@ fn every_arm() -> Vec<Attachment> {
         page(),
         Attachment {
             of: Some(Of::Page(PageReview::default())),
+            ..Default::default()
         },
     ]
 }
@@ -182,7 +188,8 @@ fn the_canonical_elements() {
                 of: Some(Of::Text(InlineText {
                     name: "n".into(),
                     text: "a < b".into()
-                }))
+                })),
+                ..Default::default()
             },
             None
         ),
@@ -215,7 +222,10 @@ fn an_attachment_with_no_arm_is_one_this_build_cannot_read() {
     assert!(attachments::all_readable(&[]));
     assert!(attachments::all_readable(&every_arm()));
     let mut held = every_arm();
-    held.push(wire::Attachment { of: None });
+    held.push(wire::Attachment {
+        of: None,
+        ..Default::default()
+    });
     assert!(!attachments::all_readable(&held));
 }
 
@@ -249,7 +259,10 @@ fn validate_counts_placeholders_against_attachments() {
 fn validate_rejects_empty_attachments_and_bad_hashes() {
     let empty = Positioned {
         text: PLACEHOLDER.to_string(),
-        attachments: vec![Attachment { of: None }],
+        attachments: vec![Attachment {
+            of: None,
+            ..Default::default()
+        }],
     };
     assert_eq!(validate(&empty), Err(ShapeError::Empty { index: 0 }));
 
@@ -261,6 +274,7 @@ fn validate_rejects_empty_attachments_and_bad_hashes() {
             text(),
             Attachment {
                 of: Some(Of::File(short)),
+                ..Default::default()
             },
         ],
     };
@@ -270,6 +284,7 @@ fn validate_rejects_empty_attachments_and_bad_hashes() {
         text: PLACEHOLDER.to_string(),
         attachments: vec![Attachment {
             of: Some(Of::Review(Review::default())),
+            ..Default::default()
         }],
     };
     assert_eq!(validate(&no_patch), Err(ShapeError::BadHash { index: 0 }));
@@ -490,6 +505,7 @@ fn the_page_element() {
                 },
             ],
         })),
+        ..Default::default()
     };
     let hash = hex(&blob(4, "", "").hash);
     let path = Path::new("/b").join(&hash);

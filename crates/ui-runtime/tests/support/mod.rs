@@ -662,6 +662,7 @@ pub fn image_item(kind: Kind, order: u64, revision: u64, hash: &[u8]) -> Item {
                 mime: "image/png".into(),
                 size: 3,
             })),
+            ..Default::default()
         }],
         ..text_item(kind, order, revision, "look")
     }

@@ -311,7 +311,10 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there(
                 input_id: b"first".to_vec(),
                 prompt: Some(wire::PromptInput {
                     text: "see this".into(),
-                    attachments: vec![wire::Attachment { of: None }],
+                    attachments: vec![wire::Attachment {
+                        of: None,
+                        ..Default::default()
+                    }],
                 }),
             }),
             ..request()

@@ -701,7 +701,13 @@ fn parse_element(text: &str, start: usize) -> Result<(Attachment, usize), Proble
     if let Some(name) = attributes.into_keys().next() {
         return Err(Problem::UnknownAttribute(name));
     }
-    Ok((Attachment { of: Some(of) }, end))
+    Ok((
+        Attachment {
+            of: Some(of),
+            ..Default::default()
+        },
+        end,
+    ))
 }
 
 fn take_blob(attributes: &mut BTreeMap<String, String>) -> Result<BlobRef, Problem> {

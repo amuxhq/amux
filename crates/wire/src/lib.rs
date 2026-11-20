@@ -144,6 +144,25 @@ pub mod amux {
         /// The suspension experiment's entry in an agent's spec:
         /// `AgentSpec.experimental["suspension/1"]`.
         pub const SUSPENSION: Entry<SuspensionSpec> = Entry::new("suspension/1");
+
+        /// The reviews experiment's entry on an agent's row:
+        /// `Agent.experimental["reviews/1"]`.
+        pub const REVIEW_ROW: Entry<ReviewRowEntry> = Entry::new("reviews/1");
+
+        /// The reviews experiment's entry on a sent review's attachment:
+        /// `Attachment.experimental["reviews/1"]`. The same version keys a
+        /// different message on each map.
+        pub const SENT_REVIEW: Entry<SentReview> = Entry::new("reviews/1");
+
+        sized_service!(
+            generic reviews1_client,
+            reviews1_server,
+            reviews1_client,
+            Reviews1Client,
+            reviews1_server,
+            Reviews1Server,
+            Reviews1
+        );
     }
 }
 
@@ -731,6 +750,8 @@ mod tests {
                 [
                     ".amux.experimental.AgentWorkspace",
                     ".amux.experimental.SuspensionSpec",
+                    ".amux.experimental.ReviewRowEntry",
+                    ".amux.experimental.SentReview",
                     ".amux.v1.Caller",
                 ]
                 .map(str::to_owned),
@@ -818,6 +839,91 @@ mod tests {
         );
         // The map encodes in key order, so a row encodes the same each time.
         assert_eq!(read.encode_to_vec(), agent.encode_to_vec());
+    }
+
+    /// The reviews experiment keeps one entry on an agent's row and one on
+    /// a sent review's attachment, under the same version, and each comes
+    /// back whole through its message's encoding.
+    #[test]
+    fn the_review_entries_round_trip_through_a_row_and_an_attachment() {
+        assert_eq!(experimental::REVIEW_ROW.version(), "reviews/1");
+        assert_eq!(experimental::SENT_REVIEW.version(), "reviews/1");
+        let entry = experimental::ReviewRowEntry {
+            drafts: 3,
+            counter: 41,
+            moved: true,
+        };
+        let mut agent = Agent {
+            agent_id: b"agent".to_vec(),
+            ..Default::default()
+        };
+        experimental::REVIEW_ROW.put(&mut agent.experimental, &entry);
+        let read = Agent::decode(agent.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(
+            experimental::REVIEW_ROW.get(&read.experimental),
+            Some(entry)
+        );
+
+        let sent = experimental::SentReview {
+            review_id: b"review".to_vec(),
+            round: 2,
+            snapshot: "4b825dc642cb6eb9a060e54bf8d69288fbee4904".into(),
+            comment_ids: vec![b"first".to_vec(), b"second".to_vec()],
+        };
+        let mut attachment = Attachment {
+            of: Some(attachment::Of::Text(InlineText {
+                name: "review".into(),
+                text: "Two comments.".into(),
+            })),
+            ..Default::default()
+        };
+        experimental::SENT_REVIEW.put(&mut attachment.experimental, &sent);
+        let read = Attachment::decode(attachment.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(read, attachment);
+        assert_eq!(
+            experimental::SENT_REVIEW.get(&read.experimental),
+            Some(sent)
+        );
+    }
+
+    /// An `Attachment` as a build before its `experimental` map decodes
+    /// one: its `of` and nothing at 1000.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct AttachmentBefore {
+        #[prost(oneof = "attachment::Of", tags = "1, 2, 3, 4, 5")]
+        of: Option<attachment::Of>,
+    }
+
+    /// A sent review is text with an entry beside it, so a build without
+    /// the attachment's map, or without the experiment, reads it as the
+    /// text alone.
+    #[test]
+    fn an_attachment_with_an_entry_reads_as_its_text_to_a_build_without_the_map() {
+        let text = attachment::Of::Text(InlineText {
+            name: "review".into(),
+            text: "src/lib.rs:4\n  fn open()\nRename this.".into(),
+        });
+        let mut attachment = Attachment {
+            of: Some(text.clone()),
+            ..Default::default()
+        };
+        experimental::SENT_REVIEW.put(
+            &mut attachment.experimental,
+            &experimental::SentReview {
+                review_id: b"review".to_vec(),
+                round: 1,
+                snapshot: "4b825dc642cb6eb9a060e54bf8d69288fbee4904".into(),
+                comment_ids: vec![b"first".to_vec()],
+            },
+        );
+        let before = AttachmentBefore::decode(attachment.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(before, AttachmentBefore { of: Some(text) });
+        // And what it writes back is the plain text attachment it read.
+        let plain = Attachment {
+            of: attachment.of.clone(),
+            ..Default::default()
+        };
+        assert_eq!(before.encode_to_vec(), plain.encode_to_vec());
     }
 
     /// Top-level enum values share one namespace in the package, so each

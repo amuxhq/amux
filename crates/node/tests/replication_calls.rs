@@ -263,6 +263,7 @@ async fn a_daemon_asks_a_paired_one_only_on_the_peer_service() {
                     text: "read this".to_owned(),
                     attachments: vec![wire::Attachment {
                         of: Some(wire::attachment::Of::File(file.clone())),
+                        ..Default::default()
                     }],
                 }),
             },

@@ -312,7 +312,10 @@ fn answer(request: Request) -> Result<Value, String> {
                         text: snippet.text,
                     })
                 }))
-                .map(|of| wire::Attachment { of: Some(of) })
+                .map(|of| wire::Attachment {
+                    of: Some(of),
+                    ..Default::default()
+                })
                 .collect();
             let input = prompt(kind, unhex(&input_id)?, text, attachments)
                 .ok_or("an agent of a kind this build does not know")?;
@@ -373,6 +376,7 @@ fn answer(request: Request) -> Result<Value, String> {
         Request::Element { page } => json!(attachments::element(
             &wire::Attachment {
                 of: Some(wire::attachment::Of::Page(page)),
+                ..Default::default()
             },
             None,
         )),

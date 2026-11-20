@@ -125,7 +125,8 @@ fn a_page_review_is_sent_in_the_agents_kind() {
     assert_eq!(
         prompt.attachments,
         [wire::Attachment {
-            of: Some(wire::attachment::Of::Page(page))
+            of: Some(wire::attachment::Of::Page(page)),
+            ..Default::default()
         }]
     );
 }

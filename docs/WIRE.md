@@ -1141,8 +1141,8 @@ none of the promises above:
   `crates/wire/src/lib.rs`.
 - **They travel in an `experimental` map.** An amux.v1 message an
   experiment extends carries, once and for good, `map<string, bytes>
-  experimental = 1000`. `Agent` and `AgentSpec` do now; `Host` gets one
-  when an experiment first needs it. Each entry is keyed by an experiment's
+  experimental = 1000`. `Agent`, `AgentSpec` and `Attachment` do now;
+  `Host` gets one when an experiment first needs it. Each entry is keyed by an experiment's
   version and holds an encoded amux.experimental message:
   `Agent.experimental["workspaces/1"]` is an `AgentWorkspace`. Its values
   are bytes because a file in the buf module cannot import one outside it,
@@ -1163,9 +1163,9 @@ none of the promises above:
   are. Graduating it is adding its settled calls to a service in `amux.v1`
   and deleting the experimental one.
 - **Each entry has a typed key** beside the generated types in the wire
-  crate (`wire::experimental::WORKSPACE`, `SUSPENSION`), whose `get`, `put`
-  and `clear` are the one way code reads and writes it; an entry that does
-  not decode reads as none. Shared types never grow experiment fields: a
+  crate (`wire::experimental::WORKSPACE`, `SUSPENSION`, `REVIEW_ROW`,
+  `SENT_REVIEW`), whose `get`, `put` and `clear` are the one way code
+  reads and writes it; an entry that does not decode reads as none. Shared types never grow experiment fields: a
   consumer decodes the entry into a view of its own.
 - **What a row says to everyone rides on the row; a host's working state
   stays home.** A host writes entries only on its own rows and specs, and

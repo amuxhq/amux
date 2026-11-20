@@ -193,7 +193,10 @@ async fn a_message_this_host_cannot_read_is_refused() {
         let unreadable = wire::SendMessageRequest {
             message: Some(wire::MessageBody {
                 text: "see this".into(),
-                attachments: vec![wire::Attachment { of: None }],
+                attachments: vec![wire::Attachment {
+                    of: None,
+                    ..Default::default()
+                }],
             }),
             ..message(recipient, "")
         };

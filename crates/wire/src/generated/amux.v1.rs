@@ -922,6 +922,18 @@ impl ::prost::Name for QueuedInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Attachment {
+    /// What experiments say about the attachment, each entry keyed by an
+    /// experiment's version (e.g. "reviews/1") and holding an encoded
+    /// amux.experimental message. The attachment reads as what `of` holds to a
+    /// build that knows none of its entries, so an entry only adds to it. A
+    /// build reads only the entries of the versions it implements and ignores
+    /// every other key. The map is promised; its entries are not. Empty
+    /// outside experiments.
+    #[prost(btree_map = "string, bytes", tag = "1000")]
+    pub experimental: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
     #[prost(oneof = "attachment::Of", tags = "1, 2, 3, 4, 5")]
     pub of: ::core::option::Option<attachment::Of>,
 }

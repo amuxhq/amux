@@ -296,6 +296,7 @@ fn image_blob(mime: &str, data: &str) -> Option<(Attachment, Effect)> {
             mime: mime.to_owned(),
             size: bytes.len() as u64,
         })),
+        ..Default::default()
     };
     Some((image, Effect::WriteBlob { hash, bytes }))
 }

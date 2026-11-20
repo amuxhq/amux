@@ -242,6 +242,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
                 text: "Fix these \u{FFFC}".into(),
                 attachments: vec![wire::Attachment {
                     of: Some(wire::attachment::Of::Page(review.clone())),
+                    ..Default::default()
                 }],
             })),
         },
@@ -291,6 +292,7 @@ async fn the_extension_sends_a_page_review_through_the_bridge() {
         sent.attachments,
         [wire::Attachment {
             of: Some(wire::attachment::Of::Page(review)),
+            ..Default::default()
         }]
     );
 

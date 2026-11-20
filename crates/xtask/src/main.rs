@@ -92,6 +92,7 @@ const PROTO_FILES: &[&str] = &[
 /// any release.
 const INTERNAL_PROTO_FILES: &[&str] = &[
     "amux/dump/session.proto",
+    "amux/experimental/reviews.proto",
     "amux/experimental/suspension.proto",
     "amux/experimental/workspaces.proto",
 ];
@@ -151,11 +152,12 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // prost never derives Eq for a message with a repeated message field,
     // though every field here is Eq; the views that hold a Diff compare it.
     config.type_attribute("amux.v1.Diff", "#[derive(Eq)]");
-    // An experimental map encodes in key order, so a row or a spec encodes
-    // to the same bytes every time.
+    // An experimental map encodes in key order, so a row, a spec or an
+    // attachment encodes to the same bytes every time.
     config.btree_map([
         ".amux.v1.Agent.experimental",
         ".amux.v1.AgentSpec.experimental",
+        ".amux.v1.Attachment.experimental",
     ]);
     // prost derives neither for a message with a map, though a BTreeMap of
     // strings and bytes is both; rows are compared and hashed.

@@ -620,6 +620,7 @@ impl Server {
             } else {
                 attachment::Of::File(blob)
             }),
+            ..Default::default()
         };
         let stored = self.dir.join(dir::BLOBS).join(interpret::to_hex(&hash));
         Ok(attachments::element(&attachment, Some(&stored)))

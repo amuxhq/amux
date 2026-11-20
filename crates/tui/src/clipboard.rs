@@ -124,7 +124,10 @@ pub fn blob_attachment(blob: wire::BlobRef) -> wire::Attachment {
     } else {
         wire::attachment::Of::File(blob)
     };
-    wire::Attachment { of: Some(of) }
+    wire::Attachment {
+        of: Some(of),
+        ..Default::default()
+    }
 }
 
 /// Puts text on this machine's clipboard. No clipboard is a normal state on

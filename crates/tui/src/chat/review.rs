@@ -198,6 +198,7 @@ impl ReviewPage {
                 diff: Some(self.diff.clone()),
                 comments: self.comments.clone(),
             })),
+            ..Default::default()
         }
     }
 

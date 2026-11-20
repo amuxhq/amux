@@ -123,7 +123,10 @@ fn a_prompt_with_an_attachment_this_build_cannot_read_is_refused() {
         wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
                 text: "see this".into(),
-                attachments: vec![wire::Attachment { of: None }],
+                attachments: vec![wire::Attachment {
+                    of: None,
+                    ..Default::default()
+                }],
             })),
         },
     );
@@ -509,6 +512,7 @@ fn attached_chart() -> (String, wire::Attachment) {
             mime: "image/png".into(),
             size: 42,
         })),
+        ..Default::default()
     };
     let path = Path::new("/home/me/agents/a/blobs").join("ab".repeat(32));
     (attachments::element(&attachment, Some(&path)), attachment)

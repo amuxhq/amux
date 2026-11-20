@@ -215,7 +215,10 @@ pub(crate) async fn get_files(
                 diff.context = context(&repo, file, path, &snapshot, body).await?;
             }
         }
-        // The field's tag and length, besides the file itself.
+        // The field's tag and length, besides the file itself. The first
+        // file is answered whatever its size, so asking again always gets
+        // further; files shown are under a megabyte a side, so one alone
+        // stays well inside what a channel carries.
         let size = diff.encoded_len() + 6;
         if bytes + size > MOST_BYTES && !answer.files.is_empty() {
             break;
@@ -391,41 +394,16 @@ async fn cut(
     Ok((snippet, scope))
 }
 
-/// The commit a review's "all changes" runs from now, by the review's
-/// rule: its chosen base branch, else the one the agent's spec recorded,
-/// else the repository's default; on a base branch with no upstream, the
-/// commit the review began at; before the repository's first commit, the
-/// empty tree.
+/// The commit a review's "all changes" runs from now, by the rule Open
+/// shows it under.
 async fn base_commit(
     runtime: &ProfileRuntime,
     repo: &Repo,
     review: &Review,
 ) -> Result<String, Status> {
-    let named = |text: &str| (!text.is_empty()).then(|| text.to_owned());
-    let recorded = match crate::spec::newest(&runtime.agent_dir(repo.agent)) {
-        Ok(spec) => spec.and_then(|spec| spec.base_branch),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => {
-            return Err(refused(
-                ErrorCode::Internal,
-                format!("reading the agent's spec: {error}"),
-            ));
-        }
-    };
-    let used = compare::base_for_review(
-        &repo.cwd,
-        recorded.as_deref(),
-        named(&review.base_branch).as_deref(),
-        named(&review.began_at).as_deref(),
-    )
-    .await
-    .map_err(|error| compared(error.into()))?;
-    match used.commit {
-        Some(commit) => Ok(commit),
-        None => compare::empty_tree(&repo.cwd)
-            .await
-            .map_err(|error| compared(error.into())),
-    }
+    super::review_base(runtime, repo.agent, &repo.cwd, review)
+        .await
+        .map(|base| base.commit)
 }
 
 /// Whole files this process has highlighted, each file's every side and

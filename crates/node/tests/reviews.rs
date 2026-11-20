@@ -960,3 +960,169 @@ mod sent {
         host.stop().await;
     }
 }
+
+/// A review's snapshot store, in its agent's directory: it can hold
+/// untracked files, secrets among them, so it never goes into a dump and is
+/// removed when the daemon opens the profile with the experiment off.
+mod stores {
+    use std::collections::BTreeSet;
+
+    use wire::DumpRequest;
+
+    use super::*;
+
+    const SECRET: &str = "PLANTEDreviewsecret0001";
+    const WORDS: &str = "PLANTEDreviewwords0002";
+
+    fn names(dir: &Path) -> BTreeSet<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// How many of the experiment's tables the profile store holds, read
+    /// from what the store says of every table it has.
+    fn review_tables(install: &Install) -> usize {
+        let dump = format!("{:?}", install.store().dump().unwrap());
+        dump.matches("name: \"exp_reviews_1_").count()
+    }
+
+    /// Stops `host`'s daemon, handing back its installation.
+    async fn stopped(host: Host) -> Install {
+        let Host {
+            install,
+            daemon,
+            runtime,
+        } = host;
+        drop(runtime);
+        daemon.unwrap().shutdown().await.unwrap();
+        install
+    }
+
+    // Unix only for the link: making one on Windows takes a privilege.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn switched_off_the_next_open_removes_every_review_and_nothing_else() {
+        let install = Install::new();
+        feature_branch(&install.work);
+        let agent = agent_in(&install, &install.work, Some("main"));
+        let linked = agent_in(&install, &install.work, Some("main"));
+        let host = Host::start(install).await;
+        let snapshot = host.open(&agent).await.snapshot;
+        host.edit(&agent, vec![put("draft", &snapshot, "notes.txt", 25, 25)])
+            .await;
+        assert!(host.entry(&agent).await.is_some());
+        assert_eq!(review_tables(&host.install), 4);
+        let install = stopped(host).await;
+
+        let review = agent.dir.join(agent_dir::REVIEW);
+        assert!(review.join("objects").is_dir());
+        // Another agent's review folder is a link out of its directory:
+        // the link goes, and nothing it names.
+        let elsewhere = install.work.with_file_name("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("kept.txt"), "kept\n").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, linked.dir.join(agent_dir::REVIEW)).unwrap();
+        let mut kept = names(&agent.dir);
+        kept.remove(agent_dir::REVIEW);
+
+        let daemon = install.start("boot-2", quiet_launch()).await;
+        let runtime = runtime(&daemon, &install);
+        assert!(!review.exists(), "the agent's review store is removed");
+        assert!(
+            std::fs::symlink_metadata(linked.dir.join(agent_dir::REVIEW)).is_err(),
+            "the link in a review folder's place is removed"
+        );
+        assert_eq!(
+            std::fs::read_to_string(elsewhere.join("kept.txt")).unwrap(),
+            "kept\n"
+        );
+        let after = names(&agent.dir);
+        assert!(kept.is_subset(&after), "{kept:?} all stay in {after:?}");
+        assert_eq!(review_tables(&install), 0, "the tables are dropped");
+        let row = runtime.agent(agent.id).await.unwrap();
+        assert_eq!(REVIEW_ROW.get(&row.experimental), None);
+        drop(runtime);
+        daemon.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_dump_holds_nothing_of_an_agents_review() {
+        let install = Install::new();
+        feature_branch(&install.work);
+        std::fs::write(
+            install.work.join("secrets.env"),
+            format!("TOKEN={SECRET}\n"),
+        )
+        .unwrap();
+        let agent = agent_in(&install, &install.work, Some("main"));
+        let host = Host::start(install).await;
+        let snapshot = host.open(&agent).await.snapshot;
+        let commented = host
+            .edit(
+                &agent,
+                vec![review_edit::Of::Put(ReviewPutComment {
+                    id: b"secret".to_vec(),
+                    anchor: Some(ReviewAnchor {
+                        commit: snapshot,
+                        path: "secrets.env".to_owned(),
+                        lines: Some(ReviewLineRange { start: 1, end: 1 }),
+                    }),
+                    text: format!("Never commit {WORDS}."),
+                })],
+            )
+            .await;
+        let snippet: Vec<&str> = comment(&commented, "secret")
+            .snippet
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect();
+        assert!(
+            snippet.iter().any(|line| line.contains(SECRET)),
+            "the review holds the secret: {snippet:?}"
+        );
+        assert!(agent.dir.join(agent_dir::REVIEW).join("objects").is_dir());
+
+        let bundle = host
+            .runtime
+            .dump(DumpRequest {
+                reason: "the review page froze".to_owned(),
+                ..DumpRequest::default()
+            })
+            .await
+            .unwrap();
+        let mut stack = vec![bundle.clone()];
+        let mut files = 0;
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                let relative = path.strip_prefix(&bundle).unwrap();
+                assert!(
+                    !relative
+                        .iter()
+                        .any(|part| part == std::ffi::OsStr::new(agent_dir::REVIEW)),
+                    "{} is in the dump",
+                    relative.display()
+                );
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                files += 1;
+                let bytes = std::fs::read(&path).unwrap();
+                for planted in [SECRET, WORDS] {
+                    assert!(
+                        !bytes
+                            .windows(planted.len())
+                            .any(|window| window == planted.as_bytes()),
+                        "{planted} is in {}",
+                        relative.display()
+                    );
+                }
+            }
+        }
+        assert!(files > 0);
+        host.stop().await;
+    }
+}

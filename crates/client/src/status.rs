@@ -82,23 +82,24 @@ impl RpcError {
 
 impl From<Status> for RpcError {
     /// The node and the hosts behind it put their whole error in the
-    /// status details; a status without one came from the transport, or
-    /// from a service that is no longer running, and says nothing about
-    /// whether the call landed.
+    /// status details. Without them, what the status says depends on who
+    /// made it. A failure with no status from the server, which tonic
+    /// makes on this side from a broken or missing connection, is a
+    /// transport failure, and so is a server saying it is unavailable
+    /// (a profile that is stopping says so), which is what a reader
+    /// redials on. Any other status the server sent is its answer, in its
+    /// own code and words: an internal error is not a lost connection.
     fn from(status: Status) -> RpcError {
         if let Ok(error) = wire::Error::decode(status.details())
             && error.code != ErrorCode::Ok as i32
         {
             return RpcError::Refused(error);
         }
+        if made_here(&status) {
+            return RpcError::Transport(status.message().to_owned());
+        }
         match status.code() {
-            Code::Unavailable
-            | Code::Unknown
-            | Code::Cancelled
-            | Code::DeadlineExceeded
-            | Code::Internal
-            | Code::Aborted
-            | Code::Ok => RpcError::Transport(status.message().to_owned()),
+            Code::Ok | Code::Unavailable => RpcError::Transport(status.message().to_owned()),
             // gRPC answers a method the server does not have with no words.
             Code::Unimplemented if status.message().is_empty() => RpcError::Refused(
                 wire::Error::new(ErrorCode::Unimplemented, wire::HOST_NEEDS_UPDATE),
@@ -112,6 +113,26 @@ impl From<Status> for RpcError {
                 status.message(),
             )),
         }
+    }
+}
+
+/// Whether tonic made `status` on this side for a call the server never
+/// answered with a status of its own. A connection that could not be made
+/// or broke under the call is the error the status was made from, which it
+/// keeps as its source. A response cut off before its final status leaves
+/// no such error, only tonic's own words for it: a stream that ended with
+/// no status trailer, or in the middle of a message.
+fn made_here(status: &Status) -> bool {
+    use std::error::Error as _;
+    if status.source().is_some() {
+        return true;
+    }
+    match status.code() {
+        Code::Unknown => status
+            .message()
+            .starts_with("protocol error: missing grpc-status trailer"),
+        Code::Internal => status.message() == "Unexpected EOF decoding stream.",
+        _ => false,
     }
 }
 
@@ -192,21 +213,56 @@ mod tests {
         );
     }
 
+    /// A status the server sent keeps its own code and words: an internal
+    /// or unknown one is the server's answer, not a lost connection. Only
+    /// its saying it is unavailable reads as the connection failing.
     #[test]
-    fn a_bare_status_is_a_transport_failure_only_when_it_says_nothing_about_the_call() {
+    fn a_status_the_server_sent_keeps_its_code_and_words() {
         for code in [
-            Code::Unavailable,
+            Code::Internal,
             Code::Unknown,
             Code::Cancelled,
-            Code::Internal,
+            Code::DeadlineExceeded,
+            Code::Aborted,
+            Code::NotFound,
         ] {
-            assert!(
-                RpcError::from(Status::new(code, "connection reset")).is_transport(),
+            let rpc = RpcError::from(Status::new(code, "a carried call names no host"));
+            assert!(!rpc.is_transport(), "{code:?}");
+            assert_eq!(
+                rpc.code(),
+                ErrorCode::try_from(code as i32).ok(),
                 "{code:?}"
             );
+            assert_eq!(rpc.to_string(), "a carried call names no host", "{code:?}");
         }
-        let refused = RpcError::from(Status::not_found("no such agent"));
-        assert_eq!(refused.code(), Some(ErrorCode::NotFound));
+        let stopping = RpcError::from(Status::unavailable("the profile is no longer running"));
+        assert!(
+            stopping.is_transport(),
+            "a reader redials a node that is stopping"
+        );
+    }
+
+    /// Only a failure with no status from the server is a transport
+    /// failure: one tonic made from a connection that broke, or for a
+    /// response cut off before its final status.
+    #[test]
+    fn a_failure_with_no_status_from_the_server_is_a_transport_failure() {
+        let reset = std::io::Error::new(std::io::ErrorKind::ConnectionReset, "connection reset");
+        let broken = Status::from_error(Box::new(reset));
+        assert!(RpcError::from(broken).is_transport());
+        let mut unavailable = Status::unavailable("error trying to connect");
+        unavailable.set_source(std::sync::Arc::new(std::io::Error::other("refused")));
+        assert!(RpcError::from(unavailable).is_transport());
+        for cut in [
+            Status::unknown(
+                "protocol error: missing grpc-status trailer, stream was terminated without a \
+                 final status (possible truncation by a proxy or load balancer)",
+            ),
+            Status::internal("Unexpected EOF decoding stream."),
+        ] {
+            let rpc = RpcError::from(cut);
+            assert!(rpc.is_transport(), "{rpc:?}");
+        }
     }
 
     /// What a fake hands back reads as what it was handed.

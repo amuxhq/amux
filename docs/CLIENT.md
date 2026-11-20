@@ -84,8 +84,9 @@ profile's node. A client manages profiles the same way whichever runtime it has.
 | `Refused(wire::Error)` | The runtime answered with an error, a `google.rpc.Status`; `code()` returns its gRPC code and `reason()` the amux reason its `ErrorInfo` names, if any. |
 
 A gRPC status that carries the runtime's error in its details is that error. A failure with no status from
-the server (the connection could not be made, or broke under the call) is a transport failure. A status the
-server sent without the details keeps its own code and words.
+the server (the connection could not be made, or broke under the call) is a transport failure, and so is a
+server saying it is unavailable, as a stopping profile does. Any other status the server sent without the details
+keeps its own code and words.
 
 ## Session state
 

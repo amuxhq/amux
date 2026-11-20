@@ -943,6 +943,7 @@ impl Install {
                     .into(),
                 attachments: vec![wire::Attachment {
                     of: Some(wire::attachment::Of::Image(blob)),
+                    ..Default::default()
                 }],
             })),
         )

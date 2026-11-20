@@ -39,6 +39,7 @@ ALLOWED_LOCAL = {
     },
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
+    "acp-protocol": set(),
     "claude-protocol": set(),
     "codex-protocol": set(),
     "pty-host": set(),
@@ -116,11 +117,13 @@ CORES_ALLOWED_LOCAL = {
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
 UI_CRATES = {"client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
-    "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
+    "node", "store", "interpret", "agent", "acp-protocol", "claude-protocol", "codex-protocol",
+    "pty-host",
 }
 # The protocol crates hold types and nothing else: no process, socket or
 # async runtime code may come in through a dependency.
 PURE_EXTERNAL = {
+    "acp-protocol": {"serde", "serde_json"},
     "claude-protocol": {"serde", "serde_json"},
     "codex-protocol": {"serde", "serde_json"},
 }

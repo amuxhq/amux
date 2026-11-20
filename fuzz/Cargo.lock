@@ -3,9 +3,18 @@
 version = 4
 
 [[package]]
+name = "acp-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "amux-fuzz"
 version = "0.0.0"
 dependencies = [
+ "acp-protocol",
  "claude-protocol",
  "codex-protocol",
  "journal",

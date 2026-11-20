@@ -625,6 +625,7 @@ every message a provider sends or is sent.
 | [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
+| [`acp-protocol`](../crates/acp-protocol/src/lib.rs) | The Agent Client Protocol's messages as types, with a tolerant decoder, checked against ACP's own schema. |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal process hosting. |
 
 **The daemon.**
@@ -699,9 +700,9 @@ workspace crates, and ignores dev-dependencies. Its rules:
    `replay-support` may be depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `client`, `ui-state`,
    `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
-   reach `node`, `store`, `interpret`, `agent`, `claude-protocol`,
-   `codex-protocol` or `pty-host`, directly or through any chain of
-   dependencies.
+   reach `node`, `store`, `interpret`, `agent`, `acp-protocol`,
+   `claude-protocol`, `codex-protocol` or `pty-host`, directly or through
+   any chain of dependencies.
 4. **A core reaches no runtime.** Each state-machine core's edges stay
    within its listed set, an upper bound rather than an exact list, so a
    core takes in its machines one at a time. `just cores-check` adds what
@@ -718,7 +719,7 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
+| `wire`, `settings`, `redaction`, `log-file`, `release`, `analytics`, `git-facts`, `acp-protocol`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |

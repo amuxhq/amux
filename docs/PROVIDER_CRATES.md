@@ -26,6 +26,13 @@ links can depend on it. It holds no process, socket or async code.
   (`ClientMessage`: requests, the `initialized` notification, and answers).
   An answer's result stays JSON until it is read as the response type of the
   request it answers, with `codex_protocol::result`.
+- `acp-protocol` types the Agent Client Protocol, the JSON-RPC that many
+  agent programs speak over their stdin and stdout: what the agent sends
+  (`AgentMessage`) and what amux sends (`ClientMessage`), named after the
+  protocol's own client and agent sides. An answer's result stays JSON
+  until `AgentResponse::read` reads it by the method of the request it
+  answers. A test generates every message from ACP's JSON schema, vendored
+  in the crate's `schema/`, and holds the types to it.
 - `claude-protocol` types three things Claude Code produces: its headless
   stream (`stream`: the frames it prints and the control requests and
   answers in both directions), the rows of the transcript file it writes in a
@@ -81,7 +88,7 @@ takes every message type from its protocol crate.
 
 | Check | Where | What it holds |
 |---|---|---|
-| Recording corpus | `codex-protocol/tests/corpus.rs`, `claude-protocol/tests/stream_corpus.rs` and `pty_corpus.rs` | Every recorded line decodes strictly (and, for Codex, encodes back to the same JSON), and every recorded answer reads strictly as the response type of the request it answers. |
+| Recording corpus | `acp-protocol/tests/corpus.rs`, `codex-protocol/tests/corpus.rs`, `claude-protocol/tests/stream_corpus.rs` and `pty_corpus.rs` | Every recorded line decodes strictly (and, for ACP and Codex, encodes back to the same JSON), and every recorded answer reads strictly as the response type of the request it answers. |
 | Fakes' shape check | [`provider-fakes/src/shape.rs`](../crates/provider-fakes/src/shape.rs) | Every frame a fake provider composes has a recorded shape and decodes strictly with its protocol crate. The fakes never use the agent's host modules, so a host bug cannot hide behind code the fakes share. |
 | Dependency policy | `scripts/check-dependency-policy.py` | The protocol crates stay pure, and only the crates listed there use them. |
 | Typed provider check | [`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py) | The interpreters, the agent's provider handshake and Claude's messaging socket build and read no provider JSON by hand; each place that keeps a tool payload as JSON is listed with its reason. |

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/acp-protocol",
     "crates/agent",
     "crates/agent-core",
     "crates/analytics",

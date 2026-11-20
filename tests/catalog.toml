@@ -255,6 +255,25 @@ cargo = [
 ]
 
 [[suite]]
+name = "acp-protocol"
+contract = "Every message the crate types matches ACP's own JSON schema: generated from it with every field, only the required ones and every nullable one null, over every member of every union, it reads strictly and writes back the same, and a missing required field is refused. Every line of every ACP agent recording, in both directions, decodes strictly and encodes back to the same JSON, and every answer reads as its request's answer; an unknown method, update kind, spelling or field is kept in production and refused by the strict check; what amux writes encodes to the bytes it means."
+paths = ["crates/acp-protocol"]
+recipe = "just suite acp-protocol"
+boundary = "Provider adapter"
+oracle = "Strict decoding of schema-generated and recorded lines, JSON equality after encoding, the typed fields read from hand-written lines, and exact encoded bytes."
+real = ["ACP's published JSON schema", "recorded agent bytes"]
+substituted = ["live agent processes"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = "crates/acp-protocol/schema and crates/interpret/fixtures/acp/live"
+update = "A failing generated message is a wrong type: fix it in crates/acp-protocol/src, or list what is left out on purpose in tests/schema.rs with why. A failing recorded line is agent drift or a wrong type: fix the type, never a live recording. A new schema release replaces the files in schema/ whole."
+cargo = [
+  { package = "acp-protocol", kind = "lib", targets = ["acp_protocol"], features = [] },
+  { package = "acp-protocol", modules = ["corpus", "messages", "schema"], features = [] },
+]
+
+[[suite]]
 name = "provider-fake-behaviour"
 contract = "Each scripted fake provider speaks its real protocol as a host sees it: every frame it composes has a recorded shape, it echoes, queues, folds, steers, interrupts and blocks on asks the way its provider does, and every journey script loads on every fake."
 paths = ["crates/provider-fakes/src", "crates/provider-fakes/tests/codex.rs", "crates/provider-fakes/tests/pty.rs", "crates/provider-fakes/tests/sdk.rs", "crates/provider-fakes/tests/scripts.rs"]

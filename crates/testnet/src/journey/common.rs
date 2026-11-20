@@ -359,14 +359,19 @@ pub(crate) fn review_repository(work: &Path) -> Result<(), String> {
 /// snapshot the line numbers refer to. Answers the snapshot.
 pub(crate) fn sent_review(attachment: &Value, comment: &str) -> Result<String, String> {
     let entry = &attachment["review"];
-    let snapshot = text(&entry["snapshot"]);
-    if attachment["kind"] != "text" || attachment["name"] != "review" || snapshot.is_empty() {
+    if attachment["kind"] != "text" || attachment["name"] != "review" {
         return Err(format!("the review arrived as {attachment}"));
     }
     if entry["round"] != 1 || entry["comments"].as_array().map_or(0, Vec::len) != 1 {
         return Err(format!("the review's entry is {entry}"));
     }
     let read = text(&attachment["text"]);
+    let snapshot = read
+        .split_once("Line numbers are those of snapshot ")
+        .and_then(|(_, rest)| rest.split_once(", "))
+        .map(|(snapshot, _)| snapshot.to_owned())
+        .filter(|snapshot| !snapshot.is_empty() && snapshot.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| format!("the review's text names no snapshot:\n{read}"))?;
     let said = [
         "1 comment from a review of your changes.".to_owned(),
         "## deploy.sh, line 3\n".to_owned(),

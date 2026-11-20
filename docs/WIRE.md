@@ -115,7 +115,7 @@ the request:
 A node that carries a call writes the caller beside it in `amux-caller-bin`:
 a `Caller` ([`caller.proto`](../proto/amux/v1/caller.proto)), encoded as
 gRPC encodes a binary header. It replaces any such header a client sent, so a
-client cannot say who it is, and the host it names is never in it: it is
+client cannot say who it is. It never names a host: the caller's host is
 whoever the link authenticated, so a host speaks only for its own people and
 agents. The header is promised as the address is. A host service refuses a
 link call with no header, and the peer service one with a header, so a

@@ -958,6 +958,77 @@ mod sent {
         assert_eq!(host.entry(&agent).await.unwrap().drafts, 0);
         host.stop().await;
     }
+
+    /// The person's prompt carrying `attachments` to `agent`, as a client
+    /// sends what its composer holds: answered with the agent's verdict.
+    async fn prompt(
+        host: &Host,
+        agent: &SyntheticAgent,
+        attachments: Vec<Attachment>,
+    ) -> wire::SendInputResponse {
+        let mut agents = wire::agent_service_client(served_as(
+            &host.runtime,
+            Served::Profile,
+            Calling::PersonHere(analytics::Client::Terminal),
+        ));
+        let input = wire::Input::new(
+            uuid::Uuid::new_v4().as_bytes().to_vec(),
+            wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+                of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                    text: "Have a look \u{fffc}".to_owned(),
+                    attachments,
+                })),
+            }),
+        );
+        agents
+            .send_input(wire::SendInputRequest {
+                agent_id: agent.id.as_bytes().to_vec(),
+                input: Some(input),
+            })
+            .await
+            .unwrap()
+            .into_inner()
+    }
+
+    /// A person's prompt sends a review as an agent's message does: the
+    /// round closes when the agent takes it, queued, and a refused one
+    /// leaves the drafts as they were.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_persons_prompt_taken_by_the_agent_closes_the_round_it_sends() {
+        let install = Install::new();
+        feature_branch(&install.work);
+        let agent = live_agent(&install);
+        let host = Host::start(install).await;
+        let snapshot = host.open(&agent).await.snapshot;
+        let drafted = host
+            .edit(&agent, vec![put("one", &snapshot, "notes.txt", 25, 25)])
+            .await;
+        let sending = review(&drafted, &["one"]);
+        let counter = host.entry(&agent).await.unwrap().counter;
+
+        agent.answer_with(Answer::Reject(wire::Refusal::Unsupported));
+        let refused = prompt(&host, &agent, vec![sending.clone()]).await;
+        assert!(
+            matches!(refused.of, Some(wire::send_input_response::Of::Rejected(_))),
+            "{refused:?}"
+        );
+        assert_eq!(host.entry(&agent).await.unwrap().counter, counter);
+
+        agent.answer_with(Answer::Accept);
+        let taken = prompt(&host, &agent, vec![sending]).await;
+        assert!(
+            matches!(taken.of, Some(wire::send_input_response::Of::Accepted(_))),
+            "{taken:?}"
+        );
+        let entry = host.entry(&agent).await.unwrap();
+        assert_eq!(entry.drafts, 0);
+        assert_eq!(entry.counter, counter + 1);
+        let sent = host.open(&agent).await;
+        assert_eq!(rounds(&sent), BTreeMap::from([("one".to_owned(), Some(1))]));
+        assert_eq!(sent.rounds.len(), 1);
+        assert_eq!(sent.rounds[0].snapshot, snapshot);
+        host.stop().await;
+    }
 }
 
 /// A review's snapshot store, in its agent's directory: it can hold

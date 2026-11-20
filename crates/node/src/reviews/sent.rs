@@ -1,6 +1,6 @@
 //! Closing a round: when this host accepts a message for one of its own
-//! agents, the comments a sent review in it names are marked sent, exactly
-//! those and no others.
+//! agents, a person's prompt or another agent's message, the comments a
+//! sent review in it names are marked sent, exactly those and no others.
 //!
 //! The message says which comments it sends, so a draft another client
 //! wrote after the sender last looked stays a draft, and a review chip
@@ -23,6 +23,16 @@ pub(crate) fn named(envelope: &Envelope) -> Vec<SentReview> {
         return Vec::new();
     };
     message
+        .attachments
+        .iter()
+        .filter_map(attachments::sent_review::entry)
+        .collect()
+}
+
+/// The sent reviews a person's prompt carries, read before the input is
+/// handed to the agent.
+pub(crate) fn prompted(prompt: &wire::PromptInput) -> Vec<SentReview> {
+    prompt
         .attachments
         .iter()
         .filter_map(attachments::sent_review::entry)

@@ -249,6 +249,10 @@ impl ProfileRuntime {
         // Only a person changes a chat's model or effort, so it is the same
         // act as picking them for a new agent, and sticks the same way.
         let picked = crate::spec::Picked::of_input(&input);
+        let reviews = prompt_of(&input)
+            .and_then(|submission| submission.prompt)
+            .map(|prompt| crate::reviews::sent::prompted(&prompt))
+            .unwrap_or_default();
         // A row that says suspended has no process to relay to: asked
         // first, the wake does not write to a connection its process left
         // behind for a moment, which would lose the input.
@@ -273,10 +277,12 @@ impl ProfileRuntime {
             }
             _ => verdict,
         };
-        if rejection(&verdict).is_none()
-            && let Some(picked) = picked
-        {
-            self.remember_pick(picked).await;
+        if rejection(&verdict).is_none() {
+            // Taken, queued or not: the reviews it sends close their rounds.
+            crate::reviews::sent::accepted(self, id, reviews).await;
+            if let Some(picked) = picked {
+                self.remember_pick(picked).await;
+            }
         }
         Ok(verdict)
     }

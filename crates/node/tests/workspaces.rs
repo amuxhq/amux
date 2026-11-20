@@ -673,16 +673,7 @@ async fn a_wt_tree_deleted_while_its_stop_hook_runs_goes_once_the_stop_ends() {
     );
     // What a delete's warning asks the host: its branch has no commits of
     // its own, so it goes with the tree.
-    let asked = runtime
-        .get_diff(wire::GetDiffRequest {
-            agent_id: id_of(&agent).as_bytes().to_vec(),
-            base: Some(wire::DiffBase {
-                base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-            }),
-            with_patch: false,
-        })
-        .await
-        .unwrap();
+    let asked = runtime.preview_delete(id_of(&agent)).await.unwrap();
     assert_eq!(asked.own_commits, Some(0));
     runtime.delete(id_of(&agent)).await.unwrap();
     gone(&tree).await;

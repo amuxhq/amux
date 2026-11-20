@@ -2561,20 +2561,13 @@ public struct Diff: Codable, Hashable, Sendable {
     public var files: [DiffFile]
     public var base: DiffBase?
     public var mergeBase: String?
-    /// Commits on the branch HEAD has checked out that no other branch, tag or
-    /// remote-tracking ref holds, the branch's own upstream aside: what
-    /// deleting the branch would lose, so a branch with none goes with an
-    /// agent's workspace. Absent on a detached head, when it could not be
-    /// counted, and from hosts before it, which a reader takes as not known.
-    public var ownCommits: UInt32?
     public var patch: BlobRef?
 
-    public init(head: String, files: [DiffFile], base: DiffBase?, mergeBase: String?, ownCommits: UInt32?, patch: BlobRef?) {
+    public init(head: String, files: [DiffFile], base: DiffBase?, mergeBase: String?, patch: BlobRef?) {
         self.head = head
         self.files = files
         self.base = base
         self.mergeBase = mergeBase
-        self.ownCommits = ownCommits
         self.patch = patch
     }
 
@@ -2583,7 +2576,6 @@ public struct Diff: Codable, Hashable, Sendable {
         case files
         case base
         case mergeBase = "merge_base"
-        case ownCommits = "own_commits"
         case patch
     }
 }

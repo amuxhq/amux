@@ -1604,7 +1604,6 @@ fn working_tree_diff() -> wire::Diff {
                 binary: false,
             },
         ],
-        own_commits: None,
     }
 }
 

@@ -1014,13 +1014,6 @@ pub struct Diff {
     pub merge_base: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, repeated, tag = "5")]
     pub files: ::prost::alloc::vec::Vec<DiffFile>,
-    /// Commits on the branch HEAD has checked out that no other branch, tag or
-    /// remote-tracking ref holds, the branch's own upstream aside: what
-    /// deleting the branch would lose, so a branch with none goes with an
-    /// agent's workspace. Absent on a detached head, when it could not be
-    /// counted, and from hosts before it, which a reader takes as not known.
-    #[prost(uint32, optional, tag = "6")]
-    pub own_commits: ::core::option::Option<u32>,
 }
 impl ::prost::Name for Diff {
     const NAME: &'static str = "Diff";

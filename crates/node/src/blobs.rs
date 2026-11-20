@@ -409,9 +409,6 @@ pub(crate) async fn compare(
                 head: compared.head.unwrap_or_default(),
                 merge_base: compared.merge_base,
                 files: compared.files.into_iter().map(diff_file).collect(),
-                // A count that fails leaves it unknown, which a delete's
-                // confirmation says as a branch kept only if it has any.
-                own_commits: git_facts::own_commits(cwd).await.ok().flatten(),
             },
             patch: compared.patch.map(|bytes| Patch {
                 hash: Sha256::digest(&bytes).to_vec(),

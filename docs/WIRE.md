@@ -1141,7 +1141,11 @@ none of the promises above:
   experiment switch, reaches a desk's. Only the answering host needs the
   experiment on; with it off the service is not mounted, and a client of it
   reads `UNIMPLEMENTED` as "not offered there". The caller arrives as for any
-  service, so the caller rules need no code of the experiment's own. The
+  service, in the same caller header; the rules on who may call are the
+  service's own: it is never mounted on an agent's tools socket, refuses an
+  agent's call that arrives another way with `PERMISSION_DENIED`, and
+  answers only for the host's own agents (a copy of another host's agent is
+  `NOT_FOUND`, naming that host). The
   service's name, methods and messages are not promised; the address, the
   caller header and the statuses a carried call fails with are, as the maps
   are. Graduating it is adding its settled calls to a service in `amux.v1`

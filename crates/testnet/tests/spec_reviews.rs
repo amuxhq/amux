@@ -283,7 +283,7 @@ async fn a_person_on_another_host_reviews_an_agent_through_the_carrier() {
     );
 
     let agent_dir = net.agent_dir("coder").unwrap();
-    assert!(agent_dir.join(agent_dir::REVIEW).is_dir());
+    assert!(agent_dir.join(daemon_core::reviews::REVIEW).is_dir());
     let id = coder.id;
     net.delete("coder").await.unwrap();
     let review = net

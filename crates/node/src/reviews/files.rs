@@ -12,6 +12,11 @@
 //! other callers are not held up behind a large change. A file too large
 //! to show is never highlighted.
 //!
+//! A call names the comparison it reads: the snapshot shown, and the commit
+//! compared against. Both must be commits the review handed out, so a page
+//! reads exactly what its summary described, whatever the review's base has
+//! become since.
+//!
 //! An answer holds at most [`MOST_FILES`] files and [`MOST_BYTES`]
 //! encoded; the files past either are left out, for the client to ask for
 //! again.
@@ -21,19 +26,19 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use git_facts::compare::{self, CompareError, DiffLine, FileHunks, LineKind};
+use git_facts::compare::{self, CompareError, DiffLine, FileHunks, LineKind, Shown};
 use git_facts::objects::ObjectStore;
 use highlight::{Definitions, Highlighter, Language, TokenKind};
 use prost::Message as _;
 use store::AgentRow;
-use store::reviews::Review;
+use store::reviews::{Review, Taken};
 use tokio::sync::Semaphore;
 use tonic::Status;
 use wire::ErrorCode;
 use wire::experimental::{
     ReviewAnchor, ReviewDefinition, ReviewFileDiff, ReviewFileRequest, ReviewGetFilesRequest,
-    ReviewGetFilesResponse, ReviewHunk, ReviewLine, ReviewLineKind, ReviewRun, ReviewTokenKind,
-    ReviewView,
+    ReviewGetFilesResponse, ReviewHunk, ReviewLine, ReviewLineKind, ReviewRun, ReviewSide,
+    ReviewTokenKind, ReviewView,
 };
 
 use crate::api::Caller;
@@ -49,12 +54,13 @@ pub(crate) const MOST_FILES: usize = 64;
 /// of a large change reach a phone over a relay before the rest are done.
 pub(crate) const MOST_BYTES: usize = 8 << 20;
 
-/// Most lines one range of more context reads: a long definition whole,
-/// and nothing like a whole generated file.
+/// Most lines of more context one file's answer reads, all its ranges
+/// together: a long definition whole, and nothing like a whole generated
+/// file.
 pub(crate) const MOST_CONTEXT_LINES: u32 = 2_000;
 
 /// Lines of unchanged code around each change in a hunk, as git shows.
-const HUNK_CONTEXT: u32 = 3;
+pub(super) const HUNK_CONTEXT: u32 = 3;
 
 /// Lines above a comment's own that its snippet shows, so it reads in
 /// context once its lines are gone.
@@ -63,6 +69,10 @@ const SNIPPET_ABOVE: u32 = 3;
 /// Most lines a snippet holds; a longer one keeps its start and its end,
 /// the middle given as one marker line.
 pub(crate) const MOST_SNIPPET_LINES: usize = 60;
+
+/// Most bytes of one snippet line's text; a longer line, a minified file's,
+/// keeps its start and ends with the marker.
+pub(crate) const MOST_SNIPPET_LINE_BYTES: usize = 256;
 
 /// What the marker standing for a snippet's elided middle says.
 const ELIDED: &str = "…";
@@ -82,8 +92,8 @@ const HIGHLIGHT_JOBS: usize = 2;
 /// holding every line of both sides: what a snippet is cut from.
 const WHOLE_FILE: u32 = 1 << 24;
 
-/// Reviews1.GetFiles: the files `caller` asks for of a snapshot of the
-/// review of `row`'s agent.
+/// Reviews1.GetFiles: the files `caller` asks for of a comparison the
+/// review of `row`'s agent handed out.
 pub(crate) async fn get_files(
     runtime: &Arc<ProfileRuntime>,
     row: AgentRow,
@@ -92,36 +102,20 @@ pub(crate) async fn get_files(
 ) -> Result<ReviewGetFilesResponse, Status> {
     let repo = Repo::of(runtime, &row)?;
     let review = review_of(runtime, &row).await?;
-    let snapshot = request.snapshot.clone();
-    let Some(taken) = review
-        .snapshots
-        .iter()
-        .find(|taken| taken.commit == snapshot)
-    else {
-        return Err(refused(
-            ErrorCode::NotFound,
-            format!("{snapshot} is not a snapshot of this agent's review"),
-        ));
-    };
     let view = request.view();
-    let from = match view {
-        ReviewView::All => base_commit(runtime, &repo, &review).await?,
-        ReviewView::SinceLast => match review.rounds.last() {
-            Some(round) => round.snapshot.clone(),
-            None => {
-                return Err(refused(
-                    ErrorCode::InvalidArgument,
-                    "no round has been sent, so nothing has changed since the last one",
-                ));
-            }
-        },
-        ReviewView::Unspecified => {
-            return Err(refused(
-                ErrorCode::InvalidArgument,
-                "a view is needed: all changes, or since the last round",
-            ));
-        }
-    };
+    let (taken, since) = comparison(&review, view, &request.from, &request.snapshot)?;
+    let snapshot = taken.commit.clone();
+    let from = request.from.clone();
+
+    let mut answer = ReviewGetFilesResponse::default();
+    if request.list {
+        let all = super::listed(&repo.cwd, &repo.store, taken, &taken.base_commit).await?;
+        answer.changed = match since {
+            Some(last) => super::listed_since(&repo.cwd, &repo.store, last, taken, &all).await?,
+            None if from == taken.base_commit => all,
+            None => super::listed(&repo.cwd, &repo.store, taken, &from).await?,
+        };
+    }
 
     let asked: Vec<ReviewFileRequest> = request.files.into_iter().take(MOST_FILES).collect();
     // A file the snapshot left out for its size holds only what the index
@@ -131,30 +125,35 @@ pub(crate) async fn get_files(
         .map(|file| file.path.as_str())
         .filter(|path| !taken.omitted.iter().any(|omitted| omitted == path))
         .collect();
-    let mut diffed = compare::hunks(
-        &repo.cwd,
-        &repo.store,
-        &from,
-        &snapshot,
-        &shown,
-        HUNK_CONTEXT,
-    )
-    .await
-    .map_err(compared)?;
-    if view == ReviewView::SinceLast {
-        let base = base_commit(runtime, &repo, &review).await?;
-        let all = compare::hunks(
+    let diffed = match since {
+        _ if shown.is_empty() => Vec::new(),
+        Some(last) => {
+            let now = Shown {
+                base: &taken.base_commit,
+                snapshot: &snapshot,
+            };
+            compare::since_last(
+                &repo.cwd,
+                &repo.store,
+                last,
+                now,
+                Some(&shown),
+                HUNK_CONTEXT,
+            )
+            .await
+            .map_err(compared)?
+        }
+        None => compare::hunks(
             &repo.cwd,
             &repo.store,
-            &base,
+            &from,
             &snapshot,
             &shown,
             HUNK_CONTEXT,
         )
         .await
-        .map_err(compared)?;
-        diffed = compare::since_last(diffed, &all);
-    }
+        .map_err(compared)?,
+    };
     let diffed: HashMap<&str, &FileHunks> = diffed
         .iter()
         .map(|file| (file.path.as_str(), file))
@@ -199,8 +198,7 @@ pub(crate) async fn get_files(
     }
     let bodies = bodies(&repo, wanted).await?;
 
-    let mut answer = ReviewGetFilesResponse::default();
-    let mut bytes = 0;
+    let mut bytes = answer.encoded_len();
     for file in &asked {
         let mut diff = ReviewFileDiff {
             path: file.path.clone(),
@@ -220,7 +218,7 @@ pub(crate) async fn get_files(
         // further; files shown are under a megabyte a side, so one alone
         // stays well inside what a channel carries.
         let size = diff.encoded_len() + 6;
-        if bytes + size > MOST_BYTES && !answer.files.is_empty() {
+        if bytes + size > MOST_BYTES && (!answer.files.is_empty() || !answer.changed.is_empty()) {
             break;
         }
         bytes += size;
@@ -229,14 +227,78 @@ pub(crate) async fn get_files(
     Ok(answer)
 }
 
+/// The comparison a GetFiles call names, checked against what the review
+/// handed out: the snapshot shown, one the review keeps, and for what
+/// changed since a round, that round as since-last compares against it.
+fn comparison<'a>(
+    review: &'a Review,
+    view: ReviewView,
+    from: &str,
+    snapshot: &str,
+) -> Result<(&'a Taken, Option<Shown<'a>>), Status> {
+    let Some(taken) = review.snapshot(snapshot) else {
+        return Err(refused(
+            ErrorCode::NotFound,
+            format!("{snapshot} is not a snapshot of this agent's review"),
+        ));
+    };
+    match view {
+        // From the snapshot's own base, or for a round's snapshot the base
+        // that round records (one and the same, as the round took it from
+        // the snapshot when it closed).
+        ReviewView::All => {
+            let base = from == taken.base_commit
+                || review
+                    .rounds
+                    .iter()
+                    .any(|round| round.snapshot == snapshot && round.base_commit == from);
+            match base {
+                true => Ok((taken, None)),
+                false => Err(refused(
+                    ErrorCode::InvalidArgument,
+                    format!("all changes of {snapshot} run from its base commit, not {from}"),
+                )),
+            }
+        }
+        ReviewView::SinceLast => {
+            match review
+                .rounds
+                .iter()
+                .rev()
+                .find(|round| round.snapshot == from)
+            {
+                Some(round) => Ok((
+                    taken,
+                    Some(Shown {
+                        base: &round.base_commit,
+                        snapshot: &round.snapshot,
+                    }),
+                )),
+                None if review.rounds.is_empty() => Err(refused(
+                    ErrorCode::InvalidArgument,
+                    "no round has been sent, so nothing has changed since the last one",
+                )),
+                None => Err(refused(
+                    ErrorCode::InvalidArgument,
+                    format!("{from} is not a round's snapshot to compare {snapshot} with"),
+                )),
+            }
+        }
+        ReviewView::Unspecified => Err(refused(
+            ErrorCode::InvalidArgument,
+            "a view is needed: all changes, or since the last round",
+        )),
+    }
+}
+
 /// The snippet a comment on `anchor` is stored with, and the definitions
 /// enclosing its lines, outermost first: the commented lines and up to
 /// three above them in diff form, as the comparison it was written in
-/// shows them, highlighted. A comment on a line of the review's latest
-/// snapshot was written comparing it with the review's base commit; one on
-/// any other commit, on a removed line comparing that commit with the
-/// snapshot. A comment on the whole file, or on a file too large or not
-/// text, has neither.
+/// shows them, highlighted. A comment on a line of one of the review's
+/// snapshots was written comparing it with that snapshot's base commit; one
+/// on any other commit, on a removed line comparing that commit with the
+/// latest snapshot. A comment on the whole file, or on a file too large or
+/// not text, has neither.
 pub(crate) async fn snippet(
     runtime: &Arc<ProfileRuntime>,
     row: &AgentRow,
@@ -251,12 +313,10 @@ pub(crate) async fn snippet(
     }
     let (start, end) = (lines.start, lines.end.max(lines.start));
     let repo = Repo::of(runtime, row)?;
-    let on_snapshot = anchor.commit == latest.commit;
-    let from = match on_snapshot {
-        true => base_commit(runtime, &repo, review).await?,
-        false => anchor.commit.clone(),
-    };
-    cut(&repo, &from, &latest.commit, anchor, start, end).await
+    match review.snapshot(&anchor.commit) {
+        Some(taken) => cut(&repo, &taken.base_commit, &taken.commit, anchor, start, end).await,
+        None => cut(&repo, &anchor.commit, &latest.commit, anchor, start, end).await,
+    }
 }
 
 /// The snippet of lines `start` to `end` of `anchor`'s file at its commit,
@@ -317,7 +377,14 @@ async fn cut(
     let Body::Code { definitions, .. } = side.as_ref() else {
         return Ok((Vec::new(), Vec::new()));
     };
-    let scope = chain(&definitions.enclosing(highlight::LineRange::new(start, end)));
+    let scope_side = match on_snapshot {
+        true => ReviewSide::Snapshot,
+        false => ReviewSide::Compared,
+    };
+    let scope = chain(
+        &definitions.enclosing(highlight::LineRange::new(start, end)),
+        scope_side,
+    );
 
     let first = start.saturating_sub(SNIPPET_ABOVE).max(1);
     let side_number = |line: &DiffLine| match on_snapshot {
@@ -391,19 +458,37 @@ async fn cut(
         });
         snippet.extend(tail);
     }
+    for line in &mut snippet {
+        clipped(line);
+    }
     Ok((snippet, scope))
 }
 
-/// The commit a review's "all changes" runs from now, by the rule Open
-/// shows it under.
-async fn base_commit(
-    runtime: &ProfileRuntime,
-    repo: &Repo,
-    review: &Review,
-) -> Result<String, Status> {
-    super::base_of_review(runtime, repo.agent, &repo.cwd, review)
-        .await
-        .map(|base| base.commit)
+/// `line` with its text cut to [`MOST_SNIPPET_LINE_BYTES`], ending with the
+/// marker, its runs cut with it.
+fn clipped(line: &mut ReviewLine) {
+    if line.text.len() <= MOST_SNIPPET_LINE_BYTES {
+        return;
+    }
+    let mut cut = MOST_SNIPPET_LINE_BYTES - ELIDED.len();
+    while !line.text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    line.text.truncate(cut);
+    let mut left = cut as u32;
+    line.runs.retain_mut(|run| {
+        let keep = left > 0;
+        run.len = run.len.min(left);
+        left -= run.len;
+        keep
+    });
+    line.text.push_str(ELIDED);
+    if !line.runs.is_empty() {
+        line.runs.push(ReviewRun {
+            kind: ReviewTokenKind::Plain as i32,
+            len: ELIDED.len() as u32,
+        });
+    }
 }
 
 /// Whole files this process has highlighted, each file's every side and
@@ -418,7 +503,6 @@ static HIGHLIGHTED: AtomicU64 = AtomicU64::new(0);
 /// Where an agent's review reads git: the agent's folder, with its
 /// snapshot store as an alternate.
 struct Repo {
-    agent: AgentId,
     cwd: PathBuf,
     store: ObjectStore,
 }
@@ -428,7 +512,6 @@ impl Repo {
         let id = AgentId::from_slice(&row.agent.agent)
             .map_err(|_| refused(ErrorCode::NotFound, "no agent with that id"))?;
         Ok(Repo {
-            agent: id,
             cwd: PathBuf::from(&row.cwd),
             store: ObjectStore::at(daemon_core::reviews::objects(&runtime.agent_dir(id))),
         })
@@ -545,11 +628,17 @@ fn fill(diff: &mut ReviewFileDiff, from: &str, file: &FileHunks, bodies: &Bodies
         // only removes, the removed ones in the file they were removed from.
         let scope = match (hunk_added.first(), hunk_added.last()) {
             (Some(first), Some(last)) => new_definitions.as_ref().map(|defs| {
-                chain(&defs.enclosing(highlight::LineRange::new(first.start, last.end)))
+                chain(
+                    &defs.enclosing(highlight::LineRange::new(first.start, last.end)),
+                    ReviewSide::Snapshot,
+                )
             }),
             _ => match (hunk_removed.first(), hunk_removed.last()) {
                 (Some(first), Some(last)) => old_definitions.as_ref().map(|defs| {
-                    chain(&defs.enclosing(highlight::LineRange::new(first.start, last.end)))
+                    chain(
+                        &defs.enclosing(highlight::LineRange::new(first.start, last.end)),
+                        ReviewSide::Compared,
+                    )
                 }),
                 _ => None,
             },
@@ -594,11 +683,13 @@ fn spans(
 /// One outline from the definitions the added lines touch and those the
 /// removed lines touch: the new side's, then each of the old side's not
 /// already there under the same parent, such as a function deleted whole.
-/// A definition found only on the old side keeps its lines there.
+/// A definition found only on the old side keeps its lines there, and says
+/// so.
 fn outline(
     new: Vec<highlight::Definition>,
     old: Vec<highlight::Definition>,
 ) -> Vec<ReviewDefinition> {
+    let snapshot_side = new.len();
     let mut merged = new;
     let mut at = Vec::with_capacity(old.len());
     for definition in old {
@@ -619,23 +710,31 @@ fn outline(
     }
     merged
         .iter()
-        .map(|definition| review_definition(definition, definition.parent))
+        .enumerate()
+        .map(|(index, definition)| {
+            let side = match index < snapshot_side {
+                true => ReviewSide::Snapshot,
+                false => ReviewSide::Compared,
+            };
+            review_definition(definition, definition.parent, side)
+        })
         .collect()
 }
 
-/// A chain of definitions, outermost first, as the protocol lists one:
-/// each one's parent the one before it.
-fn chain(chain: &[&highlight::Definition]) -> Vec<ReviewDefinition> {
+/// A chain of definitions on `side`, outermost first, as the protocol lists
+/// one: each one's parent the one before it.
+fn chain(chain: &[&highlight::Definition], side: ReviewSide) -> Vec<ReviewDefinition> {
     chain
         .iter()
         .enumerate()
-        .map(|(index, definition)| review_definition(definition, index.checked_sub(1)))
+        .map(|(index, definition)| review_definition(definition, index.checked_sub(1), side))
         .collect()
 }
 
 fn review_definition(
     definition: &highlight::Definition,
     parent: Option<usize>,
+    side: ReviewSide,
 ) -> ReviewDefinition {
     ReviewDefinition {
         // The protocol's numbers are the highlight crate's own.
@@ -645,6 +744,7 @@ fn review_definition(
         start_line: definition.lines.start,
         end_line: definition.lines.end,
         parent: parent.map(|parent| parent as u32),
+        side: side as i32,
     }
 }
 
@@ -695,19 +795,7 @@ async fn context(
     if matches!(body.as_deref(), Some(Body::Unshown)) {
         return Ok(Vec::new());
     }
-    let ranges: Vec<compare::LineRange> = file
-        .context
-        .iter()
-        .filter(|range| range.start == 0 || range.start <= range.end)
-        .map(|range| {
-            let start = range.start.max(1);
-            let end = match range.start {
-                0 => MOST_CONTEXT_LINES,
-                _ => range.end.min(start.saturating_add(MOST_CONTEXT_LINES - 1)),
-            };
-            compare::LineRange::new(start, end)
-        })
-        .collect();
+    let ranges = context_ranges(&file.context);
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
@@ -727,6 +815,41 @@ async fn context(
             text: line.text,
         })
         .collect())
+}
+
+/// The ranges of more context asked for, merged where they overlap or
+/// touch, in order, and cut so that together they read at most
+/// [`MOST_CONTEXT_LINES`]: however a client splits its ask, one file's
+/// answer holds no more. Zero to zero, the whole file, reads from its
+/// start.
+fn context_ranges(asked: &[wire::experimental::ReviewLineRange]) -> Vec<compare::LineRange> {
+    let mut ranges: Vec<(u32, u32)> = asked
+        .iter()
+        .filter(|range| range.start == 0 || range.start <= range.end)
+        .map(|range| match range.start {
+            0 => (1, MOST_CONTEXT_LINES),
+            start => (start, range.end),
+        })
+        .collect();
+    ranges.sort_unstable();
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if start <= last.1.saturating_add(1) => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    let mut left = MOST_CONTEXT_LINES;
+    let mut cut = Vec::with_capacity(merged.len());
+    for (start, end) in merged {
+        if left == 0 {
+            break;
+        }
+        let end = end.min(start.saturating_add(left - 1));
+        left -= end - start + 1;
+        cut.push(compare::LineRange::new(start, end));
+    }
+    cut
 }
 
 /// What is kept of one whole file, by its object id.
@@ -886,15 +1009,21 @@ fn token_kind(kind: TokenKind) -> ReviewTokenKind {
 async fn on_pool<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, Status> {
-    static POOL: OnceLock<Semaphore> = OnceLock::new();
-    let _place = POOL
-        .get_or_init(|| Semaphore::new(HIGHLIGHT_JOBS))
-        .acquire()
+    static POOL: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    // The place goes with the work, so it is held for as long as the work
+    // runs, even when the call that asked for it is dropped meanwhile.
+    let place = POOL
+        .get_or_init(|| Arc::new(Semaphore::new(HIGHLIGHT_JOBS)))
+        .clone()
+        .acquire_owned()
         .await
         .expect("the pool is never closed");
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|error| refused(ErrorCode::Internal, format!("highlighting a file: {error}")))
+    tokio::task::spawn_blocking(move || {
+        let _place = place;
+        work()
+    })
+    .await
+    .map_err(|error| refused(ErrorCode::Internal, format!("highlighting a file: {error}")))
 }
 
 /// Whole files' highlighting kept by object id, the least recently used
@@ -1082,7 +1211,6 @@ mod tests {
         git(dir, &["commit", "-q", "--allow-empty", "-am", "after"]);
         let to = git(dir, &["rev-parse", "HEAD"]);
         let repo = Repo {
-            agent: AgentId::nil(),
             cwd: dir.to_owned(),
             store: ObjectStore::at(dir.join("no-store")),
         };

@@ -294,19 +294,30 @@ The text holds, for each comment, the path from the repository's top, its
 lines, the definition it sits in, the code it is on as a fenced `diff` and
 then the person's words; and last, that the line numbers are a snapshot's (a
 commit of the working tree kept outside the repository), with the command
-that diffs the working tree against it,
-`GIT_ALTERNATE_OBJECT_DIRECTORIES=<objects> git -C <root> diff <snapshot>`.
-A comment whose lines are no longer on the snapshot names the commit its
-lines belong to. The model reads it as an ordinary `text` element, escaped
-as above; the `review_attachment` live recordings of headless Claude and
-Codex check that each quotes the code exactly and can run the command, Codex
-inside its read-only sandbox.
+that diffs the working tree against it:
+`GIT_INDEX_FILE=<index> GIT_ALTERNATE_OBJECT_DIRECTORIES=<objects> git -C
+<root> diff <snapshot> && GIT_INDEX_FILE=<index> git -C <root> ls-files
+--others --exclude-standard`. The index is one the host keeps of the
+snapshot beside its store, so a file that was untracked when the snapshot
+was taken is compared like any other, and the files made since are listed
+after the diff; the command writes nothing, to the repository or anywhere
+else. A comment on lines the change removed names them by the commit they
+were removed from ("line 7 of commit …"), and so does one whose lines are no
+longer on the snapshot. The model reads it as an ordinary `text` element,
+escaped as above; the `review_attachment` live recordings of headless Claude
+and Codex check that each quotes the code exactly and can run the command,
+Codex inside its read-only sandbox.
 
 The `reviews/1` entry is a `SentReview`: the review's id, the round the
-client expects to close, the snapshot and exactly the comment ids it sends.
-When the agent's host accepts the prompt or message, it marks those comments
-sent and numbers the round as it arrives, so a draft another client wrote
-meanwhile stays a draft, and a chip removed from the composer sends nothing.
+client expects to close, the snapshot the text's lines are on and exactly the
+comments it sends, each with the revision the text was written from. When
+the agent takes the prompt or message (when the item it became is in the
+agent's journal, not while it waits in the queue), its host marks sent those
+comments still drafts at that revision, in a round numbered as it arrives
+and recorded on the review's latest snapshot. So a draft another client
+wrote meanwhile stays a draft, as does one edited after the text was built
+and every comment of a prompt withdrawn from the queue, and a chip removed
+from the composer sends nothing.
 A client draws an attachment with the entry as a sent review
 (`AttachmentView::SentReview`) that opens its round, or the text the agent
 read once the host no longer holds the round; a build that reads no entry

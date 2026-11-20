@@ -16,9 +16,8 @@
 pub(crate) mod cleanup;
 pub(crate) mod files;
 mod place;
-pub(crate) mod sent;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, Weak};
@@ -26,13 +25,14 @@ use std::time::{Duration, SystemTime};
 
 use daemon_core::payload::{CallError, ClientRequest, JobResult, Response, Status as Ended};
 use daemon_core::reviews::{Change, Put, Refusal, Write, Written};
-use git_facts::compare::{self, CompareError};
+use git_facts::compare::{self, CompareError, Shown};
 use git_facts::objects::ObjectStore;
 use git_facts::snapshot::{self, Limits};
 use git_facts::{GitError, UsedBase};
 use highlight::Language;
+use prost::Message as _;
 use store::AgentRow;
-use store::reviews::Review;
+use store::reviews::{Review, Taken};
 use tonic::Status;
 use wire::experimental::{
     REVIEW_ROW, ReviewAnchor, ReviewEditRequest, ReviewFileState, ReviewLineRange,
@@ -55,6 +55,11 @@ pub(crate) const MAX_COMMENTS: usize = 500;
 /// The most bytes of words one comment holds.
 pub(crate) const MAX_WORDS: usize = 16 * 1024;
 
+/// The most bytes a review's comments take encoded, words, snippets and
+/// scopes together: what keeps a summary well inside one message a channel
+/// carries, whatever the comments hold. Checked before an edit is made.
+pub(crate) const MAX_COMMENT_BYTES: usize = 4 << 20;
+
 /// The most bytes a client's id for a comment takes; clients make UUIDs.
 const MAX_COMMENT_ID: usize = 64;
 
@@ -70,6 +75,15 @@ pub(crate) async fn open(
             ErrorCode::InvalidArgument,
             "a base branch to compare with has a name",
         ));
+    }
+    if request.read_only {
+        if request.base_branch.is_some() || request.refresh {
+            return Err(refused(
+                ErrorCode::InvalidArgument,
+                "a read-only open neither picks a base nor refreshes",
+            ));
+        }
+        return read_only(runtime, &row).await;
     }
     let tree = Tree::of(runtime, &row).await?;
     let turn = tree.turn();
@@ -104,6 +118,9 @@ pub(crate) async fn open(
             (chosen, began_at)
         }
     };
+    // The base is found anew only here, when a person opens the review: a
+    // snapshot taken now records it, and the latest is compared against it
+    // from now on. Every other read uses what a snapshot recorded.
     let base = base(
         runtime,
         tree.agent,
@@ -119,9 +136,15 @@ pub(crate) async fn open(
     let latest = review.as_ref().and_then(Review::latest).cloned();
     let drafts = review.as_ref().map_or(0, |review| review.drafts().count());
     let moved = match &latest {
-        Some(latest) => snapshot::moved(&tree.root, &tree.store, &latest.commit, &latest.omitted)
-            .await
-            .map_err(git_refused)?,
+        Some(latest) => snapshot::moved(
+            &tree.root,
+            &tree.store,
+            &Limits::default(),
+            &latest.commit,
+            &latest.omitted,
+        )
+        .await
+        .map_err(git_refused)?,
         None => true,
     };
     let take = latest.is_none() || (moved && (drafts == 0 || request.refresh));
@@ -135,6 +158,7 @@ pub(crate) async fn open(
         let onto = taken.commit.clone();
         changes.push(Change::Snapshot {
             commit: taken.commit,
+            base_commit: base.commit.clone(),
             omitted: taken.omitted,
             merging: taken.merging,
         });
@@ -157,6 +181,10 @@ pub(crate) async fn open(
             }
         }
     } else if let Some(latest) = &latest {
+        changes.push(Change::Rebased {
+            snapshot: latest.commit.clone(),
+            base_commit: base.commit.clone(),
+        });
         // Waiting drafts keep the page on their snapshot; the row says
         // the tree has moved under it.
         let told = REVIEW_ROW
@@ -183,7 +211,26 @@ pub(crate) async fn open(
     if take {
         tree.drop_unkept(&review).await;
     }
-    summary(&tree, &review, &base, moved && !take, moved_drafts).await
+    summary(&tree, &review, &base.branch, moved && !take, moved_drafts).await
+}
+
+/// A read-only Open: the review as it stands, changing nothing, and an
+/// empty summary for an agent with none. It waits for no other call on the
+/// review, so a client following the row is never held behind a snapshot
+/// another is taking; what it reads is one store read, whole.
+async fn read_only(runtime: &Arc<ProfileRuntime>, row: &AgentRow) -> Result<ReviewSummary, Status> {
+    let tree = Tree::of(runtime, row).await?;
+    let Some(review) = tree.review(runtime).await? else {
+        return Ok(tree.empty());
+    };
+    if review.latest().is_none() {
+        return Ok(tree.empty());
+    }
+    let branch = shown_branch(runtime, &tree, &review).await?;
+    let stale = REVIEW_ROW
+        .get(&row.experimental)
+        .is_some_and(|entry| entry.moved);
+    summary(&tree, &review, &branch, stale, 0).await
 }
 
 /// Reviews1.Edit: `caller`'s edits to the review of `row`'s agent, all of
@@ -200,11 +247,10 @@ pub(crate) async fn edit(
     let Some(review) = tree.review(runtime).await? else {
         return without_review(&tree, &request);
     };
-    let latest = review
-        .latest()
-        .ok_or_else(|| refused(ErrorCode::Internal, "the review holds no snapshot"))?;
-    let base = base_of_review(runtime, tree.agent, &tree.root, &review).await?;
-    let shown = compared(&review, &base.commit);
+    if review.latest().is_none() {
+        return Err(refused(ErrorCode::Internal, "the review holds no snapshot"));
+    }
+    let handed = handed_out(&review);
 
     // Every edit is checked, and what the review would hold counted,
     // before any snippet is read.
@@ -232,10 +278,7 @@ pub(crate) async fn edit(
                     .comments
                     .iter()
                     .any(|comment| comment.id == put.id && same_anchor(&comment.anchor, anchor));
-                if !unmoved
-                    && anchor.commit != latest.commit
-                    && !shown.contains(&anchor.commit.as_str())
-                {
+                if !unmoved && !handed.contains(anchor.commit.as_str()) {
                     return Err(refused(
                         ErrorCode::FailedPrecondition,
                         "the comment's lines are in a commit the review no longer shows; \
@@ -263,13 +306,25 @@ pub(crate) async fn edit(
         }
     }
     if held.len() > MAX_COMMENTS {
-        return Err(refused(
-            ErrorCode::ResourceExhausted,
-            format!("a review holds at most {MAX_COMMENTS} comments"),
-        ));
+        return Err(too_much(format!(
+            "a review holds at most {MAX_COMMENTS} comments"
+        )));
     }
 
+    let held: BTreeSet<Vec<u8>> = held.into_iter().map(<[u8]>::to_vec).collect();
     let mut changes = Vec::with_capacity(request.edits.len());
+    // What each comment the review would hold takes, by id: the review's
+    // own, replaced by each put as it comes.
+    let mut sizes: HashMap<Vec<u8>, usize> = review
+        .comments
+        .iter()
+        .map(|comment| {
+            (
+                comment.id.clone(),
+                comment_bytes(&comment.text, &comment.snippet, &comment.scope),
+            )
+        })
+        .collect();
     for of in request.edits.into_iter().filter_map(|edit| edit.of) {
         changes.push(match of {
             review_edit::Of::Put(put) => {
@@ -283,6 +338,7 @@ pub(crate) async fn edit(
                     Some(comment) => (comment.snippet.clone(), comment.scope.clone()),
                     None => files::snippet(runtime, &row, &review, &anchor).await?,
                 };
+                sizes.insert(put.id.clone(), comment_bytes(&put.text, &snippet, &scope));
                 Change::Put(Box::new(Put {
                     comment: put.id,
                     anchor: core_anchor(&anchor),
@@ -291,10 +347,30 @@ pub(crate) async fn edit(
                     scope,
                 }))
             }
-            review_edit::Of::Delete(comment) => Change::Delete { comment },
-            review_edit::Of::DiscardDrafts(_) => Change::DiscardDrafts,
-            review_edit::Of::StartOver(_) => Change::StartOver,
+            review_edit::Of::Delete(comment) => {
+                sizes.remove(&comment);
+                Change::Delete { comment }
+            }
+            review_edit::Of::DiscardDrafts(_) => {
+                sizes.retain(|id, _| !review.drafts().any(|draft| draft.id == *id));
+                Change::DiscardDrafts
+            }
+            review_edit::Of::StartOver(_) => {
+                sizes.clear();
+                Change::StartOver
+            }
         });
+    }
+    let total: usize = sizes
+        .iter()
+        .filter(|(id, _)| held.contains(*id))
+        .map(|(_, bytes)| bytes)
+        .sum();
+    if total > MAX_COMMENT_BYTES {
+        return Err(too_much(format!(
+            "a review's comments take at most {} MiB, their code with them",
+            MAX_COMMENT_BYTES >> 20
+        )));
     }
 
     let written = match changes.is_empty() {
@@ -314,7 +390,26 @@ pub(crate) async fn edit(
     // The turn-end check keeps the row's word on whether the tree moved;
     // an edit does not look again.
     let stale = entry.is_some_and(|entry| entry.moved);
-    summary(&tree, &review, &base, stale, 0).await
+    let branch = shown_branch(runtime, &tree, &review).await?;
+    summary(&tree, &review, &branch, stale, 0).await
+}
+
+/// What one comment takes in a summary, encoded.
+fn comment_bytes(
+    text: &str,
+    snippet: &[wire::experimental::ReviewLine],
+    scope: &[wire::experimental::ReviewDefinition],
+) -> usize {
+    text.len()
+        + snippet
+            .iter()
+            .map(|line| line.encoded_len() + 2)
+            .sum::<usize>()
+        + scope
+            .iter()
+            .map(|definition| definition.encoded_len() + 2)
+            .sum::<usize>()
+        + MAX_COMMENT_ID
 }
 
 /// An Edit of an agent with no review: deleting and discarding find
@@ -354,10 +449,11 @@ fn checked<'a>(
             "a comment's id is 1 to {MAX_COMMENT_ID} bytes long"
         ));
     }
+    // A cap, answered as every cap on what a review holds is.
     if text.len() > MAX_WORDS {
-        return invalid(format!(
+        return Err(too_much(format!(
             "a comment holds at most {MAX_WORDS} bytes of words"
-        ));
+        )));
     }
     let Some(anchor) = anchor.filter(|anchor| !anchor.commit.is_empty() && !anchor.path.is_empty())
     else {
@@ -371,6 +467,11 @@ fn checked<'a>(
         return invalid("a comment's lines end where they start or after".to_owned());
     }
     Ok(anchor)
+}
+
+/// A cap on what a review holds was reached.
+fn too_much(words: String) -> Status {
+    refused(ErrorCode::ResourceExhausted, words)
 }
 
 fn core_anchor(anchor: &ReviewAnchor) -> daemon_core::reviews::Anchor {
@@ -394,20 +495,41 @@ fn same_anchor(stored: &store::reviews::Anchor, anchor: &ReviewAnchor) -> bool {
         && stored.end == anchor.end
 }
 
-/// The commits a view of `review` compares its snapshot against: the base
-/// commit for all changes, and the last round's snapshot for what changed
-/// since it.
+/// Every commit the review has handed a client lines of: each snapshot it
+/// keeps, and the base commit each is compared against. A comment is put
+/// on one of these; GetFiles diffs between them.
+fn handed_out(review: &Review) -> BTreeSet<&str> {
+    review
+        .snapshots
+        .iter()
+        .flat_map(|taken| [taken.commit.as_str(), taken.base_commit.as_str()])
+        .collect()
+}
+
+/// The commits a view of `review`'s latest snapshot compares it against:
+/// `base`, the commit its all changes run from, and the last round's
+/// snapshot for what changed since it.
 fn compared<'a>(review: &'a Review, base: &'a str) -> Vec<&'a str> {
     std::iter::once(base)
         .chain(review.rounds.last().map(|round| round.snapshot.as_str()))
         .collect()
 }
 
+/// The last round as since-last compares against it: its snapshot and the
+/// base that snapshot ran from.
+fn last_shown(review: &Review) -> Option<Shown<'_>> {
+    review.rounds.last().map(|round| Shown {
+        base: &round.base_commit,
+        snapshot: &round.snapshot,
+    })
+}
+
 /// The review as of its latest snapshot, its comments placed there.
+/// `branch` is the base branch as the summary names it.
 async fn summary(
     tree: &Tree,
     review: &Review,
-    base: &Base,
+    branch: &str,
     stale: bool,
     moved_drafts: u32,
 ) -> Result<ReviewSummary, Status> {
@@ -417,49 +539,13 @@ async fn summary(
     let snapshot = latest.commit.as_str();
     let (root, store) = (tree.root.as_path(), &tree.store);
 
-    let mut files = compare::files(root, store, &base.commit, snapshot)
-        .await
-        .map_err(compare_refused)?;
-    // A file left out of the snapshot for its size is listed as large: its
-    // change is not in the snapshot to be counted or shown.
-    let listed: HashSet<String> = files.iter().map(|file| file.path.clone()).collect();
-    for path in &latest.omitted {
-        if !listed.contains(path) {
-            let at_base = compare::read(root, store, &base.commit, path)
-                .await
-                .is_ok_and(|bytes| bytes.is_some());
-            files.push(git_facts::ChangedFile {
-                path: path.clone(),
-                old_path: None,
-                status: match at_base {
-                    true => git_facts::Status::Changed,
-                    false => git_facts::Status::Created,
-                },
-                added: 0,
-                removed: 0,
-                binary: false,
-                flags: git_facts::Flags::default(),
-            });
-        }
-    }
-    for file in &mut files {
-        if latest.omitted.contains(&file.path) {
-            file.flags.large = true;
-        }
-    }
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-    let mut wire_files = Vec::with_capacity(files.len());
-    for file in files {
-        let language = language(tree, snapshot, &file).await;
-        wire_files.push(changed_file(file, language));
-    }
-
-    let file_states = match review.rounds.last() {
-        Some(round) => file_states(tree, &round.snapshot, snapshot, &wire_files).await?,
+    let wire_files = listed(root, store, latest, &latest.base_commit).await?;
+    let file_states = match last_shown(review) {
+        Some(last) => file_states(root, store, last, latest, &wire_files).await?,
         None => Vec::new(),
     };
 
-    let compared = compared(review, &base.commit);
+    let compared = compared(review, &latest.base_commit);
     let maps = Maps::read(
         root,
         store,
@@ -491,13 +577,14 @@ async fn summary(
             scope: comment.scope.clone(),
             round: comment.round,
             placement: Some(placement),
+            revision: comment.revision,
         })
         .collect();
 
     Ok(ReviewSummary {
         id: review.id.clone(),
-        base_branch: base.branch.clone(),
-        base_commit: base.commit.clone(),
+        base_branch: branch.to_owned(),
+        base_commit: latest.base_commit.clone(),
         snapshot: snapshot.to_owned(),
         stale,
         rounds: review
@@ -517,45 +604,159 @@ async fn summary(
         root: tree.root.to_string_lossy().into_owned(),
         moved_drafts,
         began_at: review.began_at.clone(),
+        index: tree.index_of(snapshot).await,
     })
 }
 
-/// How each file of all changes, `files`, changed from the last round's
-/// snapshot `last` to `snapshot`. A file all changes no longer lists is no
-/// part of the change, whatever happened to it. When the last round's
-/// snapshot can no longer be read, nothing is said about any file.
-async fn file_states(
-    tree: &Tree,
-    last: &str,
-    snapshot: &str,
-    files: &[ChangedFile],
-) -> Result<Vec<ReviewFileState>, Status> {
-    let since = match compare::files(&tree.root, &tree.store, last, snapshot).await {
+/// Every file that changed from `from` to the snapshot `taken`, as the
+/// summary lists all changes and GetFiles lists a comparison: renames
+/// followed, flagged, each with its language; a file the snapshot left out
+/// for its size listed as large.
+pub(super) async fn listed(
+    root: &Path,
+    store: &ObjectStore,
+    taken: &Taken,
+    from: &str,
+) -> Result<Vec<ChangedFile>, Status> {
+    let snapshot = taken.commit.as_str();
+    let mut files = compare::files(root, store, from, snapshot)
+        .await
+        .map_err(compare_refused)?;
+    // A file left out of the snapshot for its size is listed as large: its
+    // change is not in the snapshot to be counted or shown.
+    let listed: BTreeSet<String> = files.iter().map(|file| file.path.clone()).collect();
+    for path in &taken.omitted {
+        if !listed.contains(path) {
+            let at_base = compare::read(root, store, from, path)
+                .await
+                .is_ok_and(|bytes| bytes.is_some());
+            files.push(git_facts::ChangedFile {
+                path: path.clone(),
+                old_path: None,
+                status: match at_base {
+                    true => git_facts::Status::Changed,
+                    false => git_facts::Status::Created,
+                },
+                added: 0,
+                removed: 0,
+                binary: false,
+                flags: git_facts::Flags::default(),
+            });
+        }
+    }
+    for file in &mut files {
+        if taken.omitted.contains(&file.path) {
+            file.flags.large = true;
+        }
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut wire_files = Vec::with_capacity(files.len());
+    for file in files {
+        let language = language(root, store, snapshot, &file).await;
+        wire_files.push(changed_file(file, language));
+    }
+    Ok(wire_files)
+}
+
+/// Every file that changed since the `last` round to the snapshot `taken`,
+/// limited as since-last's hunks are and counted from them: renames
+/// followed, flagged as all changes `all` flags them.
+pub(super) async fn listed_since(
+    root: &Path,
+    store: &ObjectStore,
+    last: Shown<'_>,
+    taken: &Taken,
+    all: &[ChangedFile],
+) -> Result<Vec<ChangedFile>, Status> {
+    let now = Shown {
+        base: &taken.base_commit,
+        snapshot: &taken.commit,
+    };
+    let since = match compare::since_last(root, store, last, now, None, files::HUNK_CONTEXT).await {
         Ok(since) => since,
-        Err(CompareError::Missing(_)) => return Ok(Vec::new()),
         Err(error) => return Err(compare_refused(error)),
     };
-    let since: HashMap<&str, &git_facts::ChangedFile> = since
+    let flagged: HashMap<&str, &ChangedFile> =
+        all.iter().map(|file| (file.path.as_str(), file)).collect();
+    let mut listed = Vec::with_capacity(since.len());
+    for file in since {
+        if taken.omitted.contains(&file.path) {
+            continue;
+        }
+        let (added, removed) = file.counts();
+        let changed = git_facts::ChangedFile {
+            path: file.path.clone(),
+            old_path: file.old_path.clone(),
+            status: file.status,
+            added,
+            removed,
+            binary: file.binary,
+            flags: git_facts::Flags::default(),
+        };
+        let mut wire_file = match flagged.get(file.path.as_str()) {
+            Some(all) => changed_file(changed, all.language.clone()),
+            None => {
+                let language = language(root, store, &taken.commit, &changed).await;
+                changed_file(changed, language)
+            }
+        };
+        if let Some(all) = flagged.get(file.path.as_str()) {
+            wire_file.flags = all.flags.clone();
+        }
+        listed.push(wire_file);
+    }
+    listed.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(listed)
+}
+
+/// How each file of all changes, `files`, changed since the `last` round's
+/// snapshot to `taken`, counted from the same limited comparison
+/// since-last's hunks come from; a file the agent changed and then put
+/// back, which all changes no longer lists, comes after them. When the last
+/// round's snapshot can no longer be read, nothing is said about any file.
+async fn file_states(
+    root: &Path,
+    store: &ObjectStore,
+    last: Shown<'_>,
+    taken: &Taken,
+    files: &[ChangedFile],
+) -> Result<Vec<ReviewFileState>, Status> {
+    let since = match listed_since(root, store, last, taken, files).await {
+        Ok(since) => since,
+        Err(status) if status.code() == tonic::Code::DataLoss => return Ok(Vec::new()),
+        Err(status) => return Err(status),
+    };
+    let by_path: HashMap<&str, &ChangedFile> = since
         .iter()
         .map(|file| (file.path.as_str(), file))
         .collect();
+    let state = |path: &str, changed: Option<&&ChangedFile>| ReviewFileState {
+        path: path.to_owned(),
+        changed_since_last: changed.is_some(),
+        added: changed.map_or(0, |file| file.added),
+        removed: changed.map_or(0, |file| file.removed),
+    };
+    let listed: BTreeSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
     Ok(files
         .iter()
-        .map(|file| {
-            let changed = since.get(file.path.as_str());
-            ReviewFileState {
-                path: file.path.clone(),
-                changed_since_last: changed.is_some(),
-                added: changed.map_or(0, |file| file.added),
-                removed: changed.map_or(0, |file| file.removed),
-            }
-        })
+        .map(|file| state(&file.path, by_path.get(file.path.as_str())))
+        .chain(
+            since
+                .iter()
+                .filter(|file| !listed.contains(file.path.as_str()))
+                .map(|file| state(&file.path, Some(&file))),
+        )
         .collect())
 }
 
 /// The language a file is coloured by, by the one rule every client uses:
 /// its path, then for a script its `#!` line, read from the snapshot.
-async fn language(tree: &Tree, snapshot: &str, file: &git_facts::ChangedFile) -> String {
+async fn language(
+    root: &Path,
+    store: &ObjectStore,
+    snapshot: &str,
+    file: &git_facts::ChangedFile,
+) -> String {
     if let Some(language) = Language::from_path(&file.path) {
         return language.name().to_owned();
     }
@@ -563,7 +764,7 @@ async fn language(tree: &Tree, snapshot: &str, file: &git_facts::ChangedFile) ->
     if !readable {
         return String::new();
     }
-    let Ok(Some(bytes)) = compare::read(&tree.root, &tree.store, snapshot, &file.path).await else {
+    let Ok(Some(bytes)) = compare::read(root, store, snapshot, &file.path).await else {
         return String::new();
     };
     let head = &bytes[..bytes.len().min(SHEBANG_BYTES)];
@@ -611,18 +812,26 @@ pub(super) struct Base {
     pub(super) commit: String,
 }
 
-/// The base `review` of the own agent `agent`, working in `cwd`, runs all
-/// changes from now, by the one rule every read of a review uses.
-pub(super) async fn base_of_review(
+/// The base branch `review` is compared with, as a summary names it. Only
+/// the name: the commit a snapshot is compared against is the one recorded
+/// with it.
+async fn shown_branch(
     runtime: &ProfileRuntime,
-    agent: AgentId,
-    cwd: &Path,
+    tree: &Tree,
     review: &Review,
-) -> Result<Base, Status> {
+) -> Result<String, Status> {
     let named = |text: &str| Some(text.to_owned()).filter(|text| !text.is_empty());
     let chosen = named(&review.base_branch);
     let began_at = named(&review.began_at);
-    base(runtime, agent, cwd, chosen.as_deref(), began_at.as_deref()).await
+    let base = base(
+        runtime,
+        tree.agent,
+        &tree.root,
+        chosen.as_deref(),
+        began_at.as_deref(),
+    )
+    .await?;
+    Ok(base.branch)
 }
 
 /// The base all changes run from, by the review's rule: the base branch
@@ -732,12 +941,83 @@ impl Tree {
             .ok_or_else(|| git_refused(GitError::NotARepository))
     }
 
-    /// Removes from the store every snapshot `review` no longer keeps. A
-    /// failure leaves them, to go with the next.
+    /// Removes from the store every snapshot `review` no longer keeps, and
+    /// the index of each. A failure leaves them, to go with the next.
     async fn drop_unkept(&self, review: &Review) {
         let keep = review.snapshots.iter().map(|taken| taken.commit.as_str());
         if let Err(error) = snapshot::drop(&self.root, &self.store, keep).await {
             tracing::warn!(%error, "dropping a review's unkept snapshots failed");
+        }
+        let kept: BTreeSet<&str> = review
+            .snapshots
+            .iter()
+            .map(|taken| taken.commit.as_str())
+            .collect();
+        let Ok(indexes) = std::fs::read_dir(self.indexes()) else {
+            return;
+        };
+        for entry in indexes.flatten() {
+            let name = entry.file_name();
+            if !kept.contains(name.to_string_lossy().as_ref()) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    /// The folder holding an index of each snapshot.
+    fn indexes(&self) -> PathBuf {
+        self.dir
+            .join(daemon_core::reviews::REVIEW)
+            .join(daemon_core::reviews::INDEXES)
+    }
+
+    /// The index of `snapshot`, made now if it is not there yet: what the
+    /// agent's diff command reads the snapshot's files through, so that
+    /// git compares the working tree with the snapshot, untracked files
+    /// and all, without an index of the repository's own. Empty when it
+    /// cannot be made, and the agent's text then names none.
+    async fn index_of(&self, snapshot: &str) -> String {
+        let index = self.indexes().join(snapshot);
+        if index.is_file() {
+            return index.to_string_lossy().into_owned();
+        }
+        if let Err(error) = std::fs::create_dir_all(self.indexes()) {
+            tracing::warn!(%error, "making a review's index folder failed");
+            return String::new();
+        }
+        // Written under another name and moved into place, so a diff the
+        // agent runs meanwhile never reads half an index.
+        let making = self
+            .indexes()
+            .join(format!(".{snapshot}.{}", uuid::Uuid::new_v4()));
+        let made = self
+            .store
+            .reading(&self.root, &["read-tree", snapshot])
+            .env("GIT_INDEX_FILE", &making)
+            .output()
+            .await;
+        match made {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => {
+                tracing::warn!(
+                    stderr = %String::from_utf8_lossy(&output.stderr),
+                    "making a snapshot's index failed"
+                );
+                let _ = std::fs::remove_file(&making);
+                return String::new();
+            }
+            Err(error) => {
+                tracing::warn!(%error, "making a snapshot's index failed");
+                return String::new();
+            }
+        }
+        match std::fs::rename(&making, &index) {
+            Ok(()) => index.to_string_lossy().into_owned(),
+            Err(error) => {
+                tracing::warn!(%error, "making a snapshot's index failed");
+                let _ = std::fs::remove_file(&making);
+                String::new()
+            }
         }
     }
 
@@ -830,7 +1110,8 @@ async fn carried_out(job: daemon_core::reviews::Job) -> daemon_core::reviews::Do
             snapshot,
             omitted,
         } => {
-            let moved = snapshot::moved(&cwd, &ObjectStore::at(objects), &snapshot, &omitted)
+            let store = ObjectStore::at(objects);
+            let moved = snapshot::moved(&cwd, &store, &Limits::default(), &snapshot, &omitted)
                 .await
                 .map_err(|error| error.to_string());
             Done::Moved {

@@ -525,6 +525,12 @@ async fn answer_input(
                             _ => String::new(),
                         },
                         input_id: envelope.id.clone(),
+                        attachments: match &envelope.body {
+                            Some(wire::envelope::Body::Message(message)) => {
+                                message.attachments.clone()
+                            }
+                            _ => Vec::new(),
+                        },
                         kind: KIND as i32,
                         at_ms: 1_000,
                         ..Item::default()

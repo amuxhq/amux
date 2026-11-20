@@ -182,6 +182,14 @@ impl Daemon {
             // Only now, with the transaction committed: a subscriber never
             // sees a revision the store could not serve it.
             let mut envelope = false;
+            // The reviews the prompts and messages the agent took send.
+            let sent =
+                crate::reviews::sent_in(committed.records.iter().filter_map(
+                    |record| match record {
+                        Record::Item(item) => Some(item),
+                        _ => None,
+                    },
+                ));
             let mut agents = vec![(key.clone(), committed.records)];
             agents.extend(committed.subagents);
             for (owner, records) in agents {
@@ -223,6 +231,9 @@ impl Daemon {
                     }
                 }
             }
+            // After the items: a subscriber hears of the prompt before its
+            // round closing on the row.
+            self.review_items_committed(agent, sent, out);
             self.touched.after_end.extend(committed.after_end);
             self.subagents_committed(&key, &made, committed.changes, out)?;
             // A message waiting for its acceptance item is answered after

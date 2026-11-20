@@ -8,8 +8,11 @@
 //! A comment written on removed lines names the commit its view compared
 //! against, not a snapshot. While that commit is still what a view of the
 //! review compares against, the lines are still on the page, on its removed
-//! side: such a comment is on its file, where the page seats it on those
-//! lines, rather than outdated by the very removal it was written on.
+//! side: such a comment is placed on those lines of that commit, rather
+//! than outdated by the very removal it was written on.
+//!
+//! Every placement names the file it sits in as the snapshot names it, the
+//! path a rename took the anchor's file to.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -19,7 +22,7 @@ use git_facts::compare::{CompareError, LineMap, LineRange, Mapped};
 use git_facts::objects::ObjectStore;
 use store::reviews::{Comment, Review};
 use wire::Empty;
-use wire::experimental::{ReviewLineRange, ReviewPlacement, review_placement};
+use wire::experimental::{ReviewComparedLines, ReviewLineRange, ReviewPlacement, review_placement};
 
 /// How many lines either side of a comment count as near it when no
 /// definition encloses it.
@@ -142,18 +145,36 @@ fn place(review: &Review, comment: &Comment, views: &Views<'_>, maps: &Maps) -> 
         true => At::Outdated(Empty {}),
         false => At::File(Empty {}),
     };
-    let (at, map) = match maps.map(anchor) {
-        Some(Moved::Same) => (lines(range(anchor)), None),
-        None => (edited(), None),
-        Some(Moved::By(map)) => match map.map(range(anchor)) {
-            Mapped::Untouched(moved) => (lines(moved), Some(map)),
-            Mapped::Touched | Mapped::Gone
-                if removed_side && views.compared.contains(&anchor.commit.as_str()) =>
-            {
-                (At::File(Empty {}), None)
+    let compared = || {
+        let lines = range(anchor);
+        match lines.is_file() {
+            true => At::File(Empty {}),
+            false => At::Compared(ReviewComparedLines {
+                commit: anchor.commit.clone(),
+                lines: Some(ReviewLineRange {
+                    start: lines.start,
+                    end: lines.end,
+                }),
+            }),
+        }
+    };
+    let (at, map, path) = match maps.map(anchor) {
+        Some(Moved::Same) => (lines(range(anchor)), None, anchor.path.clone()),
+        // Its commit can no longer be read, so where its file is now is
+        // not known: it is shown by its anchor and snippet.
+        None => (edited(), None, String::new()),
+        Some(Moved::By(map)) => {
+            let path = map.path().unwrap_or(&anchor.path).to_owned();
+            match map.map(range(anchor)) {
+                Mapped::Untouched(moved) => (lines(moved), Some(map), path),
+                Mapped::Touched | Mapped::Gone
+                    if removed_side && views.compared.contains(&anchor.commit.as_str()) =>
+                {
+                    (compared(), None, path)
+                }
+                Mapped::Touched | Mapped::Gone => (edited(), None, path),
             }
-            Mapped::Touched | Mapped::Gone => (edited(), None),
-        },
+        }
     };
     // Near: the comment's lines are where they were, and something around
     // them changed since the round it was sent in, which is the diff from
@@ -165,6 +186,7 @@ fn place(review: &Review, comment: &Comment, views: &Views<'_>, maps: &Maps) -> 
     ReviewPlacement {
         at: Some(at),
         changed_near,
+        path,
     }
 }
 

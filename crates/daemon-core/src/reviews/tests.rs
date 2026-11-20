@@ -78,6 +78,7 @@ fn begin() -> Change {
 fn snapshot(commit: &str) -> Change {
     Change::Snapshot {
         commit: commit.into(),
+        base_commit: "base".into(),
         omitted: vec!["big.bin".into()],
         merging: false,
     }
@@ -226,6 +227,15 @@ fn entry(drafts: u32, counter: u64, moved: bool) -> ReviewRowEntry {
         drafts,
         counter,
         moved,
+        review_id: REVIEW_ID.to_vec(),
+    }
+}
+
+/// A send of the comments `ids`, each at its first revision.
+fn sent(review: [u8; 16], ids: &[u8]) -> Change {
+    Change::Sent {
+        review: review.to_vec(),
+        comments: ids.iter().map(|id| (vec![*id; 16], 1)).collect(),
     }
 }
 
@@ -298,7 +308,13 @@ fn a_refused_write_makes_none_of_its_changes() {
         mate.comments.is_empty(),
         "the first put went with the second"
     );
-    assert_eq!(rig.entry(MATE), Some(entry(0, 1, false)));
+    assert_eq!(
+        rig.entry(MATE),
+        Some(ReviewRowEntry {
+            review_id: vec![0x6f; 16],
+            ..entry(0, 1, false)
+        })
+    );
 
     assert_eq!(
         rig.write(LEAD, vec![begin()]).0.unwrap_err(),
@@ -353,15 +369,7 @@ fn the_draft_count_follows_puts_deletes_discards_and_sends() {
         }],
     );
     assert_eq!(drafts(w), Some(2));
-    let w = rig.written(
-        LEAD,
-        vec![Change::Sent {
-            review: REVIEW_ID.to_vec(),
-            snapshot: "s1".into(),
-            base_commit: "base".into(),
-            comments: vec![vec![1; 16]],
-        }],
-    );
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[1])]);
     assert_eq!(w.round, Some(1));
     assert_eq!(drafts(w), Some(1), "the one sent is no longer a draft");
     let w = rig.written(LEAD, vec![put(4, "s1", "d")]);
@@ -403,23 +411,27 @@ fn a_send_marks_exactly_the_named_drafts_in_a_round_numbered_on_arrival() {
             put(3, "s1", "c"),
         ],
     );
-    let sent = |comments: Vec<Vec<u8>>, review: [u8; 16]| Change::Sent {
-        review: review.to_vec(),
-        snapshot: "s1".into(),
-        base_commit: "base".into(),
-        comments,
-    };
     // Another review's send, as one started over leaves in a chat, changes
     // nothing.
-    let (written, out) = rig.write(LEAD, vec![sent(vec![vec![1; 16]], [0x6f; 16])]);
+    let (written, out) = rig.write(LEAD, vec![sent([0x6f; 16], &[1])]);
     let written = written.unwrap();
     assert_eq!(written.round, None);
     assert_eq!(written.entry, Some(entry(3, 1, false)));
     assert!(published(&rig, &out).is_empty());
 
-    let w = rig.written(LEAD, vec![sent(vec![vec![1; 16], vec![9; 16]], REVIEW_ID)]);
+    // A send naming no comments, or none still a draft, closes nothing.
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[])]);
+    assert_eq!(w.round, None);
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[9])]);
+    assert_eq!(w.round, None);
+
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[1, 9])]);
     assert_eq!(w.round, Some(1));
-    let w = rig.written(LEAD, vec![sent(vec![vec![1; 16], vec![3; 16]], REVIEW_ID)]);
+    // Sent again, as a message resent under a new id: its comment went
+    // with the first, so no second round closes.
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[1])]);
+    assert_eq!(w.round, None);
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[1, 3])]);
     assert_eq!(w.round, Some(2), "numbered by arrival");
     let review = w.review.unwrap();
     assert_eq!(
@@ -447,6 +459,176 @@ fn a_send_marks_exactly_the_named_drafts_in_a_round_numbered_on_arrival() {
 }
 
 #[test]
+fn a_send_marks_only_the_revision_it_was_written_from_on_the_latest_snapshot() {
+    let mut rig = lead();
+    rig.written(
+        LEAD,
+        vec![
+            begin(),
+            snapshot("s1"),
+            put(1, "s1", "a"),
+            put(2, "s1", "b"),
+        ],
+    );
+    // Comment 2 is edited after the sending client built its text.
+    let w = rig.written(LEAD, vec![put(2, "s1", "b, said better")]);
+    let revisions: Vec<u64> = w
+        .review
+        .unwrap()
+        .comments
+        .iter()
+        .map(|comment| comment.revision)
+        .collect();
+    assert_eq!(revisions, [1, 2], "a put raises the revision");
+    // A refresh took s2 meanwhile, whose base the rule found anew.
+    rig.written(
+        LEAD,
+        vec![Change::Snapshot {
+            commit: "s2".into(),
+            base_commit: "base 2".into(),
+            omitted: Vec::new(),
+            merging: false,
+        }],
+    );
+    let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[1, 2])]);
+    assert_eq!(w.round, Some(1));
+    let review = w.review.unwrap();
+    assert_eq!(
+        review
+            .comments
+            .iter()
+            .map(|c| (c.id[0], c.round))
+            .collect::<Vec<_>>(),
+        [(1, Some(1)), (2, None)],
+        "the comment edited since stays a draft"
+    );
+    let [round] = review.rounds.as_slice() else {
+        panic!("one round: {:?}", review.rounds);
+    };
+    assert_eq!(
+        (round.snapshot.as_str(), round.base_commit.as_str()),
+        ("s2", "base 2"),
+        "recorded on the latest snapshot, with its base"
+    );
+}
+
+#[test]
+fn a_rebased_snapshot_keeps_its_new_base_and_raises_the_counter_once() {
+    let mut rig = lead();
+    rig.written(LEAD, vec![begin(), snapshot("s1")]);
+    let rebase = |base: &str| Change::Rebased {
+        snapshot: "s1".into(),
+        base_commit: base.into(),
+    };
+    let w = rig.written(LEAD, vec![rebase("picked")]);
+    assert_eq!(
+        w.review.unwrap().snapshot("s1").unwrap().base_commit,
+        "picked"
+    );
+    assert_eq!(rig.entry(LEAD), Some(entry(0, 2, false)));
+    // The same base again changes nothing.
+    let (_, out) = rig.write(LEAD, vec![rebase("picked")]);
+    assert!(published(&rig, &out).is_empty());
+    assert_eq!(rig.entry(LEAD), Some(entry(0, 2, false)));
+}
+
+/// What the agent's journal says it took, carrying a sent review of the
+/// comments `ids`: the item a prompt became when the agent took it.
+fn taken_prompt(input: &[u8], ids: &[u8]) -> Step {
+    let mut attachment = wire::Attachment::default();
+    SENT_REVIEW.put(
+        &mut attachment.experimental,
+        &SentReview {
+            review_id: REVIEW_ID.to_vec(),
+            round: 1,
+            snapshot: "s1".into(),
+            comments: ids
+                .iter()
+                .map(|id| wire::experimental::ReviewSentComment {
+                    id: vec![*id; 16],
+                    revision: 1,
+                })
+                .collect(),
+        },
+    );
+    Step {
+        items: vec![wire::Item {
+            key: format!("prompt-{}", input[0]),
+            input_id: input.to_vec(),
+            text: "Have a look \u{fffc}".into(),
+            attachments: vec![attachment],
+            kind: wire::Kind::Codex as i32,
+            at_ms: 1_000,
+            ..wire::Item::default()
+        }],
+        ..Step::default()
+    }
+}
+
+impl Rig {
+    /// `step` lands in `agent`'s journal and is ingested.
+    fn journal(&mut self, agent: AgentId, step: &Step) -> Vec<Output> {
+        let mut journal =
+            journal::synthetic::SyntheticWriter::open(self.daemon.journal_dir(agent), 1 << 30)
+                .expect("the journal opens");
+        journal.append(step).expect("the journal takes a step");
+        self.step(Input::Nudge { agent })
+    }
+}
+
+#[test]
+fn a_round_closes_when_the_agent_takes_the_prompt_not_when_it_queues() {
+    let mut rig = lead();
+    rig.written(
+        LEAD,
+        vec![
+            begin(),
+            snapshot("s1"),
+            put(1, "s1", "a"),
+            put(2, "s1", "b"),
+        ],
+    );
+    // Queued: the queue holds the prompt, and the journal no item of it. A
+    // person may still withdraw it, so nothing is sent.
+    let mut queued = wire::QueuedInput {
+        input_id: b"queued".to_vec(),
+        ..wire::QueuedInput::default()
+    };
+    queued.attachments = taken_prompt(b"queued", &[1]).items[0].attachments.clone();
+    let out = rig.journal(
+        LEAD,
+        &Step {
+            snapshot: Some(wire::Snapshot {
+                kind: wire::Kind::Codex as i32,
+                queue: vec![queued],
+                ..wire::Snapshot::default()
+            }),
+            ..Step::default()
+        },
+    );
+    // The row is published for the snapshot's phase, its entry as it was.
+    assert!(
+        published(&rig, &out)
+            .iter()
+            .all(|(_, told)| *told == Some(entry(2, 1, false))),
+        "{:?}",
+        published(&rig, &out)
+    );
+    assert_eq!(rig.entry(LEAD), Some(entry(2, 1, false)));
+
+    // Taken: its item is in the journal, and the round closes with the row.
+    let out = rig.journal(LEAD, &taken_prompt(b"taken", &[1]));
+    assert_eq!(
+        published(&rig, &out),
+        [(LEAD.0.to_vec(), Some(entry(1, 2, false)))]
+    );
+    // The same item again, as a later revision of it, closes nothing more.
+    let out = rig.journal(LEAD, &taken_prompt(b"taken", &[1]));
+    assert!(published(&rig, &out).is_empty());
+    assert_eq!(rig.entry(LEAD), Some(entry(1, 2, false)));
+}
+
+#[test]
 fn moved_drafts_take_their_new_anchors_and_sent_ones_stay() {
     let mut rig = lead();
     rig.written(
@@ -458,15 +640,7 @@ fn moved_drafts_take_their_new_anchors_and_sent_ones_stay() {
             put(2, "s1", "b"),
         ],
     );
-    rig.written(
-        LEAD,
-        vec![Change::Sent {
-            review: REVIEW_ID.to_vec(),
-            snapshot: "s1".into(),
-            base_commit: "base".into(),
-            comments: vec![vec![2; 16]],
-        }],
-    );
+    rig.written(LEAD, vec![sent(REVIEW_ID, &[2])]);
     let to = |id: u8, start: u32| MovedDraft {
         comment: vec![id; 16],
         anchor: Anchor {
@@ -511,8 +685,14 @@ fn a_new_snapshot_forgets_those_the_review_no_longer_keeps() {
     };
     assert_eq!(
         commits(&w),
-        ["s1", "s3"],
-        "s2 is named by nothing and no longer latest"
+        ["s1", "s2", "s3"],
+        "s2 is named by nothing, but a page opened before s3 may show it"
+    );
+    let w = rig.written(LEAD, vec![snapshot("s3a")]);
+    assert_eq!(
+        commits(&w),
+        ["s1", "s3", "s3a"],
+        "s2 is neither named, the latest, nor the one before"
     );
 
     // Once the drafts on s1 move, s1 goes with the snapshot that moved them.
@@ -533,7 +713,7 @@ fn a_new_snapshot_forgets_those_the_review_no_longer_keeps() {
             },
         ],
     );
-    assert_eq!(commits(&w), ["s4"]);
+    assert_eq!(commits(&w), ["s3a", "s4"]);
 }
 
 #[test]
@@ -557,6 +737,12 @@ fn start_over_removes_the_review_and_its_entry() {
     assert!(
         w.review.unwrap().comments.is_empty(),
         "the next look is a first look"
+    );
+    let entry = w.entry.unwrap();
+    assert_eq!(
+        (entry.review_id, entry.counter),
+        (vec![0x6f; 16], 1),
+        "a review begun anew counts afresh under its own id"
     );
 }
 

@@ -18,8 +18,9 @@ use support::*;
 use tonic::Code;
 use wire::experimental::review_placement::At;
 use wire::experimental::{
-    REVIEW_ROW, ReviewAnchor, ReviewEdit, ReviewEditRequest, ReviewLineRange, ReviewOpenRequest,
-    ReviewPutComment, ReviewRowEntry, ReviewSummary, ReviewerComment, review_edit, reviews1_client,
+    REVIEW_ROW, ReviewAnchor, ReviewComparedLines, ReviewEdit, ReviewEditRequest, ReviewLineRange,
+    ReviewOpenRequest, ReviewPutComment, ReviewRowEntry, ReviewSummary, ReviewerComment,
+    review_edit, reviews1_client,
 };
 use wire::{Empty, Lifecycle};
 
@@ -150,6 +151,7 @@ impl Host {
             agent_id: agent.id.as_bytes().to_vec(),
             base_branch: base_branch.map(str::to_owned),
             refresh,
+            read_only: false,
         };
         Ok(self.client().open(request).await?.into_inner())
     }
@@ -249,7 +251,7 @@ fn at(summary: &ReviewSummary, id: &str) -> At {
     comment(summary, id)
         .placement
         .as_ref()
-        .and_then(|placement| placement.at)
+        .and_then(|placement| placement.at.clone())
         .expect("every comment is placed")
 }
 
@@ -258,6 +260,14 @@ fn near(summary: &ReviewSummary, id: &str) -> bool {
         .placement
         .as_ref()
         .is_some_and(|placement| placement.changed_near)
+}
+
+/// The file `id`'s placement says it sits in.
+fn placed_path<'a>(summary: &'a ReviewSummary, id: &str) -> &'a str {
+    comment(summary, id)
+        .placement
+        .as_ref()
+        .map_or("", |placement| placement.path.as_str())
 }
 
 fn lines(start: u32, end: u32) -> At {
@@ -387,8 +397,13 @@ async fn with_drafts_an_open_stays_on_their_snapshot_and_a_refresh_moves_them() 
     );
     assert_eq!(edited.text, "about edited");
     assert!(!host.entry(&agent).await.unwrap().moved);
-    // The drafts left the old snapshot, which nothing names now.
-    assert!(!readable(&host.install.work, &refreshed.objects, &snapshot));
+    // The drafts left the old snapshot, which nothing names now; it is
+    // kept as the one before the latest, which a page opened earlier still
+    // shows, until the next is taken.
+    assert!(readable(&host.install.work, &refreshed.objects, &snapshot));
+    std::fs::write(host.install.work.join("later.txt"), "later\n").unwrap();
+    let later = host.refresh(&agent).await;
+    assert!(!readable(&host.install.work, &later.objects, &snapshot));
     host.stop().await;
 }
 
@@ -483,7 +498,7 @@ async fn starting_over_makes_the_next_look_a_first_one_and_removes_the_store() {
         vec![put("draft", &first.snapshot, "notes.txt", 1, 1)],
     )
     .await;
-    let store = agent.dir.join(agent_dir::REVIEW);
+    let store = agent.dir.join(daemon_core::reviews::REVIEW);
     assert!(store.is_dir());
 
     let over = host
@@ -604,7 +619,8 @@ async fn unkept_snapshots_are_dropped_and_named_ones_kept() {
 
     std::fs::write(host.install.work.join("a.txt"), "a\n").unwrap();
     let second = host.open(&agent).await;
-    assert!(!readable(
+    // The one before the latest stays, for a page still showing it.
+    assert!(readable(
         &host.install.work,
         &second.objects,
         &first.snapshot
@@ -616,23 +632,41 @@ async fn unkept_snapshots_are_dropped_and_named_ones_kept() {
 
     std::fs::write(host.install.work.join("b.txt"), "b\n").unwrap();
     let third = host.open(&agent).await;
+    assert!(!readable(
+        &host.install.work,
+        &third.objects,
+        &first.snapshot
+    ));
     std::fs::write(host.install.work.join("c.txt"), "c\n").unwrap();
     let fourth = host.open(&agent).await;
+    std::fs::write(host.install.work.join("d.txt"), "d\n").unwrap();
+    let fifth = host.open(&agent).await;
     assert!(readable(
         &host.install.work,
-        &fourth.objects,
+        &fifth.objects,
         &second.snapshot
     ));
     assert!(!readable(
         &host.install.work,
-        &fourth.objects,
+        &fifth.objects,
         &third.snapshot
     ));
-    assert!(readable(
-        &host.install.work,
-        &fourth.objects,
-        &fourth.snapshot
-    ));
+    for kept in [&fourth.snapshot, &fifth.snapshot] {
+        assert!(readable(&host.install.work, &fifth.objects, kept));
+    }
+    // Each kept snapshot's index stays with it, and a dropped one's goes.
+    let indexes = std::path::Path::new(&fifth.index).parent().unwrap();
+    let mut held: Vec<String> = std::fs::read_dir(indexes)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    held.sort();
+    assert!(
+        held.iter()
+            .all(|name| [&second.snapshot, &fourth.snapshot, &fifth.snapshot].contains(&name)),
+        "{held:?}"
+    );
+    assert!(held.contains(&fifth.snapshot), "{held:?}");
     host.stop().await;
 }
 
@@ -735,9 +769,10 @@ async fn edits_are_all_or_none_and_each_refusal_says_why() {
         }),
         text: "x".repeat(16 * 1024 + 1),
     });
+    // Every cap on what a review holds answers alike.
     assert_eq!(
         code(host.try_edit(&agent, vec![long]).await),
-        Code::InvalidArgument
+        Code::ResourceExhausted
     );
     let many = (0..501)
         .map(|n| put(&format!("c{n}"), &snapshot, "notes.txt", 0, 0))
@@ -748,16 +783,295 @@ async fn edits_are_all_or_none_and_each_refusal_says_why() {
     );
     assert!(host.open(&agent).await.comments.is_empty());
 
-    // On removed lines the anchor names the base commit.
+    // On removed lines the anchor names the base commit, and the comment
+    // is placed on those lines of it, in the file the snapshot holds.
     let base = host.open(&agent).await.base_commit;
     let removed = host
         .edit(&agent, vec![put("removed", &base, "notes.txt", 25, 25)])
         .await;
-    assert_eq!(at(&removed, "removed"), At::File(Empty {}));
+    assert_eq!(
+        at(&removed, "removed"),
+        At::Compared(ReviewComparedLines {
+            commit: base.clone(),
+            lines: Some(ReviewLineRange { start: 25, end: 25 }),
+        })
+    );
+    assert_eq!(placed_path(&removed, "removed"), "notes.txt");
+    // Its scope and snippet are read from the base, and say so.
+    let comment = comment(&removed, "removed");
+    assert!(
+        comment.snippet.iter().any(|line| line.old_line == 25),
+        "{:?}",
+        comment.snippet
+    );
+
+    // A commit the review never handed out takes no comment.
+    let elsewhere = put("elsewhere", &"1".repeat(40), "notes.txt", 1, 1);
+    assert_eq!(
+        code(host.try_edit(&agent, vec![elsewhere]).await),
+        Code::FailedPrecondition
+    );
+
+    // Comments that would take the summary past its bound are refused
+    // before anything is written: here 300 comments of 15 KiB of words.
+    let heavy = (0..300)
+        .map(|n| {
+            review_edit::Of::Put(ReviewPutComment {
+                id: format!("heavy{n}").into_bytes(),
+                anchor: Some(ReviewAnchor {
+                    commit: snapshot.clone(),
+                    path: "notes.txt".to_owned(),
+                    lines: Some(ReviewLineRange { start: 0, end: 0 }),
+                }),
+                text: "y".repeat(15 * 1024),
+            })
+        })
+        .collect();
+    assert_eq!(
+        code(host.try_edit(&agent, heavy).await),
+        Code::ResourceExhausted
+    );
+    assert_eq!(host.open(&agent).await.comments.len(), 1);
 
     let empty_base = host.open_with(&agent, false, Some("")).await.unwrap_err();
     assert_eq!(empty_base.code(), Code::InvalidArgument);
     host.stop().await;
+}
+
+impl Host {
+    async fn read_only(&self, agent: &SyntheticAgent) -> Result<ReviewSummary, tonic::Status> {
+        let request = ReviewOpenRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            read_only: true,
+            ..ReviewOpenRequest::default()
+        };
+        Ok(self.client().open(request).await?.into_inner())
+    }
+}
+
+/// Only a person's open or refresh changes the review: a read-only open,
+/// as a client following the row or building a message makes, never begins
+/// one, never snapshots a moved tree and never picks a base.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_read_only_open_begins_nothing_and_takes_no_snapshot() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let agent = agent_in(&install, &install.work, Some("main"));
+    let host = Host::start(install).await;
+
+    let none = host.read_only(&agent).await.unwrap();
+    assert!(none.id.is_empty(), "no review: an empty summary");
+    assert_eq!(host.entry(&agent).await, None, "and none begun");
+
+    let opened = host.open(&agent).await;
+    let counter = host.entry(&agent).await.unwrap().counter;
+    std::fs::write(host.install.work.join("later.txt"), "later\n").unwrap();
+    let read = host.read_only(&agent).await.unwrap();
+    assert_eq!(
+        read.snapshot, opened.snapshot,
+        "the tree moved, no snapshot"
+    );
+    assert_eq!(read.files, opened.files);
+    assert_eq!(host.entry(&agent).await.unwrap().counter, counter);
+
+    for (refresh, base) in [(true, None), (false, Some("main"))] {
+        let request = ReviewOpenRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            read_only: true,
+            refresh,
+            base_branch: base.map(str::to_owned),
+        };
+        let refused = host.client().open(request).await.unwrap_err();
+        assert_eq!(refused.code(), Code::InvalidArgument);
+    }
+    host.stop().await;
+}
+
+/// A page opened before another person's open took a new snapshot still
+/// reads and comments on the one it shows: the one before the latest is
+/// kept, compared against the base recorded with it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_page_on_the_snapshot_before_the_latest_still_reads_and_comments() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let agent = agent_in(&install, &install.work, Some("main"));
+    let host = Host::start(install).await;
+    let shown = host.open(&agent).await;
+    std::fs::write(host.install.work.join("later.txt"), "later\n").unwrap();
+    let latest = host.open(&agent).await;
+    assert_ne!(latest.snapshot, shown.snapshot);
+
+    let files = host
+        .client()
+        .get_files(wire::experimental::ReviewGetFilesRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            snapshot: shown.snapshot.clone(),
+            from: shown.base_commit.clone(),
+            view: wire::experimental::ReviewView::All as i32,
+            files: vec![wire::experimental::ReviewFileRequest {
+                path: "notes.txt".to_owned(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(files.files.len(), 1);
+    assert!(!files.files[0].hunks.is_empty());
+
+    let commented = host
+        .edit(
+            &agent,
+            vec![put("late", &shown.snapshot, "notes.txt", 25, 25)],
+        )
+        .await;
+    assert_eq!(commented.snapshot, latest.snapshot);
+    assert_eq!(
+        at(&commented, "late"),
+        lines(25, 25),
+        "placed on the latest"
+    );
+    host.stop().await;
+}
+
+/// A placement names the file it sits in as the snapshot names it: a sent
+/// comment on a file renamed since sits in the renamed file.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_comment_on_a_renamed_file_is_placed_in_the_file_by_its_new_name() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let agent = agent_in(&install, &install.work, Some("main"));
+    let host = Host::start(install).await;
+    let first = host.open(&agent).await;
+    let written = host
+        .edit(
+            &agent,
+            vec![put("moved", &first.snapshot, "notes.txt", 10, 10)],
+        )
+        .await;
+    assert_eq!(placed_path(&written, "moved"), "notes.txt");
+    host.send(&agent, &written, &["moved"]);
+
+    git(&host.install.work, &["mv", "notes.txt", "renamed.txt"]);
+    let after = host.open(&agent).await;
+    assert_ne!(after.snapshot, first.snapshot);
+    assert_eq!(at(&after, "moved"), lines(10, 10));
+    assert_eq!(placed_path(&after, "moved"), "renamed.txt");
+    let text = attachments::sent_review::text(&after, &after.comments);
+    assert!(text.contains("## renamed.txt, line 10"), "{text}");
+    host.stop().await;
+}
+
+/// The command the agent is given diffs the working tree against the
+/// snapshot truthfully, untracked files included, lists the files made
+/// since, and writes nothing to the repository; and it runs, with the same
+/// answer, where nothing may be written at all, as in Codex's read-only
+/// sandbox.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_agents_diff_command_is_truthful_and_writes_nothing() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let work = install.work.clone();
+    std::fs::write(work.join("todo.txt"), "untracked\n").unwrap();
+    std::fs::write(work.join("scratch.txt"), "scratch\n").unwrap();
+    let agent = agent_in(&install, &work, Some("main"));
+    let host = Host::start(install).await;
+    let summary = host.open(&agent).await;
+    assert!(Path::new(&summary.index).is_file(), "{}", summary.index);
+
+    // After the snapshot: a tracked file and an untracked one edited, an
+    // untracked one deleted, and a new one made.
+    std::fs::write(
+        work.join("notes.txt"),
+        numbered(0, &[(25, "feature"), (2, "two")]),
+    )
+    .unwrap();
+    std::fs::write(work.join("todo.txt"), "untracked\nand more\n").unwrap();
+    std::fs::remove_file(work.join("scratch.txt")).unwrap();
+    std::fs::write(work.join("made.txt"), "made\n").unwrap();
+
+    let command = attachments::sent_review::command(
+        &summary.root,
+        &summary.objects,
+        &summary.index,
+        &summary.snapshot,
+    );
+    assert!(
+        attachments::sent_review::text(&summary, &[]).contains(&command),
+        "the text gives this command"
+    );
+    let git_dir = work.join(".git");
+    let before = tree_state(&git_dir);
+    let run = |sandboxed: bool| {
+        let mut shell = if sandboxed {
+            let mut shell = Command::new("sandbox-exec");
+            shell.args([
+                "-p",
+                "(version 1)(allow default)(deny file-write*)\
+                 (allow file-write-data (literal \"/dev/null\"))",
+                "sh",
+            ]);
+            shell
+        } else {
+            Command::new("sh")
+        };
+        let output = shell
+            .args(["-c", &command])
+            .current_dir(std::env::temp_dir())
+            .env("HOME", std::env::temp_dir())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let shown = run(false);
+    assert!(shown.contains("-line 2\n+two\n"), "{shown}");
+    assert!(
+        shown.contains("diff --git a/todo.txt b/todo.txt"),
+        "{shown}"
+    );
+    assert!(shown.contains("+and more\n"), "{shown}");
+    assert!(shown.contains("deleted file mode"), "{shown}");
+    assert!(shown.contains("-scratch\n"), "{shown}");
+    assert!(
+        !shown.contains("notes.txt\n+feature"),
+        "unchanged since: {shown}"
+    );
+    assert!(
+        shown.ends_with("made.txt\n"),
+        "the new file listed last: {shown}"
+    );
+    assert_eq!(tree_state(&git_dir), before, "nothing in .git changed");
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&status.stdout).contains("?? made.txt"));
+    if cfg!(target_os = "macos") {
+        assert_eq!(run(true), shown, "the same where nothing may be written");
+    }
+    host.stop().await;
+}
+
+/// Every file under `dir` with its size and modification time.
+fn tree_state(dir: &Path) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
+    let mut found = Vec::new();
+    let mut folders = vec![dir.to_owned()];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let entry = entry.unwrap();
+            let meta = entry.metadata().unwrap();
+            if meta.is_dir() {
+                folders.push(entry.path());
+            } else {
+                found.push((entry.path(), meta.len(), meta.modified().unwrap()));
+            }
+        }
+    }
+    found.sort();
+    found
 }
 
 /// Sending a review: the host marks sent exactly the comments the message
@@ -966,13 +1280,24 @@ mod sent {
         agent: &SyntheticAgent,
         attachments: Vec<Attachment>,
     ) -> wire::SendInputResponse {
+        let input = uuid::Uuid::new_v4().as_bytes().to_vec();
+        prompt_as(host, agent, &input, attachments).await
+    }
+
+    /// [`prompt`] under the input id `input`.
+    async fn prompt_as(
+        host: &Host,
+        agent: &SyntheticAgent,
+        input: &[u8],
+        attachments: Vec<Attachment>,
+    ) -> wire::SendInputResponse {
         let mut agents = wire::agent_service_client(served_as(
             &host.runtime,
             Served::Profile,
             Calling::PersonHere(analytics::Client::Terminal),
         ));
         let input = wire::Input::new(
-            uuid::Uuid::new_v4().as_bytes().to_vec(),
+            input.to_vec(),
             wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
                 of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
                     text: "Have a look \u{fffc}".to_owned(),
@@ -990,20 +1315,64 @@ mod sent {
             .into_inner()
     }
 
-    /// A person's prompt sends a review as an agent's message does: the
-    /// round closes when the agent takes it, queued, and a refused one
-    /// leaves the drafts as they were.
+    /// The item the agent's journal holds once it takes the prompt
+    /// `input` carrying `attachments` from its queue: the prompt as the
+    /// provider reflected it.
+    fn reflected(input: &[u8], attachments: Vec<Attachment>) -> wire::Step {
+        wire::Step {
+            items: vec![wire::Item {
+                key: format!("prompt:{}", uuid::Uuid::from_slice(input).unwrap()),
+                input_id: input.to_vec(),
+                text: "Have a look \u{fffc}".to_owned(),
+                attachments,
+                kind: KIND as i32,
+                at_ms: 1_000,
+                ..wire::Item::default()
+            }],
+            ..wire::Step::default()
+        }
+    }
+
+    /// Waits for the agent's row to say `drafts` drafts wait.
+    async fn drafts_become(host: &Host, agent: &SyntheticAgent, drafts: u32) {
+        for _ in 0..500 {
+            if host
+                .entry(agent)
+                .await
+                .is_some_and(|entry| entry.drafts == drafts)
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!(
+            "{drafts} drafts never waited: {:?}",
+            host.entry(agent).await
+        );
+    }
+
+    /// A person's prompt closes the round it sends when the agent takes it
+    /// from its queue, not when it is queued: one withdrawn from the queue
+    /// leaves its comments drafts, and so does one the agent refused. Only
+    /// the comments as the text was written are sent: one edited after the
+    /// client built it stays a draft.
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_persons_prompt_taken_by_the_agent_closes_the_round_it_sends() {
+    async fn a_persons_prompt_closes_its_round_when_the_agent_takes_it_from_the_queue() {
         let install = Install::new();
         feature_branch(&install.work);
-        let agent = live_agent(&install);
+        let mut agent = live_agent(&install);
         let host = Host::start(install).await;
         let snapshot = host.open(&agent).await.snapshot;
         let drafted = host
-            .edit(&agent, vec![put("one", &snapshot, "notes.txt", 25, 25)])
+            .edit(
+                &agent,
+                vec![
+                    put("one", &snapshot, "notes.txt", 25, 25),
+                    put("two", &snapshot, "notes.txt", 2, 2),
+                ],
+            )
             .await;
-        let sending = review(&drafted, &["one"]);
+        let sending = review(&drafted, &["one", "two"]);
         let counter = host.entry(&agent).await.unwrap().counter;
 
         agent.answer_with(Answer::Reject(wire::Refusal::Unsupported));
@@ -1014,20 +1383,55 @@ mod sent {
         );
         assert_eq!(host.entry(&agent).await.unwrap().counter, counter);
 
+        // Queued, then withdrawn: the agent never takes it, so its journal
+        // never holds it, and nothing is sent.
         agent.answer_with(Answer::Accept);
-        let taken = prompt(&host, &agent, vec![sending]).await;
+        let queued = prompt(&host, &agent, vec![sending.clone()]).await;
         assert!(
-            matches!(taken.of, Some(wire::send_input_response::Of::Accepted(_))),
-            "{taken:?}"
+            matches!(
+                queued.of,
+                Some(wire::send_input_response::Of::Accepted(wire::Accepted {
+                    queued: true
+                }))
+            ),
+            "{queued:?}"
         );
+        agent.append(&snapshot_step(&[]));
+        agent.nudge().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let entry = host.entry(&agent).await.unwrap();
-        assert_eq!(entry.drafts, 0);
-        assert_eq!(entry.counter, counter + 1);
+        assert_eq!((entry.drafts, entry.counter), (2, counter));
+        assert!(host.open(&agent).await.rounds.is_empty());
+
+        // "two" is reworded after the client built the attachment.
+        host.edit(&agent, vec![put("two", &snapshot, "notes.txt", 2, 2)])
+            .await;
+        let counter = host.entry(&agent).await.unwrap().counter;
+
+        // Sent again and taken: the round closes once its item is in.
+        let input = uuid::Uuid::new_v4().as_bytes().to_vec();
+        prompt_as(&host, &agent, &input, vec![sending.clone()]).await;
+        assert_eq!(host.entry(&agent).await.unwrap().drafts, 2, "queued only");
+        agent.append(&reflected(&input, vec![sending]));
+        agent.nudge().await;
+        drafts_become(&host, &agent, 1).await;
+        assert_eq!(host.entry(&agent).await.unwrap().counter, counter + 1);
         let sent = host.open(&agent).await;
-        assert_eq!(rounds(&sent), BTreeMap::from([("one".to_owned(), Some(1))]));
+        assert_eq!(
+            rounds(&sent),
+            BTreeMap::from([("one".to_owned(), Some(1)), ("two".to_owned(), None)]),
+            "the comment edited since stays a draft"
+        );
         assert_eq!(sent.rounds.len(), 1);
         assert_eq!(sent.rounds[0].snapshot, snapshot);
+        assert_eq!(sent.rounds[0].base_commit, drafted.base_commit);
         host.stop().await;
+    }
+
+    /// A snapshot step whose queue holds `queue`: the agent's queue after
+    /// a withdrawal.
+    fn snapshot_step(queue: &[&str]) -> wire::Step {
+        support::synthetic::snapshot(wire::Phase::Idle, queue, 2_000)
     }
 }
 
@@ -1086,22 +1490,23 @@ mod stores {
         assert_eq!(review_tables(&host.install), 4);
         let install = stopped(host).await;
 
-        let review = agent.dir.join(agent_dir::REVIEW);
+        let review = agent.dir.join(daemon_core::reviews::REVIEW);
         assert!(review.join("objects").is_dir());
         // Another agent's review folder is a link out of its directory:
         // the link goes, and nothing it names.
         let elsewhere = install.work.with_file_name("elsewhere");
         std::fs::create_dir_all(&elsewhere).unwrap();
         std::fs::write(elsewhere.join("kept.txt"), "kept\n").unwrap();
-        std::os::unix::fs::symlink(&elsewhere, linked.dir.join(agent_dir::REVIEW)).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, linked.dir.join(daemon_core::reviews::REVIEW))
+            .unwrap();
         let mut kept = names(&agent.dir);
-        kept.remove(agent_dir::REVIEW);
+        kept.remove(daemon_core::reviews::REVIEW);
 
         let daemon = install.start("boot-2", quiet_launch()).await;
         let runtime = runtime(&daemon, &install);
         assert!(!review.exists(), "the agent's review store is removed");
         assert!(
-            std::fs::symlink_metadata(linked.dir.join(agent_dir::REVIEW)).is_err(),
+            std::fs::symlink_metadata(linked.dir.join(daemon_core::reviews::REVIEW)).is_err(),
             "the link in a review folder's place is removed"
         );
         assert_eq!(
@@ -1152,7 +1557,13 @@ mod stores {
             snippet.iter().any(|line| line.contains(SECRET)),
             "the review holds the secret: {snippet:?}"
         );
-        assert!(agent.dir.join(agent_dir::REVIEW).join("objects").is_dir());
+        assert!(
+            agent
+                .dir
+                .join(daemon_core::reviews::REVIEW)
+                .join("objects")
+                .is_dir()
+        );
 
         let bundle = host
             .runtime
@@ -1171,7 +1582,7 @@ mod stores {
                 assert!(
                     !relative
                         .iter()
-                        .any(|part| part == std::ffi::OsStr::new(agent_dir::REVIEW)),
+                        .any(|part| part == std::ffi::OsStr::new(daemon_core::reviews::REVIEW)),
                     "{} is in the dump",
                     relative.display()
                 );

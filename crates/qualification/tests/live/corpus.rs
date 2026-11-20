@@ -1173,7 +1173,7 @@ impl Install {
         use wire::experimental::review_placement::At;
         use wire::experimental::{
             ReviewAnchor, ReviewDefinition, ReviewDefinitionKind, ReviewLine, ReviewLineKind,
-            ReviewLineRange, ReviewPlacement, ReviewSummary, ReviewerComment,
+            ReviewLineRange, ReviewPlacement, ReviewSide, ReviewSummary, ReviewerComment,
         };
 
         let root = self.project(scenario)?;
@@ -1214,6 +1214,16 @@ impl Install {
             ],
         )?;
         let _ = std::fs::remove_file(&index);
+        // The snapshot's own index, as the host keeps one beside the store
+        // for the diff command the review gives.
+        let indexes = objects.with_file_name("indexes");
+        std::fs::create_dir_all(&indexes).map_err(|error| error.to_string())?;
+        let snapshot_index = indexes.join(&snapshot);
+        let reading = [
+            ("GIT_ALTERNATE_OBJECT_DIRECTORIES", objects.as_os_str()),
+            ("GIT_INDEX_FILE", snapshot_index.as_os_str()),
+        ];
+        git(&root, &reading, &["read-tree", &snapshot])?;
         std::fs::write(
             &store,
             format!("{reviewed}\nconst AFTER_SNAPSHOT: &str = \"{AFTER_SNAPSHOT}\";\n"),
@@ -1235,6 +1245,7 @@ impl Install {
                 start_line: start,
                 end_line: end,
                 parent: None,
+                side: ReviewSide::Snapshot as i32,
             };
         let on = ReviewLineRange { start: 12, end: 12 };
         use ReviewLineKind::{Added, Context, Removed};
@@ -1277,7 +1288,9 @@ impl Install {
             placement: Some(ReviewPlacement {
                 at: Some(At::Lines(on)),
                 changed_near: false,
+                path: "src/store.rs".into(),
             }),
+            revision: 1,
         };
         let summary = ReviewSummary {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
@@ -1285,6 +1298,7 @@ impl Install {
             snapshot,
             objects: objects.to_string_lossy().into_owned(),
             root: root.to_string_lossy().into_owned(),
+            index: snapshot_index.to_string_lossy().into_owned(),
             ..Default::default()
         };
         Ok(attachments::sent_review::attachment(&summary, &[comment]))

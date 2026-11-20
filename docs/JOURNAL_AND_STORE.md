@@ -577,15 +577,18 @@ An experiment keeps up to three kinds of data, and they live in different places
   [the agent process](AGENT_PROCESS.md#a-suspended-agent-on-its-host)), and
   the reviews experiment's `exp_reviews_1_reviews`, `_snapshots`, `_rounds`
   and `_comments` (each own agent's one review: the base it began with, the
-  snapshots it took, the rounds sent and every comment with its anchor,
-  snippet and round; [`crates/store/src/reviews.rs`](../crates/store/src/reviews.rs)).
+  snapshots it took with the base commit each is compared against, the
+  rounds sent and every comment with its anchor, snippet, round and
+  revision; [`crates/store/src/reviews.rs`](../crates/store/src/reviews.rs)).
   An agent's review rows go with the agent, in the store's `remove_agent`.
 - **Files outside the store**, when an experiment needs them, sit in the
   agent's directory under a name of the experiment's own, and are
   experiment data like its tables. The reviews experiment keeps
   `<agent dir>/review/objects`, a git object store holding the snapshots of
   the agent's working tree (untracked files included, so possibly secrets),
-  kept out of the repository. It goes with the agent's directory and when
+  kept out of the repository, and `<agent dir>/review/indexes`, a git index
+  of each snapshot it keeps, which the diff command the agent is sent
+  reads. It goes with the agent's directory and when
   the review is started over, and the daemon removes every own agent's
   `review` folder when it next opens the profile with the experiment off,
   never following a link in its place (`reviews::cleanup` in

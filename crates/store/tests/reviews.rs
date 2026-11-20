@@ -34,6 +34,7 @@ fn with_agent(path: &std::path::Path, id: &[u8]) -> Sqlite {
 fn taken(commit: &str) -> Taken {
     Taken {
         commit: commit.into(),
+        base_commit: format!("base of {commit}"),
         taken_ms: 5,
         omitted: vec!["big.bin".into(), "assets/huge.png".into()],
         merging: false,
@@ -64,6 +65,7 @@ fn comment(id: u8, commit: &str, round: Option<u32>) -> Comment {
             ..Default::default()
         }],
         round,
+        revision: 1,
         updated_ms: 9,
     }
 }
@@ -150,11 +152,22 @@ fn a_review_reads_back_as_written() {
     .unwrap();
     assert_eq!(review(&store, b"agent").latest(), Some(&taken("s1")));
 
-    // A comment put again is changed in place, keeping its place.
+    // A comment put again is changed in place, keeping its place, and its
+    // revision is what was written.
     let mut edited = comment(1, "s1", None);
     edited.text = "said better".into();
+    edited.revision = 2;
     write(&mut store, b"agent", |w| w.put_comment(REVIEW, &edited)).unwrap();
     assert_eq!(review(&store, b"agent").comments[0], edited);
+
+    // A snapshot's base is recorded with it, and can be recorded again.
+    write(&mut store, b"agent", |w| {
+        w.set_snapshot_base(REVIEW, "s2", "picked")
+    })
+    .unwrap();
+    let read = review(&store, b"agent");
+    assert_eq!(read.snapshot("s2").unwrap().base_commit, "picked");
+    assert_eq!(read.snapshot("s1").unwrap().base_commit, "base of s1");
 }
 
 /// Each own agent has one review at most, and a comment id is one
@@ -237,9 +250,9 @@ fn comments_are_discarded_and_deleted_and_a_review_removed() {
 }
 
 /// The snapshots a review keeps are those a round or a comment names, and
-/// the latest; the rest may be forgotten.
+/// the latest and the one before it; the rest may be forgotten.
 #[test]
-fn the_kept_snapshots_are_those_named_and_the_latest() {
+fn the_kept_snapshots_are_those_named_the_latest_and_the_one_before() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = with_agent(&dir.path().join("store.sqlite"), b"agent");
     begin(&mut store, b"agent", REVIEW).unwrap();
@@ -263,7 +276,9 @@ fn the_kept_snapshots_are_those_named_and_the_latest() {
     })
     .unwrap();
     let kept = review(&store, b"agent").kept();
-    let expected: BTreeSet<String> = ["s2", "s3", "s5"].map(String::from).into();
+    // s4 is the one before the latest, which a page opened before s5 was
+    // taken may still show.
+    let expected: BTreeSet<String> = ["s2", "s3", "s4", "s5"].map(String::from).into();
     assert_eq!(kept, expected);
 
     write(&mut store, b"agent", |w| w.keep_snapshots(REVIEW, &kept)).unwrap();
@@ -273,7 +288,7 @@ fn the_kept_snapshots_are_those_named_and_the_latest() {
             .iter()
             .map(|taken| taken.commit.as_str())
             .collect::<Vec<_>>(),
-        ["s2", "s3", "s5"]
+        ["s2", "s3", "s4", "s5"]
     );
     assert_eq!(read.kept(), expected, "keeping is stable");
 }
@@ -345,6 +360,7 @@ fn switched_off_the_tables_and_own_entries_go() {
         drafts: 1,
         counter: 3,
         moved: true,
+        review_id: REVIEW.to_vec(),
     };
     let mut replica = AgentRow::new(
         AgentKey::new(b"far-host".to_vec(), b"theirs".to_vec()),

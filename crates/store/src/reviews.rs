@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS exp_reviews_1_reviews (
 CREATE TABLE IF NOT EXISTS exp_reviews_1_snapshots (
   review_id BLOB    NOT NULL,
   snapshot  TEXT    NOT NULL,               -- the snapshot's commit
+  base_commit TEXT  NOT NULL,               -- the commit its all changes run from, as found when it was taken
   taken_ms  INTEGER NOT NULL,
   omitted   BLOB    NOT NULL,               -- the paths left out for their size, each ended by a NUL
   merging   INTEGER NOT NULL,               -- a merge or rebase was under way when it was taken
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS exp_reviews_1_comments (
   snippet       BLOB    NOT NULL,             -- amux.experimental.ReviewLine, each length-delimited
   scope         BLOB    NOT NULL,             -- amux.experimental.ReviewDefinition, each length-delimited
   round         INTEGER,                      -- the round it was sent in; NULL while a draft
+  revision      INTEGER NOT NULL,             -- from 1, up by one each time a person puts it
   updated_ms    INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS exp_reviews_1_comments_by_review ON exp_reviews_1_comments (review_id);
@@ -85,6 +87,9 @@ pub struct Review {
 pub struct Taken {
     /// Its commit, by full object id.
     pub commit: String,
+    /// The commit its all changes run from, as the review's base rule found
+    /// it when the snapshot was taken (or its base was picked again).
+    pub base_commit: String,
     pub taken_ms: i64,
     /// The paths left out of it for their size, from the repository's top
     /// folder.
@@ -130,6 +135,9 @@ pub struct Comment {
     pub scope: Vec<ReviewDefinition>,
     /// The round it was sent in; none while it is a draft.
     pub round: Option<u32>,
+    /// From 1, up by one each time a person puts it: a sent review names
+    /// the revision it was written from.
+    pub revision: u64,
     pub updated_ms: i64,
 }
 
@@ -146,8 +154,21 @@ impl Review {
             .filter(|comment| comment.round.is_none())
     }
 
+    /// The snapshot taken before the latest, which a client may still be
+    /// showing: it is kept until the next one is taken.
+    pub fn previous(&self) -> Option<&Taken> {
+        self.snapshots.iter().rev().nth(1)
+    }
+
+    /// The snapshot `commit`, while the review keeps it.
+    pub fn snapshot(&self, commit: &str) -> Option<&Taken> {
+        self.snapshots.iter().find(|taken| taken.commit == commit)
+    }
+
     /// The snapshots the review still needs: each one a round or a
-    /// comment's anchor names, and the latest. Any other may go.
+    /// comment's anchor names, the latest, and the one before it, which a
+    /// page opened before the latest was taken still shows. Any other may
+    /// go.
     pub fn kept(&self) -> BTreeSet<String> {
         let named: BTreeSet<&str> = self
             .rounds
@@ -163,6 +184,7 @@ impl Review {
             .iter()
             .filter(|taken| named.contains(taken.commit.as_str()))
             .chain(self.latest())
+            .chain(self.previous())
             .map(|taken| taken.commit.clone())
             .collect()
     }
@@ -186,7 +208,7 @@ impl Sqlite {
         }
         self.read(|rows| {
             let mut statement = rows.conn.prepare_cached(
-                "SELECT r.agent_id, s.snapshot, s.taken_ms, s.omitted, s.merging \
+                "SELECT r.agent_id, s.snapshot, s.base_commit, s.taken_ms, s.omitted, s.merging \
                  FROM exp_reviews_1_reviews r JOIN exp_reviews_1_snapshots s \
                  ON s.review_id = r.id \
                  WHERE s.rowid = (SELECT max(rowid) FROM exp_reviews_1_snapshots \
@@ -305,15 +327,33 @@ impl ReviewWriter<'_> {
             params![review, taken.commit],
         )?;
         self.rows.conn.execute(
-            "INSERT INTO exp_reviews_1_snapshots (review_id, snapshot, taken_ms, omitted, merging) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO exp_reviews_1_snapshots \
+             (review_id, snapshot, base_commit, taken_ms, omitted, merging) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 review,
                 taken.commit,
+                taken.base_commit,
                 taken.taken_ms,
                 encode_paths(&taken.omitted),
                 taken.merging
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Records `base_commit` as what the snapshot `snapshot` is compared
+    /// against for all changes from now on.
+    pub fn set_snapshot_base(
+        &self,
+        review: &[u8],
+        snapshot: &str,
+        base_commit: &str,
+    ) -> Result<(), StoreError> {
+        self.rows.conn.execute(
+            "UPDATE exp_reviews_1_snapshots SET base_commit = ?3 \
+             WHERE review_id = ?1 AND snapshot = ?2",
+            params![review, snapshot, base_commit],
         )?;
         Ok(())
     }
@@ -341,13 +381,14 @@ impl ReviewWriter<'_> {
         self.rows.conn.execute(
             "INSERT INTO exp_reviews_1_comments \
              (id, review_id, anchor_commit, path, start_line, end_line, text, snippet, scope, \
-              round, updated_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
+              round, revision, updated_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
              ON CONFLICT (id) DO UPDATE SET \
              anchor_commit = excluded.anchor_commit, path = excluded.path, \
              start_line = excluded.start_line, end_line = excluded.end_line, \
              text = excluded.text, snippet = excluded.snippet, scope = excluded.scope, \
-             round = excluded.round, updated_ms = excluded.updated_ms",
+             round = excluded.round, revision = excluded.revision, \
+             updated_ms = excluded.updated_ms",
             params![
                 comment.id,
                 review,
@@ -359,6 +400,8 @@ impl ReviewWriter<'_> {
                 encode_each(&comment.snippet),
                 encode_each(&comment.scope),
                 comment.round,
+                // SQLite's integers are signed; no comment is put 2^63 times.
+                comment.revision as i64,
                 comment.updated_ms
             ],
         )?;
@@ -472,7 +515,7 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
     review.snapshots = rows
         .conn
         .prepare_cached(
-            "SELECT snapshot, taken_ms, omitted, merging FROM exp_reviews_1_snapshots \
+            "SELECT snapshot, base_commit, taken_ms, omitted, merging FROM exp_reviews_1_snapshots \
              WHERE review_id = ?1 ORDER BY rowid",
         )?
         .query_map(params![review.id], |row| taken(row, 0))?
@@ -496,7 +539,7 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
         .conn
         .prepare_cached(
             "SELECT id, anchor_commit, path, start_line, end_line, text, snippet, scope, round, \
-             updated_ms FROM exp_reviews_1_comments WHERE review_id = ?1 ORDER BY rowid",
+             revision, updated_ms FROM exp_reviews_1_comments WHERE review_id = ?1 ORDER BY rowid",
         )?
         .query_map(params![review.id], |row| {
             Ok((
@@ -512,7 +555,8 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
                     snippet: Vec::new(),
                     scope: Vec::new(),
                     round: row.get(8)?,
-                    updated_ms: row.get(9)?,
+                    revision: row.get::<_, i64>(9)? as u64,
+                    updated_ms: row.get(10)?,
                 },
                 row.get::<_, Vec<u8>>(6)?,
                 row.get::<_, Vec<u8>>(7)?,
@@ -530,14 +574,15 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
     Ok(Some(review))
 }
 
-/// A snapshot from the row's columns starting at `at`: commit, time,
-/// omitted paths and the merging flag.
+/// A snapshot from the row's columns starting at `at`: commit, base
+/// commit, time, omitted paths and the merging flag.
 fn taken(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<Taken> {
     Ok(Taken {
         commit: row.get(at)?,
-        taken_ms: row.get(at + 1)?,
-        omitted: decode_paths(&row.get::<_, Vec<u8>>(at + 2)?),
-        merging: row.get(at + 3)?,
+        base_commit: row.get(at + 1)?,
+        taken_ms: row.get(at + 2)?,
+        omitted: decode_paths(&row.get::<_, Vec<u8>>(at + 3)?),
+        merging: row.get(at + 4)?,
     })
 }
 

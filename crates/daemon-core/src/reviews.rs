@@ -14,13 +14,19 @@
 //!
 //! A write is all of its changes or none of them: one store transaction,
 //! one rise of the counter, one row published.
+//!
+//! A round closes when the agent takes the message sending it: when the
+//! item its prompt or message became is ingested from its journal. A prompt
+//! still queued, and so one a person can withdraw, has closed nothing.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use store::reviews::{Anchor as StoredAnchor, Comment, Review, ReviewWriter, Round, Taken};
-use wire::experimental::{REVIEW_ROW, ReviewDefinition, ReviewLine, ReviewRowEntry};
+use wire::experimental::{
+    REVIEW_ROW, ReviewDefinition, ReviewLine, ReviewRowEntry, SENT_REVIEW, SentReview,
+};
 
 use crate::ids::{AgentId, CallId, JobId};
 use crate::io::{Job as CoreJob, Output};
@@ -31,10 +37,16 @@ use crate::{Daemon, codec};
 /// The experiment version whose shapes this module reads and writes.
 pub const VERSION: &str = REVIEW_ROW.version();
 
-/// The folder in an own agent's directory that holds its review's data.
+/// The folder in an own agent's directory that holds its review's data,
+/// written by the daemon alone: the snapshot store and an index of each
+/// snapshot. Removed with the review, and when the daemon opens the profile
+/// without the experiment.
 pub const REVIEW: &str = "review";
 /// The snapshot store, inside [`REVIEW`].
 pub const OBJECTS: &str = "objects";
+/// A git index of each snapshot the review keeps, named by its commit,
+/// inside [`REVIEW`]: what the agent's diff command reads.
+pub const INDEXES: &str = "indexes";
 
 /// The snapshot store of the own agent whose directory is `agent_dir`.
 pub fn objects(agent_dir: &Path) -> PathBuf {
@@ -68,20 +80,31 @@ pub enum Change {
     },
     /// Compares the review with another branch from now on.
     Base { base_branch: String },
+    /// The snapshot `snapshot` is compared against `base_commit` for all
+    /// changes from now on: a person picked another base, or the base rule
+    /// found another, without a snapshot being taken.
+    Rebased {
+        snapshot: String,
+        base_commit: String,
+    },
     /// A snapshot was taken: it is the latest, the tree has not moved since
     /// it, and once the write's other changes are made the review forgets
     /// every snapshot it no longer keeps (see [`Review::kept`]), which the
     /// answer lists.
     Snapshot {
         commit: String,
+        /// The commit its all changes run from, as the base rule found it
+        /// when it was taken.
+        base_commit: String,
         /// The paths left out of it for their size.
         omitted: Vec<String>,
         /// A merge or rebase was under way.
         merging: bool,
     },
     /// Writes a draft, or changes the words, anchor, snippet and scope of
-    /// a comment the review holds, draft or sent, keeping its round.
-    /// Refused with [`Refusal::Taken`] when the id is another review's.
+    /// a comment the review holds, draft or sent, keeping its round and
+    /// raising its revision. Refused with [`Refusal::Taken`] when the id is
+    /// another review's.
     Put(Box<Put>),
     /// Deletes a comment, draft or sent; one the review does not hold is
     /// already gone.
@@ -93,16 +116,17 @@ pub enum Change {
     DraftsMoved { drafts: Vec<MovedDraft> },
     /// Deletes the review: its agent has none until the next begins.
     StartOver,
-    /// The host accepted a message sending comments of the review `review`
-    /// made on `snapshot`: a round is closed, numbered next, and exactly
-    /// the comments named that are still drafts are marked sent in it. A
-    /// review other than the agent's current one changes nothing.
+    /// The agent took a message sending comments of the review `review`:
+    /// exactly the comments named that are still drafts at the revision
+    /// named are marked sent, in a round numbered next and recorded on the
+    /// review's latest snapshot, which is where its drafts sit. A send that
+    /// marks none (another review's, one sent already, or one whose
+    /// comments were all edited since) closes no round.
     Sent {
         review: Vec<u8>,
-        snapshot: String,
-        /// The commit that snapshot was shown against.
-        base_commit: String,
-        comments: Vec<Vec<u8>>,
+        /// Each comment's id and the revision the sent text was written
+        /// from.
+        comments: Vec<(Vec<u8>, u64)>,
     },
     /// Whether the tree has moved since `snapshot`, when that is still the
     /// latest. Says nothing new about the review itself, so the counter
@@ -166,6 +190,17 @@ pub struct Written {
     pub entry: Option<ReviewRowEntry>,
     /// The round a [`Change::Sent`] closed.
     pub round: Option<u32>,
+}
+
+/// What the agent's journal said it took, read for the sent reviews in it:
+/// the attachments of each item a prompt or message became.
+pub(crate) fn sent_in<'a>(items: impl IntoIterator<Item = &'a wire::Item>) -> Vec<SentReview> {
+    items
+        .into_iter()
+        .filter(|item| !item.input_id.is_empty())
+        .flat_map(|item| &item.attachments)
+        .filter_map(|attachment| SENT_REVIEW.get(&attachment.experimental))
+        .collect()
 }
 
 /// The experiment's work off the core thread: [`crate::io::Job::Review`].
@@ -253,6 +288,35 @@ impl Daemon {
                     omitted: taken.omitted,
                 }),
             });
+        }
+    }
+
+    /// Items of the own agent `agent` were committed: each sent review in
+    /// a prompt or message it took closes a round of its review.
+    pub(crate) fn review_items_committed(
+        &mut self,
+        agent: AgentId,
+        sent: Vec<SentReview>,
+        out: &mut Vec<Output>,
+    ) {
+        if !self.options.reviews || sent.is_empty() {
+            return;
+        }
+        let changes: Vec<Change> = sent
+            .into_iter()
+            .map(|sent| Change::Sent {
+                review: sent.review_id,
+                comments: sent
+                    .comments
+                    .into_iter()
+                    .map(|comment| (comment.id, comment.revision))
+                    .collect(),
+            })
+            .collect();
+        // An agent with no review, or one started over, has nothing to
+        // close: the message is the agent's already either way.
+        if let Err(error) = self.apply_review(agent, &changes, out) {
+            tracing::debug!(?error, "a sent review closed no round");
         }
     }
 
@@ -360,6 +424,7 @@ fn apply(
         drafts: review.drafts().count() as u32,
         counter: before.as_ref().map_or(0, |entry| entry.counter) + u64::from(effect.changed),
         moved: effect.moved,
+        review_id: review.id.clone(),
     });
     let mut map = row.experimental.clone();
     match &entry {
@@ -409,8 +474,21 @@ fn apply_one(
                 effect.changed = true;
             }
         }
+        Change::Rebased {
+            snapshot,
+            base_commit,
+        } => {
+            if review
+                .snapshot(snapshot)
+                .is_some_and(|taken| taken.base_commit != *base_commit)
+            {
+                writer.set_snapshot_base(&review.id, snapshot, base_commit)?;
+                effect.changed = true;
+            }
+        }
         Change::Snapshot {
             commit,
+            base_commit,
             omitted,
             merging,
         } => {
@@ -418,6 +496,7 @@ fn apply_one(
                 &review.id,
                 &Taken {
                     commit: commit.clone(),
+                    base_commit: base_commit.clone(),
                     taken_ms: now_ms,
                     omitted: omitted.clone(),
                     merging: *merging,
@@ -428,15 +507,16 @@ fn apply_one(
             effect.snapshot = true;
         }
         Change::Put(put) => {
-            let round = match writer.comment_owner(&put.comment)? {
+            let held = match writer.comment_owner(&put.comment)? {
                 None => None,
                 Some(owner) if owner == review.id => review
                     .comments
                     .iter()
-                    .find(|comment| comment.id == put.comment)
-                    .and_then(|comment| comment.round),
+                    .find(|comment| comment.id == put.comment),
                 Some(_) => return Err(CallError::Review(Refusal::Taken(put.comment.clone()))),
             };
+            let round = held.and_then(|comment| comment.round);
+            let revision = held.map_or(0, |comment| comment.revision) + 1;
             writer.put_comment(
                 &review.id,
                 &Comment {
@@ -446,6 +526,7 @@ fn apply_one(
                     snippet: put.snippet.clone(),
                     scope: put.scope.clone(),
                     round,
+                    revision,
                     updated_ms: now_ms,
                 },
             )?;
@@ -480,11 +561,20 @@ fn apply_one(
         }
         Change::Sent {
             review: sent,
-            snapshot,
-            base_commit,
             comments,
         } => {
-            if *sent != review.id {
+            let Some(latest) = review.latest().filter(|_| *sent == review.id) else {
+                return Ok(());
+            };
+            let named: BTreeSet<(&[u8], u64)> = comments
+                .iter()
+                .map(|(id, revision)| (id.as_slice(), *revision))
+                .collect();
+            let marked: Vec<&Comment> = review
+                .drafts()
+                .filter(|draft| named.contains(&(draft.id.as_slice(), draft.revision)))
+                .collect();
+            if marked.is_empty() {
                 return Ok(());
             }
             let n = review.rounds.last().map_or(0, |round| round.n) + 1;
@@ -492,16 +582,12 @@ fn apply_one(
                 &review.id,
                 &Round {
                     n,
-                    snapshot: snapshot.clone(),
-                    base_commit: base_commit.clone(),
+                    snapshot: latest.commit.clone(),
+                    base_commit: latest.base_commit.clone(),
                     sent_ms: now_ms,
                 },
             )?;
-            let named: BTreeSet<&[u8]> = comments.iter().map(Vec::as_slice).collect();
-            for draft in review
-                .drafts()
-                .filter(|draft| named.contains(draft.id.as_slice()))
-            {
+            for draft in marked {
                 writer.put_comment(
                     &review.id,
                     &Comment {

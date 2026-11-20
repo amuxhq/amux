@@ -48,12 +48,6 @@ pub const AGENT_LOG: &str = "agent.log";
 /// the model read, and what the agent offers as an encoded Catalogue, whose
 /// hash the snapshot names.
 pub const BLOBS: &str = "blobs";
-/// The reviews experiment's data on the agent's host, written by the daemon
-/// alone: the store of the snapshots a review of the agent's working tree
-/// takes, under `objects/`. Removed with the review, and when the daemon
-/// opens the profile without the experiment.
-pub const REVIEW: &str = "review";
-
 /// The directory's exclusive lock, held for the process's lifetime; the
 /// kernel releases it when the process dies.
 #[derive(Debug)]

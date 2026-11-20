@@ -19,8 +19,8 @@ use wire::Lifecycle;
 use wire::experimental::{
     ReviewAnchor, ReviewDefinition, ReviewEdit, ReviewEditRequest, ReviewFileDiff,
     ReviewFileRequest, ReviewGetFilesRequest, ReviewHunk, ReviewLine, ReviewLineKind,
-    ReviewLineRange, ReviewOpenRequest, ReviewPutComment, ReviewSummary, ReviewTokenKind,
-    ReviewView, review_edit, reviews1_client,
+    ReviewLineRange, ReviewOpenRequest, ReviewPutComment, ReviewSide, ReviewSummary,
+    ReviewTokenKind, ReviewView, review_edit, reviews1_client,
 };
 
 use crate::support;
@@ -134,22 +134,22 @@ impl Host {
             agent_id: agent.id.as_bytes().to_vec(),
             base_branch: None,
             refresh: false,
+            read_only: false,
         };
         self.client().open(request).await.unwrap().into_inner()
     }
 
+    /// The files `files` of `view` of the comparison `summary` hands out.
     async fn files(
         &self,
         agent: &SyntheticAgent,
-        snapshot: &str,
+        summary: &ReviewSummary,
         view: ReviewView,
         files: Vec<ReviewFileRequest>,
     ) -> Vec<ReviewFileDiff> {
         let request = ReviewGetFilesRequest {
-            agent_id: agent.id.as_bytes().to_vec(),
-            snapshot: snapshot.to_owned(),
-            view: view as i32,
             files,
+            ..request(agent, summary, view)
         };
         self.client()
             .get_files(request)
@@ -161,8 +161,7 @@ impl Host {
 
     async fn all(&self, agent: &SyntheticAgent, summary: &ReviewSummary) -> Vec<ReviewFileDiff> {
         let asked = summary.files.iter().map(|file| asked(&file.path)).collect();
-        self.files(agent, &summary.snapshot, ReviewView::All, asked)
-            .await
+        self.files(agent, summary, ReviewView::All, asked).await
     }
 
     /// Closes a round on `summary`'s snapshot, as the host does when it
@@ -188,6 +187,31 @@ impl Host {
                 )
             })
             .unwrap();
+    }
+}
+
+/// A request for nothing yet of `view` of the comparison `summary` hands
+/// out: from its base commit for all changes, from the last round's
+/// snapshot for what changed since.
+fn request(
+    agent: &SyntheticAgent,
+    summary: &ReviewSummary,
+    view: ReviewView,
+) -> ReviewGetFilesRequest {
+    let from = match view {
+        ReviewView::SinceLast => summary
+            .rounds
+            .last()
+            .map(|round| round.snapshot.clone())
+            .unwrap_or_default(),
+        _ => summary.base_commit.clone(),
+    };
+    ReviewGetFilesRequest {
+        agent_id: agent.id.as_bytes().to_vec(),
+        snapshot: summary.snapshot.clone(),
+        view: view as i32,
+        from,
+        ..ReviewGetFilesRequest::default()
     }
 }
 
@@ -323,6 +347,11 @@ async fn hunks_say_where_they_sit_and_the_outline_keeps_what_was_deleted() {
     let open = hunk_with(diff, "        let b = 20;");
     assert_eq!(labels(&open.scope), ["impl Store", "fn open"]);
     assert_eq!(open.scope[1].parent, Some(0));
+    assert!(
+        open.scope
+            .iter()
+            .all(|definition| definition.side() == ReviewSide::Snapshot)
+    );
     // A hunk that only removes: from the removed line, in the base.
     let close = hunk_with(diff, "        let e = 5;");
     assert!(
@@ -332,9 +361,17 @@ async fn hunks_say_where_they_sit_and_the_outline_keeps_what_was_deleted() {
             .all(|line| line.kind() != ReviewLineKind::Added)
     );
     assert_eq!(labels(&close.scope), ["impl Store", "fn close"]);
+    // Its lines are the base's, and the scope says so.
+    assert!(
+        close
+            .scope
+            .iter()
+            .all(|definition| definition.side() == ReviewSide::Compared)
+    );
     // Removed whole: its chain names it, from the base.
     let gone = hunk_with(diff, "    fn gone() {");
     assert_eq!(labels(&gone.scope), ["impl Store", "fn gone"]);
+    assert_eq!(gone.scope[1].side(), ReviewSide::Compared);
 
     // The outline holds what the change touches on both sides, a function
     // that is gone among them, each under its parent.
@@ -365,6 +402,16 @@ async fn hunks_say_where_they_sit_and_the_outline_keeps_what_was_deleted() {
         1,
         "one impl Store, though both sides touch it"
     );
+    // A definition only the base holds is numbered in the base, and says
+    // so; one the snapshot holds, in the snapshot.
+    let side = |label: &str| {
+        diff.outline
+            .iter()
+            .find(|definition| definition.label == label)
+            .map(ReviewDefinition::side)
+    };
+    assert_eq!(side("fn gone"), Some(ReviewSide::Compared));
+    assert_eq!(side("fn open"), Some(ReviewSide::Snapshot));
 
     // Each side's lines are coloured from that side's file.
     let added = line(diff, "        let b = 20;");
@@ -426,7 +473,7 @@ async fn more_context_reads_the_snapshot_not_the_tree_edited_since() {
         context_commit: summary.snapshot.clone(),
     };
     let files = host
-        .files(&agent, &summary.snapshot, ReviewView::All, vec![ask])
+        .files(&agent, &summary, ReviewView::All, vec![ask])
         .await;
     let context: Vec<(u32, u32, &str)> = files[0]
         .context
@@ -457,7 +504,7 @@ async fn more_context_reads_the_snapshot_not_the_tree_edited_since() {
         context_commit: summary.base_commit.clone(),
     };
     let files = host
-        .files(&agent, &summary.snapshot, ReviewView::All, vec![ask])
+        .files(&agent, &summary, ReviewView::All, vec![ask])
         .await;
     assert_eq!(files[0].context.len(), 1);
     assert_eq!(
@@ -500,7 +547,7 @@ async fn since_the_last_round_after_a_merge_leaves_out_what_the_base_brought() {
     let files = host
         .files(
             &agent,
-            &after.snapshot,
+            &after,
             ReviewView::SinceLast,
             vec![asked("notes.txt")],
         )
@@ -575,7 +622,7 @@ async fn an_answer_holds_what_fits_and_leaves_the_rest_to_ask_for_again() {
     let big_paths: Vec<String> = (0..12).map(|n| format!("big/{n:02}.txt")).collect();
     let asked_big: Vec<ReviewFileRequest> = big_paths.iter().map(|path| asked(path)).collect();
     let answered = host
-        .files(&agent, &summary.snapshot, ReviewView::All, asked_big)
+        .files(&agent, &summary, ReviewView::All, asked_big)
         .await;
     let size: usize = answered.iter().map(prost::Message::encoded_len).sum();
     println!("{} of 12 files, {size} bytes", answered.len());
@@ -593,18 +640,14 @@ async fn an_answer_holds_what_fits_and_leaves_the_rest_to_ask_for_again() {
         .iter()
         .map(|path| asked(path))
         .collect();
-    let later = host
-        .files(&agent, &summary.snapshot, ReviewView::All, rest)
-        .await;
+    let later = host.files(&agent, &summary, ReviewView::All, rest).await;
     assert!(!later.is_empty());
     assert_eq!(later[0].path, big_paths[answered.len()]);
 
     let small: Vec<ReviewFileRequest> = (0..70)
         .map(|n| asked(&format!("small/{n:02}.txt")))
         .collect();
-    let answered = host
-        .files(&agent, &summary.snapshot, ReviewView::All, small)
-        .await;
+    let answered = host.files(&agent, &summary, ReviewView::All, small).await;
     assert_eq!(answered.len(), 64);
     assert_eq!(answered[63].path, "small/63.txt");
     host.stop().await;
@@ -630,7 +673,7 @@ async fn binary_and_large_files_come_back_with_no_lines() {
     let files = host
         .files(
             &agent,
-            &summary.snapshot,
+            &summary,
             ReviewView::All,
             ["committed.txt", "loose.txt", "image.bin", "kept.rs"]
                 .into_iter()
@@ -762,13 +805,11 @@ async fn what_highlighting_costs_the_host() {
     let resident_before = resident_kib();
     let started = Instant::now();
     let first = host
-        .files(&agent, &summary.snapshot, ReviewView::All, rust.clone())
+        .files(&agent, &summary, ReviewView::All, rust.clone())
         .await;
     let first_took = started.elapsed();
     let started = Instant::now();
-    let cached = host
-        .files(&agent, &summary.snapshot, ReviewView::All, rust)
-        .await;
+    let cached = host.files(&agent, &summary, ReviewView::All, rust).await;
     let cached_took = started.elapsed();
     assert_eq!(first.len(), 50);
     assert_eq!(first, cached);
@@ -776,9 +817,7 @@ async fn what_highlighting_costs_the_host() {
 
     let every: Vec<ReviewFileRequest> = samples.iter().map(|(path, _)| asked(path)).collect();
     let started = Instant::now();
-    let touched = host
-        .files(&agent, &summary.snapshot, ReviewView::All, every)
-        .await;
+    let touched = host.files(&agent, &summary, ReviewView::All, every).await;
     let every_took = started.elapsed();
     assert_eq!(touched.len(), samples.len());
     let resident_after = resident_kib();
@@ -811,11 +850,11 @@ async fn a_snapshot_no_longer_held_is_not_found() {
     let host = Host::start(install).await;
     let summary = host.open(&agent).await;
     host.send(&agent, &summary);
+    let summary = host.open(&agent).await;
     let request = |snapshot: &str, view: ReviewView| ReviewGetFilesRequest {
-        agent_id: agent.id.as_bytes().to_vec(),
         snapshot: snapshot.to_owned(),
-        view: view as i32,
         files: vec![asked("notes.txt")],
+        ..request(&agent, &summary, view)
     };
 
     // A snapshot the review does not hold.
@@ -835,6 +874,192 @@ async fn a_snapshot_no_longer_held_is_not_found() {
             .await
             .unwrap_err();
         assert_eq!(gone.code(), tonic::Code::NotFound, "{view:?}: {gone:?}");
+    }
+    host.stop().await;
+}
+
+/// One file's more context is bounded however the client splits its ask:
+/// ranges are merged, and together read at most 2,000 lines.
+#[tokio::test(flavor = "multi_thread")]
+async fn more_context_reads_at_most_two_thousand_lines_a_file() {
+    let install = Install::new();
+    let long: String = (1..=5_000).map(|n| format!("line {n}\n")).collect();
+    repository(&install.work, &[("long.txt", &long)]);
+    write(
+        &install.work,
+        &[("long.txt", &long.replace("line 3\n", "line three\n"))],
+    );
+    let agent = agent_in(&install, &install.work);
+    let host = Host::start(install).await;
+    let summary = host.open(&agent).await;
+    // Overlapping and touching ranges read once each; far more than the
+    // bound is asked for in many small pieces.
+    let mut context = vec![
+        ReviewLineRange { start: 10, end: 20 },
+        ReviewLineRange { start: 15, end: 30 },
+        ReviewLineRange { start: 31, end: 40 },
+    ];
+    context.extend((0..100).map(|n| ReviewLineRange {
+        start: 100 + n * 40,
+        end: 100 + n * 40 + 39,
+    }));
+    let ask = ReviewFileRequest {
+        path: "long.txt".to_owned(),
+        context,
+        context_commit: summary.snapshot.clone(),
+    };
+    let files = host
+        .files(&agent, &summary, ReviewView::All, vec![ask])
+        .await;
+    let read: Vec<u32> = files[0].context.iter().map(|line| line.new_line).collect();
+    assert_eq!(
+        read.len(),
+        2_000,
+        "the bound, not the 4,031 lines asked for"
+    );
+    assert_eq!(&read[..3], [10, 11, 12]);
+    let mut unique = read.clone();
+    unique.dedup();
+    assert_eq!(unique, read, "no line read twice");
+    host.stop().await;
+}
+
+/// GetFiles reads exactly the comparison it names, and only one the review
+/// handed out; with `list` it also lists the comparison's files, as the
+/// summary lists all changes. A past round's whole diff is its base to its
+/// snapshot, readable after later snapshots, and the one before the latest
+/// stays readable for a page that still shows it.
+#[tokio::test(flavor = "multi_thread")]
+async fn get_files_reads_the_comparison_it_names_and_lists_its_files() {
+    let install = Install::new();
+    repository(
+        &install.work,
+        &[("notes.txt", &numbered(&[])), ("other.txt", "other\n")],
+    );
+    write(&install.work, &[("notes.txt", &numbered(&[(3, "three")]))]);
+    let agent = agent_in(&install, &install.work);
+    let host = Host::start(install).await;
+    let first = host.open(&agent).await;
+    host.send(&agent, &first);
+
+    write(
+        &host.install.work,
+        &[
+            ("notes.txt", &numbered(&[(3, "three"), (20, "twenty")])),
+            ("new.txt", "new\n"),
+        ],
+    );
+    let second = host.open(&agent).await;
+    assert_ne!(second.snapshot, first.snapshot);
+
+    // The listing is the summary's own list of all changes.
+    let listing = host
+        .client()
+        .get_files(ReviewGetFilesRequest {
+            list: true,
+            ..request(&agent, &second, ReviewView::All)
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(
+        listing.files.is_empty(),
+        "no files asked for, only the list"
+    );
+    assert_eq!(listing.changed, second.files);
+
+    // Since the last round: new.txt and notes.txt, counted as shown.
+    let since = host
+        .client()
+        .get_files(ReviewGetFilesRequest {
+            list: true,
+            files: vec![asked("notes.txt")],
+            ..request(&agent, &second, ReviewView::SinceLast)
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let listed: Vec<(&str, u32, u32)> = since
+        .changed
+        .iter()
+        .map(|file| (file.path.as_str(), file.added, file.removed))
+        .collect();
+    assert_eq!(listed, [("new.txt", 1, 0), ("notes.txt", 1, 1)]);
+    let shown: Vec<&str> = since.files[0]
+        .hunks
+        .iter()
+        .flat_map(|hunk| &hunk.lines)
+        .filter(|line| line.kind() != ReviewLineKind::Context)
+        .map(|line| line.text.as_str())
+        .collect();
+    assert_eq!(shown, ["line 20", "twenty"]);
+    // The summary's file states agree with the listing.
+    let states: Vec<(&str, bool, u32, u32)> = second
+        .file_states
+        .iter()
+        .map(|state| {
+            (
+                state.path.as_str(),
+                state.changed_since_last,
+                state.added,
+                state.removed,
+            )
+        })
+        .collect();
+    assert_eq!(states, [("new.txt", true, 1, 0), ("notes.txt", true, 1, 1)]);
+
+    // The first round's whole diff: its base to its snapshot.
+    let round = &second.rounds[0];
+    let whole = host
+        .client()
+        .get_files(ReviewGetFilesRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            from: round.base_commit.clone(),
+            snapshot: round.snapshot.clone(),
+            view: ReviewView::All as i32,
+            list: true,
+            files: vec![asked("notes.txt")],
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let paths: Vec<&str> = whole
+        .changed
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
+    assert_eq!(paths, ["notes.txt"], "the round's own change, not today's");
+    let changed: Vec<&str> = whole.files[0]
+        .hunks
+        .iter()
+        .flat_map(|hunk| &hunk.lines)
+        .filter(|line| line.kind() != ReviewLineKind::Context)
+        .map(|line| line.text.as_str())
+        .collect();
+    assert_eq!(changed, ["line 3", "three"]);
+
+    // A comparison the review never handed out is refused.
+    for (from, view) in [
+        (second.snapshot.clone(), ReviewView::All),
+        ("1".repeat(40), ReviewView::All),
+        (second.base_commit.clone(), ReviewView::SinceLast),
+        (String::new(), ReviewView::Unspecified),
+    ] {
+        let refused = host
+            .client()
+            .get_files(ReviewGetFilesRequest {
+                from: from.clone(),
+                view: view as i32,
+                files: vec![asked("notes.txt")],
+                ..request(&agent, &second, ReviewView::All)
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.code(),
+            tonic::Code::InvalidArgument,
+            "{from} {view:?}"
+        );
     }
     host.stop().await;
 }

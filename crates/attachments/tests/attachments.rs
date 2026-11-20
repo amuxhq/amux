@@ -579,8 +579,9 @@ mod sent_review {
     use wire::attachment::Of;
     use wire::experimental::review_placement::At;
     use wire::experimental::{
-        ReviewAnchor, ReviewDefinition, ReviewDefinitionKind, ReviewLine, ReviewLineKind,
-        ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSummary, ReviewerComment, SentReview,
+        ReviewAnchor, ReviewComparedLines, ReviewDefinition, ReviewDefinitionKind, ReviewLine,
+        ReviewLineKind, ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSentComment,
+        ReviewSummary, ReviewerComment, SentReview,
     };
     use wire::{Empty, InlineText};
 
@@ -588,6 +589,9 @@ mod sent_review {
     const BASE: &str = "9e465b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a";
     const ROOT: &str = "/work/shop";
     const OBJECTS: &str = "/data/profiles/p/agents/a1/review/objects";
+    const INDEX: &str =
+        "/data/profiles/p/agents/a1/review/indexes/4f2a9c1e0b7d3a5f6e8c9b0a1d2e3f4a5b6c7d8e";
+    const EARLIER: &str = "1c0ffee2c0ffee3c0ffee4c0ffee5c0ffee6c0ff";
 
     fn line(kind: ReviewLineKind, old_line: u32, new_line: u32, text: &str) -> ReviewLine {
         ReviewLine {
@@ -607,6 +611,7 @@ mod sent_review {
             start_line: 1,
             end_line: 40,
             parent: None,
+            ..Default::default()
         }
     }
 
@@ -614,15 +619,17 @@ mod sent_review {
         ReviewLineRange { start, end }
     }
 
-    fn placed(at: At) -> Option<ReviewPlacement> {
+    fn placed(at: At, path: &str) -> Option<ReviewPlacement> {
         Some(ReviewPlacement {
             at: Some(at),
             changed_near: false,
+            path: path.into(),
         })
     }
 
     /// A comment on two lines of code holding `<`, `>` and `&`, one on a
-    /// removed line, and one on a whole file.
+    /// removed line placed as the host places it, one on a whole file, and
+    /// one sent before on a file renamed since.
     fn comments() -> Vec<ReviewerComment> {
         use ReviewLineKind::{Added, Context, Removed};
         vec![
@@ -651,7 +658,8 @@ mod sent_review {
                     definition(ReviewDefinitionKind::Method, "open", "fn open"),
                 ],
                 round: None,
-                placement: placed(At::Lines(lines(13, 14))),
+                placement: placed(At::Lines(lines(13, 14)), "src/store.rs"),
+                revision: 1,
             },
             ReviewerComment {
                 id: b"c2".to_vec(),
@@ -667,7 +675,14 @@ mod sent_review {
                 ],
                 scope: Vec::new(),
                 round: None,
-                placement: None,
+                placement: placed(
+                    At::Compared(ReviewComparedLines {
+                        commit: BASE.into(),
+                        lines: Some(lines(7, 7)),
+                    }),
+                    "src/limits.rs",
+                ),
+                revision: 3,
             },
             ReviewerComment {
                 id: b"c3".to_vec(),
@@ -680,7 +695,22 @@ mod sent_review {
                 snippet: Vec::new(),
                 scope: Vec::new(),
                 round: None,
-                placement: placed(At::File(Empty {})),
+                placement: placed(At::File(Empty {}), "docs/notes & limits.md"),
+                revision: 1,
+            },
+            ReviewerComment {
+                id: b"c4".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: EARLIER.into(),
+                    path: "src/old.rs".into(),
+                    lines: Some(lines(3, 3)),
+                }),
+                text: "Still wants a name.".into(),
+                snippet: vec![line(ReviewLineKind::Added, 0, 3, "let x = 1;")],
+                scope: Vec::new(),
+                round: Some(1),
+                placement: placed(At::Lines(lines(5, 5)), "src/new.rs"),
+                revision: 1,
             },
         ]
     }
@@ -698,6 +728,7 @@ mod sent_review {
             }],
             objects: OBJECTS.into(),
             root: ROOT.into(),
+            index: INDEX.into(),
             ..Default::default()
         }
     }
@@ -708,9 +739,9 @@ mod sent_review {
     #[test]
     fn the_text_the_agent_reads() {
         assert_eq!(
-            text(ROOT, OBJECTS, SNAPSHOT, &comments()),
+            text(&summary(), &comments()),
             format!(
-                "3 comments from a review of your changes.\n\
+                "4 comments from a review of your changes.\n\
                  \n\
                  ## src/store.rs, lines 13–14, in impl Store › fn open\n\
                  \n\
@@ -737,14 +768,26 @@ mod sent_review {
                  \n\
                  Say what the limit is.\n\
                  \n\
+                 ## src/new.rs, line 5\n\
+                 \n\
+                 ```diff\n\
+                 +let x = 1;\n\
+                 ```\n\
+                 \n\
+                 Still wants a name.\n\
+                 \n\
                  ---\n\
                  Line numbers are those of snapshot {SNAPSHOT} unless a comment names another \
                  commit, a commit of the working tree taken for this review and kept outside the \
                  repository, so the files may have changed since. Paths are relative to the \
-                 repository's top, {ROOT}. To see what has changed since the snapshot, run:\n\
+                 repository's top, {ROOT}. To see what has changed since the snapshot, untracked \
+                 files included, run this; it writes nothing, and after the diff it lists the \
+                 files made since the snapshot:\n\
                  \n\
                  ```sh\n\
-                 GIT_ALTERNATE_OBJECT_DIRECTORIES={OBJECTS} git -C {ROOT} diff {SNAPSHOT}\n\
+                 GIT_INDEX_FILE={INDEX} GIT_ALTERNATE_OBJECT_DIRECTORIES={OBJECTS} git -C {ROOT} \
+                 diff {SNAPSHOT} && GIT_INDEX_FILE={INDEX} git -C {ROOT} ls-files --others \
+                 --exclude-standard\n\
                  ```\n"
             )
         );
@@ -753,10 +796,37 @@ mod sent_review {
     #[test]
     fn a_path_the_shell_would_split_is_quoted_in_the_command() {
         assert_eq!(
-            attachments::sent_review::command("/Users/me/my shop", "/d/it's/objects", SNAPSHOT),
+            attachments::sent_review::command(
+                "/Users/me/my shop",
+                "/d/it's/objects",
+                "/d/it's/indexes/i",
+                SNAPSHOT
+            ),
             format!(
-                "GIT_ALTERNATE_OBJECT_DIRECTORIES='/d/it'\\''s/objects' git -C '/Users/me/my shop' diff {SNAPSHOT}"
+                "GIT_INDEX_FILE='/d/it'\\''s/indexes/i' \
+                 GIT_ALTERNATE_OBJECT_DIRECTORIES='/d/it'\\''s/objects' \
+                 git -C '/Users/me/my shop' diff {SNAPSHOT} && \
+                 GIT_INDEX_FILE='/d/it'\\''s/indexes/i' git -C '/Users/me/my shop' \
+                 ls-files --others --exclude-standard"
             )
+        );
+    }
+
+    /// Without an index of the snapshot the text gives no command, rather
+    /// than one that misreports untracked files.
+    #[test]
+    fn with_no_index_there_is_no_command() {
+        let read = text(
+            &ReviewSummary {
+                index: String::new(),
+                ..summary()
+            },
+            &comments()[..1],
+        );
+        assert!(!read.contains("git -C"), "{read}");
+        assert!(
+            read.ends_with(&format!("repository's top, {ROOT}.\n")),
+            "{read}"
         );
     }
 
@@ -764,7 +834,7 @@ mod sent_review {
     fn a_snippet_holding_backticks_gets_a_longer_fence() {
         let mut comment = comments().remove(0);
         comment.snippet = vec![line(ReviewLineKind::Added, 0, 3, "let s = \"```\";")];
-        let read = text(ROOT, OBJECTS, SNAPSHOT, &[comment]);
+        let read = text(&summary(), &[comment]);
         assert!(
             read.contains("````diff\n+let s = \"```\";\n````\n"),
             "{read}"
@@ -780,7 +850,7 @@ mod sent_review {
             sent.of,
             Some(Of::Text(InlineText {
                 name: NAME.into(),
-                text: text(ROOT, OBJECTS, SNAPSHOT, &comments()[..2]),
+                text: text(&summary(), &comments()[..2]),
             }))
         );
         assert_eq!(
@@ -789,7 +859,16 @@ mod sent_review {
                 review_id: b"review-1".to_vec(),
                 round: 2,
                 snapshot: SNAPSHOT.into(),
-                comment_ids: vec![b"c1".to_vec(), b"c2".to_vec()],
+                comments: vec![
+                    ReviewSentComment {
+                        id: b"c1".to_vec(),
+                        revision: 1,
+                    },
+                    ReviewSentComment {
+                        id: b"c2".to_vec(),
+                        revision: 3,
+                    },
+                ],
             })
         );
         let plain = wire::Attachment {

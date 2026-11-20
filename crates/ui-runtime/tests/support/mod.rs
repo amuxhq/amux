@@ -22,6 +22,11 @@ use tonic::service::Routes;
 use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
 use wire::draft_service_server::DraftService;
+use wire::experimental::reviews1_server::Reviews1;
+use wire::experimental::{
+    ReviewEditRequest, ReviewGetFilesRequest, ReviewGetFilesResponse, ReviewOpenRequest,
+    ReviewSummary,
+};
 use wire::inventory_service_server::InventoryService;
 use wire::profile_admin_service_server::ProfileAdminService;
 use wire::session_service_server::SessionService;
@@ -55,6 +60,9 @@ pub enum Call {
     GetBlob(wire::GetBlobRequest, Reply<wire::GetBlobResponse>),
     Close(wire::SetFilingRequest, Reply<Agent>),
     Dump(DumpRequest, Reply<DumpResponse>),
+    ReviewOpen(ReviewOpenRequest, Reply<ReviewSummary>),
+    ReviewFiles(ReviewGetFilesRequest, Reply<ReviewGetFilesResponse>),
+    ReviewEdit(ReviewEditRequest, Reply<ReviewSummary>),
 }
 
 impl std::fmt::Debug for Call {
@@ -69,6 +77,9 @@ impl std::fmt::Debug for Call {
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
             Call::Close(request, _) => write!(f, "Settle({request:?})"),
             Call::Dump(request, _) => write!(f, "Dump({request:?})"),
+            Call::ReviewOpen(request, _) => write!(f, "ReviewOpen({request:?})"),
+            Call::ReviewFiles(request, _) => write!(f, "ReviewFiles({request:?})"),
+            Call::ReviewEdit(request, _) => write!(f, "ReviewEdit({request:?})"),
         }
     }
 }
@@ -123,6 +134,7 @@ pub fn runtime() -> (client::Client, Calls) {
         .add_service(wire::session_service_server(fake.clone()))
         .add_service(wire::draft_service_server(fake.clone()))
         .add_service(wire::agent_service_server(fake.clone()))
+        .add_service(wire::experimental::reviews1_server(fake.clone()))
         .add_service(wire::profile_admin_service_server::ProfileAdminServiceServer::new(fake));
     let addressed = Addressed::default();
     let served = Recorded {
@@ -366,6 +378,39 @@ impl AgentService for FakeRuntime {
 }
 
 #[tonic::async_trait]
+impl Reviews1 for FakeRuntime {
+    async fn open(
+        &self,
+        request: Request<ReviewOpenRequest>,
+    ) -> Result<Response<ReviewSummary>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(
+            self.call(|reply| Call::ReviewOpen(request, reply)).await?,
+        ))
+    }
+
+    async fn get_files(
+        &self,
+        request: Request<ReviewGetFilesRequest>,
+    ) -> Result<Response<ReviewGetFilesResponse>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(
+            self.call(|reply| Call::ReviewFiles(request, reply)).await?,
+        ))
+    }
+
+    async fn edit(
+        &self,
+        request: Request<ReviewEditRequest>,
+    ) -> Result<Response<ReviewSummary>, Status> {
+        let request = request.into_inner();
+        Ok(Response::new(
+            self.call(|reply| Call::ReviewEdit(request, reply)).await?,
+        ))
+    }
+}
+
+#[tonic::async_trait]
 impl ProfileAdminService for FakeRuntime {
     type SubscribePairingStream = Streamed<wire::SubscribePairingResponse>;
     type SubscribeSignInOffersStream = Streamed<wire::SubscribeSignInOffersResponse>;
@@ -586,6 +631,27 @@ impl Calls {
         match self.next().await {
             Call::Resume(request, reply) => (request, reply),
             other => panic!("expected Resume, got {other:?}"),
+        }
+    }
+
+    pub async fn review_open(&mut self) -> (ReviewOpenRequest, Reply<ReviewSummary>) {
+        match self.next().await {
+            Call::ReviewOpen(request, reply) => (request, reply),
+            other => panic!("expected ReviewOpen, got {other:?}"),
+        }
+    }
+
+    pub async fn review_files(&mut self) -> (ReviewGetFilesRequest, Reply<ReviewGetFilesResponse>) {
+        match self.next().await {
+            Call::ReviewFiles(request, reply) => (request, reply),
+            other => panic!("expected ReviewFiles, got {other:?}"),
+        }
+    }
+
+    pub async fn review_edit(&mut self) -> (ReviewEditRequest, Reply<ReviewSummary>) {
+        match self.next().await {
+            Call::ReviewEdit(request, reply) => (request, reply),
+            other => panic!("expected ReviewEdit, got {other:?}"),
         }
     }
 }

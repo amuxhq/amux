@@ -746,6 +746,11 @@ impl Session {
         &self.inner.agent_id
     }
 
+    /// The agent's host services, at its host.
+    pub(crate) fn host_services(&self) -> &client::Agent {
+        &self.inner.agent
+    }
+
     pub fn state(&self) -> StateGuard<'_> {
         StateGuard(self.inner.model())
     }

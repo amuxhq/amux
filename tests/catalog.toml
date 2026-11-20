@@ -879,7 +879,7 @@ cargo = [
 
 [[suite]]
 name = "client-runtime-drivers"
-contract = "The session and fleet drivers paint the snapshot and held rows before returning, page below the oldest held row, reconnect on their own clock, settle uncertain inputs, refuse a prompt for an unreachable host without ever sending it again, fetch attachment bytes lazily, fetch a catalogue once per hash and only for a chat on screen, keep a bounded replayable trace, and run alike in process and over the profile socket against a real node."
+contract = "The session and fleet drivers paint the snapshot and held rows before returning, page below the oldest held row, reconnect on their own clock, settle uncertain inputs, refuse a prompt for an unreachable host without ever sending it again, fetch attachment bytes lazily, fetch a catalogue once per hash and only for a chat on screen, keep a bounded replayable trace, read an agent's review in batches and again from what was fetched with its host away, follow the review's entry on the row without polling, and run alike in process and over the profile socket against a real node."
 paths = ["crates/ui-runtime/tests", "crates/ui-runtime/src"]
 recipe = "just suite client-runtime-drivers"
 boundary = "Store, effects, bridge"
@@ -893,7 +893,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "ui-runtime", kind = "lib", targets = ["ui_runtime"], features = [] },
-  { package = "ui-runtime", modules = ["fleet", "node", "session"], features = [] },
+  { package = "ui-runtime", modules = ["fleet", "node", "review", "session"], features = [] },
 ]
 
 [[suite]]

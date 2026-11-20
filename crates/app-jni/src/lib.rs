@@ -7,7 +7,7 @@
 //! translates recoverable failures into `sh.amux.core.runtime.BridgeException`.
 
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -124,8 +124,22 @@ impl Drop for ShutdownPipe {
 
 struct RuntimeSlot {
     inner: RwLock<Option<Box<AmuxRuntime>>>,
+    /// Open profile handles owned by this runtime; `None` once stopping begins.
+    profiles: Mutex<Option<HashSet<i64>>>,
     #[cfg(unix)]
     shutdown: ShutdownPipe,
+}
+
+struct ProfileSlot {
+    runtime_handle: i64,
+    inner: RwLock<Option<Box<AmuxProfile>>>,
+    /// Open chat handles owned by this profile; `None` once closing begins.
+    chats: Mutex<Option<HashSet<i64>>>,
+}
+
+struct ChatSlot {
+    profile_handle: i64,
+    inner: RwLock<Option<Box<AmuxChat>>>,
 }
 
 type HandleMap<T> = Mutex<HashMap<i64, Arc<T>>>;
@@ -135,22 +149,21 @@ fn runtimes() -> &'static HandleMap<RuntimeSlot> {
     TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn profiles() -> &'static HandleMap<RwLock<Option<Box<AmuxProfile>>>> {
-    static TABLE: OnceLock<HandleMap<RwLock<Option<Box<AmuxProfile>>>>> = OnceLock::new();
+fn profiles() -> &'static HandleMap<ProfileSlot> {
+    static TABLE: OnceLock<HandleMap<ProfileSlot>> = OnceLock::new();
     TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn chats() -> &'static HandleMap<RwLock<Option<Box<AmuxChat>>>> {
-    static TABLE: OnceLock<HandleMap<RwLock<Option<Box<AmuxChat>>>>> = OnceLock::new();
+fn chats() -> &'static HandleMap<ChatSlot> {
+    static TABLE: OnceLock<HandleMap<ChatSlot>> = OnceLock::new();
     TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn insert_runtime(runtime: Box<AmuxRuntime>) -> Result<i64, String> {
-    #[cfg(unix)]
-    let shutdown = ShutdownPipe::new()?;
+fn insert_runtime(runtime: Box<AmuxRuntime>, #[cfg(unix)] shutdown: ShutdownPipe) -> i64 {
     let id = next_handle();
     let slot = Arc::new(RuntimeSlot {
         inner: RwLock::new(Some(runtime)),
+        profiles: Mutex::new(Some(HashSet::new())),
         #[cfg(unix)]
         shutdown,
     });
@@ -158,7 +171,43 @@ fn insert_runtime(runtime: Box<AmuxRuntime>) -> Result<i64, String> {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .insert(id, slot);
-    Ok(id)
+    id
+}
+
+fn start_runtime_from_json(config: &str) -> Result<i64, String> {
+    #[cfg(unix)]
+    let shutdown = ShutdownPipe::new()?;
+    let runtime = app_bridge::start_from_json(Some(config))?;
+    Ok(insert_runtime(
+        runtime,
+        #[cfg(unix)]
+        shutdown,
+    ))
+}
+
+fn stop_runtime_handle(handle: i64) {
+    let slot = runtimes()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&handle);
+    if let Some(slot) = slot {
+        #[cfg(unix)]
+        slot.shutdown.signal();
+        let child_profiles = slot
+            .profiles
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(child_profiles) = child_profiles {
+            for profile_handle in child_profiles {
+                close_profile_handle(profile_handle);
+            }
+        }
+        let runtime = slot.inner.write().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(runtime) = runtime {
+            runtime.stop();
+        }
+    }
 }
 
 fn get_runtime(handle: i64) -> Option<Arc<RuntimeSlot>> {
@@ -175,32 +224,135 @@ fn with_runtime<T>(handle: i64, f: impl FnOnce(&AmuxRuntime) -> T) -> Option<T> 
     guard.as_deref().map(f)
 }
 
-fn insert_profile(profile: Box<AmuxProfile>) -> i64 {
-    let id = next_handle();
+fn get_profile(handle: i64) -> Option<Arc<ProfileSlot>> {
     profiles()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .insert(id, Arc::new(RwLock::new(Some(profile))));
-    id
+        .get(&handle)
+        .cloned()
 }
 
-fn with_profile<T>(handle: i64, f: impl FnOnce(&AmuxProfile) -> T) -> Option<T> {
+fn open_profile_handle(runtime_handle: i64, profile_id: &str) -> Result<i64, String> {
+    let slot = get_runtime(runtime_handle).ok_or_else(|| "the runtime has stopped".to_owned())?;
+    let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
+    let Some(runtime) = guard.as_deref() else {
+        return Err("the runtime has stopped".to_owned());
+    };
+    if slot
+        .profiles
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .is_none()
+    {
+        return Err("the runtime has stopped".to_owned());
+    }
+    let opened = runtime.open_profile(Some(profile_id))?;
+    let mut children = slot.profiles.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(children) = children.as_mut() else {
+        drop(children);
+        opened.close();
+        return Err("the runtime has stopped".to_owned());
+    };
+    let id = next_handle();
+    profiles().lock().unwrap_or_else(|p| p.into_inner()).insert(
+        id,
+        Arc::new(ProfileSlot {
+            runtime_handle,
+            inner: RwLock::new(Some(opened)),
+            chats: Mutex::new(Some(HashSet::new())),
+        }),
+    );
+    children.insert(id);
+    Ok(id)
+}
+
+fn close_profile_handle(handle: i64) {
     let slot = profiles()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .get(&handle)
-        .cloned()?;
-    let guard = slot.read().unwrap_or_else(|p| p.into_inner());
+        .remove(&handle);
+    if let Some(slot) = slot {
+        if let Some(runtime_slot) = get_runtime(slot.runtime_handle)
+            && let Some(children) = runtime_slot
+                .profiles
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .as_mut()
+        {
+            children.remove(&handle);
+        }
+        let child_chats = slot.chats.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(child_chats) = child_chats {
+            for chat_handle in child_chats {
+                close_chat_handle(chat_handle);
+            }
+        }
+        let profile = slot.inner.write().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(profile) = profile {
+            profile.close();
+        }
+    }
+}
+
+fn with_profile<T>(handle: i64, f: impl FnOnce(&AmuxProfile) -> T) -> Option<T> {
+    let slot = get_profile(handle)?;
+    let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
     guard.as_deref().map(f)
 }
 
-fn insert_chat(chat: Box<AmuxChat>) -> i64 {
-    let id = next_handle();
-    chats()
+fn open_chat_handle(profile_handle: i64, agent_json: &str, tail: u32) -> Result<i64, String> {
+    let slot = get_profile(profile_handle).ok_or_else(|| "the profile is closed".to_owned())?;
+    let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
+    let Some(profile) = guard.as_deref() else {
+        return Err("the profile is closed".to_owned());
+    };
+    if slot
+        .chats
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .insert(id, Arc::new(RwLock::new(Some(chat))));
-    id
+        .is_none()
+    {
+        return Err("the profile is closed".to_owned());
+    }
+    let opened = profile.open_chat(Some(agent_json), tail)?;
+    let mut children = slot.chats.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(children) = children.as_mut() else {
+        drop(children);
+        opened.close();
+        return Err("the profile is closed".to_owned());
+    };
+    let id = next_handle();
+    chats().lock().unwrap_or_else(|p| p.into_inner()).insert(
+        id,
+        Arc::new(ChatSlot {
+            profile_handle,
+            inner: RwLock::new(Some(opened)),
+        }),
+    );
+    children.insert(id);
+    Ok(id)
+}
+
+fn close_chat_handle(handle: i64) {
+    let slot = chats()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&handle);
+    if let Some(slot) = slot {
+        if let Some(profile_slot) = get_profile(slot.profile_handle)
+            && let Some(children) = profile_slot
+                .chats
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .as_mut()
+        {
+            children.remove(&handle);
+        }
+        let chat = slot.inner.write().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(chat) = chat {
+            chat.close();
+        }
+    }
 }
 
 fn with_chat<T>(handle: i64, f: impl FnOnce(&AmuxChat) -> T) -> Option<T> {
@@ -209,7 +361,7 @@ fn with_chat<T>(handle: i64, f: impl FnOnce(&AmuxChat) -> T) -> Option<T> {
         .unwrap_or_else(|p| p.into_inner())
         .get(&handle)
         .cloned()?;
-    let guard = slot.read().unwrap_or_else(|p| p.into_inner());
+    let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
     guard.as_deref().map(f)
 }
 
@@ -453,8 +605,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeStart(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let config = req_string(env, config_json, "configJson")?;
-        let runtime = app_bridge::start_from_json(Some(&config))?;
-        insert_runtime(runtime)
+        start_runtime_from_json(&config)
     })
 }
 
@@ -465,18 +616,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeStop(
     handle: jlong,
 ) {
     guard_jni(&mut env, (), |_| {
-        let slot = runtimes()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&handle);
-        if let Some(slot) = slot {
-            #[cfg(unix)]
-            slot.shutdown.signal();
-            let runtime = slot.inner.write().unwrap_or_else(|p| p.into_inner()).take();
-            if let Some(runtime) = runtime {
-                runtime.stop();
-            }
-        }
+        stop_runtime_handle(handle);
         Ok(())
     });
 }
@@ -889,11 +1029,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileOpen(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = req_string(env, profile_id, "profileId")?;
-        let opened = with_runtime(runtime_handle, |runtime| {
-            runtime.open_profile(Some(&profile))
-        })
-        .ok_or_else(|| "the runtime has stopped".to_owned())??;
-        Ok(insert_profile(opened))
+        open_profile_handle(runtime_handle, &profile)
     })
 }
 
@@ -904,16 +1040,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileClose(
     handle: jlong,
 ) {
     guard_jni(&mut env, (), |_| {
-        let slot = profiles()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&handle);
-        if let Some(slot) = slot {
-            let profile = slot.write().unwrap_or_else(|p| p.into_inner()).take();
-            if let Some(profile) = profile {
-                profile.close();
-            }
-        }
+        close_profile_handle(handle);
         Ok(())
     });
 }
@@ -1325,11 +1452,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionOpen(
     guard_jni(&mut env, 0, |env| {
         let agent = req_string(env, agent_json, "agentJson")?;
         let tail = u32::try_from(tail).unwrap_or(0);
-        let opened = with_profile(profile_handle, |profile| {
-            profile.open_chat(Some(&agent), tail)
-        })
-        .ok_or_else(|| "the profile is closed".to_owned())??;
-        Ok(insert_chat(opened))
+        open_chat_handle(profile_handle, &agent, tail)
     })
 }
 
@@ -1351,16 +1474,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionClose(
     handle: jlong,
 ) {
     guard_jni(&mut env, (), |_| {
-        let slot = chats()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&handle);
-        if let Some(slot) = slot {
-            let chat = slot.write().unwrap_or_else(|p| p.into_inner()).take();
-            if let Some(chat) = chat {
-                chat.close();
-            }
-        }
+        close_chat_handle(handle);
         Ok(())
     });
 }
@@ -1614,10 +1728,44 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionFetchBlob(
     });
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(prefix: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "amux-{prefix}-{}-{}",
+                std::process::id(),
+                next_handle()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn first_profile_id(stepped_json: &str) -> String {
+        let needle = "\"id\":\"";
+        let start = stepped_json
+            .find(needle)
+            .expect("stepped JSON should include a profile id")
+            + needle.len();
+        let rest = &stepped_json[start..];
+        let end = rest.find('"').expect("closing quote for profile id");
+        rest[..end].to_owned()
+    }
+
+    #[cfg(unix)]
     #[test]
     fn shutdown_pipe_wakes_poll_and_handles_timeout() {
         let wake = ShutdownPipe::new().expect("wake pipe");
@@ -1643,5 +1791,65 @@ mod tests {
         assert!(with_runtime(0, AmuxRuntime::wake_fd).is_none());
         assert!(with_profile(0, AmuxProfile::fleet_id).is_none());
         assert!(with_chat(0, AmuxChat::id).is_none());
+    }
+
+    #[test]
+    fn runtime_stop_closes_unclosed_child_profiles_and_guards_closed_parents() {
+        let dir = TempDir::new("app-jni-teardown");
+        let data_dir = dir.0.to_str().expect("utf-8 temp dir");
+        let escaped_dir = data_dir.replace('\\', "\\\\").replace('"', "\\\"");
+        let config = format!(
+            r#"{{"data_dir":"{escaped_dir}","device_name":"JNI Test","lan":false,"telemetry":false,"auto_reports":false}}"#
+        );
+
+        let runtime_handle = start_runtime_from_json(&config).expect("start runtime");
+        let stepped = with_runtime(runtime_handle, AmuxRuntime::step)
+            .flatten()
+            .expect("initial step");
+        let profile_id = first_profile_id(&stepped);
+
+        let profile_handle =
+            open_profile_handle(runtime_handle, &profile_id).expect("open profile");
+        assert!(with_profile(profile_handle, AmuxProfile::fleet_id).is_some());
+
+        // Verify the parent runtime tracks the open child profile.
+        {
+            let rt_slot = get_runtime(runtime_handle).expect("runtime slot");
+            let children = rt_slot.profiles.lock().unwrap_or_else(|p| p.into_inner());
+            assert!(
+                children
+                    .as_ref()
+                    .is_some_and(|set| set.contains(&profile_handle)),
+                "runtime should track open profile handle"
+            );
+        }
+
+        // Stop runtime WITHOUT closing the profile first: child must be closed
+        // and removed before `AmuxRuntime::stop` flushes the installation.
+        stop_runtime_handle(runtime_handle);
+
+        assert!(with_runtime(runtime_handle, AmuxRuntime::wake_fd).is_none());
+        assert!(with_profile(profile_handle, AmuxProfile::fleet_id).is_none());
+        assert!(open_profile_handle(runtime_handle, &profile_id).is_err());
+        assert!(open_chat_handle(profile_handle, "{}", 50).is_err());
+
+        // Verify explicit profileClose unlinks from a live parent runtime too.
+        let second_runtime = start_runtime_from_json(&config).expect("restart runtime");
+        let second_profile =
+            open_profile_handle(second_runtime, &profile_id).expect("reopen profile");
+        close_profile_handle(second_profile);
+        assert!(with_profile(second_profile, AmuxProfile::fleet_id).is_none());
+        assert!(open_chat_handle(second_profile, "{}", 50).is_err());
+        {
+            let rt_slot = get_runtime(second_runtime).expect("second runtime slot");
+            let children = rt_slot.profiles.lock().unwrap_or_else(|p| p.into_inner());
+            assert!(
+                children
+                    .as_ref()
+                    .is_some_and(|set| !set.contains(&second_profile)),
+                "explicit profile close should unlink from parent runtime"
+            );
+        }
+        stop_runtime_handle(second_runtime);
     }
 }

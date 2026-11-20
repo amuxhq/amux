@@ -190,6 +190,9 @@ pub enum ClientRequest {
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
     /// How one of this host's agents' working tree differs from a base.
     GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
+    /// A write to one of this host's agents' reviews, under the reviews
+    /// experiment.
+    Review(Box<crate::reviews::Write>),
     /// Keep this machine's client's unsent draft of the agent.
     UpdateDraft {
         agent_id: Vec<u8>,
@@ -496,4 +499,6 @@ pub enum JobResult {
     Spec(#[serde(with = "codec::optional_boxed")] Option<Box<wire::AgentSpec>>),
     /// What a workspace job came to.
     Workspace(crate::workspaces::WorkspaceDone),
+    /// What a reviews job came to.
+    Review(crate::reviews::Done),
 }

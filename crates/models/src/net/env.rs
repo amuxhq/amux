@@ -2174,6 +2174,7 @@ impl Transition<'_> {
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // The net's hosts run no experiment.
             Job::Workspace(_) => return None,
+            Job::Review(job) => match job {},
             // Nothing reads back what these write: the trust file, the
             // store's main file, blobs and drafts.
             Job::Fsync { .. }
@@ -2782,6 +2783,7 @@ fn job_kind(job: &Job) -> &'static str {
         Job::Compare { .. } => "Compare",
         Job::MakeWorktree { .. } => "MakeWorktree",
         Job::Workspace(_) => "Workspace",
+        Job::Review(_) => "Review",
     }
 }
 

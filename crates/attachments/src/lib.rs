@@ -21,6 +21,8 @@
 //! candidate element that does not parse stays in the text exactly as
 //! written and is reported; the parser never drops text.
 
+pub mod sent_review;
+
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};

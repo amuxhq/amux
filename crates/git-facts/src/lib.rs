@@ -20,6 +20,9 @@ use std::process::{Output, Stdio};
 
 use tokio::io::AsyncWriteExt;
 
+pub mod objects;
+pub mod snapshot;
+
 /// How much a comparison changed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChangeTotals {

@@ -746,6 +746,8 @@ pub enum Job {
     /// The workspaces experiment's work, answered as
     /// [`JobResult::Workspace`].
     Workspace(crate::workspaces::WorkspaceJob),
+    /// The reviews experiment's work, answered as [`JobResult::Review`].
+    Review(crate::reviews::Job),
 }
 
 #[cfg(test)]

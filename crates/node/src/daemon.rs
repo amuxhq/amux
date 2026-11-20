@@ -321,8 +321,9 @@ impl Drop for Hosted {
 
 impl Installation {
     /// Opens a profile's store and its runtime. Writes nothing but the
-    /// store: a new one, or the migrations an existing one lacks, which
-    /// only add, so the previous binary still reads it after a rollback.
+    /// store (a new one, or the migrations an existing one lacks, which
+    /// only add, so the previous binary still reads it after a rollback)
+    /// and what an experiment it does not run leaves beside it.
     fn open(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, StartError> {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.
@@ -343,6 +344,7 @@ impl Installation {
                 error: error.into(),
             })?;
         let launch = self.launch.lock().unwrap().clone();
+        crate::reviews::cleanup::on_open(&dir, &store, &launch);
         let workspaces = std::sync::Arc::new(crate::workspaces::Workspaces::new(
             profile,
             self.data_dir.join(crate::workspaces::WORKTREES),

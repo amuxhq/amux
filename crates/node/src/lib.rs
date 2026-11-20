@@ -53,6 +53,7 @@ mod reports;
 mod repositories;
 mod resource_limits;
 mod retention;
+mod reviews;
 mod routing;
 mod runtime;
 mod seal;

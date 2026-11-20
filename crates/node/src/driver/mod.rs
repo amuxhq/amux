@@ -1418,8 +1418,9 @@ impl CoreThread {
 /// ends its agent as could not start, a hook stops halfway, a resume or a
 /// delete is left for the next daemon to find half done. A release of a
 /// workspace claim is done at once and never answered, so it holds nothing.
-/// The rest (checkpoints, blobs, pushes, credentials, comparisons, kills)
-/// are quick or done again by the next daemon.
+/// The rest (checkpoints, blobs, pushes, credentials, comparisons, kills,
+/// reviews' reads of their trees) are quick or done again by the next
+/// daemon.
 fn holds_a_restart(op: &Job) -> bool {
     use daemon_core::workspaces::WorkspaceJob;
     match op {
@@ -1435,7 +1436,8 @@ fn holds_a_restart(op: &Job) -> bool {
         | Job::RefreshToken { .. }
         | Job::SendPush(_)
         | Job::KillAgent { .. }
-        | Job::Compare { .. } => false,
+        | Job::Compare { .. }
+        | Job::Review(_) => false,
     }
 }
 
@@ -1513,6 +1515,10 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
         }
         // Carried out by the driver itself, between the core's outputs.
         Job::Workspace(_) => return,
+        Job::Review(job) => match crate::reviews::run_job(runtime, job).await {
+            Some(result) => result,
+            None => return,
+        },
         Job::SendPush(push) => {
             let Some(runtime) = runtime.upgrade() else {
                 return;

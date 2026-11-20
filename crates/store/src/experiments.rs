@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS exp_suspension_1_runs (
 "#,
 };
 
+/// Each own agent's review: its snapshots, rounds and comments.
+pub const REVIEWS_1: ExperimentTables = ExperimentTables {
+    version: wire::experimental::REVIEW_ROW.version(),
+    schema: crate::reviews::SCHEMA,
+};
+
 /// Every experiment version this build keeps tables for.
 pub const EXPERIMENT_TABLES: &[&ExperimentTables] = &[&SUSPENSION_1];
 

@@ -55,6 +55,9 @@ pub struct Sqlite {
     /// The `suspension/1` experiment's table is there: each own agent's
     /// run is kept in it.
     pub(crate) suspension_1: bool,
+    /// The `reviews/1` experiment's tables are there: each own agent's
+    /// review is kept in them.
+    pub(crate) reviews_1: bool,
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
@@ -108,6 +111,7 @@ impl Sqlite {
     pub fn settle_experiments(&mut self, experiments: &[&str]) -> Result<(), OpenError> {
         crate::experiments::settle(&mut self.conn, &self.own_host, experiments)?;
         self.suspension_1 = experiments.contains(&crate::experiments::SUSPENSION_1.version);
+        self.reviews_1 = experiments.contains(&crate::experiments::REVIEWS_1.version);
         Ok(())
     }
 
@@ -180,6 +184,7 @@ impl Sqlite {
             own_host,
             markers: HashMap::new(),
             suspension_1: false,
+            reviews_1: false,
             #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
@@ -397,6 +402,7 @@ impl Sqlite {
             conn: &tx,
             own_host: &self.own_host,
             suspension_1: self.suspension_1,
+            reviews_1: self.reviews_1,
         });
         tx.finish()?;
         result
@@ -441,6 +447,7 @@ impl Sqlite {
             conn: &tx,
             own_host: &self.own_host,
             suspension_1: self.suspension_1,
+            reviews_1: self.reviews_1,
         })?;
         tx.commit()?;
         Ok(result)

@@ -25,6 +25,7 @@ pub mod experiments;
 mod explore;
 pub mod redact;
 mod retention;
+mod reviews;
 
 pub use blobs::BlobLru;
 #[cfg(feature = "explore")]

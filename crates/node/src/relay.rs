@@ -508,6 +508,7 @@ impl ProfileRuntime {
                 .await?;
         }
         let envelope_id = envelope.id.clone();
+        let reviews = crate::reviews::sent::named(&envelope);
         let request = ClientRequest::SendMessage {
             envelope: Box::new(envelope),
         };
@@ -516,6 +517,7 @@ impl ProfileRuntime {
             match answers.next().await {
                 Some(Delivered::Answer(_)) => {}
                 Some(Delivered::End(CoreStatus::Ok)) => {
+                    crate::reviews::sent::accepted(self, id, reviews).await;
                     return Ok(SendMessageResponse { envelope_id });
                 }
                 Some(Delivered::End(CoreStatus::Failed(CallError::Message(refusal)))) => {

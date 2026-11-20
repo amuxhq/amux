@@ -177,6 +177,7 @@ impl Daemon {
                 // It may have committed or reverted what other agents in
                 // its checkout count as their changes.
                 self.turn_ended_beside(agent, out);
+                self.review_turn_ended(agent, out);
             }
             // Only now, with the transaction committed: a subscriber never
             // sees a revision the store could not serve it.

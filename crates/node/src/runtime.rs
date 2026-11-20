@@ -717,6 +717,7 @@ impl ProfileRuntime {
             budget: launch.step_budget,
             workspaces: launch.experiments.is_on(&settings::experiments::WORKSPACES),
             suspension: launch.experiments.is_on(&settings::experiments::SUSPENSION),
+            reviews: launch.experiments.is_on(&settings::experiments::REVIEWS),
             rebooted,
         };
         let mut core = None;

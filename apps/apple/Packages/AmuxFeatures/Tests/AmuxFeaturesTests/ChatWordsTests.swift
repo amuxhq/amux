@@ -383,9 +383,16 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.changes(files: 4, added: 0, removed: 28), "4 files, 0 added, 28 removed")
         XCTAssertEqual(ChatWords.commentOn(lines: 1), "Comment on 1 line")
         XCTAssertEqual(ChatWords.commentOn(lines: 5), "Comment on 5 lines")
-        let sent = SentReviewRef(reviewId: [1], round: 1, snapshot: "4f2a9c1", commentIds: [[1], [2]])
+        let sent = SentReviewRef(reviewId: [1], round: 1, commentIds: [[1], [2]])
         XCTAssertEqual(
             ChatWords.chip(.sentReview(comments: 2, review: sent, text: "src/lib.rs:4")), "Review · 2 comments")
+        // A sent prompt is heard whole, the review's chip among its words.
+        XCTAssertEqual(
+            ChatWords.spoken(of: [
+                .text("Please check against "),
+                .attachment(.sentReview(comments: 2, review: sent, text: "src/lib.rs:4")),
+            ]),
+            "Please check against, Review · 2 comments")
     }
 
     /// The chip says the model by the one name the view gives it, its

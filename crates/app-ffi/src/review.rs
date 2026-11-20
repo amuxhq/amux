@@ -95,16 +95,17 @@ pub unsafe extern "C" fn amux_review_open(
 #[derive(Deserialize)]
 struct SentRound {
     review_id: Vec<u8>,
-    snapshot: String,
     comment_ids: Vec<Vec<u8>>,
 }
 
 /// Opens the round a review sent into the chat closed: `sent` is the
 /// `SentReviewRef` its attachment draws with, as JSON. The ticket answers
-/// the round's `ReviewPage`, read from the agent's host (or with the host
-/// out of reach, from what was loaded, saying so), or JSON null when the
-/// host no longer holds the round and the chip shows its text instead. It
-/// opens no page on the chat and moves none open there.
+/// the round's `ReviewPage`, its whole diff and the comments it sent, read
+/// from the agent's host (or with the host out of reach, from what was
+/// loaded, saying so: with none of it loaded, a page with no header and
+/// only that banner), or JSON null when the host no longer holds the round
+/// and the chip shows its text instead. It opens no page on the chat and
+/// moves none open there.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `sent` is a NUL-terminated string.
@@ -116,8 +117,7 @@ pub unsafe extern "C" fn amux_review_round(chat: *const AmuxChat, sent: *const c
     unsafe {
         act(chat, move |chat| async move {
             let sent = sent?;
-            chat.review_round(&sent.review_id, &sent.snapshot, &sent.comment_ids)
-                .await
+            chat.review_round(&sent.review_id, &sent.comment_ids).await
         })
     }
 }

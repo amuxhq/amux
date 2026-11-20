@@ -354,6 +354,7 @@ fn definition(
         start_line: lines.0,
         end_line: lines.1,
         parent,
+        side: wire::experimental::ReviewSide::Snapshot as i32,
     }
 }
 
@@ -496,7 +497,9 @@ fn store_comment(
         placement: Some(ReviewPlacement {
             at: Some(at),
             changed_near: false,
+            path: "src/store.rs".into(),
         }),
+        revision: 1,
     }
 }
 
@@ -665,8 +668,8 @@ pub fn review_since_last() -> crate::chat::review::Page {
 }
 
 /// The round the review sent before the next look closed, opened from the
-/// sent review in the chat: its two comments, each on its file with the
-/// code it was written on, one of them outdated since.
+/// sent review in the chat: its whole diff, from the base to the round's
+/// snapshot, with its two comments on the lines they were written on.
 pub fn review_round() -> crate::chat::review::Page {
     let summary = review_since_last()
         .fetched()
@@ -679,10 +682,30 @@ pub fn review_round() -> crate::chat::review::Page {
         .filter(|comment| comment.round.is_some())
         .map(|comment| comment.id.clone())
         .collect();
-    let round = ui_runtime::review::round(&summary, &summary.id, REVIEW_ROUND, &sent);
+    let (_, mut round) =
+        ui_runtime::review::round_of(&summary, &summary.id, &sent).expect("the round");
+    round.files = first_look_summary().files;
+    // The round's snapshot, before the agent made close keep sync_all's
+    // error.
+    let files = review_files_all()
+        .into_iter()
+        .map(|mut file| {
+            if file.path == "src/store.rs" {
+                file.hunks[1] = close_hunk(REVIEW_BASE, 69, "        self.file.sync_all();");
+            }
+            file
+        })
+        .collect();
     let mut page = crate::chat::review::Page::round(1);
     page.set_owner("fixer", "/srv/amux");
-    page.round_read(round, "");
+    page.round_read(
+        Ok(Some(ui_runtime::review::Round {
+            summary: round,
+            files,
+            notices: Vec::new(),
+        })),
+        "",
+    );
     page
 }
 
@@ -728,6 +751,7 @@ pub fn chat_review_chip() -> ChatScene {
             drafts: 3,
             counter: 7,
             moved: true,
+            review_id: b"review".to_vec(),
         },
     );
     scene.state.update(ui_state::Msg::Entry(agent));
@@ -1426,7 +1450,6 @@ fn row_sets() -> Vec<RowSet> {
                                 review: ui_view::SentReviewRef {
                                     review_id: vec![1; 16],
                                     round: 1,
-                                    snapshot: "0463fb2c".into(),
                                     comment_ids: vec![vec![1], vec![2]],
                                 },
                                 text: "Two comments on src/sum.rs.".into(),

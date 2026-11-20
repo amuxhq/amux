@@ -1,8 +1,7 @@
 //! A comparison's changed files as a list, under their folders as the
 //! shared view groups them, each file's lines added and removed at the
-//! right in the theme's green and red. The Overview's Changes section and
-//! the review page's file list both draw it; each places it and sets its
-//! width.
+//! right in the theme's green and red: the Overview's Changes section,
+//! which places it and sets its width.
 
 use ratatui::text::Line;
 use ui_view::{Changes, FileStatus};

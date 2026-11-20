@@ -194,8 +194,9 @@ panel, repository tiles, rows, tabs, chips, cards).
   the composer shows a review chip while drafts wait: the next send carries
   them, the chip opens the tool window, and its ✕ discards them after
   asking. A review sent into the chat is a chip that opens that round as a
-  sheet. Where the agent's host does not run the reviews experiment, the
-  page says reviews are not offered there. In a window too narrow for all three columns
+  sheet: its whole diff, from the round's base to its snapshot, with the
+  comments it sent on their lines. Where the agent's host does not run the
+  reviews experiment, the page says reviews are not offered there. In a window too narrow for all three columns
   the tool window gives way to its narrowest, then the sidebar steps aside
   while it is open. The window's least width fits the rail, a readable chat
   and the narrowest tool window.

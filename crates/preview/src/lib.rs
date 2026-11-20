@@ -37,7 +37,7 @@ fn clipped(line: &str) -> String {
 fn attachment_name(attachment: &Attachment) -> Option<String> {
     use wire::attachment::Of;
     if let Some(review) = attachments::sent_review::entry(attachment) {
-        return Some(match review.comment_ids.len() {
+        return Some(match review.comments.len() {
             1 => "Review · 1 comment".to_owned(),
             n => format!("Review · {n} comments"),
         });
@@ -135,7 +135,12 @@ mod tests {
             ..Default::default()
         };
         let mut sent = wire::experimental::SentReview {
-            comment_ids: vec![b"a".to_vec(), b"b".to_vec()],
+            comments: [b"a", b"b"]
+                .map(|id| wire::experimental::ReviewSentComment {
+                    id: id.to_vec(),
+                    revision: 1,
+                })
+                .to_vec(),
             ..Default::default()
         };
         wire::experimental::SENT_REVIEW.put(&mut review.experimental, &sent);
@@ -144,7 +149,7 @@ mod tests {
             said_line(&text, std::slice::from_ref(&review)).as_deref(),
             Some("Review · 2 comments")
         );
-        sent.comment_ids.truncate(1);
+        sent.comments.truncate(1);
         wire::experimental::SENT_REVIEW.put(&mut review.experimental, &sent);
         assert_eq!(
             said_line(&text, &[review]).as_deref(),

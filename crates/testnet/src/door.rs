@@ -1133,7 +1133,7 @@ fn attachment(attachment: &wire::Attachment) -> Value {
                     "id": hex(&review.review_id),
                     "round": review.round,
                     "snapshot": review.snapshot,
-                    "comments": review.comment_ids.iter().map(|id| hex(id)).collect::<Vec<_>>(),
+                    "comments": review.comments.iter().map(|comment| hex(&comment.id)).collect::<Vec<_>>(),
                 });
             }
             observed

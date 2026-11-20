@@ -11,9 +11,11 @@
 //! through [`Page::update`].
 //!
 //! The same page shows, to read only, the round a review sent into the chat
-//! closed: each comment it sent on its file with the code stored with it,
-//! or, when the agent's host no longer holds the round, the text the agent
-//! read ([`Page::round`]).
+//! closed: its whole diff, from the base commit the round was recorded with
+//! to its snapshot, with the comments it sent on their lines; each comment
+//! with the code stored with it when the host no longer keeps the round's
+//! snapshot; or, when the agent's host no longer holds the round, the text
+//! the agent read ([`Page::round`]).
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -28,7 +30,7 @@ use ui_view::{
     LineKind, ReviewAnchor, ReviewBanner, ReviewCodeLine, ReviewCommentAt, ReviewCommentRow,
     ReviewCommentState, ReviewContextAsk, ReviewEmpty, ReviewFileFlag, ReviewFileHead, ReviewGap,
     ReviewHeader, ReviewNoLines, ReviewNotice, ReviewPage, ReviewPageState, ReviewRow, ReviewRowOf,
-    ReviewView, review_page,
+    ReviewView, review_page_of,
 };
 use wire::experimental::{
     ReviewEdit, ReviewFileDiff, ReviewLine, ReviewPutComment, ReviewSummary, review_edit,
@@ -43,7 +45,7 @@ use crate::theme::Theme;
 #[derive(Clone, Debug, Default)]
 pub struct Fetched {
     pub summary: Option<Arc<ReviewSummary>>,
-    /// The bodies fetched for each view, by path.
+    /// The bodies fetched for each view of the summary, by path.
     pub all: BTreeMap<String, Arc<ReviewFileDiff>>,
     pub since_last: BTreeMap<String, Arc<ReviewFileDiff>>,
     /// The answers to the page's asks for more context.
@@ -187,8 +189,11 @@ struct Round {
     /// The round's number: the chip's until the host's is read.
     number: u32,
     /// What the agent read, once the host is found to hold none of the
-    /// round: the page shows it in place of the comments.
+    /// round, or cannot be reached with none of it loaded: the page shows
+    /// it in place of the round.
     gone: Option<String>,
+    /// The host could not be reached, rather than holding none of it.
+    unreachable: bool,
 }
 
 #[derive(Debug, Default)]
@@ -232,27 +237,52 @@ impl Page {
     /// names it, while the round is read from the agent's host.
     pub fn round(number: u32) -> Page {
         let mut page = Page {
-            round: Some(Round { number, gone: None }),
+            round: Some(Round {
+                number,
+                gone: None,
+                unreachable: false,
+            }),
             ..Page::default()
         };
         page.compose();
         page
     }
 
-    /// The round, as `ui_runtime::review::round` made it from the agent's
-    /// review; none when the host holds none of it, and the page shows
-    /// `text`, what the agent read.
-    pub fn round_read(&mut self, summary: Option<ReviewSummary>, text: &str) {
+    /// The round, as `Review::round` read it from the agent's review; when
+    /// the host holds none of it, or cannot be reached and none of it was
+    /// loaded, the page shows `text`, what the agent read.
+    pub fn round_read(
+        &mut self,
+        read: Result<Option<ui_runtime::review::Round>, ui_runtime::review::ReviewError>,
+        text: &str,
+    ) {
         let Some(round) = &mut self.round else {
             return;
         };
-        match summary {
-            Some(summary) => {
-                if let Some(number) = summary.comments.iter().filter_map(|c| c.round).min() {
+        let read = match read {
+            Ok(read) => read,
+            Err(error) => {
+                round.unreachable = ui_runtime::review::unreachable(&error);
+                None
+            }
+        };
+        match read {
+            Some(read) => {
+                if let Some(number) = read.summary.comments.iter().filter_map(|c| c.round).min() {
                     round.number = number;
                 }
+                for notice in read.notices {
+                    if !self.state.notices.contains(&notice) {
+                        self.state.notices.push(notice);
+                    }
+                }
                 self.update(Fetched {
-                    summary: Some(Arc::new(summary)),
+                    summary: Some(Arc::new(read.summary)),
+                    all: read
+                        .files
+                        .into_iter()
+                        .map(|file| (file.path.clone(), Arc::new(file)))
+                        .collect(),
                     ..Fetched::default()
                 });
             }
@@ -312,16 +342,12 @@ impl Page {
         self.compose();
     }
 
-    /// The view the page shows, as composing it decides.
+    /// The view the page shows, as composing it decided.
     pub fn view(&self) -> ReviewView {
-        let Some(summary) = &self.fetched.summary else {
-            return ReviewView::All;
-        };
-        match self.state.view {
-            _ if summary.rounds.is_empty() => ReviewView::All,
-            Some(view) => view,
-            None => ReviewView::SinceLast,
-        }
+        self.page
+            .header
+            .as_ref()
+            .map_or(ReviewView::All, |header| header.view)
     }
 
     /// The files the view shown still needs the bodies of, in page order.
@@ -342,18 +368,19 @@ impl Page {
     }
 
     fn compose(&mut self) {
-        let view = self.view();
-        let files: Vec<ReviewFileDiff> = match view {
-            ReviewView::All => &self.fetched.all,
-            ReviewView::SinceLast => &self.fetched.since_last,
-        }
-        .values()
-        .map(|file| ReviewFileDiff::clone(file))
-        .collect();
-        self.page = review_page(
-            self.fetched.summary.as_deref(),
-            &files,
-            &self.fetched.context,
+        let fetched = &self.fetched;
+        self.page = review_page_of(
+            fetched.summary.as_deref(),
+            |view| {
+                match view {
+                    ReviewView::All => &fetched.all,
+                    ReviewView::SinceLast => &fetched.since_last,
+                }
+                .values()
+                .cloned()
+                .collect()
+            },
+            &fetched.context,
             &self.state,
         );
         let stops = self.stops();
@@ -1053,10 +1080,13 @@ impl Page {
         };
         if let Some(text) = self.gone() {
             let room = width.saturating_sub(4).max(1);
-            for part in text::wrap(
-                "The agent's computer no longer holds this round, so this is what the agent read.",
-                room,
-            ) {
+            let why = if self.round.as_ref().is_some_and(|round| round.unreachable) {
+                "The agent's computer can't be reached and none of this round was loaded, so this \
+                 is what the agent read."
+            } else {
+                "The agent's computer no longer holds this round, so this is what the agent read."
+            };
+            for part in text::wrap(why, room) {
                 let mut line = Line::from(Span::raw("  "));
                 push(&mut line, part, theme.muted(), width);
                 body.lines.push(line);
@@ -1682,7 +1712,7 @@ fn banner_lines(banner: &ReviewBanner, width: usize, theme: Theme) -> Vec<Line<'
             None,
         ),
         ReviewBanner::RoundGone => (
-            "Your last review's snapshot is gone from the repository: its comments show with \
+            "The round's snapshot is gone from the agent's computer: its comments show with \
              the code saved with them."
                 .into(),
             theme.muted(),

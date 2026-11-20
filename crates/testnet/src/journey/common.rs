@@ -392,12 +392,17 @@ pub(crate) fn sent_review(attachment: &Value, comment: &str) -> Result<String, S
 /// The snapshot a review's `text` names is a commit kept outside the
 /// repository at `work`, which holds no such object: the command the text
 /// gives the agent reads it from any folder and finds the working tree as
-/// it was snapshotted, and the snapshot holds the edit.
+/// it was snapshotted, its listing of files made since runs, and the
+/// snapshot holds the edit.
 pub(crate) fn snapshot_outside(work: &Path, read: &str, snapshot: &str) -> Result<(), String> {
-    let command = read
+    let given = read
         .lines()
-        .find(|line| line.starts_with("GIT_ALTERNATE_OBJECT_DIRECTORIES="))
+        .find(|line| line.starts_with("GIT_INDEX_FILE="))
         .ok_or_else(|| format!("the review gives no command:\n{read}"))?;
+    // The diff, then the listing of files made since the snapshot.
+    let (command, listing) = given
+        .split_once(" && ")
+        .ok_or_else(|| format!("the review's command lists nothing made since: {given}"))?;
     let reading = command
         .rsplit_once(" diff ")
         .map(|(reading, _)| reading)
@@ -415,6 +420,13 @@ pub(crate) fn snapshot_outside(work: &Path, read: &str, snapshot: &str) -> Resul
     {
         return Err(format!(
             "the review's command finds the tree moved from the snapshot: {command}"
+        ));
+    }
+    let listed = shell(listing)?;
+    if !listed.status.success() {
+        return Err(format!(
+            "the review's listing of files made since fails: {}",
+            String::from_utf8_lossy(&listed.stderr)
         ));
     }
     let shown = shell(&format!("{reading} show {snapshot}:deploy.sh"))?;

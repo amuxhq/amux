@@ -1352,7 +1352,7 @@ async fn a_person_on_the_laptop_reviews_the_desks_agent() {
     })
     .await;
     let (entry, attachment) = sent(&app).unwrap();
-    assert_eq!(entry.comment_ids.len(), 1);
+    assert_eq!(entry.comments.len(), 1);
     assert_eq!(entry.round, 1);
     let Some(wire::attachment::Of::Text(read)) = &attachment.of else {
         panic!("a sent review is text the agent reads");

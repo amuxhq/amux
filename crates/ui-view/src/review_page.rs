@@ -16,7 +16,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use wire::experimental::{
     REVIEW_ROW, ReviewDefinition, ReviewDefinitionKind, ReviewFileDiff, ReviewHunk, ReviewLine,
-    ReviewLineKind, ReviewSummary, ReviewTokenKind, ReviewerComment, review_placement,
+    ReviewLineKind, ReviewSide, ReviewSummary, ReviewTokenKind, ReviewerComment, review_placement,
 };
 
 use crate::changed_words::changed_words;
@@ -31,6 +31,10 @@ pub const CONTEXT_STEP: u32 = 20;
 /// The most lines one ask for more context reaches, the same bound the
 /// agent's host keeps: a definition longer than this loads in parts.
 pub const MOST_CONTEXT: u32 = 2_000;
+
+/// The lines of context the agent's host gives each hunk on either side of
+/// its changes: a hunk ending in fewer ends at the file's end.
+pub const HUNK_CONTEXT: u32 = 3;
 
 /// Which comparison the page shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -100,9 +104,10 @@ pub enum ReviewNotice {
     NotOffered,
     /// The agent's folder is not a git repository, so it has no review.
     NotARepository,
-    /// The last round's snapshot is gone from the repository, as after a
-    /// rebase and garbage collection: since your last review shows each
-    /// comment with the code stored with it instead.
+    /// A round's snapshot is gone from the agent's host, which keeps only
+    /// its latest two, or from the repository, as after a rebase and garbage
+    /// collection: since your last review, or the round's own page, shows
+    /// each comment with the code stored with it instead.
     RoundGone,
     /// A snapshot of the working tree could not be taken; what the host
     /// said.
@@ -192,7 +197,7 @@ pub enum ReviewBanner {
     MergeUnderway,
     NotOffered,
     NotARepository,
-    /// The last round's snapshot is gone from the repository: its comments
+    /// The round's snapshot is gone from the agent's host: its comments
     /// show with the code stored with them.
     RoundGone,
     SnapshotFailed {
@@ -292,8 +297,13 @@ pub struct ReviewOutlineEntry {
     pub label: String,
     /// How many definitions it sits in.
     pub depth: u32,
+    /// Its lines, numbered in the snapshot, or in the compared commit when
+    /// `compared`.
     pub start_line: u32,
     pub end_line: u32,
+    /// Its lines are the compared commit's: a definition only removed lines
+    /// reach, as one deleted.
+    pub compared: bool,
     /// The row of the first hunk whose changes it encloses, for jumping to
     /// it; none for one only a hunk's context reaches.
     pub row: Option<u32>,
@@ -494,6 +504,24 @@ pub fn review_page(
     context: &[(ReviewContextAsk, Vec<ReviewLine>)],
     state: &ReviewPageState,
 ) -> ReviewPage {
+    review_page_of(
+        summary,
+        |_| files.iter().cloned().map(std::sync::Arc::new).collect(),
+        context,
+        state,
+    )
+}
+
+/// [`review_page`], with the bodies asked for once the page has decided
+/// which view it shows: `files` answers those a client fetched for it. The
+/// view is the one the person switched to, or the one a look opens on, and
+/// the page's header says which ([`ReviewHeader::view`]).
+pub fn review_page_of(
+    summary: Option<&ReviewSummary>,
+    files: impl FnOnce(ReviewView) -> Vec<std::sync::Arc<ReviewFileDiff>>,
+    context: &[(ReviewContextAsk, Vec<ReviewLine>)],
+    state: &ReviewPageState,
+) -> ReviewPage {
     let mut page = ReviewPage::default();
     let noticed = |notice: &ReviewNotice| state.notices.contains(notice);
     let failures = state.notices.iter().filter_map(|notice| {
@@ -555,27 +583,20 @@ pub fn review_page(
         .collect();
     let changed_since = |path: &str| since.get(path).is_some_and(|file| file.changed_since_last);
 
-    // Comments by the file they are on in the snapshot, which for a file
-    // renamed since a comment was written is its new path.
+    // Comments by the file they sit in, as the host placed them: for a file
+    // renamed since a comment was written, its new path. One whose commit
+    // can no longer be read has no place, and shows on the file it was
+    // written on.
     let mut by_file: BTreeMap<String, Vec<&ReviewerComment>> = BTreeMap::new();
     let mut outside: Vec<String> = Vec::new();
     for comment in &summary.comments {
-        let written = comment
-            .anchor
+        let path = comment
+            .placement
             .as_ref()
-            .map(|anchor| anchor.path.as_str())
+            .map(|placement| placement.path.as_str())
+            .filter(|path| !path.is_empty())
+            .or_else(|| comment.anchor.as_ref().map(|anchor| anchor.path.as_str()))
             .unwrap_or_default();
-        let path = summary
-            .files
-            .iter()
-            .find(|file| file.path == written)
-            .or_else(|| {
-                summary
-                    .files
-                    .iter()
-                    .find(|file| file.old_path.as_deref() == Some(written))
-            })
-            .map_or(written, |file| file.path.as_str());
         if !summary.files.iter().any(|file| file.path == path) && !outside.iter().any(|p| p == path)
         {
             outside.push(path.to_owned());
@@ -590,9 +611,10 @@ pub fn review_page(
             view == ReviewView::All || changed_since(&file.path) || by_file.contains_key(&file.path)
         })
         .collect();
+    let files = files(view);
     let fetched: BTreeMap<&str, &ReviewFileDiff> = files
         .iter()
-        .map(|file| (file.path.as_str(), file))
+        .map(|file| (file.path.as_str(), &**file))
         .collect();
     let toggled: HashSet<&str> = state.toggled_files.iter().map(String::as_str).collect();
     let opened: HashSet<&[u8]> = state.opened_comments.iter().map(Vec::as_slice).collect();
@@ -923,16 +945,31 @@ impl<'a> Place<'a> {
             Body::Diff(diff) => Some(diff),
             _ => None,
         };
+        // Removed lines each hunk shows, by the commit they belong to.
+        let mut removed_shown: BTreeMap<&str, HashSet<u32>> = BTreeMap::new();
+        for hunk in diff.iter().flat_map(|diff| &diff.hunks) {
+            removed_shown
+                .entry(hunk.old_commit.as_str())
+                .or_default()
+                .extend(
+                    hunk.lines
+                        .iter()
+                        .filter(|line| line.kind() == ReviewLineKind::Removed && line.old_line > 0)
+                        .map(|line| line.old_line),
+                );
+        }
         let mut whole = Vec::new();
         let mut on_lines = Vec::new();
         for &comment in comments {
-            if let Some(at) = self.on_removed(comment) {
-                on_lines.push((comment, at, true));
-                continue;
-            }
             match placed(comment) {
-                at @ ReviewCommentAt::Lines { .. } => on_lines.push((comment, at, false)),
-                at => whole.push((comment, at)),
+                (at @ ReviewCommentAt::Lines { .. }, None) => on_lines.push((comment, at, None)),
+                // On removed lines of the commit this view compares
+                // against: on those lines, on the removed side. Of any
+                // other commit, the view does not show them.
+                (at @ ReviewCommentAt::Lines { .. }, Some(commit)) if commit == self.compared => {
+                    on_lines.push((comment, at, Some(commit)))
+                }
+                (at, _) => whole.push((comment, at)),
             }
         }
         // Comments on the file come first under its head, then outdated
@@ -979,25 +1016,21 @@ impl<'a> Place<'a> {
             .chain(extra.lines.keys().copied())
             .collect();
         let mut seating = Seating::default();
-        let removed_shown: HashSet<u32> = diff
-            .hunks
-            .iter()
-            .filter(|hunk| hunk.old_commit == self.compared)
-            .flat_map(|hunk| &hunk.lines)
-            .filter(|line| line.kind() == ReviewLineKind::Removed && line.old_line > 0)
-            .map(|line| line.old_line)
-            .collect();
         let mut unseated = Vec::new();
         for (comment, at, removed) in on_lines {
             let ReviewCommentAt::Lines { start, end } = at else {
                 continue;
             };
             match removed {
-                true if removed_shown.contains(&end) => {
+                Some(commit)
+                    if removed_shown
+                        .get(commit)
+                        .is_some_and(|shown| shown.contains(&end)) =>
+                {
                     seating.old.extend(start..=end);
                     seating.seated.push((Seat::Removed(end), comment, at));
                 }
-                false if shown.contains(&end) => {
+                None if shown.contains(&end) => {
                     seating.new.extend(start..=end);
                     seating.seated.push((Seat::New(end), comment, at));
                 }
@@ -1082,29 +1115,6 @@ impl<'a> Place<'a> {
         outline(&diff.outline, &hunk_rows)
     }
 
-    /// The lines of a draft written on removed lines, which it sits on
-    /// while the view shows them against the commit it was written on: its
-    /// anchor names that commit rather than a snapshot, and its placement,
-    /// which can only name the snapshot's lines, puts it on its file or is
-    /// absent. None for any other comment: one placed on the snapshot's
-    /// lines sits there, and an outdated one stays outdated.
-    fn on_removed(&self, comment: &ReviewerComment) -> Option<ReviewCommentAt> {
-        let anchor = comment.anchor.as_ref()?;
-        let lines = anchor.lines.filter(|lines| lines.start > 0)?;
-        let removed_side = anchor.commit != self.snapshot && anchor.commit == self.compared;
-        let unplaced = matches!(
-            comment
-                .placement
-                .as_ref()
-                .and_then(|placement| placement.at.as_ref()),
-            None | Some(review_placement::At::File(_))
-        );
-        (removed_side && unplaced).then_some(ReviewCommentAt::Lines {
-            start: lines.start,
-            end: lines.end.max(lines.start),
-        })
-    }
-
     /// The snapshot's lines between the shown lines `after` and `before`
     /// (none: the end of the file) that were read for more context, and the
     /// gaps left among them, each line with the seat a comment under it
@@ -1130,7 +1140,7 @@ impl<'a> Place<'a> {
         for (&number, line) in extra.lines.range(after + 1..=upper) {
             if number > shown + 1 {
                 out.push((
-                    self.gap(path, extra, shown, Some(number), above, below),
+                    self.gap(path, extra, shown, Some(number), above, below, delta),
                     None,
                 ));
             }
@@ -1147,12 +1157,17 @@ impl<'a> Place<'a> {
         match before {
             Some(before) if before > shown + 1 => {
                 out.push((
-                    self.gap(path, extra, shown, Some(before), above, below),
+                    self.gap(path, extra, shown, Some(before), above, below, delta),
                     None,
                 ));
             }
-            None if extra.end.is_none_or(|end| shown < end) => {
-                out.push((self.gap(path, extra, shown, None, above, below), None));
+            None if extra.end.is_none_or(|end| shown < end)
+                && above.is_none_or(|hunk| !ends_the_file(hunk)) =>
+            {
+                out.push((
+                    self.gap(path, extra, shown, None, above, below, delta),
+                    None,
+                ));
             }
             _ => {}
         }
@@ -1160,7 +1175,10 @@ impl<'a> Place<'a> {
     }
 
     /// The gap between the shown lines `after` and `before` (none: the end
-    /// of the file), below the hunk `above` and above the hunk `below`.
+    /// of the file), below the hunk `above` and above the hunk `below`;
+    /// `delta` turns the snapshot's numbers in it into the compared
+    /// commit's.
+    #[allow(clippy::too_many_arguments)]
     fn gap(
         &self,
         path: &str,
@@ -1169,7 +1187,17 @@ impl<'a> Place<'a> {
         before: Option<u32>,
         above: Option<&ReviewHunk>,
         below: Option<&ReviewHunk>,
+        delta: i64,
     ) -> ReviewRow {
+        // A definition's edge as a line of the snapshot: one of the compared
+        // commit's, enclosing only removed lines, has its unchanged edges in
+        // the gap numbered there.
+        let edge = |def: &ReviewDefinition, line: u32| match def.side() {
+            ReviewSide::Compared => u32::try_from(i64::from(line) - delta)
+                .ok()
+                .filter(|line| *line > 0),
+            ReviewSide::Snapshot | ReviewSide::Unspecified => Some(line),
+        };
         let first = after + 1;
         let last = before.map_or(u32::MAX, |before| before - 1);
         let hidden = before.map(|before| before - first);
@@ -1183,19 +1211,29 @@ impl<'a> Place<'a> {
         let (up, down) = match hidden {
             Some(hidden) if hidden <= CONTEXT_STEP => (Some(ask(first, last, None)), None),
             _ => {
-                let up = before.map(|before| match below.and_then(|hunk| hunk.scope.last()) {
-                    Some(def) if def.start_line >= first && def.start_line <= last => ask(
-                        def.start_line.max(before.saturating_sub(MOST_CONTEXT)),
-                        last,
-                        Some(def),
-                    ),
-                    _ => ask(before.saturating_sub(CONTEXT_STEP).max(first), last, None),
-                });
-                let down = (after > 0).then(|| match above.and_then(|hunk| hunk.scope.last()) {
-                    Some(def) if def.end_line >= first && def.end_line <= last => {
-                        ask(first, def.end_line.min(first + MOST_CONTEXT - 1), Some(def))
+                let up = before.map(|before| {
+                    match below
+                        .and_then(|hunk| hunk.scope.last())
+                        .and_then(|def| Some((def, edge(def, def.start_line)?)))
+                    {
+                        Some((def, start)) if start >= first && start <= last => ask(
+                            start.max(before.saturating_sub(MOST_CONTEXT)),
+                            last,
+                            Some(def),
+                        ),
+                        _ => ask(before.saturating_sub(CONTEXT_STEP).max(first), last, None),
                     }
-                    _ => ask(first, (first + CONTEXT_STEP - 1).min(last), None),
+                });
+                let down = (after > 0).then(|| {
+                    match above
+                        .and_then(|hunk| hunk.scope.last())
+                        .and_then(|def| Some((def, edge(def, def.end_line)?)))
+                    {
+                        Some((def, end)) if end >= first && end <= last => {
+                            ask(first, end.min(first + MOST_CONTEXT - 1), Some(def))
+                        }
+                        _ => ask(first, (first + CONTEXT_STEP - 1).min(last), None),
+                    }
                 });
                 (up, down)
             }
@@ -1315,6 +1353,18 @@ struct Edges {
     trailing_delta: i64,
 }
 
+/// Whether `hunk` reaches the end of its file: the host gives each hunk
+/// [`HUNK_CONTEXT`] lines after its last change wherever the file has them.
+fn ends_the_file(hunk: &ReviewHunk) -> bool {
+    let after = hunk
+        .lines
+        .iter()
+        .rev()
+        .take_while(|line| line.kind() == ReviewLineKind::Context)
+        .count();
+    (after as u32) < HUNK_CONTEXT
+}
+
 fn edges(hunk: &ReviewHunk) -> Edges {
     let new: Vec<u32> = hunk
         .lines
@@ -1342,10 +1392,11 @@ fn edges(hunk: &ReviewHunk) -> Edges {
     }
 }
 
-/// Where a comment's placement puts it: on its lines in the snapshot, on
-/// its file, or outdated. One with no placement sits on the lines it was
-/// written on, or on its file when it was written on the whole file.
-fn placed(comment: &ReviewerComment) -> ReviewCommentAt {
+/// Where a comment's placement puts it: on lines of the snapshot, on
+/// removed lines of the commit named beside them, on its file, or outdated.
+/// One with no placement sits on the lines it was written on, or on its
+/// file when it was written on the whole file.
+fn placed(comment: &ReviewerComment) -> (ReviewCommentAt, Option<&str>) {
     let lines = |range: wire::experimental::ReviewLineRange| ReviewCommentAt::Lines {
         start: range.start,
         end: range.end.max(range.start),
@@ -1355,12 +1406,16 @@ fn placed(comment: &ReviewerComment) -> ReviewCommentAt {
         .as_ref()
         .and_then(|placement| placement.at.as_ref())
     {
-        Some(review_placement::At::Outdated(_)) => ReviewCommentAt::Outdated,
-        Some(review_placement::At::File(_)) => ReviewCommentAt::File,
-        Some(review_placement::At::Lines(range)) if range.start > 0 => lines(*range),
+        Some(review_placement::At::Outdated(_)) => (ReviewCommentAt::Outdated, None),
+        Some(review_placement::At::File(_)) => (ReviewCommentAt::File, None),
+        Some(review_placement::At::Lines(range)) if range.start > 0 => (lines(*range), None),
+        Some(review_placement::At::Compared(compared)) => match compared.lines {
+            Some(range) if range.start > 0 => (lines(range), Some(compared.commit.as_str())),
+            _ => (ReviewCommentAt::File, None),
+        },
         _ => match comment.anchor.as_ref().and_then(|anchor| anchor.lines) {
-            Some(range) if range.start > 0 => lines(range),
-            _ => ReviewCommentAt::File,
+            Some(range) if range.start > 0 => (lines(range), None),
+            _ => (ReviewCommentAt::File, None),
         },
     }
 }
@@ -1471,6 +1526,7 @@ fn outline(
                 depth,
                 start_line: def.start_line,
                 end_line: def.end_line,
+                compared: def.side() == ReviewSide::Compared,
                 row: hunks
                     .iter()
                     .find(|(_, scope)| scope.iter().any(same))

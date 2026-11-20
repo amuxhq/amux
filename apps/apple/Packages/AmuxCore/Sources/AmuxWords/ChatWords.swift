@@ -357,6 +357,18 @@ public enum ChatWords {
         }.joined()
     }
 
+    /// Segments as a sentence to hear: the words, and each chip by its
+    /// name, in order, a pause between.
+    public static func spoken(of segments: [Segment]) -> String {
+        segments.compactMap { segment -> String? in
+            let said = switch segment {
+            case .text(let text): text.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .attachment(let view): chip(view)
+            }
+            return said.isEmpty ? nil : said
+        }.joined(separator: ", ")
+    }
+
     // MARK: - The activity line
 
     /// "Running cargo test · 12s", as one sentence to hear. `subject` names
@@ -537,7 +549,7 @@ public enum ChatWords {
 
     /// Beside the chip when the agent changed code after the drafts were
     /// written on it.
-    public static let reviewChipMoved = String(localized: "Code changed since")
+    public static let reviewChipMoved = String(localized: "Written on older code")
 
     /// The chip's ✕ asks this before the drafts go.
     public static func discardDrafts(_ count: UInt32) -> String {
@@ -602,7 +614,7 @@ public enum ChatWords {
             String(localized: "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews.")
         case .notARepository: String(localized: "This agent’s folder isn’t a git repository, so it has no review.")
         case .roundGone:
-            String(localized: "Your last review’s snapshot is gone from the repository. Its comments show with the code saved with them.")
+            String(localized: "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them.")
         case .snapshotFailed(let message):
             String(localized: "Couldn’t take a snapshot of the working tree: \(message)")
         case .unreachable:
@@ -719,6 +731,11 @@ public enum ChatWords {
     /// its round.
     public static let reviewRoundGone = String(
         localized: "The agent’s computer no longer holds this round, so this is what the agent read.")
+
+    /// Above a sent review's text, when the agent's computer can't be
+    /// reached and none of its round was loaded.
+    public static let reviewRoundUnreachable = String(
+        localized: "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read.")
 
     /// From a sent review's round to the review as it is now.
     public static let reviewOpenReview = String(localized: "Open the Review")

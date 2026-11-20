@@ -405,17 +405,15 @@ impl Chat {
     }
 
     /// Sends `draft` with the review's drafts after its words: the review's
-    /// text attachment, naming exactly the comments its text holds, so the
-    /// agent's host marks those sent when it accepts the message and no
-    /// draft written meanwhile. The review is read again first, so what is
-    /// sent is what the host holds; nothing is sent when it cannot be read
-    /// or holds no drafts.
+    /// text attachment, naming exactly the comments its text holds, each at
+    /// the revision it holds, so the agent's host marks those sent when the
+    /// agent takes the message and no draft written or edited meanwhile.
+    /// Until then they are still drafts there. The review is read again
+    /// first, without changing it, so what is sent is what the host holds;
+    /// nothing is sent when it cannot be read or holds no drafts.
     pub async fn send_with_review(&self, draft: &Draft) -> Result<SendOutcome, String> {
         let review = self.reviews();
-        let summary = review
-            .open(None, false)
-            .await
-            .map_err(|error| error.to_string())?;
+        let summary = review.read().await.map_err(|error| error.to_string())?;
         let (text, attachments) = with_review(draft, &summary)?;
         let sent = self.session.send_prompt(&text, attachments).await;
         let state = self
@@ -484,17 +482,17 @@ impl Chat {
     }
 
     /// The page of the round a sent review in the chat closed, named as its
-    /// attachment names it; none when the agent's host no longer holds the
-    /// round, and the chat shows the text the agent read instead. It is
-    /// read apart from the review page open on the chat, so the snapshot
-    /// that page shows never moves under it.
+    /// attachment names it: its whole diff and the comments it sent. None
+    /// when the agent's host no longer holds the round, and the chat shows
+    /// the text the agent read instead. It is read apart from the review
+    /// page open on the chat, so the snapshot that page shows never moves
+    /// under it.
     pub async fn review_round(
         &self,
         review_id: &[u8],
-        snapshot: &str,
         comment_ids: &[Vec<u8>],
     ) -> Option<ui_view::ReviewPage> {
-        crate::review::round_page(&self.session.reviews(), review_id, snapshot, comment_ids).await
+        crate::review::round_page(&self.session.reviews(), review_id, comment_ids).await
     }
 
     /// The agent's review: the open page's, or one read for a send.
@@ -880,7 +878,14 @@ mod tests {
         );
         assert_eq!(attachments.len(), 2);
         let entry = ui_view::sent_review::entry(&attachments[1]).expect("the review last");
-        assert_eq!(entry.comment_ids, vec![b"one".to_vec()]);
+        assert_eq!(
+            entry
+                .comments
+                .iter()
+                .map(|comment| comment.id.clone())
+                .collect::<Vec<_>>(),
+            vec![b"one".to_vec()]
+        );
     }
 
     /// The composer's chip comes from the review's entry on the agent's
@@ -896,6 +901,7 @@ mod tests {
             drafts,
             counter: 4,
             moved: true,
+            review_id: b"review".to_vec(),
         };
         REVIEW_ROW.put(&mut agent.experimental, &entry(3));
         let chip = frame(&SessionState::new(agent.clone(), 3), 0, None).review_chip;

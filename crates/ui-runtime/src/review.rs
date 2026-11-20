@@ -3,9 +3,10 @@
 //! the agent's row followed so the page changes when the review does.
 //!
 //! Every read names commits, and a commit's content never changes, so what
-//! was fetched is kept, keyed by the commits it was read from, for as long
-//! as the process runs ([`ReviewCache`]). A review already loaded reads
-//! again with its host asleep; only edits need the host.
+//! was fetched is kept, keyed by the request that read it ([`Comparison`]
+//! and path), for as long as the process runs ([`ReviewCache`]), and by the
+//! page that fetched it for as long as the page shows it. A review already
+//! loaded reads again with its host asleep; only edits need the host.
 //!
 //! The page never changes under its reader: a summary re-read because the
 //! review changed is taken only while it describes the snapshot the page
@@ -20,8 +21,9 @@ use prost::Message as _;
 use tokio::sync::watch;
 use wire::ErrorCode;
 use wire::experimental::{
-    REVIEW_ROW, ReviewEdit, ReviewFileDiff, ReviewFileRequest, ReviewLine, ReviewLineRange,
-    ReviewSummary, ReviewView,
+    REVIEW_ROW, ReviewAnchor, ReviewComparedLines, ReviewEdit, ReviewFileDiff, ReviewFileRequest,
+    ReviewLine, ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSummary, ReviewView,
+    ReviewerComment, review_placement,
 };
 
 use crate::Session;
@@ -101,8 +103,106 @@ pub enum Followed {
     Stale,
 }
 
+/// What of an agent's row a review page follows: the review its entry
+/// describes, the entry's change counter, and whether the working tree
+/// moved since the latest snapshot. A client hands [`Review::follow`] a row
+/// whose mark differs from the last one it handed, and no other: two rows
+/// with the same mark have nothing new for the page.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RowMark {
+    pub review_id: Vec<u8>,
+    /// Counts afresh when a review starts over, so it means something only
+    /// beside the review's id.
+    pub counter: u64,
+    pub moved: bool,
+}
+
+impl RowMark {
+    /// The mark of `row`; none for a row without the review's entry.
+    pub fn of(row: &wire::Agent) -> Option<RowMark> {
+        let entry = REVIEW_ROW.get(&row.experimental)?;
+        Some(RowMark {
+            review_id: entry.review_id,
+            counter: entry.counter,
+            moved: entry.moved,
+        })
+    }
+
+    /// The review as of this mark: what changes when the review does, as
+    /// against the working tree moving under it.
+    fn version(&self) -> (Vec<u8>, u64) {
+        (self.review_id.clone(), self.counter)
+    }
+}
+
+/// One comparison a review handed out, as GetFiles names it: the files of
+/// `snapshot`, compared with `from` as `view` shows them. Every body read
+/// is of one comparison, and kept by it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Comparison {
+    pub from: String,
+    pub snapshot: String,
+    pub view: ReviewView,
+}
+
+impl Comparison {
+    /// What `summary` shows for `view`: all changes, from the base commit
+    /// recorded with its snapshot; or what changed since the last round,
+    /// from that round's snapshot. None for the second before any round.
+    pub fn shown(summary: &ReviewSummary, view: ReviewView) -> Option<Comparison> {
+        let from = match view {
+            ReviewView::SinceLast => summary.rounds.last()?.snapshot.clone(),
+            _ => summary.base_commit.clone(),
+        };
+        Some(Comparison {
+            from,
+            snapshot: summary.snapshot.clone(),
+            view,
+        })
+    }
+
+    /// A past round's whole diff: its snapshot against the base commit it
+    /// was recorded with.
+    pub fn round(round: &ReviewRound) -> Comparison {
+        Comparison {
+            from: round.base_commit.clone(),
+            snapshot: round.snapshot.clone(),
+            view: ReviewView::All,
+        }
+    }
+
+    /// The comparison a composed page shows, as its header names it.
+    pub fn of_page(header: &ui_view::ReviewHeader) -> Comparison {
+        Comparison {
+            from: header.compared_with.clone(),
+            snapshot: header.snapshot.clone(),
+            view: match header.view {
+                ui_view::ReviewView::All => ReviewView::All,
+                ui_view::ReviewView::SinceLast => ReviewView::SinceLast,
+            },
+        }
+    }
+}
+
+/// A round a sent review closed, read for its page: [`Review::round`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Round {
+    /// The round as a review of its own: its snapshot against the base
+    /// commit it was recorded with, the files that comparison changed, and
+    /// the comments it sent, each on its lines of that snapshot. Composed
+    /// with no view chosen, it shows the round's whole diff.
+    pub summary: ReviewSummary,
+    /// The bodies fetched of the files its page shows open.
+    pub files: Vec<ReviewFileDiff>,
+    /// What reading it taught the page: the host out of reach, so this is
+    /// what the process had loaded; or the round's snapshot gone from the
+    /// host, so its comments show with the code stored with them.
+    pub notices: Vec<ui_view::ReviewNotice>,
+}
+
 /// One agent's review. Made from its chat's [`Session`]; every one made in
-/// a process shares that process's [`ReviewCache`].
+/// a process shares that process's [`ReviewCache`], and keeps besides what
+/// its own page fetched for as long as the page shows it.
 pub struct Review {
     reviews: client::AgentReviews,
     agent_id: Vec<u8>,
@@ -121,9 +221,40 @@ struct State {
     unavailable: Option<Unavailable>,
     /// The page asked for the review: from then on a change to it is read.
     opened: bool,
-    /// The row entry's counter as last followed: `None` until a row is
+    /// The review and its counter as last followed: `None` until a row is
     /// followed, `Some(None)` for a row without the entry.
-    seen: Option<Option<u64>>,
+    seen: Option<Option<(Vec<u8>, u64)>>,
+    /// What this page fetched, held apart from the process's cache so a
+    /// page larger than that cache never loses what it shows and asks for
+    /// it again. Kept while the shown summary names its commits.
+    files: HashMap<FileKey, Arc<ReviewFileDiff>>,
+    context: HashMap<ContextKey, Arc<[ReviewLine]>>,
+    lists: HashMap<Comparison, Arc<[wire::ChangedFile]>>,
+}
+
+impl State {
+    /// Drops what the page fetched of commits the shown summary no longer
+    /// names: its snapshot, its base commit, and its rounds'.
+    fn prune(&mut self) {
+        let Some(shown) = &self.shown else {
+            return;
+        };
+        let named: HashSet<&str> = [shown.snapshot.as_str(), shown.base_commit.as_str()]
+            .into_iter()
+            .chain(
+                shown
+                    .rounds
+                    .iter()
+                    .flat_map(|round| [round.snapshot.as_str(), round.base_commit.as_str()]),
+            )
+            .collect();
+        self.files
+            .retain(|key, _| named.contains(key.comparison.snapshot.as_str()));
+        self.lists
+            .retain(|comparison, _| named.contains(comparison.snapshot.as_str()));
+        self.context
+            .retain(|key, _| named.contains(key.commit.as_str()));
+    }
 }
 
 impl Session {
@@ -185,10 +316,12 @@ impl Review {
         self.state().unavailable
     }
 
-    /// Opens the review at the agent's host, which begins it on a first
-    /// look and snapshots a moved tree when no drafts wait; `base_branch`
-    /// picks its base anew and `refresh` takes a snapshot even with drafts,
-    /// moving them onto it. The answer is what the page shows from now.
+    /// Opens the review as a person does, at the agent's host, which begins
+    /// it on a first look and snapshots a moved tree when no drafts wait;
+    /// `base_branch` picks its base anew and `refresh` takes a snapshot even
+    /// with drafts, moving them onto it. The answer is what the page shows
+    /// from now. Only a person's open or refresh does this: following the
+    /// row and sending read the review without changing it ([`Review::read`]).
     ///
     /// On failure the page keeps what it showed, which for a review this
     /// process loaded before is its last summary.
@@ -204,20 +337,35 @@ impl Review {
         Ok(self.show(summary, Taking::Always))
     }
 
+    /// Reads the review as its host holds it, changing nothing there, and
+    /// answers that: what a send takes its drafts from. The page shows it
+    /// only while it is of the page's snapshot. An agent with no review
+    /// answers a summary whose id is empty.
+    pub async fn read(&self) -> Result<Arc<ReviewSummary>, ReviewError> {
+        let _call = self.calls.lock().await;
+        let answer = self.reviews.read().await;
+        let summary = Arc::new(self.answered(answer.map_err(ReviewError::of_open))?);
+        self.show(ReviewSummary::clone(&summary), Taking::SameSnapshot);
+        Ok(summary)
+    }
+
     /// Makes `edits`, all of them or none, at the agent's host, which must
-    /// be reachable. The review as it is after them is shown when it is of
-    /// the page's snapshot.
+    /// be reachable. The comments the answer holds replace the page's, even
+    /// on a page held on an earlier snapshot, where each sits by the lines
+    /// it was written on; the rest of the answer is shown when it is of the
+    /// page's snapshot.
     pub async fn edit(&self, edits: Vec<ReviewEdit>) -> Result<Arc<ReviewSummary>, ReviewError> {
         let _call = self.calls.lock().await;
         let answer = self.reviews.edit(edits).await;
         let summary = self.answered(answer.map_err(ReviewError::of))?;
-        Ok(self.show(summary, Taking::SameSnapshot))
+        Ok(self.show(summary, Taking::Edit))
     }
 
     /// Follows the agent's row, as every client receives it: once the page
-    /// has opened the review, a move of the review's change counter reads
-    /// the summary again; a working tree that only moved marks the page
-    /// stale without a call.
+    /// has opened the review, a change of the review its entry names, or of
+    /// the entry's counter, reads the summary again, without changing the
+    /// review; a working tree that only moved marks the page stale without
+    /// a call. A client hands over rows whose [`RowMark`] moved.
     ///
     /// A row followed before the review is opened sets where following
     /// starts, so a page that follows the row it opened from re-reads
@@ -225,14 +373,14 @@ impl Review {
     /// with no row before it reads again, as it cannot tell whether the
     /// open saw that row's change.
     pub async fn follow(&self, row: &wire::Agent) -> Result<Followed, ReviewError> {
-        let entry = REVIEW_ROW.get(&row.experimental);
-        let counter = entry.as_ref().map(|entry| entry.counter);
-        let moved = entry.is_some_and(|entry| entry.moved);
+        let mark = RowMark::of(row);
+        let version = mark.as_ref().map(RowMark::version);
+        let moved = mark.is_some_and(|mark| mark.moved);
         let _call = self.calls.lock().await;
         let before = {
             let mut state = self.state();
-            let before = state.seen.replace(counter);
-            if !state.opened || before == Some(counter) {
+            let before = state.seen.replace(version.clone());
+            if !state.opened || before.as_ref() == Some(&version) {
                 let Some(shown) = state.shown.as_ref().filter(|shown| moved && !shown.stale) else {
                     return Ok(Followed::Same);
                 };
@@ -245,7 +393,7 @@ impl Review {
             }
             before
         };
-        let answer = self.reviews.open(None, false).await;
+        let answer = self.reviews.read().await;
         let summary = match self.answered(answer.map_err(ReviewError::of_open)) {
             Ok(summary) => summary,
             Err(error) => {
@@ -262,17 +410,16 @@ impl Review {
         })
     }
 
-    /// The bodies of `paths` in the shown snapshot, as `view` compares it,
-    /// in the order asked: those already fetched from the cache, the rest
-    /// from the host [`BATCH_FILES`] at a time, each batch kept and
-    /// announced as it lands. A file the host left out of a full answer is
-    /// asked for again in the next batch.
+    /// The bodies of `paths` in `comparison`, in the order asked: those
+    /// this page or the process already fetched, the rest from the host
+    /// [`BATCH_FILES`] at a time, each batch kept and announced as it
+    /// lands. A file the host left out of a full answer is asked for again
+    /// in the next batch.
     pub async fn files(
         &self,
-        view: ReviewView,
+        comparison: &Comparison,
         paths: &[String],
     ) -> Result<Vec<Arc<ReviewFileDiff>>, ReviewError> {
-        let summary = self.summary().ok_or(ReviewError::NotOpen)?;
         let mut got: HashMap<&str, Arc<ReviewFileDiff>> = HashMap::new();
         let mut wanted = VecDeque::new();
         let mut asked = HashSet::new();
@@ -280,13 +427,14 @@ impl Review {
             if !asked.insert(path.as_str()) {
                 continue;
             }
-            match self.cache.file(&FileKey::new(&summary, view, path)) {
+            match self.file(&FileKey::new(comparison, path)) {
                 Some(file) => {
                     got.insert(path.as_str(), file);
                 }
                 None => wanted.push_back(path.as_str()),
             }
         }
+        let mut notified = false;
         while !wanted.is_empty() {
             let batch: Vec<&str> = wanted.drain(..wanted.len().min(BATCH_FILES)).collect();
             let requests = batch
@@ -298,7 +446,13 @@ impl Review {
                 .collect();
             let answer = self
                 .reviews
-                .get_files(&summary.snapshot, view, requests)
+                .get_files(
+                    &comparison.from,
+                    &comparison.snapshot,
+                    comparison.view,
+                    requests,
+                    false,
+                )
                 .await;
             let answer = self.answered(answer.map_err(ReviewError::of))?;
             let mut landed = 0;
@@ -310,8 +464,7 @@ impl Review {
                     continue;
                 }
                 let file = Arc::new(file);
-                self.cache
-                    .put_file(FileKey::new(&summary, view, path), file.clone());
+                self.keep_file(FileKey::new(comparison, path), file.clone());
                 got.insert(path, file);
                 landed += 1;
             }
@@ -327,6 +480,12 @@ impl Review {
                 }
             }
             self.notify();
+            notified = true;
+        }
+        if !notified && !got.is_empty() {
+            // Read from the process's cache into the page's own: the page
+            // draws them from there.
+            self.notify();
         }
         let mut answered = HashSet::new();
         Ok(paths
@@ -336,38 +495,67 @@ impl Review {
             .collect())
     }
 
-    /// The files of the shown snapshot already fetched for `view`, by
-    /// path: what the page draws while the rest arrive.
-    pub fn fetched(&self, view: ReviewView) -> BTreeMap<String, Arc<ReviewFileDiff>> {
-        let Some(summary) = self.summary() else {
-            return BTreeMap::new();
-        };
-        summary
+    /// The files of `comparison` this page fetched, by path: what the page
+    /// draws while the rest arrive.
+    pub fn fetched(&self, comparison: &Comparison) -> BTreeMap<String, Arc<ReviewFileDiff>> {
+        self.state()
             .files
             .iter()
-            .filter_map(|changed| {
-                let file = self
-                    .cache
-                    .file(&FileKey::new(&summary, view, &changed.path))?;
-                Some((changed.path.clone(), file))
-            })
+            .filter(|(key, _)| key.comparison == *comparison)
+            .map(|(key, file)| (key.path.clone(), file.clone()))
             .collect()
     }
 
-    /// More lines of `path` around a change, read from `commit` (the
-    /// snapshot, or a hunk's old commit for lines on its removed side), each
-    /// numbered as a line of that commit.
+    /// Every file `comparison` changed, as the host lists them; with the
+    /// host out of reach, the list this process read before.
+    pub async fn list(
+        &self,
+        comparison: &Comparison,
+    ) -> Result<Arc<[wire::ChangedFile]>, ReviewError> {
+        if let Some(held) = self.state().lists.get(comparison) {
+            return Ok(held.clone());
+        }
+        let answer = self
+            .reviews
+            .get_files(
+                &comparison.from,
+                &comparison.snapshot,
+                comparison.view,
+                Vec::new(),
+                true,
+            )
+            .await
+            .map_err(ReviewError::of);
+        let listed: Arc<[wire::ChangedFile]> = match self.answered(answer) {
+            Ok(answer) => answer.changed.into(),
+            Err(error) => {
+                let held = unreachable(&error)
+                    .then(|| self.cache.list(comparison))
+                    .flatten();
+                return held.ok_or(error);
+            }
+        };
+        self.cache.put_list(comparison.clone(), listed.clone());
+        self.state()
+            .lists
+            .insert(comparison.clone(), listed.clone());
+        Ok(listed)
+    }
+
+    /// More lines of `path` around a change in `comparison`, read from
+    /// `commit` (its snapshot, or for lines on a hunk's removed side the
+    /// commit it compares against), each numbered as a line of that commit.
     pub async fn context(
         &self,
+        comparison: &Comparison,
         commit: &str,
         path: &str,
         lines: ReviewLineRange,
     ) -> Result<Arc<[ReviewLine]>, ReviewError> {
         let key = ContextKey::new(commit, path, lines);
-        if let Some(held) = self.cache.context(&key) {
+        if let Some(held) = self.context_held(commit, path, lines) {
             return Ok(held);
         }
-        let summary = self.summary().ok_or(ReviewError::NotOpen)?;
         let request = ReviewFileRequest {
             path: path.to_owned(),
             context: vec![lines],
@@ -375,7 +563,13 @@ impl Review {
         };
         let answer = self
             .reviews
-            .get_files(&summary.snapshot, ReviewView::All, vec![request])
+            .get_files(
+                &comparison.from,
+                &comparison.snapshot,
+                comparison.view,
+                vec![request],
+                false,
+            )
             .await;
         let answer = self.answered(answer.map_err(ReviewError::of))?;
         let Some(file) = answer.files.into_iter().find(|file| file.path == path) else {
@@ -385,7 +579,8 @@ impl Review {
             ))));
         };
         let held: Arc<[ReviewLine]> = file.context.into();
-        self.cache.put_context(key, held.clone());
+        self.cache.put_context(key.clone(), held.clone());
+        self.state().context.insert(key, held.clone());
         self.notify();
         Ok(held)
     }
@@ -397,7 +592,102 @@ impl Review {
         path: &str,
         lines: ReviewLineRange,
     ) -> Option<Arc<[ReviewLine]>> {
-        self.cache.context(&ContextKey::new(commit, path, lines))
+        let key = ContextKey::new(commit, path, lines);
+        let mut state = self.state();
+        if let Some(held) = state.context.get(&key) {
+            return Some(held.clone());
+        }
+        let held = self.cache.context(&key)?;
+        state.context.insert(key, held.clone());
+        Some(held)
+    }
+
+    /// The round a sent review closed, read for its page: the review as its
+    /// host holds it now, without changing it, and of it the round in which
+    /// the comments `comment_ids` were sent, whose whole diff is listed and
+    /// the bodies its page shows open fetched. The host records a round on
+    /// its latest snapshot when the agent takes the message, so the round
+    /// is found by its comments, not by the snapshot the sender named.
+    ///
+    /// With the host out of reach, the round is read from what this process
+    /// loaded, and the error is the host's when that holds none of it. When
+    /// the host no longer keeps the round's snapshot, its comments show with
+    /// the code stored with them. None when the review holds none of the
+    /// comments, as after starting over or deleting them, and the chat
+    /// shows the text the agent read instead.
+    pub async fn round(
+        &self,
+        review_id: &[u8],
+        comment_ids: &[Vec<u8>],
+    ) -> Result<Option<Round>, ReviewError> {
+        let mut notices = Vec::new();
+        let (summary, (number, mut round)) = match self.read().await {
+            Ok(summary) => match round_of(&summary, review_id, comment_ids) {
+                Some(round) => (summary, round),
+                None => return Ok(None),
+            },
+            Err(error) if unreachable(&error) => {
+                notices.push(ui_view::ReviewNotice::Unreachable);
+                let held = self.summary().and_then(|summary| {
+                    let round = round_of(&summary, review_id, comment_ids)?;
+                    Some((summary, round))
+                });
+                match held {
+                    Some(held) => held,
+                    None => return Err(error),
+                }
+            }
+            Err(error) => return Err(error),
+        };
+        let held = summary
+            .rounds
+            .get(number as usize - 1)
+            .cloned()
+            .unwrap_or_default();
+        let comparison = Comparison::round(&held);
+        match self.list(&comparison).await {
+            Ok(listed) => round.files = listed.to_vec(),
+            Err(error) if unreachable(&error) => {
+                if !notices.contains(&ui_view::ReviewNotice::Unreachable) {
+                    notices.push(ui_view::ReviewNotice::Unreachable);
+                }
+            }
+            Err(_) => notices.push(ui_view::ReviewNotice::RoundGone),
+        }
+        let state = ui_view::ReviewPageState {
+            notices: notices.clone(),
+            ..ui_view::ReviewPageState::default()
+        };
+        let wanted = ui_view::review_page(Some(&round), &[], &[], &state).to_fetch;
+        let files = match self.files(&comparison, &wanted).await {
+            Ok(files) => files,
+            // What was kept before the failure still draws; the rest draw
+            // as loading, never asked for again on a round.
+            Err(_) => self.fetched(&comparison).into_values().collect(),
+        };
+        Ok(Some(Round {
+            summary: round,
+            files: files
+                .iter()
+                .map(|file| ReviewFileDiff::clone(file))
+                .collect(),
+            notices,
+        }))
+    }
+
+    fn file(&self, key: &FileKey) -> Option<Arc<ReviewFileDiff>> {
+        let mut state = self.state();
+        if let Some(held) = state.files.get(key) {
+            return Some(held.clone());
+        }
+        let held = self.cache.file(key)?;
+        state.files.insert(key.clone(), held.clone());
+        Some(held)
+    }
+
+    fn keep_file(&self, key: FileKey, file: Arc<ReviewFileDiff>) {
+        self.cache.put_file(key.clone(), file.clone());
+        self.state().files.insert(key, file);
     }
 
     /// The answer of a call, noting when it says the review is not there to
@@ -421,85 +711,142 @@ impl Review {
     /// Shows `summary` as `taking` allows, and answers what the page shows
     /// after.
     fn show(&self, summary: ReviewSummary, taking: Taking) -> Arc<ReviewSummary> {
-        let summary = Arc::new(summary);
         let shown = {
             let mut state = self.state();
-            let keep = match (&state.shown, taking) {
-                (Some(shown), Taking::SameSnapshot) => {
-                    shown.id == summary.id && shown.snapshot != summary.snapshot
+            let held = state
+                .shown
+                .clone()
+                .filter(|shown| shown.id == summary.id && shown.snapshot != summary.snapshot);
+            let next = match (held, taking) {
+                (Some(held), Taking::SameSnapshot | Taking::Edit) => {
+                    let mut kept = ReviewSummary::clone(&held);
+                    kept.stale = true;
+                    if matches!(taking, Taking::Edit) {
+                        kept.comments = seated_on(&held, summary.comments);
+                    }
+                    if kept == *held {
+                        return held;
+                    }
+                    Arc::new(kept)
                 }
-                _ => false,
+                _ => {
+                    if state.shown.as_deref() == Some(&summary) {
+                        return state.shown.clone().expect("just compared");
+                    }
+                    Arc::new(summary)
+                }
             };
-            if keep {
-                let held = state.shown.as_ref().expect("kept only when shown");
-                if held.stale {
-                    return held.clone();
-                }
-                let mut stale = ReviewSummary::clone(held);
-                stale.stale = true;
-                state.shown = Some(Arc::new(stale));
-            } else {
-                if state.shown.as_deref() == Some(&*summary) {
-                    return summary;
-                }
-                state.shown = Some(summary.clone());
-                self.cache.put_summary(&self.agent_id, summary.clone());
-            }
-            state.shown.clone().expect("just shown")
+            state.shown = Some(next.clone());
+            state.prune();
+            self.cache.put_summary(&self.agent_id, next.clone());
+            next
         };
         self.notify();
         shown
     }
 }
 
-/// The review as one round sent it, from `summary`, the review as its host
-/// holds it now: the snapshot the round's comments were made on, compared
-/// with the base commit the round was shown against, and of the comments
-/// the round sent, `comment_ids`, those still on the review, each on the
-/// lines it was written on. A sent review's attachment names the review,
-/// the snapshot and the comments, and the host numbered the round as the
-/// message arrived, so the round is the one its comments were sent in.
-///
-/// The host lists changed files only for its latest snapshot, so the
-/// round lists none: each comment shows on its file with the code stored
-/// with it. None when `summary` is of another review, as after starting
-/// over, or holds none of the comments, all deleted since.
-pub fn round(
+/// `comments`, as the agent's host placed them on a later snapshot, seated
+/// instead on the snapshot of `held`, the summary a page keeps showing: a
+/// comment the page already held keeps where it sat, and any other sits on
+/// the lines it was written on, of the snapshot or of a commit compared
+/// against, or on its file.
+fn seated_on(held: &ReviewSummary, comments: Vec<ReviewerComment>) -> Vec<ReviewerComment> {
+    comments
+        .into_iter()
+        .map(|mut comment| {
+            let before = held
+                .comments
+                .iter()
+                .find(|seen| seen.id == comment.id && seen.anchor == comment.anchor);
+            comment.placement = match before {
+                Some(before) => before.placement.clone(),
+                None => comment
+                    .anchor
+                    .as_ref()
+                    .map(|anchor| written_on(anchor, &held.snapshot)),
+            };
+            comment
+        })
+        .collect()
+}
+
+/// A comment on the lines `anchor` names, as it sits on `snapshot`: on the
+/// snapshot's lines when they are its, on the lines of the commit compared
+/// against when they are that commit's, and on its file when it names no
+/// lines.
+fn written_on(anchor: &ReviewAnchor, snapshot: &str) -> ReviewPlacement {
+    let at = match anchor.lines.filter(|lines| lines.start > 0) {
+        None => review_placement::At::File(wire::Empty {}),
+        Some(lines) if anchor.commit == snapshot => review_placement::At::Lines(lines),
+        Some(lines) => review_placement::At::Compared(ReviewComparedLines {
+            commit: anchor.commit.clone(),
+            lines: Some(lines),
+        }),
+    };
+    ReviewPlacement {
+        at: Some(at),
+        changed_near: false,
+        path: anchor.path.clone(),
+    }
+}
+
+/// The round of `summary`, the review as its host holds it now, that sent
+/// the comments `comment_ids` of the review `review_id`, as a review of its
+/// own, and its number: the round's snapshot compared with the base commit
+/// it was recorded with, and of the comments it sent those still on the
+/// review, each on the lines it was written on. The round's files are for
+/// the caller to list ([`Review::list`]). None when `summary` is of another
+/// review, as after starting over, or holds none of the comments.
+pub fn round_of(
     summary: &ReviewSummary,
     review_id: &[u8],
-    snapshot: &str,
     comment_ids: &[Vec<u8>],
-) -> Option<ReviewSummary> {
-    if summary.id != review_id {
+) -> Option<(u32, ReviewSummary)> {
+    if summary.id != review_id || review_id.is_empty() {
         return None;
     }
-    let comments: Vec<_> = summary
+    let number = summary
         .comments
         .iter()
-        .filter(|comment| comment.round.is_some() && comment_ids.contains(&comment.id))
-        .map(|comment| wire::experimental::ReviewerComment {
-            // Where it sits on a later snapshot is not where it was sent:
-            // with no placement it shows on its anchor's lines.
-            placement: None,
+        .filter(|comment| comment_ids.contains(&comment.id))
+        .filter_map(|comment| comment.round)
+        .min()?;
+    let round = (number as usize)
+        .checked_sub(1)
+        .and_then(|at| summary.rounds.get(at))?;
+    let comments = summary
+        .comments
+        .iter()
+        .filter(|comment| comment.round == Some(number) && comment_ids.contains(&comment.id))
+        .map(|comment| ReviewerComment {
+            // Where it sits on a later snapshot is not where it was sent.
+            placement: comment
+                .anchor
+                .as_ref()
+                .map(|anchor| written_on(anchor, &round.snapshot)),
             ..comment.clone()
         })
         .collect();
-    let number = comments.iter().filter_map(|comment| comment.round).min()?;
-    let base_commit = (number as usize)
-        .checked_sub(1)
-        .and_then(|at| summary.rounds.get(at))
-        .map_or(&summary.base_commit, |round| &round.base_commit);
-    Some(ReviewSummary {
-        id: summary.id.clone(),
-        base_branch: summary.base_branch.clone(),
-        base_commit: base_commit.clone(),
-        snapshot: snapshot.to_owned(),
-        comments,
-        objects: summary.objects.clone(),
-        root: summary.root.clone(),
-        began_at: summary.began_at.clone(),
-        ..ReviewSummary::default()
-    })
+    Some((
+        number,
+        ReviewSummary {
+            id: summary.id.clone(),
+            base_branch: summary.base_branch.clone(),
+            base_commit: round.base_commit.clone(),
+            snapshot: round.snapshot.clone(),
+            comments,
+            objects: summary.objects.clone(),
+            root: summary.root.clone(),
+            began_at: summary.began_at.clone(),
+            ..ReviewSummary::default()
+        },
+    ))
+}
+
+/// Whether a review call failed for not reaching the agent's host.
+pub fn unreachable(error: &ReviewError) -> bool {
+    matches!(error, ReviewError::Rpc(rpc) if rpc.not_sent().is_some() || rpc.uncertain() || matches!(rpc, RpcError::Transport(_)))
 }
 
 /// Which answers replace the summary the page shows.
@@ -510,6 +857,9 @@ enum Taking {
     /// It came of something else: only an answer about the same snapshot of
     /// the same review, or of a review begun anew.
     SameSnapshot,
+    /// An edit's: as [`Taking::SameSnapshot`], but its comments are taken
+    /// whatever snapshot it is about, so what the person just wrote shows.
+    Edit,
 }
 
 /// What reviews fetched in this process, kept by the commits it was read
@@ -573,6 +923,20 @@ impl ReviewCache {
             .put(Key::Context(key), Held::Context(lines), size);
     }
 
+    fn list(&self, comparison: &Comparison) -> Option<Arc<[wire::ChangedFile]>> {
+        match self.held().get(&Key::List(comparison.clone()))? {
+            Held::List(files) => Some(files),
+            _ => None,
+        }
+    }
+
+    fn put_list(&self, comparison: Comparison, files: Arc<[wire::ChangedFile]>) {
+        let size = comparison_size(&comparison)
+            + files.iter().map(|file| file.encoded_len()).sum::<usize>();
+        self.held()
+            .put(Key::List(comparison), Held::List(files), size);
+    }
+
     fn summary(&self, agent_id: &[u8]) -> Option<Arc<ReviewSummary>> {
         match self.held().get(&Key::Summary(agent_id.to_vec()))? {
             Held::Summary(summary) => Some(summary),
@@ -590,40 +954,28 @@ impl ReviewCache {
     }
 }
 
-/// A file's hunks as one view of one snapshot shows them, which the
-/// commits it compares fix: the base commit for all changes, and with it
-/// the last round's snapshot for the change since then.
+/// A file's hunks as one comparison shows them.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FileKey {
-    snapshot: String,
-    view: i32,
-    base_commit: String,
-    since: String,
+    comparison: Comparison,
     path: String,
 }
 
 impl FileKey {
-    fn new(summary: &ReviewSummary, view: ReviewView, path: &str) -> FileKey {
-        let since = match view {
-            ReviewView::SinceLast => summary
-                .rounds
-                .last()
-                .map(|round| round.snapshot.clone())
-                .unwrap_or_default(),
-            _ => String::new(),
-        };
+    fn new(comparison: &Comparison, path: &str) -> FileKey {
         FileKey {
-            snapshot: summary.snapshot.clone(),
-            view: view as i32,
-            base_commit: summary.base_commit.clone(),
-            since,
+            comparison: comparison.clone(),
             path: path.to_owned(),
         }
     }
 
     fn size(&self) -> usize {
-        self.snapshot.len() + self.base_commit.len() + self.since.len() + self.path.len()
+        comparison_size(&self.comparison) + self.path.len()
     }
+}
+
+fn comparison_size(comparison: &Comparison) -> usize {
+    comparison.from.len() + comparison.snapshot.len() + 4
 }
 
 /// Lines of one file of one commit.
@@ -654,6 +1006,8 @@ impl ContextKey {
 enum Key {
     File(FileKey),
     Context(ContextKey),
+    /// The files a comparison changed.
+    List(Comparison),
     /// The last summary an agent's review answered.
     Summary(Vec<u8>),
 }
@@ -662,6 +1016,7 @@ enum Key {
 enum Held {
     File(Arc<ReviewFileDiff>),
     Context(Arc<[ReviewLine]>),
+    List(Arc<[wire::ChangedFile]>),
     Summary(Arc<ReviewSummary>),
 }
 

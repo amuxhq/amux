@@ -21,8 +21,6 @@ review.line.l/deploy.sh/3/0 | rsync build/ prod:/srv |  | 0,241,402,19
 review.line.l/deploy.sh/0/3 | rsync --delete build/ prod:/srv | commented | 0,260,402,19
 review.comment | Why --delete here? | Draft | 0,279,402,58
 review.line.l/deploy.sh/0/4 | echo done |  | 0,337,402,19
-review.gap | The rest of the file |  | 0,356,402,44
-review.gap.down | 20 lines down |  | 350,356,44,44
 review.file | deploy.sh | open | 0,132,402,44
 review.done | Done · 1 draft |  | 16,782,370,50
 review.summary | Since main, 1 file · +2 −1 · 1 draft |  | 76,66,141,36
@@ -37,9 +35,6 @@ review.more | More |  | 344,66,38,36
  | Line 3, added: rsync --delete build/ prod:/srv |  | 0,260,402,19
  | Draft, Why --delete here? |  | 0,279,402,58
  | Line 4, added: echo done |  | 0,337,402,19
- | ⋯ |  | 28,369,8,17
- | The rest of the file |  | 46,370,107,16
- | 20 lines down |  | 350,356,44,44
 BackButton | Back |  | 16,62,44,44
  | Since main, 1 file · +2 −1 · 1 draft |  | 76,66,141,36
  | Files |  | 292,66,36,36

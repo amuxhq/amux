@@ -905,7 +905,10 @@ struct PromptBubble: View {
                 }
             }
         }
+        // Combining drops the children that are buttons, as a sent review's
+        // chip is, so the words are said here whole, every chip among them.
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(ChatWords.spoken(of: text))
         .identified(
             "chat.row.prompt", label: ChatWords.text(of: text), value: steered ? "steered" : nil)
     }

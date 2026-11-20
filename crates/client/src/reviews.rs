@@ -28,34 +28,58 @@ impl AgentReviews {
         Ok(stub!(Reviews1Client<Conn>, self.to.conn()?))
     }
 
-    /// The review, begun on the first look; `base_branch` picks its base
-    /// anew, and `refresh` takes a snapshot even with drafts.
+    /// Opens the review as a person does: begun on the first look, and on
+    /// a new snapshot when the tree changed and no drafts wait;
+    /// `base_branch` picks its base anew, and `refresh` takes a snapshot
+    /// even with drafts.
     pub async fn open(
         &self,
         base_branch: Option<String>,
         refresh: bool,
     ) -> Result<ReviewSummary, RpcError> {
-        let request = ReviewOpenRequest {
+        self.open_as(ReviewOpenRequest {
             agent_id: self.agent_id.clone(),
             base_branch,
             refresh,
-        };
+            read_only: false,
+        })
+        .await
+    }
+
+    /// Reads the review as it stands, changing nothing: no review is begun,
+    /// no snapshot taken and no base picked. An agent with no review
+    /// answers a summary with an empty id.
+    pub async fn read(&self) -> Result<ReviewSummary, RpcError> {
+        self.open_as(ReviewOpenRequest {
+            agent_id: self.agent_id.clone(),
+            read_only: true,
+            ..ReviewOpenRequest::default()
+        })
+        .await
+    }
+
+    async fn open_as(&self, request: ReviewOpenRequest) -> Result<ReviewSummary, RpcError> {
         Ok(self.stub()?.open(request).await?.into_inner())
     }
 
-    /// The bodies of `files` of `snapshot`, as `view` compares it; the files
-    /// that did not fit are absent from the answer.
+    /// The bodies of `files` of the comparison from `from` to `snapshot`
+    /// that `view` names; the files that did not fit are absent from the
+    /// answer. `list` also answers every file the comparison changed.
     pub async fn get_files(
         &self,
+        from: &str,
         snapshot: &str,
         view: ReviewView,
         files: Vec<ReviewFileRequest>,
+        list: bool,
     ) -> Result<ReviewGetFilesResponse, RpcError> {
         let request = ReviewGetFilesRequest {
             agent_id: self.agent_id.clone(),
             snapshot: snapshot.to_owned(),
             view: view as i32,
             files,
+            from: from.to_owned(),
+            list,
         };
         Ok(self.stub()?.get_files(request).await?.into_inner())
     }

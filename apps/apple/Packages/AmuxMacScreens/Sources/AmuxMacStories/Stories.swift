@@ -445,7 +445,7 @@ public enum Stories {
     ]
 
     private static let reconnectEdit = FileRow(
-        path: "crates/relay/tests/reconnect.rs", change: .edited, added: 6, removed: 3, line: 41)
+        path: "crates/relay/tests/reconnect.rs", change: .edited, added: 3, removed: 2, line: 40)
 
     private static let workingRows: [Row] = [
         r("r1", .prompt(text: text("Draft the release notes for 0.9.0 from the changelog."), steered: false)),
@@ -605,7 +605,7 @@ public enum Stories {
         chatStory("chat.conversation", flaky) {
             StillChat(
                 rows: conversationRows, frame: frame(flaky.card, .idle),
-                changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
+                changes: ChangeTotals(files: 1, added: 3, removed: 2), settings: claude)
         },
         chatStory("chat.asking", flaky) {
             StillChat(
@@ -623,7 +623,7 @@ public enum Stories {
                     ],
                     questionNote: true, questionSkip: true, questionReply: true, stopsTurn: true, defaultToNo: false,
                     state: .open),
-                changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
+                changes: ChangeTotals(files: 1, added: 3, removed: 2), settings: claude)
         },
         Story("chat.subagents") {
             MainStory(
@@ -655,7 +655,7 @@ public enum Stories {
                 chat: {
                     let chat = StillChat(
                         rows: conversationRows, frame: frame(flaky.card, .idle),
-                        changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
+                        changes: ChangeTotals(files: 3, added: 18, removed: 6), settings: claude)
                     chat.page = StillReviewPage(page: firstLook())
                     return chat
                 }())
@@ -779,31 +779,43 @@ public enum Stories {
         header: header(
             view: .sinceLast, files: 1, added: 1, removed: 1, drafts: 1, sent: 2, rounds: 1, sinceFiles: 1))
 
-    /// The first round as its chip in the chat opens it: the two comments it
-    /// sent, each with the code it was written on.
+    /// The first round as its chip in the chat opens it: its whole diff,
+    /// from main to the round's snapshot, with the two comments it sent on
+    /// the lines they were written on.
     private static let sentRound = ReviewPage(
         banners: [],
         rows: [
-            fileHead(test, added: 0, removed: 0, comments: 2),
+            fileHead("Cargo.lock", added: 12, removed: 4, flags: [.lockfile], folded: true),
+            fileHead(link, added: 3, removed: 0),
+            hunkHead(link, old: 120, new: 120, against: base, scope: ["impl Link"]),
+            kept(link, 120, 120, "    /// Resolves once the relay acknowledged the hello."),
+            put(link, 121, "    pub async fn settled(&self) {"),
+            put(link, 122, "        self.hello.wait().await"),
+            put(link, 123, "    }"),
+            fileHead(test, added: 3, removed: 2, comments: 2),
+            hunkHead(test, old: 38, new: 38, against: base, scope: ["async fn reconnect_after_cut"]),
+            kept(test, 38, 38, "    let relay = Relay::start().await;"),
+            kept(test, 39, 39, "    let link = relay.dial(&host).await?;", commented: true),
             comment(
                 "sent-dial", test, "Name the host in the dial, so a failure says which one it was.",
-                .sent(round: 1), .lines(start: 39, end: 39), scope: ["async fn reconnect_after_cut"],
-                snippet: [
-                    line(test, .context, "async fn reconnect_after_cut() -> Result<()> {", old: 37, new: 37),
-                    line(test, .context, "    let relay = Relay::start().await;", old: 38, new: 38),
-                    line(test, .context, "    let link = relay.dial(&host).await?;", old: 39, new: 39),
-                ]),
+                .sent(round: 1), .lines(start: 39, end: 39), scope: ["async fn reconnect_after_cut"]),
+            cut(test, 40, "    // Give the hello time to land.", changed: ["Give the hello time to land."]),
+            cut(test, 41, "    tokio::time::sleep(Duration::from_millis(50)).await;"),
+            put(test, 40, "    // Cut only once the relay has acknowledged the hello:",
+                changed: ["Cut only once the relay has acknowledged the hello:"]),
+            put(test, 41, "    // a slow runner otherwise races the first handshake."),
+            put(test, 42, "    link.settled().await;", commented: true),
             comment(
                 "sent-settled", test,
                 "Is there a timeout on settled()? A link that never settles would hang the test.",
-                .sent(round: 1), .lines(start: 42, end: 42), scope: ["async fn reconnect_after_cut"],
-                snippet: [
-                    line(test, .added, "    // a slow runner otherwise races the first handshake.", new: 41),
-                    line(test, .added, "    link.settled().await;", new: 42),
-                ]),
+                .sent(round: 1), .lines(start: 42, end: 42), scope: ["async fn reconnect_after_cut"]),
+            kept(test, 42, 43, "    relay.cut(&link);"),
+            kept(test, 43, 44, ""),
+            kept(test, 44, 45, "    let back = link.reconnected().await?;"),
         ],
         toFetch: [], opening: false, empty: nil,
-        header: header(view: .all, files: 0, added: 0, removed: 0, drafts: 0, sent: 2, allFiles: 0))
+        header: header(
+            view: .all, files: 3, added: 18, removed: 6, drafts: 0, sent: 2, at: lastRound))
 
     /// A review with nothing changed and no comments.
     private static let nothingToReview = ReviewPage(
@@ -817,10 +829,10 @@ public enum Stories {
 
     private static func header(
         view: ReviewView, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32,
-        rounds: UInt32 = 0, allFiles: UInt32 = 3, sinceFiles: UInt32 = 0
+        rounds: UInt32 = 0, allFiles: UInt32 = 3, sinceFiles: UInt32 = 0, at: String = snapshot
     ) -> ReviewHeader {
         ReviewHeader(
-            baseBranch: "main", baseCommit: base, snapshot: snapshot, view: view,
+            baseBranch: "main", baseCommit: base, snapshot: at, view: view,
             comparedWith: view == .all ? base : lastRound,
             views: [ReviewViewTab(view: .all, files: allFiles)]
                 + (rounds > 0 ? [ReviewViewTab(view: .sinceLast, files: sinceFiles)] : []),
@@ -837,7 +849,7 @@ public enum Stories {
                 .attachment(.sentReview(
                     comments: 2,
                     review: SentReviewRef(
-                        reviewId: Array("review".utf8), round: 1, snapshot: lastRound,
+                        reviewId: Array("review".utf8), round: 1,
                         commentIds: [Array("sent-dial".utf8), Array("sent-settled".utf8)]),
                     text: sentText)),
             ],
@@ -874,10 +886,12 @@ public enum Stories {
         ---
         Line numbers are those of snapshot \(lastRound), a commit of the working tree taken for this \
         review and kept outside the repository, so the files may have changed since. Paths are \
-        relative to the repository's top, ~/src/amux. To see what has changed since the snapshot, run:
+        relative to the repository's top, ~/src/amux. To see what has changed since the snapshot, \
+        untracked files included, run this; it writes nothing, and after the diff it lists the files \
+        made since the snapshot:
 
         ```sh
-        GIT_ALTERNATE_OBJECT_DIRECTORIES=~/.amux/agents/flaky/review/objects git -C ~/src/amux diff \(lastRound)
+        GIT_INDEX_FILE=~/.amux/agents/flaky/review/index GIT_ALTERNATE_OBJECT_DIRECTORIES=~/.amux/agents/flaky/review/objects git -C ~/src/amux diff \(lastRound) && GIT_INDEX_FILE=~/.amux/agents/flaky/review/index git -C ~/src/amux ls-files --others --exclude-standard
         ```
         """
 
@@ -925,8 +939,12 @@ public enum Stories {
                 scope: scope, snippet: snippet, folded: folded)))
     }
 
-    private static func kept(_ path: String, _ old: UInt32, _ new: UInt32, _ code: String) -> ReviewRow {
-        ReviewRow(key: "l/\(path)/\(old)/\(new)", of: .line(line(path, .context, code, old: old, new: new)))
+    private static func kept(
+        _ path: String, _ old: UInt32, _ new: UInt32, _ code: String, commented: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(
+            key: "l/\(path)/\(old)/\(new)",
+            of: .line(line(path, .context, code, old: old, new: new, commented: commented)))
     }
 
     private static func put(

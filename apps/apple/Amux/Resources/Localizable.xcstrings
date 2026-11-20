@@ -11149,14 +11149,14 @@
         }
       }
     },
-    "Code changed since" : {
+    "Written on older code" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Code changed since"
+            "value" : "Written on older code"
           }
         }
       }
@@ -11377,14 +11377,14 @@
         }
       }
     },
-    "Your last review’s snapshot is gone from the repository. Its comments show with the code saved with them." : {
+    "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your last review’s snapshot is gone from the repository. Its comments show with the code saved with them."
+            "value" : "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them."
           }
         }
       }
@@ -11817,6 +11817,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The agent’s computer no longer holds this round, so this is what the agent read."
+          }
+        }
+      }
+    },
+    "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read."
           }
         }
       }

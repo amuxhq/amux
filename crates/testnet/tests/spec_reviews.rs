@@ -195,12 +195,14 @@ async fn a_person_on_another_host_reviews_an_agent_through_the_carrier() {
 
     let files = reviews
         .get_files(
+            &opened.base_commit,
             &opened.snapshot,
             ReviewView::All,
             vec![ReviewFileRequest {
                 path: "README.md".to_owned(),
                 ..ReviewFileRequest::default()
             }],
+            false,
         )
         .await
         .unwrap();

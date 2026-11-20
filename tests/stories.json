@@ -462,7 +462,7 @@
     },
     {
       "name": "review.round",
-      "shows": "What a review sent into the chat opens: the round it closed, each comment with the code it was written on, and a way to the review as it is now.",
+      "shows": "What a review sent into the chat opens: the round it closed, its whole diff from the base to the round's snapshot with each comment it sent on its lines, and a way to the review as it is now.",
       "clients": ["phone", "terminal", "mac"]
     },
     {

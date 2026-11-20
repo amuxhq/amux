@@ -949,7 +949,7 @@ enum ReviewStory {
     static let anchor = ReviewAnchor(commit: snapshot, path: open, start: 41, end: 42)
 
     static let sent = SentReviewRef(
-        reviewId: [1], round: 1, snapshot: lastRound, commentIds: [[0x0a], [0x0b]])
+        reviewId: [1], round: 1, commentIds: [[0x0a], [0x0b]])
 
     /// What the agent read of the first round.
     static let sentText = """
@@ -1054,31 +1054,31 @@ enum ReviewStory {
 
     /// The first round, as its chip opens it: each comment it sent on its
     /// file, with the code stored with it.
+    /// The first round as its chip opens it: its whole diff, from main to
+    /// the round's snapshot, with the two comments it sent on their lines.
     static func round() -> ReviewPage {
-        let first = { (path: String) in
-            ReviewRow(key: "f/\(path)", of: .file(ReviewFileHead(
-                path: path, status: .modified, added: 0, removed: 0, binary: false, language: "rust",
-                flags: [], folded: false, changedSinceLast: false, inChange: false, comments: 1,
-                outline: [], oldPath: nil)))
-        }
+        let scope = ["impl Store", "pub fn open"]
         return ReviewPage(
             banners: [], rows: [
-                first(open),
+                head(open, added: 2, removed: 0, comments: 2),
+                hunk(open, old: 40, new: 40, scope),
+                code(open, .context, old: 40, new: 40, "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
+                code(open, .added, new: 41, "        let conn = Connection::open(path)?;", commented: true),
                 comment(
                     [0x0a], open, "Return the store’s own error, not rusqlite’s.", .sent(round: 1),
-                    .lines(start: 41, end: 41), snippet: [
-                        snip(open, .context, old: 38, new: 38, "impl Store {"),
-                        snip(open, .context, old: 40, new: 40, "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
-                        snip(open, .added, new: 41, "        let conn = Connection::open(path)?;"),
-                    ], scope: ["impl Store", "pub fn open"]),
+                    .lines(start: 41, end: 41), scope: scope),
+                code(open, .added, new: 42, "        conn.busy_timeout(BUSY)?;", commented: true),
                 comment(
                     [0x0b], open, "Name it for what it waits on.", .sent(round: 1), .lines(start: 42, end: 42),
-                    snippet: [snip(open, .added, new: 42, "        conn.busy_timeout(BUSY)?;")],
-                    scope: ["impl Store", "pub fn open"]),
-            ], toFetch: [], opening: false, empty: nil,
+                    scope: scope),
+                code(open, .context, old: 41, new: 43, "        migrate(&conn)?;"),
+                code(open, .context, old: 42, new: 44, "        Ok(Store { conn })"),
+                code(open, .context, old: 43, new: 45, "    }"),
+                head(lib, status: .modified, added: 3, removed: 0),
+            ] + libBody(), toFetch: [], opening: false, empty: nil,
             header: ReviewHeader(
                 baseBranch: "main", baseCommit: base, snapshot: lastRound, view: .all, comparedWith: base,
-                views: [ReviewViewTab(view: .all, files: 0)], rounds: 0, files: 0, added: 0, removed: 0,
+                views: [ReviewViewTab(view: .all, files: 2)], rounds: 0, files: 2, added: 5, removed: 0,
                 drafts: 0, sent: 2, discardDrafts: false, startOver: true))
     }
 

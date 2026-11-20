@@ -13,14 +13,13 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use ui_runtime::review::{Followed, Review, ReviewError, Unavailable};
+use ui_runtime::review::{Comparison, Followed, Review, ReviewError, RowMark, Unavailable};
 use ui_view::{
     ReviewAnchor, ReviewContextAsk, ReviewNotice, ReviewPage, ReviewPageState, ReviewView,
 };
 use wire::ErrorCode;
 use wire::experimental::{
-    REVIEW_ROW, ReviewEdit, ReviewFileDiff, ReviewLineRange, ReviewPutComment, ReviewSummary,
-    review_edit,
+    ReviewEdit, ReviewLineRange, ReviewPutComment, ReviewSummary, review_edit,
 };
 
 use crate::coalesce::WakeFn;
@@ -48,9 +47,9 @@ struct Held {
     choices: ReviewPageState,
     /// What calls that failed taught the page.
     notices: Vec<ReviewNotice>,
-    /// The files being fetched now, by view and path, so asking again
-    /// while they are on their way asks for nothing twice.
-    fetching: HashSet<(ReviewView, String)>,
+    /// The files being fetched now, by comparison and path, so asking
+    /// again while they are on their way asks for nothing twice.
+    fetching: HashSet<(Comparison, String)>,
     /// The page as it was handed over last.
     handed: Option<ReviewPage>,
 }
@@ -85,7 +84,7 @@ impl ReviewSession {
         });
         // Read now, so a change to the row from here on is followed however
         // late the follower first runs.
-        let followed = REVIEW_ROW.get(&row().experimental);
+        let followed = RowMark::of(&row());
         let follower = tokio::spawn(follow(
             Arc::downgrade(&session),
             changed,
@@ -135,9 +134,13 @@ impl ReviewSession {
     /// none given every file the page still needs; those already on their
     /// way are not asked for again. The page moves as each batch lands.
     pub async fn files(&self, paths: Vec<String>) -> ReviewOutcome {
-        let view = self.view();
+        let page = self.page();
+        let Some(header) = &page.header else {
+            return ReviewOutcome::Done;
+        };
+        let comparison = Comparison::of_page(header);
         let paths = if paths.is_empty() {
-            self.page().to_fetch
+            page.to_fetch.clone()
         } else {
             paths
         };
@@ -145,25 +148,28 @@ impl ReviewSession {
             let mut held = self.held();
             paths
                 .into_iter()
-                .filter(|path| held.fetching.insert((view, path.clone())))
+                .filter(|path| held.fetching.insert((comparison.clone(), path.clone())))
                 .collect()
         };
         if asking.is_empty() {
             return ReviewOutcome::Done;
         }
-        let answer = self.review.files(wire_view(view), &asking).await.map(drop);
+        let answer = self.review.files(&comparison, &asking).await.map(drop);
         {
             let mut held = self.held();
             for path in asking {
-                held.fetching.remove(&(view, path));
+                held.fetching.remove(&(comparison.clone(), path));
             }
         }
-        self.answered(Call::Files(view), answer)
+        self.answered(Call::Files(header.view), answer)
     }
 
     /// Loads the lines `ask` names, from one of the page's gaps; the gap
     /// says it is loading until they arrive.
     pub async fn context(&self, ask: ReviewContextAsk) -> ReviewOutcome {
+        let Some(comparison) = self.page().header.as_ref().map(Comparison::of_page) else {
+            return ReviewOutcome::Failed("the review has not been opened".into());
+        };
         {
             let mut held = self.held();
             if !held.choices.asked.contains(&ask) {
@@ -177,7 +183,7 @@ impl ReviewSession {
         };
         let answer = self
             .review
-            .context(&ask.commit, &ask.path, lines)
+            .context(&comparison, &ask.commit, &ask.path, lines)
             .await
             .map(drop);
         self.answered(Call::Other, answer)
@@ -206,12 +212,6 @@ impl ReviewSession {
         self.mark();
     }
 
-    /// The view the page shows.
-    fn view(&self) -> ReviewView {
-        let summary = self.review.summary();
-        shown_view(summary.as_deref(), &self.held().choices)
-    }
-
     /// The page as it stands, composed from what was fetched.
     pub fn page(&self) -> ReviewPage {
         let summary = self.review.summary();
@@ -226,13 +226,13 @@ impl ReviewSession {
             Some(Unavailable::NotARepository) => Some(ReviewNotice::NotARepository),
             None => None,
         });
-        let view = shown_view(summary.as_deref(), &state);
-        let files: Vec<ReviewFileDiff> = self
-            .review
-            .fetched(wire_view(view))
-            .into_values()
-            .map(|file| ReviewFileDiff::clone(&file))
-            .collect();
+        let files = |view| {
+            summary
+                .as_deref()
+                .and_then(|summary| Comparison::shown(summary, wire_view(view)))
+                .map(|comparison| self.review.fetched(&comparison).into_values().collect())
+                .unwrap_or_default()
+        };
         let context: Vec<_> = state
             .asked
             .iter()
@@ -245,7 +245,7 @@ impl ReviewSession {
                 Some((ask.clone(), held.to_vec()))
             })
             .collect();
-        ui_view::review_page(summary.as_deref(), &files, &context, &state)
+        ui_view::review_page_of(summary.as_deref(), files, &context, &state)
     }
 
     /// The page to hand over: when it moved since it was handed over last,
@@ -365,7 +365,7 @@ async fn follow(
     mut changed: watch::Receiver<()>,
     mut rows: watch::Receiver<()>,
     row: RowFn,
-    mut followed: Option<wire::experimental::ReviewRowEntry>,
+    mut followed: Option<RowMark>,
 ) {
     loop {
         tokio::select! {
@@ -383,11 +383,11 @@ async fn follow(
                     return;
                 }
                 let agent = row();
-                let entry = REVIEW_ROW.get(&agent.experimental);
-                if entry == followed {
+                let mark = RowMark::of(&agent);
+                if mark == followed {
                     continue;
                 }
-                followed = entry;
+                followed = mark;
                 let Some(session) = session.upgrade() else {
                     return;
                 };
@@ -444,28 +444,39 @@ pub(crate) async fn edit_closed(review: &Review, changes: Vec<ReviewChange>) -> 
     }
 }
 
-/// The page of the round a sent review closed: `review_id`, `snapshot` and
-/// `comment_ids` as its attachment names them. The review is read from the
-/// agent's host, as any look at it is; with the host out of reach, from
-/// what this process loaded of it, and the page says so. None when neither
-/// holds the round, and the chat shows the text the agent read instead.
+/// The page of the round a sent review closed, `review_id` and
+/// `comment_ids` as its attachment names them: its whole diff with the
+/// comments it sent, read from the agent's host as any look at it is; with
+/// the host out of reach, from what this process loaded of it, and the page
+/// says so. With the host out of reach and none of the round loaded, a page
+/// with nothing but that to say. None when the host holds none of the
+/// round, and the chat shows the text the agent read instead.
 pub(crate) async fn round_page(
     review: &Review,
     review_id: &[u8],
-    snapshot: &str,
     comment_ids: &[Vec<u8>],
 ) -> Option<ReviewPage> {
-    let mut state = ReviewPageState::default();
-    let summary = match review.open(None, false).await {
-        Ok(summary) => summary,
-        Err(ReviewError::Rpc(error)) if error.not_sent().is_some() || error.uncertain() => {
-            state.notices.push(ReviewNotice::Unreachable);
-            review.summary()?
+    let round = match review.round(review_id, comment_ids).await {
+        Ok(round) => round?,
+        Err(error) if ui_runtime::review::unreachable(&error) => {
+            let state = ReviewPageState {
+                notices: vec![ReviewNotice::Unreachable],
+                ..ReviewPageState::default()
+            };
+            return Some(ui_view::review_page(None, &[], &[], &state));
         }
         Err(_) => return None,
     };
-    let round = ui_runtime::review::round(&summary, review_id, snapshot, comment_ids)?;
-    Some(ui_view::review_page(Some(&round), &[], &[], &state))
+    let state = ReviewPageState {
+        notices: round.notices,
+        ..ReviewPageState::default()
+    };
+    Some(ui_view::review_page(
+        Some(&round.summary),
+        &round.files,
+        &[],
+        &state,
+    ))
 }
 
 /// What a call came to, as the app hears it.
@@ -476,17 +487,6 @@ fn outcome(answer: &Result<(), ReviewError>) -> ReviewOutcome {
         Err(ReviewError::Rpc(error)) if error.not_sent().is_some() => ReviewOutcome::Unreachable,
         Err(ReviewError::Rpc(error)) if error.uncertain() => ReviewOutcome::NotConfirmed,
         Err(error) => ReviewOutcome::Failed(error.to_string()),
-    }
-}
-
-/// The view the page shows: the one switched to, or the one a look opens
-/// on, since your last review once a round was sent.
-fn shown_view(summary: Option<&ReviewSummary>, state: &ReviewPageState) -> ReviewView {
-    match (summary, state.view) {
-        (Some(summary), _) if summary.rounds.is_empty() => ReviewView::All,
-        (_, Some(view)) => view,
-        (Some(_), None) => ReviewView::SinceLast,
-        (None, None) => ReviewView::All,
     }
 }
 
@@ -521,9 +521,10 @@ mod tests {
     use ui_view::{ReviewBanner, ReviewRowOf};
     use wire::experimental::reviews1_server::Reviews1;
     use wire::experimental::{
-        ReviewEditRequest, ReviewGetFilesRequest, ReviewGetFilesResponse, ReviewHunk, ReviewLine,
-        ReviewLineKind, ReviewOpenRequest, ReviewPlacement, ReviewRound, ReviewRowEntry,
-        ReviewerComment, SENT_REVIEW, review_placement,
+        REVIEW_ROW, ReviewEditRequest, ReviewFileDiff, ReviewGetFilesRequest,
+        ReviewGetFilesResponse, ReviewHunk, ReviewLine, ReviewLineKind, ReviewOpenRequest,
+        ReviewPlacement, ReviewRound, ReviewRowEntry, ReviewerComment, SENT_REVIEW,
+        review_placement,
     };
 
     use super::*;
@@ -541,6 +542,8 @@ mod tests {
         /// Every call is answered with this while it is set.
         failing: Option<RpcError>,
         opens: usize,
+        /// Of `opens`, those that read without changing the review.
+        reads: usize,
         gets: Vec<ReviewGetFilesRequest>,
         edits: Vec<ReviewEditRequest>,
     }
@@ -565,11 +568,12 @@ mod tests {
     impl Reviews1 for Fake {
         async fn open(
             &self,
-            _: Request<ReviewOpenRequest>,
+            request: Request<ReviewOpenRequest>,
         ) -> Result<Response<ReviewSummary>, Status> {
             self.failing()?;
             let mut host = self.host();
             host.opens += 1;
+            host.reads += usize::from(request.into_inner().read_only);
             Ok(Response::new(host.summary.clone()))
         }
 
@@ -600,8 +604,13 @@ mod tests {
                     Some(file)
                 })
                 .collect();
+            // The fake's one comparison lists what its summary does.
+            let changed = match request.list {
+                true => host.summary.files.clone(),
+                false => Vec::new(),
+            };
             host.gets.push(request);
-            Ok(Response::new(ReviewGetFilesResponse { files }))
+            Ok(Response::new(ReviewGetFilesResponse { files, changed }))
         }
 
         async fn edit(
@@ -622,6 +631,7 @@ mod tests {
                             placement: Some(ReviewPlacement {
                                 at: lines.map(review_placement::At::Lines),
                                 changed_near: false,
+                                path: "src/lib.rs".into(),
                             }),
                             ..ReviewerComment::default()
                         };
@@ -717,6 +727,7 @@ mod tests {
                 drafts,
                 counter,
                 moved,
+                review_id: b"review-1".to_vec(),
             };
             REVIEW_ROW.put(&mut self.row.lock().unwrap().experimental, &entry);
             self.rows.send_replace(());
@@ -916,6 +927,7 @@ mod tests {
         })
         .await;
         assert_eq!(fake.host().opens, 2);
+        assert_eq!(fake.host().reads, 1, "following reads, changing nothing");
 
         opened.entry(1, 2, true);
         until(page, "the tree moving", |page| {
@@ -1068,7 +1080,14 @@ mod tests {
         summary.comments.push(comment(b"two", None));
         let attachment = sent_review(&summary).expect("drafts to send");
         let entry = SENT_REVIEW.get(&attachment.experimental).unwrap();
-        assert_eq!(entry.comment_ids, vec![b"one".to_vec(), b"two".to_vec()]);
+        assert_eq!(
+            entry
+                .comments
+                .iter()
+                .map(|comment| comment.id.clone())
+                .collect::<Vec<_>>(),
+            vec![b"one".to_vec(), b"two".to_vec()]
+        );
         assert_eq!(entry.snapshot, SNAPSHOT);
         assert_eq!(entry.round, 2);
         let Some(wire::attachment::Of::Text(text)) = attachment.of else {
@@ -1078,11 +1097,12 @@ mod tests {
         assert!(!text.text.contains("comment sent"));
     }
 
-    /// A sent review opens its round from the agent's host: the comments it
-    /// sent that are still on the review, on the lines they were written
-    /// on, each with the code stored with it; with the host out of reach,
-    /// from what was loaded, saying so; and nothing once the review holds
-    /// none of it.
+    /// A sent review opens its round from the agent's host: its whole diff,
+    /// listed and fetched from the round's base to its snapshot, with the
+    /// comments it sent that are still on the review on the lines they were
+    /// written on; with the host out of reach, from what was loaded, saying
+    /// so, or with nothing loaded only that; and nothing once the review
+    /// holds none of it.
     #[tokio::test]
     async fn a_sent_review_opens_its_round() {
         let fake = reviewed();
@@ -1108,18 +1128,48 @@ mod tests {
                 placement: Some(ReviewPlacement {
                     at: Some(review_placement::At::Outdated(wire::Empty {})),
                     changed_near: false,
+                    path: "src/lib.rs".into(),
                 }),
                 ..ReviewerComment::default()
             });
         }
         let sent = [b"sent".to_vec()];
-        let round = round_page(&review, b"review-1", SNAPSHOT, &sent)
+
+        // With the host out of reach before anything was loaded, the page
+        // says only that.
+        fake.host().failing = Some(RpcError::Refused(wire::Error::because(
+            wire::ErrorReason::HostUnreachable,
+            "the desk is away",
+        )));
+        let unloaded = round_page(&review, b"review-1", &sent)
+            .await
+            .expect("a page saying the host is away");
+        assert_eq!(unloaded.banners, vec![ReviewBanner::Unreachable]);
+        assert!(unloaded.header.is_none());
+        fake.host().failing = None;
+
+        let round = round_page(&review, b"review-1", &sent)
             .await
             .expect("the host holds the round");
         assert!(round.banners.is_empty(), "{:?}", round.banners);
         let header = round.header.as_ref().expect("a header");
         assert_eq!(header.snapshot, SNAPSHOT);
+        assert_eq!(header.compared_with, BASE);
         assert_eq!((header.sent, header.drafts, header.rounds), (1, 0, 0));
+        let gets = fake.host().gets.clone();
+        assert!(gets[0].list && gets[0].files.is_empty(), "{gets:?}");
+        assert_eq!(
+            (gets[0].from.as_str(), gets[0].snapshot.as_str()),
+            (BASE, SNAPSHOT)
+        );
+        assert_eq!(gets[1].files[0].path, "src/lib.rs");
+        assert!(
+            round.rows.iter().any(|row| matches!(
+                &row.of,
+                ReviewRowOf::Line(line) if line.text == "    let a = 2;"
+            )),
+            "its whole diff: {round:#?}"
+        );
         let comment = round
             .rows
             .iter()
@@ -1132,21 +1182,22 @@ mod tests {
             comment.at,
             ui_view::ReviewCommentAt::Lines { start: 41, end: 41 }
         );
-        assert_eq!(comment.snippet.len(), 1, "with the code stored with it");
-        assert!(round.to_fetch.is_empty(), "it asks for no file");
+        assert!(comment.snippet.is_empty(), "drawn under its line");
+        assert!(round.to_fetch.is_empty(), "its files were fetched");
 
         fake.host().failing = Some(RpcError::Refused(wire::Error::because(
             wire::ErrorReason::HostUnreachable,
             "the desk is away",
         )));
-        let away = round_page(&review, b"review-1", SNAPSHOT, &sent)
+        let away = round_page(&review, b"review-1", &sent)
             .await
             .expect("what was loaded still reads");
         assert_eq!(away.banners, vec![ReviewBanner::Unreachable]);
+        assert!(away.to_fetch.is_empty(), "its files were kept");
 
         fake.host().failing = None;
         assert_eq!(
-            round_page(&review, b"review-2", SNAPSHOT, &sent).await,
+            round_page(&review, b"review-2", &sent).await,
             None,
             "the review was started over"
         );
@@ -1155,7 +1206,7 @@ mod tests {
             .comments
             .retain(|comment| comment.id != b"sent");
         assert_eq!(
-            round_page(&review, b"review-1", SNAPSHOT, &sent).await,
+            round_page(&review, b"review-1", &sent).await,
             None,
             "every comment it sent is deleted"
         );

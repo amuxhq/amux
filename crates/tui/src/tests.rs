@@ -1905,6 +1905,7 @@ mod review_page {
                 drafts: 3,
                 counter: 4,
                 moved: false,
+                review_id: b"review".to_vec(),
             },
         );
         state.update(Msg::Entry(agent.clone()));
@@ -1930,6 +1931,7 @@ mod review_page {
                 drafts: 3,
                 counter: 5,
                 moved: true,
+                review_id: b"review".to_vec(),
             },
         );
         state.update(Msg::Entry(agent.clone()));
@@ -1974,6 +1976,7 @@ mod review_page {
                 drafts: 0,
                 counter: 6,
                 moved: false,
+                review_id: b"review".to_vec(),
             },
         );
         state.update(Msg::Entry(agent));

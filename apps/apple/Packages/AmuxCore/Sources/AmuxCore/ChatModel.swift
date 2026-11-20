@@ -138,9 +138,10 @@ public struct SentRound: Identifiable, Equatable, Sendable {
         self.text = text
     }
 
-    /// The snapshot and exactly the comments sent name one round for good.
+    /// The review and exactly the comments sent name one round for good:
+    /// the host records each comment sent in one round only.
     public var id: String {
-        ([sent.snapshot] + sent.commentIds.map { $0.map { String(format: "%02x", $0) }.joined() })
+        ([sent.reviewId] + sent.commentIds).map { $0.map { String(format: "%02x", $0) }.joined() }
             .joined(separator: "/")
     }
 }
@@ -963,7 +964,14 @@ public final class ChatModel {
                 notice = failure.description
                 if chip != nil { sentChip = nil }
             case .success(let outcome):
-                if case .rejected = outcome.state, chip != nil { sentChip = nil }
+                // Refused, or not known to have landed: the drafts are still
+                // the review's on the agent's computer, which marks them sent
+                // only once the agent takes the message, so the chip shows
+                // them again rather than hiding what may never have gone.
+                switch outcome.state {
+                case .rejected, .uncertain: if chip != nil { sentChip = nil }
+                case .sent, .queued, .settled: break
+                }
             }
         }
     }

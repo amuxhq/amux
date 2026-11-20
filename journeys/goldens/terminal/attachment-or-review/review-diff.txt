@@ -8,7 +8,7 @@
     3 - rsync build/ prod:/srv
 ▌   3 + rsync --delete build/ prod:/srv
     4 + echo done
-    ⋮   the rest of the file · ↓ 20 lines
+
 
 
 

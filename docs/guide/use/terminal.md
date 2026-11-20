@@ -260,10 +260,13 @@ just what changed since then, with your earlier comments where they sit now,
 folded away where their lines changed. Tab shows all the changes again.
 
 A review you sent shows in the chat as `[review · 3 comments]`. Click it, or
-focus its message and press Ctrl+A then `o`, to see that round again: each
-comment on its file, with the code it was written on. If the review has since
-been started over, you see the text the agent read instead. `q` goes back to
-the chat.
+focus its message and press Ctrl+A then `o`, to see that round again: its whole
+diff, from the base branch to the code you reviewed, with each comment you sent
+on its lines. Once the review has moved on to newer code twice since, the
+agent's computer no longer keeps the round's code, and each comment shows with
+the code it was written on. If the review has since been started over, or the
+computer can't be reached and the round was never loaded, you see the text the
+agent read instead. `q` goes back to the chat.
 
 Where the agent's computer doesn't run reviews, because the experiment is off
 there or its amux is older than reviews, the page says so. The overview still

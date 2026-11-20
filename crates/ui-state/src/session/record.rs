@@ -425,7 +425,10 @@ mod tests {
             review_id: b"review".to_vec(),
             round: 1,
             snapshot: "4b825dc642cb6eb9a060e54bf8d69288fbee4904".into(),
-            comment_ids: vec![b"first".to_vec()],
+            comments: vec![wire::experimental::ReviewSentComment {
+                id: b"first".to_vec(),
+                revision: 1,
+            }],
         };
         let mut held = Attachment {
             of: Some(attachment::Of::Text(wire::InlineText {

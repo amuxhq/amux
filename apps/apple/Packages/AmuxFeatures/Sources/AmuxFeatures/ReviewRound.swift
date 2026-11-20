@@ -4,10 +4,13 @@ import AmuxWords
 import SwiftUI
 
 /// The round a review sent into the chat closed, raised over the chat from
-/// its chip: each comment it sent on its file, with the code it was written
-/// on as stored with it, read from the agent's computer. When the computer
-/// no longer holds the round, as after starting over, it shows the text the
-/// agent read. The review itself, as it stands now, is one tap away.
+/// its chip: its whole diff, from the base to the round's snapshot, with
+/// each comment it sent on its lines, read from the agent's computer; each
+/// comment with the code stored with it once the computer no longer keeps
+/// the round's snapshot. When the computer no longer holds the round, as
+/// after starting over, or cannot be reached with none of it loaded, it
+/// shows the text the agent read. The review itself, as it stands now, is
+/// one tap away.
 public struct ReviewRoundSheet: View {
     @Environment(\.design) private var design
     let round: SentRound
@@ -53,7 +56,7 @@ public struct ReviewRoundSheet: View {
             asked = true
         }
         .accessibilityElement(children: .contain)
-        .reported("review.round", value: !asked ? "reading" : (page == nil ? "text" : "round"))
+        .reported("review.round", value: !asked ? "reading" : (instead == nil ? "round" : "text"))
     }
 
     /// "Round 2", as the agent's computer numbered it when the message
@@ -66,11 +69,20 @@ public struct ReviewRoundSheet: View {
         return ChatWords.reviewRound(number ?? round.sent.round)
     }
 
+    /// Why the sheet shows the text the agent read rather than the round:
+    /// the computer holds none of it, or cannot be reached and none of it
+    /// was loaded. Nil while it shows the round.
+    private var instead: String? {
+        guard let page else { return ChatWords.reviewRoundGone }
+        let unloaded = page.header == nil && page.banners.contains(.unreachable)
+        return unloaded ? ChatWords.reviewRoundUnreachable : nil
+    }
+
     @ViewBuilder
     private var content: some View {
         if !asked {
             PagePlaceholder(.waiting(ChatWords.reviewOpening), identifier: "review.round")
-        } else if let page {
+        } else if let page, instead == nil {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     VStack(alignment: .leading, spacing: Space.s) {
@@ -96,8 +108,8 @@ public struct ReviewRoundSheet: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.m) {
-                    Explain(ChatWords.reviewRoundGone)
-                        .identified("review.round.gone", label: ChatWords.reviewRoundGone)
+                    Explain(instead ?? ChatWords.reviewRoundGone)
+                        .identified("review.round.gone", label: instead ?? ChatWords.reviewRoundGone)
                     Text(verbatim: round.text)
                         .designFont(.monoSmall, design)
                         .foregroundStyle(design.ink.color)
@@ -113,8 +125,8 @@ public struct ReviewRoundSheet: View {
         }
     }
 
-    /// A round's rows are its comments under their files' heads, and the
-    /// code stored with each; drawn as the page draws them, to read only.
+    /// A round's rows are its whole diff under its files' heads, with its
+    /// comments; drawn as the page draws them, to read only.
     @ViewBuilder
     private func row(_ row: ReviewRow) -> some View {
         switch row.of {

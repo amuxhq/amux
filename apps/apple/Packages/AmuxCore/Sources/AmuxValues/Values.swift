@@ -5925,7 +5925,7 @@ public enum ReviewBanner: Codable, Hashable, Sendable {
     /// A merge or rebase was under way when the snapshot was taken, so
     /// conflicted files hold their markers as content.
     case mergeUnderway
-    /// The last round's snapshot is gone from the repository: its comments
+    /// The round's snapshot is gone from the agent's host: its comments
     /// show with the code stored with them.
     case roundGone
     case snapshotFailed(message: String)
@@ -6641,9 +6641,10 @@ public enum ReviewNotice: Codable, Hashable, Sendable {
     case notOffered
     /// The agent's folder is not a git repository, so it has no review.
     case notARepository
-    /// The last round's snapshot is gone from the repository, as after a
-    /// rebase and garbage collection: since your last review shows each
-    /// comment with the code stored with it instead.
+    /// A round's snapshot is gone from the agent's host, which keeps only
+    /// its latest two, or from the repository, as after a rebase and garbage
+    /// collection: since your last review, or the round's own page, shows
+    /// each comment with the code stored with it instead.
     case roundGone
     /// A snapshot of the working tree could not be taken; what the host
     /// said.
@@ -6791,18 +6792,24 @@ public struct ReviewOutlineEntry: Codable, Hashable, Sendable {
     public var label: String
     /// How many definitions it sits in.
     public var depth: UInt32
+    /// Its lines, numbered in the snapshot, or in the compared commit when
+    /// `compared`.
     public var startLine: UInt32
     public var endLine: UInt32
+    /// Its lines are the compared commit's: a definition only removed lines
+    /// reach, as one deleted.
+    public var compared: Bool
     /// The row of the first hunk whose changes it encloses, for jumping to
     /// it; none for one only a hunk's context reaches.
     public var row: UInt32?
 
-    public init(kind: DefinitionKind, label: String, depth: UInt32, startLine: UInt32, endLine: UInt32, row: UInt32?) {
+    public init(kind: DefinitionKind, label: String, depth: UInt32, startLine: UInt32, endLine: UInt32, compared: Bool, row: UInt32?) {
         self.kind = kind
         self.label = label
         self.depth = depth
         self.startLine = startLine
         self.endLine = endLine
+        self.compared = compared
         self.row = row
     }
 
@@ -6812,6 +6819,7 @@ public struct ReviewOutlineEntry: Codable, Hashable, Sendable {
         case depth
         case startLine = "start_line"
         case endLine = "end_line"
+        case compared
         case row
     }
 }
@@ -8023,24 +8031,21 @@ public struct SentPrompt: Codable, Hashable, Sendable {
 public struct SentReviewRef: Codable, Hashable, Sendable {
     public var reviewId: [UInt8]
     /// The round the sending client expected it to be; the agent's host
-    /// numbers rounds as they arrive, so the snapshot names the round.
+    /// numbers rounds as the agent takes the messages, so the comments name
+    /// the round.
     public var round: UInt32
-    /// The snapshot the comments were made on.
-    public var snapshot: String
     /// Exactly the comments it sent.
     public var commentIds: [[UInt8]]
 
-    public init(reviewId: [UInt8], round: UInt32, snapshot: String, commentIds: [[UInt8]]) {
+    public init(reviewId: [UInt8], round: UInt32, commentIds: [[UInt8]]) {
         self.reviewId = reviewId
         self.round = round
-        self.snapshot = snapshot
         self.commentIds = commentIds
     }
 
     private enum CodingKeys: String, CodingKey {
         case reviewId = "review_id"
         case round
-        case snapshot
         case commentIds = "comment_ids"
     }
 }

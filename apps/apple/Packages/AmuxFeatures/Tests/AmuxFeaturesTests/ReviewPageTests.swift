@@ -96,13 +96,16 @@ final class ReviewPageTests: XCTestCase {
         XCTAssertEqual(ComposerBox.primary(resuming: true, hasMessage: true, working: true), .resume)
     }
 
-    /// A sent review names its round for good by its snapshot and exactly
-    /// the comments it sent, so two sends on one snapshot are two rounds.
-    func testASentReviewNamesItsRoundByItsSnapshotAndComments() {
-        let one = SentRound(sent: SentReviewRef(reviewId: [1], round: 1, snapshot: "abc", commentIds: [[1], [2]]), text: "")
-        let same = SentRound(sent: SentReviewRef(reviewId: [1], round: 3, snapshot: "abc", commentIds: [[1], [2]]), text: "x")
-        let next = SentRound(sent: SentReviewRef(reviewId: [1], round: 2, snapshot: "abc", commentIds: [[3]]), text: "")
+    /// A sent review names its round for good by its review and exactly the
+    /// comments it sent, so two sends are two rounds, and a review started
+    /// over is another.
+    func testASentReviewNamesItsRoundByItsReviewAndComments() {
+        let one = SentRound(sent: SentReviewRef(reviewId: [1], round: 1, commentIds: [[1], [2]]), text: "")
+        let same = SentRound(sent: SentReviewRef(reviewId: [1], round: 3, commentIds: [[1], [2]]), text: "x")
+        let next = SentRound(sent: SentReviewRef(reviewId: [1], round: 2, commentIds: [[3]]), text: "")
+        let over = SentRound(sent: SentReviewRef(reviewId: [2], round: 1, commentIds: [[1], [2]]), text: "")
         XCTAssertEqual(one.id, same.id)
         XCTAssertNotEqual(one.id, next.id)
+        XCTAssertNotEqual(one.id, over.id)
     }
 }

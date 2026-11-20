@@ -75,9 +75,34 @@ struct ReviewPagePane: View {
             if review.waiting > 0 { ProgressView().controlSize(.mini) }
             if header.files > 0 { counts(header) }
             menu(header)
-        } else {
+        } else if page.opening {
             // The tab above names the tool; nothing is open to say more.
             Spacer()
+        } else {
+            // Nothing could be opened: why, in a word, beside the way to
+            // ask again. The note below says it in full.
+            Text(Self.unopened(page.banners))
+                .font(.ui(.meta))
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            if review.waiting > 0 { ProgressView().controlSize(.mini) }
+            Button("Try Again") { review.refresh() }
+                .buttonStyle(HoverButtonStyle())
+                .font(.ui(.meta))
+                .fixedSize()
+                .help("Open the review again")
+        }
+    }
+
+    /// Why no review opened, as the bar says it.
+    static func unopened(_ banners: [ReviewBanner]) -> String {
+        switch banners.first {
+        case .notOffered?: "Reviews are off on this computer"
+        case .notARepository?: "Not a git repository"
+        case .unreachable?: "The computer can’t be reached"
+        case .snapshotFailed?: "No snapshot of the changes"
+        default: "No review"
         }
     }
 
@@ -782,10 +807,14 @@ private struct CodeLineRow: View {
     }
 
     /// The code after its indent: each run in its token's colour, and the
-    /// changed words on the line's green or red.
+    /// changed words on the line's green or red. A line too long for the
+    /// pane wraps between tokens: text breaks only at spaces, and code like
+    /// `self.hello.wait().await` has none, so without a break offered at
+    /// each token's edge such a line would be cut mid-word wherever the
+    /// width ran out.
     static func code(_ line: ReviewCodeLine, dropping count: Int) -> AttributedString {
         guard !line.runs.isEmpty else {
-            var plain = AttributedString(String(line.text.dropFirst(count)))
+            var plain = AttributedString(breakable(String(line.text.dropFirst(count))))
             plain.foregroundColor = Palette.text
             return plain
         }
@@ -796,7 +825,7 @@ private struct CodeLineRow: View {
             left -= cut
             let rest = String(run.text.dropFirst(cut))
             guard !rest.isEmpty else { continue }
-            var piece = AttributedString(rest)
+            var piece = AttributedString(breakable(rest) + Self.mayBreak)
             piece.foregroundColor = Palette.syntax(run.kind) ?? Palette.text
             if run.changed {
                 piece.backgroundColor = (line.kind == .removed ? Palette.removed : Palette.added).opacity(0.26)
@@ -804,6 +833,21 @@ private struct CodeLineRow: View {
             text += piece
         }
         return text
+    }
+
+    /// Where a line may wrap, drawn as nothing.
+    static let mayBreak = "\u{200B}"
+
+    /// `code` with a place to wrap after each punctuation mark that ends a
+    /// token: a path's dots and colons, a call's brackets, a list's commas.
+    static func breakable(_ code: String) -> String {
+        var out = ""
+        out.reserveCapacity(code.count)
+        for char in code {
+            out.append(char)
+            if ".,:;([{)]}/".contains(char) { out += mayBreak }
+        }
+        return out
     }
 
     private var sign: String {
@@ -1097,13 +1141,22 @@ public struct ReviewRoundSheet: View {
         }.first ?? round
     }
 
+    /// Why the sheet shows the text the agent read rather than the round:
+    /// the host holds none of it, or cannot be reached and none of it was
+    /// loaded. Nil while it shows the round.
+    private var instead: String? {
+        guard let page else { return ChatWords.reviewRoundGone }
+        let unloaded = page.header == nil && page.banners.contains(.unreachable)
+        return unloaded ? ChatWords.reviewRoundUnreachable : nil
+    }
+
     @ViewBuilder private var content: some View {
         if !asked {
             VStack(spacing: 10) {
                 ProgressView().controlSize(.small)
                 Text(ChatWords.reviewOpening).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
             }
-        } else if let page {
+        } else if let page, instead == nil {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(Array(page.banners.enumerated()), id: \.offset) { _, banner in
@@ -1137,7 +1190,7 @@ public struct ReviewRoundSheet: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(ChatWords.reviewRoundGone)
+                    Text(instead ?? ChatWords.reviewRoundGone)
                         .font(.ui(.body))
                         .foregroundStyle(Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1152,8 +1205,8 @@ public struct ReviewRoundSheet: View {
         }
     }
 
-    /// A round's rows are its comments under their files' heads, each with
-    /// the code stored with it; drawn as the page draws them, to read only.
+    /// A round's rows are its whole diff under its files' heads, with its
+    /// comments; drawn as the page draws them, to read only.
     @ViewBuilder private func row(_ row: ReviewRow) -> some View {
         switch row.of {
         case .comment(let comment): CommentCard(comment: comment)

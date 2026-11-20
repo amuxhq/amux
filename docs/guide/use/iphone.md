@@ -122,10 +122,13 @@ With drafts waiting, opening the review keeps them on the code you wrote them
 on; refreshing moves them to the code as it is now, and any whose lines were
 edited become comments on their file.
 
-A review you sent shows in the chat as a chip. Tap it to see that round: each
-comment you sent, on the code you wrote it on. If the agent's computer no
-longer has the round, for example after you started over, you see the text
-the agent read instead.
+A review you sent shows in the chat as a chip. Tap it to see that round: its
+whole diff, from the base branch to the code you reviewed, with each comment
+you sent on its lines. Once the review has moved on to newer code twice since,
+the agent's computer no longer keeps the round's code, and each comment shows
+with the code you wrote it on. If the agent's computer no longer has the round, for example
+after you started over, or can't be reached and the round was never loaded,
+you see the text the agent read instead.
 
 Where the agent's computer doesn't run reviews, because the experiment is off
 there or its amux is older than reviews, the page says so. The overview still

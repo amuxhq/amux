@@ -8,13 +8,13 @@ use client::{ManualClock, NotSent, RpcError};
 use support::*;
 use ui_runtime::Session;
 use ui_runtime::review::{
-    BATCH_FILES, CACHE_BYTES, Followed, Review, ReviewCache, ReviewError, Unavailable,
+    BATCH_FILES, CACHE_BYTES, Comparison, Followed, Review, ReviewCache, ReviewError, Unavailable,
 };
 use wire::ErrorCode;
 use wire::experimental::{
-    REVIEW_ROW, ReviewEdit, ReviewFileDiff, ReviewGetFilesResponse, ReviewLine, ReviewLineKind,
-    ReviewLineRange, ReviewPutComment, ReviewRowEntry, ReviewSummary, ReviewView, ReviewerComment,
-    review_edit,
+    REVIEW_ROW, ReviewAnchor, ReviewEdit, ReviewFileDiff, ReviewGetFilesResponse, ReviewLine,
+    ReviewLineKind, ReviewLineRange, ReviewPlacement, ReviewPutComment, ReviewRound,
+    ReviewRowEntry, ReviewSummary, ReviewView, ReviewerComment, review_edit, review_placement,
 };
 
 use crate::support;
@@ -69,18 +69,38 @@ fn file(path: &str) -> ReviewFileDiff {
     }
 }
 
-/// The agent's row with the review's entry, or none.
+/// The agent's row with the entry of the review `review-1`, or none.
 fn row(entry: Option<(u64, bool)>) -> wire::Agent {
+    row_of(b"review-1", entry)
+}
+
+/// The agent's row with the entry of the review `id`, or none.
+fn row_of(id: &[u8], entry: Option<(u64, bool)>) -> wire::Agent {
     let mut row = agent(wire::Kind::ClaudeSdk);
     if let Some((counter, moved)) = entry {
         let entry = ReviewRowEntry {
             drafts: 0,
             counter,
             moved,
+            review_id: id.to_vec(),
         };
         REVIEW_ROW.put(&mut row.experimental, &entry);
     }
     row
+}
+
+/// All changes of `summary`.
+fn all(summary: &ReviewSummary) -> Comparison {
+    Comparison::shown(summary, ReviewView::All).unwrap()
+}
+
+/// The comparison all changes of the summary `summary("s1", ..)` shows.
+fn all_of(snapshot: &str) -> Comparison {
+    Comparison {
+        from: "b".repeat(40),
+        snapshot: snapshot.into(),
+        view: ReviewView::All,
+    }
 }
 
 /// Opens `review`, the host answering `answer`.
@@ -91,27 +111,45 @@ async fn opened(review: &Arc<Review>, calls: &mut Calls, answer: ReviewSummary) 
     });
     let (request, reply) = calls.review_open().await;
     assert_eq!(request.agent_id, b"agent-1");
+    assert!(!request.read_only, "a person's open");
     reply.send(Ok(answer.clone())).ok();
     assert_eq!(*opening.await.unwrap().unwrap(), answer);
 }
 
-/// Reads `want` of the shown snapshot, the host answering every file each
-/// batch asks for.
-async fn read_all(review: &Arc<Review>, calls: &mut Calls, want: &[String]) {
+/// Reads `want` of `comparison`, the host answering every file each batch
+/// asks for.
+async fn read_all(
+    review: &Arc<Review>,
+    calls: &mut Calls,
+    comparison: &Comparison,
+    want: &[String],
+) {
     let reading = tokio::spawn({
-        let (review, want) = (review.clone(), want.to_vec());
-        async move { review.files(ReviewView::All, &want).await }
+        let (review, want, comparison) = (review.clone(), want.to_vec(), comparison.clone());
+        async move { review.files(&comparison, &want).await }
     });
     let mut answered = 0;
     while answered < want.len() {
         let (request, reply) = calls.review_files().await;
+        assert_eq!(
+            (request.from.as_str(), request.snapshot.as_str()),
+            (comparison.from.as_str(), comparison.snapshot.as_str()),
+            "the request names the comparison"
+        );
+        assert_eq!(request.view, comparison.view as i32);
+        assert!(!request.list);
         answered += request.files.len();
         let files = request
             .files
             .iter()
             .map(|asked| file(&asked.path))
             .collect();
-        reply.send(Ok(ReviewGetFilesResponse { files })).ok();
+        reply
+            .send(Ok(ReviewGetFilesResponse {
+                files,
+                ..Default::default()
+            }))
+            .ok();
     }
     assert_eq!(reading.await.unwrap().unwrap().len(), want.len());
 }
@@ -123,9 +161,9 @@ async fn a_second_read_of_the_same_snapshot_makes_no_call() {
     let want = paths(3);
     let first = review(&client, &cache);
     opened(&first, &mut calls, summary("s1", &want)).await;
-    read_all(&first, &mut calls, &want).await;
+    read_all(&first, &mut calls, &all_of("s1"), &want).await;
 
-    let again = first.files(ReviewView::All, &want).await.unwrap();
+    let again = first.files(&all_of("s1"), &want).await.unwrap();
     assert_eq!(
         again
             .iter()
@@ -139,20 +177,27 @@ async fn a_second_read_of_the_same_snapshot_makes_no_call() {
     // and reads the same files without asking.
     let second = review(&client, &cache);
     assert_eq!(second.summary().unwrap().snapshot, "s1");
-    assert_eq!(second.fetched(ReviewView::All).len(), 3);
-    second.files(ReviewView::All, &want).await.unwrap();
+    second.files(&all_of("s1"), &want).await.unwrap();
+    assert_eq!(second.fetched(&all_of("s1")).len(), 3);
     calls.none().await;
 
-    // The other view of the same snapshot is another read.
+    // Another comparison of the same snapshot is another read.
+    let since_round = Comparison {
+        from: "r".repeat(40),
+        snapshot: "s1".into(),
+        view: ReviewView::SinceLast,
+    };
     let since = tokio::spawn({
-        let (second, want) = (second.clone(), want.clone());
-        async move { second.files(ReviewView::SinceLast, &want).await }
+        let (second, want, since_round) = (second.clone(), want.clone(), since_round.clone());
+        async move { second.files(&since_round, &want).await }
     });
     let (request, reply) = calls.review_files().await;
     assert_eq!(request.view, ReviewView::SinceLast as i32);
+    assert_eq!(request.from, "r".repeat(40));
     reply
         .send(Ok(ReviewGetFilesResponse {
             files: want.iter().map(|path| file(path)).collect(),
+            ..Default::default()
         }))
         .ok();
     since.await.unwrap().unwrap();
@@ -170,28 +215,31 @@ async fn files_arrive_in_batches_and_those_left_out_are_asked_again() {
 
     let reading = tokio::spawn({
         let (review, want) = (review.clone(), want.clone());
-        async move { review.files(ReviewView::All, &want).await }
+        async move { review.files(&all_of("s1"), &want).await }
     });
     // The first batch: the host fits ten of the sixteen.
     let (request, reply) = calls.review_files().await;
     assert_eq!(request.snapshot, "s1");
+    assert_eq!(request.from, "b".repeat(40));
     assert_eq!(request.view, ReviewView::All as i32);
     let asked: Vec<String> = request.files.iter().map(|f| f.path.clone()).collect();
     assert_eq!(asked, want[..BATCH_FILES]);
     reply
         .send(Ok(ReviewGetFilesResponse {
             files: asked[..10].iter().map(|path| file(path)).collect(),
+            ..Default::default()
         }))
         .ok();
     // The page has those ten to draw before the next batch is answered.
     changed.changed().await.unwrap();
     let (request, reply) = calls.review_files().await;
-    assert_eq!(review.fetched(ReviewView::All).len(), 10);
+    assert_eq!(review.fetched(&all_of("s1")).len(), 10);
     let asked: Vec<String> = request.files.iter().map(|f| f.path.clone()).collect();
     assert_eq!(asked, want[10..10 + BATCH_FILES], "the six left out lead");
     reply
         .send(Ok(ReviewGetFilesResponse {
             files: asked.iter().map(|path| file(path)).collect(),
+            ..Default::default()
         }))
         .ok();
     let (request, reply) = calls.review_files().await;
@@ -200,6 +248,7 @@ async fn files_arrive_in_batches_and_those_left_out_are_asked_again() {
     reply
         .send(Ok(ReviewGetFilesResponse {
             files: asked.iter().map(|path| file(path)).collect(),
+            ..Default::default()
         }))
         .ok();
     let files = reading.await.unwrap().unwrap();
@@ -211,7 +260,7 @@ async fn files_arrive_in_batches_and_those_left_out_are_asked_again() {
         want,
         "answered in the order asked"
     );
-    assert_eq!(review.fetched(ReviewView::All).len(), 40);
+    assert_eq!(review.fetched(&all_of("s1")).len(), 40);
     calls.none().await;
 }
 
@@ -222,13 +271,18 @@ async fn with_the_host_gone_a_loaded_review_still_reads_and_an_edit_says_so() {
     let want = paths(2);
     let loaded = review(&client, &cache);
     opened(&loaded, &mut calls, summary("s1", &want)).await;
-    read_all(&loaded, &mut calls, &want).await;
+    read_all(&loaded, &mut calls, &all_of("s1"), &want).await;
     let lines = ReviewLineRange { start: 1, end: 9 };
     let context = tokio::spawn({
         let loaded = loaded.clone();
-        async move { loaded.context("s1", "src/file00.rs", lines).await }
+        async move {
+            loaded
+                .context(&all_of("s1"), "s1", "src/file00.rs", lines)
+                .await
+        }
     });
     let (request, reply) = calls.review_files().await;
+    assert_eq!(request.from, "b".repeat(40));
     assert_eq!(request.files[0].context_commit, "s1");
     assert_eq!(request.files[0].context, [lines]);
     let mut answer = file("src/file00.rs");
@@ -241,6 +295,7 @@ async fn with_the_host_gone_a_loaded_review_still_reads_and_an_edit_says_so() {
     reply
         .send(Ok(ReviewGetFilesResponse {
             files: vec![answer],
+            ..Default::default()
         }))
         .ok();
     assert_eq!(context.await.unwrap().unwrap().len(), 1);
@@ -264,9 +319,12 @@ async fn with_the_host_gone_a_loaded_review_still_reads_and_an_edit_says_so() {
         "it keeps what it loaded"
     );
     assert_eq!(page.unavailable(), None);
-    assert_eq!(page.files(ReviewView::All, &want).await.unwrap().len(), 2);
+    assert_eq!(page.files(&all_of("s1"), &want).await.unwrap().len(), 2);
     assert_eq!(
-        page.context("s1", "src/file00.rs", lines).await.unwrap()[0].text,
+        page.context(&all_of("s1"), "s1", "src/file00.rs", lines)
+            .await
+            .unwrap()[0]
+            .text,
         "fn main() {"
     );
     assert!(page.context_held("s1", "src/file00.rs", lines).is_some());
@@ -340,7 +398,11 @@ async fn following_the_row_reads_a_changed_review_and_marks_a_moved_tree_stale()
         async move { review.follow(&row(Some((5, true)))).await }
     });
     let (request, reply) = calls.review_open().await;
-    assert!(!request.refresh, "following never refreshes");
+    assert!(
+        request.read_only,
+        "following reads without changing the review"
+    );
+    assert!(!request.refresh);
     assert_eq!(request.base_branch, None);
     let mut commented = summary("s1", &paths(1));
     commented.stale = true;
@@ -394,6 +456,258 @@ async fn following_the_row_reads_a_changed_review_and_marks_a_moved_tree_stale()
     reply.send(Ok(summary("s2", &paths(2)))).ok();
     assert_eq!(following.await.unwrap().unwrap(), Followed::Reread);
     calls.none().await;
+
+    // Started over elsewhere, its counter begun again at the same number:
+    // another review, read again, and shown as it is.
+    let following = tokio::spawn({
+        let review = review.clone();
+        async move { review.follow(&row_of(b"review-2", Some((7, false)))).await }
+    });
+    let (request, reply) = calls.review_open().await;
+    assert!(request.read_only);
+    let begun = ReviewSummary {
+        id: b"review-2".to_vec(),
+        ..summary("s3", &paths(1))
+    };
+    reply.send(Ok(begun.clone())).ok();
+    assert_eq!(following.await.unwrap().unwrap(), Followed::Reread);
+    assert_eq!(*review.summary().unwrap(), begun);
+    calls.none().await;
+}
+
+/// A page larger than the process's cache keeps what it fetched: nothing
+/// it shows is evicted under it and asked for again.
+#[tokio::test]
+async fn the_open_page_keeps_its_files_apart_from_the_cache() {
+    let (client, mut calls) = runtime();
+    let want = paths(4);
+    let one = {
+        use prost::Message as _;
+        file(&want[0]).encoded_len() + 2 * 40 + 4 + want[0].len()
+    };
+    // Room for two files of the four.
+    let cache = ReviewCache::new(one * 2 + one / 2);
+    let review = review(&client, &cache);
+    opened(&review, &mut calls, summary("s1", &want)).await;
+    read_all(&review, &mut calls, &all_of("s1"), &want).await;
+    assert!(cache.bytes() <= one * 2 + one / 2);
+    assert_eq!(review.fetched(&all_of("s1")).len(), 4);
+    review.files(&all_of("s1"), &want).await.unwrap();
+    calls.none().await;
+
+    // A refresh onto a new snapshot lets the old one's files go.
+    let refreshing = tokio::spawn({
+        let review = review.clone();
+        async move { review.open(None, true).await }
+    });
+    let (_, reply) = calls.review_open().await;
+    reply.send(Ok(summary("s2", &want))).ok();
+    refreshing.await.unwrap().unwrap();
+    assert!(review.fetched(&all_of("s1")).is_empty());
+}
+
+/// An edit's answer on a newer snapshot than the page's: the page stays on
+/// its own snapshot, and what the person wrote shows on it, on the lines it
+/// was written on.
+#[tokio::test]
+async fn an_edit_on_a_page_held_behind_shows_its_comments() {
+    let (client, mut calls) = runtime();
+    let cache = ReviewCache::new(CACHE_BYTES);
+    let review = review(&client, &cache);
+    let mut held = summary("s1", &paths(1));
+    held.comments = vec![ReviewerComment {
+        id: b"old".to_vec(),
+        anchor: Some(ReviewAnchor {
+            commit: "s1".into(),
+            path: "src/file00.rs".into(),
+            lines: Some(ReviewLineRange { start: 3, end: 3 }),
+        }),
+        placement: Some(ReviewPlacement {
+            at: Some(review_placement::At::Lines(ReviewLineRange {
+                start: 3,
+                end: 3,
+            })),
+            changed_near: false,
+            path: "src/file00.rs".into(),
+        }),
+        ..ReviewerComment::default()
+    }];
+    opened(&review, &mut calls, held.clone()).await;
+
+    let editing = tokio::spawn({
+        let review = review.clone();
+        async move {
+            review
+                .edit(vec![ReviewEdit {
+                    of: Some(review_edit::Of::Put(ReviewPutComment::default())),
+                }])
+                .await
+        }
+    });
+    let (_, reply) = calls.review_edit().await;
+    // Another client refreshed meanwhile: the host answers on s2, where the
+    // old comment moved down two lines.
+    let mut answer = summary("s2", &paths(1));
+    let mut old = held.comments[0].clone();
+    old.text = "reworded".into();
+    old.placement = Some(ReviewPlacement {
+        at: Some(review_placement::At::Lines(ReviewLineRange {
+            start: 5,
+            end: 5,
+        })),
+        changed_near: false,
+        path: "src/file00.rs".into(),
+    });
+    let new = ReviewerComment {
+        id: b"new".to_vec(),
+        anchor: Some(ReviewAnchor {
+            commit: "b".repeat(40),
+            path: "src/file00.rs".into(),
+            lines: Some(ReviewLineRange { start: 7, end: 8 }),
+        }),
+        text: "on removed lines".into(),
+        ..ReviewerComment::default()
+    };
+    answer.comments = vec![old, new];
+    reply.send(Ok(answer)).ok();
+    let shown = editing.await.unwrap().unwrap();
+    assert_eq!(shown.snapshot, "s1", "the page stays where it is");
+    assert!(shown.stale);
+    assert_eq!(shown.comments.len(), 2);
+    assert_eq!(shown.comments[0].text, "reworded");
+    assert_eq!(
+        shown.comments[0].placement, held.comments[0].placement,
+        "where it sat on the page"
+    );
+    assert_eq!(
+        shown.comments[1]
+            .placement
+            .as_ref()
+            .and_then(|p| p.at.clone()),
+        Some(review_placement::At::Compared(
+            wire::experimental::ReviewComparedLines {
+                commit: "b".repeat(40),
+                lines: Some(ReviewLineRange { start: 7, end: 8 }),
+            }
+        )),
+        "on the lines it was written on"
+    );
+}
+
+/// A sent review opens its round: read without changing the review, found
+/// by its comments, its whole diff listed and fetched from the round's base
+/// to its snapshot.
+#[tokio::test]
+async fn a_round_reads_its_whole_diff() {
+    let (client, mut calls) = runtime();
+    let cache = ReviewCache::new(CACHE_BYTES);
+    let review = review(&client, &cache);
+    let first = "1".repeat(40);
+    let mut now = summary(&"9".repeat(40), &paths(1));
+    now.rounds = vec![ReviewRound {
+        snapshot: first.clone(),
+        base_commit: "a".repeat(40),
+        sent_at_ms: 1,
+    }];
+    now.comments = vec![ReviewerComment {
+        id: b"sent".to_vec(),
+        anchor: Some(ReviewAnchor {
+            commit: first.clone(),
+            path: "src/file00.rs".into(),
+            lines: Some(ReviewLineRange { start: 1, end: 1 }),
+        }),
+        round: Some(1),
+        ..ReviewerComment::default()
+    }];
+    let reading = tokio::spawn({
+        let review = review.clone();
+        async move { review.round(b"review-1", &[b"sent".to_vec()]).await }
+    });
+    let (request, reply) = calls.review_open().await;
+    assert!(request.read_only);
+    reply.send(Ok(now.clone())).ok();
+    let (request, reply) = calls.review_files().await;
+    assert!(request.list && request.files.is_empty(), "the list alone");
+    assert_eq!(request.from, "a".repeat(40));
+    assert_eq!(request.snapshot, first);
+    assert_eq!(request.view, ReviewView::All as i32);
+    let listed = vec![
+        wire::ChangedFile {
+            path: "src/file00.rs".into(),
+            added: 1,
+            ..wire::ChangedFile::default()
+        },
+        wire::ChangedFile {
+            path: "src/gone.rs".into(),
+            added: 1,
+            ..wire::ChangedFile::default()
+        },
+    ];
+    reply
+        .send(Ok(ReviewGetFilesResponse {
+            changed: listed.clone(),
+            ..Default::default()
+        }))
+        .ok();
+    let (request, reply) = calls.review_files().await;
+    assert_eq!(request.from, "a".repeat(40));
+    assert_eq!(request.snapshot, first);
+    assert!(!request.list);
+    let asked: Vec<&str> = request.files.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(asked, ["src/file00.rs", "src/gone.rs"]);
+    reply
+        .send(Ok(ReviewGetFilesResponse {
+            files: vec![file("src/file00.rs"), file("src/gone.rs")],
+            ..Default::default()
+        }))
+        .ok();
+    let round = reading.await.unwrap().unwrap().expect("the round");
+    assert_eq!(round.summary.snapshot, first);
+    assert_eq!(round.summary.base_commit, "a".repeat(40));
+    assert_eq!(round.summary.files, listed);
+    assert_eq!(round.files.len(), 2);
+    assert!(round.notices.is_empty());
+    calls.none().await;
+
+    // The host has since dropped the round's snapshot: the comments show
+    // with their stored code.
+    let again = Arc::new(Review::with_cache(
+        client.agent(&agent(wire::Kind::ClaudeSdk)),
+        ReviewCache::new(CACHE_BYTES),
+    ));
+    let reading = tokio::spawn({
+        let again = again.clone();
+        async move { again.round(b"review-1", &[b"sent".to_vec()]).await }
+    });
+    let (_, reply) = calls.review_open().await;
+    reply.send(Ok(now.clone())).ok();
+    let (_, reply) = calls.review_files().await;
+    reply
+        .send(Err(RpcError::Refused(wire::Error::new(
+            ErrorCode::NotFound,
+            "no longer kept",
+        ))))
+        .ok();
+    let round = reading.await.unwrap().unwrap().expect("the round");
+    assert!(round.summary.files.is_empty());
+    assert_eq!(round.notices, [ui_view::ReviewNotice::RoundGone]);
+    assert_eq!(round.summary.comments.len(), 1);
+
+    // With the host out of reach and nothing loaded, the host's error.
+    let empty = Arc::new(Review::with_cache(
+        client.agent(&agent(wire::Kind::ClaudeSdk)),
+        ReviewCache::new(CACHE_BYTES),
+    ));
+    let reading = tokio::spawn({
+        let empty = empty.clone();
+        async move { empty.round(b"review-1", &[b"sent".to_vec()]).await }
+    });
+    let (_, reply) = calls.review_open().await;
+    reply.send(Err(host_unreachable())).ok();
+    assert!(matches!(
+        reading.await.unwrap(),
+        Err(error) if ui_runtime::review::unreachable(&error)
+    ));
 }
 
 #[tokio::test]
@@ -488,13 +802,11 @@ async fn a_chats_review_is_addressed_to_the_agents_host() {
     drop(feed);
 }
 
-/// A sent review opens its round from the review as the host holds it now:
-/// the round's snapshot against the base it was shown against, and of the
-/// comments it sent those still on the review, each on the lines it was
-/// written on rather than where a later snapshot placed it.
+/// A round is the round's snapshot against the base it was recorded with,
+/// and of the comments it sent those still on the review, each on the lines
+/// it was written on rather than where a later snapshot placed it.
 #[test]
 fn a_round_is_its_snapshot_and_the_comments_it_sent() {
-    use wire::experimental::{ReviewAnchor, ReviewPlacement, ReviewRound, review_placement};
     let first = "1".repeat(40);
     let comment = |id: &[u8], round: Option<u32>| ReviewerComment {
         id: id.to_vec(),
@@ -508,6 +820,7 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
         placement: Some(ReviewPlacement {
             at: Some(review_placement::At::Outdated(wire::Empty {})),
             changed_near: true,
+            path: "src/lib.rs".into(),
         }),
         ..ReviewerComment::default()
     };
@@ -532,35 +845,42 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
     ];
     let sent = vec![b"sent".to_vec(), b"deleted since".to_vec()];
 
-    let round = ui_runtime::review::round(&now, b"review-1", &first, &sent).expect("held");
+    let (number, round) = ui_runtime::review::round_of(&now, b"review-1", &sent).expect("held");
+    assert_eq!(number, 1);
     assert_eq!(round.snapshot, first);
     assert_eq!(
         round.base_commit,
         "a".repeat(40),
-        "the base it was shown against"
+        "the base it was recorded with"
     );
     assert!(round.rounds.is_empty() && round.files.is_empty() && !round.stale);
     assert_eq!(round.comments.len(), 1);
     assert_eq!(round.comments[0].id, b"sent");
     assert_eq!(round.comments[0].round, Some(1));
     assert_eq!(
-        round.comments[0].placement, None,
+        round.comments[0].placement,
+        Some(ReviewPlacement {
+            at: Some(review_placement::At::Lines(ReviewLineRange {
+                start: 4,
+                end: 5
+            })),
+            changed_near: false,
+            path: "src/lib.rs".into(),
+        }),
         "on the lines it was written on"
     );
+    assert_eq!(all(&round).from, "a".repeat(40));
 
     // Started over since, or every comment it sent deleted: the host holds
     // none of the round.
+    assert_eq!(ui_runtime::review::round_of(&now, b"review-2", &sent), None);
     assert_eq!(
-        ui_runtime::review::round(&now, b"review-2", &first, &sent),
-        None
-    );
-    assert_eq!(
-        ui_runtime::review::round(&now, b"review-1", &first, &[b"deleted since".to_vec()]),
+        ui_runtime::review::round_of(&now, b"review-1", &[b"deleted since".to_vec()]),
         None
     );
     // A draft is not sent, whatever names it.
     assert_eq!(
-        ui_runtime::review::round(&now, b"review-1", &first, &[b"draft".to_vec()]),
+        ui_runtime::review::round_of(&now, b"review-1", &[b"draft".to_vec()]),
         None
     );
 }

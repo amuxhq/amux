@@ -1375,6 +1375,12 @@ final class ChatModelTests: XCTestCase {
         source.withReview = .success(SendOutcome(inputId: [7], state: .rejected(Refusal(reason: .exited, detail: nil))))
         await model.send()?.value
         XCTAssertEqual(model.reviewChip, chip)
+
+        // Not known to have landed: the drafts stay drafts until the agent
+        // takes a message carrying them, so the chip shows them again.
+        source.withReview = .success(SendOutcome(inputId: [8], state: .uncertain))
+        await model.send()?.value
+        XCTAssertEqual(model.reviewChip, chip)
     }
 
     func testWithoutAChipASendCarriesNoReview() async {

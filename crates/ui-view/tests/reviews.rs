@@ -8,10 +8,11 @@ use std::path::Path;
 
 use ui_view::*;
 use wire::experimental::{
-    REVIEW_ROW, ReviewAnchor as WireAnchor, ReviewDefinition, ReviewDefinitionKind, ReviewFileDiff,
-    ReviewFileState, ReviewHunk, ReviewLine, ReviewLineKind, ReviewLineRange, ReviewPlacement,
-    ReviewRound, ReviewRowEntry, ReviewRun as WireRun, ReviewSummary, ReviewTokenKind,
-    ReviewerComment, SENT_REVIEW, SentReview, review_placement,
+    REVIEW_ROW, ReviewAnchor as WireAnchor, ReviewComparedLines, ReviewDefinition,
+    ReviewDefinitionKind, ReviewFileDiff, ReviewFileState, ReviewHunk, ReviewLine, ReviewLineKind,
+    ReviewLineRange, ReviewPlacement, ReviewRound, ReviewRowEntry, ReviewRun as WireRun,
+    ReviewSentComment, ReviewSide, ReviewSummary, ReviewTokenKind, ReviewerComment, SENT_REVIEW,
+    SentReview, review_placement,
 };
 
 const SNAPSHOT: &str = "s2";
@@ -54,6 +55,7 @@ fn def(
         start_line: start,
         end_line: end,
         parent,
+        side: ReviewSide::Snapshot as i32,
     }
 }
 
@@ -95,6 +97,8 @@ fn range(start: u32, end: u32) -> ReviewLineRange {
 
 enum At {
     Lines(u32, u32),
+    /// On removed lines of the comment's own commit.
+    Compared(u32, u32),
     File,
     Outdated,
 }
@@ -122,11 +126,17 @@ fn comment(
         placement: Some(ReviewPlacement {
             at: Some(match at {
                 At::Lines(start, end) => review_placement::At::Lines(range(start, end)),
+                At::Compared(start, end) => review_placement::At::Compared(ReviewComparedLines {
+                    commit: commit.into(),
+                    lines: Some(range(start, end)),
+                }),
                 At::File => review_placement::At::File(wire::Empty {}),
                 At::Outdated => review_placement::At::Outdated(wire::Empty {}),
             }),
             changed_near: false,
+            path: path.into(),
         }),
+        revision: 1,
     }
 }
 
@@ -181,6 +191,7 @@ fn store_close(old_commit: &str, old_start: u32) -> ReviewHunk {
             added(71, "        self.file.sync_all();"),
             context(old_start + 1, 72, "        drop(self.file);"),
             context(old_start + 2, 73, "    }"),
+            context(old_start + 3, 74, ""),
         ],
     }
 }
@@ -269,7 +280,7 @@ fn first_look() -> ReviewSummary {
                 (41, 41),
                 "This read the path twice.",
                 None,
-                At::File,
+                At::Compared(41, 41),
             ),
             comment(
                 "d3",
@@ -441,9 +452,10 @@ fn row_text(row: &ReviewRowOf) -> String {
                 .iter()
                 .map(|entry| {
                     format!(
-                        "{}{} {}-{}{}",
+                        "{}{} {}{}-{}{}",
                         "  ".repeat(entry.depth as usize),
                         entry.label,
+                        if entry.compared { "compared " } else { "" },
                         entry.start_line,
                         entry.end_line,
                         entry.row.map(|row| format!(" @{row}")).unwrap_or_default()
@@ -613,8 +625,8 @@ fn review_page_goldens() {
     let past_the_end = ReviewContextAsk {
         path: "src/store.rs".into(),
         commit: SNAPSHOT.into(),
-        start: 74,
-        end: 75,
+        start: 75,
+        end: 76,
         definition: Some("fn close".into()),
     };
     let waiting = ReviewContextAsk {
@@ -632,7 +644,7 @@ fn review_page_goldens() {
                 .map(|n| context(n, n, &format!("    // line {n}")))
                 .collect(),
         ),
-        (past_the_end, vec![context(74, 74, "}")]),
+        (past_the_end, vec![context(75, 75, "}")]),
     ];
     let mut with_comment = first_look();
     with_comment.comments = vec![comment(
@@ -647,6 +659,51 @@ fn review_page_goldens() {
     case(
         "more context: the top filled to fn open's start, the end found, one ask waiting, a comment on lines read for context",
         review_page(Some(&with_comment), &[store_all()], &answers, &asked),
+    );
+
+    // A file whose change only removes a method: the hunk's scope is the
+    // compared commit's, ten lines on from the snapshot's above it, and the
+    // hunk reaches the file's end. A comment written on the file before it
+    // was renamed sits where the host placed it.
+    let mut removing = summary();
+    removing.files = vec![wire::ChangedFile {
+        old_path: Some("src/old_gone.rs".into()),
+        ..changed("src/gone.rs", wire::FileStatus::Renamed, 0, 3)
+    }];
+    let mut renamed = comment(
+        "d6",
+        SNAPSHOT,
+        "src/old_gone.rs",
+        (41, 41),
+        "Keep the closing brace's comment.",
+        None,
+        At::Lines(41, 41),
+    );
+    renamed.placement.as_mut().unwrap().path = "src/gone.rs".into();
+    removing.comments = vec![renamed];
+    let mut gone_method = def(ReviewDefinitionKind::Method, "fn gone", 47, 53, None);
+    gone_method.side = ReviewSide::Compared as i32;
+    let only_removed = ReviewFileDiff {
+        path: "src/gone.rs".into(),
+        hunks: vec![ReviewHunk {
+            old_commit: BASE.into(),
+            old_start: 50,
+            new_start: 40,
+            scope: vec![gone_method.clone()],
+            lines: vec![
+                context(50, 40, "    }"),
+                removed(51, "    fn gone() {"),
+                removed(52, "        todo!()"),
+                removed(53, "    }"),
+                context(54, 41, "}"),
+            ],
+        }],
+        outline: vec![gone_method],
+        context: Vec::new(),
+    };
+    case(
+        "a hunk that only removes: more context up to its compared-side definition, no gap past the file's end, a comment seated by its placed path",
+        page(&removing, &[only_removed], &none),
     );
 
     case(
@@ -991,6 +1048,7 @@ fn the_chip_comes_from_the_agents_row() {
             drafts: 0,
             counter: 4,
             moved: false,
+            review_id: b"review".to_vec(),
         },
     );
     assert_eq!(review_chip(&agent), None, "a review with nothing to send");
@@ -1000,6 +1058,7 @@ fn the_chip_comes_from_the_agents_row() {
             drafts: 3,
             counter: 5,
             moved: true,
+            review_id: b"review".to_vec(),
         },
     );
     assert_eq!(
@@ -1031,7 +1090,16 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
             review_id: b"review".to_vec(),
             round: 2,
             snapshot: SNAPSHOT.into(),
-            comment_ids: vec![b"d1".to_vec(), b"d3".to_vec()],
+            comments: vec![
+                ReviewSentComment {
+                    id: b"d1".to_vec(),
+                    revision: 1,
+                },
+                ReviewSentComment {
+                    id: b"d3".to_vec(),
+                    revision: 2,
+                },
+            ],
         },
     );
     assert_eq!(
@@ -1041,7 +1109,6 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
             review: SentReviewRef {
                 review_id: b"review".to_vec(),
                 round: 2,
-                snapshot: SNAPSHOT.into(),
                 comment_ids: vec![b"d1".to_vec(), b"d3".to_vec()],
             },
             text: "src/store.rs:41\nWhy the flags?".into(),

@@ -22,7 +22,8 @@ empty None fetch []
   +        71 |        self.file.sync_all();
       69   72 |        drop(self.file);
       70   73 |    }
-  gap hidden ? up - down 74-75 to fn close
+      71   74 |
+  gap hidden ? up - down 75-75 to fn close
   file src/new.rs Added +2 -0 flags [] comments 0
   hunk -0 +1 against b0 in 
   +         1 |//! New.
@@ -66,7 +67,8 @@ empty None fetch ["src/new.rs"]
   +        71 |        self.file.sync_all();
       69   72 |        drop(self.file);
       70   73 |    }
-      71   74 |}   (more)
+      71   74 |
+      72   75 |}   (more)
   file src/new.rs Added +2 -0 flags [] comments 0
   loading src/new.rs
   file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
@@ -75,6 +77,20 @@ empty None fetch ["src/new.rs"]
   file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
   file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
   file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## a hunk that only removes: more context up to its compared-side definition, no gap past the file's end, a comment seated by its placed path
+header base main at b0 snapshot s2 view All against b0 views [All 1] rounds 0 files 1 +0 -3 drafts 1 sent 0 discard true start-over true
+banners []
+empty None fetch []
+  file src/gone.rs Renamed +0 -3 flags [] comments 1 outline [fn gone compared 47-53 @2]
+  gap hidden 39 up 37-39 to fn gone down -
+  hunk -50 +40 against b0 in fn gone
+      50   40 |    }
+  -   51      |    fn gone() {
+  -   52      |        todo!()
+  -   53      |    }
+      54   41 |}   ◆
+      comment d6 Draft Lines { start: 41, end: 41 } scope [] "Keep the closing brace's comment."
 
 ## since your last review: placed, outdated, changed near, a file unchanged since, one outside the change
 header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
@@ -94,7 +110,8 @@ empty None fetch []
       71   72 |        drop(self.file);   ◆
       comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
       72   73 |    }
-  gap hidden ? up - down 74-75 to fn close
+      73   74 |
+  gap hidden ? up - down 75-75 to fn close
   file README.md Modified +0 -0 flags [] comments 1
       comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
       snippet      3    3 |Opens a store.
@@ -120,7 +137,8 @@ empty None fetch []
       71   72 |        drop(self.file);   ◆
       comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
       72   73 |    }
-  gap hidden ? up - down 74-75 to fn close
+      73   74 |
+  gap hidden ? up - down 75-75 to fn close
   file README.md Modified +0 -0 flags [] comments 1
       comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
       snippet      3    3 |Opens a store.
@@ -156,7 +174,8 @@ empty None fetch ["README.md"]
       69   72 |        drop(self.file);   ◆
       comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
       70   73 |    }
-  gap hidden ? up - down 74-75 to fn close
+      71   74 |
+  gap hidden ? up - down 75-75 to fn close
   file src/new.rs Added +2 -0 flags [] comments 0
   hunk -0 +1 against b0 in 
   +         1 |//! New.
@@ -311,7 +330,8 @@ empty None fetch ["src/new.rs"]
   +        71 |        self.file.sync_all();
       69   72 |        drop(self.file);
       70   73 |    }
-  gap hidden ? up - down 74-75 to fn close
+      71   74 |
+  gap hidden ? up - down 75-75 to fn close
   file src/new.rs Added +2 -0 flags [] comments 0
   loading src/new.rs
   file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0

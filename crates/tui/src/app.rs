@@ -14,7 +14,7 @@ use ratatui::Frame as Paint;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
-use ui_runtime::review::{Followed, Review, ReviewError, Unavailable};
+use ui_runtime::review::{Comparison, Followed, Review, ReviewError, RowMark, Unavailable};
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
 use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
@@ -201,11 +201,12 @@ fn sync_review_page(chat: &mut OpenChat) {
     };
     let review = &link.review;
     let summary = review.summary();
-    let since_last = match &summary {
-        Some(summary) if !summary.rounds.is_empty() => {
-            review.fetched(wire::experimental::ReviewView::SinceLast)
-        }
-        _ => Default::default(),
+    let fetched = |view| {
+        summary
+            .as_deref()
+            .and_then(|summary| Comparison::shown(summary, view))
+            .map(|comparison| review.fetched(&comparison))
+            .unwrap_or_default()
     };
     let context = page
         .asks()
@@ -229,25 +230,14 @@ fn sync_review_page(chat: &mut OpenChat) {
         unavailable == Some(Unavailable::NotARepository),
     );
     page.update(crate::chat::review::Fetched {
-        all: review.fetched(wire::experimental::ReviewView::All),
-        since_last,
+        all: fetched(wire::experimental::ReviewView::All),
+        since_last: fetched(wire::experimental::ReviewView::SinceLast),
         summary,
         context,
     });
 }
 
-/// A review call that did not reach the agent's host.
-fn unreachable(error: &ReviewError) -> bool {
-    matches!(error, ReviewError::Rpc(rpc) if rpc.not_sent().is_some() || matches!(rpc, client::RpcError::Transport(_)))
-}
-
-/// The page's view as the review's calls name it.
-fn wire_view(view: ui_view::ReviewView) -> wire::experimental::ReviewView {
-    match view {
-        ui_view::ReviewView::All => wire::experimental::ReviewView::All,
-        ui_view::ReviewView::SinceLast => wire::experimental::ReviewView::SinceLast,
-    }
-}
+use ui_runtime::review::unreachable;
 
 /// Sends a prompt carrying the review's drafts: read from the agent's host
 /// as they are now, so exactly those are named and the host marks those
@@ -260,7 +250,7 @@ async fn send_with_review(
     text: String,
     mut attachments: Vec<Attachment>,
 ) -> Option<AppEvent> {
-    let summary = match review.open(None, false).await {
+    let summary = match review.read().await {
         Ok(summary) => summary,
         Err(error) => {
             return Some(AppEvent::Restore {
@@ -285,8 +275,12 @@ async fn send_with_review(
     if text.trim().is_empty() && attachments.is_empty() {
         return None;
     }
-    session.send_prompt(&text, attachments).await;
-    None
+    let sent = session.send_prompt(&text, attachments).await;
+    // A send that may not have landed leaves the drafts the chip's: the
+    // round closes only when the agent takes the message, and until then
+    // they are drafts on the agent's host either way.
+    matches!(sent.outcome, ui_state::InputOutcome::Lost)
+        .then_some(AppEvent::ReviewUnsent { agent_id })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -363,6 +357,7 @@ pub enum AppEvent {
     ReviewFetched {
         agent_id: Vec<u8>,
         view: ui_view::ReviewView,
+        comparison: Comparison,
         result: Result<(), ReviewError>,
     },
     /// More context on the review page was read, or could not be.
@@ -378,8 +373,12 @@ pub enum AppEvent {
         agent_id: Vec<u8>,
         review: ui_view::SentReviewRef,
         text: String,
-        round: Option<wire::experimental::ReviewSummary>,
-        unreachable: bool,
+        round: Box<Result<Option<ui_runtime::review::Round>, ReviewError>>,
+    },
+    /// A send carrying the review's drafts may not have landed: the chip
+    /// shows them again.
+    ReviewUnsent {
+        agent_id: Vec<u8>,
     },
     /// Following the agent's row read the review again, or could not.
     ReviewFollowed {
@@ -436,15 +435,14 @@ pub struct OpenChat {
 /// row entry last followed.
 struct ReviewLink {
     review: Arc<Review>,
-    /// The row's review entry (its counter and whether the tree moved) as
-    /// last handed to the review; None until a row is.
-    followed: Option<Option<(u64, bool)>>,
+    /// The row's mark as last handed to the review; None until a row is.
+    followed: Option<Option<RowMark>>,
     following: bool,
     /// The bodies being fetched now.
     fetching: bool,
-    /// The snapshot a fetch failed for: not asked again until the page
+    /// The comparison a fetch failed for: not asked again until the page
     /// shows another, or is opened again.
-    fetch_failed: Option<String>,
+    fetch_failed: Option<Comparison>,
 }
 
 impl OpenChat {
@@ -978,10 +976,14 @@ impl App {
                 review,
                 text,
                 round,
-                unreachable,
             } => {
                 if let Some(chat) = self.review_chat(&agent_id) {
-                    chat.view.round_read(&review, round, &text, unreachable);
+                    chat.view.round_read(&review, *round, &text);
+                }
+            }
+            AppEvent::ReviewUnsent { agent_id } => {
+                if let Some(chat) = self.review_chat(&agent_id) {
+                    chat.view.review_unsent();
                 }
             }
             AppEvent::ReviewChanged { agent_id } => {
@@ -997,6 +999,7 @@ impl App {
             AppEvent::ReviewFetched {
                 agent_id,
                 view,
+                comparison,
                 result,
             } => {
                 let Some(chat) = self.review_chat(&agent_id) else {
@@ -1007,10 +1010,7 @@ impl App {
                 };
                 link.fetching = false;
                 if let Err(error) = result {
-                    link.fetch_failed = link
-                        .review
-                        .summary()
-                        .map(|summary| summary.snapshot.clone());
+                    link.fetch_failed = Some(comparison);
                     if let Some(page) = &mut chat.view.review_page {
                         // The host answers NOT_FOUND for a snapshot it no
                         // longer has. Since the last review, that is the last
@@ -1666,16 +1666,11 @@ impl App {
             return;
         };
         let agent_id = chat.view.agent_id.clone();
-        let entry = {
-            let state = chat.session.state();
-            wire::experimental::REVIEW_ROW
-                .get(&state.agent().experimental)
-                .map(|entry| (entry.counter, entry.moved))
-        };
+        let mark = RowMark::of(chat.session.state().agent());
         let mut tasks: Vec<std::pin::Pin<Box<dyn Future<Output = Option<AppEvent>> + Send>>> =
             Vec::new();
-        if !link.following && link.followed != Some(entry) {
-            link.followed = Some(entry);
+        if !link.following && link.followed.as_ref() != Some(&mark) {
+            link.followed = Some(mark);
             link.following = true;
             let review = link.review.clone();
             let row = chat.session.state().agent().clone();
@@ -1685,13 +1680,11 @@ impl App {
                 Some(AppEvent::ReviewFollowed { agent_id, result })
             }));
         }
-        let snapshot = link
-            .review
-            .summary()
-            .map(|summary| summary.snapshot.clone());
+        let comparison = page.page().header.as_ref().map(Comparison::of_page);
         if !link.fetching
             && !page.to_fetch().is_empty()
-            && (link.fetch_failed.is_none() || link.fetch_failed != snapshot)
+            && let Some(comparison) = comparison
+            && link.fetch_failed.as_ref() != Some(&comparison)
         {
             link.fetching = true;
             link.fetch_failed = None;
@@ -1699,10 +1692,11 @@ impl App {
             let view = page.view();
             let paths = page.to_fetch().to_vec();
             tasks.push(Box::pin(async move {
-                let result = review.files(wire_view(view), &paths).await.map(drop);
+                let result = review.files(&comparison, &paths).await.map(drop);
                 Some(AppEvent::ReviewFetched {
                     agent_id,
                     view,
+                    comparison,
                     result,
                 })
             }));
@@ -2045,6 +2039,12 @@ impl App {
                 });
             }
             ChatEffect::ReviewContext(ask) => {
+                let comparison = chat
+                    .view
+                    .review_page
+                    .as_ref()
+                    .and_then(|page| page.page().header.as_ref())
+                    .map(Comparison::of_page)?;
                 let review = self.review_link().map(|link| link.review.clone())?;
                 self.spawn(async move {
                     let lines = wire::experimental::ReviewLineRange {
@@ -2052,7 +2052,7 @@ impl App {
                         end: ask.end,
                     };
                     let result = review
-                        .context(&ask.commit, &ask.path, lines)
+                        .context(&comparison, &ask.commit, &ask.path, lines)
                         .await
                         .map(drop);
                     Some(AppEvent::ReviewContext {
@@ -2081,25 +2081,13 @@ impl App {
                 // snapshot that page shows never moves under it.
                 let reviews = chat.session.reviews();
                 self.spawn(async move {
-                    let (summary, unreachable) = match reviews.open(None, false).await {
-                        Ok(summary) => (Some(summary), false),
-                        Err(error) if unreachable(&error) => (reviews.summary(), true),
-                        Err(_) => (None, false),
-                    };
-                    let round = summary.and_then(|summary| {
-                        ui_runtime::review::round(
-                            &summary,
-                            &review.review_id,
-                            &review.snapshot,
-                            &review.comment_ids,
-                        )
-                    });
+                    let round =
+                        Box::new(reviews.round(&review.review_id, &review.comment_ids).await);
                     Some(AppEvent::ReviewRound {
                         agent_id,
                         review,
                         text,
                         round,
-                        unreachable,
                     })
                 });
             }

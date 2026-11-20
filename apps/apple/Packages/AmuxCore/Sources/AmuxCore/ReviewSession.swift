@@ -48,8 +48,9 @@ public final class ReviewSession {
     @ObservationIgnored private var to: String?
     /// Each row's index in the page, by key.
     @ObservationIgnored private var places: [String: Int] = [:]
-    /// The files asked for, each as the snapshot, view and path its body is
-    /// read for, so a page that moves before they land asks nothing twice.
+    /// The files asked for, each as the comparison (the commits and view) and
+    /// path its body is read for, so a page that moves before they land asks
+    /// nothing twice.
     /// A fetch that failed stays here until the page is opened again or the
     /// host can be reached again, so a failing host is not asked in a loop.
     @ObservationIgnored private var asked: Set<Asked> = []
@@ -128,7 +129,7 @@ public final class ReviewSession {
     private func fetchWanted() {
         guard !closed, let header = page.header else { return }
         let keys = page.toFetch
-            .map { Asked(snapshot: header.snapshot, view: header.view, path: $0) }
+            .map { Asked(from: header.comparedWith, snapshot: header.snapshot, view: header.view, path: $0) }
             .filter { !asked.contains($0) }
         guard !keys.isEmpty else { return }
         asked.formUnion(keys)
@@ -154,8 +155,9 @@ public final class ReviewSession {
         latest = task
     }
 
-    /// A file's body as asked for: the snapshot and view it is read for.
+    /// A file's body as asked for: the comparison it is read for.
     private struct Asked: Hashable {
+        var from: String
         var snapshot: String
         var view: ReviewView
         var path: String

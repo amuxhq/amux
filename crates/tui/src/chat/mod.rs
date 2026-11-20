@@ -2579,20 +2579,19 @@ impl ChatView {
     }
 
     /// The round `review` names, read: shown when it is still the one
-    /// open; none shows `text`, what the agent read. `unreachable` says
-    /// the host was out of reach and the round is from what was loaded.
+    /// open; none, or a host out of reach with none of it loaded, shows
+    /// `text`, what the agent read. A round read from what was loaded with
+    /// the host out of reach says so.
     pub fn round_read(
         &mut self,
         review: &ui_view::SentReviewRef,
-        summary: Option<wire::experimental::ReviewSummary>,
+        read: Result<Option<ui_runtime::review::Round>, ui_runtime::review::ReviewError>,
         text: &str,
-        unreachable: bool,
     ) {
         if let Some((open, page)) = &mut self.round
             && open == review
         {
-            page.round_read(summary, text);
-            page.notice(ui_view::ReviewNotice::Unreachable, unreachable);
+            page.round_read(read, text);
         }
     }
 

@@ -22,12 +22,11 @@ use serde::{Deserialize, Serialize};
 use store::reviews::{Anchor as StoredAnchor, Comment, Review, ReviewWriter, Round, Taken};
 use wire::experimental::{REVIEW_ROW, ReviewDefinition, ReviewLine, ReviewRowEntry};
 
-use crate::Daemon;
-use crate::codec;
 use crate::ids::{AgentId, CallId, JobId};
 use crate::io::{Job as CoreJob, Output};
 use crate::payload::{CallError, JobResult, Response};
 use crate::serve::answered;
+use crate::{Daemon, codec};
 
 /// The experiment version whose shapes this module reads and writes.
 pub const VERSION: &str = REVIEW_ROW.version();

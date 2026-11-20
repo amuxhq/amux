@@ -2943,12 +2943,28 @@ fn machine_lines(
 
 type Ups = BTreeMap<String, BTreeMap<String, String>>;
 
-/// The first link to come up to each machine, by machine name, with the
+/// Which of a launch's links to each machine a check judges.
+#[derive(Clone, Copy)]
+enum Judged {
+    /// The first to come up, whoever dialled: on the first launch ever no
+    /// end has a session ticket.
+    FirstUp,
+    /// The first the phone dialled itself. Only the dialling end logs its
+    /// early data as `accepted` or `rejected`; a machine dialling in to the
+    /// phone is logged `none` here, and can come up before the phone's own
+    /// dial does.
+    PhonesOwnDial,
+}
+
+/// The link `judged` picks to each machine, by machine name, with the
 /// milliseconds its catch-up took from the first packet where it carried
 /// one.
-fn first_ups(journey: &PhoneJourney, lines: &[String]) -> Ups {
+fn first_ups(journey: &PhoneJourney, lines: &[String], judged: Judged) -> Ups {
     let mut ups = Ups::new();
     for (name, fields) in machine_lines(journey, lines, "up") {
+        if matches!(judged, Judged::PhonesOwnDial) && field(&fields, "early_data") == "none" {
+            continue;
+        }
         ups.entry(name).or_insert(fields);
     }
     for (name, fields) in machine_lines(journey, lines, "caught_up") {
@@ -2970,8 +2986,14 @@ fn log_length(journey: &PhoneJourney) -> Result<u64, String> {
 }
 
 /// Waits for the launch to reconcile with every machine and for its link
-/// log to name a link to each, then keeps that log as `<launch>.log`.
-fn reconciled_launch(journey: &mut PhoneJourney, launch: &str, offset: u64) -> Result<Ups, String> {
+/// log to name the link `judged` picks to each, then keeps that log as
+/// `<launch>.log`.
+fn reconciled_launch(
+    journey: &mut PhoneJourney,
+    launch: &str,
+    offset: u64,
+    judged: Judged,
+) -> Result<Ups, String> {
     journey.app_within(
         json!({"kind": "awaitReconciled", "seconds": 60}),
         Duration::from_secs(70),
@@ -2992,7 +3014,7 @@ fn reconciled_launch(journey: &mut PhoneJourney, launch: &str, offset: u64) -> R
     let deadline = Instant::now() + Duration::from_secs(30);
     let (lines, ups) = loop {
         let lines = logged_since(journey, offset)?;
-        let ups = first_ups(journey, &lines);
+        let ups = first_ups(journey, &lines, judged);
         if ups.len() == RESUME_HOSTS.len() {
             break (lines, ups);
         }
@@ -3061,7 +3083,7 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
     for host in RESUME_HOSTS {
         pair_by_code(journey, host)?;
     }
-    let first = reconciled_launch(journey, "first", 0)?;
+    let first = reconciled_launch(journey, "first", 0, Judged::FirstUp)?;
     for (host, fields) in machine_lines(journey, &logged_since(journey, 0)?, "up") {
         if field(&fields, "resumed") != "false" || field(&fields, "early_data") != "none" {
             return Err(format!(
@@ -3070,11 +3092,12 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
         }
     }
 
-    // Closed and opened again: every machine resumed, its early data taken.
+    // Closed and opened again: the phone's dial to every machine resumed,
+    // its early data taken.
     journey.quit()?;
     let offset = log_length(journey)?;
     journey.relaunch(Launch::plain())?;
-    let relaunch = reconciled_launch(journey, "relaunch", offset)?;
+    let relaunch = reconciled_launch(journey, "relaunch", offset, Judged::PhonesOwnDial)?;
     for (host, fields) in &relaunch {
         if field(fields, "resumed") != "true" || field(fields, "early_data") != "accepted" {
             return Err(format!(
@@ -3089,7 +3112,7 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
     restart(journey, "desk")?;
     let offset = log_length(journey)?;
     journey.relaunch(Launch::plain())?;
-    let after = reconciled_launch(journey, "after-host-restart", offset)?;
+    let after = reconciled_launch(journey, "after-host-restart", offset, Judged::PhonesOwnDial)?;
     for (host, fields) in &after {
         if field(fields, "resumed") != "true" {
             return Err(format!(

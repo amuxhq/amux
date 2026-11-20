@@ -100,8 +100,10 @@ the top jumps between files. Tap the arrows on hidden lines to show more of
 the file above or below a change.
 
 - **Commenting:** tap a line to select it, and tap another line in the same
-  file to stretch the selection to it, or hold a line and drag. Then tap
-  **Comment on 3 lines** at the bottom. To comment on a whole file, hold its
+  file to stretch the selection to it. Or hold a line for a moment and drag,
+  the way you select text: hold your finger near the top or bottom of the
+  screen and the page scrolls to take the selection further. A quick swipe
+  still scrolls. Then tap **Comment on 3 lines** at the bottom. To comment on a whole file, hold its
   name and choose **Comment on the File**.
 - **Changing a comment:** tap it to change its words or delete it.
 - **Sending:** comments are saved on the agent's computer as you write them,

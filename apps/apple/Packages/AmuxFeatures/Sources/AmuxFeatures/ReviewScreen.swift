@@ -29,9 +29,14 @@ public struct ReviewScreen: View {
     @State private var editing: ReviewCommentRow?
     @State private var note = ""
     @State private var asking: Asking?
-    /// Each drawn line's frame in the list, by row index, so a finger's
-    /// place names a row.
-    @State private var frames: [Int: CGRect] = [:]
+    /// Where the lines are and where a finger drawing a selection is; read
+    /// on every movement and scrolled frame, so it is not observed.
+    @State private var drawing = Drawing()
+    /// Set while a selection is drawn, so the list runs under a finger held
+    /// at its top or bottom edge.
+    @State private var position = ScrollPosition()
+    /// Counts the selections drawn, so each start is felt.
+    @State private var started = 0
     /// A row to bring to the top.
     @State private var target: String?
     /// Files whose rows are on screen, so the file menu ticks the one read.
@@ -70,7 +75,7 @@ public struct ReviewScreen: View {
             ZStack(alignment: .bottom) {
                 Ground()
                 content
-                foot
+                foot.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { drawing.foot = $0 }
                 if writing || editing != nil { sheet(proxy) }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
@@ -250,9 +255,16 @@ public struct ReviewScreen: View {
                 }
                 .padding(.bottom, 120)
                 .coordinateSpace(.named(Self.space))
-                .onPreferenceChange(RowFrames.self) { frames = $0 }
-                .gesture(selecting)
+                .onPreferenceChange(RowFrames.self) { drawing.frames = $0 }
+                .gesture(DiffSelection(
+                    hold: Self.hold, space: Self.space,
+                    began: { drawing.end(); press($0) }, moved: press, ended: drawing.end))
             }
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: ScrollGeometry.self, of: { $0 }) { _, geometry in
+                drawing.scroll = geometry
+            }
+            .sensoryFeedback(.selection, trigger: started)
             .scrollDismissesKeyboard(.interactively)
             .refreshable { _ = await session.open()?.value }
         }
@@ -422,21 +434,82 @@ public struct ReviewScreen: View {
         return head(one) == head(other)
     }
 
-    /// Hold a line for a moment, then drag: the selection follows the
-    /// finger. A quick swipe fails the hold and scrolls instead.
-    private var selecting: some Gesture {
-        LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space)))
-            .onChanged { value in
-                guard case .second(true, let drag?) = value,
-                      let index = frames.first(where: { $0.value.minY <= drag.location.y && drag.location.y < $0.value.maxY })?.key
-                else { return }
-                if drag.translation == .zero || session.selected == nil {
-                    session.select(index)
-                } else {
-                    session.extend(to: index)
-                }
+    /// How long a line is held before the finger draws a selection from
+    /// it, as text is selected: the selection follows the finger through
+    /// the lines of the file it began in, and the list runs under a finger
+    /// held at its top or bottom edge. A swipe moves before the hold is up,
+    /// so it scrolls.
+    static let hold: Double = 0.3
+
+    /// The held finger at a place in the list.
+    private func press(_ point: CGPoint) {
+        guard let scroll = drawing.scroll else { return }
+        drawing.finger = point.y - scroll.contentOffset.y
+        reach(point.y)
+        if drawing.running == nil, edgeSpeed() != 0 { run() }
+    }
+
+    private func start(_ index: Int) {
+        drawing.file = SelectionDrag.file(of: index, in: page.rows)
+        drawing.reached = index
+        session.select(index)
+        started += 1
+    }
+
+    /// The finger at a height in the list: the line under it starts the
+    /// selection, or stretches it within the file it began in.
+    private func reach(_ y: CGFloat) {
+        if let file = drawing.file {
+            guard let index = SelectionDrag.line(at: y, in: drawing.frames, within: file),
+                  index != drawing.reached
+            else { return }
+            drawing.reached = index
+            session.extend(to: index)
+        } else {
+            guard let index = SelectionDrag.line(at: y, in: drawing.frames, within: nil) else { return }
+            start(index)
+        }
+    }
+
+    /// How fast the list runs under the finger, from where it is between
+    /// the bar and the page's foot.
+    private func edgeSpeed() -> CGFloat {
+        guard let finger = drawing.finger, let scroll = drawing.scroll, drawing.file != nil else { return 0 }
+        return SelectionDrag.speed(
+            at: finger, top: scroll.contentInsets.top,
+            bottom: scroll.containerSize.height - scroll.contentInsets.bottom - drawing.foot)
+    }
+
+    /// Runs the list under a finger held at an edge, a frame at a time,
+    /// stretching the selection to the line that comes under it, until the
+    /// finger leaves the edge, the list ends or the finger lifts.
+    private func run() {
+        drawing.running = Task { @MainActor in
+            // The offset is kept here rather than read back: the list
+            // reports where it went a frame later than it is told.
+            var at = drawing.scroll?.contentOffset.y ?? 0
+            var last = ContinuousClock.now
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(16))
+                let speed = edgeSpeed()
+                guard speed != 0, let finger = drawing.finger, let scroll = drawing.scroll else { break }
+                let now = ContinuousClock.now
+                let elapsed = (now - last).components
+                last = now
+                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) * 1e-18
+                let lowest = -scroll.contentInsets.top
+                let highest = max(
+                    lowest, scroll.contentSize.height - scroll.containerSize.height + scroll.contentInsets.bottom)
+                let offset = min(highest, max(lowest, at + speed * seconds))
+                guard offset != at else { break }
+                at = offset
+                // The list is asked for a place measured from the top of
+                // what it shows under the bar, not for its offset.
+                position.scrollTo(y: offset + scroll.contentInsets.top)
+                reach(finger + offset)
             }
+            drawing.running = nil
+        }
     }
 
     // MARK: - The foot
@@ -606,6 +679,83 @@ private struct RowFrames: PreferenceKey {
     static let defaultValue: [Int: CGRect] = [:]
     static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
         value.merge(nextValue()) { $1 }
+    }
+}
+
+/// What a finger drawing a selection needs on every movement and every
+/// scrolled frame. Held by reference and not observed, so neither redraws
+/// the page.
+@MainActor
+final class Drawing {
+    /// Each drawn line's frame in the list, by row index.
+    var frames: [Int: CGRect] = [:]
+    var scroll: ScrollGeometry?
+    /// The height of the page's foot over the bottom of the list.
+    var foot: CGFloat = 0
+    /// The finger's height in the list's visible frame, while it draws.
+    var finger: CGFloat?
+    /// The rows of the file the selection began in.
+    var file: Range<Int>?
+    /// The line the selection reaches now.
+    var reached: Int?
+    /// The list running under a finger held at an edge.
+    var running: Task<Void, Never>?
+
+    func end() {
+        running?.cancel()
+        running = nil
+        finger = nil
+        file = nil
+        reached = nil
+    }
+}
+
+/// Where a finger drawing a selection is among the lines, and how fast the
+/// list runs under it at an edge.
+enum SelectionDrag {
+    /// How deep the band at each edge is where the list runs, in points.
+    static let edge: CGFloat = 56
+    /// How fast it runs with the finger at or past the edge, in points a
+    /// second: a screenful in about half a second.
+    static let fastest: CGFloat = 1400
+    /// How fast it runs as the finger enters the band.
+    static let slowest: CGFloat = 120
+
+    /// The line under a height in the list. Within a file, a finger past
+    /// the file's first or last line holds at it, and one over a comment or
+    /// a hunk's band holds where it was.
+    static func line(at y: CGFloat, in frames: [Int: CGRect], within file: Range<Int>?) -> Int? {
+        if let under = frames.first(where: { $0.value.minY <= y && y < $0.value.maxY })?.key,
+           file?.contains(under) ?? true {
+            return under
+        }
+        guard let file else { return nil }
+        let lines = frames.filter { file.contains($0.key) }
+        if let first = lines.min(by: { $0.key < $1.key }), y < first.value.minY { return first.key }
+        if let last = lines.max(by: { $0.key < $1.key }), y >= last.value.maxY { return last.key }
+        return nil
+    }
+
+    /// The rows from a row's file head to the next head.
+    static func file(of row: Int, in rows: [ReviewRow]) -> Range<Int> {
+        let isHead = { (row: ReviewRow) -> Bool in if case .file = row.of { true } else { false } }
+        let start = rows[...row].lastIndex(where: isHead) ?? 0
+        let end = rows[(row + 1)...].firstIndex(where: isHead) ?? rows.endIndex
+        return start..<end
+    }
+
+    /// Points a second the list runs with the finger at a height between a
+    /// visible top and bottom: up as a negative, nothing away from the
+    /// edges, and faster the deeper into an edge's band.
+    static func speed(at y: CGFloat, top: CGFloat, bottom: CGFloat) -> CGFloat {
+        guard bottom - top > edge * 2 else { return 0 }
+        func pace(_ depth: CGFloat) -> CGFloat {
+            let reach = min(1, depth / edge)
+            return slowest + (fastest - slowest) * reach * reach
+        }
+        if y < top + edge { return -pace(top + edge - y) }
+        if y > bottom - edge { return pace(y - (bottom - edge)) }
+        return 0
     }
 }
 

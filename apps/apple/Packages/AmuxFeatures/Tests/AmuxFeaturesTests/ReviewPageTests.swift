@@ -31,6 +31,48 @@ final class ReviewPageTests: XCTestCase {
         XCTAssertTrue(ReviewSections([]).all.isEmpty)
     }
 
+    /// A drawn selection follows the finger through the lines of the file it
+    /// began in: over another file's lines it holds at its file's last or
+    /// first line, and over a comment between lines it holds where it was.
+    func testADrawnSelectionStaysInTheFileItBeganIn() {
+        let rows = [head("a.rs"), note("a1"), note("a2"), note("a3"), head("b.rs"), note("b1")]
+        let file = SelectionDrag.file(of: 2, in: rows)
+        XCTAssertEqual(file, 0..<4)
+        XCTAssertEqual(SelectionDrag.file(of: 5, in: rows), 4..<6)
+        // Lines 1 and 3 drawn with a comment between them; line 5 is the
+        // next file's.
+        let frames: [Int: CGRect] = [
+            1: CGRect(x: 0, y: 100, width: 300, height: 20),
+            3: CGRect(x: 0, y: 160, width: 300, height: 20),
+            5: CGRect(x: 0, y: 240, width: 300, height: 20),
+        ]
+        XCTAssertEqual(SelectionDrag.line(at: 110, in: frames, within: nil), 1)
+        XCTAssertEqual(SelectionDrag.line(at: 250, in: frames, within: nil), 5)
+        XCTAssertEqual(SelectionDrag.line(at: 130, in: frames, within: nil), nil)
+        XCTAssertEqual(SelectionDrag.line(at: 170, in: frames, within: file), 3)
+        XCTAssertEqual(SelectionDrag.line(at: 130, in: frames, within: file), nil)
+        XCTAssertEqual(SelectionDrag.line(at: 250, in: frames, within: file), 3)
+        XCTAssertEqual(SelectionDrag.line(at: 40, in: frames, within: file), 1)
+    }
+
+    /// The list runs under a finger only in the bands at its edges, up at
+    /// the top and down at the bottom, faster the deeper in, and at its
+    /// fastest past the edge.
+    func testTheListRunsUnderAFingerAtItsEdges() {
+        let top: CGFloat = 100, bottom: CGFloat = 700
+        XCTAssertEqual(SelectionDrag.speed(at: 400, top: top, bottom: bottom), 0)
+        XCTAssertEqual(SelectionDrag.speed(at: top + SelectionDrag.edge, top: top, bottom: bottom), 0)
+        let entering = SelectionDrag.speed(at: bottom - SelectionDrag.edge + 1, top: top, bottom: bottom)
+        let deep = SelectionDrag.speed(at: bottom - 5, top: top, bottom: bottom)
+        XCTAssertGreaterThan(entering, 0)
+        XCTAssertGreaterThan(deep, entering)
+        XCTAssertEqual(SelectionDrag.speed(at: bottom + 80, top: top, bottom: bottom), SelectionDrag.fastest)
+        XCTAssertLessThan(SelectionDrag.speed(at: top + 10, top: top, bottom: bottom), 0)
+        XCTAssertEqual(SelectionDrag.speed(at: top - 80, top: top, bottom: bottom), -SelectionDrag.fastest)
+        // A list too short for two bands never runs.
+        XCTAssertEqual(SelectionDrag.speed(at: 10, top: 0, bottom: 100), 0)
+    }
+
     /// The file menu says what a file changed and its comments, leaving out
     /// what is nothing.
     func testTheFileMenuSaysWhatAFileChanged() {

@@ -37,6 +37,7 @@ SOURCES = [
     "crates/interpret/src/claude_pty",
     "crates/interpret/src/claude_common.rs",
     "crates/interpret/src/claude_answers.rs",
+    "crates/agent/src/acp.rs",
     "crates/agent/src/provider.rs",
     "crates/agent/src/claude/messaging.rs",
 ]

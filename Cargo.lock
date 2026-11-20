@@ -30,6 +30,7 @@ dependencies = [
 name = "agent"
 version = "0.1.0"
 dependencies = [
+ "acp-protocol",
  "agent-core",
  "agent-dir",
  "anyhow",

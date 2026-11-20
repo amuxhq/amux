@@ -35,9 +35,9 @@ ALLOWED_LOCAL = {
         "redaction", "wire",
     },
     # The agent process: its lock, journal and sockets, the interpreter,
-    # and the provider hosts, each in a module of its own (`claude`, `codex`).
+    # and the provider hosts, each in a module of its own (`acp`, `claude`, `codex`).
     "agent": {
-        "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
+        "acp-protocol", "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
         "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
     },
     # Each provider's messages as types: pure, so the interpreter the phone

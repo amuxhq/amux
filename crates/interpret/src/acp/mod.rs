@@ -20,9 +20,8 @@
 
 mod agents;
 mod facts;
+mod offer;
 mod recording;
-
-pub use agents::{BUILT_INS, BuiltIn, built_in};
 
 use std::collections::BTreeMap;
 
@@ -39,6 +38,8 @@ use acp_protocol::{
     ClientMessage, ClientNotification, ClientRequest, ClientResponse, ContentBlock, Empty, Extra,
     RequestId, RpcError,
 };
+pub use agents::{BUILT_INS, BuiltIn, built_in};
+pub use offer::{HostOffer, host_offer};
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use wire::{
@@ -50,7 +51,9 @@ use wire::{
 
 use crate::claude_common::{clip, describe_cause, or_dash};
 use crate::serde_pb::{self, to_hex};
-use crate::shared::{EarlyBoundary, agent_message_body, agent_message_key, provider_text};
+use crate::shared::{
+    AMUX_TOOL_SERVER, EarlyBoundary, agent_message_body, agent_message_key, provider_text,
+};
 use crate::{
     Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView, Shared,
     SnapshotView, ask_item, unknown,
@@ -141,21 +144,97 @@ pub struct Quirks {
     /// Grok lists `cached_token` signed in (`grok-catalogue`) and not
     /// signed out (`grok-signed_out`).
     pub signed_in_method: Option<&'static str>,
+    /// `initialize`'s `_meta` lists the models, with their efforts, and the
+    /// commands a session would offer, so the host's copy has them without
+    /// opening a session. Seen in `grok-catalogue`.
+    pub offers_in_initialize: bool,
+    /// How the agent names a call to a tool server's tool, by which a call
+    /// to amux's own server is told from the rest.
+    pub tool_naming: ToolNaming,
 }
+
+/// How an agent names a tool server's tool on its calls. ACP gives a call
+/// only a title, so each agent's own way is read; an agent a person added
+/// is taken to use any of the ways seen, each of which names the server.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToolNaming {
+    /// Any of the ways below.
+    #[default]
+    Any,
+    /// `mcp_<server>_<tool>` in the call's `name`, and `Run <that>` as its
+    /// title (Antigravity, `agy-elicitation`).
+    RunMcp,
+    /// `<server>_<tool>` as the call's title (OpenCode,
+    /// `opencode-elicitation`).
+    Underscore,
+    /// `<server>__<tool>`, as the `tool_name` of the `use_tool` call that
+    /// runs it and then as the call's title (Grok, `grok-elicitation`).
+    DoubleUnderscore,
+}
+
+impl ToolNaming {
+    /// The tool of amux's own server that a call by this name runs, if it
+    /// runs one.
+    fn amux_tool(self, name: &str) -> Option<&'static str> {
+        let server = AMUX_TOOL_SERVER;
+        let forms: &[fn(&str, &str, &str) -> bool] = match self {
+            Self::Any => &[run_mcp, underscore, double_underscore],
+            Self::RunMcp => &[run_mcp],
+            Self::Underscore => &[underscore],
+            Self::DoubleUnderscore => &[double_underscore],
+        };
+        AMUX_TOOLS_UNASKED
+            .iter()
+            .copied()
+            .find(|tool| forms.iter().any(|form| form(name, server, tool)))
+    }
+}
+
+fn run_mcp(name: &str, server: &str, tool: &str) -> bool {
+    let name = name.strip_prefix("Run ").unwrap_or(name);
+    name == format!("mcp_{server}_{tool}")
+}
+
+fn underscore(name: &str, server: &str, tool: &str) -> bool {
+    name == format!("{server}_{tool}")
+}
+
+fn double_underscore(name: &str, server: &str, tool: &str) -> bool {
+    name == format!("{server}__{tool}")
+}
+
+/// amux's own tools that run without asking. `attach` asks, as it does in
+/// Claude: it copies any file the agent names into the agent's blob folder,
+/// which the agent then reads unasked, so a read the agent's own settings
+/// would ask about goes through them first.
+const AMUX_TOOLS_UNASKED: [&str; 6] = [
+    wire::AGENTS_TOOL,
+    wire::HOSTS_TOOL,
+    wire::SEND_TOOL,
+    wire::SPAWN_TOOL,
+    wire::STOP_TOOL,
+    wire::STATUS_TOOL,
+];
 
 /// The quirks of the agent with this id.
 pub fn quirks(agent: &str) -> Quirks {
     match agent {
         "antigravity" => Quirks {
             steers: true,
+            tool_naming: ToolNaming::RunMcp,
             ..Quirks::default()
         },
         "grok" => Quirks {
             usage_in_answer_meta: true,
             signed_in_method: Some("cached_token"),
+            offers_in_initialize: true,
+            tool_naming: ToolNaming::DoubleUnderscore,
             ..Quirks::default()
         },
-        "opencode" => Quirks::default(),
+        "opencode" => Quirks {
+            tool_naming: ToolNaming::Underscore,
+            ..Quirks::default()
+        },
         _ => Quirks::default(),
     }
 }
@@ -184,6 +263,44 @@ impl Reopens {
                 || session.is_some_and(|session| session.load.is_some()),
         }
     }
+}
+
+/// What a prompt may carry beyond text, as the agent last said at
+/// `initialize`. An agent's answer can change with its version (Grok took
+/// no images at 1.0.50 and takes them at 1.0.89, `grok-image`), so it is
+/// read again from every process.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Takes {
+    images: bool,
+}
+
+impl Takes {
+    fn of(init: &InitializeResponse) -> Self {
+        let prompt = init
+            .agent_capabilities
+            .as_ref()
+            .and_then(|caps| caps.prompt_capabilities.as_ref());
+        Self {
+            images: prompt.is_some_and(|prompt| prompt.image == Some(true)),
+        }
+    }
+}
+
+/// A line an ACP agent wrote on stderr, as the agent process hands it on.
+#[derive(Serialize, Deserialize)]
+struct Stderr {
+    stderr: String,
+}
+
+/// The fact the agent process gives the interpreter for a line the agent
+/// wrote on stderr. Agents write there freely (Grok an error for each remote
+/// tool server it cannot reach, at every start), so the line is logged and
+/// never drawn or taken as a failure.
+pub fn stderr_fact(line: &str) -> Vec<u8> {
+    serde_json::to_vec(&Stderr {
+        stderr: line.to_owned(),
+    })
+    .expect("a string serializes")
 }
 
 /// The settings amux can change, by the category ACP gives their option.
@@ -349,6 +466,9 @@ pub struct State {
     /// What the agent last said at `initialize` about reopening sessions;
     /// None before any `initialize` answered.
     reopens: Option<Reopens>,
+    /// What its prompts may carry, from the same answer.
+    #[serde(default)]
+    takes: Option<Takes>,
     /// This process's session answer came. Until it does, what the agent
     /// says about the conversation is a replay of a loaded session, which
     /// the chat already holds; what it says about the session's state
@@ -512,6 +632,7 @@ impl State {
             incarnation: spec.incarnation,
             session_id: None,
             reopens: None,
+            takes: None,
             opened: false,
             choices: Vec::new(),
             wanted,
@@ -1150,7 +1271,9 @@ impl State {
         };
         match arm {
             acp_input::Of::Prompt(prompt) => {
-                if self.shared.refuse_unreadable(emit, &id, &prompt) {
+                if self.shared.refuse_unreadable(emit, &id, &prompt)
+                    || self.refuse_untaken(emit, &id, &prompt)
+                {
                     return;
                 }
                 if let Some(entry) =
@@ -1204,6 +1327,30 @@ impl State {
             acp_input::Of::Mode(set) => self.setting(emit, &id, Category::Mode, Some(set.value)),
             acp_input::Of::Answer(answer) => self.answer(emit, &id, answer),
         }
+    }
+
+    /// Refuses a prompt carrying what the agent said its prompts do not
+    /// take: an image, for an agent without image support. Until the agent
+    /// has said, the prompt waits, and an image it turns out not to take
+    /// reaches it as the element naming the file.
+    fn refuse_untaken(&mut self, emit: &mut Emit, id: &[u8], prompt: &wire::PromptInput) -> bool {
+        let images = prompt
+            .attachments
+            .iter()
+            .any(|attachment| matches!(attachment.of, Some(wire::attachment::Of::Image(_))));
+        if !images || self.takes.is_none_or(|takes| takes.images) {
+            return false;
+        }
+        let name = built_in(&self.agent).map_or("this agent", |agent| agent.name);
+        self.shared.refuse(
+            emit,
+            id,
+            wire::Rejected {
+                refusal: Refusal::Unsupported as i32,
+                detail: Some(format!("{name} does not take images")),
+            },
+        );
+        true
     }
 
     /// A person's pick of a setting: sent now when the session is open,
@@ -1511,7 +1658,14 @@ impl Interpreter for Acp {
     }
 
     fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
-        crate::shape::acp_fact(fact)
+        match fact.channel {
+            // A stderr line is the agent's own words: none of it is kept.
+            crate::Channel::Agent => crate::shape::FactShape {
+                variant: "stderr".into(),
+                ..Default::default()
+            },
+            _ => crate::shape::acp_fact(fact),
+        }
     }
 
     fn input_shape(input: &Input) -> crate::shape::InputShape {

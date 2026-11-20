@@ -5425,6 +5425,62 @@ impl ::prost::Name for AcpAnswer {
         "type.googleapis.com/amux.v1.AcpAnswer".into()
     }
 }
+/// What `amux internal catalogue <agent>` read in an ACP agent's `initialize`
+/// answer, beyond its catalogue. The helper opens no session, so asking
+/// leaves no conversation in the agent's history.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcpOffer {
+    /// The agent's own name for itself; empty where it gives none (Grok).
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// How a later process reopens one of its conversations.
+    #[prost(enumeration = "AcpReopen", tag = "2")]
+    pub reopen: i32,
+    /// Whether a prompt may carry images, and files' contents embedded in it.
+    #[prost(bool, tag = "3")]
+    pub images: bool,
+    #[prost(bool, tag = "4")]
+    pub embedded_context: bool,
+    /// The ways the agent says it can be signed in to, as it lists them.
+    #[prost(message, repeated, tag = "5")]
+    pub sign_in_methods: ::prost::alloc::vec::Vec<AcpSignInMethod>,
+    /// Signed in or out where `initialize` alone shows it (Grok); unspecified
+    /// where only opening a session would tell.
+    #[prost(enumeration = "SignInState", tag = "6")]
+    pub sign_in: i32,
+}
+impl ::prost::Name for AcpOffer {
+    const NAME: &'static str = "AcpOffer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AcpOffer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AcpOffer".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AcpSignInMethod {
+    /// The id `authenticate` names it by.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    /// What a person is told to do, such as "Run `opencode auth login` in the
+    /// terminal"; empty where the agent says nothing.
+    #[prost(string, tag = "3")]
+    pub description: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AcpSignInMethod {
+    const NAME: &'static str = "AcpSignInMethod";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AcpSignInMethod".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AcpSignInMethod".into()
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum AcpToolKind {
@@ -5585,6 +5641,42 @@ impl AcpPermissionKind {
             "ACP_PERMISSION_KIND_ALLOW_ALWAYS" => Some(Self::AllowAlways),
             "ACP_PERMISSION_KIND_REJECT_ONCE" => Some(Self::RejectOnce),
             "ACP_PERMISSION_KIND_REJECT_ALWAYS" => Some(Self::RejectAlways),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AcpReopen {
+    Unspecified = 0,
+    /// `session/resume`, which replays nothing.
+    Resume = 1,
+    /// `session/load`, which replays the conversation first.
+    Load = 2,
+    /// Neither: a conversation ends with the process that had it, so the
+    /// agent never suspends and is never resumed.
+    None = 3,
+}
+impl AcpReopen {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ACP_REOPEN_UNSPECIFIED",
+            Self::Resume => "ACP_REOPEN_RESUME",
+            Self::Load => "ACP_REOPEN_LOAD",
+            Self::None => "ACP_REOPEN_NONE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ACP_REOPEN_UNSPECIFIED" => Some(Self::Unspecified),
+            "ACP_REOPEN_RESUME" => Some(Self::Resume),
+            "ACP_REOPEN_LOAD" => Some(Self::Load),
+            "ACP_REOPEN_NONE" => Some(Self::None),
             _ => None,
         }
     }
@@ -15144,11 +15236,16 @@ pub struct ProviderOffer {
     pub catalogue: ::core::option::Option<Catalogue>,
     #[prost(bool, tag = "2")]
     pub signed_in: bool,
-    /// What `<provider> --version` printed, as printed.
+    /// What `<provider> --version` printed, as printed; for an ACP agent, the
+    /// version its `initialize` answer names, empty where it names none.
     #[prost(string, tag = "3")]
     pub provider_version: ::prost::alloc::string::String,
     #[prost(int64, tag = "4")]
     pub asked_at_ms: i64,
+    /// What an ACP agent's `initialize` said beyond its catalogue; absent for
+    /// Claude and Codex.
+    #[prost(message, optional, tag = "5")]
+    pub acp: ::core::option::Option<AcpOffer>,
 }
 impl ::prost::Name for ProviderOffer {
     const NAME: &'static str = "ProviderOffer";

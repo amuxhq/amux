@@ -8,6 +8,7 @@ publish = false
 autotests = false
 
 [dependencies]
+acp-protocol = { workspace = true }
 log-file = { workspace = true }
 agent-core = { workspace = true }
 agent-dir = { workspace = true }

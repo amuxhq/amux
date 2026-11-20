@@ -2,7 +2,8 @@
 //!
 //! It takes `<dir>/lock` for its lifetime, reads the newest `spec.<n>`,
 //! listens on `ctl.sock` and `private/agent.sock` (and `pty.sock` and
-//! `private/hooks.sock` for the kinds that have them), starts the provider
+//! `private/hooks.sock` for the kinds that have them; an ACP agent has
+//! neither), starts the provider
 //! child and runs the kind's interpreter, writing every step to `journal/`
 //! and raw terminal bytes to `pty/`. The daemon dials `ctl.sock`, gets a
 //! Hello and then a Nudge whenever the journal grows, and sends inputs and
@@ -16,6 +17,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod acp;
 pub mod attach;
 pub mod catalogue;
 pub mod claude;
@@ -42,6 +44,7 @@ pub use agent_dir::{
     Clock, ManualClock, SystemClock, clock, ctl, local_socket, read_frame, read_message,
     write_frame, write_message,
 };
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -64,8 +67,6 @@ pub enum AgentError {
     NoSpec(PathBuf),
     #[error("agents of kind {0} are unknown")]
     UnknownKind(i32),
-    #[error("ACP agents are not runnable yet")]
-    NotRunnable,
     #[error("reading the agent directory: {0}")]
     Dir(std::io::Error),
     #[error("listening: {0}")]
@@ -104,9 +105,7 @@ pub async fn run_cutting_segments_at(
         Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock, segment_bytes).await,
         Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock, segment_bytes).await,
         Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock, segment_bytes).await,
-        // The interpreter exists; the process host that runs an ACP agent's
-        // program does not yet.
-        Ok(wire::Kind::Acp) => Err(AgentError::NotRunnable),
+        Ok(wire::Kind::Acp) => host::run::<Acp>(dir, spec, clock, segment_bytes).await,
         Ok(wire::Kind::Unspecified) | Err(_) => Err(AgentError::UnknownKind(spec.kind)),
     };
     trimming.abort();

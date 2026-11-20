@@ -244,3 +244,45 @@ message AcpAnswer {
     ReplyInstead reply = 5;
   }
 }
+
+// ---------------------------------------------------------------------------
+// The host's copy
+// ---------------------------------------------------------------------------
+
+// What `amux internal catalogue <agent>` read in an ACP agent's `initialize`
+// answer, beyond its catalogue. The helper opens no session, so asking
+// leaves no conversation in the agent's history.
+message AcpOffer {
+  // The agent's own name for itself; empty where it gives none (Grok).
+  string name = 1;
+  // How a later process reopens one of its conversations.
+  AcpReopen reopen = 2;
+  // Whether a prompt may carry images, and files' contents embedded in it.
+  bool images = 3;
+  bool embedded_context = 4;
+  // The ways the agent says it can be signed in to, as it lists them.
+  repeated AcpSignInMethod sign_in_methods = 5;
+  // Signed in or out where `initialize` alone shows it (Grok); unspecified
+  // where only opening a session would tell.
+  SignInState sign_in = 6;
+}
+
+enum AcpReopen {
+  ACP_REOPEN_UNSPECIFIED = 0;
+  // `session/resume`, which replays nothing.
+  ACP_REOPEN_RESUME = 1;
+  // `session/load`, which replays the conversation first.
+  ACP_REOPEN_LOAD = 2;
+  // Neither: a conversation ends with the process that had it, so the
+  // agent never suspends and is never resumed.
+  ACP_REOPEN_NONE = 3;
+}
+
+message AcpSignInMethod {
+  // The id `authenticate` names it by.
+  string id = 1;
+  string name = 2;
+  // What a person is told to do, such as "Run `opencode auth login` in the
+  // terminal"; empty where the agent says nothing.
+  string description = 3;
+}

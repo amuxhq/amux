@@ -1,8 +1,8 @@
 //! What the agent writes: answers, notifications and requests.
 
 use acp_protocol::agent::{
-    AuthState, InitializeResponse, NewSessionResponse, PromptResponse, RequestPermissionRequest,
-    SessionSetup, SetSessionConfigOptionResponse, StopReason,
+    AuthState, InitializeResponse, NewSessionResponse, PermissionOptionKind, PromptResponse,
+    RequestPermissionRequest, SessionSetup, SetSessionConfigOptionResponse, StopReason,
 };
 use acp_protocol::elicitation::CreateElicitationRequest;
 use acp_protocol::session::SessionConfigOption;
@@ -40,6 +40,13 @@ struct XaiUpdate {
     tokens_before: Option<u64>,
     #[serde(default)]
     tokens_after: Option<u64>,
+}
+
+/// The input of Grok's `use_tool` call, which runs a tool server's tool
+/// by its name (`grok-elicitation`).
+#[derive(Deserialize)]
+struct UseTool {
+    tool_name: String,
 }
 
 /// Grok's turn tokens, in its prompt answer's `_meta` (`grok-prompt`).
@@ -121,6 +128,11 @@ fn signed(state: wire::SignInState) -> wire::SignIn {
 
 impl State {
     pub(super) fn fact(&mut self, emit: &mut Emit, fact: Fact) {
+        if fact.channel == Channel::Agent
+            && let Ok(super::Stderr { stderr }) = serde_json::from_slice(&fact.payload)
+        {
+            return self.log(emit, format!("{} on stderr: {stderr}", self.agent));
+        }
         if fact.channel != Channel::Rpc {
             return self.unrecognized(
                 emit,
@@ -587,7 +599,33 @@ impl State {
     fn permission(&mut self, emit: &mut Emit, id: &RequestId, request: RequestPermissionRequest) {
         self.close_stream(emit);
         let call = request.tool_call.tool_call_id.clone();
+        let amux_tool = self.amux_tool(&request.tool_call);
         self.tool_update(emit, &request.tool_call);
+        if amux_tool {
+            // amux's own tools never ask, on any kind: the call is allowed
+            // once, which a new process allows again, rather than always,
+            // which would be a grant the session holds.
+            let allow = [
+                PermissionOptionKind::AllowOnce,
+                PermissionOptionKind::AllowAlways,
+            ]
+            .iter()
+            .find_map(|kind| request.options.iter().find(|option| &option.kind == kind));
+            if let Some(allow) = allow {
+                let response = acp_protocol::ClientResponse::RequestPermission(
+                    acp_protocol::client::RequestPermissionResponse::selected(&allow.option_id),
+                );
+                self.write(
+                    emit,
+                    &acp_protocol::ClientMessage::response(id.clone(), response),
+                );
+                return self.decide(
+                    emit,
+                    &super::tool_key(&call),
+                    wire::DecisionOutcome::Allowed,
+                );
+            }
+        }
         let tool = self.tools.get(&call).cloned().unwrap_or_default();
         let ask = AcpAsk {
             key: self.ask_for(id),
@@ -607,6 +645,33 @@ impl State {
             })),
         };
         self.shared.open_ask(ask);
+    }
+
+    /// Whether a call is to one of amux's own tools that never ask, by the
+    /// names the agent gives it: its title so far, and the title, name and
+    /// input the permission request carries. OpenCode titles a call by its
+    /// tool and its permission request by what it does (`opencode-allow`),
+    /// so the call's earlier title counts too.
+    fn amux_tool(&self, call: &ToolCallUpdate) -> bool {
+        let naming = self.quirks().tool_naming;
+        let tracked = self.tools.get(&call.tool_call_id);
+        let used: Option<UseTool> = tracked
+            .and_then(|tool| serde_json::from_slice(&tool.input_json).ok())
+            .or_else(|| {
+                call.raw_input
+                    .clone()
+                    .and_then(|input| serde_json::from_value(input).ok())
+            });
+        let names = [
+            tracked.map(|tool| tool.title.clone()),
+            call.title.clone().flatten(),
+            call.name.clone().flatten(),
+            used.map(|used| used.tool_name),
+        ];
+        names
+            .iter()
+            .flatten()
+            .any(|name| naming.amux_tool(name).is_some())
     }
 
     fn work_ask(&mut self, emit: &mut Emit, id: &RequestId, body: acp_ask::Body) {
@@ -730,10 +795,25 @@ impl State {
                 });
             }
         };
+        // The agent process opens no session on an answer it cannot read
+        // either, so the agent would wait for good.
         let Ok(init) = init else {
-            return self.log(emit, "an initialize answer amux cannot read".to_owned());
+            return emit.effect(Effect::Exit {
+                cause: format!(
+                    "{} answered initialize in a way amux cannot read",
+                    self.agent
+                ),
+            });
         };
         self.reopens = Some(super::Reopens::of(&init));
+        self.takes = Some(super::Takes::of(&init));
+        // A conversation this process cannot reopen ends here; the agent
+        // process sends no session request for it.
+        if super::opening(&init, self.session_id.as_deref()) == super::Opening::Unresumable {
+            return emit.effect(Effect::Exit {
+                cause: super::UNRESUMABLE.to_owned(),
+            });
+        }
         if let Some(method) = self.quirks().signed_in_method {
             let present = init
                 .auth_methods

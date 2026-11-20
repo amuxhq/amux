@@ -152,6 +152,9 @@ final class StillChat: ChatSurface {
     func closeReviewPage() {}
     var reviewChip: ReviewChip?
     func discardReviewDrafts() { reviewChip = nil }
+    /// The round a sent review in the story's chat opens.
+    var round: ReviewPage?
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? { round }
 }
 
 /// The agent's review page holding still, as the runtime would hand it:

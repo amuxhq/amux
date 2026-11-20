@@ -611,7 +611,7 @@ struct GridLine: View {
 }
 
 /// The person's prompt, in a bubble on the right. A review sent with it
-/// goes under the bubble as a chip, which shows what the agent read.
+/// goes under the bubble as a chip, which opens the round it closed.
 struct PromptBubble: View {
     let segments: [Segment]
     let steered: Bool
@@ -632,7 +632,7 @@ struct PromptBubble: View {
                         .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.well))
                 }
                 ForEach(Array(reviews.enumerated()), id: \.offset) { _, review in
-                    SentReviewChip(comments: review.comments, text: review.text)
+                    SentReviewChip(review: review)
                 }
                 if steered {
                     Text("steered").font(.ui(.caption)).foregroundStyle(Palette.textTertiary)
@@ -641,35 +641,42 @@ struct PromptBubble: View {
         }
         .padding(.top, 6)
     }
-}
 
-extension PromptBubble {
-    /// The reviews sent with the prompt, each its comment count and the
-    /// text the agent read.
-    static func reviews(_ segments: [Segment]) -> [(comments: UInt32, text: String)] {
+    /// The reviews sent with the prompt.
+    static func reviews(_ segments: [Segment]) -> [SentReviewChip.Sent] {
         segments.compactMap(review)
     }
 
-    static func review(_ segment: Segment) -> (comments: UInt32, text: String)? {
-        if case .attachment(.sentReview(let comments, _, let text)) = segment { return (comments, text) }
+    static func review(_ segment: Segment) -> SentReviewChip.Sent? {
+        if case .attachment(.sentReview(let comments, let sent, let text)) = segment {
+            return SentReviewChip.Sent(comments: comments, sent: sent, text: text)
+        }
         return nil
     }
 }
 
-/// A review sent into the chat: "Review · 3 comments", opening the text the
-/// agent read, which says each comment with the code it was written on.
-private struct SentReviewChip: View {
-    let comments: UInt32
-    let text: String
-    @State private var showing = false
+/// A review sent into the chat: "Review · 3 comments", opening the round it
+/// closed, read from the agent's host.
+struct SentReviewChip: View {
+    struct Sent: Identifiable {
+        let comments: UInt32
+        let sent: SentReviewRef
+        /// What the agent read, shown once the host holds none of the round.
+        let text: String
+        var id: String { sent.snapshot }
+    }
+
+    let review: Sent
+    @Environment(\.reviewRounds) private var rounds
+    @State private var opened: Sent?
 
     var body: some View {
         Button {
-            showing.toggle()
+            opened = review
         } label: {
             HStack(spacing: 5) {
                 Icon("message-square-text", size: 12).foregroundStyle(Palette.textSecondary)
-                Text(ChatWords.reviewChip(ReviewChip(comments: comments, moved: false))).lineLimit(1)
+                Text(ChatWords.reviewChip(ReviewChip(comments: review.comments, moved: false))).lineLimit(1)
             }
             .font(.ui(.meta))
             .padding(.horizontal, 8)
@@ -678,17 +685,11 @@ private struct SentReviewChip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Show what was sent")
-        .popover(isPresented: $showing, arrowEdge: .bottom) {
-            ScrollView {
-                Text(text)
-                    .font(.mono(.small))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-            }
-            .frame(width: 520)
-            .frame(maxHeight: 460)
+        .help("Show the round this review sent")
+        .sheet(item: $opened) { review in
+            ReviewRoundSheet(
+                round: review.sent.round, text: review.text, read: { await rounds.read(review.sent) },
+                openReview: rounds.openReview, close: { opened = nil })
         }
     }
 }

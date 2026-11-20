@@ -867,6 +867,32 @@ public enum Stories {
         header: header(
             view: .sinceLast, files: 1, added: 1, removed: 1, drafts: 1, sent: 2, rounds: 1, sinceFiles: 1))
 
+    /// The first round as its chip in the chat opens it: the two comments it
+    /// sent, each with the code it was written on.
+    private static let sentRound = ReviewPage(
+        banners: [],
+        rows: [
+            fileHead(test, added: 0, removed: 0, comments: 2),
+            comment(
+                "sent-dial", test, "Name the host in the dial, so a failure says which one it was.",
+                .sent(round: 1), .lines(start: 39, end: 39), scope: ["async fn reconnect_after_cut"],
+                snippet: [
+                    line(test, .context, "async fn reconnect_after_cut() -> Result<()> {", old: 37, new: 37),
+                    line(test, .context, "    let relay = Relay::start().await;", old: 38, new: 38),
+                    line(test, .context, "    let link = relay.dial(&host).await?;", old: 39, new: 39),
+                ]),
+            comment(
+                "sent-settled", test,
+                "Is there a timeout on settled()? A link that never settles would hang the test.",
+                .sent(round: 1), .lines(start: 42, end: 42), scope: ["async fn reconnect_after_cut"],
+                snippet: [
+                    line(test, .added, "    // a slow runner otherwise races the first handshake.", new: 41),
+                    line(test, .added, "    link.settled().await;", new: 42),
+                ]),
+        ],
+        toFetch: [], opening: false, empty: nil,
+        header: header(view: .all, files: 0, added: 0, removed: 0, drafts: 0, sent: 2, allFiles: 0))
+
     /// A review with nothing changed and no comments.
     private static let nothingToReview = ReviewPage(
         banners: [], rows: [], toFetch: [], opening: false, empty: .nothing,
@@ -1103,9 +1129,13 @@ public enum Stories {
             StillReviewPage(page: firstLook(banners: [.changedSinceYouStarted]))
         },
         reviewStory("review.empty") { StillReviewPage(page: nothingToReview) },
-        reviewStory("review.not-offered") {
-            StillReviewPage(
-                page: ReviewPage(banners: [.notOffered], rows: [], toFetch: [], opening: false, empty: nil, header: nil))
+        // A host with no reviews on the first look keeps the review over a
+        // patch; the page says so when the host stops offering them under
+        // a review already read, which stays up as it was.
+        reviewStory("review.not-offered") { StillReviewPage(page: firstLook(banners: [.notOffered])) },
+        Story("review.round", window: .sheet) {
+            ReviewRoundSheet(
+                round: 1, text: sentText, page: sentRound, read: { sentRound }, openReview: {}, close: {})
         },
         Story("review.no-changes") {
             MainStory(

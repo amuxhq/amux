@@ -164,6 +164,7 @@ final class MacChat: ChatSurface {
     func closeReviewPage() { model.closeReviewPage() }
     var reviewChip: ReviewChip? { model.reviewChip }
     func discardReviewDrafts() { model.discardReviewDrafts() }
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? { await model.reviewRound(sent) }
 
     // MARK: Attaching and settings
 

@@ -68,6 +68,9 @@ private struct Feed: View {
                 }
                 ActivityLine(chat: chat)
             }
+            .environment(
+                \.reviewRounds,
+                ReviewRounds(read: { [chat] in await chat.reviewRound($0) }, openReview: openChanges))
             .frame(maxWidth: Metrics.reading)
             .padding(.horizontal, Metrics.gutter)
             .padding(.top, 24)
@@ -211,6 +214,15 @@ extension ActivityKind {
 extension EnvironmentValues {
     /// The activity, for the one row it names as at work.
     @Entry var liveStep: Activity?
+    /// How a review sent into the chat opens its round.
+    @Entry var reviewRounds = ReviewRounds()
+}
+
+/// What a sent review's chip opens: its round, read from the agent's host,
+/// and from there the review as it is now.
+struct ReviewRounds {
+    var read: @MainActor (SentReviewRef) async -> ReviewPage? = { _ in nil }
+    var openReview: @MainActor () -> Void = {}
 }
 
 /// The time a step has been at work, counting.

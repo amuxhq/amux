@@ -8,8 +8,10 @@ import SwiftUI
 /// files, then each file under a sticky head with its hunks, the lines
 /// between them that more context loads, and the comments where they sit.
 ///
-/// A click on a line picks it and opens a comment on it; Shift-click takes
-/// in more. From the keyboard, the arrow keys move a line at a time and
+/// A click on a line picks it and opens a comment on it; dragging across
+/// lines, or their numbers, picks them all, within the file it began in,
+/// with the list running under a pointer held at its top or bottom edge;
+/// Shift-click takes in more. From the keyboard, the arrow keys move a line at a time and
 /// Shift with them takes in more, Return opens a comment on what is
 /// picked, and Escape steps back out. Every draft written here rides on
 /// the chat's next message under the composer's chip.
@@ -18,6 +20,11 @@ struct ReviewPagePane: View {
     /// The row the arrow keys move from, by key, so a page that moves
     /// under the reader keeps it.
     @State private var head: String?
+    /// Where the lines are and where a drag picking them is; read on every
+    /// movement and scrolled frame, so it is not observed.
+    @State private var drawing = Drawing()
+    /// Moved while a drag runs the list under a pointer at an edge.
+    @State private var position = ScrollPosition()
     @State private var discarding = false
     @State private var startingOver = false
     @FocusState private var focused: Bool
@@ -170,6 +177,15 @@ struct ReviewPagePane: View {
                     }
                 }
                 .padding(.bottom, 12)
+                .coordinateSpace(.named(Self.space))
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+                        .onChanged(drag)
+                        .onEnded { _ in finishDrag() })
+            }
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: ScrollGeometry.self, of: { $0 }) { _, geometry in
+                drawing.scroll = geometry
             }
             .focusable()
             .focused($focused)
@@ -210,7 +226,9 @@ struct ReviewPagePane: View {
         case .line(let line):
             CodeLineRow(line: line, selected: isSelected(item.index))
                 .id(row.key)
-                .onTapGesture { pick(item.index, key: row.key) }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frame in
+                    drawing.frames[row.key] = frame
+                }
         case .gap(let gap):
             GapRow(gap: gap, more: { review.moreContext($0) })
         case .loading:
@@ -237,16 +255,84 @@ struct ReviewPagePane: View {
         review.selected?.contains(row) ?? false
     }
 
-    /// A click picks a line and opens a comment on it; Shift-click takes in
-    /// the lines up to it.
-    private func pick(_ row: Int, key: String) {
-        if NSEvent.modifierFlags.contains(.shift), review.selected != nil {
-            review.extend(to: row)
-        } else {
-            review.select(row)
+    /// The lines' coordinate space: the list's content, scrolled with it.
+    private static let space = "review.lines"
+
+    /// The pointer pressed or moved, from where it went down: a press on a
+    /// line picks it, or with Shift takes in the lines up to it; moving
+    /// then stretches the pick through the lines of that file.
+    private func drag(_ value: DragGesture.Value) {
+        let rows = review.page.rows
+        if drawing.file == nil {
+            guard !drawing.missed else { return }
+            drawing.places = Dictionary(
+                rows.enumerated().map { ($1.key, $0) }, uniquingKeysWith: { first, _ in first })
+            guard let index = drawing.line(at: value.startLocation.y, within: nil) else {
+                // Pressed on something else: a head, a gap, a comment.
+                drawing.missed = true
+                return
+            }
+            drawing.file = FileSection.range(of: index, in: rows)
+            drawing.reached = index
+            if NSEvent.modifierFlags.contains(.shift), review.selected != nil {
+                review.extend(to: index)
+            } else {
+                review.select(index)
+            }
+            head = rows[index].key
         }
-        head = key
-        review.writing = true
+        reach(value.location.y)
+        drawing.pointer = value.location.y - (drawing.scroll?.contentOffset.y ?? 0)
+        if drawing.running == nil, drawing.edgeSpeed() != 0 { runAtEdge() }
+    }
+
+    /// The pointer at a height in the list stretches the pick to the line
+    /// under it, holding at the file's first or last line.
+    private func reach(_ y: CGFloat) {
+        guard let file = drawing.file, let index = drawing.line(at: y, within: file), index != drawing.reached,
+            review.page.rows.indices.contains(index)
+        else { return }
+        drawing.reached = index
+        review.extend(to: index)
+        head = review.page.rows[index].key
+    }
+
+    /// The pointer let go: what was picked gets its comment field, as a
+    /// click's does.
+    private func finishDrag() {
+        let picked = drawing.file != nil
+        drawing.end()
+        if picked { review.writing = true }
+    }
+
+    /// Runs the list under a pointer held at an edge, a frame at a time,
+    /// stretching the pick to the line that comes under it, until the
+    /// pointer leaves the edge, the list ends or the button is let go.
+    private func runAtEdge() {
+        drawing.running = Task { @MainActor in
+            // The offset is kept here rather than read back: the list says
+            // where it went a frame after it is told.
+            var at = drawing.scroll?.contentOffset.y ?? 0
+            var last = ContinuousClock.now
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(16))
+                let speed = drawing.edgeSpeed()
+                guard speed != 0, let pointer = drawing.pointer, let scroll = drawing.scroll else { break }
+                let now = ContinuousClock.now
+                let elapsed = (now - last).components
+                last = now
+                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) * 1e-18
+                let lowest = -scroll.contentInsets.top
+                let highest = max(
+                    lowest, scroll.contentSize.height - scroll.containerSize.height + scroll.contentInsets.bottom)
+                let offset = min(highest, max(lowest, at + speed * seconds))
+                guard offset != at else { break }
+                at = offset
+                position.scrollTo(y: offset + scroll.contentInsets.top)
+                reach(pointer + offset)
+            }
+            drawing.running = nil
+        }
     }
 
     /// Moves the selection a row up or down from where the keys last left
@@ -292,7 +378,7 @@ struct ReviewPagePane: View {
                 save: { review.comment(review.words) },
                 cancel: { review.writing = false })
         } else {
-            Text("A comment goes on lines of one file.")
+            Text(ChatWords.reviewOneFile)
                 .font(.ui(.meta))
                 .foregroundStyle(Palette.textTertiary)
                 .padding(.horizontal, 12)
@@ -303,7 +389,7 @@ struct ReviewPagePane: View {
 
 /// The page's rows a file at a time: its head, which stays at the top while
 /// its rows scroll under it, then its rows.
-private struct FileSection: Identifiable {
+struct FileSection: Identifiable {
     struct Item: Identifiable {
         let index: Int
         let id: String
@@ -313,6 +399,19 @@ private struct FileSection: Identifiable {
     /// The head's index; none for rows before the first file.
     let head: Int?
     var rows: [Item]
+
+    /// The rows of the file a row is in: from its head to the next.
+    static func range(of row: Int, in rows: [ReviewRow]) -> Range<Int> {
+        let isHead = { (at: Int) -> Bool in
+            if case .file = rows[at].of { return true }
+            return false
+        }
+        var start = row
+        while start > 0, !isHead(start) { start -= 1 }
+        var end = row + 1
+        while end < rows.count, !isHead(end) { end += 1 }
+        return start..<end
+    }
 
     static func of(_ rows: [ReviewRow]) -> [FileSection] {
         var sections: [FileSection] = []
@@ -325,6 +424,75 @@ private struct FileSection: Identifiable {
             }
         }
         return sections
+    }
+}
+
+/// What a drag picking lines needs on every movement and every scrolled
+/// frame. Held by reference and not observed, so neither redraws the page.
+@MainActor
+final class Drawing {
+    /// Each drawn line's frame in the list, by its row's key.
+    var frames: [String: CGRect] = [:]
+    /// Each row's index in the page, by key, as the drag began.
+    var places: [String: Int] = [:]
+    var scroll: ScrollGeometry?
+    /// The pointer's height in the list's visible frame, while it drags.
+    var pointer: CGFloat?
+    /// The rows of the file the pick began in.
+    var file: Range<Int>?
+    /// The line the pick reaches now.
+    var reached: Int?
+    /// The press was not on a line, so this drag picks nothing.
+    var missed = false
+    /// The list running under a pointer held at an edge.
+    var running: Task<Void, Never>?
+
+    /// How deep the band at each edge is where the list runs.
+    static let edge: CGFloat = 36
+    /// How fast it runs with the pointer at or past the edge, in points a
+    /// second, and as the pointer enters the band.
+    static let fastest: CGFloat = 1200
+    static let slowest: CGFloat = 120
+
+    func end() {
+        running?.cancel()
+        running = nil
+        pointer = nil
+        file = nil
+        reached = nil
+        missed = false
+    }
+
+    /// The line under a height in the list. Within a file, a pointer past
+    /// the file's first or last drawn line holds at it, and one over a
+    /// comment or a hunk's band holds where it was.
+    func line(at y: CGFloat, within file: Range<Int>?) -> Int? {
+        let lines = frames.compactMap { key, frame in places[key].map { ($0, frame) } }
+            .filter { file?.contains($0.0) ?? true }
+        if let under = lines.first(where: { $0.1.minY <= y && y < $0.1.maxY }) { return under.0 }
+        guard file != nil else { return nil }
+        if let first = lines.min(by: { $0.0 < $1.0 }), y < first.1.minY { return first.0 }
+        if let last = lines.max(by: { $0.0 < $1.0 }), y >= last.1.maxY { return last.0 }
+        return nil
+    }
+
+    /// How fast the list runs under the pointer, from how far into an edge
+    /// band it is: up at the top, down at the bottom, none between.
+    func edgeSpeed() -> CGFloat {
+        guard let pointer, let scroll, file != nil else { return 0 }
+        let top = scroll.contentInsets.top
+        let bottom = scroll.containerSize.height - scroll.contentInsets.bottom
+        let into: CGFloat
+        if pointer < top + Self.edge {
+            into = -(top + Self.edge - pointer)
+        } else if pointer > bottom - Self.edge {
+            into = pointer - (bottom - Self.edge)
+        } else {
+            return 0
+        }
+        let depth = min(1, abs(into) / Self.edge)
+        let speed = Self.slowest + (Self.fastest - Self.slowest) * depth
+        return into < 0 ? -speed : speed
     }
 }
 
@@ -474,9 +642,9 @@ private struct FileHeadRow: View {
                     Text(ChatWords.reviewFlag(flag)).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
                 if !file.inChange {
-                    Text("Not in the change").foregroundStyle(Palette.textTertiary).lineLimit(1)
+                    Text(ChatWords.reviewOutsideChange).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 } else if view == .all, rounds > 0, file.changedSinceLast {
-                    Text("Changed since your last review").foregroundStyle(Palette.textTertiary).lineLimit(1)
+                    Text(ChatWords.reviewChangedSinceLast).foregroundStyle(Palette.textTertiary).lineLimit(1)
                 }
                 Spacer(minLength: 6)
                 if file.comments > 0 {
@@ -502,7 +670,7 @@ private struct FileHeadRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Comment on File", action: commentOnFile)
+            Button("Comment on the File", action: commentOnFile)
             Button(file.folded ? "Show Changes" : "Fold", action: toggle)
         }
     }
@@ -576,6 +744,8 @@ private struct GapRow: View {
 private struct CodeLineRow: View {
     let line: ReviewCodeLine
     let selected: Bool
+    /// Lines can be picked here to comment on; a round only reads.
+    var picks = true
     @State private var hovering = false
 
     var body: some View {
@@ -607,8 +777,8 @@ private struct CodeLineRow: View {
         }
         .overlay(selected ? Palette.accent.opacity(0.14) : (hovering ? Palette.hover : .clear))
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .help("Click to comment. Shift-click to select more lines.")
+        .onHover { if picks { hovering = $0 } }
+        .help(picks ? "Click or drag to comment. Shift-click to take in more lines." : "")
     }
 
     /// The code after its indent: each run in its token's colour, and the
@@ -665,12 +835,12 @@ private struct CodeLineRow: View {
 /// round sent it, where it sits when not under its lines, the code it was
 /// written on when that is not drawn above it, and its words. An outdated
 /// one is folded to a line until opened. Under the pointer it offers to
-/// edit or delete it.
+/// edit or delete it, where it can be changed.
 private struct CommentCard: View {
     let comment: ReviewCommentRow
-    let toggle: () -> Void
-    let reword: (String) -> Void
-    let delete: () -> Void
+    var toggle: () -> Void = {}
+    var reword: ((String) -> Void)?
+    var delete: (() -> Void)?
     @State private var hovering = false
     @State private var editing: String?
 
@@ -690,7 +860,7 @@ private struct CommentCard: View {
                     CommentWriter(
                         on: nil, words: Binding(get: { editing }, set: { self.editing = $0 }),
                         save: {
-                            reword(editing)
+                            reword?(editing)
                             self.editing = nil
                         },
                         cancel: { self.editing = nil }, framed: false, verb: "Save")
@@ -735,11 +905,13 @@ private struct CommentCard: View {
                 Text(comment.text).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }
             Spacer(minLength: 4)
-            if hovering, editing == nil {
+            if hovering, editing == nil, reword != nil {
                 Button { editing = comment.text } label: { Icon("pencil", size: 12) }
                     .buttonStyle(.plain)
                     .foregroundStyle(Palette.textSecondary)
                     .help("Edit")
+            }
+            if hovering, editing == nil, let delete {
                 Button(action: delete) { Icon("trash", size: 12) }
                     .buttonStyle(.plain)
                     .foregroundStyle(Palette.textSecondary)
@@ -847,4 +1019,153 @@ private struct CommentWriter: View {
     }
 
     private var blank: Bool { words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+}
+
+/// The round a review sent into the chat closed, as a sheet over the
+/// window from its chip: each comment it sent under its file, with the
+/// code it was written on as stored with it, read from the agent's host.
+/// When the host no longer holds the round, as after starting over, it
+/// shows the text the agent read. The review as it is now is one click
+/// away.
+public struct ReviewRoundSheet: View {
+    /// The round the chip expected; the host's own number once read.
+    let round: UInt32
+    /// What the agent read.
+    let text: String
+    let read: @MainActor () async -> ReviewPage?
+    let openReview: @MainActor () -> Void
+    let close: @MainActor () -> Void
+    @State private var asked: Bool
+    @State private var page: ReviewPage?
+
+    public init(
+        round: UInt32, text: String, page: ReviewPage? = nil, read: @escaping @MainActor () async -> ReviewPage?,
+        openReview: @escaping @MainActor () -> Void, close: @escaping @MainActor () -> Void
+    ) {
+        self.round = round
+        self.text = text
+        self.read = read
+        self.openReview = openReview
+        self.close = close
+        _page = State(initialValue: page)
+        _asked = State(initialValue: page != nil)
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Icon("message-square-text", size: 16).foregroundStyle(Palette.textSecondary)
+                Text(ChatWords.reviewRound(number)).font(.ui(.title, weight: .semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 52)
+            .overlay(alignment: .bottom) { Rectangle().fill(Palette.line).frame(height: 1) }
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            HStack(spacing: 8) {
+                Spacer()
+                if asked {
+                    Button(ChatWords.reviewOpenReview) {
+                        close()
+                        openReview()
+                    }
+                    .buttonStyle(PillButtonStyle())
+                    .help("Show the agent’s changes as they are now")
+                }
+                Button("Done", action: close)
+                    .buttonStyle(PillButtonStyle(prominent: true))
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+            .overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
+        }
+        .frame(width: 520, height: 560)
+        .background(Palette.content)
+        .onExitCommand(perform: close)
+        .task {
+            guard !asked else { return }
+            page = await read()
+            asked = true
+        }
+    }
+
+    /// "Round 2", as the agent's host numbered it when the message arrived.
+    private var number: UInt32 {
+        page?.rows.lazy.compactMap { row -> UInt32? in
+            if case .comment(let comment) = row.of, case .sent(let round) = comment.state { return round }
+            return nil
+        }.first ?? round
+    }
+
+    @ViewBuilder private var content: some View {
+        if !asked {
+            VStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text(ChatWords.reviewOpening).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
+            }
+        } else if let page {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(Array(page.banners.enumerated()), id: \.offset) { _, banner in
+                        BannerRow(banner: banner, act: {})
+                    }
+                    ForEach(FileSection.of(page.rows)) { section in
+                        Section {
+                            ForEach(section.rows) { item in row(page.rows[item.index]) }
+                        } header: {
+                            if let at = section.head, case .file(let file) = page.rows[at].of {
+                                HStack(spacing: 6) {
+                                    FileName(path: file.path, from: file.oldPath).layoutPriority(1)
+                                    if !file.inChange {
+                                        Text(ChatWords.reviewOutsideChange)
+                                            .foregroundStyle(Palette.textTertiary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 6)
+                                }
+                                .font(.ui(.meta))
+                                .padding(.horizontal, 12)
+                                .frame(height: 34)
+                                .background(Palette.content)
+                                .overlay(alignment: .bottom) { Rectangle().fill(Palette.line).frame(height: 1) }
+                            }
+                        }
+                    }
+                }
+                .padding(.bottom, 12)
+            }
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(ChatWords.reviewRoundGone)
+                        .font(.ui(.body))
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(text)
+                        .font(.mono(.small))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(20)
+            }
+        }
+    }
+
+    /// A round's rows are its comments under their files' heads, each with
+    /// the code stored with it; drawn as the page draws them, to read only.
+    @ViewBuilder private func row(_ row: ReviewRow) -> some View {
+        switch row.of {
+        case .comment(let comment): CommentCard(comment: comment)
+        case .line(let line): CodeLineRow(line: line, selected: false, picks: false)
+        case .hunk(let hunk): HunkHeadRow(hunk: hunk)
+        case .noLines(_, let why):
+            Text(ChatWords.reviewNoLines(why))
+                .font(.ui(.meta))
+                .foregroundStyle(Palette.textTertiary)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+        case .file, .gap, .loading: EmptyView()
+        }
+    }
 }

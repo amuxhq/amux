@@ -134,6 +134,10 @@ public protocol ChatSurface: AnyObject {
     var reviewChip: ReviewChip? { get }
     /// The chip's ✕, once the person confirmed it: the drafts are deleted.
     func discardReviewDrafts()
+    /// The round a review sent into the chat closed, read from the agent's
+    /// host apart from the page open on the chat; nil once the host holds
+    /// none of it, when the text the agent read stands in.
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage?
 }
 
 /// The agent's review page as the runtime composed it, and what the person

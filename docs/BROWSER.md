@@ -7,7 +7,8 @@ attachment.*
 The extension lets a person comment on any web page, the way a diff review
 comments on lines, and send the comments to an agent together. It is another
 amux client: it talks only to the amux on its own machine, never dials another
-host, and keeps nothing but its unsent comments.
+host, and keeps nothing but its unsent comments. A review for an agent on a
+paired host is addressed to that host, and the profile's node carries it there.
 
 The pieces:
 
@@ -88,17 +89,60 @@ and the encoded request; the bridge makes the call on that socket and streams
 the response messages back. It decodes nothing and has no per-method code. A
 browser refuses a message over 1 MB to an extension, so a response message
 larger than 512 KiB goes in parts the extension joins. Every call carries the
-surface header `browser`, which the daemon counts in its analytics.
+surface header `browser`.
+
+**Addressing a host.** A call may also name an `authority`, the host it is
+for, as every client addresses a host service: the host's id in its one
+written form (lowercase, hyphenated), which browser-core's `authority` op
+gives. Without one the call is made to the node behind the target's socket.
+With one, the bridge makes the call with that authority on the same socket,
+on a channel of its own (a channel writes its own authority over every
+request's, so the bridge keeps one per target and authority), and the router
+behind the socket decides: another host's id is carried to that host over
+the link, anything else is answered by the node. The bridge does not read
+what the authority names; text that no HTTP request could carry as one ends
+the call "invalid argument". The extension names the owning host on every act
+on an agent (creating it, storing a screenshot, sending the review) and none
+on reads of its own node (profiles, the device's identity, the fleet).
+
+**Counting.** The node reads the surface header into the caller, and a call
+it carries reaches the owner as a person on the browser at this host. So the
+browser opening is counted on the node it is attached to (`client_opened`,
+when it opens a profile's fleet), and a page review is counted once, on the
+host that owns the agent (`page_review_sent`, with the prompt counted as
+from here or from the paired host), and not on the node that carried it.
 
 **The bridge is a promise.** An installed host manifest runs it long after the
 build that wrote the manifest, for an extension at another version: its name,
 its arguments (a browser passes the extension's origin, and on Windows a
 window handle) and its framing only ever add. The command-line test in
 `crates/amux/src/main.rs` parses it. Everything the extension and amux say
-inside the framing is `amux.v1`, which only adds too. The bridge's greeting names the
-revision of the framing it speaks (`framing`, from 1), which goes up whenever
+inside the framing is `amux.v1`. The bridge's greeting names the
+revision of the framing it speaks (`framing`), which goes up whenever
 the framing adds something, so an extension can tell what an older amux
-understands without reading meaning into amux's version.
+understands without reading meaning into amux's version:
+
+| Framing | Adds |
+|---|---|
+| 1 | Calls by target, method and body; parts; cancelling. |
+| 2 | A call's optional `authority`. |
+
+An extension sends a field only to a bridge whose framing has it. An older
+bridge ignores a field it does not know, so an `authority` sent to a framing 1
+bridge would be dropped and the call made to its node; the extension holds a
+call that names one until the greeting arrives, then sends it with the
+authority or without. A frame without the field, as an extension written for
+framing 1 sends, is read as it always was.
+
+The framing is the one part of the extension's way to amux that never breaks.
+The calls inside it are `amux.v1`, deployed together with every host and app,
+which the extension cannot be: it updates through the Chrome Web Store's
+review, on the store's schedule. When the calls the extension makes move, the
+published extension stops working against the new amux until its update is
+approved; an extension built for the new calls against an older amux likewise
+gets "unimplemented". In both cases it lists the profiles and then shows no
+agents and no folders, so it has nowhere to send a review and sends nothing to
+the wrong place.
 
 **Registration.** The supervisor writes, when it starts, a host manifest into
 the `NativeMessagingHosts` folder of each Chromium browser installed (Chrome,

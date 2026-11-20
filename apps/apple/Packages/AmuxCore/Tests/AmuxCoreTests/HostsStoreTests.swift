@@ -35,6 +35,57 @@ final class HostsStoreTests: XCTestCase {
         XCTAssertTrue(hosts.isConnecting(studio))
     }
 
+    /// Coming forward, a machine the last listing read out of reach with no
+    /// failed dial is connecting at once: the next listing may not come
+    /// until its dial ends, as for a machine stopped while the app was away.
+    func testComingForwardWaitsOnTheMachinesListedLast() {
+        let hosts = HostsStore()
+        var failed = Cards.host(mini, name: "mini", reach: .offline(.plain))
+        failed.lastDialError = "connection refused"
+        let listed = [
+            Cards.host(studio, name: "studio", reach: .offline(.plain)),
+            failed,
+            Cards.host(found, name: "nova", reach: .online(.direct)),
+        ]
+        hosts.show(listed)
+        hosts.stopWaiting()
+        XCTAssertEqual(hosts.connecting, [])
+
+        hosts.cameForward()
+        XCTAssertEqual(hosts.connecting, [studio], "a failed dial is known already")
+        hosts.show(listed)
+        XCTAssertEqual(hosts.connecting, [studio], "the same listing again changes nothing")
+    }
+
+    /// A machine read linked as the app comes forward lost that link while
+    /// the app was away, though a listing may say it is linked until the
+    /// runtime hears it go: whichever comes first, the app coming forward or
+    /// the listing that says the link went, the machine is connecting after
+    /// both, and a link read after it went settles it.
+    func testALinkFromBeforeComingForwardSettlesNothing() {
+        let linked = [Cards.host(studio, name: "studio", reach: .online(.direct))]
+        let unlinked = [Cards.host(studio, name: "studio", reach: .offline(.plain))]
+
+        let first = HostsStore()
+        first.show(linked)
+        first.show(unlinked)
+        first.cameForward()
+        XCTAssertEqual(first.connecting, [studio], "the link went first")
+
+        let later = HostsStore()
+        later.show(linked)
+        later.cameForward()
+        later.show(linked)
+        XCTAssertEqual(later.connecting, [], "drawn linked while it is read so")
+        later.show(unlinked)
+        XCTAssertEqual(later.connecting, [studio], "the app came forward first")
+
+        later.show(linked)
+        XCTAssertEqual(later.connecting, [], "linked again since")
+        later.show(unlinked)
+        XCTAssertEqual(later.connecting, [], "a machine that answered and went is gone")
+    }
+
     /// A machine nothing dials at all is not connecting for ever.
     func testWaitingStopsAfterItsPatience() {
         let hosts = HostsStore()

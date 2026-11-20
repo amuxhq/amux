@@ -311,10 +311,8 @@ pub async fn add_worktree(
         std::fs::create_dir_all(parent).map_err(|error| WorktreeError::Git(error.to_string()))?;
     }
     let destination_text = destination.to_string_lossy();
-    let added = run(
-        repository,
-        None,
-        &[
+    let added = as_configured(repository)
+        .args([
             "worktree",
             "add",
             "--quiet",
@@ -322,10 +320,10 @@ pub async fn add_worktree(
             branch,
             &destination_text,
             "HEAD",
-        ],
-        None,
-    )
-    .await?;
+        ])
+        .output()
+        .await
+        .map_err(GitError::Spawn)?;
     if !added.status.success() {
         return Err(WorktreeError::Git(text(&added.stderr)));
     }
@@ -428,18 +426,10 @@ pub fn working_tree(dir: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
 /// [`remote_identity`] writes it; None outside a repository or without an
 /// origin. Blocks on git: call it off the async workers.
 pub fn origin(cwd: &Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["config", "--get", "remote.origin.url"])
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| remote_identity(&text(&output.stdout)))
+    blocking::answer(cwd, &["config", "--get", "remote.origin.url"])
+        .ok()
+        .flatten()
+        .map(|url| remote_identity(&url))
         .filter(|remote| !remote.is_empty())
 }
 
@@ -835,13 +825,19 @@ impl<'a> Scratch<'a> {
         Ok(scratch)
     }
 
-    /// The copy of the person's index alone, nothing marked in it.
-    async fn copied(cwd: &'a Path) -> Result<Self, GitError> {
+    /// A folder for an index of its own, with no index in it yet.
+    fn empty(cwd: &'a Path) -> Result<Self, GitError> {
         let mut builder = tempfile::Builder::new();
         builder.prefix("amux-git-facts-");
         #[cfg(unix)]
         builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
         let dir = builder.tempdir().map_err(GitError::Scratch)?;
+        Ok(Self { cwd, dir })
+    }
+
+    /// The copy of the person's index alone, nothing marked in it.
+    async fn copied(cwd: &'a Path) -> Result<Self, GitError> {
+        let scratch = Self::empty(cwd)?;
         let own = text(
             &checked(
                 cwd,
@@ -858,7 +854,7 @@ impl<'a> Scratch<'a> {
         match std::fs::File::open(&own) {
             Ok(mut from) => {
                 let mut to =
-                    std::fs::File::create_new(dir.path().join(INDEX)).map_err(GitError::Scratch)?;
+                    std::fs::File::create_new(scratch.index()).map_err(GitError::Scratch)?;
                 std::io::copy(&mut from, &mut to).map_err(GitError::Scratch)?;
                 let written = from
                     .metadata()
@@ -870,7 +866,7 @@ impl<'a> Scratch<'a> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(GitError::Scratch(error)),
         }
-        Ok(Self { cwd, dir })
+        Ok(scratch)
     }
 
     fn index(&self) -> std::path::PathBuf {
@@ -901,25 +897,21 @@ impl<'a> Scratch<'a> {
     /// Each file that differs between `against` and the working tree, with
     /// renames found when `renames`.
     async fn diff(&self, against: &str, renames: bool) -> Result<Vec<RawFile>, GitError> {
-        let raw = self
-            .checked(&[
-                "diff",
-                "--raw",
-                "--numstat",
-                "-z",
-                "--no-abbrev",
-                if renames {
-                    "--find-renames"
-                } else {
-                    "--no-renames"
-                },
-                "--no-ext-diff",
-                "--no-textconv",
-                against,
-                "--",
-            ])
-            .await?;
-        Ok(raw_files(&raw))
+        let mut args = vec![
+            "diff",
+            "--raw",
+            "--numstat",
+            "-z",
+            "--no-abbrev",
+            if renames {
+                "--find-renames"
+            } else {
+                "--no-renames"
+            },
+        ];
+        args.extend(DIFF_OPTIONS);
+        args.extend([against, "--"]);
+        Ok(raw_files(&self.checked(&args).await?))
     }
 }
 
@@ -1014,19 +1006,22 @@ fn raw_files(output: &[u8]) -> Vec<RawFile> {
 }
 
 /// `files` with their flags, read from the repository's top folder.
-/// With a `store`, both sides are commits, read from their objects in the
-/// repository and the store; without one, the later side is the working
-/// tree, read from its files, since an object id git shows for a file there
-/// is the index's, which may not be what the file holds.
+/// With `commits`, a store and the later commit, both sides are commits,
+/// read from their objects in the repository and the store, and the later
+/// commit's `.gitattributes` apply; without, the later side is the working
+/// tree, read from its files (an object id git shows for a file there is
+/// the index's, which may not be what the file holds), and so are its
+/// `.gitattributes`.
 async fn flagged(
     root: &Path,
-    store: Option<&objects::ObjectStore>,
+    commits: Option<(&objects::ObjectStore, &str)>,
     files: Vec<RawFile>,
 ) -> Result<Vec<ChangedFile>, GitError> {
     if files.is_empty() {
         return Ok(Vec::new());
     }
-    let attributes = attributes(root, &files).await?;
+    let store = commits.map(|(store, _)| store);
+    let attributes = attributes(root, commits, &files).await?;
     let regular = |mode: &str| mode.starts_with("100");
     let hashed =
         |id: &str| store.is_some() && !id.is_empty() && id.bytes().any(|byte| byte != b'0');
@@ -1139,9 +1134,11 @@ fn read_head(path: &Path) -> Vec<u8> {
 
 /// What `.gitattributes` says of each file's `linguist-generated` and
 /// `linguist-vendored`: Some either way when it says, None when it does
-/// not.
+/// not. Read from the working tree's, or with `commits`, a store and a
+/// commit, from the commit's.
 async fn attributes(
     cwd: &Path,
+    commits: Option<(&objects::ObjectStore, &str)>,
     files: &[RawFile],
 ) -> Result<std::collections::HashMap<String, (Option<bool>, Option<bool>)>, GitError> {
     let mut input = Vec::new();
@@ -1149,19 +1146,10 @@ async fn attributes(
         input.extend_from_slice(file.path.as_bytes());
         input.push(0);
     }
-    let output = checked_with_input(
-        cwd,
-        None,
-        &[
-            "check-attr",
-            "-z",
-            "--stdin",
-            "linguist-generated",
-            "linguist-vendored",
-        ],
-        input,
-    )
-    .await?;
+    let output = match commits {
+        None => checked_with_input(cwd, None, &ATTRIBUTES, input).await?,
+        Some((store, commit)) => attributes_at(cwd, store, commit, input).await?,
+    };
     let mut said = std::collections::HashMap::<String, (Option<bool>, Option<bool>)>::new();
     let fields: Vec<_> = output.split(|byte| *byte == 0).collect();
     for [path, attribute, value] in fields.as_chunks::<3>().0 {
@@ -1180,6 +1168,58 @@ async fn attributes(
         }
     }
     Ok(said)
+}
+
+/// `check-attr` asking for the attributes flags are read from, of the paths
+/// on its input.
+const ATTRIBUTES: [&str; 5] = [
+    "check-attr",
+    "-z",
+    "--stdin",
+    "linguist-generated",
+    "linguist-vendored",
+];
+
+/// [`ATTRIBUTES`]' answer for the paths `input` names, by the
+/// `.gitattributes` of `commit`, read with `store` beside the repository.
+/// Git reads them from a commit itself since 2.40 (`--source`); an older
+/// git is given a temporary index of the commit's tree to read them from.
+async fn attributes_at(
+    cwd: &Path,
+    store: &objects::ObjectStore,
+    commit: &str,
+    input: Vec<u8>,
+) -> Result<Vec<u8>, GitError> {
+    let source = format!("--source={commit}");
+    let mut args = vec![ATTRIBUTES[0], &source];
+    args.extend(&ATTRIBUTES[1..]);
+    let output = objects::finish(store.reading(cwd, &args), Some(input.clone())).await?;
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+    attributes_by_index(cwd, store, commit, input).await
+}
+
+/// [`attributes_at`] through a temporary index holding `commit`'s tree,
+/// read with `check-attr --cached`, for a git that cannot read a commit's
+/// attributes itself. The index lives in a folder only this user can
+/// enter, as the scratch index does, and goes when done.
+async fn attributes_by_index(
+    cwd: &Path,
+    store: &objects::ObjectStore,
+    commit: &str,
+    input: Vec<u8>,
+) -> Result<Vec<u8>, GitError> {
+    let scratch = Scratch::empty(cwd)?;
+    let index = scratch.index();
+    let mut read = store.reading(cwd, &["read-tree", commit]);
+    read.env("GIT_INDEX_FILE", &index);
+    objects::checked("read-tree", read, None).await?;
+    let mut args = vec![ATTRIBUTES[0], "--cached"];
+    args.extend(&ATTRIBUTES[1..]);
+    let mut check = store.reading(cwd, &args);
+    check.env("GIT_INDEX_FILE", &index);
+    objects::checked("check-attr", check, Some(input)).await
 }
 
 /// Git with `args` reading the snapshot store's objects too when there is
@@ -1366,21 +1406,103 @@ async fn run(
     output.map_err(GitError::Spawn)
 }
 
-/// Git with `args` in `cwd`, on the scratch `index` when given: its output
-/// and errors piped, nothing on its input, and killed if dropped.
+/// Configuration every git call here runs with, over the person's, so what
+/// git writes to the repository and what it answers are the same on every
+/// machine:
+///
+/// - Nothing is written into `.git`: no filesystem monitor (its daemon
+///   keeps a socket and a folder there), no split index (it writes shared
+///   index files there), no automatic housekeeping.
+/// - Git LFS's filters never run. A file is compared and stored as the
+///   bytes on disk; where LFS is configured as required but not installed,
+///   its filter would fail every read of a file whose cached times are
+///   stale. A snapshot works out the pointer LFS would commit instead
+///   ([`snapshot`]'s note).
+/// - A file whose times alone changed reads as unchanged, as by default.
+/// - Diff output is git's plain format, whatever the person prefers to
+///   read: `a/` and `b/` prefixes, paths from the top folder, no colour.
+///   The options that pick hunks and their order go on each diff read
+///   ([`DIFF_OPTIONS`]).
+/// - No advice on adding an embedded repository, which a snapshot does.
+const CONFIG: &[&str] = &[
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.splitIndex=false",
+    "-c",
+    "gc.auto=0",
+    "-c",
+    "maintenance.auto=false",
+    "-c",
+    "filter.lfs.process=",
+    "-c",
+    "filter.lfs.clean=",
+    "-c",
+    "filter.lfs.smudge=",
+    "-c",
+    "filter.lfs.required=false",
+    "-c",
+    "diff.autoRefreshIndex=true",
+    "-c",
+    "diff.noprefix=false",
+    "-c",
+    "diff.mnemonicPrefix=false",
+    "-c",
+    "diff.relative=false",
+    "-c",
+    "color.ui=false",
+    "-c",
+    "color.diff=false",
+    "-c",
+    "advice.addEmbeddedRepo=false",
+];
+
+/// Options on every diff whose output is read, over what the person's
+/// configuration or environment would pick: no external diff or text
+/// conversion, no colour, paths from the top folder, a submodule as the
+/// one line naming its commit (`diff.submodule=log` writes a summary with
+/// no `diff --git` header, `diff` the submodule's own files), hunks only
+/// as close as their context makes them, git's default algorithm and
+/// heuristic, and files in git's own order (an order file would reorder
+/// them).
+const DIFF_OPTIONS: &[&str] = &[
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-color",
+    "--no-relative",
+    "--submodule=short",
+    "--inter-hunk-context=0",
+    "--diff-algorithm=myers",
+    "--indent-heuristic",
+    "-O/dev/null",
+];
+
+/// Git with `args` in `cwd`, run with [`CONFIG`], on the scratch `index`
+/// when given: its output and errors piped, nothing on its input, and
+/// killed if dropped.
 fn command(cwd: &Path, index: Option<&Path>, args: &[&str]) -> tokio::process::Command {
+    let mut command = as_configured(cwd);
+    command.args(CONFIG).args(args);
+    if let Some(index) = index {
+        command.env("GIT_INDEX_FILE", index);
+    }
+    command
+}
+
+/// Git in `cwd` with the person's configuration alone, no arguments yet:
+/// for the one call that does the person's own work, checking out a new
+/// worktree, where their filters must run so its files are their content
+/// rather than LFS pointers. Output and errors piped, nothing on its input,
+/// optional locks off, and killed if dropped.
+fn as_configured(cwd: &Path) -> tokio::process::Command {
     let mut command = tokio::process::Command::new("git");
     command
-        .args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("GIT_OPTIONAL_LOCKS", "0")
         .kill_on_drop(true);
-    if let Some(index) = index {
-        command.env("GIT_INDEX_FILE", index);
-    }
     command
 }
 
@@ -1391,7 +1513,7 @@ mod blocking {
     use std::path::Path;
     use std::process::{Command, Output, Stdio};
 
-    use super::{GitError, succeeded, text};
+    use super::{CONFIG, GitError, succeeded, text};
 
     /// [`super::answer`], blocking.
     pub(super) fn answer(cwd: &Path, args: &[&str]) -> Result<Option<String>, GitError> {
@@ -1415,6 +1537,7 @@ mod blocking {
     fn run(cwd: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<Output, GitError> {
         let mut command = Command::new("git");
         command
+            .args(CONFIG)
             .args(args)
             .current_dir(cwd)
             .stdin(if input.is_some() {
@@ -1565,6 +1688,113 @@ mod tests {
         assert_ne!(
             std::fs::read(&own).unwrap(),
             std::fs::read(scratch.index()).unwrap()
+        );
+    }
+
+    fn git(cwd: &std::path::Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=amux",
+                "-c",
+                "user.email=amux@example.invalid",
+            ])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    /// A git too old to read a commit's attributes itself reads them from a
+    /// temporary index of its tree, with the same answer, for a commit only
+    /// a snapshot store holds as well as for one in the repository.
+    #[tokio::test]
+    async fn attributes_read_through_an_index_match_attributes_read_from_the_commit() {
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path();
+        git(root, &["init", "-q", "-b", "main"]);
+        std::fs::write(root.join(".gitattributes"), "made.txt linguist-generated\n").unwrap();
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-q", "-m", "start"]);
+        let head = git(root, &["rev-parse", "HEAD"]);
+        let held = tempfile::tempdir().unwrap();
+        let store = super::objects::ObjectStore::at(held.path().join("objects"));
+        std::fs::write(
+            root.join(".gitattributes"),
+            "made.txt -linguist-generated\nkept/** linguist-vendored\n",
+        )
+        .unwrap();
+        let taken = super::snapshot::take(
+            root,
+            &store,
+            &super::snapshot::Limits::default(),
+            std::time::SystemTime::now(),
+        )
+        .await
+        .unwrap();
+        std::fs::remove_file(root.join(".gitattributes")).unwrap();
+
+        let input = b"made.txt\0kept/y.rs\0".to_vec();
+        for (commit, generated, vendored) in [
+            (head.as_str(), "set", "unspecified"),
+            (taken.commit.as_str(), "unset", "set"),
+        ] {
+            let by_index = super::attributes_by_index(root, &store, commit, input.clone())
+                .await
+                .unwrap();
+            let from_commit = super::attributes_at(root, &store, commit, input.clone())
+                .await
+                .unwrap();
+            assert_eq!(by_index, from_commit);
+            let said = String::from_utf8(by_index).unwrap().replace('\0', "|");
+            assert_eq!(
+                said,
+                format!(
+                    "made.txt|linguist-generated|{generated}|made.txt|linguist-vendored|unspecified|\
+                     kept/y.rs|linguist-generated|unspecified|kept/y.rs|linguist-vendored|{vendored}|"
+                )
+            );
+        }
+    }
+
+    /// The scratch index keeps the person's index's modification time to
+    /// the nanosecond, even when a file was rewritten in that same second:
+    /// git trusts an entry's cached size and time only when the entry is
+    /// older than the index file, so a fresh time would hide the rewrite.
+    #[tokio::test]
+    async fn the_scratch_index_keeps_the_index_time() {
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path();
+        git(root, &["init", "-q", "-b", "main"]);
+        let time = |path: &std::path::Path| std::fs::metadata(path).unwrap().modified().unwrap();
+        let second = |path: &std::path::Path| {
+            time(path)
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        };
+        let own = root.join(".git/index");
+        let mut same_second = false;
+        for _ in 0..10 {
+            std::fs::write(root.join("racy.txt"), "2222\n").unwrap();
+            git(root, &["add", "racy.txt"]);
+            std::fs::write(root.join("racy.txt"), "3333\n").unwrap();
+            if second(&own) == second(&root.join("racy.txt")) {
+                same_second = true;
+                break;
+            }
+        }
+        assert!(same_second, "never wrote the file in the index's second");
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        let scratch = super::Scratch::copied(root).await.unwrap();
+        assert_eq!(time(&scratch.index()), time(&own));
+        assert_eq!(
+            std::fs::read(scratch.index()).unwrap(),
+            std::fs::read(&own).unwrap()
         );
     }
 }

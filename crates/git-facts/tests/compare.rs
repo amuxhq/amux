@@ -307,6 +307,61 @@ async fn flags_between_commits_are_read_from_the_commits() {
     assert_eq!(files.len(), 3);
 }
 
+/// Between commits, `.gitattributes` is the later commit's, not what the
+/// working tree holds now: here the two say the opposite of each file.
+#[tokio::test]
+async fn attributes_between_commits_are_the_later_commits() {
+    let repo = repository(&[("plain.txt", "x\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    let from = git(dir, &["rev-parse", "HEAD"]);
+    let write = |path: &str, text: &str| {
+        let path = dir.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    write(
+        ".gitattributes",
+        "made.txt linguist-generated\nlib/vendor/** -linguist-vendored\nkept/** linguist-vendored\n",
+    );
+    write("made.txt", "no header\n");
+    write("lib/vendor/x.rs", "fn x() {}\n");
+    write("kept/y.rs", "fn y() {}\n");
+    let to = snapshot(dir, store.dir());
+    write(
+        ".gitattributes",
+        "made.txt -linguist-generated\nlib/vendor/** linguist-vendored\nkept/** -linguist-vendored\n",
+    );
+
+    let files = compare::files(dir, &store, &from, &to).await.unwrap();
+    let flags = |path: &str| {
+        files
+            .iter()
+            .find(|file| file.path == path)
+            .unwrap_or_else(|| panic!("{path} listed"))
+            .flags
+    };
+    assert!(flags("made.txt").generated, "said generated, no header");
+    assert!(
+        !flags("lib/vendor/x.rs").vendored,
+        "said not vendored, in a vendor folder"
+    );
+    assert!(flags("kept/y.rs").vendored, "said vendored");
+    // The working tree's own list reads its own attributes.
+    let listed = changes(dir, &Base::Head).await.unwrap();
+    let listed = |path: &str| {
+        listed
+            .files
+            .iter()
+            .find(|file| file.path == path)
+            .unwrap()
+            .flags
+    };
+    assert!(!listed("made.txt").generated);
+    assert!(listed("lib/vendor/x.rs").vendored);
+    assert!(!listed("kept/y.rs").vendored);
+}
+
 /// The lines each file's hunks change, by path.
 fn changed_lines(files: &[FileHunks]) -> Vec<(String, Vec<String>)> {
     files
@@ -609,6 +664,45 @@ async fn a_commit_that_is_gone_is_a_typed_error() {
     // The store itself gone.
     drop(held);
     missing(compare::files(dir, &store, &head, &taken).await, &taken);
+}
+
+/// A submodule holds no file of this repository: reading it is no file,
+/// not a commit gone, though its commit is in another repository.
+#[tokio::test]
+async fn a_submodule_reads_as_no_file() {
+    let repo = repository(&[("a.txt", "one\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    let elsewhere = "0123456789abcdef0123456789abcdef01234567";
+    git(
+        dir,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{elsewhere},lib"),
+        ],
+    );
+    git(dir, &["commit", "-q", "-m", "a submodule"]);
+    let head = git(dir, &["rev-parse", "HEAD"]);
+
+    assert_eq!(
+        compare::read(dir, &store, &head, "lib").await.unwrap(),
+        None
+    );
+    assert_eq!(
+        compare::lines(dir, &store, &head, "lib", &[range(1, 1)])
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        compare::read(dir, &store, &head, "a.txt")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some(b"one\n".as_slice())
+    );
 }
 
 #[tokio::test]

@@ -13,9 +13,9 @@
 //! parent and a fixed identity, so no configuration of the person's is
 //! needed and nothing personal is stored.
 //!
-//! Git LFS's filters never run. They would write the file's content into
-//! `.git/lfs`, and fail the snapshot outright where LFS is configured but
-//! not installed. A file LFS tracks is stored as the pointer LFS would
+//! Git LFS's filters never run (no git call in this crate runs them). They
+//! would write the file's content into `.git/lfs`, and fail the snapshot
+//! outright where LFS is configured but not installed. A file LFS tracks is stored as the pointer LFS would
 //! commit for it instead, worked out here from the file.
 
 use std::collections::{BTreeSet, HashSet};
@@ -73,32 +73,6 @@ impl Default for Limits {
         }
     }
 }
-
-/// Configuration every git call here runs with, over the person's: no
-/// filesystem monitor (its daemon keeps a socket in `.git`), no split index
-/// (it writes shared index files into `.git`), no automatic housekeeping, no
-/// LFS filters (see the module's note), and no advice on an embedded
-/// repository being added.
-const CONFIG: &[&str] = &[
-    "-c",
-    "core.fsmonitor=false",
-    "-c",
-    "core.splitIndex=false",
-    "-c",
-    "gc.auto=0",
-    "-c",
-    "maintenance.auto=false",
-    "-c",
-    "filter.lfs.process=",
-    "-c",
-    "filter.lfs.clean=",
-    "-c",
-    "filter.lfs.smudge=",
-    "-c",
-    "filter.lfs.required=false",
-    "-c",
-    "advice.addEmbeddedRepo=false",
-];
 
 /// The identity and message every snapshot is committed with.
 const AUTHOR: &str = "amux";
@@ -230,7 +204,7 @@ async fn attempt(
     let root = repository.root.as_path();
     let scratch = Scratch::copied(root).await?;
     let index = scratch.index();
-    let git = |args: &[&str]| store.writing(root, Some(&index), &with_config(args));
+    let git = |args: &[&str]| store.writing(root, Some(&index), args);
     // Entries whose file was only touched read as unchanged, so they are
     // neither counted nor stored again. Its status says whether any entry
     // still differs, which the listing below finds anyway.
@@ -245,15 +219,7 @@ async fn attempt(
         )
         .await?,
     );
-    let unmerged: HashSet<Vec<u8>> =
-        objects::checked("ls-files", git(&["ls-files", "-z", "--unmerged"]), None)
-            .await?
-            .split(|byte| *byte == 0)
-            .filter_map(|record| {
-                let tab = record.iter().position(|byte| *byte == b'\t')?;
-                Some(record[tab + 1..].to_vec())
-            })
-            .collect();
+    let unmerged = unmerged(&git).await?;
     let count = changed.len() + untracked.len();
     if count > limits.max_paths {
         return Err(GitError::TooManyPaths {
@@ -288,7 +254,7 @@ async fn attempt(
             pointed.push((path, meta));
             continue;
         }
-        if meta.is_file() && meta.len() > limits.large_file_bytes && !unmerged.contains(path) {
+        if left_out(&meta, limits, false, unmerged.contains(path)) {
             omitted.push(lossy(path));
             continue;
         }
@@ -366,7 +332,7 @@ async fn attempt(
     if let Some(head) = &repository.head {
         args.extend(["-p", head.as_str()]);
     }
-    let mut commit = store.committing(root, &repository.objects, &with_config(&args));
+    let mut commit = store.committing(root, &repository.objects, &args);
     commit
         .env("GIT_AUTHOR_NAME", AUTHOR)
         .env("GIT_AUTHOR_EMAIL", EMAIL)
@@ -382,14 +348,41 @@ async fn attempt(
     }))
 }
 
-/// Whether the working tree `cwd` is in differs from `snapshot`, leaving
-/// out the paths the snapshot `omitted`; untracked files count. Nothing is
-/// written to the repository or the store: untracked files are marked in a
-/// copy of the index without being stored, and the one object marking
-/// writes (the empty blob) goes to a folder of its own that is then removed.
+/// Whether a file a snapshot measured is left out of it: a regular file
+/// over the size cap, unless LFS tracks it (it is stored as its pointer) or
+/// it is in conflict (its markers are what a merge under way needs seen).
+fn left_out(meta: &std::fs::Metadata, limits: &Limits, lfs: bool, unmerged: bool) -> bool {
+    meta.is_file() && meta.len() > limits.large_file_bytes && !lfs && !unmerged
+}
+
+/// The paths in conflict in the index `git` runs on.
+async fn unmerged(
+    git: &impl Fn(&[&str]) -> tokio::process::Command,
+) -> Result<HashSet<Vec<u8>>, GitError> {
+    Ok(
+        objects::checked("ls-files", git(&["ls-files", "-z", "--unmerged"]), None)
+            .await?
+            .split(|byte| *byte == 0)
+            .filter_map(|record| {
+                let tab = record.iter().position(|byte| *byte == b'\t')?;
+                Some(record[tab + 1..].to_vec())
+            })
+            .collect(),
+    )
+}
+
+/// Whether the working tree `cwd` is in differs from `snapshot`, taken
+/// with `limits`; untracked files count. A path the snapshot `omitted` has
+/// moved only once a snapshot would no longer leave it out (it shrank under
+/// the cap, went, or no longer differs from the index), since what it holds
+/// is not in the snapshot to compare. Nothing is written to the repository
+/// or the store: untracked files are marked in a copy of the index without
+/// being stored, and the one object marking writes (the empty blob) goes to
+/// a folder of its own that is then removed.
 pub async fn moved(
     cwd: &Path,
     store: &ObjectStore,
+    limits: &Limits,
     snapshot: &str,
     omitted: &[String],
 ) -> Result<bool, GitError> {
@@ -399,7 +392,7 @@ pub async fn moved(
     let index = scratch.index();
     let throwaway = ObjectStore::at(scratch.dir.path().join("objects"));
     std::fs::create_dir_all(throwaway.dir()).map_err(GitError::Scratch)?;
-    let git = |args: &[&str]| throwaway.writing(root, Some(&index), &with_config(args));
+    let git = |args: &[&str]| throwaway.writing(root, Some(&index), args);
     objects::finish(git(&["update-index", "-q", "--refresh"]), None).await?;
     let untracked = committed_repositories(
         root,
@@ -413,6 +406,11 @@ pub async fn moved(
         ),
     )
     .await?;
+    if !omitted.is_empty()
+        && !still_left_out(root, &index, &git, limits, omitted, &untracked).await?
+    {
+        return Ok(true);
+    }
     if !untracked.is_empty() {
         let refs: Vec<&[u8]> = untracked.iter().map(Vec::as_slice).collect();
         objects::checked(
@@ -428,22 +426,17 @@ pub async fn moved(
         )
         .await?;
     }
-    let mut diff = crate::command(
-        root,
-        Some(&index),
-        &with_config(&[
-            "diff",
-            "--raw",
-            "-z",
-            "--no-abbrev",
-            "--no-renames",
-            "--ignore-submodules=dirty",
-            "--no-ext-diff",
-            "--no-textconv",
-            snapshot,
-            "--",
-        ]),
-    );
+    let mut args = vec![
+        "diff",
+        "--raw",
+        "-z",
+        "--no-abbrev",
+        "--no-renames",
+        "--ignore-submodules=dirty",
+    ];
+    args.extend(crate::DIFF_OPTIONS);
+    args.extend([snapshot, "--"]);
+    let mut diff = crate::command(root, Some(&index), &args);
     diff.env("GIT_OBJECT_DIRECTORY", throwaway.dir()).env(
         "GIT_ALTERNATE_OBJECT_DIRECTORIES",
         objects::alternates(&[&repository.objects, store.dir()]),
@@ -507,6 +500,41 @@ pub async fn moved(
     Ok(differ.iter().zip(&ids).any(|(file, id)| file.old_id != *id))
 }
 
+/// Whether a snapshot taken now would leave out every path in `omitted`,
+/// as [`attempt`] decides it: each still differs from the index `git` runs
+/// on (refreshed) or is among the `untracked`, and is [`left_out`].
+async fn still_left_out(
+    root: &Path,
+    index: &Path,
+    git: &impl Fn(&[&str]) -> tokio::process::Command,
+    limits: &Limits,
+    omitted: &[String],
+    untracked: &[Vec<u8>],
+) -> Result<bool, GitError> {
+    let changed =
+        listed(objects::checked("ls-files", git(&["ls-files", "-z", "--modified"]), None).await?);
+    // Named by the snapshot as text; found again by the bytes git lists.
+    let listed: std::collections::HashMap<String, &Vec<u8>> = changed
+        .iter()
+        .chain(untracked)
+        .map(|path| (lossy(path), path))
+        .collect();
+    let mut paths = Vec::with_capacity(omitted.len());
+    for path in omitted {
+        match listed.get(path) {
+            Some(path) => paths.push(*path),
+            None => return Ok(false),
+        }
+    }
+    let lfs = lfs_paths(root, index, paths.iter().copied()).await?;
+    let unmerged = unmerged(git).await?;
+    Ok(paths.iter().all(|path| {
+        std::fs::symlink_metadata(on_disk(root, path)).is_ok_and(|meta| {
+            left_out(&meta, limits, lfs.contains(*path), unmerged.contains(*path))
+        })
+    }))
+}
+
 /// Removes from `store` every object no snapshot in `keep` reaches, using
 /// the repository `cwd` is in for its object format. A commit in `keep`
 /// the store does not hold keeps nothing. Answers how many objects went.
@@ -522,7 +550,7 @@ pub async fn drop<S: AsRef<str>>(
     let root = repository.root.as_path();
     // The store alone: what it holds is what is walked, and the history
     // beneath each snapshot, in the repository, is never read.
-    let git = |args: &[&str]| store.writing(root, None, &with_config(args));
+    let git = |args: &[&str]| store.writing(root, None, args);
     let mut asked = String::new();
     for commit in keep {
         asked.push_str(commit.as_ref());
@@ -641,7 +669,7 @@ async fn lfs_paths<'p>(
         crate::command(
             root,
             Some(index),
-            &with_config(&["check-attr", "-z", "--stdin", "filter"]),
+            &["check-attr", "-z", "--stdin", "filter"],
         ),
         Some(input),
     )
@@ -715,11 +743,6 @@ fn mode(meta: &std::fs::Metadata) -> &'static str {
     }
     let _ = meta;
     "100644"
-}
-
-/// `args` after the configuration every call here runs with.
-fn with_config<'a>(args: &[&'a str]) -> Vec<&'a str> {
-    CONFIG.iter().copied().chain(args.iter().copied()).collect()
 }
 
 fn nul_separated(paths: &[&[u8]]) -> Vec<u8> {

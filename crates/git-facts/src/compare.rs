@@ -130,7 +130,7 @@ pub async fn files(
 ) -> Result<Vec<ChangedFile>, CompareError> {
     let root = top(cwd).await?;
     let raw = raw(&root, store, from, to, None).await?;
-    match flagged(&root, Some(store), raw).await {
+    match flagged(&root, Some((store, to)), raw).await {
         Ok(files) => Ok(files),
         Err(error) => Err(explained(&root, store, &[from, to], error).await),
     }
@@ -237,14 +237,16 @@ pub async fn read(
     }
     match file {
         Some((kind, bytes)) => Ok((kind == "blob").then_some(bytes)),
-        // No file there, or one whose object is gone: the tree says which.
+        // No file there, a submodule (its commit is another repository's),
+        // or a file whose object is gone: the tree says which.
         None => {
             let listed = store
                 .reading(&root, &ls_tree(commit, path))
                 .output()
                 .await
                 .map_err(GitError::Spawn)?;
-            match listed.status.success() && listed.stdout.is_empty() {
+            let submodule = listed.stdout.starts_with(b"160000 ");
+            match listed.status.success() && (listed.stdout.is_empty() || submodule) {
                 true => Ok(None),
                 false => Err(CompareError::Missing(commit.to_owned())),
             }
@@ -658,18 +660,6 @@ async fn top(cwd: &Path) -> Result<PathBuf, GitError> {
         .ok_or(GitError::NotARepository)
 }
 
-/// Options every comparison runs with: renames found, and nothing the
-/// person's configuration adds that would change what is read (an external
-/// diff, a text conversion, colour, other prefixes, paths relative to a
-/// subfolder).
-const DIFF: &[&str] = &[
-    "--find-renames",
-    "--no-ext-diff",
-    "--no-textconv",
-    "--no-color",
-    "--no-relative",
-];
-
 /// The files that differ from `from` to `to`, limited to `paths` when
 /// given, as `git diff --raw --numstat` lists them.
 async fn raw(
@@ -686,8 +676,11 @@ async fn raw(
         "--numstat",
         "-z",
         "--no-abbrev",
+        "--find-renames",
     ];
-    args.extend(DIFF);
+    // Nothing the person's configuration adds that would change what is
+    // read, here or in the patch below.
+    args.extend(crate::DIFF_OPTIONS);
     args.extend([from, to, "--"]);
     args.extend(paths.unwrap_or_default());
     let listed = read_git(root, store, &[from, to], &args).await?;
@@ -732,8 +725,9 @@ async fn diffed(
         &unified,
         "--src-prefix=a/",
         "--dst-prefix=b/",
+        "--find-renames",
     ];
-    args.extend(DIFF);
+    args.extend(crate::DIFF_OPTIONS);
     args.extend([from, to, "--"]);
     args.extend(pathspec.iter().copied());
     let patch = read_git(root, store, &[from, to], &args).await?;

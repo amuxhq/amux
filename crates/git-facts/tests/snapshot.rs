@@ -64,6 +64,14 @@ fn repository() -> tempfile::TempDir {
     dir
 }
 
+/// The limits a host takes snapshots with.
+const LIMITS: Limits = Limits {
+    large_file_bytes: git_facts::LARGE_FILE_BYTES,
+    max_paths: snapshot::MAX_PATHS,
+    tries: snapshot::TRIES,
+    retry_after: snapshot::RETRY_AFTER,
+};
+
 /// A store in a folder of its own, as an agent's would be.
 struct Store {
     _dir: tempfile::TempDir,
@@ -220,7 +228,7 @@ async fn nothing_in_the_repository_changes_taking_asking_or_dropping() {
     let first = take(root, &store.store).await;
     unchanged(&before, root, "taking a snapshot");
     assert!(
-        !snapshot::moved(root, &store.store, &first.commit, &first.omitted)
+        !snapshot::moved(root, &store.store, &LIMITS, &first.commit, &first.omitted)
             .await
             .unwrap()
     );
@@ -228,7 +236,7 @@ async fn nothing_in_the_repository_changes_taking_asking_or_dropping() {
     write(root, "src/new.rs", "pub fn newer() {}\n");
     let before = manifest(root);
     assert!(
-        snapshot::moved(root, &store.store, &first.commit, &first.omitted)
+        snapshot::moved(root, &store.store, &LIMITS, &first.commit, &first.omitted)
             .await
             .unwrap()
     );
@@ -407,8 +415,26 @@ async fn an_edit_in_the_same_second_as_the_index_write_is_taken() {
     // A copy made in a later second with a fresh time would trust the
     // entry's cached size and time and miss the rewrite.
     std::thread::sleep(Duration::from_millis(1100));
+    // Had git smudged the entry (zeroed its cached size, as it does to an
+    // entry it finds racily clean when it writes the index), any copy would
+    // read the file again, whatever its time, and this test would prove
+    // nothing. The copy's time is checked itself in the crate's own tests.
+    let entry = git(root, &["ls-files", "--debug", "--", "racy.txt"]);
+    assert!(entry.contains("size: 5\t"), "{entry}");
+    let index_time = std::fs::metadata(root.join(".git/index"))
+        .unwrap()
+        .modified()
+        .unwrap();
     let store = store();
     let snapshot = take(root, &store.store).await;
+    assert_eq!(
+        std::fs::metadata(root.join(".git/index"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        index_time,
+        "the person's index is untouched"
+    );
     assert_eq!(
         read(root, &store.store, &snapshot.commit, "racy.txt")
             .await
@@ -448,9 +474,15 @@ async fn a_dirty_submodule_reads_as_a_change_of_commit() {
     let before = manifest(root);
     let snapshot = take(root, &store.store).await;
     assert!(
-        !snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted)
-            .await
-            .unwrap()
+        !snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted
+        )
+        .await
+        .unwrap()
     );
     unchanged(&before, root, "a snapshot with a dirty submodule");
     let files = tree(root, &store.store, &snapshot.commit).await;
@@ -489,13 +521,67 @@ async fn a_file_over_the_cap_is_left_out_and_named() {
             .unwrap(),
         b"small\n"
     );
-    let moved = || snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted);
+    let moved = || {
+        snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted,
+        )
+    };
     assert!(!moved().await.unwrap());
     write(root, "big.bin", &"y".repeat(2 * 1024 * 1024));
     write(root, "grows.txt", &"z".repeat(3 * 1024 * 1024));
     assert!(!moved().await.unwrap());
     write(root, "small.txt", "edited\n");
     assert!(moved().await.unwrap());
+}
+
+/// A file left out of a snapshot moves the tree once a snapshot would take
+/// it: shrunk under the cap, deleted, or put back as the index has it,
+/// however large. While it would still be left out it does not.
+#[tokio::test]
+async fn a_left_out_file_moves_the_tree_once_it_would_be_taken() {
+    let repo = repository();
+    let root = repo.path();
+    let limits = Limits {
+        large_file_bytes: 100,
+        ..LIMITS
+    };
+    let large = |fill: &str| fill.repeat(200);
+    write(root, "committed.txt", &large("c"));
+    git(root, &["add", "committed.txt"]);
+    git(root, &["commit", "-q", "-m", "large"]);
+    write(root, "big.bin", &large("b"));
+    write(root, "committed.txt", &large("d"));
+
+    let store = store();
+    let snapshot = snapshot::take(root, &store.store, &limits, SystemTime::now())
+        .await
+        .unwrap();
+    let mut omitted = snapshot.omitted.clone();
+    omitted.sort();
+    assert_eq!(omitted, ["big.bin", "committed.txt"]);
+    let moved = || snapshot::moved(root, &store.store, &limits, &snapshot.commit, &omitted);
+    assert!(!moved().await.unwrap());
+    write(root, "big.bin", &large("e"));
+    assert!(!moved().await.unwrap(), "still over the cap");
+
+    write(root, "big.bin", "small now\n");
+    assert!(moved().await.unwrap(), "shrunk under the cap");
+    write(root, "big.bin", &large("b"));
+    assert!(!moved().await.unwrap());
+
+    std::fs::remove_file(root.join("big.bin")).unwrap();
+    assert!(moved().await.unwrap(), "deleted");
+    write(root, "big.bin", &large("b"));
+    assert!(!moved().await.unwrap());
+
+    write(root, "committed.txt", &large("c"));
+    assert!(moved().await.unwrap(), "as the index has it");
+    write(root, "committed.txt", &large("d"));
+    assert!(!moved().await.unwrap());
 }
 
 /// More changed and untracked paths than the cap refuse the snapshot,
@@ -535,7 +621,15 @@ async fn moved_answers_whether_the_tree_differs_from_the_snapshot() {
     write(root, "untracked.txt", "untracked\n");
     let store = store();
     let snapshot = take(root, &store.store).await;
-    let moved = || snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted);
+    let moved = || {
+        snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted,
+        )
+    };
     assert!(!moved().await.unwrap());
 
     write(root, "base.txt", "edited after\n");
@@ -671,9 +765,15 @@ async fn mid_merge_the_snapshot_holds_the_markers() {
         std::fs::read_to_string(root.join("base.txt")).unwrap()
     );
     assert!(
-        !snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted)
-            .await
-            .unwrap()
+        !snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted
+        )
+        .await
+        .unwrap()
     );
 }
 
@@ -733,9 +833,15 @@ async fn a_link_is_stored_as_a_link() {
         b"../outside/secret"
     );
     assert!(
-        !snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted)
-            .await
-            .unwrap()
+        !snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted
+        )
+        .await
+        .unwrap()
     );
 }
 
@@ -763,9 +869,15 @@ async fn an_embedded_repository_without_a_commit_is_left_out() {
     assert_eq!(paths(&files), ["base.txt", "beside.txt", "committed"]);
     assert_eq!(files["committed"].0, "160000");
     assert!(
-        !snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted)
-            .await
-            .unwrap()
+        !snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted
+        )
+        .await
+        .unwrap()
     );
 }
 
@@ -774,16 +886,11 @@ async fn an_embedded_repository_without_a_commit_is_left_out() {
 async fn a_folder_outside_a_repository_has_no_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let store = store();
-    let error = snapshot::take(
-        dir.path(),
-        &store.store,
-        &Limits::default(),
-        SystemTime::now(),
-    )
-    .await
-    .unwrap_err();
+    let error = snapshot::take(dir.path(), &store.store, &LIMITS, SystemTime::now())
+        .await
+        .unwrap_err();
     assert!(matches!(error, GitError::NotARepository), "{error:?}");
-    let error = snapshot::moved(dir.path(), &store.store, "HEAD", &[])
+    let error = snapshot::moved(dir.path(), &store.store, &LIMITS, "HEAD", &[])
         .await
         .unwrap_err();
     assert!(matches!(error, GitError::NotARepository), "{error:?}");
@@ -889,7 +996,15 @@ async fn a_changed_lfs_file_is_stored_as_its_pointer_without_lfs() {
         other
     );
 
-    let moved = || snapshot::moved(root, &store.store, &snapshot.commit, &snapshot.omitted);
+    let moved = || {
+        snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted,
+        )
+    };
     assert!(!moved().await.unwrap());
     assert!(!mark.exists(), "an LFS filter ran");
     write(root, "model.bin", "weights v3\n");

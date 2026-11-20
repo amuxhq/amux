@@ -49,10 +49,6 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     var facts: Overview?
     var offered: SettingsView?
     var changed: [SettingChange] = []
-    /// The working-tree diff the machine answers with, and how often it was
-    /// asked for.
-    var working: FrozenReview?
-    var reviews = 0
     /// The comparisons the overview asked for its changed files, in order,
     /// and the files it was told.
     var listings: [Comparison] = []
@@ -322,11 +318,6 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     func blobFailed(_ hash: [UInt8]) -> Bool { failedFetches.contains(hash) }
     func fetchBlob(_ hash: [UInt8]) { fetchedAgain.append(hash) }
 
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
-        reviews += 1
-        guard let working else { return .failure(RuntimeFailure("no machine")) }
-        return .success(working)
-    }
 
     func sendWithReview(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
         sentWithReview.append(draft)
@@ -754,15 +745,14 @@ final class ChatModelTests: XCTestCase {
     }
 
     /// Withdrawn, a prompt gives back every attachment whole: a pasted text
-    /// with all its words, a review with its comments and patch, not the
-    /// line count and label its queued row shows.
-    func testAWithdrawnPromptGivesBackItsPastedTextAndReview() async {
+    /// with all its words, a page review with its comments, not the line
+    /// count and label its queued row shows.
+    func testAWithdrawnPromptGivesBackItsPastedTextAndPageReview() async {
         let source = FakeChat(rows: [], frame: frame(phase: .working))
         let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
-        let patch = BlobRef(hash: [4, 2], name: "patch", mime: "text/x-diff", size: 120)
-        let review = DraftAttachment.review(
-            diff: Diff(head: "abc123", files: [], base: nil, mergeBase: nil, patch: patch),
-            comments: [ReviewComment(path: "src/lib.rs", line: 12, oldLine: 0, text: "Name this.")])
+        let review = DraftAttachment.page(PageReview(
+            url: "http://localhost:5173/", title: "Pricing",
+            comments: [PageComment(text: "Say annual pricing.", quote: "", element: nil, image: nil)]))
         source.drafts[[7]] = Draft(words: "Look at these.", attachments: [pasted, review])
         let model = ChatModel(source: source)
         model.draft = "half written"
@@ -1266,8 +1256,7 @@ final class ChatModelTests: XCTestCase {
         model.compare(.onBranch)
         XCTAssertEqual(model.changes, ChangeTotals(files: 6, added: 120, removed: 30))
         XCTAssertEqual(model.base, "main")
-        XCTAssertEqual(source.reviews, 0, "the totals come with the frame; nothing is asked")
-        XCTAssertEqual(source.listings, [], "nor are files listed while the overview is not shown")
+        XCTAssertEqual(source.listings, [], "the totals come with the frame; no files are listed while the overview is not shown")
     }
 
     func testNothingToCountShowsNoTotalsAndNoBaseOffersOneComparison() {
@@ -1326,60 +1315,6 @@ final class ChatModelTests: XCTestCase {
         model.compare(.uncommitted)
         await model.listing?.value
         XCTAssertEqual(source.listings.count, 3)
-    }
-
-    func testAnAgentWithNoChangesHasNoReview() async {
-        let source = FakeChat(rows: [row("a", 1)], frame: frame())
-        source.working = FrozenReview(diff: ReviewFixtures.frozen.diff, patch: "")
-        let model = ChatModel(source: source)
-        guard case .success(nil) = await model.openReview() else {
-            return XCTFail("an empty diff has no review")
-        }
-        source.working = nil
-        guard case .failure = await model.openReview() else {
-            return XCTFail("a host that was not asked says so")
-        }
-    }
-
-    /// Changes the page cannot read are never shown as no changes: the host
-    /// listed files, so something changed, and the page says it could not
-    /// read them.
-    func testChangesThatCannotBeReadAreAFailureNotNoChanges() async {
-        let source = FakeChat(rows: [row("a", 1)], frame: frame())
-        var listed = ReviewFixtures.frozen.diff
-        listed.files = [DiffFile(path: "src/pairing/errors.rs", added: 1, removed: 2, change: 1, binary: false)]
-        source.working = FrozenReview(diff: listed, patch: "")
-        let model = ChatModel(source: source)
-        guard case .failure(let failure) = await model.openReview() else {
-            return XCTFail("a patch missing the files the host lists is not read as no changes")
-        }
-        XCTAssertEqual(failure.description, "the host’s patch is missing the files it lists")
-    }
-
-    func testAnAttachedReviewIsOneDraftTokenThatSendsWithItsPatch() async {
-        let source = FakeChat(rows: [row("a", 1)], frame: frame())
-        source.working = ReviewFixtures.frozen
-        let model = ChatModel(source: source)
-        guard case .success(let opened?) = await model.openReview(),
-              case .success(let again?) = await model.openReview()
-        else { return XCTFail("the changes have a review") }
-        let review = opened
-        XCTAssertTrue(review === again, "the review being written is kept")
-        review.begin(at: ReviewLine(file: 0, hunk: 0, line: 1))
-        review.comment("Keep the old name.")
-        model.attach(review)
-        review.begin(at: ReviewLine(file: 1, hunk: 0, line: 0))
-        review.comment("Say why.")
-        model.attach(review)
-        XCTAssertEqual(model.attachments.count, 1, "a second attach replaces the first token")
-        guard case .review(let diff, let comments)? = model.attachments.first else {
-            return XCTFail("the draft holds no review")
-        }
-        XCTAssertEqual(diff, ReviewFixtures.frozen.diff)
-        XCTAssertEqual(comments.map(\.text), ["Keep the old name.", "Say why."])
-
-        await model.send()?.value
-        XCTAssertEqual(source.sent.first?.attachments, [.review(diff: ReviewFixtures.frozen.diff, comments: comments)])
     }
 
     // MARK: - The agent's review

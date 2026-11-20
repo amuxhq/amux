@@ -307,7 +307,6 @@ enum Act {
     Rename,
     Input,
     PutBlob,
-    Diff,
     PreviewDelete,
     Close,
     Resume,
@@ -316,11 +315,10 @@ enum Act {
 
 impl Act {
     /// Acts on a live agent, and acts on one that has exited.
-    const ON_LIVE: [Self; 5] = [
+    const ON_LIVE: [Self; 4] = [
         Self::Rename,
         Self::Input,
         Self::PutBlob,
-        Self::Diff,
         Self::PreviewDelete,
     ];
     const ON_EXITED: [Self; 2] = [Self::Close, Self::Resume];
@@ -351,16 +349,6 @@ async fn act(host: &Host, who: Who, act: Act, target: uuid::Uuid) -> Result<(), 
                 name: "notes.txt".into(),
                 mime: "text/plain".into(),
                 bytes: b"some notes".to_vec(),
-            })
-            .await
-            .map(drop),
-        Act::Diff => agents
-            .get_diff(wire::GetDiffRequest {
-                agent_id,
-                base: Some(wire::DiffBase {
-                    base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-                }),
-                with_patch: false,
             })
             .await
             .map(drop),

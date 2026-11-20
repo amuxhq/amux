@@ -11,7 +11,6 @@
 //! <amux-attachment kind="image" hash="sha256:…" name="shot.png" mime="image/png" size="1204" path="/…/blobs/…"/>
 //! <amux-attachment kind="file" hash="sha256:…" name="trace.json" mime="application/json" size="8192" path="/…"/>
 //! <amux-attachment kind="text" name="pasted-1">the pasted text…</amux-attachment>
-//! <amux-attachment kind="review" hash="sha256:…" name="review.diff" mime="text/x-diff" size="512" base="working-tree" head="4f2a9c1" comments="1" path="/…">…</amux-attachment>
 //! <amux-attachment kind="page" url="http://localhost:5173/" title="Pricing" comments="1">…</amux-attachment>
 //! ```
 //!
@@ -30,11 +29,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use wire::attachment::Of;
-use wire::diff_base::Base;
-use wire::{
-    Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, PageComment, PageElement, PageReview,
-    Review, ReviewComment,
-};
+use wire::{Attachment, BlobRef, InlineText, PageComment, PageElement, PageReview};
 
 /// The type of an image both providers read natively (PNG, JPEG, GIF or
 /// WebP), judged by its bytes; None for anything else, which reaches the
@@ -75,8 +70,6 @@ pub const REPLACEMENT: char = '\u{FFFD}';
 const OPEN: &str = "<amux-attachment";
 const CLOSE: &str = "</amux-attachment>";
 const HASH_PREFIX: &str = "sha256:";
-const WORKING_TREE: &str = "working-tree";
-const BRANCH_PREFIX: &str = "branch:";
 
 /// Text with one placeholder per attachment, and the attachments in order.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -143,18 +136,8 @@ pub fn validate(p: &Positioned) -> Result<(), ShapeError> {
         });
     }
     for (index, attachment) in p.attachments.iter().enumerate() {
-        match &attachment.of {
-            None => return Err(ShapeError::Empty { index }),
-            Some(Of::Review(review))
-                if review
-                    .diff
-                    .as_ref()
-                    .and_then(|diff| diff.patch.as_ref())
-                    .is_none() =>
-            {
-                return Err(ShapeError::BadHash { index });
-            }
-            Some(_) => {}
+        if attachment.of.is_none() {
+            return Err(ShapeError::Empty { index });
         }
         if blobs(attachment).iter().any(|blob| blob.hash.len() != 32) {
             return Err(ShapeError::BadHash { index });
@@ -218,12 +201,11 @@ pub fn blob_path(attachment: &Attachment, dir: &Path) -> Option<PathBuf> {
 }
 
 /// The one blob an attachment is, for the kinds that are a single file: an
-/// image, a file, or a review's patch. A page review is none; its comments'
-/// screenshots are each a blob of their own (see [`blobs`]).
+/// image or a file. A page review is none; its comments' screenshots are
+/// each a blob of their own (see [`blobs`]).
 fn blob_of(attachment: &Attachment) -> Option<&BlobRef> {
     match attachment.of.as_ref()? {
         Of::Image(blob) | Of::File(blob) => Some(blob),
-        Of::Review(review) => review.diff.as_ref()?.patch.as_ref(),
         Of::Text(_) | Of::Page(_) => None,
     }
 }
@@ -284,30 +266,6 @@ fn written(attachment: &Attachment, path: Option<&Path>, dir: Option<&Path>) -> 
             out.push_str(CLOSE);
             return out;
         }
-        Some(Of::Review(review)) => {
-            attribute(&mut out, "kind", "review");
-            let diff = review.diff.clone().unwrap_or_default();
-            blob_attributes(&mut out, &diff.patch.unwrap_or_default());
-            match diff.base.and_then(|base| base.base) {
-                Some(Base::Head(_)) => attribute(&mut out, "base", WORKING_TREE),
-                Some(Base::Branch(branch)) => {
-                    attribute(&mut out, "base", &format!("{BRANCH_PREFIX}{branch}"));
-                }
-                None => {}
-            }
-            attribute(&mut out, "head", &diff.head);
-            if let Some(merge_base) = &diff.merge_base {
-                attribute(&mut out, "merge-base", merge_base);
-            }
-            attribute(&mut out, "comments", &review.comments.len().to_string());
-            if let Some(path) = path {
-                attribute(&mut out, "path", &path.to_string_lossy());
-            }
-            out.push('>');
-            out.push_str(&escape(&review_body(&review.comments), false));
-            out.push_str(CLOSE);
-            return out;
-        }
         Some(Of::Page(page)) => {
             attribute(&mut out, "kind", "page");
             attribute(&mut out, "url", &page.url);
@@ -339,57 +297,6 @@ fn attribute(out: &mut String, name: &str, value: &str) {
     out.push_str("=\"");
     out.push_str(&escape(value, true));
     out.push('"');
-}
-
-/// A review's comments, each framed by byte counts so no path or comment
-/// text can be mistaken for the next heading:
-/// `## path-bytes=N line=N old-line=N text-bytes=N`, a newline, the path,
-/// the text, a newline.
-fn review_body(comments: &[ReviewComment]) -> String {
-    let mut body = String::new();
-    for comment in comments {
-        body.push_str(&format!(
-            "## path-bytes={} line={} old-line={} text-bytes={}\n{}{}\n",
-            comment.path.len(),
-            comment.line,
-            comment.old_line,
-            comment.text.len(),
-            comment.path,
-            comment.text,
-        ));
-    }
-    body
-}
-
-fn parse_review_body(body: &str) -> Option<Vec<ReviewComment>> {
-    let mut comments = Vec::new();
-    let mut rest = body;
-    while !rest.is_empty() {
-        let (heading, after) = rest.strip_prefix("## ")?.split_once('\n')?;
-        let mut fields = BTreeMap::new();
-        for field in heading.split(' ') {
-            let (name, value) = field.split_once('=')?;
-            if fields.insert(name, value.parse::<usize>().ok()?).is_some() {
-                return None;
-            }
-        }
-        if fields.len() != 4 {
-            return None;
-        }
-        let path_bytes = *fields.get("path-bytes")?;
-        let text_bytes = *fields.get("text-bytes")?;
-        let path = after.get(..path_bytes)?;
-        let after = &after[path_bytes..];
-        let text = after.get(..text_bytes)?;
-        rest = after[text_bytes..].strip_prefix('\n')?;
-        comments.push(ReviewComment {
-            path: path.to_owned(),
-            line: u32::try_from(*fields.get("line")?).ok()?,
-            old_line: u32::try_from(*fields.get("old-line")?).ok()?,
-            text: text.to_owned(),
-        });
-    }
-    Some(comments)
 }
 
 /// A page review's comments. Each is a heading that names the byte count of
@@ -532,9 +439,9 @@ pub enum Problem {
     Unterminated,
     /// Another element opens inside this one's body.
     Nested,
-    /// `kind` is missing or not image, file, text, review or page.
+    /// `kind` is missing or not image, file, text or page.
     UnknownKind,
-    /// An image, file or review with no `hash`.
+    /// An image or file with no `hash`.
     MissingHash,
     /// A `hash` that is not `sha256:` and 64 hex digits.
     BadHash,
@@ -648,40 +555,6 @@ fn parse_element(text: &str, start: usize) -> Result<(Attachment, usize), Proble
             name: attributes.remove("name").unwrap_or_default(),
             text: body,
         }),
-        ("review", Some(body)) => {
-            let patch = take_blob(&mut attributes)?;
-            let base = match attributes.remove("base") {
-                None => None,
-                Some(base) if base == WORKING_TREE => Some(Base::Head(Empty {})),
-                Some(base) => Some(Base::Branch(
-                    base.strip_prefix(BRANCH_PREFIX)
-                        .ok_or_else(|| Problem::BadAttribute("base".into()))?
-                        .to_owned(),
-                )),
-            };
-            let head = attributes.remove("head").unwrap_or_default();
-            let merge_base = attributes.remove("merge-base");
-            let count: usize = attributes
-                .remove("comments")
-                .and_then(|count| count.parse().ok())
-                .ok_or_else(|| Problem::BadAttribute("comments".into()))?;
-            let comments = parse_review_body(&body).ok_or(Problem::BadBody)?;
-            if comments.len() != count {
-                return Err(Problem::BadBody);
-            }
-            Of::Review(Review {
-                diff: Some(Diff {
-                    patch: Some(patch),
-                    base: base.map(|base| DiffBase { base: Some(base) }),
-                    head,
-                    merge_base,
-                    // The patch names every file; the form does not repeat them.
-                    files: Vec::new(),
-                    // Of the branch when the diff was taken, not the review's.
-                }),
-                comments,
-            })
-        }
         ("page", Some(body)) => {
             let url = attributes.remove("url").unwrap_or_default();
             let title = attributes.remove("title").unwrap_or_default();
@@ -699,7 +572,7 @@ fn parse_element(text: &str, start: usize) -> Result<(Attachment, usize), Proble
                 comments,
             })
         }
-        ("image" | "file" | "text" | "review" | "page", _) => return Err(Problem::BadForm),
+        ("image" | "file" | "text" | "page", _) => return Err(Problem::BadForm),
         _ => return Err(Problem::UnknownKind),
     };
     if let Some(name) = attributes.into_keys().next() {

@@ -135,14 +135,6 @@ final class StillChat: ChatSurface {
     var comparison: Comparison = .uncommitted
     var comparisons: [Comparison] { [.uncommitted, .onBranch] }
     func compare(_ comparison: Comparison) { self.comparison = comparison }
-    var review: ReviewState = .idle
-    /// The review a story shows once the pane asks for it.
-    var reviewing: StillReview?
-    func loadReview(keepingComments: Bool) {
-        if keepingComments, case .ready = review { return }
-        review = reviewing.map { .ready($0) } ?? .nothing
-    }
-    func attachReview() {}
 
     /// The agent's review page a story shows, and the chip its drafts put
     /// in the composer.
@@ -226,54 +218,4 @@ final class StillReviewPage: ReviewPageSurface {
     func delete(_ id: [UInt8]) {}
     func discardDrafts() {}
     func startOver() {}
-}
-
-/// A review that holds still, but takes comments.
-@MainActor
-@Observable
-final class StillReview: ReviewSurface {
-    var doc: ReviewDoc
-    private var shut: Set<Int> = []
-    private var anchor: ReviewSpot?
-    private var head: ReviewSpot?
-    private(set) var count = 0
-
-    init(doc: ReviewDoc, selected: ReviewSpot? = nil, folded: Set<Int> = []) {
-        self.doc = doc
-        anchor = selected
-        head = selected
-        shut = folded
-    }
-
-    func folded(_ file: Int) -> Bool { shut.contains(file) }
-    func toggle(file: Int) {
-        if shut.contains(file) { shut.remove(file) } else { shut.insert(file) }
-    }
-
-    func isSelected(_ spot: ReviewSpot) -> Bool {
-        guard let anchor, let head else { return false }
-        return min(anchor, head) <= spot && spot <= max(anchor, head)
-    }
-
-    var selecting: Bool { anchor != nil }
-    func begin(at spot: ReviewSpot) {
-        anchor = spot
-        head = spot
-    }
-    func extend(to spot: ReviewSpot) { head = spot }
-    func clearSelection() {
-        anchor = nil
-        head = nil
-    }
-
-    func comment(_ text: String) -> Bool {
-        guard let anchor, let head, !text.isEmpty else { return false }
-        let at = max(anchor, head)
-        doc.files[at.file].hunks[at.hunk].lines[at.line].comments.append(text)
-        count += 1
-        clearSelection()
-        return true
-    }
-
-    var canAttach: Bool { count > 0 && anchor == nil }
 }

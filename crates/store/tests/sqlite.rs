@@ -595,9 +595,6 @@ impl store::redact::Redactor for Blank {
     fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
         bytes.to_vec()
     }
-    fn content(&self, bytes: &[u8]) -> Vec<u8> {
-        vec![0; bytes.len()]
-    }
     fn hash(&self, bytes: &[u8]) -> Vec<u8> {
         bytes.to_vec()
     }

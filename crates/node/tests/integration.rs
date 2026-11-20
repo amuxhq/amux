@@ -10,7 +10,6 @@ mod blobs;
 mod carried;
 mod catalogue;
 mod changes;
-mod diff;
 mod dump;
 mod front_door;
 mod host_acts;

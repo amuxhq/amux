@@ -782,8 +782,6 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
             .is_some_and(|git| git.branch.as_deref() == Some("main"))
     })
     .await;
-    let review = chat.review(Comparison::Uncommitted).await.unwrap();
-    assert!(review.patch.contains("README.md"), "{}", review.patch);
     net.shutdown().await.unwrap();
 }
 
@@ -800,7 +798,7 @@ fn git(dir: &std::path::Path, args: &[&str]) {
 
 /// The worker's folder on desk, on `main` with an upstream it was pushed
 /// to (README.md) and one commit not pushed yet (plan.md).
-fn main_ahead_of_its_upstream(net: &Net) -> std::path::PathBuf {
+fn main_ahead_of_its_upstream(net: &Net) {
     let work = net.host("desk").unwrap().work.clone();
     let folder = work.join("project");
     std::fs::write(folder.join("README.md"), "hello\n").unwrap();
@@ -812,23 +810,13 @@ fn main_ahead_of_its_upstream(net: &Net) -> std::path::PathBuf {
     std::fs::write(folder.join("plan.md"), "one\ntwo\n").unwrap();
     git(&folder, &["add", "plan.md"]);
     git(&folder, &["commit", "--quiet", "-m", "not pushed"]);
-    folder
-}
-
-/// The files a patch writes, in order.
-fn reviewed(patch: &str) -> Vec<&str> {
-    patch
-        .lines()
-        .filter_map(|line| line.strip_prefix("+++ b/"))
-        .collect()
 }
 
 /// An agent working on its base branch, with commits not yet pushed to
 /// the branch's upstream: the host counts the branch from the upstream,
-/// and the review page shows the same commits the overview lists, whether
-/// the overview fetched its list first or not.
+/// and the overview lists the commits not pushed yet.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_review_shows_what_the_overview_lists_on_a_branch_with_an_upstream() {
+async fn the_overview_lists_what_is_not_pushed_on_a_branch_with_an_upstream() {
     let topology = Topology::new().host("desk").agent(
         AgentDecl::new("worker", "desk")
             .kind(FakeKind::ClaudeSdk)
@@ -846,13 +834,6 @@ async fn the_review_shows_what_the_overview_lists_on_a_branch_with_an_upstream()
         chat.frame().caught_up && says(chat, "turn one")
     })
     .await;
-    let unlisted = chat.review(Comparison::OnBranch).await.unwrap();
-    assert_eq!(
-        reviewed(&unlisted.patch),
-        vec!["plan.md"],
-        "{}",
-        unlisted.patch
-    );
     let listed = chat
         .open_overview(Comparison::OnBranch)
         .await
@@ -866,53 +847,6 @@ async fn the_review_shows_what_the_overview_lists_on_a_branch_with_an_upstream()
         .flat_map(|folder| folder.files.iter().map(|file| file.path.as_str()))
         .collect();
     assert_eq!(paths, vec!["plan.md"]);
-    let review = chat.review(Comparison::OnBranch).await.unwrap();
-    assert_eq!(reviewed(&review.patch), paths, "{}", review.patch);
-    net.shutdown().await.unwrap();
-}
-
-/// The list the overview fetched names the base the host's rule picked at
-/// the time: once the agent makes a branch of its own, the review is
-/// counted from where that branch left its base, not from the upstream the
-/// list named.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_review_after_the_agent_makes_a_branch_asks_the_host_its_base_again() {
-    let topology = Topology::new().host("desk").agent(
-        AgentDecl::new("worker", "desk")
-            .kind(FakeKind::ClaudeSdk)
-            .cwd("project")
-            .branch("main")
-            .steps(vec![text("turn one"), Step::TurnEnd])
-            .prompt("go"),
-    );
-    let net = Net::start(topology).await.unwrap();
-    let folder = main_ahead_of_its_upstream(&net);
-
-    let (runtime, mut host) = open(&net).await;
-    let chat = opened(&runtime, &worker(&net), 50).await;
-    until(&mut host, &chat, "the first turn", |chat| {
-        chat.frame().caught_up && says(chat, "turn one")
-    })
-    .await;
-    let listed = chat
-        .open_overview(Comparison::OnBranch)
-        .await
-        .unwrap()
-        .changes
-        .expect("the files were fetched");
-    assert_eq!(listed.base.as_deref(), Some("origin/main"), "{listed:?}");
-
-    git(&folder, &["switch", "--quiet", "-c", "feature"]);
-    std::fs::write(folder.join("feature.md"), "new\n").unwrap();
-    git(&folder, &["add", "feature.md"]);
-    git(&folder, &["commit", "--quiet", "-m", "on the branch"]);
-    let review = chat.review(Comparison::OnBranch).await.unwrap();
-    assert_eq!(
-        reviewed(&review.patch),
-        vec!["feature.md"],
-        "counted from where feature left main, not from origin/main: {}",
-        review.patch
-    );
     net.shutdown().await.unwrap();
 }
 

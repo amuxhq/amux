@@ -89,9 +89,9 @@ words instead.
 Open an agent's changes from its chat: the changes count at the top, the
 overview's **Review changes**, or the review chip in the message box.
 
-With the reviews experiment switched on on the agent's computer, the review is
-a snapshot of the agent's folder, taken when you open it, and it stays put
-while you read. If the agent changes code meanwhile, the page says so and
+The review needs the reviews experiment switched on on the agent's computer.
+It is a snapshot of the agent's folder, taken when you open it, and it stays
+put while you read. If the agent changes code meanwhile, the page says so and
 **Refresh** brings it up to date; pulling the page down does the same. Every
 file follows the next, each change under the functions it sits in, with the
 words an edited line changed marked. Lock files, generated and vendored files
@@ -127,10 +127,9 @@ comment you sent, on the code you wrote it on. If the agent's computer no
 longer has the round, for example after you started over, you see the text
 the agent read instead.
 
-Where the agent's computer doesn't run reviews, the page shows the changes it
-froze when you opened them. Select a line, or a range of lines, and comment on
-it with **Add to Review**. Your comments go back into the composer as one
-review, ready to send to the agent.
+Where the agent's computer doesn't run reviews, because the experiment is off
+there or its amux is older than reviews, the page says so. The overview still
+lists the changed files.
 
 ## Computers
 

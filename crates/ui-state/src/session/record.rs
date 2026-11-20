@@ -210,13 +210,6 @@ fn attachment(held: Attachment, hashes: &mut Hashes) -> Attachment {
             Of::Image(held) => Of::Image(blob(held)),
             Of::File(held) => Of::File(blob(held)),
             Of::Text(_) => Of::Text(Default::default()),
-            Of::Review(review) => Of::Review(wire::Review {
-                diff: review.diff.map(|diff| wire::Diff {
-                    patch: diff.patch.map(blob),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }),
             Of::Page(page) => Of::Page(wire::PageReview {
                 comments: page
                     .comments

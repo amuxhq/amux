@@ -1436,7 +1436,6 @@ fn holds_a_restart(op: &Job) -> bool {
         | Job::RefreshToken { .. }
         | Job::SendPush(_)
         | Job::KillAgent { .. }
-        | Job::Compare { .. }
         | Job::Review(_) => false,
     }
 }
@@ -1555,11 +1554,6 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
                 }
             }
         }
-        Job::Compare {
-            cwd,
-            base,
-            with_patch,
-        } => crate::blobs::compare(&cwd, base, with_patch).await,
         Job::NextSpec {
             agent,
             bootstrap,

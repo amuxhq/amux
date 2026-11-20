@@ -1041,40 +1041,6 @@ impl Session {
         self.inner.agent.changes(base).await
     }
 
-    /// The agent's diff for `comparison` and the patch it names, for a
-    /// review page. The agent's host is asked for the comparison's changed
-    /// files each time, and the diff against the base it reports, so the
-    /// page shows what the overview lists by the host's rule as it stands
-    /// now: a list fetched earlier may name a base the agent has since left,
-    /// such as `origin/main` before it made a branch. The diff comes back
-    /// exactly as the host froze it, so a review sent with it names the
-    /// same patch the page showed; the patch is read through this node's
-    /// copy of the agent's files.
-    pub async fn review(
-        &self,
-        comparison: ui_view::Comparison,
-    ) -> Result<(wire::Diff, String), RpcError> {
-        let listed = self.changes(comparison.base()).await?;
-        let diff = self
-            .inner
-            .agent
-            .get_diff(ui_view::review_base(&listed), true)
-            .await?;
-        let patch = match &diff.patch {
-            Some(blob) => {
-                let bytes = self
-                    .inner
-                    .client
-                    .sessions()
-                    .get_blob(self.inner.agent.id(), &blob.hash)
-                    .await?;
-                String::from_utf8_lossy(&bytes).into_owned()
-            }
-            None => String::new(),
-        };
-        Ok((diff, patch))
-    }
-
     /// Stores bytes to attach to a prompt.
     pub async fn put_blob(
         &self,

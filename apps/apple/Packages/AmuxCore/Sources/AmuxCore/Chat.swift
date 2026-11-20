@@ -179,17 +179,6 @@ public final class Chat: ChatSource, @unchecked Sendable {
         await value(PageOutcome.self, .pageOlder(rows))
     }
 
-    /// The agent's diff for `comparison` as its host froze it, with its
-    /// patch.
-    public func review(
-        _ comparison: Comparison
-    ) async -> Result<FrozenReview, RuntimeFailure> {
-        let comparison = Bridge.json(comparison)
-        return await act(FrozenReview.self) { live in
-            comparison.withCString { amux_session_review(live, $0) }
-        }
-    }
-
     // MARK: - The review page
 
     /// Sends the draft with the review's drafts after its words, naming

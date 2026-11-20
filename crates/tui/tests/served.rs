@@ -1091,6 +1091,12 @@ impl Store {
 /// `site`, and a laptop linked to it, without the experiment, whose
 /// terminal client has the worker's chat open.
 async fn review_from_the_laptop() -> (Net, tui::App, std::path::PathBuf) {
+    review_from_the_laptop_with(true).await
+}
+
+/// [`review_from_the_laptop`], with the desk running the reviews
+/// experiment only when `reviews`.
+async fn review_from_the_laptop_with(reviews: bool) -> (Net, tui::App, std::path::PathBuf) {
     use std::sync::Arc;
 
     let topology = Topology::new()
@@ -1115,8 +1121,8 @@ async fn review_from_the_laptop() -> (Net, tui::App, std::path::PathBuf) {
                 .prompt("go")
         });
     let options = testnet::NetOptions {
-        launch: Some(Arc::new(|host: &str, launch: &mut node::Launch| {
-            if host == "desk" {
+        launch: Some(Arc::new(move |host: &str, launch: &mut node::Launch| {
+            if host == "desk" && reviews {
                 launch.experiments =
                     settings::experiments::Enabled::of(&[&settings::experiments::REVIEWS]);
             }
@@ -1439,6 +1445,37 @@ async fn a_person_on_the_laptop_reviews_the_desks_agent() {
     .await;
     assert!(screen.contains("## src/store.rs, line 7"), "{screen}");
     assert!(screen.contains("say why the store must open"), "{screen}");
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// An agent whose computer runs no reviews: the review page opens and says
+/// so, with nothing of a review to draw, and asking again keeps it open.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_desk_without_reviews_has_the_page_say_so() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let (net, mut app, _site) = review_from_the_laptop_with(false).await;
+    let open_review = |app: &mut tui::App| {
+        app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        press(app, KeyCode::Char('r'));
+    };
+    open_review(&mut app);
+    let offered_none = |app: &tui::App, screen: &str| {
+        review_page(app).is_some_and(|page| page.page().rows.is_empty())
+            && screen.contains("Reviews aren't offered on this agent's computer")
+    };
+    let screen = until(&mut app, "the page saying reviews are off", offered_none).await;
+    assert!(!screen.contains("src/store.rs"), "{screen}");
+
+    press(&mut app, KeyCode::Char('q'));
+    assert!(review_page(&app).is_none(), "q goes back to the chat");
+    open_review(&mut app);
+    until(&mut app, "the page again", offered_none).await;
 
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())

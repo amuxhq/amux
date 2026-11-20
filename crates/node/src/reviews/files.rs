@@ -401,7 +401,7 @@ async fn base_commit(
     repo: &Repo,
     review: &Review,
 ) -> Result<String, Status> {
-    super::review_base(runtime, repo.agent, &repo.cwd, review)
+    super::base_of_review(runtime, repo.agent, &repo.cwd, review)
         .await
         .map(|base| base.commit)
 }

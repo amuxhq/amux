@@ -482,94 +482,6 @@ public enum Stories {
         r("r7", command("cargo test -p relay -- --test-threads 1", .asking), attention: true),
     ]
 
-    private static let review = ReviewDoc(
-        base: "main", head: "relay-flake",
-        files: [
-            ReviewFile(
-                path: "crates/relay/tests/reconnect.rs", status: .modified, added: 6, removed: 3, binary: false,
-                hunks: [
-                    Hunk(
-                        skips: true, scope: "async fn reconnect_after_cut() {",
-                        lines: [
-                            DiffLine(kind: .context, text: "    let relay = Relay::start().await;", comments: [], newLine: 38, oldLine: 38),
-                            DiffLine(kind: .context, text: "    let link = relay.dial(&host).await?;", comments: [], newLine: 39, oldLine: 39),
-                            DiffLine(kind: .removed, text: "    // Give the hello time to land.", comments: [], newLine: nil, oldLine: 40),
-                            DiffLine(kind: .removed, text: "    tokio::time::sleep(Duration::from_millis(50)).await;", comments: [], newLine: nil, oldLine: 41),
-                            DiffLine(kind: .removed, text: "    relay.cut(&link);", comments: [], newLine: nil, oldLine: 42),
-                            DiffLine(kind: .added, text: "    // Cut only once the relay has acknowledged the hello:", comments: [], newLine: 40, oldLine: nil),
-                            DiffLine(kind: .added, text: "    // a slow runner otherwise races the first handshake.", comments: [], newLine: 41, oldLine: nil),
-                            DiffLine(kind: .added, text: "    link.settled().await;", comments: ["Is there a timeout on settled()? A link that never settles would hang the test."], newLine: 42, oldLine: nil),
-                            DiffLine(kind: .added, text: "    relay.cut(&link);", comments: [], newLine: 43, oldLine: nil),
-                            DiffLine(kind: .context, text: "", comments: [], newLine: 44, oldLine: 43),
-                            DiffLine(kind: .context, text: "    let back = link.reconnected().await?;", comments: [], newLine: 45, oldLine: 44),
-                        ]),
-                ],
-                comments: [], oldPath: nil),
-            ReviewFile(
-                path: "crates/relay/src/link.rs", status: .modified, added: 3, removed: 0, binary: false,
-                hunks: [
-                    Hunk(
-                        skips: true, scope: "impl Link {",
-                        lines: [
-                            DiffLine(kind: .context, text: "    /// Resolves once the relay acknowledged the hello.", comments: [], newLine: 120, oldLine: 120),
-                            DiffLine(kind: .added, text: "    pub async fn settled(&self) {", comments: [], newLine: 121, oldLine: nil),
-                            DiffLine(kind: .added, text: "        self.hello.wait().await", comments: [], newLine: 122, oldLine: nil),
-                            DiffLine(kind: .added, text: "    }", comments: [], newLine: 123, oldLine: nil),
-                        ]),
-                ],
-                comments: [], oldPath: nil),
-        ],
-        added: 9, removed: 3)
-
-    private static func line(_ kind: LineKind, _ text: String, old: UInt32?, new: UInt32?, comments: [String] = []) -> DiffLine {
-        DiffLine(kind: kind, text: text, comments: comments, newLine: new, oldLine: old)
-    }
-
-    /// A review of every kind of file a diff holds: changed in two places
-    /// with a comment and a line too long for the column, added, renamed
-    /// with an edit, deleted (folded), and binary.
-    private static let wideReview = ReviewDoc(
-        base: "main", head: "relay-flake",
-        files: review.files + [
-            ReviewFile(
-                path: "crates/relay/src/backoff.rs", status: .added, added: 9, removed: 0, binary: false,
-                hunks: [
-                    Hunk(skips: false, scope: "", lines: [
-                        line(.added, "//! How long a dial waits before it tries again.", old: nil, new: 1),
-                        line(.added, "", old: nil, new: 2),
-                        line(.added, "use std::time::Duration;", old: nil, new: 3),
-                        line(.added, "", old: nil, new: 4),
-                        line(.added, "/// Doubles from 50 ms, capped at 2 s, so a cut link is redialled quickly at first and politely after.", old: nil, new: 5),
-                        line(.added, "pub fn backoff(attempt: u32) -> Duration {", old: nil, new: 6),
-                        line(.added, "    let ms = 50u64.saturating_mul(1 << attempt.min(6));", old: nil, new: 7),
-                        line(.added, "    Duration::from_millis(ms.min(2_000))", old: nil, new: 8),
-                        line(.added, "}", old: nil, new: 9),
-                    ]),
-                ],
-                comments: [], oldPath: nil),
-            ReviewFile(
-                path: "crates/relay/src/dial.rs", status: .renamed, added: 2, removed: 2, binary: false,
-                hunks: [
-                    Hunk(skips: true, scope: "pub async fn dial(&self, host: &Host) -> Result<Link> {", lines: [
-                        line(.context, "    let mut attempt = 0;", old: 31, new: 31),
-                        line(.removed, "    tokio::time::sleep(Duration::from_millis(100)).await;", old: 32, new: nil),
-                        line(.removed, "    attempt += 1;", old: 33, new: nil),
-                        line(.added, "    tokio::time::sleep(backoff(attempt)).await;", old: nil, new: 32,
-                             comments: ["Should the first try wait at all?"]),
-                        line(.added, "    attempt = attempt.saturating_add(1);", old: nil, new: 33),
-                        line(.context, "    self.connect(host).await", old: 34, new: 34),
-                    ]),
-                ],
-                comments: [], oldPath: "crates/relay/src/connect.rs"),
-            ReviewFile(
-                path: "crates/relay/src/legacy_retry.rs", status: .deleted, added: 0, removed: 24, binary: false,
-                hunks: [], comments: [], oldPath: nil),
-            ReviewFile(
-                path: "docs/images/relay-reconnect.png", status: .modified, added: 0, removed: 0, binary: true,
-                hunks: [], comments: [], oldPath: nil),
-        ],
-        added: 20, removed: 29)
-
     // MARK: - Subagents
 
     /// An agent that handed its audit to four of Claude's subagents.
@@ -744,7 +656,7 @@ public enum Stories {
                     let chat = StillChat(
                         rows: conversationRows, frame: frame(flaky.card, .idle),
                         changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
-                    chat.reviewing = StillReview(doc: review, selected: ReviewSpot(file: 0, hunk: 0, line: 6))
+                    chat.page = StillReviewPage(page: firstLook())
                     return chat
                 }())
         },
@@ -897,6 +809,11 @@ public enum Stories {
     private static let nothingToReview = ReviewPage(
         banners: [], rows: [], toFetch: [], opening: false, empty: .nothing,
         header: header(view: .all, files: 0, added: 0, removed: 0, drafts: 0, sent: 0, allFiles: 0))
+
+    /// The page for an agent whose computer runs no reviews: what the
+    /// runtime hands over once the host answers that it offers none.
+    private static let notOffered = ReviewPage(
+        banners: [.notOffered], rows: [], toFetch: [], opening: false, empty: nil, header: nil)
 
     private static func header(
         view: ReviewView, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32,
@@ -1129,22 +1046,12 @@ public enum Stories {
             StillReviewPage(page: firstLook(banners: [.changedSinceYouStarted]))
         },
         reviewStory("review.empty") { StillReviewPage(page: nothingToReview) },
-        // A host with no reviews on the first look keeps the review over a
-        // patch; the page says so when the host stops offering them under
-        // a review already read, which stays up as it was.
-        reviewStory("review.not-offered") { StillReviewPage(page: firstLook(banners: [.notOffered])) },
+        // A host with no reviews: the page says so, with nothing of the
+        // review to draw.
+        reviewStory("review.not-offered") { StillReviewPage(page: notOffered) },
         Story("review.round", window: .sheet) {
             ReviewRoundSheet(
                 round: 1, text: sentText, page: sentRound, read: { sentRound }, openReview: {}, close: {})
-        },
-        Story("review.no-changes") {
-            MainStory(
-                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
-                place: Place(agent: flaky.card.agent, changes: true),
-                chat: {
-                    let chat = StillChat(rows: conversationRows, frame: frame(flaky.card, .idle), settings: claude)
-                    return chat
-                }())
         },
         Story("settings.machine", window: .settings) {
             SettingsScreen(state: .ready(machineSettings), account: SettingsAccount(profile: signedIn))

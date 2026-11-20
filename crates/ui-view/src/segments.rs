@@ -28,10 +28,6 @@ pub enum AttachmentView {
         lines: u32,
         text: String,
     },
-    Review {
-        patch: Option<BlobRef>,
-        comments: u32,
-    },
     /// A review sent into the chat: the comments it sent, the review and
     /// round it names, and the text the agent read, which is what opening
     /// it shows when the agent's host no longer has the round.
@@ -80,10 +76,6 @@ impl AttachmentView {
                 name: without_direction_controls(&text.name),
                 lines: text.text.lines().count() as u32,
                 text: text.text.clone(),
-            },
-            Some(Of::Review(review)) => AttachmentView::Review {
-                patch: review.diff.as_ref().and_then(|diff| diff.patch.clone()),
-                comments: review.comments.len() as u32,
             },
             Some(Of::Page(page)) => AttachmentView::Page {
                 title: without_direction_controls(if page.title.is_empty() {

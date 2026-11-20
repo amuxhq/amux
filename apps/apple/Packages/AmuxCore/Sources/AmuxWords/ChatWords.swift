@@ -310,7 +310,7 @@ public enum ChatWords {
         case .image(let blob), .file(let blob): (blob.name, bytes(blob.size))
         case .text(let name, let lines, _):
             (name, lines == 1 ? String(localized: "1 line") : String(localized: "\(lines) lines"))
-        case .review(let comments, _), .sentReview(let comments, _, _):
+        case .sentReview(let comments, _, _):
             (String(localized: "Review"),
              comments == 1 ? String(localized: "1 comment") : String(localized: "\(comments) comments"))
         case .page(let title, let comments, _):
@@ -324,7 +324,7 @@ public enum ChatWords {
         case .image: "photo"
         case .file: "doc"
         case .text: "doc.plaintext"
-        case .review, .sentReview: "text.bubble"
+        case .sentReview: "text.bubble"
         case .page: "globe"
         case .empty: "paperclip"
         }
@@ -516,22 +516,6 @@ public enum ChatWords {
     /// "4 files, 18 added, 28 removed": the counts as a sentence to hear.
     public static func changes(files: Int, added: UInt32, removed: UInt32) -> String {
         String(localized: "\(Self.files(files)), \(added) added, \(removed) removed")
-    }
-
-    public static func attachReview(_ count: Int) -> String {
-        count == 1
-            ? String(localized: "Attach Review · 1 comment")
-            : String(localized: "Attach Review · \(count) comments")
-    }
-
-    /// "Added line 12, Refused(String),": a diff line as VoiceOver reads it.
-    public static func spoken(_ line: DiffLine) -> String {
-        let text = line.text.trimmingCharacters(in: .whitespaces)
-        switch line.kind {
-        case .added: return String(localized: "Added line \(line.newLine ?? 0), \(text)")
-        case .removed: return String(localized: "Removed line \(line.oldLine ?? 0), \(text)")
-        case .context: return String(localized: "Line \(line.newLine ?? line.oldLine ?? 0), \(text)")
-        }
     }
 
     /// "1 line", "12 lines".

@@ -13,7 +13,7 @@ use daemon_core::reviews::Change;
 use wire::Envelope;
 use wire::experimental::SentReview;
 
-use super::{Tree, review_base, write};
+use super::{Tree, base_of_review, write};
 use crate::runtime::{AgentId, ProfileRuntime};
 
 /// The sent reviews `envelope`'s message carries, read before the message
@@ -100,7 +100,7 @@ pub(crate) async fn accepted(runtime: &ProfileRuntime, agent: AgentId, named: Ve
 
     // The round records the base its snapshot was shown against, which is
     // the review's base as it stands: the sender read it moments ago.
-    let base_commit = match review_base(runtime, agent, &tree.root, &review).await {
+    let base_commit = match base_of_review(runtime, agent, &tree.root, &review).await {
         Ok(base) => base.commit,
         Err(error) => {
             tracing::warn!(%error, "marking a sent review: its base could not be read");

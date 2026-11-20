@@ -303,13 +303,6 @@ impl AgentService for Fleet {
     ) -> Result<Response<wire::PutBlobResponse>, Status> {
         Err(Status::unimplemented("put_blob"))
     }
-
-    async fn get_diff(
-        &self,
-        _: Request<wire::GetDiffRequest>,
-    ) -> Result<Response<wire::GetDiffResponse>, Status> {
-        Err(Status::unimplemented("diff"))
-    }
 }
 
 /// A connection the stand-in daemon accepted, which fails its reads and

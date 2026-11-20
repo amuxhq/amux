@@ -46,9 +46,6 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     /// that looks at the chat while its page is on the way.
     public var holdsPage = false
     private var heldPage: CheckedContinuation<Void, Never>?
-    /// What asking for the working-tree diff comes to; nil answers that the
-    /// machine could not be asked.
-    public var working: FrozenReview?
 
     public init(
         rows: [Row], frame: ChatFrame, card: AskCard? = nil,
@@ -511,13 +508,6 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func blobFailed(_ hash: [UInt8]) -> Bool { lock.withLock { failed.contains(hash) } }
 
     public func fetchBlob(_ hash: [UInt8]) { lock.withLock { retried.append(hash) } }
-
-    public func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
-        guard let working = lock.withLock({ working }) else {
-            return .failure(RuntimeFailure("the machine could not be asked"))
-        }
-        return .success(working)
-    }
 
     public func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {
         .success(lock.withLock {

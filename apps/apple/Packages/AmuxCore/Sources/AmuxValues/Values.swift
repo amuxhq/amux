@@ -946,7 +946,6 @@ public enum AttachmentView: Codable, Hashable, Sendable {
     /// Pasted text: its name, its length in lines, and the text itself,
     /// which a sent message shows in place of the chip.
     case text(name: String, lines: UInt32, text: String)
-    case review(comments: UInt32, patch: BlobRef?)
     /// A review sent into the chat: the comments it sent, the review and
     /// round it names, and the text the agent read, which is what opening
     /// it shows when the agent's host no longer has the round.
@@ -960,7 +959,6 @@ public enum AttachmentView: Codable, Hashable, Sendable {
         case image = "Image"
         case file = "File"
         case text = "Text"
-        case review = "Review"
         case sentReview = "SentReview"
         case page = "Page"
     }
@@ -969,11 +967,6 @@ public enum AttachmentView: Codable, Hashable, Sendable {
         case name
         case lines
         case text
-    }
-
-    private enum ReviewKeys: String, CodingKey {
-        case comments
-        case patch
     }
 
     private enum SentReviewKeys: String, CodingKey {
@@ -1019,12 +1012,6 @@ public enum AttachmentView: Codable, Hashable, Sendable {
                 name: try _fields.decode(String.self, forKey: .name),
                 lines: try _fields.decode(UInt32.self, forKey: .lines),
                 text: try _fields.decode(String.self, forKey: .text))
-        case .review:
-            let _fields = try _container.nestedContainer(
-                keyedBy: ReviewKeys.self, forKey: .review)
-            self = .review(
-                comments: try _fields.decode(UInt32.self, forKey: .comments),
-                patch: try _fields.decodeIfPresent(BlobRef.self, forKey: .patch))
         case .sentReview:
             let _fields = try _container.nestedContainer(
                 keyedBy: SentReviewKeys.self, forKey: .sentReview)
@@ -1059,11 +1046,6 @@ public enum AttachmentView: Codable, Hashable, Sendable {
             try _fields.encode(name, forKey: .name)
             try _fields.encode(lines, forKey: .lines)
             try _fields.encode(text, forKey: .text)
-        case .review(let comments, let patch):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: ReviewKeys.self, forKey: .review)
-            try _fields.encode(comments, forKey: .comments)
-            try _fields.encodeIfPresent(patch, forKey: .patch)
         case .sentReview(let comments, let review, let text):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: SentReviewKeys.self, forKey: .sentReview)
@@ -1101,44 +1083,6 @@ public enum BackgroundKind: String, Codable, Hashable, Sendable, CaseIterable {
     case monitor = "Monitor"
     /// A kind the provider names that amux has no word for.
     case other = "Other"
-}
-
-public enum Base: Codable, Hashable, Sendable {
-    /// From the folder's HEAD commit.
-    case head(Empty)
-    case branch(String)
-
-    private enum Tag: String, CodingKey {
-        case head = "Head"
-        case branch = "Branch"
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a Base names exactly one variant"))
-        }
-        switch _tag {
-        case .head:
-            self = .head(try _container.decode(Empty.self, forKey: .head))
-        case .branch:
-            self = .branch(try _container.decode(String.self, forKey: .branch))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .head(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .head)
-        case .branch(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .branch)
-        }
-    }
 }
 
 /// A bearer for the account service, borrowed from the profile, which alone
@@ -2621,97 +2565,6 @@ public enum DeleteWarning: Codable, Hashable, Sendable {
     }
 }
 
-/// A comparison of an agent's working tree, made on the agent's host. It
-/// runs to the working tree, untracked files included, from HEAD or from
-/// where the branch left the named base. The patch is a text/x-diff blob of
-/// the agent, built only when asked for; its index lines carry each file's
-/// full object ids.
-public struct Diff: Codable, Hashable, Sendable {
-    /// Empty before the first commit.
-    public var head: String
-    public var files: [DiffFile]
-    public var base: DiffBase?
-    public var mergeBase: String?
-    public var patch: BlobRef?
-
-    public init(head: String, files: [DiffFile], base: DiffBase?, mergeBase: String?, patch: BlobRef?) {
-        self.head = head
-        self.files = files
-        self.base = base
-        self.mergeBase = mergeBase
-        self.patch = patch
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case head
-        case files
-        case base
-        case mergeBase = "merge_base"
-        case patch
-    }
-}
-
-public struct DiffBase: Codable, Hashable, Sendable {
-    public var base: Base?
-
-    public init(base: Base?) {
-        self.base = base
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case base
-    }
-}
-
-public struct DiffFile: Codable, Hashable, Sendable {
-    public var path: String
-    /// Lines; none for a binary file.
-    public var added: UInt32
-    public var removed: UInt32
-    public var change: Int32
-    public var binary: Bool
-
-    public init(path: String, added: UInt32, removed: UInt32, change: Int32, binary: Bool) {
-        self.path = path
-        self.added = added
-        self.removed = removed
-        self.change = change
-        self.binary = binary
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case path
-        case added
-        case removed
-        case change
-        case binary
-    }
-}
-
-public struct DiffLine: Codable, Hashable, Sendable {
-    public var kind: LineKind
-    public var text: String
-    public var comments: [String]
-    public var newLine: UInt32?
-    public var oldLine: UInt32?
-
-    public init(kind: LineKind, text: String, comments: [String], newLine: UInt32?, oldLine: UInt32?) {
-        self.kind = kind
-        self.text = text
-        self.comments = comments
-        self.newLine = newLine
-        self.oldLine = oldLine
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case kind
-        case text
-        case comments
-        case newLine = "new_line"
-        case oldLine = "old_line"
-    }
-}
-
 /// What a host offers to start an agent in: where agents ran lately and the
 /// repositories its person chose.
 public struct Directories: Codable, Hashable, Sendable {
@@ -2780,8 +2633,6 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
     case image(BlobRef)
     case file(BlobRef)
     case text(name: String, text: String)
-    /// Comments on a frozen diff, sent with the diff that names its patch.
-    case review(diff: Diff, comments: [ReviewComment])
     /// Comments on a web page, whose screenshots were stored with put_blob
     /// first.
     case page(PageReview)
@@ -2790,18 +2641,12 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
         case image = "Image"
         case file = "File"
         case text = "Text"
-        case review = "Review"
         case page = "Page"
     }
 
     private enum TextKeys: String, CodingKey {
         case name
         case text
-    }
-
-    private enum ReviewKeys: String, CodingKey {
-        case diff
-        case comments
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2823,12 +2668,6 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
             self = .text(
                 name: try _fields.decode(String.self, forKey: .name),
                 text: try _fields.decode(String.self, forKey: .text))
-        case .review:
-            let _fields = try _container.nestedContainer(
-                keyedBy: ReviewKeys.self, forKey: .review)
-            self = .review(
-                diff: try _fields.decode(Diff.self, forKey: .diff),
-                comments: try _fields.decode([ReviewComment].self, forKey: .comments))
         case .page:
             self = .page(try _container.decode(PageReview.self, forKey: .page))
         }
@@ -2847,11 +2686,6 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: TextKeys.self, forKey: .text)
             try _fields.encode(name, forKey: .name)
             try _fields.encode(text, forKey: .text)
-        case .review(let diff, let comments):
-            var _container = encoder.container(keyedBy: Tag.self)
-            var _fields = _container.nestedContainer(keyedBy: ReviewKeys.self, forKey: .review)
-            try _fields.encode(diff, forKey: .diff)
-            try _fields.encode(comments, forKey: .comments)
         case .page(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .page)
@@ -2916,12 +2750,6 @@ public struct EffortChoice: Codable, Hashable, Sendable {
         case current
         case `default` = "default"
         case unlisted
-    }
-}
-
-public struct Empty: Codable, Hashable, Sendable {
-
-    public init() {
     }
 }
 
@@ -3893,23 +3721,6 @@ public struct Found: Codable, Hashable, Sendable {
     }
 }
 
-/// An agent's working-tree diff as its host froze it for a review page, and
-/// the patch it names.
-public struct FrozenReview: Codable, Hashable, Sendable {
-    public var diff: Diff
-    public var patch: String
-
-    public init(diff: Diff, patch: String) {
-        self.diff = diff
-        self.patch = patch
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case diff
-        case patch
-    }
-}
-
 /// What a row says about the git repository an agent works in.
 public struct Git: Codable, Hashable, Sendable {
     /// The branch a worktree amux made was made from, else the repository's
@@ -4126,28 +3937,6 @@ public struct HostView: Codable, Hashable, Sendable {
         case signedIn = "signed_in"
         case through
         case version
-    }
-}
-
-public struct Hunk: Codable, Hashable, Sendable {
-    /// Lines the patch leaves out come before this one: every hunk but a
-    /// file's first when that starts at the top.
-    public var skips: Bool
-    /// The line git names after the header's second `@@`, its guess at the
-    /// enclosing function or type; empty when it names none.
-    public var scope: String
-    public var lines: [DiffLine]
-
-    public init(skips: Bool, scope: String, lines: [DiffLine]) {
-        self.skips = skips
-        self.scope = scope
-        self.lines = lines
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case skips
-        case scope
-        case lines
     }
 }
 
@@ -4515,6 +4304,7 @@ public enum Lands: String, Codable, Hashable, Sendable, CaseIterable {
     case queue = "Queue"
 }
 
+/// Which side of a change a line of a diff is on.
 public enum LineKind: String, Codable, Hashable, Sendable, CaseIterable {
     case context = "Context"
     case added = "Added"
@@ -6434,29 +6224,6 @@ public struct ReviewCodeLine: Codable, Hashable, Sendable {
     }
 }
 
-public struct ReviewComment: Codable, Hashable, Sendable {
-    public var path: String
-    /// New-side line; zero comments on the file as a whole.
-    public var line: UInt32
-    /// Old-side line for a comment on a removed line.
-    public var oldLine: UInt32
-    public var text: String
-
-    public init(path: String, line: UInt32, oldLine: UInt32, text: String) {
-        self.path = path
-        self.line = line
-        self.oldLine = oldLine
-        self.text = text
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case path
-        case line
-        case oldLine = "old_line"
-        case text
-    }
-}
-
 public enum ReviewCommentAt: Codable, Hashable, Sendable {
     /// On these lines: the snapshot's numbers, or the compared commit's for
     /// a comment on removed lines.
@@ -6652,30 +6419,6 @@ public struct ReviewContextAsk: Codable, Hashable, Sendable {
     }
 }
 
-public struct ReviewDoc: Codable, Hashable, Sendable {
-    public var base: String
-    public var head: String
-    public var files: [ReviewFile]
-    public var added: UInt32
-    public var removed: UInt32
-
-    public init(base: String, head: String, files: [ReviewFile], added: UInt32, removed: UInt32) {
-        self.base = base
-        self.head = head
-        self.files = files
-        self.added = added
-        self.removed = removed
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case base
-        case head
-        case files
-        case added
-        case removed
-    }
-}
-
 /// Why the view shown has nothing in it.
 public enum ReviewEmpty: String, Codable, Hashable, Sendable, CaseIterable {
     /// Nothing is left to review: no change and no comment.
@@ -6683,41 +6426,6 @@ public enum ReviewEmpty: String, Codable, Hashable, Sendable, CaseIterable {
     /// Nothing changed since the last round; all changes still has the
     /// change.
     case nothingSince = "NothingSince"
-}
-
-public struct ReviewFile: Codable, Hashable, Sendable {
-    public var path: String
-    public var status: FileStatus
-    public var added: UInt32
-    public var removed: UInt32
-    public var binary: Bool
-    public var hunks: [Hunk]
-    /// Comments on the file as a whole.
-    public var comments: [String]
-    /// Set for a rename or copy.
-    public var oldPath: String?
-
-    public init(path: String, status: FileStatus, added: UInt32, removed: UInt32, binary: Bool, hunks: [Hunk], comments: [String], oldPath: String?) {
-        self.path = path
-        self.status = status
-        self.added = added
-        self.removed = removed
-        self.binary = binary
-        self.hunks = hunks
-        self.comments = comments
-        self.oldPath = oldPath
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case path
-        case status
-        case added
-        case removed
-        case binary
-        case hunks
-        case comments
-        case oldPath = "old_path"
-    }
 }
 
 /// What a reader may want to pass over; a flagged file starts folded.

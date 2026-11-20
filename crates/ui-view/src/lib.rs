@@ -18,7 +18,6 @@ mod form;
 mod onboarding;
 mod overview;
 mod repository;
-mod review;
 mod review_page;
 mod rows;
 mod run;
@@ -36,7 +35,7 @@ pub use ask::{
 pub use attachments::PLACEHOLDER;
 pub use attachments::sent_review;
 pub use changed_words::*;
-pub use code::{CodeRun, HighlightedCode, TokenKind, highlight_block, highlight_patch};
+pub use code::{CodeRun, HighlightedCode, LineKind, TokenKind, highlight_block, highlight_patch};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
@@ -63,7 +62,6 @@ pub use overview::{
     lists_changes, overview, usage_windows,
 };
 pub use repository::{REPOSITORY_TINTS, Repository};
-pub use review::{DiffLine, Hunk, LineKind, ReviewDoc, ReviewFile, review_base, review_doc};
 pub use review_page::*;
 pub use rows::{
     AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView,

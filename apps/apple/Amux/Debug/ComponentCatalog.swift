@@ -561,10 +561,6 @@ enum ComponentCatalog {
             composer("review-chip-working", height: 220, frame: ScriptedChat.frame(
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 8_000, turnElapsedMs: 8_000),
                 reviewChip: ReviewChip(comments: 1, moved: true))),
-            composer("review-token", height: 200, frame: ScriptedChat.frame(phase: .idle),
-                     draft: "Please address these before the next run.") {
-                $0.attach(F.writtenReview())
-            },
             composer("strip-trouble", height: 220, frame: ScriptedChat.frame(), strip: ScriptedChat.strip(
                 model: "gpt-5", usage: UsageView(blocked: false, windows: [UsageWindowView(label: .fiveHour, state: .nearLimit, resetsAtMs: nil, usedPercent: 91)], credits: nil),
                 failedServers: [ServerView(name: "github", error: "exited", needsAuth: false)])),
@@ -754,7 +750,6 @@ enum ComponentCatalog {
                 let source = ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle),
                     strip: ScriptedChat.strip(git: F.git))
-                source.working = F.review
                 return source
             }),
             chat("changes-on-branch", readiness: ("chat.changes", "OnBranch"), chat: {
@@ -886,23 +881,6 @@ extension ComponentCatalog {
         }
     }
 
-    /// The old page over a patch, for an agent whose computer runs no
-    /// reviews.
-    private static func patchReview(
-        _ id: String, height: CGFloat = 844, writing: Bool = false, editing: Int? = nil,
-        setUp: @escaping @MainActor (ReviewModel) -> Void = { _ in }
-    ) -> ComponentExample {
-        ComponentExample(
-            id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height)
-        ) {
-            Pushed {
-                CatalogReview(setUp: setUp) { model in
-                    PatchReviewPage(model: model, against: "Uncommitted", writing: writing, editing: editing) { _ in }
-                }
-            }
-        }
-    }
-
     /// A sent review's round, raised over the chat from its chip.
     private static func round(_ id: String, page: ReviewPage?) -> ComponentExample {
         ComponentExample(id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: 844)) {
@@ -913,7 +891,6 @@ extension ComponentCatalog {
     }
 
     fileprivate static let review: [ComponentExample] = {
-        typealias F = CatalogFixtures
         typealias R = ReviewStory
         return [
             review("page") { R.page() },
@@ -931,30 +908,7 @@ extension ComponentCatalog {
             review("large-text", size: .accessibility3) { R.page() },
             round("round", page: R.round()),
             round("round-text", page: nil),
-            patchReview("patch-page") { F.comment($0) },
-            patchReview("patch-selection") { model in
-                model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
-                model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
-            },
-            patchReview("patch-comment", writing: true) { model in
-                model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
-                model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
-            },
-            patchReview("patch-editing", editing: 0) { F.comment($0) },
-            patchReview("patch-folded") { model in
-                F.comment(model)
-                model.toggle(file: 0)
-                model.toggle(file: 1)
-            },
             placeholder("review.reading", family: .review, .waiting("Reading the changes"), identifier: "review"),
-            placeholder(
-                "review.no-changes", family: .review,
-                .empty(title: "No changes", detail: "This agent has no uncommitted changes."),
-                identifier: "review"),
-            placeholder(
-                "review.not-read", family: .review,
-                .failed(title: "Couldn’t read the changes", reason: "desk did not answer"),
-                identifier: "review"),
         ]
     }()
 }
@@ -1267,21 +1221,6 @@ enum ReviewStory {
     }
 }
 
-/// Holds one review's model for as long as the example is drawn.
-private struct CatalogReview<Content: View>: View {
-    @State private var model = ReviewModel(review: CatalogFixtures.review)
-    let setUp: @MainActor (ReviewModel) -> Void
-    let content: (ReviewModel) -> Content
-
-    init(setUp: @escaping @MainActor (ReviewModel) -> Void, @ViewBuilder content: @escaping (ReviewModel) -> Content) {
-        self.setUp = setUp
-        self.content = content
-        setUp(_model.wrappedValue)
-    }
-
-    var body: some View { content(model) }
-}
-
 /// Holds one scripted chat's model for as long as the example is drawn.
 private struct CatalogChat<Content: View>: View {
     @State private var model: ChatModel
@@ -1396,50 +1335,6 @@ enum CatalogFixtures {
         }
     }()
 
-    /// An agent's working tree: a changed file, another of the same name,
-    /// and a new file.
-    static let reviewPatch = """
-        diff --git a/crates/amux-ui/src/pairing/errors.rs b/crates/amux-ui/src/pairing/errors.rs
-        index 1111111..2222222 100644
-        --- a/crates/amux-ui/src/pairing/errors.rs
-        +++ b/crates/amux-ui/src/pairing/errors.rs
-        @@ -8,11 +8,10 @@ use crate::codes::Code;
-         /// Why a pairing did not happen.
-         pub enum PairError {
-             Expired,
-        -    Refused,
-        -    Unknown,
-        -    Busy,
-        +    Refused(String),
-        +    Busy { retry_after_ms: u64 },
-         }
-         
-         impl PairError {
-        -    pub fn message(&self) -> &str {
-        +    pub fn message(&self) -> String {
-                 match self {
-        diff --git a/crates/amux-ui/tests/errors.rs b/crates/amux-ui/tests/errors.rs
-        index 3333333..4444444 100644
-        --- a/crates/amux-ui/tests/errors.rs
-        +++ b/crates/amux-ui/tests/errors.rs
-        @@ -1,4 +1,5 @@
-         use amux_ui::pairing::PairError;
-        +use amux_ui::pairing::describe;
-         
-         #[test]
-         fn every_error_has_one_string() {
-        diff --git a/docs/PAIRING.md b/docs/PAIRING.md
-        new file mode 100644
-        index 0000000..5555555
-        --- /dev/null
-        +++ b/docs/PAIRING.md
-        @@ -0,0 +1,3 @@
-        +# Pairing
-        +
-        +A refused pairing now says why.
-
-        """
-
     /// The catalogue's clock, where a view reads ages and resets against it.
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
@@ -1483,26 +1378,6 @@ enum CatalogFixtures {
             JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, kind: .shell, stop: .stopping, step: nil),
         ]
         return strip
-    }
-
-    static let review = FrozenReview(
-        diff: Diff(
-            head: "4f2a9c1", files: [], base: DiffBase(base: .head(Empty())), mergeBase: nil,
-            patch: BlobRef(hash: [5, 5, 5], name: "patch", mime: "text/x-diff", size: UInt64(reviewPatch.utf8.count))),
-        patch: reviewPatch)
-
-    /// Two comments: one on a changed line, one on a new file's line.
-    static func comment(_ model: ReviewModel) {
-        model.begin(at: ReviewLine(file: 0, hunk: 0, line: 5))
-        model.comment("Say what refused it, not only that it was refused.")
-        model.begin(at: ReviewLine(file: 2, hunk: 0, line: 2))
-        model.comment("Link the error table here.")
-    }
-
-    static func writtenReview() -> ReviewModel {
-        let model = ReviewModel(review: review)
-        comment(model)
-        return model
     }
 
     static let photo = BlobRef(hash: [7, 7, 7], name: "screen.jpg", mime: "image/jpeg", size: 184_320)

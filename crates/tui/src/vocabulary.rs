@@ -25,7 +25,6 @@ use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
 use crate::chat::ask::AskUi;
 use crate::chat::composer::{QueueEntry, edge_row};
-use crate::chat::patch_review::ReviewPage;
 use crate::chat::rows::{RowFacts, RowState, row_lines};
 use crate::chat::{composer_lines, feed, native_composer_lines, sign_in_composer_lines};
 use crate::editor::Editor;
@@ -194,11 +193,6 @@ pub fn components(theme: Theme) -> Vec<Component> {
         name: "home_rows",
         shows: "Home with a row in every state, each with its name (word pairs where amux named the agent), its branch where it works in a repository, and its second line: a family placed under Needs you by its child's question, a command asked for with another ask behind it; under Live a step being run, what an idle agent last said, a signed-out and a usage-limited agent, a starting agent with nothing to say yet, and an agent that failed with its cause, and an agent on a host that is away; under Settled, unfolded, one that finished and one that was stopped, whose heading says all there is to say.",
         buffer: home_rows(theme),
-    });
-    out.push(Component {
-        name: "review_patch_page",
-        shows: "The full-screen review page over a working-tree diff, for an agent whose computer does not run reviews: the file list beside one stream of files and hunks, added and removed lines tinted, a saved comment under its line and the comment editor open on another.",
-        buffer: review_page(theme),
     });
     for (name, shows, mut page) in review_pages() {
         let mut terminal =
@@ -1172,95 +1166,6 @@ pub fn authored_home() -> HomeScene {
     }
 }
 
-fn review_page(theme: Theme) -> Buffer {
-    let mut page = commented_review();
-    let mut terminal = Terminal::new(TestBackend::new(WIDTH, PAGE_HEIGHT)).expect("test terminal");
-    terminal
-        .draw(|frame| {
-            let area = frame.area();
-            page.draw(frame, area, None, theme);
-        })
-        .expect("draw");
-    terminal.backend().buffer().clone()
-}
-
-/// The review page over a two-file working-tree diff, with a comment on
-/// one line and a second being written on the next.
-fn commented_review() -> ReviewPage {
-    let patch = "\
-diff --git a/src/sum.rs b/src/sum.rs
-index 1111111..2222222 100644
---- a/src/sum.rs
-+++ b/src/sum.rs
-@@ -1,5 +1,6 @@
- fn main() {
-     let a = 1;
--    let b = 2;
--    println!(\"{}\", a + b);
-+    let b = 3;
-+    let c = 4;
-+    println!(\"{}\", a + b + c);
- }
-@@ -19,3 +20,3 @@ fn total(xs: &[i32]) -> i32 {
-     let mut sum = 0;
--    for x in xs { sum += x; }
-+    for x in xs { sum += *x; }
-     sum
-diff --git a/NOTES.md b/NOTES.md
-new file mode 100644
-index 0000000..3333333
---- /dev/null
-+++ b/NOTES.md
-@@ -0,0 +1 @@
-+Remember the sum changed.
-";
-    let diff = wire::Diff {
-        patch: Some(BlobRef {
-            hash: vec![7; 32],
-            name: "working-tree.diff".into(),
-            mime: "text/x-diff".into(),
-            size: patch.len() as u64,
-        }),
-        base: Some(wire::DiffBase {
-            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-        }),
-        head: "0463fb2c".into(),
-        merge_base: None,
-        files: vec![
-            wire::DiffFile {
-                path: "src/sum.rs".into(),
-                added: 3,
-                removed: 2,
-                change: wire::DiffFileChange::Changed as i32,
-                binary: false,
-            },
-            wire::DiffFile {
-                path: "NOTES.md".into(),
-                added: 1,
-                removed: 0,
-                change: wire::DiffFileChange::Created as i32,
-                binary: false,
-            },
-        ],
-    };
-    let mut page = ReviewPage::new(diff, patch.into());
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
-    page.key(key(KeyCode::Char('j')));
-    page.key(key(KeyCode::Char('j')));
-    page.key(key(KeyCode::Char('c')));
-    for c in "why 3? the spec says b stays 2".chars() {
-        page.key(key(KeyCode::Char(c)));
-    }
-    page.key(key(KeyCode::Enter));
-    page.key(key(KeyCode::Char('j')));
-    page.key(key(KeyCode::Char('c')));
-    for c in "and c".chars() {
-        page.key(key(KeyCode::Char(c)));
-    }
-    page
-}
-
 // --- rows ------------------------------------------------------------------
 
 fn row(kind: RowKind) -> Row {
@@ -1516,9 +1421,15 @@ fn row_sets() -> Vec<RowSet> {
                             Segment::Text("Why does the fleet flicker? See ".into()),
                             Segment::Attachment(AttachmentView::Image(image.clone())),
                             Segment::Text(" and my notes ".into()),
-                            Segment::Attachment(AttachmentView::Review {
-                                patch: None,
+                            Segment::Attachment(AttachmentView::SentReview {
                                 comments: 2,
+                                review: ui_view::SentReviewRef {
+                                    review_id: vec![1; 16],
+                                    round: 1,
+                                    snapshot: "0463fb2c".into(),
+                                    comment_ids: vec![vec![1], vec![2]],
+                                },
+                                text: "Two comments on src/sum.rs.".into(),
                             }),
                         ],
                         steered: false,

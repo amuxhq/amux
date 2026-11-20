@@ -457,20 +457,13 @@
     },
     {
       "name": "review.not-offered",
-      "shows": "The review page for an agent whose computer does not run reviews.",
-      "clients": ["terminal", "mac"],
-      "why": "The phone opens the review over a patch when the agent's computer does not run reviews."
+      "shows": "The review page for an agent whose computer does not run reviews: it says so, with nothing of the review to draw.",
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "review.round",
       "shows": "What a review sent into the chat opens: the round it closed, each comment with the code it was written on, and a way to the review as it is now.",
       "clients": ["phone", "terminal", "mac"]
-    },
-    {
-      "name": "review.no-changes",
-      "shows": "The review page for an agent with nothing changed.",
-      "clients": ["phone", "mac"],
-      "why": "The terminal says there is nothing to review on its notice line instead of opening the page."
     },
     {
       "name": "settings.signed-in",

@@ -28,10 +28,10 @@ use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
 use wire::{
     CreateAgentRequest, CreateAgentResponse, DeleteAgentRequest, DeleteAgentResponse, ErrorCode,
-    GetDiffRequest, GetDiffResponse, PreviewDeleteRequest, PreviewDeleteResponse, PutBlobRequest,
-    PutBlobResponse, RenameAgentRequest, RenameAgentResponse, ResumeAgentRequest,
-    ResumeAgentResponse, SendInputRequest, SendMessageRequest, SendMessageResponse,
-    SetFilingRequest, SetFilingResponse, create_agent_request,
+    PreviewDeleteRequest, PreviewDeleteResponse, PutBlobRequest, PutBlobResponse,
+    RenameAgentRequest, RenameAgentResponse, ResumeAgentRequest, ResumeAgentResponse,
+    SendInputRequest, SendMessageRequest, SendMessageResponse, SetFilingRequest, SetFilingResponse,
+    create_agent_request,
 };
 
 use super::changes::person_or_parent;
@@ -414,24 +414,6 @@ impl AgentService for Agents {
             .put_blob(put)
             .await
             .map(|blob| Response::new(PutBlobResponse { blob: Some(blob) }))
-            .map_err(|error| status(error.to_wire()))
-    }
-
-    async fn get_diff(
-        &self,
-        request: Request<GetDiffRequest>,
-    ) -> Result<Response<GetDiffResponse>, Status> {
-        let (runtime, ..) = self
-            .acting_on(
-                &request,
-                &request.get_ref().agent_id,
-                "an agent reads only its own children's changes",
-            )
-            .await?;
-        runtime
-            .get_diff(request.into_inner())
-            .await
-            .map(|diff| Response::new(GetDiffResponse { diff: Some(diff) }))
             .map_err(|error| status(error.to_wire()))
     }
 }

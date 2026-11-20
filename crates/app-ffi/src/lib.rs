@@ -43,9 +43,9 @@ use app_embedded::{
     UsageEvent,
 };
 use app_runtime::values::{
-    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, MachineSettings,
-    NewAgent, OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView,
-    RepositorySuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome, SignInOfferView,
+    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, MachineSettings, NewAgent,
+    OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView, RepositorySuggestion,
+    SettingsChange, SignInAnswer, SignInOfferOutcome, SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use node::SourcePolicy;
@@ -3200,48 +3200,6 @@ pub unsafe extern "C" fn amux_session_open_overview(
             Answered::from(chat.open_overview(comparison).await)
         })
     }
-}
-
-/// Asks the agent's host for its diff for `comparison` (a JSON
-/// `Comparison`, or null for the uncommitted work) and the patch it names;
-/// the ticket answers `{"Ok": FrozenReview}` or `{"Err": ..}`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `comparison` is a C string or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_review(
-    chat: *const AmuxChat,
-    comparison: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let comparison: Comparison = unsafe { parse(comparison) }.unwrap_or_default();
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            Answered::from(chat.review(comparison).await)
-        })
-    }
-}
-
-/// The review page's document: a `FrozenReview`'s patch parsed into files
-/// and hunks, with `comments` (a JSON array of `ReviewComment`) placed on
-/// their lines. Null when either argument does not parse.
-///
-/// # Safety
-/// The strings are NUL-terminated.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_review_doc(
-    review: *const c_char,
-    comments: *const c_char,
-) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    let review: Option<FrozenReview> = unsafe { parse(review) };
-    // SAFETY: the caller's contract.
-    let comments: Option<Vec<_>> = unsafe { parse(comments) };
-    guard(std::ptr::null_mut(), || match (review, comments) {
-        (Some(review), Some(comments)) => owned(&review.doc(&comments)),
-        _ => std::ptr::null_mut(),
-    })
 }
 
 /// Stores bytes to attach to a prompt; the ticket answers

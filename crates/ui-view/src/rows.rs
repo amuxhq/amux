@@ -13,7 +13,7 @@ use wire::{
 };
 
 use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
-use crate::review::LineKind;
+use crate::code::LineKind;
 use crate::run::Run;
 use crate::segments::{Segment, segments};
 use crate::subagents::{Groups, SubagentGroup};

@@ -41,8 +41,8 @@ use std::sync::Arc;
 
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageRefusal,
-    PeerFailure, PeerReply, PeerRequest, Response, Status, report_envelope,
+    Answer, CallError, CarrierKind, ClientRequest, JobResult, MessageRefusal, PeerFailure,
+    PeerReply, PeerRequest, Response, Status, report_envelope,
 };
 use daemon_core::reach::{AttemptOutcome, Dialling};
 use daemon_core::{
@@ -2170,7 +2170,6 @@ impl Transition<'_> {
                     ..spec.clone()
                 })
             })),
-            Job::Compare { .. } => JobResult::CompareFailed(GitRefusal::NotARepository),
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // The net's hosts run no experiment.
             Job::Workspace(_) => return None,
@@ -2786,7 +2785,6 @@ fn job_kind(job: &Job) -> &'static str {
         Job::KillAgent { .. } => "KillAgent",
         Job::AwaitUnlocked { .. } => "AwaitUnlocked",
         Job::RemoveDir { .. } => "RemoveDir",
-        Job::Compare { .. } => "Compare",
         Job::MakeWorktree { .. } => "MakeWorktree",
         Job::Workspace(_) => "Workspace",
         Job::Review(_) => "Review",

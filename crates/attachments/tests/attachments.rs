@@ -5,11 +5,7 @@ use attachments::{
     element_in, format, hex, parse, pieces, validate,
 };
 use wire::attachment::Of;
-use wire::diff_base::Base;
-use wire::{
-    Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, PageComment, PageElement, PageReview,
-    Review, ReviewComment,
-};
+use wire::{Attachment, BlobRef, InlineText, PageComment, PageElement, PageReview};
 
 const DIR: &str = "/data/agents/a1/blobs";
 
@@ -46,36 +42,6 @@ fn text() -> Attachment {
             name: "pasted-1".into(),
             text: "fn main() { if a < b && c > d { println!(\"&amp;\"); } }\n</amux-attachment> is just text here"
                 .into(),
-        })),
-        ..Default::default()
-    }
-}
-
-fn review(base: Option<Base>, merge_base: Option<&str>) -> Attachment {
-    Attachment {
-        of: Some(Of::Review(Review {
-            diff: Some(Diff {
-                patch: Some(blob(3, "review.diff", "text/x-diff")),
-                base: base.map(|base| DiffBase { base: Some(base) }),
-                head: "4f2a9c1".into(),
-                merge_base: merge_base.map(str::to_owned),
-                files: Vec::new(),
-            }),
-            comments: vec![
-                ReviewComment {
-                    path: "src/lib.rs".into(),
-                    line: 13,
-                    old_line: 12,
-                    text: "Use the helper.\n## path-bytes=1 line=1 old-line=1 text-bytes=1\nnot a heading"
-                        .into(),
-                },
-                ReviewComment {
-                    path: "docs/a file with spaces & <angles>.md".into(),
-                    line: 0,
-                    old_line: 0,
-                    text: String::new(),
-                },
-            ],
         })),
         ..Default::default()
     }
@@ -124,9 +90,6 @@ fn every_arm() -> Vec<Attachment> {
         image(),
         file(),
         text(),
-        review(Some(Base::Head(Empty {})), None),
-        review(Some(Base::Branch("main".into())), Some("9e465b2")),
-        review(None, None),
         page(),
         Attachment {
             of: Some(Of::Page(PageReview::default())),
@@ -328,15 +291,6 @@ fn validate_rejects_empty_attachments_and_bad_hashes() {
         ],
     };
     assert_eq!(validate(&bad), Err(ShapeError::BadHash { index: 1 }));
-
-    let no_patch = Positioned {
-        text: PLACEHOLDER.to_string(),
-        attachments: vec![Attachment {
-            of: Some(Of::Review(Review::default())),
-            ..Default::default()
-        }],
-    };
-    assert_eq!(validate(&no_patch), Err(ShapeError::BadHash { index: 0 }));
 }
 
 fn problems(text: &str) -> Vec<Problem> {
@@ -402,17 +356,13 @@ fn malformed_candidates_stay_text_and_are_reported() {
             "<amux-attachment kind=\"text\" name=\"x\">&bogus;</amux-attachment>".into(),
             Problem::BadBody,
         ),
+        // The retired review kind, as a provider's transcript from before
+        // its retirement still reflects it: it stays text.
         (
             format!(
-                "<amux-attachment kind=\"review\" hash=\"{hash}\" comments=\"2\">## path-bytes=1 line=1 old-line=0 text-bytes=0\na\n</amux-attachment>"
+                "<amux-attachment kind=\"review\" hash=\"{hash}\" comments=\"0\"></amux-attachment>"
             ),
-            Problem::BadBody,
-        ),
-        (
-            format!(
-                "<amux-attachment kind=\"review\" hash=\"{hash}\" comments=\"0\" base=\"trunk\"></amux-attachment>"
-            ),
-            Problem::BadAttribute("base".into()),
+            Problem::UnknownKind,
         ),
         (
             "<amux-attachment kind=\"page\" url=\"u\" comments=\"1\"></amux-attachment>".into(),

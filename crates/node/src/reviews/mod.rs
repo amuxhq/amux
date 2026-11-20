@@ -203,7 +203,7 @@ pub(crate) async fn edit(
     let latest = review
         .latest()
         .ok_or_else(|| refused(ErrorCode::Internal, "the review holds no snapshot"))?;
-    let base = review_base(runtime, tree.agent, &tree.root, &review).await?;
+    let base = base_of_review(runtime, tree.agent, &tree.root, &review).await?;
     let shown = compared(&review, &base.commit);
 
     // Every edit is checked, and what the review would hold counted,
@@ -613,7 +613,7 @@ pub(super) struct Base {
 
 /// The base `review` of the own agent `agent`, working in `cwd`, runs all
 /// changes from now, by the one rule every read of a review uses.
-pub(super) async fn review_base(
+pub(super) async fn base_of_review(
     runtime: &ProfileRuntime,
     agent: AgentId,
     cwd: &Path,

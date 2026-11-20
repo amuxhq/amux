@@ -926,6 +926,30 @@ mod tests {
         assert_eq!(before.encode_to_vec(), plain.encode_to_vec());
     }
 
+    /// An attachment as builds before the review service wrote a review of
+    /// a patch: field 4, a message of its own, here only its bytes.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct OldReviewAttachment {
+        #[prost(bytes = "vec", optional, tag = "4")]
+        review: Option<Vec<u8>>,
+    }
+
+    /// The retired review kind's number stays reserved, so a journal or
+    /// draft holding one still decodes: an attachment with no kind, which
+    /// clients draw as an empty attachment and leave out of a draft.
+    #[test]
+    fn a_retired_review_attachment_decodes_with_no_kind() {
+        // A review holding a diff that names its patch's hash.
+        let review = [0x0a, 0x04, 0x0a, 0x02, 0x0a, 0x00];
+        let old = OldReviewAttachment {
+            review: Some(review.to_vec()),
+        };
+        let read = Attachment::decode(old.encode_to_vec().as_slice())
+            .expect("an old review attachment decodes");
+        assert_eq!(read.of, None);
+        assert!(read.experimental.is_empty());
+    }
+
     /// Top-level enum values share one namespace in the package, so each
     /// carries its enum's name as a prefix; prost strips it in Rust.
     #[test]

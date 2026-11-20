@@ -9,24 +9,16 @@
 //! its own: images the model read, and its catalogue, whose hash its
 //! snapshot names. GetBlob reads a file for a client, and for a peer's
 //! agent keeps the origin's exact bytes, so a catalogue with fields this
-//! daemon does not know keeps its hash. Diff compares the agent's working directory through git-facts
-//! and, only when asked for the patch, writes it as a blob of the agent, so
-//! it lives as long as that agent whether or not a review is ever attached.
+//! daemon does not know keeps its hash.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// The mime type of a patch written by Diff.
-pub use daemon_core::blobs::PATCH_MIME;
-use daemon_core::payload::{BlobRefusal, CallError, ClientRequest, GitRefusal, Response, Status};
-use git_facts::{Change, Comparison, GitError};
+use daemon_core::payload::{BlobRefusal, CallError, ClientRequest, Response, Status};
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
 use uuid::Uuid;
-use wire::{
-    BlobRef, DiffBase, DiffFile, DiffFileChange, ErrorCode, GetBlobRequest, GetBlobResponse,
-    GetDiffRequest, PutBlobRequest, diff_base,
-};
+use wire::{BlobRef, ErrorCode, GetBlobRequest, GetBlobResponse, PutBlobRequest};
 
 use crate::api::Owner;
 use crate::driver::{Ask, Delivered};
@@ -48,16 +40,12 @@ pub enum BlobError {
     TooLarge { name: String, size: usize },
     #[error("the agent holds no blob {0}")]
     NoBlob(String),
-    #[error("a diff needs a base")]
-    NoBase,
     /// Writing failed, most often because the disk is full. Nothing is
     /// left behind.
     #[error("writing the blob: {0}")]
     Write(io::Error),
     #[error("reading the blob: {0}")]
     Read(io::Error),
-    #[error(transparent)]
-    Git(#[from] git_facts::GitError),
     #[error("the bytes a peer sent are not the blob {0}")]
     Mismatch(String),
     /// A file of another host's agent this node has not fetched yet, and
@@ -78,8 +66,8 @@ impl BlobError {
     pub fn to_wire(&self) -> wire::Error {
         let code = match self {
             Self::NoAgent | Self::NoBlob(_) => ErrorCode::NotFound,
-            Self::NotOwn | Self::Git(_) => ErrorCode::FailedPrecondition,
-            Self::BadHash(_) | Self::NoBase => ErrorCode::InvalidArgument,
+            Self::NotOwn => ErrorCode::FailedPrecondition,
+            Self::BadHash(_) => ErrorCode::InvalidArgument,
             Self::TooLarge { .. } => ErrorCode::ResourceExhausted,
             Self::Write(error) if is_full(error) => ErrorCode::ResourceExhausted,
             Self::Write(_) | Self::Read(_) | Self::Mismatch(_) | Self::Store(_) | Self::Core(_) => {
@@ -240,15 +228,6 @@ impl ProfileRuntime {
                                 io::Error::other(words)
                             }),
                             BlobRefusal::Read(words) => BlobError::Read(io::Error::other(words)),
-                            BlobRefusal::NoBase => BlobError::NoBase,
-                            BlobRefusal::Git(refusal) => BlobError::Git(match refusal {
-                                GitRefusal::NotARepository => GitError::NotARepository,
-                                GitRefusal::NoForkPoint(base) => GitError::NoForkPoint(base),
-                                GitRefusal::Failed(words) => GitError::Failed {
-                                    command: "diff".to_owned(),
-                                    stderr: words,
-                                },
-                            }),
                         },
                         CallError::Store(words) => BlobError::Core(words),
                         other => BlobError::Core(format!("{other:?}")),
@@ -256,13 +235,6 @@ impl ProfileRuntime {
                 }
                 None => return Err(BlobError::Core("the profile is no longer running".into())),
             }
-        }
-    }
-
-    pub async fn get_diff(&self, request: GetDiffRequest) -> Result<wire::Diff, BlobError> {
-        match self.blob_call(ClientRequest::GetDiff(request)).await? {
-            Some(Response::Diff(diff)) => Ok(*diff),
-            other => Err(answered_with(other)),
         }
     }
 }
@@ -291,55 +263,4 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
         let _ = write!(out, "{byte:02x}");
         out
     })
-}
-
-fn diff_file(file: git_facts::FileChange) -> DiffFile {
-    let change = match file.change {
-        Change::Created => DiffFileChange::Created,
-        Change::Deleted => DiffFileChange::Deleted,
-        Change::Changed => DiffFileChange::Changed,
-    };
-    DiffFile {
-        path: file.path,
-        added: file.added,
-        removed: file.removed,
-        change: change as i32,
-        binary: file.binary,
-    }
-}
-
-/// Compares a working tree for the core's diff: the diff without its patch,
-/// and the patch with its hash.
-pub(crate) async fn compare(
-    cwd: &Path,
-    base: diff_base::Base,
-    with_patch: bool,
-) -> daemon_core::payload::JobResult {
-    use daemon_core::payload::{JobResult, Patch};
-    let comparison = match &base {
-        diff_base::Base::Head(_) => Comparison::Uncommitted,
-        diff_base::Base::Branch(branch) => Comparison::OnBranch {
-            base: branch.clone(),
-        },
-    };
-    match git_facts::compare(cwd, &comparison, with_patch).await {
-        Ok(compared) => JobResult::Compared {
-            diff: wire::Diff {
-                patch: None,
-                base: Some(DiffBase { base: Some(base) }),
-                head: compared.head.unwrap_or_default(),
-                merge_base: compared.merge_base,
-                files: compared.files.into_iter().map(diff_file).collect(),
-            },
-            patch: compared.patch.map(|bytes| Patch {
-                hash: Sha256::digest(&bytes).to_vec(),
-                bytes,
-            }),
-        },
-        Err(error) => JobResult::CompareFailed(match error {
-            GitError::NotARepository => GitRefusal::NotARepository,
-            GitError::NoForkPoint(base) => GitRefusal::NoForkPoint(base),
-            other => GitRefusal::Failed(other.to_string()),
-        }),
-    }
 }

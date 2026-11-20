@@ -142,7 +142,6 @@ fn writes(input: &Input, copying: JobId) -> bool {
                 | ClientRequest::GetItem(_)
                 | ClientRequest::SubscribeInventory
                 | ClientRequest::GetBlob(_)
-                | ClientRequest::GetDiff(_)
         ),
         // A paired daemon asks this host only to read: its follows and its
         // pages. A report it hands over reaches the core as a message.

@@ -378,18 +378,14 @@ final class ChatWordsTests: XCTestCase {
         }
     }
 
-    func testTheReviewSaysHowMuchChangedAndWhatAttachingCarries() {
+    func testTheReviewSaysHowMuchChangedAndWhatASentReviewCarries() {
         XCTAssertEqual(ChatWords.changes(files: 1, added: 18, removed: 2), "1 file, 18 added, 2 removed")
         XCTAssertEqual(ChatWords.changes(files: 4, added: 0, removed: 28), "4 files, 0 added, 28 removed")
-        XCTAssertEqual(ChatWords.attachReview(1), "Attach Review · 1 comment")
-        XCTAssertEqual(ChatWords.attachReview(3), "Attach Review · 3 comments")
         XCTAssertEqual(ChatWords.commentOn(lines: 1), "Comment on 1 line")
         XCTAssertEqual(ChatWords.commentOn(lines: 5), "Comment on 5 lines")
-        XCTAssertEqual(ChatWords.chip(.review(comments: 2, patch: nil)), "Review · 2 comments")
-        let added = DiffLine(kind: .added, text: "    Refused(String),", comments: [], newLine: 11, oldLine: nil)
-        XCTAssertEqual(ChatWords.spoken(added), "Added line 11, Refused(String),")
-        let removed = DiffLine(kind: .removed, text: "    Busy,", comments: [], newLine: nil, oldLine: 13)
-        XCTAssertEqual(ChatWords.spoken(removed), "Removed line 13, Busy,")
+        let sent = SentReviewRef(reviewId: [1], round: 1, snapshot: "4f2a9c1", commentIds: [[1], [2]])
+        XCTAssertEqual(
+            ChatWords.chip(.sentReview(comments: 2, review: sent, text: "src/lib.rs:4")), "Review · 2 comments")
     }
 
     /// The chip says the model by the one name the view gives it, its

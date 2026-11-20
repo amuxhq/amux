@@ -66,7 +66,6 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
         .failure(RuntimeFailure("no"))
     }
     func blob(_ hash: [UInt8]) -> Data? { nil }
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func keptDraft() -> Draft? { kept }
     func keep(_ draft: Draft) { MainActor.assumeIsolated { keeps?(draft) } }

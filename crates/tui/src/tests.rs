@@ -2006,59 +2006,7 @@ mod review_page {
 
 // --- the review page -------------------------------------------------------
 
-const PATCH: &str = "\
-diff --git a/src/lib.rs b/src/lib.rs
-index 1111111..2222222 100644
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -10,3 +10,4 @@ fn main() {
- let a = 1;
--let b = 2;
-+let b = 3;
-+let c = 4;
-diff --git a/notes.md b/notes.md
-new file mode 100644
-index 0000000..3333333
---- /dev/null
-+++ b/notes.md
-@@ -0,0 +1 @@
-+hello
-";
-
-fn working_tree_diff() -> wire::Diff {
-    wire::Diff {
-        patch: Some(wire::BlobRef {
-            hash: vec![9; 32],
-            name: "working-tree.diff".into(),
-            mime: "text/x-diff".into(),
-            size: PATCH.len() as u64,
-        }),
-        base: Some(wire::DiffBase {
-            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-        }),
-        head: "3f2a1c9e0000".into(),
-        merge_base: None,
-        files: vec![
-            wire::DiffFile {
-                path: "src/lib.rs".into(),
-                added: 2,
-                removed: 1,
-                change: wire::DiffFileChange::Changed as i32,
-                binary: false,
-            },
-            wire::DiffFile {
-                path: "notes.md".into(),
-                added: 1,
-                removed: 0,
-                change: wire::DiffFileChange::Created as i32,
-                binary: false,
-            },
-        ],
-    }
-}
-
-/// [`working_tree_diff`]'s files as the agent's host lists them for an
-/// overview.
+/// Two changed files as the agent's host lists them for an overview.
 fn working_tree_changes() -> wire::GetChangesResponse {
     use wire::{ChangedFile, FileStatus};
     wire::GetChangesResponse {
@@ -2089,186 +2037,29 @@ fn review_screen(view: &mut ChatView, state: &SessionState) -> (String, ratatui:
     (text(&buffer), buffer)
 }
 
-fn review_token(view: &ChatView) -> Option<wire::Review> {
-    view.editor.attachments().iter().find_map(|a| match &a.of {
-        Some(wire::attachment::Of::Review(review)) => Some(review.clone()),
-        _ => None,
-    })
+/// The chat's review page open at `src/store.rs`, over the files of a
+/// review whose drafts were written before the agent last changed code.
+fn open_review(view: &mut ChatView) {
+    let page = view.open_review_page(Some("src/store.rs"));
+    page.update(crate::vocabulary::review_drafts_stale().fetched().clone());
+    page.show_file("src/store.rs");
 }
 
-#[test]
-fn the_review_page_lists_files_and_styles_hunks() {
-    let state = chat(replies(1, 3));
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
-    let (screen, buffer) = review_screen(&mut view, &state);
-    assert!(
-        screen.contains("review · working tree at 3f2a1c9"),
-        "{screen}"
-    );
-    assert!(screen.contains("2 files · +3 −1"), "{screen}");
-    // The list beside the stream, files under their directories.
-    assert!(screen.contains("notes.md           +1  │"), "{screen}");
-    assert!(screen.contains("src/"), "{screen}");
-    assert!(screen.contains("lib.rs        +2 −1  │"), "{screen}");
-    // No hunk headers: one column of numbers, a removed line by its old
-    // number and every other by its new one.
-    assert!(!screen.contains("@@"), "{screen}");
-    // The page opens on the first changed line.
-    assert!(screen.contains("│▌   1 + hello"), "{screen}");
-    assert!(screen.contains("│   11 - let b = 2;"), "{screen}");
-    assert!(screen.contains("│   11 + let b = 3;"), "{screen}");
-
-    // Added and removed lines carry the diff tints across the row.
-    let row_of = |needle: &str| {
-        screen
-            .lines()
-            .position(|line| line.contains(needle))
-            .unwrap_or_else(|| panic!("{needle}: {screen}")) as u16
+/// The words of the one comment `effects` puts on the review.
+fn put_words(effects: &[ChatEffect]) -> &str {
+    use wire::experimental::review_edit;
+    let [ChatEffect::ReviewEdit { edits, .. }] = effects else {
+        panic!("not one review edit: {effects:?}");
     };
-    let added = row_of("+ let b = 3;");
-    let removed = row_of("- let b = 2;");
-    let context = row_of("let a = 1;");
-    assert_eq!(buffer[(W - 1, added)].bg, theme().diff_added().bg.unwrap());
-    assert_eq!(
-        buffer[(W - 1, removed)].bg,
-        theme().diff_removed().bg.unwrap()
-    );
-    assert_ne!(
-        buffer[(W - 1, context)].bg,
-        theme().diff_added().bg.unwrap()
-    );
-}
-
-#[test]
-fn a_hunk_after_left_out_lines_opens_on_a_break_naming_where_it_is() {
-    let patch = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n\
-                 @@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -20,2 +20,2 @@ fn main() {\n d\n-e\n+f\n\
-                 @@ -40,2 +40,2 @@\n g\n-h\n+i\n";
-    let state = chat(replies(1, 3));
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), patch.into(), None);
-    let (screen, _) = review_screen(&mut view, &state);
-    // The page beside the file list.
-    let lines: Vec<&str> = screen
-        .lines()
-        .map(|line| line.rsplit_once('│').map_or(line, |(_, page)| page))
-        .collect();
-    let at = |needle: &str| {
-        lines
-            .iter()
-            .position(|line| line.contains(needle))
-            .unwrap_or_else(|| panic!("{needle} in {screen}"))
-    };
-    // The first hunk starts at the top, so nothing is left out before it.
-    assert!(lines[at("1   a") - 1].trim().is_empty(), "{screen}");
-    // The next opens on its scope; git's ranges are not shown.
-    let named = at("⋯   fn main() { ──");
-    assert!(lines[named - 1].trim().is_empty(), "{screen}");
-    assert!(lines[named + 1].contains("20   d"), "{screen}");
-    assert!(!screen.contains("@@"), "{screen}");
-    // A hunk git names nothing for still opens on the break.
-    let bare = at("40   g") - 1;
-    assert!(lines[bare].trim_start().starts_with("⋯   ──"), "{screen}");
-}
-
-#[test]
-fn the_first_saved_comment_puts_a_review_token_in_the_draft_at_the_cursor() {
-    let state = chat(replies(1, 3));
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    typed(&mut view, &state, "look at this ");
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
-
-    // Down past notes.md to src/lib.rs's first added line, and comment.
-    for _ in 0..4 {
-        view.key(&state, key(KeyCode::Char('j')), theme());
+    match edits.as_slice() {
+        [
+            wire::experimental::ReviewEdit {
+                of: Some(review_edit::Of::Put(put)),
+            },
+        ] => &put.text,
+        other => panic!("not one put: {other:?}"),
     }
-    view.key(&state, key(KeyCode::Char('c')), theme());
-    typed(&mut view, &state, "why three?");
-    assert!(review_token(&view).is_none(), "nothing until it is saved");
-    view.key(&state, key(KeyCode::Enter), theme());
-    let (screen, _) = review_screen(&mut view, &state);
-    assert!(screen.contains("│ why three?"), "{screen}");
-    assert!(screen.contains("2 files · +3 −1 · 1 comment"), "{screen}");
-
-    let review = review_token(&view).expect("the token is in the draft");
-    assert_eq!(review.diff, Some(working_tree_diff()));
-    assert_eq!(
-        review.comments,
-        vec![wire::ReviewComment {
-            path: "src/lib.rs".into(),
-            line: 11,
-            old_line: 0,
-            text: "why three?".into(),
-        }]
-    );
-    assert_eq!(
-        view.editor.text(),
-        format!("look at this {} ", attachments::PLACEHOLDER)
-    );
-
-    // A comment on the removed line lands on its old-side number, and the
-    // same token updates where it sits.
-    view.key(&state, key(KeyCode::Char('k')), theme());
-    view.key(&state, key(KeyCode::Char('c')), theme());
-    typed(&mut view, &state, "was two");
-    view.key(&state, key(KeyCode::Enter), theme());
-    assert_eq!(view.editor.attachments().len(), 1);
-    let review = review_token(&view).unwrap();
-    assert_eq!(review.comments.len(), 2);
-    assert_eq!(
-        (review.comments[1].line, review.comments[1].old_line),
-        (0, 11)
-    );
-
-    // q returns to the chat with the draft kept and the token drawn.
-    view.key(&state, key(KeyCode::Char('q')), theme());
-    assert!(!view.review_open);
-    let (screen, _) = review_screen(&mut view, &state);
-    assert!(
-        screen.contains("look at this [review · 2 comments]"),
-        "{screen}"
-    );
-    // <leader> r goes back to the same page while its token is held.
-    assert!(view.resume_review());
-    let (screen, _) = review_screen(&mut view, &state);
-    assert!(screen.contains("│ was two"), "{screen}");
 }
-
-#[test]
-fn deleting_comments_and_the_token_drops_the_draft_review() {
-    let state = chat(replies(1, 3));
-    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
-    view.key(&state, key(KeyCode::Char('c')), theme());
-    typed(&mut view, &state, "one");
-    view.key(&state, key(KeyCode::Enter), theme());
-    // Enter on a commented line edits its comment.
-    view.key(&state, key(KeyCode::Enter), theme());
-    typed(&mut view, &state, " more");
-    view.key(&state, key(KeyCode::Enter), theme());
-    assert_eq!(review_token(&view).unwrap().comments[0].text, "one more");
-    // d deletes it, and with no comments left the token goes too.
-    view.key(&state, key(KeyCode::Char('d')), theme());
-    assert!(review_token(&view).is_none());
-    assert!(view.editor.is_empty());
-    view.key(&state, key(KeyCode::Esc), theme());
-    assert!(!view.resume_review(), "no token: a fresh diff is wanted");
-
-    // A token backspaced out of the draft drops the review the same way.
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
-    view.key(&state, key(KeyCode::Char('c')), theme());
-    typed(&mut view, &state, "two");
-    view.key(&state, key(KeyCode::Enter), theme());
-    view.key(&state, key(KeyCode::Char('q')), theme());
-    // The space the token keeps after itself, then the token.
-    view.key(&state, key(KeyCode::Backspace), theme());
-    view.key(&state, key(KeyCode::Backspace), theme());
-    assert!(view.editor.is_empty());
-    assert!(!view.resume_review());
-}
-
-// --- wording and keys found in use ------------------------------------------
 
 #[test]
 fn a_question_mark_types_into_a_review_comment() {
@@ -2279,15 +2070,13 @@ fn a_question_mark_types_into_a_review_comment() {
         view.opens_help(&state, question),
         "the empty composer's key"
     );
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
-    view.key(&state, key(KeyCode::Char('j')), theme());
+    open_review(&mut view);
     view.key(&state, key(KeyCode::Char('c')), theme());
     assert!(!view.opens_help(&state, question), "the comment's key");
     typed(&mut view, &state, "why?");
     typed(&mut view, &state, " ok");
-    view.key(&state, key(KeyCode::Enter), theme());
-    let review = review_token(&view).expect("the comment is saved");
-    assert_eq!(review.comments[0].text, "why? ok");
+    let saved = view.key(&state, key(KeyCode::Enter), theme());
+    assert_eq!(put_words(&saved), "why? ok");
 }
 
 /// A step as the feed draws it outside any run, opened or not.
@@ -2702,18 +2491,12 @@ fn a_paste_goes_to_the_field_with_the_keys() {
 
     // A review comment.
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
-    view.key(&idle, key(KeyCode::Char('j')), theme());
+    open_review(&mut view);
     view.key(&idle, key(KeyCode::Char('c')), theme());
     view.paste_text(&idle, "why this?");
-    view.key(&idle, key(KeyCode::Enter), theme());
-    let review = review_token(&view).expect("the comment is saved");
-    assert_eq!(review.comments[0].text, "why this?");
-    assert_eq!(
-        view.editor.text().trim_end().chars().count(),
-        1,
-        "only the review token"
-    );
+    let saved = view.key(&idle, key(KeyCode::Enter), theme());
+    assert_eq!(put_words(&saved), "why this?");
+    assert!(view.editor.is_empty(), "the composer is left alone");
 
     // A denial's note; on the menu there is nothing to paste into.
     let (state, at) = fixtures::Named::ClaudePermissionAsk.state();

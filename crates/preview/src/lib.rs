@@ -45,7 +45,6 @@ fn attachment_name(attachment: &Attachment) -> Option<String> {
     let name = match attachment.of.as_ref()? {
         Of::Image(blob) | Of::File(blob) => &blob.name,
         Of::Text(text) => &text.name,
-        Of::Review(review) => &review.diff.as_ref()?.patch.as_ref()?.name,
         Of::Page(page) if page.title.is_empty() => &page.url,
         Of::Page(page) => &page.title,
     };

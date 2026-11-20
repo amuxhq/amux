@@ -70,7 +70,8 @@ impl Drafts {
         let _turn = saves.turn.lock().await;
         saves.flush(client, &agent.agent).await;
         let draft = client.drafts().get(&agent.agent).await.unwrap_or_default();
-        Some(draft).filter(|draft| !draft.text.is_empty() || !draft.attachments.is_empty())
+        Some(ui_state::kept_draft(draft))
+            .filter(|draft| !draft.text.is_empty() || !draft.attachments.is_empty())
     }
 
     pub(crate) async fn flushed(&self, client: &Client) {

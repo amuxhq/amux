@@ -13,7 +13,6 @@ pub mod composer;
 pub mod feed;
 pub mod layout;
 pub mod pane;
-pub mod patch_review;
 pub mod review;
 pub mod rows;
 pub mod selection;
@@ -43,7 +42,6 @@ use self::composer::{COMPOSER_LINES, QueueEntry, edge_row, editor_lines};
 use self::feed::FeedHit;
 pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
-use self::patch_review::{ReviewAction, ReviewPage};
 use self::selection::{FeedSelection, Point, ScreenCells, ScreenSelection};
 use crate::clipboard::{Clip, ClipboardContent};
 use crate::editor::Editor;
@@ -328,10 +326,6 @@ pub struct ChatView {
     pub ask: AskUi,
     /// The selected entry of the queue block while it has the keys.
     pub tray: Option<usize>,
-    /// The review page over a patch, for a host that does not run
-    /// reviews, kept behind its draft token while the chat shows.
-    pub review: Option<ReviewPage>,
-    pub review_open: bool,
     /// The review page of the agent's review, kept while the chat is open
     /// so returning to it draws at once.
     pub review_page: Option<review::Page>,
@@ -516,8 +510,6 @@ impl ChatView {
             editor: Editor::default(),
             ask: AskUi::default(),
             tray: None,
-            review: None,
-            review_open: false,
             review_page: None,
             review_page_open: false,
             round: None,
@@ -716,9 +708,6 @@ impl ChatView {
         if self.review_page_open {
             return self.review_page.as_ref().is_some_and(review::Page::editing);
         }
-        if self.review_open {
-            return self.review.as_ref().is_some_and(ReviewPage::editing);
-        }
         if self.pane_open && self.pane_keys {
             return false;
         }
@@ -734,7 +723,6 @@ impl ChatView {
     pub fn opens_help(&self, state: &SessionState, key: KeyEvent) -> bool {
         key.code == KeyCode::Char('?')
             && self.round.is_none()
-            && !self.review_open
             && !self.review_page_open
             && self.live_card(state).is_none()
             && self.tray.is_none()
@@ -753,9 +741,6 @@ impl ChatView {
                 .as_mut()
                 .is_some_and(review::Page::kill_field);
         }
-        if self.review_open {
-            return self.review.as_mut().is_some_and(ReviewPage::kill_field);
-        }
         if let Some(card) = self.card_takes_keys(state) {
             return self.ask.in_box_note(&card) && self.ask.kill_box_note();
         }
@@ -770,12 +755,6 @@ impl ChatView {
         }
         if self.review_page_open {
             if let Some(page) = &mut self.review_page {
-                page.paste(text);
-            }
-            return;
-        }
-        if self.review_open {
-            if let Some(page) = &mut self.review {
                 page.paste(text);
             }
             return;
@@ -881,16 +860,6 @@ impl ChatView {
                 review::ReviewAction::Context(ask) => vec![ChatEffect::ReviewContext(ask)],
                 review::ReviewAction::Notice(words) => vec![ChatEffect::Notice(words.into())],
             };
-        }
-        if self.review_open
-            && let Some(page) = &mut self.review
-        {
-            match page.key(key) {
-                ReviewAction::None => {}
-                ReviewAction::Close => self.review_open = false,
-                ReviewAction::Comments => self.sync_review_token(),
-            }
-            return vec![];
         }
         if key.code == KeyCode::Char('o') && ctrl {
             self.pane_toggle_key();
@@ -1703,31 +1672,6 @@ impl ChatView {
             }
             return vec![];
         }
-        if self.review_open
-            && let Some(page) = &mut self.review
-        {
-            match event.kind {
-                MouseEventKind::ScrollUp => {
-                    self.selection = None;
-                    page.scroll_by(-wheel_lines(Direction::Up));
-                }
-                MouseEventKind::ScrollDown => {
-                    self.selection = None;
-                    page.scroll_by(wheel_lines(Direction::Down));
-                }
-                MouseEventKind::Down(MouseButton::Left) => {
-                    self.selection = None;
-                    self.copied = false;
-                    page.click(event.column, event.row);
-                    let rect = page.stream_area();
-                    if rect.contains(Position::new(event.column, event.row)) {
-                        self.press = Some(Press::new(event, Pressed::Stream(rect)));
-                    }
-                }
-                _ => {}
-            }
-            return vec![];
-        }
         // The commands' flyover: a click on a command fills it in; one
         // elsewhere goes on as usual.
         if event.kind == MouseEventKind::Down(MouseButton::Left)
@@ -2133,8 +2077,7 @@ impl ChatView {
 
     /// Whether keys typed now reach the composer.
     fn composer_has_keys(&self, state: &SessionState) -> bool {
-        !self.review_open
-            && !self.review_page_open
+        !self.review_page_open
             && self.round.is_none()
             && self.discard_ask.is_none()
             && self.picker.is_none()
@@ -2619,9 +2562,8 @@ impl ChatView {
     }
 
     /// The agent's review page, made when first wanted, shown at the file
-    /// `at` when one is named. The old page over a patch closes.
+    /// `at` when one is named.
     pub fn open_review_page(&mut self, at: Option<&str>) -> &mut review::Page {
-        self.review_open = false;
         self.review_page_open = true;
         let page = self.review_page.get_or_insert_with(review::Page::new);
         if let Some(path) = at {
@@ -2671,50 +2613,6 @@ impl ChatView {
         self.discard_ask = Some(review::Asking::new(review::Confirm::Discard { drafts }));
     }
 
-    /// `<leader> r` with a review already in the draft: back to its page.
-    /// False when there is none, and a fresh diff is wanted.
-    pub fn resume_review(&mut self) -> bool {
-        let held = self
-            .review
-            .as_ref()
-            .is_some_and(|page| self.editor.find_attachment(|a| page.owns(a)).is_some());
-        self.review_open = held;
-        held
-    }
-
-    /// The review page, at the file `at` when one is named.
-    pub fn open_review_at(&mut self, diff: wire::Diff, patch: String, at: Option<&str>) {
-        let mut page = ReviewPage::new(diff, patch);
-        if let Some(path) = at {
-            page.show_file(path);
-        }
-        self.review = Some(page);
-        self.review_open = true;
-    }
-
-    /// The review page already held, turned to the file `at`.
-    pub fn review_file(&mut self, at: &str) {
-        if let Some(page) = &mut self.review {
-            page.show_file(at);
-        }
-    }
-
-    /// Keeps the draft's Review token in step with the page: the first
-    /// comment inserts it at the cursor, later ones update it where it
-    /// sits, and the last deletion takes it out.
-    fn sync_review_token(&mut self) {
-        let Some(page) = &self.review else {
-            return;
-        };
-        let held = self.editor.find_attachment(|a| page.owns(a));
-        match (held, page.comments().is_empty()) {
-            (Some(index), false) => self.editor.replace_attachment(index, page.attachment()),
-            (Some(index), true) => self.editor.remove_attachment(index),
-            (None, false) => self.editor.attach(page.attachment()),
-            (None, true) => {}
-        }
-    }
-
     /// A page was asked for; another waits until the window grows.
     pub fn page_sent(&mut self, state: &SessionState) {
         self.page_asked = state.oldest_order();
@@ -2760,29 +2658,6 @@ impl ChatView {
                 Some((_, page)) => page,
                 None => self.review_page.as_mut().expect("open"),
             };
-            page.draw(paint, area, footer, theme);
-            let cells = ScreenCells::capture(
-                paint.buffer_mut(),
-                page.stream_area(),
-                page.stream_gutters().to_vec(),
-            );
-            self.keep_screen(paint, cells, theme);
-            return None;
-        }
-        if self.review_open
-            && let Some(page) = &mut self.review
-        {
-            // Its header names the agent and where it works, as the chat's.
-            let name = ui_state::shown_name(state.agent()).to_owned();
-            let cwd = &state.agent().cwd;
-            let place = if self.local {
-                text::tilde(cwd)
-            } else {
-                cwd.clone()
-            };
-            page.set_owner(&name, &place);
-            let footer = footer.or_else(|| self.screen_footer(usize::from(area.width), theme));
-            let page = self.review.as_mut().expect("open");
             page.draw(paint, area, footer, theme);
             let cells = ScreenCells::capture(
                 paint.buffer_mut(),

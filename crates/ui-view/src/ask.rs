@@ -1044,7 +1044,7 @@ fn elsewhere(home: &str, cwd: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::LineKind;
+    use crate::code::LineKind;
 
     fn words(of: &[&str]) -> Vec<String> {
         of.iter().map(|word| (*word).to_owned()).collect()

@@ -10,7 +10,7 @@
 
 use std::ops::Range;
 
-use crate::review::LineKind;
+use crate::code::LineKind;
 
 /// The least likeness, from 0 to 1, a removed and an added line need to be
 /// read as one line edited rather than one line replaced by another: below

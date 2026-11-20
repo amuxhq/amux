@@ -18,7 +18,7 @@ use ui_runtime::review::{Followed, Review, ReviewError, Unavailable};
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
 use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
-use wire::{Agent, AgentRef, Attachment, Diff};
+use wire::{Agent, AgentRef, Attachment};
 
 mod desk;
 pub use desk::DeskConfig;
@@ -339,14 +339,6 @@ pub enum AppEvent {
     },
     /// Creating an agent from home's draft failed; the draft is kept.
     StartFailed(String),
-    /// A working-tree diff frozen for this agent's review page.
-    Review {
-        agent_id: Vec<u8>,
-        diff: Diff,
-        patch: String,
-        /// The file to open the page at.
-        at: Option<String>,
-    },
     /// The agent's review answered an open: the first, which decides
     /// which page shows, or one made from the page.
     ReviewOpened {
@@ -453,9 +445,6 @@ struct ReviewLink {
     /// The snapshot a fetch failed for: not asked again until the page
     /// shows another, or is opened again.
     fetch_failed: Option<String>,
-    /// The host answered that it does not run reviews: the page over a
-    /// patch is the review.
-    not_offered: bool,
 }
 
 impl OpenChat {
@@ -978,22 +967,6 @@ impl App {
                 }
                 self.notice(format!("could not attach {name}: {why}"), Tone::Warn);
             }
-            AppEvent::Review {
-                agent_id,
-                diff,
-                patch,
-                at,
-            } => {
-                if let Some(chat) = self
-                    .chat
-                    .as_mut()
-                    .filter(|chat| chat.view.agent_id == agent_id)
-                {
-                    chat.view.open_review_at(diff, patch, at.as_deref());
-                    // The page answers "reading the changes…".
-                    self.notice = None;
-                }
-            }
             AppEvent::ReviewOpened {
                 agent_id,
                 result,
@@ -1505,8 +1478,7 @@ impl App {
 
     /// `<leader> r`, or a `[diff]` clicked: the agent's review page, at the
     /// file `at` when one is named. Where the agent's host does not run
-    /// reviews, the review page over a patch of its working tree is the
-    /// review instead.
+    /// reviews, the page says so.
     fn review(&mut self, at: Option<String>) {
         let Some(chat) = &mut self.chat else {
             return;
@@ -1521,15 +1493,7 @@ impl App {
             );
             return;
         }
-        // A review over a patch already in the draft goes on there.
-        if chat.view.resume_review() {
-            if let Some(path) = &at {
-                chat.view.review_file(path);
-            }
-            return;
-        }
-        let first = chat.view.review_page.is_none()
-            || chat.review.as_ref().is_some_and(|link| link.not_offered);
+        let first = chat.view.review_page.is_none();
         if first {
             self.notice("opening the review…", Tone::Info);
         } else {
@@ -1589,7 +1553,6 @@ impl App {
                 following: false,
                 fetching: false,
                 fetch_failed: None,
-                not_offered: false,
             });
         }
         chat.review.as_mut()
@@ -1620,25 +1583,12 @@ impl App {
             .review
             .as_ref()
             .is_some_and(|link| link.review.summary().is_some());
-        if let Some(link) = &mut chat.review {
-            link.not_offered = matches!(
-                result,
-                Err(ReviewError::Unavailable(Unavailable::NotOffered))
-            );
-        }
-        match &result {
-            // A host without reviews: its page over a patch instead.
-            Err(ReviewError::Unavailable(Unavailable::NotOffered)) if first => {
-                chat.view.review_page = None;
-                chat.view.review_page_open = false;
-                self.patch_review(at);
-                return;
-            }
-            Err(ReviewError::Rpc(error)) if first && !held => {
-                self.notice(format!("could not open the review: {error}"), Tone::Warn);
-                return;
-            }
-            _ => {}
+        if let Err(ReviewError::Rpc(error)) = &result
+            && first
+            && !held
+        {
+            self.notice(format!("could not open the review: {error}"), Tone::Warn);
+            return;
         }
         if first {
             chat.view.open_review_page(at.as_deref());
@@ -1759,57 +1709,6 @@ impl App {
         }
         for task in tasks {
             self.spawn(task);
-        }
-    }
-
-    /// The review page over a patch of the agent's working tree, for a host
-    /// that does not run reviews, at the file `at` when one is named.
-    fn patch_review(&mut self, at: Option<String>) {
-        let Some(chat) = &mut self.chat else {
-            return;
-        };
-        let session = chat.session.clone();
-        let state = chat.session.state();
-        let writable = matches!(state.composer(), Composer::Send | Composer::Resume);
-        let agent_id = chat.view.agent_id.clone();
-        // The page reads the changes the header counts.
-        let comparison = chat.view.comparison;
-        drop(state);
-        if !writable {
-            self.notice("review waits until the chat is current", Tone::Warn);
-            return;
-        }
-        {
-            self.notice("reading the changes…", Tone::Info);
-            self.spawn(async move {
-                Some(match session.review(comparison).await {
-                    // The host's list of changed files is its word on
-                    // whether anything changed; an empty patch beside a
-                    // list was not read whole, and is no reason to say
-                    // nothing changed.
-                    Ok((diff, patch)) if patch.trim().is_empty() => {
-                        if diff.files.is_empty() {
-                            AppEvent::Notice("no changes to review".into(), Tone::Info)
-                        } else {
-                            AppEvent::Notice(
-                                "could not read the changes: the host's patch is missing the \
-                                 files it lists"
-                                    .into(),
-                                Tone::Warn,
-                            )
-                        }
-                    }
-                    Ok((diff, patch)) => AppEvent::Review {
-                        agent_id,
-                        diff,
-                        patch,
-                        at,
-                    },
-                    Err(error) => {
-                        AppEvent::Notice(format!("could not read the changes: {error}"), Tone::Warn)
-                    }
-                })
-            });
         }
     }
 

@@ -20,9 +20,8 @@ use wire::experimental::{
 };
 
 use crate::changed_words::changed_words;
-use crate::code::TokenKind;
+use crate::code::{LineKind, TokenKind};
 use crate::overview::FileStatus;
-use crate::review::LineKind;
 
 /// How many lines one ask for more context loads when no edge of a
 /// definition is near: enough to read the code around a change without

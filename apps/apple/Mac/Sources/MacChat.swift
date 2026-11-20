@@ -8,18 +8,13 @@ import UniformTypeIdentifiers
 /// The shared chat model as the Mac's screens read it.
 ///
 /// Every read goes straight to the model, so the screens observe exactly
-/// what they read: one row's cell, the frame, the draft. What the Mac adds
-/// is the review's loading, which the phone keeps on its review page.
+/// what they read: one row's cell, the frame, the draft.
 @MainActor
 @Observable
 final class MacChat: ChatSurface {
     @ObservationIgnored let model: ChatModel
     /// The host's name, for what the chat says about reaching it.
     @ObservationIgnored let host: String
-    private(set) var review: ReviewState = .idle
-    @ObservationIgnored private var loading: Task<Void, Never>?
-    /// The comparison the review on show was read for.
-    @ObservationIgnored private var loadedFor: Comparison?
 
     init(model: ChatModel, host: String) {
         self.model = model
@@ -111,51 +106,15 @@ final class MacChat: ChatSurface {
     var comparisons: [Comparison] { model.comparisons }
     func compare(_ comparison: Comparison) { model.compare(comparison) }
 
-    /// Freezes the changes as they stand on the host. A review already being
-    /// written on the same patch is kept, comments and all.
-    func loadReview(keepingComments: Bool) {
-        // Held here rather than in the pane, so switching tabs or closing
-        // the pane does not forget there are comments to keep.
-        if keepingComments, loadedFor == model.comparison, case .ready(let open) = review,
-            open.count > 0 || open.selecting
-        {
-            return
-        }
-        loadedFor = model.comparison
-        loading?.cancel()
-        if case .ready = review {} else { review = .loading }
-        loading = Task { [weak self] in
-            guard let self else { return }
-            let opened = await model.openReview()
-            guard !Task.isCancelled else { return }
-            switch opened {
-            case .success(let model?): review = .ready(MacReview(model: model))
-            case .success(nil): review = .nothing
-            case .failure(let failure): review = .failed(failure.description)
-            }
-        }
-    }
-
-    func attachReview() {
-        guard case .ready(let surface) = review, let open = surface as? MacReview else { return }
-        model.attach(open.model)
-    }
-
     // MARK: The agent's review
 
     /// The page drawn for the review open on the chat, kept for as long as
     /// that review is: what the person is writing on it lives here.
     @ObservationIgnored private var shown: MacReviewPage?
 
-    /// A host without reviews, with nothing of its review ever read here,
-    /// gets its page over a patch instead. The runtime keeps the last
-    /// summary it read for the rest of the process, so a host that stops
-    /// offering reviews under a review already read leaves that page up,
-    /// saying so.
+    /// A host without reviews has the page say so.
     var reviewPage: (any ReviewPageSurface)? {
         guard let session = model.reviewPage else { return nil }
-        let page = session.page
-        if page.header == nil, page.banners.contains(.notOffered) { return nil }
         if shown?.session !== session { shown = MacReviewPage(session: session) }
         return shown
     }
@@ -230,28 +189,4 @@ final class MacReviewPage: ReviewPageSurface {
     func delete(_ id: [UInt8]) { session.delete(id) }
     func discardDrafts() { session.discardDrafts() }
     func startOver() { session.startOver() }
-}
-
-/// The shared review model as the Mac's screens read it.
-@MainActor
-final class MacReview: ReviewSurface {
-    let model: ReviewModel
-
-    init(model: ReviewModel) { self.model = model }
-
-    var doc: ReviewDoc { model.doc }
-    var count: Int { model.count }
-    func folded(_ file: Int) -> Bool { model.folded.contains(file) }
-    func toggle(file: Int) { model.toggle(file: file) }
-    func isSelected(_ spot: ReviewSpot) -> Bool { model.isSelected(line(spot)) }
-    var selecting: Bool { model.selection != nil }
-    func begin(at spot: ReviewSpot) { model.begin(at: line(spot)) }
-    func extend(to spot: ReviewSpot) { model.extend(to: line(spot)) }
-    func clearSelection() { model.clearSelection() }
-    func comment(_ text: String) -> Bool { model.comment(text) }
-    var canAttach: Bool { model.canAttach }
-
-    private func line(_ spot: ReviewSpot) -> ReviewLine {
-        ReviewLine(file: spot.file, hunk: spot.hunk, line: spot.line)
-    }
 }

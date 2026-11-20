@@ -147,7 +147,6 @@ impl Daemon {
                 bytes,
             } => self.keep_blob(call, &agent_id, hash, bytes, out),
             ClientRequest::GetBlob(request) => self.get_blob(call, &request, out),
-            ClientRequest::GetDiff(request) => self.get_diff(call, request, out),
             ClientRequest::Review(write) => self.review_write(call, *write, out),
             ClientRequest::UpdateDraft { agent_id, draft } => {
                 self.update_draft(call, agent_id, &draft, out);

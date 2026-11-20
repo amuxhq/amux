@@ -15,13 +15,10 @@ The pieces are:
 - The [`attachments`](../crates/attachments/src/lib.rs) crate: positioned
   text and the `<amux-attachment>` element a model sees.
 - The daemon's blob calls in
-  [`crates/node/src/blobs.rs`](../crates/node/src/blobs.rs): `PutBlob` and
-  `GetDiff`, which the agent's own host answers (`AgentService`), and
-  `GetBlob`, which the node a client is attached to answers from its copy
+  [`crates/node/src/blobs.rs`](../crates/node/src/blobs.rs): `PutBlob`,
+  which the agent's own host answers (`AgentService`), and `GetBlob`, which
+  the node a client is attached to answers from its copy
   (`SessionService`).
-- The review document in
-  [`crates/ui-view/src/review.rs`](../crates/ui-view/src/review.rs), drawn by
-  the terminal's review page and the phone's.
 
 ## Shape
 

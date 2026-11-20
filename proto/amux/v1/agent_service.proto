@@ -53,9 +53,6 @@ service AgentService {
   // Writes a file into the agent's directory, for a prompt or message to
   // reference. No larger than the attachment limit, 64 MiB.
   rpc PutBlob(PutBlobRequest) returns (PutBlobResponse);
-  // The changed files against a base; with_patch also builds the patch
-  // and stores it as one of the agent's files.
-  rpc GetDiff(GetDiffRequest) returns (GetDiffResponse);
 }
 
 message CreateAgentRequest {
@@ -219,13 +216,3 @@ message PutBlobResponse {
   BlobRef blob = 1;
 }
 
-message GetDiffRequest {
-  bytes agent_id = 1;
-  DiffBase base = 2;
-  // Also build the patch and store it as the agent's file.
-  bool with_patch = 3;
-}
-
-message GetDiffResponse {
-  Diff diff = 1;
-}

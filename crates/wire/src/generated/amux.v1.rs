@@ -934,7 +934,7 @@ pub struct Attachment {
         ::prost::alloc::string::String,
         ::prost::alloc::vec::Vec<u8>,
     >,
-    #[prost(oneof = "attachment::Of", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "attachment::Of", tags = "1, 2, 3, 5")]
     pub of: ::core::option::Option<attachment::Of>,
 }
 /// Nested message and enum types in `Attachment`.
@@ -947,8 +947,6 @@ pub mod attachment {
         File(super::BlobRef),
         #[prost(message, tag = "3")]
         Text(super::InlineText),
-        #[prost(message, tag = "4")]
-        Review(super::Review),
         /// Comments a person made on a web page, sent from the browser extension.
         #[prost(message, tag = "5")]
         Page(super::PageReview),
@@ -1004,133 +1002,6 @@ impl ::prost::Name for InlineText {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.InlineText".into()
-    }
-}
-/// A comparison of an agent's working tree, made on the agent's host. It
-/// runs to the working tree, untracked files included, from HEAD or from
-/// where the branch left the named base. The patch is a text/x-diff blob of
-/// the agent, built only when asked for; its index lines carry each file's
-/// full object ids.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Diff {
-    #[prost(message, optional, tag = "1")]
-    pub patch: ::core::option::Option<BlobRef>,
-    #[prost(message, optional, tag = "2")]
-    pub base: ::core::option::Option<DiffBase>,
-    /// Empty before the first commit.
-    #[prost(string, tag = "3")]
-    pub head: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "4")]
-    pub merge_base: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, repeated, tag = "5")]
-    pub files: ::prost::alloc::vec::Vec<DiffFile>,
-}
-impl ::prost::Name for Diff {
-    const NAME: &'static str = "Diff";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Diff".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Diff".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DiffFile {
-    #[prost(string, tag = "1")]
-    pub path: ::prost::alloc::string::String,
-    /// Lines; none for a binary file.
-    #[prost(uint32, tag = "2")]
-    pub added: u32,
-    #[prost(uint32, tag = "3")]
-    pub removed: u32,
-    #[prost(enumeration = "DiffFileChange", tag = "4")]
-    pub change: i32,
-    #[prost(bool, tag = "5")]
-    pub binary: bool,
-}
-impl ::prost::Name for DiffFile {
-    const NAME: &'static str = "DiffFile";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DiffFile".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DiffFile".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DiffBase {
-    #[prost(oneof = "diff_base::Base", tags = "1, 2")]
-    pub base: ::core::option::Option<diff_base::Base>,
-}
-/// Nested message and enum types in `DiffBase`.
-pub mod diff_base {
-    #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Base {
-        /// From the folder's HEAD commit.
-        #[prost(message, tag = "1")]
-        Head(super::Empty),
-        #[prost(string, tag = "2")]
-        Branch(::prost::alloc::string::String),
-    }
-}
-impl ::prost::Name for DiffBase {
-    const NAME: &'static str = "DiffBase";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DiffBase".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.DiffBase".into()
-    }
-}
-/// A diff exactly as the GetDiff call returned it, frozen when the review page
-/// opened, plus a person's comments.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Review {
-    #[prost(message, optional, tag = "1")]
-    pub diff: ::core::option::Option<Diff>,
-    #[prost(message, repeated, tag = "2")]
-    pub comments: ::prost::alloc::vec::Vec<ReviewComment>,
-}
-impl ::prost::Name for Review {
-    const NAME: &'static str = "Review";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Review".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Review".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReviewComment {
-    #[prost(string, tag = "1")]
-    pub path: ::prost::alloc::string::String,
-    /// New-side line; zero comments on the file as a whole.
-    #[prost(uint32, tag = "2")]
-    pub line: u32,
-    /// Old-side line for a comment on a removed line.
-    #[prost(uint32, tag = "3")]
-    pub old_line: u32,
-    #[prost(string, tag = "4")]
-    pub text: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ReviewComment {
-    const NAME: &'static str = "ReviewComment";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ReviewComment".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.ReviewComment".into()
     }
 }
 /// Comments a person made on a web page: an app the agent builds, a page it
@@ -1431,38 +1302,6 @@ impl TurnOutcome {
             "TURN_OUTCOME_INTERRUPTED" => Some(Self::Interrupted),
             "TURN_OUTCOME_FAILED" => Some(Self::Failed),
             "TURN_OUTCOME_STOPPED" => Some(Self::Stopped),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum DiffFileChange {
-    Unspecified = 0,
-    Changed = 1,
-    Created = 2,
-    Deleted = 3,
-}
-impl DiffFileChange {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "DIFF_FILE_CHANGE_UNSPECIFIED",
-            Self::Changed => "DIFF_FILE_CHANGE_CHANGED",
-            Self::Created => "DIFF_FILE_CHANGE_CREATED",
-            Self::Deleted => "DIFF_FILE_CHANGE_DELETED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "DIFF_FILE_CHANGE_UNSPECIFIED" => Some(Self::Unspecified),
-            "DIFF_FILE_CHANGE_CHANGED" => Some(Self::Changed),
-            "DIFF_FILE_CHANGE_CREATED" => Some(Self::Created),
-            "DIFF_FILE_CHANGE_DELETED" => Some(Self::Deleted),
             _ => None,
         }
     }
@@ -8732,41 +8571,6 @@ impl ::prost::Name for PutBlobResponse {
         "type.googleapis.com/amux.v1.PutBlobResponse".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetDiffRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
-    pub base: ::core::option::Option<DiffBase>,
-    /// Also build the patch and store it as the agent's file.
-    #[prost(bool, tag = "3")]
-    pub with_patch: bool,
-}
-impl ::prost::Name for GetDiffRequest {
-    const NAME: &'static str = "GetDiffRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetDiffRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetDiffRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetDiffResponse {
-    #[prost(message, optional, tag = "1")]
-    pub diff: ::core::option::Option<Diff>,
-}
-impl ::prost::Name for GetDiffResponse {
-    const NAME: &'static str = "GetDiffResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetDiffResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.GetDiffResponse".into()
-    }
-}
 /// Generated client implementations.
 #[cfg(feature = "grpc")]
 pub mod agent_service_client {
@@ -9077,32 +8881,6 @@ pub mod agent_service_client {
                 .insert(GrpcMethod::new("amux.v1.AgentService", "PutBlob"));
             self.inner.unary(req, path, codec).await
         }
-        /// The changed files against a base; with_patch also builds the patch
-        /// and stores it as one of the agent's files.
-        pub async fn get_diff(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetDiffRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetDiffResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.AgentService/GetDiff",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.AgentService", "GetDiff"));
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -9192,12 +8970,6 @@ pub mod agent_service_server {
             &self,
             request: tonic::Request<super::PutBlobRequest>,
         ) -> std::result::Result<tonic::Response<super::PutBlobResponse>, tonic::Status>;
-        /// The changed files against a base; with_patch also builds the patch
-        /// and stores it as one of the agent's files.
-        async fn get_diff(
-            &self,
-            request: tonic::Request<super::GetDiffRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetDiffResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct AgentServiceServer<T> {
@@ -9665,51 +9437,6 @@ pub mod agent_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PutBlobSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.AgentService/GetDiff" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetDiffSvc<T: AgentService>(pub Arc<T>);
-                    impl<
-                        T: AgentService,
-                    > tonic::server::UnaryService<super::GetDiffRequest>
-                    for GetDiffSvc<T> {
-                        type Response = super::GetDiffResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetDiffRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as AgentService>::get_diff(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetDiffSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

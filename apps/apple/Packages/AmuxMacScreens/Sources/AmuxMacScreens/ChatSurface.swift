@@ -108,21 +108,12 @@ public protocol ChatSurface: AnyObject {
     var comparison: Comparison { get }
     var comparisons: [Comparison] { get }
     func compare(_ comparison: Comparison)
-    /// The review of the changes as the host froze them, being written.
-    var review: ReviewState { get }
-    /// Asks the host for the changes as they stand now. Keeping comments,
-    /// a review of the same comparison with comments written or under way
-    /// stays as it is, since reading again would replace it.
-    func loadReview(keepingComments: Bool)
-    /// Puts the review's comments into the draft, for the next message.
-    func attachReview()
 
     // MARK: The agent's review
 
     /// The agent's review page, read and written at the agent's host, while
-    /// the tool window shows it. Nil before it opens, and when the agent's
-    /// host offered no reviews as the page opened: the review over a patch
-    /// (`review`) stands in for it then.
+    /// the tool window shows it; nil before it opens. On a host that offers
+    /// no reviews the page says so.
     var reviewPage: (any ReviewPageSurface)? { get }
     /// Opens the review page for a look; it follows the agent's row until
     /// it is closed.
@@ -176,50 +167,4 @@ public protocol ReviewPageSurface: AnyObject {
     func delete(_ id: [UInt8])
     func discardDrafts()
     func startOver()
-}
-
-/// Where the review of an agent's changes stands.
-public enum ReviewState {
-    case idle
-    case loading
-    /// Nothing changed against the comparison.
-    case nothing
-    case failed(String)
-    case ready(any ReviewSurface)
-}
-
-/// A line of the review: its file, hunk and line within the hunk.
-public struct ReviewSpot: Hashable, Comparable, Sendable {
-    public var file: Int
-    public var hunk: Int
-    public var line: Int
-
-    public init(file: Int, hunk: Int, line: Int) {
-        self.file = file
-        self.hunk = hunk
-        self.line = line
-    }
-
-    public static func < (a: ReviewSpot, b: ReviewSpot) -> Bool {
-        (a.file, a.hunk, a.line) < (b.file, b.hunk, b.line)
-    }
-}
-
-/// A review being written: the diff with the comments placed on it, and
-/// the lines picked for the next comment.
-@MainActor
-public protocol ReviewSurface: AnyObject {
-    var doc: ReviewDoc { get }
-    /// How many comments are written.
-    var count: Int { get }
-    func folded(_ file: Int) -> Bool
-    func toggle(file: Int)
-    func isSelected(_ spot: ReviewSpot) -> Bool
-    var selecting: Bool { get }
-    func begin(at spot: ReviewSpot)
-    func extend(to spot: ReviewSpot)
-    func clearSelection()
-    /// Comments on the selected lines; false when there was nothing to say.
-    @discardableResult func comment(_ text: String) -> Bool
-    var canAttach: Bool { get }
 }

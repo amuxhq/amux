@@ -413,9 +413,6 @@ fn a_redacted_copy_carries_no_review() {
         fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
             bytes.to_vec()
         }
-        fn content(&self, bytes: &[u8]) -> Vec<u8> {
-            bytes.to_vec()
-        }
         fn hash(&self, bytes: &[u8]) -> Vec<u8> {
             bytes.to_vec()
         }

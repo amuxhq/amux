@@ -57,47 +57,6 @@ pub struct GitFacts {
     pub remote: Option<String>,
 }
 
-/// What a comparison runs from; it always runs to the working tree.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Comparison {
-    /// From HEAD: the work not committed yet.
-    Uncommitted,
-    /// From where the branch left `base`, so the branch's commits and its
-    /// uncommitted work both count.
-    OnBranch { base: String },
-}
-
-/// What happened to a file between the two ends of a comparison.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Change {
-    Created,
-    Deleted,
-    Changed,
-}
-
-/// One file a comparison found different.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FileChange {
-    pub path: String,
-    /// Lines added and removed; none for a binary file.
-    pub added: u32,
-    pub removed: u32,
-    pub change: Change,
-    pub binary: bool,
-}
-
-/// A comparison of an agent's folder.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Compared {
-    /// The commit checked out; None before the first commit.
-    pub head: Option<String>,
-    /// For a branch comparison, where the branch left its base.
-    pub merge_base: Option<String>,
-    pub files: Vec<FileChange>,
-    /// Built only when asked for.
-    pub patch: Option<Vec<u8>>,
-}
-
 /// What [`changes`] compares the working tree with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Base {
@@ -544,46 +503,6 @@ fn is_drive(letter: &str, rest: &str) -> bool {
         && rest.starts_with(['/', '\\'])
 }
 
-/// Compares the working tree of `cwd` with where `comparison` runs from:
-/// the list of changed files always, the patch only `with_patch`.
-pub async fn compare(
-    cwd: &Path,
-    comparison: &Comparison,
-    with_patch: bool,
-) -> Result<Compared, GitError> {
-    let inside = run(cwd, None, &["rev-parse", "--is-inside-work-tree"], None).await?;
-    if !inside.status.success() || text(&inside.stdout) != "true" {
-        return Err(GitError::NotARepository);
-    }
-    let head = answer(cwd, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).await?;
-    let (against, merge_base) = match comparison {
-        Comparison::Uncommitted => match &head {
-            Some(head) => (head.clone(), None),
-            None => (empty_tree(cwd).await?, None),
-        },
-        Comparison::OnBranch { base } => {
-            let fork = match head {
-                Some(_) => fork_point(cwd, base).await?,
-                None => None,
-            };
-            let fork = fork.ok_or_else(|| GitError::NoForkPoint(base.clone()))?;
-            (fork.clone(), Some(fork))
-        }
-    };
-    let scratch = Scratch::new(cwd).await?;
-    let files = scratch.files(&against).await?;
-    let patch = match with_patch {
-        true => Some(scratch.patch(&against).await?),
-        false => None,
-    };
-    Ok(Compared {
-        head,
-        merge_base,
-        files,
-        patch,
-    })
-}
-
 /// What changed in the whole working tree of the repository `cwd` is in,
 /// against `base`, untracked files included, renames found, and the base it
 /// ran from. The person's
@@ -851,10 +770,10 @@ async fn empty_tree(cwd: &Path) -> Result<String, GitError> {
 /// `against` compared with the working tree, untracked files included.
 async fn totals(cwd: &Path, against: &str) -> Result<ChangeTotals, GitError> {
     let scratch = Scratch::new(cwd).await?;
-    Ok(sum(&scratch.files(against).await?))
+    Ok(sum(&scratch.diff(against, false).await?))
 }
 
-fn sum(files: &[FileChange]) -> ChangeTotals {
+fn sum(files: &[RawFile]) -> ChangeTotals {
     files
         .iter()
         .fold(ChangeTotals::default(), |totals, file| ChangeTotals {
@@ -979,27 +898,6 @@ impl<'a> Scratch<'a> {
         .await
     }
 
-    /// Each file that differs between `against` and the working tree,
-    /// with renames as one file each.
-    async fn files(&self, against: &str) -> Result<Vec<FileChange>, GitError> {
-        Ok(self
-            .diff(against, false)
-            .await?
-            .into_iter()
-            .map(|file| FileChange {
-                path: file.path,
-                added: file.added,
-                removed: file.removed,
-                change: match file.status {
-                    Status::Created => Change::Created,
-                    Status::Deleted => Change::Deleted,
-                    Status::Changed | Status::Renamed => Change::Changed,
-                },
-                binary: file.binary,
-            })
-            .collect())
-    }
-
     /// Each file that differs between `against` and the working tree, with
     /// renames found when `renames`.
     async fn diff(&self, against: &str, renames: bool) -> Result<Vec<RawFile>, GitError> {
@@ -1022,22 +920,6 @@ impl<'a> Scratch<'a> {
             ])
             .await?;
         Ok(raw_files(&raw))
-    }
-
-    /// The patch from `against` to the working tree, with full object ids
-    /// on its index lines: each file's identity.
-    async fn patch(&self, against: &str) -> Result<Vec<u8>, GitError> {
-        self.checked(&[
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-            "--no-renames",
-            "--full-index",
-            against,
-            "--",
-        ])
-        .await
     }
 }
 

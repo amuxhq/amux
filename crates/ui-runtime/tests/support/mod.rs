@@ -368,13 +368,6 @@ impl AgentService for FakeRuntime {
     ) -> Result<Response<wire::PutBlobResponse>, Status> {
         unimplemented!("put_blob")
     }
-
-    async fn get_diff(
-        &self,
-        _: Request<wire::GetDiffRequest>,
-    ) -> Result<Response<wire::GetDiffResponse>, Status> {
-        unimplemented!("get_diff")
-    }
 }
 
 #[tonic::async_trait]

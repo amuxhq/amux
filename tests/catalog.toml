@@ -470,7 +470,7 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "carried", "catalogue", "changes", "diff", "dump", "front_door", "host_acts", "host_acts_link", "host_acts_messages", "host_acts_usage", "host_acts_workspaces", "host_service", "hosts", "local_services", "messaging", "onboarding", "peer_server", "push", "registry", "replication_calls", "resumption", "review_files", "reviews", "settings", "single_daemon", "subagents", "suspension", "upgrade", "workspaces", "worktree"], features = [] }]
+cargo = [{ package = "node", modules = ["addresses", "agent_names", "analytics", "blobs", "carried", "catalogue", "changes", "dump", "front_door", "host_acts", "host_acts_link", "host_acts_messages", "host_acts_usage", "host_acts_workspaces", "host_service", "hosts", "local_services", "messaging", "onboarding", "peer_server", "push", "registry", "replication_calls", "resumption", "review_files", "reviews", "settings", "single_daemon", "subagents", "suspension", "upgrade", "workspaces", "worktree"], features = [] }]
 
 [[suite]]
 name = "client-install"

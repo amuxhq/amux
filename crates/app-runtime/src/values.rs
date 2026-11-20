@@ -255,11 +255,6 @@ pub enum DraftAttachment {
         name: String,
         text: String,
     },
-    /// Comments on a frozen diff, sent with the diff that names its patch.
-    Review {
-        diff: wire::Diff,
-        comments: Vec<wire::ReviewComment>,
-    },
     /// Comments on a web page, whose screenshots were stored with put_blob
     /// first.
     Page(wire::PageReview),
@@ -274,10 +269,6 @@ impl DraftAttachment {
             DraftAttachment::Text { name, text } => Of::Text(wire::InlineText {
                 name: name.clone(),
                 text: text.clone(),
-            }),
-            DraftAttachment::Review { diff, comments } => Of::Review(wire::Review {
-                diff: Some(diff.clone()),
-                comments: comments.clone(),
             }),
             DraftAttachment::Page(page) => Of::Page(page.clone()),
         };
@@ -303,10 +294,6 @@ impl DraftAttachment {
             Of::Text(inline) => DraftAttachment::Text {
                 name: inline.name.clone(),
                 text: inline.text.clone(),
-            },
-            Of::Review(review) => DraftAttachment::Review {
-                diff: review.diff.clone()?,
-                comments: review.comments.clone(),
             },
             Of::Page(page) => DraftAttachment::Page(page.clone()),
         })
@@ -339,14 +326,15 @@ impl Draft {
     }
 
     /// A prompt read back into a draft. Each placeholder is the next
-    /// attachment, as a row draws it: one with no attachment left is
-    /// dropped, and attachments with no placeholder follow the words.
+    /// attachment, as a row draws it: one with no attachment left, or whose
+    /// attachment a draft does not carry, is dropped, and attachments with
+    /// no placeholder follow the words.
     fn of(text: &str, attachments: &[wire::Attachment]) -> Draft {
         let mut parts = Vec::new();
-        let mut attachments = attachments.iter().filter_map(DraftAttachment::from_wire);
+        let mut attachments = attachments.iter().map(DraftAttachment::from_wire);
         for (index, words) in text.split(PLACEHOLDER).enumerate() {
             if index > 0
-                && let Some(attachment) = attachments.next()
+                && let Some(Some(attachment)) = attachments.next()
             {
                 parts.push(DraftPart::Attachment(attachment));
             }
@@ -354,7 +342,7 @@ impl Draft {
                 parts.push(DraftPart::Text(words.to_owned()));
             }
         }
-        parts.extend(attachments.map(DraftPart::Attachment));
+        parts.extend(attachments.flatten().map(DraftPart::Attachment));
         Draft { parts }
     }
 
@@ -374,21 +362,6 @@ impl Draft {
             ui_state::InputWhat::Prompt { text, attachments } => Some(Draft::of(text, attachments)),
             _ => None,
         }
-    }
-}
-
-/// An agent's working-tree diff as its host froze it for a review page, and
-/// the patch it names.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct FrozenReview {
-    pub diff: wire::Diff,
-    pub patch: String,
-}
-
-impl FrozenReview {
-    /// The page's document, with `comments` placed on their lines.
-    pub fn doc(&self, comments: &[wire::ReviewComment]) -> ui_view::ReviewDoc {
-        ui_view::review_doc(&self.diff, &self.patch, comments)
     }
 }
 
@@ -1301,19 +1274,14 @@ mod tests {
                 name: "Pasted text".into(),
                 text: "one\ntwo\nthree".into(),
             },
-            DraftAttachment::Review {
-                diff: wire::Diff {
-                    head: "abc".into(),
-                    patch: Some(blob("patch")),
+            DraftAttachment::Page(wire::PageReview {
+                url: "http://localhost:5173/".into(),
+                title: "Pricing".into(),
+                comments: vec![wire::PageComment {
+                    text: "Say annual pricing.".into(),
                     ..Default::default()
-                },
-                comments: vec![wire::ReviewComment {
-                    path: "src/lib.rs".into(),
-                    line: 4,
-                    old_line: 0,
-                    text: "Name this.".into(),
                 }],
-            },
+            }),
         ];
         let wire: Vec<wire::Attachment> = sent.iter().map(DraftAttachment::to_wire).collect();
         let back = Draft::of("look", &wire);
@@ -1329,6 +1297,24 @@ mod tests {
                 ..Default::default()
             }),
             None
+        );
+    }
+
+    /// An attachment a draft does not carry, such as one of a kind this
+    /// build does not read, goes with its placeholder: the next attachment
+    /// stays at its own place.
+    #[test]
+    fn an_attachment_a_draft_does_not_carry_goes_with_its_placeholder() {
+        let unread = wire::Attachment::default();
+        let image = DraftAttachment::Image(blob("photo"));
+        let text = format!("see {PLACEHOLDER} and {PLACEHOLDER}");
+        assert_eq!(
+            Draft::of(&text, &[unread, image.to_wire()]).parts,
+            vec![
+                DraftPart::Text("see ".into()),
+                DraftPart::Text(" and ".into()),
+                DraftPart::Attachment(image),
+            ]
         );
     }
 

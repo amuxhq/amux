@@ -7,8 +7,7 @@
 //! stashes or reverts there changes what every other one's row counts: the
 //! totals compare the whole folder with HEAD, and nothing says whose changes
 //! are whose. So the daemon asks the others to read again when one of them
-//! ends a turn, and corrects a row a diff of the folder has just shown to be
-//! wrong.
+//! ends a turn.
 
 use std::path::Path;
 
@@ -41,74 +40,12 @@ impl Daemon {
             }
         }
     }
-
-    /// A diff of one of this host's agents' folders was just made against
-    /// HEAD (`branch` None) or a branch. When the row counts that comparison
-    /// differently, the row takes the diff's totals at once, so the marker
-    /// every client draws agrees with the changes it opens, and a live agent
-    /// reads its facts again, so its next snapshot does not put the old
-    /// totals back. A branch other than the row's base is not a comparison
-    /// the row counts.
-    pub(crate) fn diff_compared(
-        &mut self,
-        agent_id: &[u8],
-        branch: Option<&str>,
-        diff: &wire::Diff,
-        out: &mut Vec<Output>,
-    ) {
-        let Ok(Some(mut row)) = self.store.agent_by_id(agent_id) else {
-            return;
-        };
-        if row.agent.host != self.store.own_host() {
-            return;
-        }
-        let Some(git) = row.git.as_mut() else {
-            return;
-        };
-        let counted = match branch {
-            None => &mut git.uncommitted,
-            Some(branch) if git.base_branch.as_deref() == Some(branch) => &mut git.on_branch,
-            Some(_) => return,
-        };
-        let seen = totals(diff);
-        if *counted == Some(seen) {
-            return;
-        }
-        *counted = Some(seen);
-        let written = self
-            .store
-            .set_git(&row.agent, row.git.clone())
-            .and_then(|_| self.publish_row(&row.agent, out));
-        if let Err(error) = written {
-            tracing::warn!(agent = %crate::hex(agent_id), %error, "correcting a row's git totals failed");
-            return;
-        }
-        if let Some(agent) = AgentId::from_slice(agent_id)
-            && self.families.connected(agent)
-        {
-            read_git(agent, out);
-        }
-    }
 }
 
 /// Whether two folders are taken to be in one checkout: the same folder, or
 /// one inside the other.
 pub(crate) fn one_checkout(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
-}
-
-/// A diff's changed files counted as an agent's row counts them: every
-/// file, and the lines added and removed, a binary file adding none.
-fn totals(diff: &wire::Diff) -> wire::ChangeTotals {
-    diff.files
-        .iter()
-        .fold(wire::ChangeTotals::default(), |totals, file| {
-            wire::ChangeTotals {
-                files: totals.files + 1,
-                added: totals.added + file.added,
-                removed: totals.removed + file.removed,
-            }
-        })
 }
 
 fn read_git(agent: AgentId, out: &mut Vec<Output>) {

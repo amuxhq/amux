@@ -426,6 +426,45 @@ fn attachments_keep_their_positions() {
     }
 }
 
+/// A prompt a release sent with a review of a patch, a kind since retired
+/// whose number stays reserved: the review draws as an empty attachment at
+/// its place, and the image after it as itself.
+#[test]
+fn a_retired_review_in_a_journal_draws_as_an_empty_attachment() {
+    // Field 4: a review holding an empty diff.
+    let review = wire::Attachment::decode([0x22, 0x02, 0x0a, 0x00].as_slice()).unwrap();
+    let image = wire::Attachment {
+        of: Some(wire::attachment::Of::Image(wire::BlobRef {
+            hash: vec![1; 32],
+            name: "a.png".into(),
+            mime: "image/png".into(),
+            size: 10,
+        })),
+        ..Default::default()
+    };
+    for kind in KINDS {
+        let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
+        let mut prompt = item(kind, 1, 1, None);
+        prompt.body = body(kind, None, false);
+        prompt.text = "see \u{FFFC} and \u{FFFC}".into();
+        prompt.attachments = vec![review.clone(), image.clone()];
+        state.update(event(session_event::Of::Item(prompt)));
+        let rows = all_rows(&state, ToolRows::ShowAll);
+        assert_eq!(
+            rows[0].kind,
+            RowKind::Prompt {
+                text: vec![
+                    Segment::Text("see ".into()),
+                    Segment::Attachment(AttachmentView::Empty),
+                    Segment::Text(" and ".into()),
+                    Segment::Attachment(AttachmentView::of(&image)),
+                ],
+                steered: false
+            }
+        );
+    }
+}
+
 fn fleet_entry(
     host: &str,
     id: &str,
@@ -688,76 +727,6 @@ fn a_fleet_filter_keeps_what_a_row_says_narrowed_to_a_state_or_a_host() {
         only: Some(FleetOnly::Working),
     };
     assert!(names(both).is_empty());
-}
-
-#[test]
-fn the_review_document_parses_files_hunks_and_places_comments() {
-    let patch = "diff --git a/src/a.rs b/src/a.rs\nindex 1..2 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -10,3 +10,4 @@ fn a()\n keep\n-old\n+new\n+more\n keep2\ndiff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello\ndiff --git a/x b/y\nsimilarity index 100%\nrename from x\nrename to y\n";
-    let comments = vec![
-        wire::ReviewComment {
-            path: "src/a.rs".into(),
-            line: 11,
-            old_line: 0,
-            text: "why new?".into(),
-        },
-        wire::ReviewComment {
-            path: "src/a.rs".into(),
-            line: 0,
-            old_line: 11,
-            text: "keep old".into(),
-        },
-        wire::ReviewComment {
-            path: "new.txt".into(),
-            line: 0,
-            old_line: 0,
-            text: "whole file".into(),
-        },
-    ];
-    let doc = review_doc(
-        &wire::Diff {
-            head: "abc".into(),
-            ..Default::default()
-        },
-        patch,
-        &comments,
-    );
-    assert_eq!(doc.files.len(), 3);
-    assert_eq!((doc.added, doc.removed), (3, 1));
-    let a = &doc.files[0];
-    assert_eq!(
-        (a.path.as_str(), a.status, a.added, a.removed),
-        ("src/a.rs", FileStatus::Modified, 2, 1)
-    );
-    // A hunk carries git's name for where it is, not its ranges; one that
-    // starts at a file's top leaves nothing out before it.
-    assert_eq!(
-        (a.hunks[0].skips, a.hunks[0].scope.as_str()),
-        (true, "fn a()")
-    );
-    assert_eq!(
-        (
-            doc.files[1].hunks[0].skips,
-            doc.files[1].hunks[0].scope.as_str()
-        ),
-        (false, "")
-    );
-    let lines = &a.hunks[0].lines;
-    assert_eq!(lines[0].old_line, Some(10));
-    assert_eq!(
-        (lines[2].kind, lines[2].new_line, lines[2].comments.clone()),
-        (LineKind::Added, Some(11), vec!["why new?".to_owned()])
-    );
-    assert_eq!(lines[1].comments, vec!["keep old".to_owned()]);
-    assert_eq!(doc.files[1].status, FileStatus::Added);
-    assert_eq!(doc.files[1].comments, vec!["whole file".to_owned()]);
-    assert_eq!(
-        (
-            doc.files[2].status,
-            doc.files[2].old_path.as_deref(),
-            doc.files[2].path.as_str()
-        ),
-        (FileStatus::Renamed, Some("x"), "y")
-    );
 }
 
 fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAsk>) -> Vec<u8> {
@@ -2863,10 +2832,7 @@ fn the_overview_holds_the_changes_it_is_given() {
 
 /// The overview asks the agent's host for HEAD when it counts the
 /// uncommitted work, and for nothing on the branch, so the base is the
-/// host's to pick. The review page, still built on the diff's patch, asks
-/// for the base the host reported for the list, never the row's: on its
-/// base branch with an upstream the host counts from the upstream, where
-/// the row's base branch would show nothing the agent has not pushed.
+/// host's to pick.
 #[test]
 fn the_overview_leaves_the_branchs_base_to_the_host() {
     use wire::get_changes_request::Base;
@@ -2884,18 +2850,6 @@ fn the_overview_leaves_the_branchs_base_to_the_host() {
     });
     let state = SessionState::new(row, CAP);
     assert!(Comparison::OnBranch.offered(&state));
-    let listed = |base: &str| wire::GetChangesResponse {
-        base_branch: base.into(),
-        ..Default::default()
-    };
-    assert_eq!(
-        review_base(&listed("origin/main")).base,
-        Some(wire::diff_base::Base::Branch("origin/main".into()))
-    );
-    assert!(matches!(
-        review_base(&listed("")).base,
-        Some(wire::diff_base::Base::Head(_))
-    ));
 }
 
 /// A prompt on its way stays where it was first drawn: at the feed's end
@@ -3796,22 +3750,6 @@ fn an_explore_step_keeps_its_failure_reason_and_its_result() {
             "the explore rows drop {outcome:?}: {rows}"
         );
     }
-}
-
-/// Git quotes a path holding a quote, a backslash or a non-ASCII letter in
-/// its patch headers (`"a/we ird<&>\"\303\251.txt"`). The review page names
-/// the file as it is on disk, which is also the path a review comment
-/// gives the agent, not git's quoted octal form.
-#[test]
-fn the_review_document_reads_gits_quoted_paths() {
-    let patch = "diff --git \"a/we ird<&>\\\"\\303\\251.txt\" \"b/we ird<&>\\\"\\303\\251.txt\"\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ \"b/we ird<&>\\\"\\303\\251.txt\"\n@@ -0,0 +1 @@\n+hello\n";
-    let doc = review_doc(&wire::Diff::default(), patch, &[]);
-    let paths: Vec<&str> = doc.files.iter().map(|file| file.path.as_str()).collect();
-    assert_eq!(
-        paths,
-        vec!["we ird<&>\"é.txt"],
-        "the review names the file in git's quoted form"
-    );
 }
 
 /// A command's output as a terminal shows it: colour codes are not text,

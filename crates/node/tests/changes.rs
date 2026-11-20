@@ -5,10 +5,13 @@
 //! language the clients colour it by. The delete preview says whether the
 //! workspace goes (its host made it and no agent outside the family works
 //! in it), its branch, the branch's own commits by the rule the removal
-//! applies, and the uncommitted totals.
+//! applies, and the uncommitted totals. One agent's turn end has the others
+//! in its checkout read their folders' facts again, so every row's totals
+//! follow what any of them did there.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use support::synthetic::*;
 use support::*;
@@ -471,6 +474,84 @@ async fn every_entry_answers_a_person_and_an_agent_only_about_its_children() {
     assert_eq!(ask(Served::Link, remote.clone(), &helper).await, Ok(()));
     assert_eq!(ask(Served::Link, remote, &coder).await, denied);
 
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A turn's end, its snapshot carrying no git facts.
+fn turn_ended() -> wire::Step {
+    let mut step = snapshot(wire::Phase::Idle, &[], 4_000);
+    step.turn_end = Some(wire::TurnEnd {
+        turn_id: 1,
+        outcome: wire::TurnOutcome::Completed as i32,
+        ..wire::TurnEnd::default()
+    });
+    step
+}
+
+/// Agents sharing a checkout all count it against HEAD, so one agent's turn
+/// end, which may have committed or reverted, has every other live agent
+/// whose folder is the same, or one inside the other, read its facts again.
+/// An agent in another folder is left alone, and so is the one whose turn
+/// ended: it reads at its own turn end.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_end_has_the_others_in_its_checkout_read_their_facts_again() {
+    let install = Install::new();
+    git(&install.work, &["init", "-q", "-b", "main"]);
+    let inside = install.work.join("crates");
+    std::fs::create_dir_all(&inside).unwrap();
+    let elsewhere = install.path("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let mut ending = SyntheticAgent::new(&install, "ending", SEGMENTS);
+    let mut beside = SyntheticAgent::new(&install, "beside", SEGMENTS);
+    let mut nested = SyntheticAgent::new(&install, "nested", SEGMENTS).in_folder(inside);
+    let mut apart = SyntheticAgent::new(&install, "apart", SEGMENTS).in_folder(elsewhere);
+    let agents = [&mut ending, &mut beside, &mut nested, &mut apart];
+    for agent in agents {
+        agent.register(&install);
+        agent.go_live();
+    }
+    let daemon = install.start("boot-1", quiet_launch()).await;
+    let runtime = runtime(&daemon, &install);
+    // An idle snapshot from each, ingested only after its Hello on the same
+    // connection: once every row shows it, the daemon knows each is live.
+    for agent in [&mut ending, &mut beside, &mut nested, &mut apart] {
+        agent.append(&snapshot(wire::Phase::Idle, &[], 2_000));
+        agent.nudge().await;
+    }
+    for agent in [&ending, &beside, &nested, &apart] {
+        until("each agent's idle snapshot", || async {
+            let phase = runtime.agent(agent.id).await.unwrap().phase;
+            (phase == wire::Phase::Idle as i32)
+                .then_some(())
+                .ok_or_else(|| format!("{phase}"))
+        })
+        .await
+        .unwrap();
+    }
+    assert_eq!(beside.git_reads_asked(), 0, "nothing has ended yet");
+
+    ending.append(&turn_ended());
+    ending.nudge().await;
+    until("the agents in the checkout to be asked", || async {
+        let asked = (beside.git_reads_asked(), nested.git_reads_asked());
+        (asked == (1, 1))
+            .then_some(())
+            .ok_or_else(|| format!("{asked:?}"))
+    })
+    .await
+    .unwrap();
+    holds_for(
+        "the agent elsewhere and the one that ended to be left alone",
+        Duration::from_millis(300),
+        || async { apart.git_reads_asked() == 0 && ending.git_reads_asked() == 0 },
+    )
+    .await
+    .unwrap();
+
+    for agent in [&mut ending, &mut beside, &mut nested, &mut apart] {
+        agent.die().await;
+    }
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

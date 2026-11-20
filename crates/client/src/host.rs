@@ -6,8 +6,7 @@ use wire::agent_service_client::AgentServiceClient;
 use wire::host_service_client::HostServiceClient;
 use wire::review_service_client::ReviewServiceClient;
 use wire::{
-    BlobRef, Diff, DiffBase, Filing, Input, MessageBody, PromptSubmission, SendInputResponse,
-    get_changes_request,
+    BlobRef, Filing, Input, MessageBody, PromptSubmission, SendInputResponse, get_changes_request,
 };
 
 use crate::{Addressed, Conn, RpcError, held, stub};
@@ -230,17 +229,5 @@ impl Agent {
         };
         let mut reviews = stub!(ReviewServiceClient<Conn>, self.to.conn()?);
         Ok(reviews.get_changes(request).await?.into_inner())
-    }
-
-    /// The changed files against `base`; `with_patch` also has the host
-    /// build the patch and keep it as one of the agent's files, which the
-    /// diff names.
-    pub async fn get_diff(&self, base: DiffBase, with_patch: bool) -> Result<Diff, RpcError> {
-        let request = wire::GetDiffRequest {
-            agent_id: self.id_owned(),
-            base: Some(base),
-            with_patch,
-        };
-        held(self.agents()?.get_diff(request).await?.into_inner().diff)
     }
 }

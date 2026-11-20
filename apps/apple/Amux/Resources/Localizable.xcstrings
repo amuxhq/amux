@@ -1969,30 +1969,6 @@
         }
       }
     },
-    "Add to Review" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/DiffPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add to Review"
-          }
-        }
-      }
-    },
-    "Added line %@, %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Added line %@, %@"
-          }
-        }
-      }
-    },
     "Address" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/PlaceSheet.swift.",
       "extractionState" : "manual",
@@ -2457,30 +2433,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attach"
-          }
-        }
-      }
-    },
-    "Attach Review · %@ comments" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attach Review · %@ comments"
-          }
-        }
-      }
-    },
-    "Attach Review · 1 comment" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attach Review · 1 comment"
           }
         }
       }
@@ -4165,18 +4117,6 @@
         }
       }
     },
-    "Line %@, %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Line %@, %@"
-          }
-        }
-      }
-    },
     "Link from" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
       "extractionState" : "manual",
@@ -5397,18 +5337,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove from This Phone"
-          }
-        }
-      }
-    },
-    "Removed line %@, %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removed line %@, %@"
           }
         }
       }
@@ -6741,30 +6669,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This agent"
-          }
-        }
-      }
-    },
-    "This agent has no changes on its branch." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxShell/Sources/AmuxShell/Shell.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This agent has no changes on its branch."
-          }
-        }
-      }
-    },
-    "This agent has no uncommitted changes." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxShell/Sources/AmuxShell/Shell.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This agent has no uncommitted changes."
           }
         }
       }
@@ -9085,30 +8989,6 @@
         }
       }
     },
-    "review.file.%@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "review.file.%@"
-          }
-        }
-      }
-    },
-    "review.line.%@.%@.%@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "review.line.%@.%@.%@"
-          }
-        }
-      }
-    },
     "running" : {
       "comment" : "English app copy. Used in Facts.swift.",
       "extractionState" : "manual",
@@ -9793,18 +9673,6 @@
         }
       }
     },
-    "·" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatComposer.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "·"
-          }
-        }
-      }
-    },
     "··· %@ more lines" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
       "extractionState" : "manual",
@@ -9853,18 +9721,6 @@
         }
       }
     },
-    "Goes to the first file" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Goes to the first file"
-          }
-        }
-      }
-    },
     "Edits the comment" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift.",
       "extractionState" : "manual",
@@ -9873,18 +9729,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edits the comment"
-          }
-        }
-      }
-    },
-    "Edit Comment" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Comment"
           }
         }
       }
@@ -10197,54 +10041,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reading the changes"
-          }
-        }
-      }
-    },
-    "No changes" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No changes"
-          }
-        }
-      }
-    },
-    "Couldn’t read the changes" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn’t read the changes"
-          }
-        }
-      }
-    },
-    "this app could not read the host’s diff" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "this app could not read the host’s diff"
-          }
-        }
-      }
-    },
-    "the host’s patch is missing the files it lists" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the host’s patch is missing the files it lists"
           }
         }
       }

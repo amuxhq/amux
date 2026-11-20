@@ -19,8 +19,8 @@ use crate::coalesce::{Coalescer, WakeFn};
 use crate::delta::Sent;
 use crate::review::ReviewSession;
 use crate::values::{
-    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
-    ReviewChange, ReviewOutcome, SendOutcome,
+    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, PageOutcome, ReviewChange,
+    ReviewOutcome, SendOutcome,
 };
 
 /// An open chat. The host hears what moved as [`ChatDelta`]s: the window's
@@ -726,14 +726,6 @@ impl Chat {
             Err(PageError::OriginUnreachable) => PageOutcome::OriginUnreachable,
             Err(PageError::Rpc(error)) => PageOutcome::Failed(error.to_string()),
         }
-    }
-
-    /// The agent's diff for `comparison` and its patch, frozen for a
-    /// review, against the base the host reports for `comparison` as the
-    /// review opens.
-    pub async fn review(&self, comparison: Comparison) -> Result<FrozenReview, client::RpcError> {
-        let (diff, patch) = self.session.review(comparison).await?;
-        Ok(FrozenReview { diff, patch })
     }
 
     /// Stores bytes to attach to a prompt.

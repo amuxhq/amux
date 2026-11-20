@@ -51,7 +51,6 @@ public protocol ChatSource: AnyObject, Sendable {
     func blob(_ hash: [UInt8]) -> Data?
     func blobFailed(_ hash: [UInt8]) -> Bool
     func fetchBlob(_ hash: [UInt8])
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure>
     /// Fetches the files changed for `comparison`; the overview lists them
     /// from then on.
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure>
@@ -320,9 +319,6 @@ public final class ChatModel {
     /// then, and again when the comparison or its totals move.
     @ObservationIgnored private var overviewShown = false
     @ObservationIgnored private var listed: Listed?
-    /// The review being written on this agent's changes, kept while the
-    /// chat is open so leaving the page loses no comment.
-    public private(set) var reviewing: ReviewModel?
     /// The agent's review page while it is open on the chat: the review
     /// read and written at the agent's host, which every client of the
     /// agent sees.
@@ -1140,46 +1136,6 @@ public final class ChatModel {
                 notice = String(localized: "\(name) is not attached: \(failure.description)")
             }
         }
-    }
-
-    /// The review page's model for the chosen comparison, as the agent's
-    /// host freezes it now: the one already being written when it is on the
-    /// same patch, else a new one. Nil when nothing changed; a failure when
-    /// the changes could not be read, which is never said as nothing
-    /// changed.
-    public func openReview() async -> Result<ReviewModel?, RuntimeFailure> {
-        switch await source.review(comparison) {
-        case .failure(let failure): return .failure(failure)
-        case .success(let frozen):
-            if let reviewing, reviewing.review.diff.patch?.hash == frozen.diff.patch?.hash {
-                return .success(reviewing)
-            }
-            guard let doc = ReviewModel.document(frozen, comments: []) else {
-                return .failure(RuntimeFailure(String(localized: "this app could not read the host’s diff")))
-            }
-            if doc.files.isEmpty {
-                // The host's list of changed files is its word on whether
-                // anything changed; a patch showing none of them was not
-                // read whole.
-                return frozen.diff.files.isEmpty
-                    ? .success(nil)
-                    : .failure(RuntimeFailure(String(localized: "the host’s patch is missing the files it lists")))
-            }
-            let review = ReviewModel(review: frozen)
-            reviewing = review
-            return .success(review)
-        }
-    }
-
-    /// Puts a written review into the draft as one token, replacing the
-    /// token of an earlier review of the same patch.
-    public func attach(_ review: ReviewModel) {
-        let patch = review.review.diff.patch?.hash
-        attachments.removeAll { attachment in
-            if case .review(let diff, _) = attachment { return diff.patch?.hash == patch }
-            return false
-        }
-        attachments.append(review.attachment)
     }
 
     // MARK: - The agent's review

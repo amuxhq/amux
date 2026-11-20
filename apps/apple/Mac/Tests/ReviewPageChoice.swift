@@ -3,16 +3,16 @@ import AmuxValues
 import Foundation
 import XCTest
 
-/// Which review the tool window draws: the agent's review page wherever
-/// its host offers reviews, and the review over a patch where the host
-/// says it offers none and nothing of its review was read. A host that
-/// stops offering them under a review already read has the page say so.
+/// The tool window draws the agent's review page: the review itself
+/// wherever its host offers reviews, and a page saying so where the host
+/// offers none, whether or not anything of its review was read.
 @MainActor
 final class ReviewPageChoice: XCTestCase {
-    func testAHostWithoutReviewsGetsTheReviewOverAPatch() {
+    func testAHostWithoutReviewsHasThePageSaySo() {
         let (chat, model) = opened()
         model.apply(delta(review: Self.notOffered))
-        XCTAssertNil(chat.reviewPage, "the review over a patch stands in")
+        XCTAssertEqual(chat.reviewPage?.page.banners, [.notOffered])
+        XCTAssertNil(chat.reviewPage?.page.header, "nothing of the review to draw")
     }
 
     func testAHostWithReviewsGetsTheAgentsPage() {
@@ -90,9 +90,6 @@ private final class Silent: ChatSource {
         .failure(RuntimeFailure("silent"))
     }
     func blob(_ hash: [UInt8]) -> Data? { nil }
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
-        .failure(RuntimeFailure("silent"))
-    }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {
         .failure(RuntimeFailure("silent"))
     }

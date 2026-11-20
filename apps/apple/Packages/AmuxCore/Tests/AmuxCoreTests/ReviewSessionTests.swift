@@ -92,9 +92,6 @@ private final class ReviewChat: ChatSource, @unchecked Sendable {
         .failure(RuntimeFailure("no blobs"))
     }
     func blob(_ hash: [UInt8]) -> Data? { nil }
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
-        .failure(RuntimeFailure("no frozen review"))
-    }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {
         .failure(RuntimeFailure("no overview"))
     }
@@ -492,9 +489,6 @@ private final class ReviewChatClosing: ChatSource, @unchecked Sendable {
         .failure(RuntimeFailure("closed"))
     }
     func blob(_ hash: [UInt8]) -> Data? { nil }
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> {
-        .failure(RuntimeFailure("closed"))
-    }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {
         .failure(RuntimeFailure("closed"))
     }

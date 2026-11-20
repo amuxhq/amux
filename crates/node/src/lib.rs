@@ -72,7 +72,7 @@ mod workspaces;
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
 pub use api::Owner;
 pub use auth::oauth::CLI_CLIENT_ID;
-pub use blobs::{BlobError, PATCH_MIME};
+pub use blobs::BlobError;
 pub use daemon::{
     Daemon, RESTART_DEBOUNCE, RESTART_SETTLE_WITHIN, RestartWanted, STOP_TARGET, StartError,
     StartOptions, start,

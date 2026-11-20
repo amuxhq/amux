@@ -540,11 +540,11 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
 
 /// A person on the laptop works with the blobs of the desk's agent as with
 /// its own: an attachment stored from the laptop is written into the
-/// agent's directory on the desk, a diff of its working tree is made on the
-/// desk (its file list always, its patch when asked for), and the laptop reads each blob from the desk once and keeps the
-/// bytes under the replica, so the next read needs no link.
+/// agent's directory on the desk, and the laptop reads each blob from the
+/// desk once and keeps the bytes under the replica, so the next read needs
+/// no link.
 #[tokio::test(flavor = "multi_thread")]
-async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader() {
+async fn blobs_of_a_peers_agent_are_stored_at_its_origin_and_kept_by_the_reader() {
     let topology = desk_and_laptop().agent(
         AgentDecl::new("worker", "desk")
             .steps(turns(1, 1))
@@ -559,29 +559,18 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
     let agent_id = worker.id.as_bytes().to_vec();
     let own = net.host("desk").unwrap().data_dir.clone();
 
-    let work = net.host("desk").unwrap().work.clone();
-    let git = |args: &[&str]| {
-        let status = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&work)
-            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
-            .args(args)
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?}");
-    };
-    git(&["init", "-q"]);
-    std::fs::write(work.join("deploy.sh"), "rsync build/ prod:/srv\n").unwrap();
-    git(&["add", "."]);
-    git(&["commit", "-qm", "first"]);
-    std::fs::write(work.join("deploy.sh"), "rsync --delete build/ prod:/srv\n").unwrap();
-
     let laptop = net.person("laptop").await.unwrap();
-    let stored = laptop
-        .agent(&worker)
-        .put_blob("notes.txt", "text/plain", b"from the laptop".to_vec())
-        .await
-        .expect("the desk stores the laptop's attachment");
+    let store = |name: &'static str, bytes: &'static [u8]| {
+        let worker = laptop.agent(&worker);
+        async move {
+            worker
+                .put_blob(name, "text/plain", bytes.to_vec())
+                .await
+                .expect("the desk stores the laptop's attachment")
+        }
+    };
+    let stored = store("notes.txt", b"from the laptop").await;
+    let unread = store("later.txt", b"never read back").await;
     let hex = |hash: &[u8]| hash.iter().map(|b| format!("{b:02x}")).collect::<String>();
     let on_desk = |hash: &[u8]| {
         walk(&own).into_iter().find(|path| {
@@ -591,61 +580,29 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
     };
     let written = on_desk(&stored.hash).expect("the attachment is in the desk's data");
     assert_eq!(std::fs::read(written).unwrap(), b"from the laptop");
-
-    let diff = |with_patch| {
-        let worker = laptop.agent(&worker);
-        async move {
-            worker
-                .get_diff(
-                    wire::DiffBase {
-                        base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-                    },
-                    with_patch,
-                )
-                .await
-                .expect("the desk diffs its agent's working tree")
-        }
-    };
-    let listed = diff(false).await;
-    assert_eq!(listed.patch, None, "no patch unless asked");
-    assert_eq!(
-        listed
-            .files
-            .iter()
-            .map(|file| (file.path.as_str(), file.added, file.removed))
-            .collect::<Vec<_>>(),
-        [("deploy.sh", 1, 1)]
-    );
-    let diff = diff(true).await;
-    assert_eq!(diff.files, listed.files);
-    let patch = diff.patch.unwrap();
-    assert!(
-        on_desk(&patch.hash).is_some(),
-        "the patch is the desk's blob"
-    );
+    assert!(on_desk(&unread.hash).is_some());
 
     let read = |hash: Vec<u8>| {
         let sessions = laptop.sessions();
         let agent_id = agent_id.clone();
         async move { sessions.get_blob(&agent_id, &hash).await }
     };
-    let bytes = read(patch.hash.clone())
+    let bytes = read(stored.hash.clone())
         .await
-        .expect("the laptop reads the patch");
-    let text = String::from_utf8(bytes).unwrap();
-    assert!(text.contains("+rsync --delete build/ prod:/srv"), "{text}");
+        .expect("the laptop reads the attachment");
+    assert_eq!(bytes, b"from the laptop");
 
-    // Kept: with the desk away the laptop still has the patch it read, and
+    // Kept: with the desk away the laptop still has the blob it read, and
     // nothing it never read.
     sever(&mut net).await;
     assert_eq!(
-        read(patch.hash.clone())
+        read(stored.hash.clone())
             .await
             .expect("kept under the replica"),
-        text.as_bytes()
+        b"from the laptop"
     );
-    let unread = read(stored.hash.clone()).await;
-    assert!(unread.is_err(), "{unread:?}");
+    let never = read(unread.hash.clone()).await;
+    assert!(never.is_err(), "{never:?}");
     net.shutdown().await.unwrap();
 }
 

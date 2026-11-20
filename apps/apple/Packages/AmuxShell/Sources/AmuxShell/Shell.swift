@@ -410,43 +410,21 @@ private extension View {
 
 /// An agent's review, pushed over the chat from the changes chip, the
 /// overview or the composer's review chip. It is the agent's review on its
-/// computer, read and written there; an agent whose computer runs no reviews
-/// gets the page over the diff its host froze as the page opened instead,
-/// whose comments are kept on the chat so leaving and coming back loses
-/// none.
+/// computer, read and written there; a computer that runs no reviews has the
+/// page say so.
 private struct ChangesPage: View {
     let agent: AgentKey
     let router: Router
     let stores: StoreBundle
     @State private var chat: ChatModel?
-    /// The review page while the agent's computer offers reviews.
     @State private var session: ReviewSession?
-    @State private var review: ReviewModel?
-    /// What the review was frozen against, fixed as it opened.
-    @State private var against: String?
-    /// Why there is no review: nothing changed, or the host was not asked.
-    @State private var missing: PagePlaceholder.Showing?
 
     var body: some View {
         Group {
             if let session {
                 ReviewScreen(session: session) { router.pop() }
-                    .onChange(of: Self.offersNone(session.page), initial: true) { _, none in
-                        if none { Task { await patch() } }
-                    }
-            } else if let chat, let review {
-                PatchReviewPage(model: review, against: against) { action in
-                    switch action {
-                    case .back: router.pop()
-                    case .attach:
-                        chat.attach(review)
-                        router.pop()
-                    }
-                }
             } else {
-                PagePlaceholder(
-                    missing ?? .waiting(String(localized: "Reading the changes")),
-                    identifier: "review")
+                PagePlaceholder(.waiting(String(localized: "Reading the changes")), identifier: "review")
             }
         }
         .task {
@@ -455,32 +433,6 @@ private struct ChangesPage: View {
             session = model.openReviewPage()
         }
         .onDisappear { if session != nil { chat?.closeReviewPage() } }
-    }
-
-    /// The first look found the agent's computer runs no reviews: its
-    /// experiment is off there, or its amux predates them.
-    private static func offersNone(_ page: ReviewPage) -> Bool {
-        page.header == nil && page.banners.contains(.notOffered)
-    }
-
-    /// The page over the patch, for a computer with no reviews.
-    private func patch() async {
-        guard let model = chat, session != nil else { return }
-        model.closeReviewPage()
-        session = nil
-        against = ChatWords.comparison(model.comparison, base: model.base)
-        switch await model.openReview() {
-        case .success(let opened?): review = opened
-        case .success(nil):
-            missing = .empty(
-                title: String(localized: "No changes"),
-                detail: model.comparison == .onBranch
-                    ? String(localized: "This agent has no changes on its branch.")
-                    : String(localized: "This agent has no uncommitted changes."))
-        case .failure(let failure):
-            missing = .failed(
-                title: String(localized: "Couldn’t read the changes"), reason: failure.description)
-        }
     }
 }
 

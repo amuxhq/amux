@@ -224,9 +224,9 @@ one at a time and end on a review of your answers.
 
 Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review.
 
-With the reviews experiment switched on on the agent's computer, the review is
-a snapshot of the agent's folder, taken when you open it, and it stays put
-while you read: if the agent changes code meanwhile, the page says so and `r`
+The review needs the reviews experiment switched on on the agent's computer.
+It is a snapshot of the agent's folder, taken when you open it, and it stays
+put while you read: if the agent changes code meanwhile, the page says so and `r`
 refreshes it. Every file follows the next, each change under the functions it
 sits in; lock files, generated and vendored files start folded.
 
@@ -265,19 +265,16 @@ comment on its file, with the code it was written on. If the review has since
 been started over, you see the text the agent read instead. `q` goes back to
 the chat.
 
-Where the agent's computer doesn't run reviews, the page instead shows the
-changed files on the left and every change on the right, and your comments go
-into the message box as one review, ready to send with anything else you want
-to say.
+Where the agent's computer doesn't run reviews, because the experiment is off
+there or its amux is older than reviews, the page says so. The overview still
+lists the changed files.
 
 The header can count either your uncommitted changes, or everything since the
 branch left its base. Ctrl+A then `c` switches between the two. For an agent
 working on the base branch itself, everything on the branch is what isn't
 pushed yet: its commits since the upstream, and its uncommitted changes. The
 count is of the agent's whole folder, so agents sharing one checkout count
-the same changes: it updates when any of them finishes a turn, and opening
-the review corrects it if the folder changed in between, say because you
-committed.
+the same changes: it updates when any of them finishes a turn.
 
 ## Chatting in each agent's own interface
 

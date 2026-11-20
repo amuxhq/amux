@@ -18,8 +18,15 @@ use highlight::{Highlighted, Highlighter, Language};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::review::LineKind;
 use crate::rows::{PatchHunk, PatchLine};
+
+/// Which side of a change a line of a diff is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum LineKind {
+    Context,
+    Added,
+    Removed,
+}
 
 /// What a run of code is, as far as colouring it goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

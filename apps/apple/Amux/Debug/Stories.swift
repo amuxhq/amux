@@ -320,7 +320,6 @@ struct StoryApp: View {
                 let chat = ScriptedChat(
                     rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: chatPhase),
                     strip: ScriptedChat.strip(model: "opus 4.6", git: CatalogFixtures.git))
-                chat.working = CatalogFixtures.review
                 chat.reviewOnOpening = ReviewStory.page()
                 chat.roundOnOpening = ReviewStory.round()
                 return chat

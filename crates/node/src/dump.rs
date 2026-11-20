@@ -907,10 +907,6 @@ impl store::redact::Redactor for Structure {
         Structure::message(self, name, bytes)
     }
 
-    fn content(&self, bytes: &[u8]) -> Vec<u8> {
-        vec![0; bytes.len()]
-    }
-
     fn hash(&self, bytes: &[u8]) -> Vec<u8> {
         self.0.lock().unwrap().hash(bytes)
     }

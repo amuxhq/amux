@@ -215,7 +215,7 @@ pub fn components(theme: Theme) -> Vec<Component> {
             .expect("draw");
         out.push(Component {
             name: "composer_review_chip",
-            shows: "A chat whose agent's review holds three drafts: the review chip on the composer's top edge, read from the agent's row alone, with its ✕ and the words saying the code changed since the drafts were written.",
+            shows: "A chat whose agent's review holds three drafts: the review chip on the composer's top edge, read from the agent's row alone, with its ✕ and the words saying the drafts were written on older code.",
             buffer: terminal.backend().buffer().clone(),
         });
     }

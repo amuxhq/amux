@@ -977,6 +977,86 @@ fn a_queued_prompt_can_be_withdrawn_or_sent_now() {
     );
 }
 
+/// A queued prompt that carried a review, withdrawn, comes back to the
+/// composer without the review, as a refused one does: its comments are
+/// still drafts on the agent's host, so the chip is back and the next send
+/// carries one review read afresh, never the old one beside a new one.
+#[test]
+fn a_withdrawn_prompt_comes_back_without_the_review_it_carried() {
+    let mut state = chat(replies(1, 3));
+    let mut agent = state.agent().clone();
+    wire::experimental::REVIEW_ROW.put(
+        &mut agent.experimental,
+        &wire::experimental::ReviewRowEntry {
+            drafts: 1,
+            counter: 4,
+            moved: false,
+            review_id: b"review".to_vec(),
+        },
+    );
+    state.update(Msg::Entry(agent));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let chip = |view: &mut ChatView, state: &SessionState| {
+        let (buffer, _) = draw(view, state, 0, W, H, theme());
+        text(&buffer).contains("[review · 1 comment ✕]")
+    };
+    assert!(chip(&mut view, &state));
+    typed(&mut view, &state, "have a look");
+    assert!(matches!(
+        view.key(&state, key(KeyCode::Enter), theme()).as_slice(),
+        [ChatEffect::PromptWithReview { .. }]
+    ));
+    assert!(!chip(&mut view, &state), "the send took the chip");
+
+    // The prompt waits in the queue, with the review and a note it carried.
+    let summary = wire::experimental::ReviewSummary {
+        id: b"review".to_vec(),
+        snapshot: "5".repeat(40),
+        ..Default::default()
+    };
+    let draft = wire::experimental::ReviewerComment {
+        id: b"d1".to_vec(),
+        text: "say why".into(),
+        revision: 1,
+        ..Default::default()
+    };
+    let review = ui_view::sent_review::attachment(&summary, &[draft]);
+    let note = wire::Attachment {
+        of: Some(wire::attachment::Of::Text(wire::InlineText {
+            name: "note".into(),
+            text: "kept".into(),
+        })),
+        ..Default::default()
+    };
+    let queued = wire::QueuedInput {
+        input_id: b"q1".to_vec(),
+        text: format!("have a look {}", attachments::PLACEHOLDER),
+        attachments: vec![note.clone(), review],
+        ..Default::default()
+    };
+    state.update(snapshot(Phase::Working, vec![], vec![queued]));
+    view.tray = Some(0);
+    let effects = view.key(&state, key(KeyCode::Backspace), theme());
+    let [
+        ChatEffect::Withdraw {
+            text: words,
+            attachments,
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("a withdrawal: {effects:?}");
+    };
+    // The host took it back: the app hands the prompt to the composer.
+    view.take_back(words, attachments.clone());
+    assert_eq!(view.editor.attachments(), [note], "the review stays behind");
+    assert!(view.editor.text().starts_with("have a look"));
+    assert!(
+        chip(&mut view, &state),
+        "the chip is back for the next send"
+    );
+}
+
 #[test]
 fn a_steered_prompt_reads_sending_into_this_turn_until_its_reflection() {
     let queued = wire::QueuedInput {
@@ -1911,7 +1991,7 @@ mod review_page {
         state.update(Msg::Entry(agent.clone()));
         let (shown, _) = review_screen(&mut view, &state);
         assert!(shown.contains("[review · 3 comments ✕]"), "{shown}");
-        assert!(!shown.contains("code changed since"), "{shown}");
+        assert!(!shown.contains("written on older code"), "{shown}");
         assert_eq!(
             view.key(&state, key(KeyCode::Enter), theme()),
             vec![ChatEffect::PromptWithReview {
@@ -1939,7 +2019,7 @@ mod review_page {
         // The ✕ asks first.
         let (shown, _) = review_screen(&mut view, &state);
         assert!(
-            shown.contains("[review · 3 comments ✕] code changed since"),
+            shown.contains("[review · 3 comments ✕] written on older code"),
             "{shown}"
         );
         let row = shown.lines().position(|line| line.contains("✕]")).unwrap();

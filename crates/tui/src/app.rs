@@ -917,8 +917,7 @@ impl App {
                     .as_mut()
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
-                    chat.view.editor.restore(&text, attachments);
-                    chat.view.review_unsent();
+                    chat.view.take_back(&text, attachments);
                 }
             }
             AppEvent::Thumbnail {

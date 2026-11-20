@@ -21,7 +21,7 @@
           todo!("sort by folder")
       }
 
-  ┏━ [review · 3 comments ✕] code changed since ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+  ┏━ [review · 3 comments ✕] written on older code ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
   ┃ › Here's my review of the store change.                                                                          ┃
   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ GPT-5.5 (medium) · full access · plan ━┛
 
@@ -50,7 +50,7 @@
 ..........aaaaa.oooooooooooooooo........................................................................................
 ........................................................................................................................
 ........................................................................................................................
-..ww.UUUUUUUUUUUUUUUUUUUUUUU????????????????????wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww..
+..ww.UUUUUUUUUUUUUUUUUUUUUUU???????????????????????wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww..
 ..wwmm...............................................................................................................w..
 ..wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww???????????????????wwwwwwwwwww.......www..
 ........................................................................................................................

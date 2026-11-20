@@ -663,15 +663,7 @@ impl ChatView {
                 .find(|sent| sent.id == refused.input_id)
                 .map(|sent| &sent.what)
             {
-                // A review it carried is the chip's again, read afresh
-                // when it next goes.
-                let attachments: Vec<Attachment> = attachments
-                    .iter()
-                    .filter(|attachment| ui_view::sent_review::entry(attachment).is_none())
-                    .cloned()
-                    .collect();
-                self.editor.restore(text, attachments);
-                self.review_sent = None;
+                self.take_back(text, attachments.clone());
                 self.draft_owed = true;
             }
             self.not_sent = Some(format!("not sent: {}", refusal_words(&refused.reason)));
@@ -2607,6 +2599,21 @@ impl ChatView {
         self.review_sent = None;
     }
 
+    /// A prompt that did not reach the agent, refused, withdrawn from the
+    /// queue or never sent, comes back to the composer: its words and
+    /// attachments after any draft there, but not a review it carried.
+    /// That review's comments are still drafts on the agent's host, so the
+    /// chip is back and the next send reads them afresh: the agent gets
+    /// one review, in the words the drafts hold then.
+    pub fn take_back(&mut self, text: &str, attachments: Vec<Attachment>) {
+        let attachments = attachments
+            .into_iter()
+            .filter(|attachment| ui_view::sent_review::entry(attachment).is_none())
+            .collect();
+        self.editor.restore(text, attachments);
+        self.review_sent = None;
+    }
+
     /// Asks before the review chip's drafts are discarded.
     pub fn ask_discard_drafts(&mut self, drafts: u32) {
         self.discard_ask = Some(review::Asking::new(review::Confirm::Discard { drafts }));
@@ -2689,7 +2696,8 @@ fn review_counter(state: &SessionState) -> Option<u64> {
 
 /// The review chip laid on the composer box's top edge, from the review's
 /// entry on the agent's row: "[review · 3 comments ✕]", and after it, when
-/// the code changed since the drafts were written, that it did. Returns the
+/// the code changed since the drafts were written, "written on older code",
+/// the words the apps' chip says it in. Returns the
 /// edge with it, and the columns of the chip and of its ✕.
 fn review_chip_line(
     top: &Line<'static>,
@@ -2712,7 +2720,7 @@ fn review_chip_line(
     let chip_to = AT + text::line_width(&over);
     if chip.moved {
         over.spans
-            .push(Span::styled(" code changed since ", theme.faint()));
+            .push(Span::styled(" written on older code ", theme.faint()));
     } else {
         over.spans.push(Span::raw(" "));
     }

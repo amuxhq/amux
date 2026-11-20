@@ -7,8 +7,8 @@
 //! What is here: the review's base, by the rule [`changes`](crate::changes)
 //! uses; the files and the numbered lines that differ between two commits,
 //! renames followed; the line map that carries a comment from the commit
-//! that holds its lines to a later one; and the limit that keeps "since your
-//! last review" to what is still part of the agent's change.
+//! that holds its lines to a later one; and "since your last review",
+//! limited to what is part of the agent's change.
 //!
 //! A commit can be gone: the repository can be cloned again, and a rebase
 //! followed by garbage collection removes what only an old snapshot still
@@ -182,6 +182,18 @@ pub struct FileHunks {
     pub old_blob: Option<String>,
     pub new_blob: Option<String>,
     pub hunks: Vec<Hunk>,
+}
+
+impl FileHunks {
+    /// The lines its hunks add and remove; none for a binary file.
+    pub fn counts(&self) -> (u32, u32) {
+        let lines = self.hunks.iter().flat_map(|hunk| &hunk.lines);
+        lines.fold((0, 0), |(added, removed), line| match line.kind {
+            LineKind::Added => (added + 1, removed),
+            LineKind::Removed => (added, removed + 1),
+            LineKind::Context => (added, removed),
+        })
+    }
 }
 
 /// The hunks of the files `paths` from `from` to `to`, with `context` lines
@@ -467,68 +479,170 @@ impl LineMap {
     }
 }
 
-/// "Since your last review" limited to what is still part of the agent's
-/// change: `last` is the diff from the last round's snapshot, `all` the
-/// diff from the base commit, both to the same snapshot.
+/// A snapshot a review showed and the base commit its "all changes" ran
+/// from (the empty tree's id before the first commit).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shown<'a> {
+    pub base: &'a str,
+    pub snapshot: &'a str,
+}
+
+/// "Since your last review": the hunks from the `last` round's snapshot to
+/// `now`'s, with `context` lines around each change, limited to what is
+/// part of the agent's change. `paths` are files at `now`'s snapshot (a
+/// deleted one by its path at the last round's); None asks for every file
+/// that differs, so a list of files and their counts can come from the
+/// same comparison as their hunks.
 ///
-/// A file stays only when `all` lists it, and a hunk only when one of its
-/// changes sits on the lines of a change in `all`'s hunks for that file:
-/// after a merge or rebase from a moved base, what arrived from the base
+/// After a merge or rebase from a moved base, what arrived from the base
 /// differs from the last round but is no part of the change, so it goes. A
-/// file whose hunks all go goes with them; one with none to compare (a
-/// binary file, a rename alone) stays.
-pub fn since_last(last: Vec<FileHunks>, all: &[FileHunks]) -> Vec<FileHunks> {
-    let all: HashMap<&str, &FileHunks> =
-        all.iter().map(|file| (file.path.as_str(), file)).collect();
-    last.into_iter()
+/// hunk stays when one of its changes sits on the lines of a change the
+/// agent's work holds now (`now`'s all changes), or on the lines of one it
+/// held at the last round (that round's all changes): the agent undoing its
+/// own change, a line put back or a file it made and then deleted, is
+/// shown, though all changes no longer lists it. A file stays when either
+/// lists it; one whose hunks all go goes with them, and one either lists
+/// with nothing to compare (a binary file, a rename alone) stays whole.
+pub async fn since_last(
+    cwd: &Path,
+    store: &ObjectStore,
+    last: Shown<'_>,
+    now: Shown<'_>,
+    paths: Option<&[&str]>,
+    context: u32,
+) -> Result<Vec<FileHunks>, CompareError> {
+    let root = top(cwd).await?;
+    let wanted: Option<HashSet<&str>> = paths.map(|paths| paths.iter().copied().collect());
+    let asked = |file: &RawFile| {
+        wanted
+            .as_ref()
+            .is_none_or(|wanted| wanted.contains(file.path.as_str()))
+    };
+    let since: Vec<FileHunks> = diffed(&root, store, last.snapshot, now.snapshot, context, asked)
+        .await?
+        .into_iter()
+        .map(|(file, hunks)| file_hunks(file, hunks))
+        .collect();
+    if since.is_empty() {
+        return Ok(since);
+    }
+    // Each file as the agent's work holds it now, by its path now, and as
+    // it held it at the last round, by its path then.
+    let at_now: HashSet<&str> = since.iter().map(|file| file.path.as_str()).collect();
+    let at_last: HashSet<&str> = since.iter().map(old_path).collect();
+    let all = diffed(&root, store, now.base, now.snapshot, context, |file| {
+        at_now.contains(file.path.as_str())
+    })
+    .await?;
+    let then = diffed(&root, store, last.base, last.snapshot, context, |file| {
+        at_last.contains(file.path.as_str())
+    })
+    .await?;
+    Ok(limited(since, &all, &then))
+}
+
+/// [`since_last`]'s rule over the three comparisons: `since` from the last
+/// round's snapshot to now's, `all` from now's base to now's snapshot, and
+/// `then` from the last round's base to its snapshot.
+fn limited(
+    since: Vec<FileHunks>,
+    all: &[(RawFile, Vec<Hunk>)],
+    then: &[(RawFile, Vec<Hunk>)],
+) -> Vec<FileHunks> {
+    let by_path = |files: &'_ [(RawFile, Vec<Hunk>)]| -> HashMap<String, Vec<(u32, u32)>> {
+        files
+            .iter()
+            .map(|(file, hunks)| {
+                let spans = hunks
+                    .iter()
+                    .flat_map(|hunk| change_spans(hunk, Side::New))
+                    .collect();
+                (file.path.clone(), spans)
+            })
+            .collect()
+    };
+    let (all, then) = (by_path(all), by_path(then));
+    let overlaps = |spans: &[(u32, u32)], (first, last): (u32, u32)| {
+        spans
+            .iter()
+            .any(|&(start, end)| first <= end && start <= last)
+    };
+    since
+        .into_iter()
         .filter_map(|mut file| {
-            let changed = *all.get(file.path.as_str())?;
-            if file.hunks.is_empty() || changed.hunks.is_empty() {
+            let now = all.get(file.path.as_str());
+            let held = then.get(old_path(&file));
+            if now.is_none() && held.is_none() {
+                return None;
+            }
+            let whole = |spans: Option<&Vec<(u32, u32)>>| spans.is_some_and(Vec::is_empty);
+            if file.hunks.is_empty() || whole(now) || whole(held) {
                 return Some(file);
             }
-            let spans: Vec<(u32, u32)> = changed.hunks.iter().flat_map(change_spans).collect();
+            let (now, held) = (
+                now.map_or(&[][..], Vec::as_slice),
+                held.map_or(&[][..], Vec::as_slice),
+            );
             file.hunks.retain(|hunk| {
-                change_spans(hunk).any(|(first, last)| {
-                    spans
-                        .iter()
-                        .any(|&(start, end)| first <= end && start <= last)
-                })
+                change_spans(hunk, Side::New).any(|span| overlaps(now, span))
+                    || change_spans(hunk, Side::Old).any(|span| overlaps(held, span))
             });
             (!file.hunks.is_empty()).then_some(file)
         })
         .collect()
 }
 
-/// Where each run of changed lines in `hunk` sits in the later commit, both
-/// ends included: the lines it added, or for a run that only removes, the
-/// lines either side of where they were.
-fn change_spans(hunk: &Hunk) -> impl Iterator<Item = (u32, u32)> + '_ {
+/// A file's path at the earlier side of its comparison.
+fn old_path(file: &FileHunks) -> &str {
+    file.old_path.as_deref().unwrap_or(&file.path)
+}
+
+/// A side of a comparison.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    Old,
+    New,
+}
+
+/// Where each run of changed lines in `hunk` sits on `side`, both ends
+/// included: the lines it wrote there (added on the new side, removed on
+/// the old), or for a run with none on that side, the lines either side of
+/// where they would be.
+fn change_spans(hunk: &Hunk, side: Side) -> impl Iterator<Item = (u32, u32)> + '_ {
+    let (start, count, own) = match side {
+        Side::Old => (hunk.old_start, hunk.old_count, LineKind::Removed),
+        Side::New => (hunk.new_start, hunk.new_count, LineKind::Added),
+    };
+    let number = |line: &DiffLine| match side {
+        Side::Old => line.old_line,
+        Side::New => line.new_line,
+    };
     let mut spans = Vec::new();
-    // The later commit's last line before the run, and the run's added
-    // lines so far.
-    let mut before = hunk.new_start.saturating_sub(1);
+    // The side's last line before the run, and the run's own lines so far.
+    // A side with no lines in the hunk starts after line `start`.
+    let mut before = match count {
+        0 => start,
+        _ => start.saturating_sub(1),
+    };
     let mut run: Option<Option<(u32, u32)>> = None;
     let mut close = |run: &mut Option<Option<(u32, u32)>>, before: u32| {
-        if let Some(added) = run.take() {
-            spans.push(added.unwrap_or((before, before + 1)));
+        if let Some(lines) = run.take() {
+            spans.push(lines.unwrap_or((before, before + 1)));
         }
     };
     for line in &hunk.lines {
-        match line.kind {
-            LineKind::Context => {
-                close(&mut run, before);
-                before = line.new_line;
-            }
-            LineKind::Removed => {
-                run.get_or_insert(None);
-            }
-            LineKind::Added => {
-                let added = run.get_or_insert(None);
-                *added = Some(match *added {
-                    Some((first, _)) => (first, line.new_line),
-                    None => (line.new_line, line.new_line),
-                });
-            }
+        if line.kind == LineKind::Context {
+            close(&mut run, before);
+            before = number(line);
+            continue;
+        }
+        let lines = run.get_or_insert(None);
+        if line.kind == own {
+            let at = number(line);
+            *lines = Some(match *lines {
+                Some((first, _)) => (first, at),
+                None => (at, at),
+            });
         }
     }
     close(&mut run, before);

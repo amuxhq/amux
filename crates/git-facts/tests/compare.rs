@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 use git_facts::compare::{
-    self, CompareError, FileHunks, LineKind, LineMap, LineRange, Mapped, NumberedLine,
+    self, CompareError, FileHunks, LineKind, LineMap, LineRange, Mapped, NumberedLine, Shown,
 };
 use git_facts::objects::ObjectStore;
 use git_facts::{Base, Status, UsedBase, changes};
@@ -307,6 +307,23 @@ async fn flags_between_commits_are_read_from_the_commits() {
     assert_eq!(files.len(), 3);
 }
 
+/// The lines each file's hunks change, by path.
+fn changed_lines(files: &[FileHunks]) -> Vec<(String, Vec<String>)> {
+    files
+        .iter()
+        .map(|file| {
+            let lines = file
+                .hunks
+                .iter()
+                .flat_map(|hunk| &hunk.lines)
+                .filter(|line| line.kind != LineKind::Context)
+                .map(|line| line.text.clone())
+                .collect();
+            (file.path.clone(), lines)
+        })
+        .collect()
+}
+
 /// After the agent merges a base that moved, the last round's snapshot
 /// differs from now by everything the base brought as well; what is shown
 /// since the last review is only what is still the agent's change.
@@ -317,6 +334,7 @@ async fn since_the_last_review_after_a_merge_from_a_moved_base_holds_only_the_ag
     let dir = repo.path();
     let (_held, store) = store();
     git(dir, &["switch", "-q", "-c", "work"]);
+    let round_base = git(dir, &["rev-parse", "main"]);
     std::fs::write(dir.join("a.txt"), replaced(&text, 5, "agent five")).unwrap();
     let round = snapshot(dir, store.dir());
     commit_all(dir, "the agent's first change");
@@ -336,11 +354,8 @@ async fn since_the_last_review_after_a_merge_from_a_moved_base_holds_only_the_ag
         .await
         .unwrap();
     let base = base.commit.unwrap();
-    let paths = ["a.txt", "b.txt"];
-    let last = compare::hunks(dir, &store, &round, &now, &paths, 3)
-        .await
-        .unwrap();
-    let all = compare::hunks(dir, &store, &base, &now, &paths, 3)
+    assert_ne!(base, round_base, "the merge moved the base");
+    let last = compare::hunks(dir, &store, &round, &now, &["a.txt", "b.txt"], 3)
         .await
         .unwrap();
     assert_eq!(last.len(), 2, "both files moved since the round");
@@ -350,29 +365,103 @@ async fn since_the_last_review_after_a_merge_from_a_moved_base_holds_only_the_ag
         "the agent's line and the base's in a.txt"
     );
 
-    let limited = compare::since_last(last, &all);
-    let changed = |files: &[FileHunks]| -> Vec<(String, Vec<String>)> {
-        files
-            .iter()
-            .map(|file| {
-                let lines = file
-                    .hunks
-                    .iter()
-                    .flat_map(|hunk| &hunk.lines)
-                    .filter(|line| line.kind != LineKind::Context)
-                    .map(|line| line.text.clone())
-                    .collect();
-                (file.path.clone(), lines)
-            })
-            .collect()
-    };
+    let limited = compare::since_last(
+        dir,
+        &store,
+        Shown {
+            base: &round_base,
+            snapshot: &round,
+        },
+        Shown {
+            base: &base,
+            snapshot: &now,
+        },
+        None,
+        3,
+    )
+    .await
+    .unwrap();
     assert_eq!(
-        changed(&limited),
+        changed_lines(&limited),
         [(
             "a.txt".to_owned(),
             vec!["line 6".to_owned(), "agent six".to_owned()]
         )]
     );
+    assert_eq!(limited[0].counts(), (1, 1));
+}
+
+/// The agent undoing its own change since the last round is part of what
+/// changed since then, though all changes no longer lists the file: a line
+/// it changed then put back, a file it made then deleted. What arrived from
+/// the base in between still goes.
+#[tokio::test]
+async fn since_the_last_review_shows_the_agent_undoing_its_own_change() {
+    let text = numbered(40);
+    let repo = repository(&[("a.txt", &text), ("b.txt", "base\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    git(dir, &["switch", "-q", "-c", "work"]);
+    let round_base = git(dir, &["rev-parse", "main"]);
+    std::fs::write(dir.join("a.txt"), replaced(&text, 5, "agent five")).unwrap();
+    std::fs::write(dir.join("made.txt"), "made\nby the agent\n").unwrap();
+    let round = snapshot(dir, store.dir());
+    // The base moves, and the agent merges it.
+    git(dir, &["stash", "-q", "-u"]);
+    git(dir, &["switch", "-q", "main"]);
+    std::fs::write(dir.join("a.txt"), replaced(&text, 30, "base thirty")).unwrap();
+    std::fs::write(dir.join("b.txt"), "base moved\n").unwrap();
+    commit_all(dir, "the base moves on");
+    git(dir, &["switch", "-q", "work"]);
+    git(dir, &["merge", "-q", "--no-edit", "main"]);
+    // Then puts line 5 back and deletes the file it made: nothing of its
+    // own is left.
+    let now = snapshot(dir, store.dir());
+    let base = compare::base_for_review(dir, None, None, None)
+        .await
+        .unwrap()
+        .commit
+        .unwrap();
+    assert!(
+        compare::files(dir, &store, &base, &now)
+            .await
+            .unwrap()
+            .is_empty(),
+        "all changes lists nothing"
+    );
+
+    let last = Shown {
+        base: &round_base,
+        snapshot: &round,
+    };
+    let now = Shown {
+        base: &base,
+        snapshot: &now,
+    };
+    let every = compare::since_last(dir, &store, last, now, None, 3)
+        .await
+        .unwrap();
+    assert_eq!(
+        changed_lines(&every),
+        [
+            (
+                "a.txt".to_owned(),
+                vec!["agent five".to_owned(), "line 5".to_owned()]
+            ),
+            (
+                "made.txt".to_owned(),
+                vec!["made".to_owned(), "by the agent".to_owned()]
+            ),
+        ]
+    );
+    let made = every.iter().find(|file| file.path == "made.txt").unwrap();
+    assert_eq!(made.status, Status::Deleted);
+    assert_eq!(made.counts(), (0, 2));
+    // Asked by path, the same.
+    let asked = compare::since_last(dir, &store, last, now, Some(&["made.txt", "b.txt"]), 3)
+        .await
+        .unwrap();
+    assert_eq!(changed_lines(&asked), changed_lines(&every[1..]));
 }
 
 /// The review's base follows the rule the changes list uses, except where
@@ -567,5 +656,10 @@ fn every_comparison_can_be_sent_between_threads() {
     sent(compare::blobs(dir, &store, &["a"]));
     sent(LineMap::between(dir, &store, "a", "b", "p"));
     sent(LineMap::for_paths(dir, &store, "a", "b", &["p"]));
+    let shown = Shown {
+        base: "a",
+        snapshot: "b",
+    };
+    sent(compare::since_last(dir, &store, shown, shown, None, 3));
     sent(changes(dir, &Base::Head));
 }

@@ -86,7 +86,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             caughtUp: caughtUp, hasOlder: hasOlder, arrivalsHeld: false, queue: queue,
             underway: underway, refused: refused, askInput: nil, context: nil,
             ended: nil,
-            git: nil, signIn: nil)
+            git: nil, reviewChip: nil, signIn: nil)
     }
 
     /// The facts around a chat's rows: what the frame reports of the agent,
@@ -258,7 +258,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             return ChatDelta(
                 chat: 0, rows: rows, agents: session ? agents : nil, ask: session ? AskMoved(card: card) : nil,
                 frame: session ? current : nil, keys: keys, overview: session ? facts : nil,
-                settings: session ? offered : nil)
+                review: nil, settings: session ? offered : nil)
         }
     }
 
@@ -293,7 +293,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             pending = Pending()
             return ChatDelta(
                 chat: 0, rows: [], agents: agents, ask: AskMoved(card: card), frame: current,
-                keys: .reload(ordered.map(\.id)), overview: facts, settings: offered)
+                keys: .reload(ordered.map(\.id)), overview: facts, review: nil, settings: offered)
         }
     }
 

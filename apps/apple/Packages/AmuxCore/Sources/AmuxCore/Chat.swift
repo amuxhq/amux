@@ -48,7 +48,7 @@ public final class Chat: ChatSource, @unchecked Sendable {
     public func opening() -> ChatDelta {
         let closed = ChatDelta(
             chat: id, rows: [], agents: nil, ask: nil, frame: nil, keys: .reload([]), overview: nil,
-            settings: nil)
+            review: nil, settings: nil)
         return call(closed) { live in
             Bridge.read(ChatDelta.self, amux_session_opening(live)) ?? closed
         }

@@ -404,7 +404,7 @@ public enum Stories {
                 checkout: Checkout(root: card.cwd, main: nil, remote: "github.com/amuxhq/amux"),
                 onBranch: ChangeTotals(files: 3, added: 48, removed: 12),
                 uncommitted: ChangeTotals(files: 2, added: 30, removed: 4)),
-            signIn: nil)
+            reviewChip: nil, signIn: nil)
     }
 
     private static let conversationRows: [Row] = [

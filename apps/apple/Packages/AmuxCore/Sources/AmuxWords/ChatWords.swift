@@ -310,7 +310,7 @@ public enum ChatWords {
         case .image(let blob), .file(let blob): (blob.name, bytes(blob.size))
         case .text(let name, let lines, _):
             (name, lines == 1 ? String(localized: "1 line") : String(localized: "\(lines) lines"))
-        case .review(let comments, _):
+        case .review(let comments, _), .sentReview(let comments, _, _):
             (String(localized: "Review"),
              comments == 1 ? String(localized: "1 comment") : String(localized: "\(comments) comments"))
         case .page(let title, let comments, _):
@@ -324,7 +324,7 @@ public enum ChatWords {
         case .image: "photo"
         case .file: "doc"
         case .text: "doc.plaintext"
-        case .review: "text.bubble"
+        case .review, .sentReview: "text.bubble"
         case .page: "globe"
         case .empty: "paperclip"
         }

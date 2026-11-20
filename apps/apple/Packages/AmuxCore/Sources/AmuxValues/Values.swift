@@ -947,6 +947,10 @@ public enum AttachmentView: Codable, Hashable, Sendable {
     /// which a sent message shows in place of the chip.
     case text(name: String, lines: UInt32, text: String)
     case review(comments: UInt32, patch: BlobRef?)
+    /// A review sent into the chat: the comments it sent, the review and
+    /// round it names, and the text the agent read, which is what opening
+    /// it shows when the agent's host no longer has the round.
+    case sentReview(comments: UInt32, review: SentReviewRef, text: String)
     /// Comments on a web page: the page's title, or its address when it
     /// has none, the comment count, and the screenshots of the regions the
     /// comments were made on.
@@ -957,6 +961,7 @@ public enum AttachmentView: Codable, Hashable, Sendable {
         case file = "File"
         case text = "Text"
         case review = "Review"
+        case sentReview = "SentReview"
         case page = "Page"
     }
 
@@ -969,6 +974,12 @@ public enum AttachmentView: Codable, Hashable, Sendable {
     private enum ReviewKeys: String, CodingKey {
         case comments
         case patch
+    }
+
+    private enum SentReviewKeys: String, CodingKey {
+        case comments
+        case review
+        case text
     }
 
     private enum PageKeys: String, CodingKey {
@@ -1014,6 +1025,13 @@ public enum AttachmentView: Codable, Hashable, Sendable {
             self = .review(
                 comments: try _fields.decode(UInt32.self, forKey: .comments),
                 patch: try _fields.decodeIfPresent(BlobRef.self, forKey: .patch))
+        case .sentReview:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SentReviewKeys.self, forKey: .sentReview)
+            self = .sentReview(
+                comments: try _fields.decode(UInt32.self, forKey: .comments),
+                review: try _fields.decode(SentReviewRef.self, forKey: .review),
+                text: try _fields.decode(String.self, forKey: .text))
         case .page:
             let _fields = try _container.nestedContainer(
                 keyedBy: PageKeys.self, forKey: .page)
@@ -1046,6 +1064,12 @@ public enum AttachmentView: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: ReviewKeys.self, forKey: .review)
             try _fields.encode(comments, forKey: .comments)
             try _fields.encodeIfPresent(patch, forKey: .patch)
+        case .sentReview(let comments, let review, let text):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SentReviewKeys.self, forKey: .sentReview)
+            try _fields.encode(comments, forKey: .comments)
+            try _fields.encode(review, forKey: .review)
+            try _fields.encode(text, forKey: .text)
         case .page(let title, let comments, let images):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: PageKeys.self, forKey: .page)
@@ -1519,12 +1543,19 @@ public struct Changes: Codable, Hashable, Sendable {
     }
 }
 
-/// An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
-/// `{"Ok": SendOutcome}`), a `CommandOutcome` for `Command`, a `SendOutcome`
+/// An act on an open chat. Its answer is a `SendOutcome` for `Send` and
+/// `SendWithReview` (as `{"Ok": SendOutcome}`), a `CommandOutcome` for
+/// `Command`, a `SendOutcome`
 /// or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
 /// `ActOutcome` for every other.
 public enum ChatAct: Codable, Hashable, Sendable {
     case send(Draft)
+    /// Sends the draft with the review's drafts after its words, as the
+    /// review's text attachment naming exactly those comments: the round
+    /// closes when the agent's host accepts the message. Answers
+    /// `{"Ok": SendOutcome}`, or `{"Err": ..}` without sending when the
+    /// review cannot be read or holds no drafts.
+    case sendWithReview(Draft)
     /// A draft that names a command the client handles itself (`/model`,
     /// `/effort`, `/rename`) or one the agent does not run; the outcome's
     /// `Send` says to send it as typed.
@@ -1567,6 +1598,7 @@ public enum ChatAct: Codable, Hashable, Sendable {
 
     private enum Tag: String, CodingKey {
         case send = "Send"
+        case sendWithReview = "SendWithReview"
         case command = "Command"
         case answer = "Answer"
         case answerForm = "AnswerForm"
@@ -1626,6 +1658,8 @@ public enum ChatAct: Codable, Hashable, Sendable {
         switch _tag {
         case .send:
             self = .send(try _container.decode(Draft.self, forKey: .send))
+        case .sendWithReview:
+            self = .sendWithReview(try _container.decode(Draft.self, forKey: .sendWithReview))
         case .command:
             self = .command(try _container.decode(Draft.self, forKey: .command))
         case .answer:
@@ -1676,6 +1710,9 @@ public enum ChatAct: Codable, Hashable, Sendable {
         case .send(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .send)
+        case .sendWithReview(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .sendWithReview)
         case .command(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .command)
@@ -1778,9 +1815,12 @@ public struct ChatDelta: Codable, Hashable, Sendable {
     public var frame: ChatFrame?
     public var keys: KeysMoved?
     public var overview: Overview?
+    /// The review page open on the chat, whole, when it moved: the rows an
+    /// anchor's indices count are those of the page handed over last.
+    public var review: ReviewPage?
     public var settings: SettingsView?
 
-    public init(chat: UInt64, rows: [Row], agents: ChatAgents?, ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, settings: SettingsView?) {
+    public init(chat: UInt64, rows: [Row], agents: ChatAgents?, ask: AskMoved?, frame: ChatFrame?, keys: KeysMoved?, overview: Overview?, review: ReviewPage?, settings: SettingsView?) {
         self.chat = chat
         self.rows = rows
         self.agents = agents
@@ -1788,6 +1828,7 @@ public struct ChatDelta: Codable, Hashable, Sendable {
         self.frame = frame
         self.keys = keys
         self.overview = overview
+        self.review = review
         self.settings = settings
     }
 
@@ -1799,6 +1840,7 @@ public struct ChatDelta: Codable, Hashable, Sendable {
         case frame
         case keys
         case overview
+        case review
         case settings
     }
 }
@@ -1837,10 +1879,13 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     /// The agent's branch and change totals as of its last turn end; None
     /// outside a repository.
     public var git: Git?
+    /// The chip the composer shows while the agent's review holds drafts,
+    /// from the review's entry on the agent's row.
+    public var reviewChip: ReviewChip?
     /// Only a problem; a notice above the composer, which still sends.
     public var signIn: SignInView?
 
-    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, signIn: SignInView?) {
+    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, reviewChip: ReviewChip?, signIn: SignInView?) {
         self.agent = agent
         self.name = name
         self.kind = kind
@@ -1858,6 +1903,7 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         self.context = context
         self.ended = ended
         self.git = git
+        self.reviewChip = reviewChip
         self.signIn = signIn
     }
 
@@ -1879,6 +1925,7 @@ public struct ChatFrame: Codable, Hashable, Sendable {
         case context
         case ended
         case git
+        case reviewChip = "review_chip"
         case signIn = "sign_in"
     }
 }
@@ -2487,6 +2534,30 @@ public enum DecisionView: String, Codable, Hashable, Sendable, CaseIterable {
     case autoApproved = "AutoApproved"
     /// Closed by a fact that did not say how.
     case dismissed = "Dismissed"
+}
+
+/// What a definition is, across languages, for a client to mark it by.
+public enum DefinitionKind: String, Codable, Hashable, Sendable, CaseIterable {
+    case module = "Module"
+    case `struct` = "Struct"
+    case `enum` = "Enum"
+    case union = "Union"
+    case typeAlias = "TypeAlias"
+    case function = "Function"
+    case method = "Method"
+    case constructor = "Constructor"
+    case constant = "Constant"
+    case `static` = "Static"
+    case macro = "Macro"
+    /// A class, and its relatives: Swift's actor, Java's record.
+    case `class` = "Class"
+    /// An interface, Rust's trait, Swift's protocol.
+    case interface = "Interface"
+    /// Methods given to a type declared elsewhere: Rust's impl, Swift's
+    /// extension.
+    case impl = "Impl"
+    /// A kind this build has no name for.
+    case other = "Other"
 }
 
 /// What a delete's confirmation says about the agent's workspace, and so
@@ -6025,6 +6096,344 @@ public enum Resolution: String, Codable, Hashable, Sendable, CaseIterable {
     case dismissed = "Dismissed"
 }
 
+/// Where a new comment goes: the commit holding its lines, the file and
+/// the lines, both ends included; zero to zero for the whole file.
+public struct ReviewAnchor: Codable, Hashable, Sendable {
+    public var commit: String
+    public var path: String
+    public var start: UInt32
+    public var end: UInt32
+
+    public init(commit: String, path: String, start: UInt32, end: UInt32) {
+        self.commit = commit
+        self.path = path
+        self.start = start
+        self.end = end
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case commit
+        case path
+        case start
+        case end
+    }
+}
+
+/// Something said above the files.
+public enum ReviewBanner: Codable, Hashable, Sendable {
+    case notOffered
+    case notARepository
+    case unreachable
+    /// Drafts hold the page on the snapshot they were written on, and the
+    /// tree has changed since: refreshing moves them onto a new snapshot.
+    case changedSinceYouStarted
+    /// The agent changed code since this snapshot: refreshing shows it.
+    case changedSince
+    /// The refresh that took this snapshot moved this many drafts onto it;
+    /// those whose lines were edited are now comments on their files.
+    case movedDrafts(count: UInt32)
+    /// A merge or rebase was under way when the snapshot was taken, so
+    /// conflicted files hold their markers as content.
+    case mergeUnderway
+    /// The last round's snapshot is gone from the repository: its comments
+    /// show with the code stored with them.
+    case roundGone
+    case snapshotFailed(message: String)
+
+    private enum Tag: String, CodingKey {
+        case movedDrafts = "MovedDrafts"
+        case snapshotFailed = "SnapshotFailed"
+    }
+
+    private enum MovedDraftsKeys: String, CodingKey {
+        case count
+    }
+
+    private enum SnapshotFailedKeys: String, CodingKey {
+        case message
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "NotOffered": self = .notOffered
+            case "NotARepository": self = .notARepository
+            case "Unreachable": self = .unreachable
+            case "ChangedSinceYouStarted": self = .changedSinceYouStarted
+            case "ChangedSince": self = .changedSince
+            case "MergeUnderway": self = .mergeUnderway
+            case "RoundGone": self = .roundGone
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ReviewBanner is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewBanner names exactly one variant"))
+        }
+        switch _tag {
+        case .movedDrafts:
+            let _fields = try _container.nestedContainer(
+                keyedBy: MovedDraftsKeys.self, forKey: .movedDrafts)
+            self = .movedDrafts(
+                count: try _fields.decode(UInt32.self, forKey: .count))
+        case .snapshotFailed:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SnapshotFailedKeys.self, forKey: .snapshotFailed)
+            self = .snapshotFailed(
+                message: try _fields.decode(String.self, forKey: .message))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .notOffered:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("NotOffered")
+        case .notARepository:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("NotARepository")
+        case .unreachable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unreachable")
+        case .changedSinceYouStarted:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("ChangedSinceYouStarted")
+        case .changedSince:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("ChangedSince")
+        case .movedDrafts(let count):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: MovedDraftsKeys.self, forKey: .movedDrafts)
+            try _fields.encode(count, forKey: .count)
+        case .mergeUnderway:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("MergeUnderway")
+        case .roundGone:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("RoundGone")
+        case .snapshotFailed(let message):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SnapshotFailedKeys.self, forKey: .snapshotFailed)
+            try _fields.encode(message, forKey: .message)
+        }
+    }
+}
+
+/// A change to the review open on a chat, made at the agent's host, all of
+/// a call's changes or none.
+public enum ReviewChange: Codable, Hashable, Sendable {
+    /// A new draft on the lines `anchor` names, as `amux_review_anchor`
+    /// gives them for a selection of the page's rows.
+    case comment(anchor: ReviewAnchor, text: String)
+    /// New words for a comment, draft or sent, by its id; it stays where
+    /// it was written.
+    case reword(id: [UInt8], text: String)
+    /// Deletes a comment, draft or sent, by its id; the chat keeps a sent
+    /// one.
+    case delete([UInt8])
+    /// Deletes every draft, leaving sent comments: the chip's ✕, once the
+    /// person confirmed it.
+    case discardDrafts
+    /// Deletes the review: the next look is a first look.
+    case startOver
+
+    private enum Tag: String, CodingKey {
+        case comment = "Comment"
+        case reword = "Reword"
+        case delete = "Delete"
+    }
+
+    private enum CommentKeys: String, CodingKey {
+        case anchor
+        case text
+    }
+
+    private enum RewordKeys: String, CodingKey {
+        case id
+        case text
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "DiscardDrafts": self = .discardDrafts
+            case "StartOver": self = .startOver
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ReviewChange is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewChange names exactly one variant"))
+        }
+        switch _tag {
+        case .comment:
+            let _fields = try _container.nestedContainer(
+                keyedBy: CommentKeys.self, forKey: .comment)
+            self = .comment(
+                anchor: try _fields.decode(ReviewAnchor.self, forKey: .anchor),
+                text: try _fields.decode(String.self, forKey: .text))
+        case .reword:
+            let _fields = try _container.nestedContainer(
+                keyedBy: RewordKeys.self, forKey: .reword)
+            self = .reword(
+                id: try _fields.decode([UInt8].self, forKey: .id),
+                text: try _fields.decode(String.self, forKey: .text))
+        case .delete:
+            self = .delete(try _container.decode([UInt8].self, forKey: .delete))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .comment(let anchor, let text):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: CommentKeys.self, forKey: .comment)
+            try _fields.encode(anchor, forKey: .anchor)
+            try _fields.encode(text, forKey: .text)
+        case .reword(let id, let text):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: RewordKeys.self, forKey: .reword)
+            try _fields.encode(id, forKey: .id)
+            try _fields.encode(text, forKey: .text)
+        case .delete(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .delete)
+        case .discardDrafts:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("DiscardDrafts")
+        case .startOver:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("StartOver")
+        }
+    }
+}
+
+/// The review chip an agent's composer shows while its review holds
+/// drafts: "Review · 3 comments".
+public struct ReviewChip: Codable, Hashable, Sendable {
+    /// Drafts it would send.
+    public var comments: UInt32
+    /// The tree has changed since the drafts' snapshot.
+    public var moved: Bool
+
+    public init(comments: UInt32, moved: Bool) {
+        self.comments = comments
+        self.moved = moved
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case comments
+        case moved
+    }
+}
+
+/// A choice the person makes on the review page, kept by the chat and
+/// drawn at once.
+public enum ReviewChoice: Codable, Hashable, Sendable {
+    /// Switches to a view the page's header offers.
+    case view(ReviewView)
+    /// Folds an open file or opens a folded one, by path.
+    case toggleFile(String)
+    /// Opens a folded outdated comment or folds it again, by id.
+    case toggleComment([UInt8])
+
+    private enum Tag: String, CodingKey {
+        case view = "View"
+        case toggleFile = "ToggleFile"
+        case toggleComment = "ToggleComment"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewChoice names exactly one variant"))
+        }
+        switch _tag {
+        case .view:
+            self = .view(try _container.decode(ReviewView.self, forKey: .view))
+        case .toggleFile:
+            self = .toggleFile(try _container.decode(String.self, forKey: .toggleFile))
+        case .toggleComment:
+            self = .toggleComment(try _container.decode([UInt8].self, forKey: .toggleComment))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .view(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .view)
+        case .toggleFile(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .toggleFile)
+        case .toggleComment(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .toggleComment)
+        }
+    }
+}
+
+/// One line of code.
+public struct ReviewCodeLine: Codable, Hashable, Sendable {
+    public var path: String
+    public var kind: LineKind
+    /// Without its line ending.
+    public var text: String
+    /// The text in order, each run one token kind and either changed or
+    /// not: on a line edited rather than written anew, the words that
+    /// differ from its partner on the other side are changed.
+    public var runs: [ReviewRun]
+    /// A comment placed on the page covers this line.
+    public var commented: Bool
+    /// Read for more context, outside the change's hunks.
+    public var extra: Bool
+    /// Its number in the snapshot, for an added or context line.
+    public var newLine: UInt32?
+    /// Its number in the compared commit, for a removed or context line.
+    public var oldLine: UInt32?
+
+    public init(path: String, kind: LineKind, text: String, runs: [ReviewRun], commented: Bool, extra: Bool, newLine: UInt32?, oldLine: UInt32?) {
+        self.path = path
+        self.kind = kind
+        self.text = text
+        self.runs = runs
+        self.commented = commented
+        self.extra = extra
+        self.newLine = newLine
+        self.oldLine = oldLine
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case kind
+        case text
+        case runs
+        case commented
+        case extra
+        case newLine = "new_line"
+        case oldLine = "old_line"
+    }
+}
+
 public struct ReviewComment: Codable, Hashable, Sendable {
     public var path: String
     /// New-side line; zero comments on the file as a whole.
@@ -6045,6 +6454,201 @@ public struct ReviewComment: Codable, Hashable, Sendable {
         case line
         case oldLine = "old_line"
         case text
+    }
+}
+
+public enum ReviewCommentAt: Codable, Hashable, Sendable {
+    /// On these lines: the snapshot's numbers, or the compared commit's for
+    /// a comment on removed lines.
+    case lines(start: UInt32, end: UInt32)
+    /// On the whole file: written so, or a draft whose lines were edited.
+    case file
+    /// A sent comment whose lines were edited or deleted since.
+    case outdated
+
+    private enum Tag: String, CodingKey {
+        case lines = "Lines"
+    }
+
+    private enum LinesKeys: String, CodingKey {
+        case start
+        case end
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "File": self = .file
+            case "Outdated": self = .outdated
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ReviewCommentAt is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewCommentAt names exactly one variant"))
+        }
+        switch _tag {
+        case .lines:
+            let _fields = try _container.nestedContainer(
+                keyedBy: LinesKeys.self, forKey: .lines)
+            self = .lines(
+                start: try _fields.decode(UInt32.self, forKey: .start),
+                end: try _fields.decode(UInt32.self, forKey: .end))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .lines(let start, let end):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: LinesKeys.self, forKey: .lines)
+            try _fields.encode(start, forKey: .start)
+            try _fields.encode(end, forKey: .end)
+        case .file:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("File")
+        case .outdated:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Outdated")
+        }
+    }
+}
+
+/// A comment, where the page places it.
+public struct ReviewCommentRow: Codable, Hashable, Sendable {
+    public var id: [UInt8]
+    /// The file it is on in the snapshot.
+    public var path: String
+    public var text: String
+    public var state: ReviewCommentState
+    public var at: ReviewCommentAt
+    /// A sent comment whose code nearby changed since the round it was
+    /// sent in.
+    public var changedNear: Bool
+    /// Where its lines sat in the code, outermost first.
+    public var scope: [String]
+    /// The code it was written on, as stored when it was saved, when it is
+    /// not drawn under its lines: outdated, moved to its file, on lines the
+    /// view shown does not reach, or on a file not yet fetched. Empty for a
+    /// comment drawn under its lines and for one written on a whole file.
+    public var snippet: [ReviewCodeLine]
+    /// Folded to one line: an outdated comment until the person opens it.
+    public var folded: Bool
+
+    public init(id: [UInt8], path: String, text: String, state: ReviewCommentState, at: ReviewCommentAt, changedNear: Bool, scope: [String], snippet: [ReviewCodeLine], folded: Bool) {
+        self.id = id
+        self.path = path
+        self.text = text
+        self.state = state
+        self.at = at
+        self.changedNear = changedNear
+        self.scope = scope
+        self.snippet = snippet
+        self.folded = folded
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case path
+        case text
+        case state
+        case at
+        case changedNear = "changed_near"
+        case scope
+        case snippet
+        case folded
+    }
+}
+
+public enum ReviewCommentState: Codable, Hashable, Sendable {
+    case draft
+    /// Sent in the round numbered, from 1.
+    case sent(round: UInt32)
+
+    private enum Tag: String, CodingKey {
+        case sent = "Sent"
+    }
+
+    private enum SentKeys: String, CodingKey {
+        case round
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Draft": self = .draft
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ReviewCommentState is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewCommentState names exactly one variant"))
+        }
+        switch _tag {
+        case .sent:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SentKeys.self, forKey: .sent)
+            self = .sent(
+                round: try _fields.decode(UInt32.self, forKey: .round))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .draft:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Draft")
+        case .sent(let round):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SentKeys.self, forKey: .sent)
+            try _fields.encode(round, forKey: .round)
+        }
+    }
+}
+
+/// Lines to read for more context: a client asks the review for them and
+/// keeps the ask in [`ReviewPageState::asked`].
+public struct ReviewContextAsk: Codable, Hashable, Sendable {
+    public var path: String
+    /// The commit to read: the snapshot.
+    public var commit: String
+    /// Both ends included, from 1.
+    public var start: UInt32
+    public var end: UInt32
+    /// The label of the definition whose edge it reaches; none for a step
+    /// or a whole gap.
+    public var definition: String?
+
+    public init(path: String, commit: String, start: UInt32, end: UInt32, definition: String?) {
+        self.path = path
+        self.commit = commit
+        self.start = start
+        self.end = end
+        self.definition = definition
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case commit
+        case start
+        case end
+        case definition
     }
 }
 
@@ -6070,6 +6674,15 @@ public struct ReviewDoc: Codable, Hashable, Sendable {
         case added
         case removed
     }
+}
+
+/// Why the view shown has nothing in it.
+public enum ReviewEmpty: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Nothing is left to review: no change and no comment.
+    case nothing = "Nothing"
+    /// Nothing changed since the last round; all changes still has the
+    /// change.
+    case nothingSince = "NothingSince"
 }
 
 public struct ReviewFile: Codable, Hashable, Sendable {
@@ -6107,6 +6720,596 @@ public struct ReviewFile: Codable, Hashable, Sendable {
     }
 }
 
+/// What a reader may want to pass over; a flagged file starts folded.
+public enum ReviewFileFlag: String, Codable, Hashable, Sendable, CaseIterable {
+    case generated = "Generated"
+    case lockfile = "Lockfile"
+    case vendored = "Vendored"
+    case large = "Large"
+}
+
+public struct ReviewFileHead: Codable, Hashable, Sendable {
+    /// From the repository's top.
+    public var path: String
+    public var status: FileStatus
+    /// Its lines added and removed in the view shown.
+    public var added: UInt32
+    public var removed: UInt32
+    public var binary: Bool
+    /// The language its code is highlighted as ("rust", "tsx"); empty when
+    /// none is known for it.
+    public var language: String
+    public var flags: [ReviewFileFlag]
+    /// Its body is folded away; its head still counts its comments.
+    public var folded: Bool
+    /// It changed since the last round's snapshot; false before the first.
+    public var changedSinceLast: Bool
+    /// False for a file no longer part of the change, listed only for the
+    /// comments on it.
+    public var inChange: Bool
+    /// Comments on the file, on its lines or on it whole.
+    public var comments: UInt32
+    /// The definitions its change touches, on either side, so a deleted one
+    /// still shows; empty until its body is fetched.
+    public var outline: [ReviewOutlineEntry]
+    /// Where a renamed file was before.
+    public var oldPath: String?
+
+    public init(path: String, status: FileStatus, added: UInt32, removed: UInt32, binary: Bool, language: String, flags: [ReviewFileFlag], folded: Bool, changedSinceLast: Bool, inChange: Bool, comments: UInt32, outline: [ReviewOutlineEntry], oldPath: String?) {
+        self.path = path
+        self.status = status
+        self.added = added
+        self.removed = removed
+        self.binary = binary
+        self.language = language
+        self.flags = flags
+        self.folded = folded
+        self.changedSinceLast = changedSinceLast
+        self.inChange = inChange
+        self.comments = comments
+        self.outline = outline
+        self.oldPath = oldPath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case status
+        case added
+        case removed
+        case binary
+        case language
+        case flags
+        case folded
+        case changedSinceLast = "changed_since_last"
+        case inChange = "in_change"
+        case comments
+        case outline
+        case oldPath = "old_path"
+    }
+}
+
+/// Lines of the snapshot between what is shown, folded away.
+public struct ReviewGap: Codable, Hashable, Sendable {
+    public var path: String
+    /// An ask in it is waiting for its answer.
+    public var loading: Bool
+    /// Loads lines downward from the code above it: to the end of that
+    /// code's definition when it ends in the gap, else a step. None at the
+    /// top of the file and for a gap loaded whole by `up`.
+    public var down: ReviewContextAsk?
+    /// How many lines it holds; none after the file's last hunk, where the
+    /// file's length is not known until the lines are asked for.
+    public var hidden: UInt32?
+    /// Loads lines upward from the code below it: up to the start of that
+    /// code's definition when it starts in the gap, else a step; or the
+    /// whole gap when it is short. None after the last hunk.
+    public var up: ReviewContextAsk?
+
+    public init(path: String, loading: Bool, down: ReviewContextAsk?, hidden: UInt32?, up: ReviewContextAsk?) {
+        self.path = path
+        self.loading = loading
+        self.down = down
+        self.hidden = hidden
+        self.up = up
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case loading
+        case down
+        case hidden
+        case up
+    }
+}
+
+/// What the page is of, and what can be done to it as a whole.
+public struct ReviewHeader: Codable, Hashable, Sendable {
+    /// The branch the change is counted against; empty when none was found
+    /// and the change is the uncommitted work alone.
+    public var baseBranch: String
+    /// The commit all changes are compared against.
+    public var baseCommit: String
+    /// The snapshot the page shows: every line number on it is the
+    /// snapshot's, but a removed line's, which is the compared commit's.
+    public var snapshot: String
+    public var view: ReviewView
+    /// The commit the view shown compares the snapshot against: the base
+    /// commit, or the last round's snapshot.
+    public var comparedWith: String
+    /// The views the person can switch between, in order: since your last
+    /// review is offered once a round has been sent.
+    public var views: [ReviewViewTab]
+    /// Rounds sent so far.
+    public var rounds: UInt32
+    /// The files the view shown lists as changed, and their lines.
+    public var files: UInt32
+    public var added: UInt32
+    public var removed: UInt32
+    /// Comments not yet sent.
+    public var drafts: UInt32
+    /// Sent comments still on the review.
+    public var sent: UInt32
+    /// Discarding drafts is offered: there are some.
+    public var discardDrafts: Bool
+    /// Starting over, which deletes the review, is offered.
+    public var startOver: Bool
+
+    public init(baseBranch: String, baseCommit: String, snapshot: String, view: ReviewView, comparedWith: String, views: [ReviewViewTab], rounds: UInt32, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32, discardDrafts: Bool, startOver: Bool) {
+        self.baseBranch = baseBranch
+        self.baseCommit = baseCommit
+        self.snapshot = snapshot
+        self.view = view
+        self.comparedWith = comparedWith
+        self.views = views
+        self.rounds = rounds
+        self.files = files
+        self.added = added
+        self.removed = removed
+        self.drafts = drafts
+        self.sent = sent
+        self.discardDrafts = discardDrafts
+        self.startOver = startOver
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case baseBranch = "base_branch"
+        case baseCommit = "base_commit"
+        case snapshot
+        case view
+        case comparedWith = "compared_with"
+        case views
+        case rounds
+        case files
+        case added
+        case removed
+        case drafts
+        case sent
+        case discardDrafts = "discard_drafts"
+        case startOver = "start_over"
+    }
+}
+
+public struct ReviewHunkHead: Codable, Hashable, Sendable {
+    public var path: String
+    /// The commit its removed lines belong to.
+    public var oldCommit: String
+    public var oldStart: UInt32
+    public var newStart: UInt32
+    /// Where its changed lines sit, outermost first: `impl Store`, `fn
+    /// open`. Empty where no definition encloses them.
+    public var scope: [String]
+
+    public init(path: String, oldCommit: String, oldStart: UInt32, newStart: UInt32, scope: [String]) {
+        self.path = path
+        self.oldCommit = oldCommit
+        self.oldStart = oldStart
+        self.newStart = newStart
+        self.scope = scope
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case oldCommit = "old_commit"
+        case oldStart = "old_start"
+        case newStart = "new_start"
+        case scope
+    }
+}
+
+public enum ReviewNoLines: String, Codable, Hashable, Sendable, CaseIterable {
+    case binary = "Binary"
+    /// Over the size the host shows without asking.
+    case tooLarge = "TooLarge"
+}
+
+/// Something the client learned about the review that its summary does not
+/// carry: from the agent's row, or from a call that failed.
+public enum ReviewNotice: Codable, Hashable, Sendable {
+    /// The working tree changed after the summary was read: the agent's
+    /// row says so, or a newer summary was held back so the page does not
+    /// change under the reader.
+    case moved
+    /// The agent's host does not run the reviews experiment.
+    case notOffered
+    /// The agent's folder is not a git repository, so it has no review.
+    case notARepository
+    /// The last round's snapshot is gone from the repository, as after a
+    /// rebase and garbage collection: since your last review shows each
+    /// comment with the code stored with it instead.
+    case roundGone
+    /// A snapshot of the working tree could not be taken; what the host
+    /// said.
+    case snapshotFailed(message: String)
+    /// The agent's host cannot be reached: the page reads what was loaded,
+    /// and changes wait for the host.
+    case unreachable
+
+    private enum Tag: String, CodingKey {
+        case snapshotFailed = "SnapshotFailed"
+    }
+
+    private enum SnapshotFailedKeys: String, CodingKey {
+        case message
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Moved": self = .moved
+            case "NotOffered": self = .notOffered
+            case "NotARepository": self = .notARepository
+            case "RoundGone": self = .roundGone
+            case "Unreachable": self = .unreachable
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ReviewNotice is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewNotice names exactly one variant"))
+        }
+        switch _tag {
+        case .snapshotFailed:
+            let _fields = try _container.nestedContainer(
+                keyedBy: SnapshotFailedKeys.self, forKey: .snapshotFailed)
+            self = .snapshotFailed(
+                message: try _fields.decode(String.self, forKey: .message))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .moved:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Moved")
+        case .notOffered:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("NotOffered")
+        case .notARepository:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("NotARepository")
+        case .roundGone:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("RoundGone")
+        case .snapshotFailed(let message):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: SnapshotFailedKeys.self, forKey: .snapshotFailed)
+            try _fields.encode(message, forKey: .message)
+        case .unreachable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unreachable")
+        }
+    }
+}
+
+/// What a call on the review came to. The page says what it learned too:
+/// a host it could not reach, or why there is no review.
+public enum ReviewOutcome: Codable, Hashable, Sendable {
+    case done
+    /// The agent's host could not be reached: nothing changed there.
+    case unreachable
+    /// The connection dropped before the host answered: a change may have
+    /// been made, and the page shows the review as the host says next.
+    case notConfirmed
+    /// The agent has no review to be had: its host does not offer reviews,
+    /// or its folder is not a repository.
+    case unavailable
+    case failed(String)
+
+    private enum Tag: String, CodingKey {
+        case failed = "Failed"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Done": self = .done
+            case "Unreachable": self = .unreachable
+            case "NotConfirmed": self = .notConfirmed
+            case "Unavailable": self = .unavailable
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no ReviewOutcome is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewOutcome names exactly one variant"))
+        }
+        switch _tag {
+        case .failed:
+            self = .failed(try _container.decode(String.self, forKey: .failed))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .done:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Done")
+        case .unreachable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unreachable")
+        case .notConfirmed:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("NotConfirmed")
+        case .unavailable:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Unavailable")
+        case .failed(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .failed)
+        }
+    }
+}
+
+/// One definition of a file's outline.
+public struct ReviewOutlineEntry: Codable, Hashable, Sendable {
+    public var kind: DefinitionKind
+    /// "impl Display for Store", "fn open".
+    public var label: String
+    /// How many definitions it sits in.
+    public var depth: UInt32
+    public var startLine: UInt32
+    public var endLine: UInt32
+    /// The row of the first hunk whose changes it encloses, for jumping to
+    /// it; none for one only a hunk's context reaches.
+    public var row: UInt32?
+
+    public init(kind: DefinitionKind, label: String, depth: UInt32, startLine: UInt32, endLine: UInt32, row: UInt32?) {
+        self.kind = kind
+        self.label = label
+        self.depth = depth
+        self.startLine = startLine
+        self.endLine = endLine
+        self.row = row
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case label
+        case depth
+        case startLine = "start_line"
+        case endLine = "end_line"
+        case row
+    }
+}
+
+/// The review page, in reading order.
+public struct ReviewPage: Codable, Hashable, Sendable {
+    /// Said above the files, in order.
+    public var banners: [ReviewBanner]
+    public var rows: [ReviewRow]
+    /// The files whose bodies the page still needs for its view, in page
+    /// order: shown open and not yet fetched. A client asks for them in
+    /// batches and composes the page again as each answer arrives.
+    public var toFetch: [String]
+    /// The review is still being opened: there is no summary yet and
+    /// nothing went wrong.
+    public var opening: Bool
+    /// Set when the view shown has nothing to review. Since your last
+    /// review can be empty of changes and still list earlier comments.
+    public var empty: ReviewEmpty?
+    /// None until the review has opened, and where there is none.
+    public var header: ReviewHeader?
+
+    public init(banners: [ReviewBanner], rows: [ReviewRow], toFetch: [String], opening: Bool, empty: ReviewEmpty?, header: ReviewHeader?) {
+        self.banners = banners
+        self.rows = rows
+        self.toFetch = toFetch
+        self.opening = opening
+        self.empty = empty
+        self.header = header
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case banners
+        case rows
+        case toFetch = "to_fetch"
+        case opening
+        case empty
+        case header
+    }
+}
+
+/// The person's own choices on a page, which the client keeps and hands
+/// back each time the page is composed. Everything else comes from the
+/// agent's host.
+public struct ReviewPageState: Codable, Hashable, Sendable {
+    /// Files the person folded or opened, by path: each flips how the file
+    /// starts. Generated files, lock files, vendored code and large changes
+    /// start folded; every other file starts open.
+    public var toggledFiles: [String]
+    /// Outdated comments the person opened, by id; they start folded.
+    public var openedComments: [[UInt8]]
+    /// More context asked for, from the gaps' asks, answered or not.
+    public var asked: [ReviewContextAsk]
+    /// What the client learned that the summary does not say.
+    public var notices: [ReviewNotice]
+    /// The view switched to; none for the one a look opens on: since your
+    /// last review once a round has been sent, all changes before.
+    public var view: ReviewView?
+
+    public init(toggledFiles: [String], openedComments: [[UInt8]], asked: [ReviewContextAsk], notices: [ReviewNotice], view: ReviewView?) {
+        self.toggledFiles = toggledFiles
+        self.openedComments = openedComments
+        self.asked = asked
+        self.notices = notices
+        self.view = view
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case toggledFiles = "toggled_files"
+        case openedComments = "opened_comments"
+        case asked
+        case notices
+        case view
+    }
+}
+
+/// One row of the page, with a key that names it across compositions.
+public struct ReviewRow: Codable, Hashable, Sendable {
+    public var key: String
+    public var of: ReviewRowOf
+
+    public init(key: String, of: ReviewRowOf) {
+        self.key = key
+        self.of = of
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case of
+    }
+}
+
+public enum ReviewRowOf: Codable, Hashable, Sendable {
+    /// A file's head; its rows follow until the next head.
+    case file(ReviewFileHead)
+    case comment(ReviewCommentRow)
+    /// Where a hunk sits in the code; its lines follow.
+    case hunk(ReviewHunkHead)
+    case line(ReviewCodeLine)
+    /// Lines of the snapshot not shown, with the asks that load more.
+    case gap(ReviewGap)
+    /// The file's body is still being fetched.
+    case loading(path: String)
+    /// The file's change has no lines to show.
+    case noLines(path: String, why: ReviewNoLines)
+
+    private enum Tag: String, CodingKey {
+        case file = "File"
+        case comment = "Comment"
+        case hunk = "Hunk"
+        case line = "Line"
+        case gap = "Gap"
+        case loading = "Loading"
+        case noLines = "NoLines"
+    }
+
+    private enum LoadingKeys: String, CodingKey {
+        case path
+    }
+
+    private enum NoLinesKeys: String, CodingKey {
+        case path
+        case why
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a ReviewRowOf names exactly one variant"))
+        }
+        switch _tag {
+        case .file:
+            self = .file(try _container.decode(ReviewFileHead.self, forKey: .file))
+        case .comment:
+            self = .comment(try _container.decode(ReviewCommentRow.self, forKey: .comment))
+        case .hunk:
+            self = .hunk(try _container.decode(ReviewHunkHead.self, forKey: .hunk))
+        case .line:
+            self = .line(try _container.decode(ReviewCodeLine.self, forKey: .line))
+        case .gap:
+            self = .gap(try _container.decode(ReviewGap.self, forKey: .gap))
+        case .loading:
+            let _fields = try _container.nestedContainer(
+                keyedBy: LoadingKeys.self, forKey: .loading)
+            self = .loading(
+                path: try _fields.decode(String.self, forKey: .path))
+        case .noLines:
+            let _fields = try _container.nestedContainer(
+                keyedBy: NoLinesKeys.self, forKey: .noLines)
+            self = .noLines(
+                path: try _fields.decode(String.self, forKey: .path),
+                why: try _fields.decode(ReviewNoLines.self, forKey: .why))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .file(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .file)
+        case .comment(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .comment)
+        case .hunk(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .hunk)
+        case .line(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .line)
+        case .gap(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .gap)
+        case .loading(let path):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: LoadingKeys.self, forKey: .loading)
+            try _fields.encode(path, forKey: .path)
+        case .noLines(let path, let why):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: NoLinesKeys.self, forKey: .noLines)
+            try _fields.encode(path, forKey: .path)
+            try _fields.encode(why, forKey: .why)
+        }
+    }
+}
+
+public struct ReviewRun: Codable, Hashable, Sendable {
+    public var text: String
+    public var kind: TokenKind
+    public var changed: Bool
+
+    public init(text: String, kind: TokenKind, changed: Bool) {
+        self.text = text
+        self.kind = kind
+        self.changed = changed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case kind
+        case changed
+    }
+}
+
 public enum ReviewStatus: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
     case inProgress = "InProgress"
@@ -6114,6 +7317,32 @@ public enum ReviewStatus: String, Codable, Hashable, Sendable, CaseIterable {
     case denied = "Denied"
     case timeout = "Timeout"
     case abort = "Abort"
+}
+
+/// Which comparison the page shows.
+public enum ReviewView: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Everything on the branch: from the base commit to the snapshot.
+    case all = "All"
+    /// From the last round's snapshot to this one, limited to what is
+    /// still part of the agent's change.
+    case sinceLast = "SinceLast"
+}
+
+/// One of the views, as the switch between them shows it.
+public struct ReviewViewTab: Codable, Hashable, Sendable {
+    public var view: ReviewView
+    /// The changed files it lists.
+    public var files: UInt32
+
+    public init(view: ReviewView, files: UInt32) {
+        self.view = view
+        self.files = files
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case view
+        case files
+    }
 }
 
 /// This device and the machines it trusts, by name.
@@ -7079,6 +8308,32 @@ public struct SentPrompt: Codable, Hashable, Sendable {
         case text
         case lands
         case underway
+    }
+}
+
+/// The review a sent review's attachment names, for opening its round.
+public struct SentReviewRef: Codable, Hashable, Sendable {
+    public var reviewId: [UInt8]
+    /// The round the sending client expected it to be; the agent's host
+    /// numbers rounds as they arrive, so the snapshot names the round.
+    public var round: UInt32
+    /// The snapshot the comments were made on.
+    public var snapshot: String
+    /// Exactly the comments it sent.
+    public var commentIds: [[UInt8]]
+
+    public init(reviewId: [UInt8], round: UInt32, snapshot: String, commentIds: [[UInt8]]) {
+        self.reviewId = reviewId
+        self.round = round
+        self.snapshot = snapshot
+        self.commentIds = commentIds
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case reviewId = "review_id"
+        case round
+        case snapshot
+        case commentIds = "comment_ids"
     }
 }
 

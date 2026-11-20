@@ -85,7 +85,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         sentAgents = agents
         return ChatDelta(
             chat: 0, rows: [], agents: agents, ask: AskMoved(card: card), frame: current,
-            keys: .reload(sentKeys), overview: facts, settings: offered)
+            keys: .reload(sentKeys), overview: facts, review: nil, settings: offered)
     }
 
     /// What moved since the last delta, or nil when nothing did.
@@ -119,7 +119,7 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         else { return nil }
         return ChatDelta(
             chat: 0, rows: rows, agents: agents, ask: ask, frame: frame, keys: keys, overview: overview,
-            settings: settings)
+            review: nil, settings: settings)
     }
 
     /// Hands the model what moved since the last delta, if anything did.
@@ -356,7 +356,7 @@ private func frame(
         agent: AgentKey(host: [1], agent: [2]), name: "a", kind: kind, phase: phase,
         composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
-        signIn: nil)
+        reviewChip: nil, signIn: nil)
 }
 
 /// Prose rows "m<first>" through "m<last>", in order.
@@ -762,7 +762,7 @@ final class ChatModelTests: XCTestCase {
     private func landing(on model: ChatModel) {
         model.apply(ChatDelta(
             chat: 0, rows: [row("r1", 1, "words")], agents: nil, ask: nil, frame: nil, keys: nil, overview: nil,
-            settings: nil))
+            review: nil, settings: nil))
     }
 
     func testAnAttachmentHereOpensAsAFileUnderItsOwnName() throws {
@@ -797,7 +797,7 @@ final class ChatModelTests: XCTestCase {
         let cell = model.cell(for: "r1")
         let before = cell.attachmentRevision
         model.apply(ChatDelta(
-            chat: 0, rows: [held], agents: nil, ask: nil, frame: nil, keys: nil, overview: nil, settings: nil))
+            chat: 0, rows: [held], agents: nil, ask: nil, frame: nil, keys: nil, overview: nil, review: nil, settings: nil))
         XCTAssertGreaterThan(cell.attachmentRevision, before)
     }
 

@@ -227,6 +227,11 @@ pub(crate) async fn get_files(
     Ok(answer)
 }
 
+/// What changed since a round, as since-last compares it: the round's
+/// snapshot and the base it was shown against, then the snapshot shown and
+/// its base.
+type SinceLast<'a> = (Shown<'a>, Shown<'a>);
+
 /// The comparison a GetFiles call names, checked against what the review
 /// handed out: the snapshot shown, one the review keeps; and for what
 /// changed since a round, that round and the snapshot, each with the base
@@ -235,7 +240,7 @@ fn comparison<'a>(
     review: &'a Review,
     view: ReviewView,
     request: &'a ReviewGetFilesRequest,
-) -> Result<(&'a Taken, Option<(Shown<'a>, Shown<'a>)>), Status> {
+) -> Result<(&'a Taken, Option<SinceLast<'a>>), Status> {
     let (from, snapshot) = (request.from.as_str(), request.snapshot.as_str());
     let Some(taken) = review.snapshot(snapshot) else {
         return Err(refused(

@@ -464,8 +464,7 @@
     {
       "name": "review.round",
       "shows": "What a review sent into the chat opens: the round it closed, each comment with the code it was written on, and a way to the review as it is now.",
-      "clients": ["phone", "mac"],
-      "why": "The terminal does not open a sent review's round yet; its chat shows the review's chip."
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "review.no-changes",

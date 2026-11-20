@@ -670,6 +670,28 @@ pub fn review_since_last() -> crate::chat::review::Page {
     page
 }
 
+/// The round the review sent before the next look closed, opened from the
+/// sent review in the chat: its two comments, each on its file with the
+/// code it was written on, one of them outdated since.
+pub fn review_round() -> crate::chat::review::Page {
+    let summary = review_since_last()
+        .fetched()
+        .summary
+        .clone()
+        .expect("the next look's summary");
+    let sent: Vec<Vec<u8>> = summary
+        .comments
+        .iter()
+        .filter(|comment| comment.round.is_some())
+        .map(|comment| comment.id.clone())
+        .collect();
+    let round = ui_runtime::review::round(&summary, &summary.id, REVIEW_ROUND, &sent);
+    let mut page = crate::chat::review::Page::round(1);
+    page.set_owner("fixer", "/srv/amux");
+    page.round_read(round, "");
+    page
+}
+
 /// The first look's draft held on its snapshot after the agent changed
 /// code.
 pub fn review_drafts_stale() -> crate::chat::review::Page {

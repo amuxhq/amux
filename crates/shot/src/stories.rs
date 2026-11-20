@@ -282,6 +282,9 @@ pub fn all() -> Vec<Story> {
         story("review.not-offered", || {
             Scene::Review(Box::new(tui::vocabulary::review_not_offered()))
         }),
+        story("review.round", || {
+            Scene::Review(Box::new(tui::vocabulary::review_round()))
+        }),
         // Settings.
         story("settings.machine", || {
             Scene::Settings(Box::new(setup::settings_page(true)))

@@ -260,9 +260,22 @@ pub(crate) struct RowShape {
 }
 
 /// The chips on one line that a click opens, by their columns.
-pub(crate) type OpeningChips = Vec<(usize, usize, wire::BlobRef)>;
+pub(crate) type OpeningChips = Vec<(usize, usize, Opened)>;
 
-/// An attachment that can be opened: an image or a file.
+/// What opening a chip shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Opened {
+    /// An image or file, in the app the system picks for it.
+    Attachment(wire::BlobRef),
+    /// The round a sent review closed, as the agent's host holds it, or
+    /// the text the agent read when the host no longer does.
+    Round {
+        review: ui_view::SentReviewRef,
+        text: String,
+    },
+}
+
+/// An attachment that can be opened in its own app: an image or a file.
 pub(crate) fn opens(view: &AttachmentView) -> Option<&wire::BlobRef> {
     match view {
         AttachmentView::Image(blob) | AttachmentView::File(blob) => Some(blob),
@@ -270,9 +283,21 @@ pub(crate) fn opens(view: &AttachmentView) -> Option<&wire::BlobRef> {
     }
 }
 
+/// What a click on the attachment's chip opens: an image or a file, or a
+/// sent review's round.
+pub(crate) fn opened(view: &AttachmentView) -> Option<Opened> {
+    match view {
+        AttachmentView::SentReview { review, text, .. } => Some(Opened::Round {
+            review: review.clone(),
+            text: text.clone(),
+        }),
+        _ => opens(view).cloned().map(Opened::Attachment),
+    }
+}
+
 /// A chip's look: underlined like a link when a click opens it.
 pub(crate) fn chip_style(view: &AttachmentView, theme: Theme) -> Style {
-    match opens(view) {
+    match opened(view) {
         Some(_) => theme.chip_raised().add_modifier(Modifier::UNDERLINED),
         None => theme.chip_raised(),
     }
@@ -367,8 +392,8 @@ pub(crate) fn segment_rows(
                     let to = from + text::str_width(&shown);
                     last.spans
                         .push(Span::styled(shown, chip_style(view, theme)));
-                    if let Some(blob) = opens(view) {
-                        shape.opening.push((from, to, blob.clone()));
+                    if let Some(opened) = opened(view) {
+                        shape.opening.push((from, to, opened));
                     }
                 }
             }

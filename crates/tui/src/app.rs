@@ -379,6 +379,16 @@ pub enum AppEvent {
         ask: ui_view::ReviewContextAsk,
         result: Result<(), ReviewError>,
     },
+    /// A sent review's round read from the agent's review: none when its
+    /// host holds none of it; `unreachable` when the host was out of reach
+    /// and the round comes from what was loaded of it.
+    ReviewRound {
+        agent_id: Vec<u8>,
+        review: ui_view::SentReviewRef,
+        text: String,
+        round: Option<wire::experimental::ReviewSummary>,
+        unreachable: bool,
+    },
     /// Following the agent's row read the review again, or could not.
     ReviewFollowed {
         agent_id: Vec<u8>,
@@ -990,6 +1000,17 @@ impl App {
                 at,
                 first,
             } => self.review_opened(&agent_id, result, at, first),
+            AppEvent::ReviewRound {
+                agent_id,
+                review,
+                text,
+                round,
+                unreachable,
+            } => {
+                if let Some(chat) = self.review_chat(&agent_id) {
+                    chat.view.round_read(&review, round, &text, unreachable);
+                }
+            }
             AppEvent::ReviewChanged { agent_id } => {
                 if let Some(chat) = self.review_chat(&agent_id) {
                     sync_review_page(chat);
@@ -2154,6 +2175,34 @@ impl App {
                 if let Err(error) = open_url(&url) {
                     self.notice(format!("could not open the link: {error}"), Tone::Warn);
                 }
+            }
+            ChatEffect::ReviewRound { review, text } => {
+                chat.view.open_round(&review);
+                // Read apart from the review page's own review, so the
+                // snapshot that page shows never moves under it.
+                let reviews = chat.session.reviews();
+                self.spawn(async move {
+                    let (summary, unreachable) = match reviews.open(None, false).await {
+                        Ok(summary) => (Some(summary), false),
+                        Err(error) if unreachable(&error) => (reviews.summary(), true),
+                        Err(_) => (None, false),
+                    };
+                    let round = summary.and_then(|summary| {
+                        ui_runtime::review::round(
+                            &summary,
+                            &review.review_id,
+                            &review.snapshot,
+                            &review.comment_ids,
+                        )
+                    });
+                    Some(AppEvent::ReviewRound {
+                        agent_id,
+                        review,
+                        text,
+                        round,
+                        unreachable,
+                    })
+                });
             }
             ChatEffect::OpenAttachment(blob) => {
                 self.notice(format!("opening {}…", blob.name), Tone::Info);

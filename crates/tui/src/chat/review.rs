@@ -9,6 +9,11 @@
 //! I/O: keys answer [`ReviewAction`]s, which the chat hands to the app to
 //! carry out against the review, and what the review fetches comes back
 //! through [`Page::update`].
+//!
+//! The same page shows, to read only, the round a review sent into the chat
+//! closed: each comment it sent on its file with the code stored with it,
+//! or, when the agent's host no longer holds the round, the text the agent
+//! read ([`Page::round`]).
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -176,9 +181,21 @@ struct Composing {
     failed: Option<String>,
 }
 
+/// A sent review's round, shown to read only.
+#[derive(Debug)]
+struct Round {
+    /// The round's number: the chip's until the host's is read.
+    number: u32,
+    /// What the agent read, once the host is found to hold none of the
+    /// round: the page shows it in place of the comments.
+    gone: Option<String>,
+}
+
 #[derive(Debug, Default)]
 pub struct Page {
     fetched: Fetched,
+    /// Showing a sent round rather than the review as it stands.
+    round: Option<Round>,
     state: ReviewPageState,
     page: ReviewPage,
     /// The row the keys are on, by index and by key, so it stays on its
@@ -209,6 +226,51 @@ impl Page {
         let mut page = Page::default();
         page.compose();
         page
+    }
+
+    /// The page of a review's round `number`, as a sent review's chip
+    /// names it, while the round is read from the agent's host.
+    pub fn round(number: u32) -> Page {
+        let mut page = Page {
+            round: Some(Round { number, gone: None }),
+            ..Page::default()
+        };
+        page.compose();
+        page
+    }
+
+    /// The round, as `ui_runtime::review::round` made it from the agent's
+    /// review; none when the host holds none of it, and the page shows
+    /// `text`, what the agent read.
+    pub fn round_read(&mut self, summary: Option<ReviewSummary>, text: &str) {
+        let Some(round) = &mut self.round else {
+            return;
+        };
+        match summary {
+            Some(summary) => {
+                if let Some(number) = summary.comments.iter().filter_map(|c| c.round).min() {
+                    round.number = number;
+                }
+                self.update(Fetched {
+                    summary: Some(Arc::new(summary)),
+                    ..Fetched::default()
+                });
+            }
+            None => {
+                round.gone = Some(text.to_owned());
+                self.scroll = 0;
+            }
+        }
+    }
+
+    /// Whether this is a sent round's page, to read only.
+    pub fn is_round(&self) -> bool {
+        self.round.is_some()
+    }
+
+    /// The text the agent read, shown when the round is gone.
+    fn gone(&self) -> Option<&str> {
+        self.round.as_ref().and_then(|round| round.gone.as_deref())
     }
 
     /// The page as composed now.
@@ -355,8 +417,13 @@ impl Page {
         self.cursor_key = self.page.rows.get(at).map(|row| row.key.clone());
     }
 
-    /// Moves the cursor `by` stops.
+    /// Moves the cursor `by` stops; over the text of a gone round, scrolls
+    /// it `by` lines.
     fn step(&mut self, by: isize) {
+        if self.gone().is_some() {
+            self.scroll = self.scroll.saturating_add_signed(by);
+            return;
+        }
         let stops = self.stops();
         if stops.is_empty() {
             return;
@@ -521,6 +588,9 @@ impl Page {
         if self.composing.is_some() {
             return self.composing_key(key);
         }
+        if self.round.is_some() {
+            return self.round_key(key);
+        }
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
             KeyCode::Esc if self.mark.is_some() => self.mark = None,
@@ -564,6 +634,38 @@ impl Page {
             KeyCode::Char('e') => return self.expand(false),
             KeyCode::Char('d') => return self.delete(),
             KeyCode::Enter => return self.enter(),
+            _ => {}
+        }
+        ReviewAction::None
+    }
+
+    /// A key on a sent round's page: it moves, folds and goes back, and
+    /// changes nothing.
+    fn round_key(&mut self, key: KeyEvent) -> ReviewAction {
+        let page = self.height.saturating_sub(2).max(1) as isize;
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => return ReviewAction::Close,
+            KeyCode::Char('j') | KeyCode::Down => self.step(1),
+            KeyCode::Char('k') | KeyCode::Up => self.step(-1),
+            KeyCode::PageDown | KeyCode::Char(' ') => self.step(page),
+            KeyCode::PageUp => self.step(-page),
+            KeyCode::Char('g') | KeyCode::Home => self.step(isize::MIN / 2),
+            KeyCode::Char('G') | KeyCode::End => self.step(isize::MAX / 2),
+            KeyCode::Char(']') => self.jump(true, |row| matches!(row, ReviewRowOf::File(_))),
+            KeyCode::Char('[') => self.jump(false, |row| matches!(row, ReviewRowOf::File(_))),
+            KeyCode::Enter => match self.row().map(|row| row.of.clone()) {
+                Some(ReviewRowOf::File(head)) => {
+                    self.state.toggle_file(&head.path);
+                    self.compose();
+                }
+                Some(ReviewRowOf::Comment(comment))
+                    if comment.folded || comment.at == ReviewCommentAt::Outdated =>
+                {
+                    self.state.toggle_comment(&comment.id);
+                    self.compose();
+                }
+                _ => {}
+            },
             _ => {}
         }
         ReviewAction::None
@@ -779,9 +881,11 @@ impl Page {
         if let Some(end) = body.editor_end {
             wanted.1 = wanted.1.max(end);
         }
-        if wanted.0 < self.scroll {
+        // A gone round's text scrolls by itself, with no rows to follow.
+        let follows = self.gone().is_none();
+        if follows && wanted.0 < self.scroll {
             self.scroll = wanted.0;
-        } else if wanted.1 + 1 > self.scroll + body_height {
+        } else if follows && wanted.1 + 1 > self.scroll + body_height {
             self.scroll = (wanted.1 + 1).saturating_sub(body_height).min(wanted.0);
         }
         self.scroll = self
@@ -859,7 +963,20 @@ impl Page {
     fn title(&self, width: usize, theme: Theme) -> Line<'static> {
         let bar = || Span::styled(" │ ", theme.faint());
         let mut right = Vec::new();
-        if let Some(header) = self.header() {
+        if let Some(round) = &self.round {
+            let mut about = format!("review · round {}", round.number);
+            if let Some(header) = self.header().filter(|_| round.gone.is_none()) {
+                let snapshot: String = header.snapshot.chars().take(7).collect();
+                about.push_str(&format!(" at {snapshot}"));
+                right = vec![
+                    Span::styled(about, theme.faint()),
+                    bar(),
+                    Span::styled(counted(header.sent, "comment"), theme.muted()),
+                ];
+            } else {
+                right = vec![Span::styled(about, theme.faint())];
+            }
+        } else if let Some(header) = self.header() {
             let about = match header.view {
                 ReviewView::SinceLast => "since your last review".to_owned(),
                 ReviewView::All if header.base_branch.is_empty() => "uncommitted".to_owned(),
@@ -929,13 +1046,36 @@ impl Page {
             digits,
             gutter,
             theme,
+            round: self.round.is_some(),
             since_rounds: self
                 .header()
                 .is_some_and(|header| header.view == ReviewView::All && header.rounds > 0),
         };
+        if let Some(text) = self.gone() {
+            let room = width.saturating_sub(4).max(1);
+            for part in text::wrap(
+                "The agent's computer no longer holds this round, so this is what the agent read.",
+                room,
+            ) {
+                let mut line = Line::from(Span::raw("  "));
+                push(&mut line, part, theme.muted(), width);
+                body.lines.push(line);
+            }
+            body.lines.push(Line::default());
+            for part in text.lines().flat_map(|line| text::wrap(line, room)) {
+                let mut line = Line::from(Span::raw("  "));
+                push(&mut line, part, theme.text(), width);
+                body.lines.push(line);
+            }
+            return body;
+        }
         if self.page.opening {
             let mut line = Line::from(Span::raw("  "));
-            push(&mut line, "Opening the review…", theme.muted(), width);
+            let words = match self.round {
+                Some(_) => "Reading the round…",
+                None => "Opening the review…",
+            };
+            push(&mut line, words, theme.muted(), width);
             body.lines.push(line);
         }
         if let Some(empty) = self.page.empty {
@@ -1049,7 +1189,21 @@ impl Page {
     /// recedes, as on every hint line.
     fn hint_line(&self, width: usize, theme: Theme) -> Line<'static> {
         let mut keys: Vec<(&str, &str)> = Vec::new();
-        if let Some(composing) = &self.composing {
+        if self.gone().is_some() {
+            keys.extend([("j/k", "scroll"), ("q", "back")]);
+        } else if self.round.is_some() {
+            keys.push(("j/k", "move"));
+            match self.row().map(|row| &row.of) {
+                Some(ReviewRowOf::File(head)) => {
+                    keys.push(("enter", if head.folded { "open" } else { "fold" }));
+                }
+                Some(ReviewRowOf::Comment(comment)) if comment.folded => {
+                    keys.push(("enter", "open"));
+                }
+                _ => {}
+            }
+            keys.extend([("]/[", "file"), ("q", "back")]);
+        } else if let Some(composing) = &self.composing {
             if composing.saving {
                 keys.push(("esc", "close"));
             } else {
@@ -1145,6 +1299,9 @@ struct Draw {
     /// All changes, after a round has been sent: a file says when it
     /// changed since then.
     since_rounds: bool,
+    /// A sent round: its files are where its comments are, not the change
+    /// as it stands, so a head says nothing of how the file changes now.
+    round: bool,
 }
 
 impl Draw {
@@ -1210,7 +1367,9 @@ impl Draw {
         if head.comments > 0 {
             said.push(vec![(counted(head.comments, "comment"), theme.attention())]);
         }
-        if !head.in_change {
+        if self.round {
+            // Nothing of how the file changes now.
+        } else if !head.in_change {
             said.push(vec![("no longer changed".into(), theme.faint())]);
         } else if self.since_rounds && head.changed_since_last {
             said.push(vec![(

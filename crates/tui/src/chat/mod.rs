@@ -149,6 +149,13 @@ pub enum ChatEffect {
     OpenUrl(String),
     /// Open an attachment in the app the system picks for it.
     OpenAttachment(wire::BlobRef),
+    /// Show the round a sent review in the chat closed, read from the
+    /// agent's host; `text`, what the agent read, when the host no longer
+    /// holds it.
+    ReviewRound {
+        review: ui_view::SentReviewRef,
+        text: String,
+    },
     /// Fetch an attachment again after a failure.
     RetryBlob(Vec<u8>),
     /// Back to home: the header's [Home].
@@ -329,6 +336,9 @@ pub struct ChatView {
     /// so returning to it draws at once.
     pub review_page: Option<review::Page>,
     pub review_page_open: bool,
+    /// A sent review's round, over the chat and its review page while
+    /// open, with the review it names.
+    pub round: Option<(ui_view::SentReviewRef, review::Page)>,
     /// The window asking before the review chip's drafts are discarded.
     discard_ask: Option<review::Asking>,
     /// The review chip on the composer's edge on the last frame: its row,
@@ -510,6 +520,7 @@ impl ChatView {
             review_open: false,
             review_page: None,
             review_page_open: false,
+            round: None,
             discard_ask: None,
             chip_spot: None,
             review_sent: None,
@@ -699,6 +710,9 @@ impl ChatView {
     }
 
     pub fn field_text(&self, state: &SessionState) -> bool {
+        if self.round.is_some() {
+            return false;
+        }
         if self.review_page_open {
             return self.review_page.as_ref().is_some_and(review::Page::editing);
         }
@@ -719,6 +733,7 @@ impl ChatView {
     /// answer among them, types it.
     pub fn opens_help(&self, state: &SessionState, key: KeyEvent) -> bool {
         key.code == KeyCode::Char('?')
+            && self.round.is_none()
             && !self.review_open
             && !self.review_page_open
             && self.live_card(state).is_none()
@@ -729,6 +744,9 @@ impl ChatView {
     /// Ctrl+C on a field with text: clears it as a kill. Only the field
     /// with the keys: a draft hidden behind a card stays.
     pub fn kill_field(&mut self, state: &SessionState) -> bool {
+        if self.round.is_some() {
+            return false;
+        }
         if self.review_page_open {
             return self
                 .review_page
@@ -747,6 +765,9 @@ impl ChatView {
     /// A bracketed paste goes to the field with the keys, and nowhere when
     /// none has them.
     pub fn paste_text(&mut self, state: &SessionState, text: &str) {
+        if self.round.is_some() {
+            return;
+        }
         if self.review_page_open {
             if let Some(page) = &mut self.review_page {
                 page.paste(text);
@@ -837,6 +858,12 @@ impl ChatView {
                     vec![]
                 }
             };
+        }
+        if let Some((_, page)) = &mut self.round {
+            if page.key(key) == review::ReviewAction::Close {
+                self.round = None;
+            }
+            return vec![];
         }
         if self.review_page_open
             && let Some(page) = &mut self.review_page
@@ -1648,9 +1675,12 @@ impl ChatView {
             MouseEventKind::Up(MouseButton::Left) => return self.release(state, theme),
             _ => {}
         }
-        if self.review_page_open
-            && let Some(page) = &mut self.review_page
-        {
+        let shown = match &mut self.round {
+            Some((_, page)) => Some(page),
+            None if self.review_page_open => self.review_page.as_mut(),
+            None => None,
+        };
+        if let Some(page) = shown {
             match event.kind {
                 MouseEventKind::ScrollUp => {
                     self.selection = None;
@@ -2105,6 +2135,7 @@ impl ChatView {
     fn composer_has_keys(&self, state: &SessionState) -> bool {
         !self.review_open
             && !self.review_page_open
+            && self.round.is_none()
             && self.discard_ask.is_none()
             && self.picker.is_none()
             && !self.setting_prefix
@@ -2309,6 +2340,9 @@ impl ChatView {
         match hit {
             FeedHit::Link(url) => return vec![ChatEffect::OpenUrl(url)],
             FeedHit::Attachment(blob) => return vec![ChatEffect::OpenAttachment(blob)],
+            FeedHit::Round { review, text } => {
+                return vec![ChatEffect::ReviewRound { review, text }];
+            }
             FeedHit::Thumbnail { blob, .. } => {
                 return vec![match state.blob(&blob.hash) {
                     ui_state::BlobStatus::Failed(_) => ChatEffect::RetryBlob(blob.hash),
@@ -2398,6 +2432,10 @@ impl ChatView {
             FeedHit::Attachment(blob) | FeedHit::Thumbnail { blob, .. } => {
                 Some(ChatEffect::OpenAttachment(blob.clone()))
             }
+            FeedHit::Round { review, text } => Some(ChatEffect::ReviewRound {
+                review: review.clone(),
+                text: text.clone(),
+            }),
             _ => None,
         })
     }
@@ -2592,6 +2630,30 @@ impl ChatView {
         page
     }
 
+    /// A sent review's round over the chat, while it is read from the
+    /// agent's host.
+    pub fn open_round(&mut self, review: &ui_view::SentReviewRef) {
+        self.round = Some((review.clone(), review::Page::round(review.round)));
+    }
+
+    /// The round `review` names, read: shown when it is still the one
+    /// open; none shows `text`, what the agent read. `unreachable` says
+    /// the host was out of reach and the round is from what was loaded.
+    pub fn round_read(
+        &mut self,
+        review: &ui_view::SentReviewRef,
+        summary: Option<wire::experimental::ReviewSummary>,
+        text: &str,
+        unreachable: bool,
+    ) {
+        if let Some((open, page)) = &mut self.round
+            && open == review
+        {
+            page.round_read(summary, text);
+            page.notice(ui_view::ReviewNotice::Unreachable, unreachable);
+        }
+    }
+
     /// The review chip the composer shows: from the agent's row, unless
     /// this composer has just sent those drafts.
     fn review_chip(&self, state: &SessionState) -> Option<ui_view::ReviewChip> {
@@ -2679,9 +2741,12 @@ impl ChatView {
             self.focus = None;
             self.page_asked = None;
         }
-        if self.review_page_open
-            && let Some(page) = &mut self.review_page
-        {
+        let shown = match &mut self.round {
+            Some((_, page)) => Some(page),
+            None if self.review_page_open => self.review_page.as_mut(),
+            None => None,
+        };
+        if let Some(page) = shown {
             let name = ui_state::shown_name(state.agent()).to_owned();
             let cwd = &state.agent().cwd;
             let place = if self.local {
@@ -2691,7 +2756,10 @@ impl ChatView {
             };
             page.set_owner(&name, &place);
             let footer = footer.or_else(|| self.screen_footer(usize::from(area.width), theme));
-            let page = self.review_page.as_mut().expect("open");
+            let page = match &mut self.round {
+                Some((_, page)) => page,
+                None => self.review_page.as_mut().expect("open"),
+            };
             page.draw(paint, area, footer, theme);
             let cells = ScreenCells::capture(
                 paint.buffer_mut(),

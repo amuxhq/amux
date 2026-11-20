@@ -52,6 +52,12 @@ pub enum FeedHit {
     Link(String),
     /// Open an attachment in its own app.
     Attachment(BlobRef),
+    /// Open the round a sent review closed; `text` is what the agent read,
+    /// shown when its host no longer holds the round.
+    Round {
+        review: ui_view::SentReviewRef,
+        text: String,
+    },
     /// One line of an image's thumbnail, `row` lines below its top.
     Thumbnail { blob: BlobRef, row: u16 },
     /// Open the chat of the agent a call started.
@@ -173,7 +179,13 @@ fn thumbnail_lines(blob: &BlobRef, column: usize) -> Vec<(Line<'static>, LineHit
 fn chip_hits(opening: rows::OpeningChips) -> LineHits {
     opening
         .into_iter()
-        .map(|(from, to, blob)| (Some((from, to)), FeedHit::Attachment(blob)))
+        .map(|(from, to, opened)| {
+            let hit = match opened {
+                rows::Opened::Attachment(blob) => FeedHit::Attachment(blob),
+                rows::Opened::Round { review, text } => FeedHit::Round { review, text },
+            };
+            (Some((from, to)), hit)
+        })
         .collect()
 }
 

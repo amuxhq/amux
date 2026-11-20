@@ -259,6 +259,12 @@ Once you've sent a review, the next look opens on **Since your last review**:
 just what changed since then, with your earlier comments where they sit now,
 folded away where their lines changed. Tab shows all the changes again.
 
+A review you sent shows in the chat as `[review · 3 comments]`. Click it, or
+focus its message and press Ctrl+A then `o`, to see that round again: each
+comment on its file, with the code it was written on. If the review has since
+been started over, you see the text the agent read instead. `q` goes back to
+the chat.
+
 Where the agent's computer doesn't run reviews, the page instead shows the
 changed files on the left and every change on the right, and your comments go
 into the message box as one review, ready to send with anything else you want

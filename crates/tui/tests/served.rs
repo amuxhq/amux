@@ -1189,6 +1189,38 @@ fn review_page(app: &tui::App) -> Option<&tui::chat::review::Page> {
         .filter(|_| chat.view.review_page_open)
 }
 
+/// The sent round open over the chat.
+fn round_page(app: &tui::App) -> Option<&tui::chat::review::Page> {
+    let chat = app.chat.as_ref()?;
+    chat.view.round.as_ref().map(|(_, page)| page)
+}
+
+/// Clicks the sent review's chip in the chat's feed, where `screen` drew
+/// it.
+fn click_sent_review(app: &mut tui::App, screen: &str) {
+    use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let (row, column) = screen
+        .lines()
+        .enumerate()
+        .find_map(|(row, line)| {
+            let at = line.find("[review · 1 comment]")?;
+            Some((row, line[..at].chars().count()))
+        })
+        .unwrap_or_else(|| panic!("no sent review in the feed:\n{screen}"));
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        app.input(Event::Mouse(MouseEvent {
+            kind,
+            column: column as u16 + 2,
+            row: row as u16,
+            modifiers: KeyModifiers::NONE,
+        }));
+    }
+}
+
 fn row_key(app: &tui::App) -> String {
     let page = review_page(app).expect("the page is open");
     page.page().rows[page.cursor()].key.clone()
@@ -1213,7 +1245,9 @@ fn drafts(app: &tui::App) -> Vec<String> {
 /// host service, reads its files, loads more lines, comments on a changed
 /// line and sees the draft; the laptop's copy of the agent's row carries
 /// the drafts to the composer's chip, and sending carries them to the
-/// agent. Starting over leaves a first look.
+/// agent. The sent review in the chat opens the round it closed, its
+/// comment on its file; starting over leaves a first look, and the sent
+/// review then opens the text the agent read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_person_on_the_laptop_reviews_the_desks_agent() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -1328,6 +1362,42 @@ async fn a_person_on_the_laptop_reviews_the_desks_agent() {
         read.text
     );
 
+    // The sent review in the chat opens its round, read from the desk:
+    // the comment, sent in round 1, on its file, to read only. The agent's
+    // reply says the desk accepted the message and closed the round.
+    let screen = until(&mut app, "the sent review in the feed", |_, screen| {
+        screen.contains("have a look [review · 1 comment]") && screen.contains("Read it.")
+    })
+    .await;
+    click_sent_review(&mut app, &screen);
+    let screen = until(&mut app, "the round", |app, _| {
+        round_page(app).is_some_and(|page| {
+            page.page().rows.iter().any(|row| {
+                matches!(&row.of, ui_view::ReviewRowOf::Comment(comment)
+                    if comment.text == "say why the store must open"
+                        && comment.state == ui_view::ReviewCommentState::Sent { round: 1 })
+            })
+        })
+    })
+    .await;
+    assert!(screen.contains("review · round 1 at"), "{screen}");
+    assert!(screen.contains("src/store.rs"), "{screen}");
+    assert!(screen.contains("│ say why the store must open"), "{screen}");
+    assert!(
+        !screen.contains("delete"),
+        "a round is read only:\n{screen}"
+    );
+    press(&mut app, KeyCode::Char('c'));
+    assert!(
+        round_page(&app).is_some_and(|page| !page.editing()),
+        "a round takes no comment"
+    );
+    press(&mut app, KeyCode::Char('q'));
+    until(&mut app, "the chat again", |app, screen| {
+        round_page(app).is_none() && screen.contains("have a look [review · 1 comment]")
+    })
+    .await;
+
     // Starting over: asked first, then a first look again.
     app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
     press(&mut app, KeyCode::Char('r'));
@@ -1354,6 +1424,21 @@ async fn a_person_on_the_laptop_reviews_the_desks_agent() {
     })
     .await;
     assert!(!screen.contains("Draft"), "{screen}");
+
+    // The round went with the review: the sent review shows what the agent
+    // read.
+    press(&mut app, KeyCode::Char('q'));
+    let screen = until(&mut app, "the chat after starting over", |_, screen| {
+        screen.contains("have a look [review · 1 comment]")
+    })
+    .await;
+    click_sent_review(&mut app, &screen);
+    let screen = until(&mut app, "the text the agent read", |_, screen| {
+        screen.contains("no longer holds this round")
+    })
+    .await;
+    assert!(screen.contains("## src/store.rs, line 7"), "{screen}");
+    assert!(screen.contains("say why the store must open"), "{screen}");
 
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())

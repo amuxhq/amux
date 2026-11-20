@@ -55,7 +55,18 @@ pub(crate) async fn run_job(
     _runtime: Weak<ProfileRuntime>,
     job: daemon_core::reviews::Job,
 ) -> Option<JobResult> {
-    match job {}
+    use daemon_core::reviews::{Done, Job};
+    match job {
+        // Only a review that has taken a snapshot is checked, and this host
+        // takes none before it answers Open, so nothing checked has moved.
+        Job::Moved {
+            agent, snapshot, ..
+        } => Some(JobResult::Review(Done::Moved {
+            agent,
+            snapshot,
+            moved: Ok(false),
+        })),
+    }
 }
 
 /// The answer of a call this build does not carry out yet.

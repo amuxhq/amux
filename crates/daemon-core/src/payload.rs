@@ -399,6 +399,8 @@ pub enum Response {
     Paired {
         host: HostId,
     },
+    /// What a write to a review left.
+    Review(Box<crate::reviews::Written>),
 }
 
 /// How a call ended.
@@ -437,6 +439,8 @@ pub enum CallError {
     Window(crate::pairing::WindowRefusal),
     /// A pairing did not finish.
     Pairing(crate::pairing::PairFailure),
+    /// A write to a review was refused.
+    Review(crate::reviews::Refusal),
 }
 
 /// Why a blob call failed.

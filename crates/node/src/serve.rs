@@ -63,7 +63,8 @@ impl From<Status> for ServeError {
                 | CallError::Message(_)
                 | CallError::Trust(_)
                 | CallError::Window(_)
-                | CallError::Pairing(_)),
+                | CallError::Pairing(_)
+                | CallError::Review(_)),
             ) => ServeError::Failed(format!("{error:?}")),
         }
     }

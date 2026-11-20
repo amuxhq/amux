@@ -93,7 +93,7 @@ impl Daemon {
 
 /// Whether two folders are taken to be in one checkout: the same folder, or
 /// one inside the other.
-fn one_checkout(a: &Path, b: &Path) -> bool {
+pub(crate) fn one_checkout(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }
 

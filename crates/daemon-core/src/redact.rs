@@ -634,6 +634,59 @@ mod tests {
     }
 
     #[test]
+    fn a_review_write_keeps_no_comment_words_snippet_or_path() {
+        use crate::payload::ClientRequest;
+        use crate::reviews::{Anchor, Change, Put, Write};
+
+        let redactor = Swap::default();
+        let write = |word: &str| Input::ClientCall {
+            call: crate::CallId(5),
+            request: ClientRequest::Review(Box::new(Write {
+                agent: AgentId([1; 16]),
+                changes: vec![Change::Put(Box::new(Put {
+                    comment: vec![2; 16],
+                    anchor: Anchor {
+                        commit: "c0ffee".into(),
+                        path: format!("src/{word}.rs"),
+                        start: 3,
+                        end: 4,
+                    },
+                    text: format!("rename the {word} key"),
+                    snippet: vec![wire::experimental::ReviewLine {
+                        text: format!("let key = \"{word}\";"),
+                        new_line: 3,
+                        ..Default::default()
+                    }],
+                    scope: vec![wire::experimental::ReviewDefinition {
+                        label: format!("fn {word}"),
+                        ..Default::default()
+                    }],
+                }))],
+            })),
+        };
+        let planted = write("PLANTED");
+        let carries = |input: &Input| {
+            let line = serde_json::to_string(&Recorded::input(input)).unwrap();
+            line.contains("PLANTED") || line.contains(&hex(PLANTED))
+        };
+        assert!(carries(&planted), "the line carries the words");
+        let redacted = planted.redacted(&redactor);
+        assert!(!carries(&redacted), "the planted words are gone");
+        assert_eq!(redacted, write("REMOVED"), "every id and number is kept");
+        let names = redactor.names.borrow();
+        assert!(
+            names.contains("amux.experimental.ReviewLine")
+                && names.contains("amux.experimental.ReviewDefinition"),
+            "the snippet and the scope went through as their messages: {names:?}"
+        );
+        let fields = redactor.fields.borrow();
+        assert!(
+            fields.contains("Put.text") && fields.contains("Anchor.path"),
+            "the words and the path went through by name: {fields:?}"
+        );
+    }
+
+    #[test]
     fn a_typed_value_written_as_text_is_kept() {
         // A redactor that empties every text it is handed, the worst it can
         // do: what reads back only as itself still reads back.

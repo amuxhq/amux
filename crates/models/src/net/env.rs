@@ -2174,7 +2174,13 @@ impl Transition<'_> {
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // The net's hosts run no experiment.
             Job::Workspace(_) => return None,
-            Job::Review(job) => match job {},
+            Job::Review(daemon_core::reviews::Job::Moved {
+                agent, snapshot, ..
+            }) => JobResult::Review(daemon_core::reviews::Done::Moved {
+                agent,
+                snapshot,
+                moved: Ok(false),
+            }),
             // Nothing reads back what these write: the trust file, the
             // store's main file, blobs and drafts.
             Job::Fsync { .. }

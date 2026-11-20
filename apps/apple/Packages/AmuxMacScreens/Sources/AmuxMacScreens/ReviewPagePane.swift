@@ -730,7 +730,7 @@ private struct CommentCard: View {
             Text(words)
                 .foregroundStyle(Palette.textSecondary)
                 .lineLimit(1)
-                .fixedSize()
+                .layoutPriority(1)
             if comment.folded {
                 Text(comment.text).foregroundStyle(Palette.textTertiary).lineLimit(1)
             }

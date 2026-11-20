@@ -1063,3 +1063,89 @@ async fn get_files_reads_the_comparison_it_names_and_lists_its_files() {
     }
     host.stop().await;
 }
+
+/// The agent undoing its own change since the last round is part of what
+/// changed since it: a line put back and a file made then deleted are
+/// gone from all changes, yet the summary's file states count them from
+/// since-last's own comparison, and since-last shows them.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_undo_since_the_last_round_is_counted_and_shown_since_it() {
+    let install = Install::new();
+    repository(&install.work, &[("notes.txt", &numbered(&[]))]);
+    write(
+        &install.work,
+        &[
+            ("notes.txt", &numbered(&[(3, "three")])),
+            ("made.txt", "made\n"),
+        ],
+    );
+    let agent = agent_in(&install, &install.work);
+    let host = Host::start(install).await;
+    let first = host.open(&agent).await;
+    host.send(&agent, &first);
+
+    write(&host.install.work, &[("notes.txt", &numbered(&[]))]);
+    std::fs::remove_file(host.install.work.join("made.txt")).unwrap();
+    let undone = host.open(&agent).await;
+    assert_ne!(undone.snapshot, first.snapshot);
+    assert!(
+        undone.files.is_empty(),
+        "all changes lists nothing: {:?}",
+        undone.files
+    );
+    let states: Vec<(&str, bool, u32, u32)> = undone
+        .file_states
+        .iter()
+        .map(|state| {
+            (
+                state.path.as_str(),
+                state.changed_since_last,
+                state.added,
+                state.removed,
+            )
+        })
+        .collect();
+    assert_eq!(
+        states,
+        [("made.txt", true, 0, 1), ("notes.txt", true, 1, 1)]
+    );
+
+    let since = host
+        .client()
+        .get_files(ReviewGetFilesRequest {
+            list: true,
+            files: vec![asked("notes.txt"), asked("made.txt")],
+            ..request(&agent, &undone, ReviewView::SinceLast)
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let listed: Vec<(&str, u32, u32)> = since
+        .changed
+        .iter()
+        .map(|file| (file.path.as_str(), file.added, file.removed))
+        .collect();
+    assert_eq!(listed, [("made.txt", 0, 1), ("notes.txt", 1, 1)]);
+    let shown: Vec<(&str, Vec<&str>)> = since
+        .files
+        .iter()
+        .map(|file| {
+            let changed = file
+                .hunks
+                .iter()
+                .flat_map(|hunk| &hunk.lines)
+                .filter(|line| line.kind() != ReviewLineKind::Context)
+                .map(|line| line.text.as_str())
+                .collect();
+            (file.path.as_str(), changed)
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("notes.txt", vec!["three", "line 3"]),
+            ("made.txt", vec!["made"])
+        ]
+    );
+    host.stop().await;
+}

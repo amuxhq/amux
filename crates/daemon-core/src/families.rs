@@ -1130,7 +1130,11 @@ impl Daemon {
             // A cause on a live row with a process is its journal's last
             // step, written as the agent begins to exit: it is on its way
             // out though it may have refused nothing yet, and once it
-            // finishes it no longer reads input.
+            // finishes it no longer reads input. The cause is committed
+            // with the step that makes the row read as suspended, so a
+            // wake for a row a client saw suspended always finds it here;
+            // read from the row rather than kept beside the process, it
+            // holds for a process adopted by a restarted daemon too.
             let journal_ended = row.exit_cause != ExitCause::Unspecified as i32;
             let leaving = process.leaving
                 || process.stopping.is_some()

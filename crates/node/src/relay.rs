@@ -291,9 +291,10 @@ impl ProfileRuntime {
     /// prompt is the next incarnation's first input, so the answer is that
     /// it was taken; any other input goes to the new process once it is
     /// connected. The core decides: it waits out an exit the agent chose
-    /// (one it refused an input for, or whose ending step is committed, so
-    /// a row read as suspended is never one whose process is handed the
-    /// input) and then wakes it only if the exit left it suspended, else
+    /// (one it refused an input for, or whose row already carries the
+    /// cause its journal's last step put there, so a row read as suspended
+    /// is never one whose process is handed the input) and then wakes it
+    /// only if the exit left it suspended, else
     /// the input is refused as exited; an agent the daemon is stopping is
     /// answered at once with the refusal the input had.
     async fn wake_with(

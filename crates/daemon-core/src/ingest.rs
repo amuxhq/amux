@@ -165,20 +165,6 @@ impl Daemon {
             };
             let committed = self.store.commit(&key, &batch.frames, clock)?;
             self.committed(agent);
-            // A step that ends the incarnation is the process saying it is
-            // on its way out, committed with the cause it puts on the row,
-            // which a client may read as suspended before the process has
-            // gone. From here a resume, a wake for a person's input among
-            // them, waits for the exit instead of finding the agent live:
-            // the process takes nothing more, and what is handed to it in
-            // its last moments goes unanswered.
-            if batch
-                .frames
-                .iter()
-                .any(|(_, step)| step.incarnation_end.is_some())
-            {
-                self.exiting(agent);
-            }
             report.turn_ends = batch
                 .frames
                 .iter()

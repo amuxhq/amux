@@ -12,8 +12,8 @@ use std::process::Command;
 use prost::Message as _;
 use support::synthetic::{quiet_launch, read_until};
 use support::*;
-use wire::agent_service_server::AgentService as _;
-use wire::{AgentSpec, CreateAgentRequest, SessionEvent, session_event};
+use wire::amux::staging;
+use wire::{AgentSpec, SessionEvent, session_event};
 
 use crate::support;
 
@@ -53,8 +53,8 @@ fn repository(install: &Install) -> PathBuf {
     repo
 }
 
-fn in_worktree(cwd: &Path, name: Option<&str>) -> CreateAgentRequest {
-    CreateAgentRequest {
+fn in_worktree(cwd: &Path, name: Option<&str>) -> staging::CreateAgentRequest {
+    staging::CreateAgentRequest {
         name: name.map(str::to_owned),
         new_workspace: true,
         ..create(cwd, "", None)
@@ -195,26 +195,24 @@ async fn a_folder_outside_a_repository_or_a_taken_branch_fails_the_create() {
         .spawn(in_worktree(&outside, Some("tidy")), None)
         .await
         .unwrap_err();
-    let wire = refused.to_wire();
-    assert_eq!(wire.code, wire::ErrorCode::FailedPrecondition as i32);
+    assert_eq!(refused.code(), tonic::Code::FailedPrecondition);
     assert!(
-        wire.message.contains("is not in a git repository"),
+        refused.message().contains("is not in a git repository"),
         "{}",
-        wire.message
+        refused.message()
     );
-    println!("not a repository: {}", wire.message);
+    println!("not a repository: {}", refused.message());
 
     let refused = runtime
         .spawn(in_worktree(&repo, Some("main")), None)
         .await
         .unwrap_err();
-    let wire = refused.to_wire();
-    assert_eq!(wire.code, wire::ErrorCode::AlreadyExists as i32);
+    assert_eq!(refused.code(), tonic::Code::AlreadyExists);
     assert_eq!(
-        wire.message,
+        refused.message(),
         "starting in a new worktree: the repository already has a branch named main"
     );
-    println!("taken branch: {}", wire.message);
+    println!("taken branch: {}", refused.message());
 
     assert!(
         runtime
@@ -237,27 +235,29 @@ async fn a_folder_outside_a_repository_or_a_taken_branch_fails_the_create() {
 async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() {
     let desk = Install::new();
     let repo = repository(&desk);
-    let desk_daemon = desk.start("boot-1", desk.launch("idle", vec![])).await;
+    let desk_daemon = node::start(desk.serving("boot-1", desk.launch("idle", vec![])), None)
+        .await
+        .unwrap();
     let desk_runtime = runtime(&desk_daemon, &desk);
     let laptop = Install::new();
-    let laptop_daemon = laptop.start("boot-1", quiet_launch()).await;
+    let laptop_daemon = node::start(laptop.serving("boot-1", quiet_launch()), None)
+        .await
+        .unwrap();
     let laptop_runtime = runtime(&laptop_daemon, &laptop);
     let (desk_edge, laptop_edge) = (desk_runtime.edge().unwrap(), laptop_runtime.edge().unwrap());
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
     let link = laptop_edge.link_in_process(&desk_edge).unwrap();
     assert!(wait_for_route(&laptop_edge, desk_runtime.host(), PATIENCE).await);
-    let from_laptop = node::ClientApi::new(&laptop_runtime, None);
-    let on_desk = |name: &str| CreateAgentRequest {
-        host: Some(wire::HostRef {
-            of: Some(wire::host_ref::Of::HostId(
-                desk_runtime.host().as_bytes().to_vec(),
-            )),
-        }),
-        ..in_worktree(&repo, Some(name))
-    };
+    // A person on the laptop, addressing the desk: the laptop carries the
+    // call there.
+    let from_laptop = staging::agent_service_client(
+        addressed(&laptop_runtime, &wire::authority(&desk_runtime.host())).await,
+    );
+    let on_desk = |name: &str| in_worktree(&repo, Some(name));
 
     let agent = from_laptop
+        .clone()
         .create_agent(tonic::Request::new(on_desk("from-laptop")))
         .await
         .unwrap()
@@ -284,6 +284,7 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
     // agent name would only earn a suffix, so the clash is with a branch
     // the repository already has.
     let refused = from_laptop
+        .clone()
         .create_agent(tonic::Request::new(on_desk("main")))
         .await
         .unwrap_err();
@@ -303,7 +304,13 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
 
     drop(link);
     kill_all(&desk_runtime).await;
-    drop((desk_runtime, laptop_runtime, desk_edge, laptop_edge));
+    drop((
+        from_laptop,
+        desk_runtime,
+        laptop_runtime,
+        desk_edge,
+        laptop_edge,
+    ));
     desk_daemon.shutdown().await.unwrap();
     laptop_daemon.shutdown().await.unwrap();
 }

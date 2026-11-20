@@ -890,26 +890,17 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     }
 }
 
-/// The clients a daemon calls a paired host with, on one [`PeerChannel`]:
-/// the peer service, for everything it asks for itself, and the client
-/// services, for the calls of its own clients it forwards.
+/// What a daemon calls a paired host with, on one [`PeerChannel`]: that
+/// host's peer service, for everything it asks for itself. A call it
+/// carries for one of its clients rides the carrier, never this.
 #[derive(Clone)]
 pub struct PeerClient {
     pub peer: wire::amux::staging::peer_service_client::PeerServiceClient<PeerChannel>,
-    pub agents: wire::agent_service_client::AgentServiceClient<PeerChannel>,
-    pub sessions: wire::session_service_client::SessionServiceClient<PeerChannel>,
 }
 
 pub(crate) fn peer_client(channel: Channel) -> PeerClient {
-    let channel = PeerChannel::new(channel);
     PeerClient {
-        peer: wire::amux::staging::peer_service_client(channel.clone()),
-        agents: wire::agent_service_client::AgentServiceClient::new(channel.clone())
-            .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
-            .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
-        sessions: wire::session_service_client::SessionServiceClient::new(channel)
-            .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
-            .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT),
+        peer: wire::amux::staging::peer_service_client(PeerChannel::new(channel)),
     }
 }
 

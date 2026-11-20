@@ -1517,7 +1517,7 @@ fn send_may_not_have_arrived(journey: &mut TerminalJourney) -> Proved {
     journey.type_text(&pane, MAYBE)?;
     journey.wait_terms(&pane, &[MAYBE])?;
     journey.keys(&pane, &["Enter"])?;
-    // Sent: the composer is empty again. The forwarded call reaches the
+    // Sent: the composer is empty again. The carried call reaches the
     // cabin at once and waits there for an answer that does not come; it
     // would give up after 30 seconds, so everything until the prompt reads
     // may not have arrived happens well inside that.

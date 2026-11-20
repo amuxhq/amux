@@ -203,25 +203,6 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 /// at the attachment limit still fits in one message.
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
-sized_service!(
-    agent_service_client,
-    agent_service_server,
-    agent_service_client,
-    AgentServiceClient,
-    agent_service_server,
-    AgentServiceServer,
-    AgentService
-);
-sized_service!(
-    session_service_client,
-    session_service_server,
-    session_service_client,
-    SessionServiceClient,
-    session_service_server,
-    SessionServiceServer,
-    SessionService
-);
-
 /// The request header a client of a profile socket names itself in, for
 /// the usage count of clients opened: `mac` for the Mac app. The terminal
 /// sends none.
@@ -264,23 +245,6 @@ pub fn provider_signalled(detail: Option<&str>) -> bool {
 /// to an unknown method has no words, and a caller's "could not start the
 /// agent: " would end at the colon.
 pub const HOST_NEEDS_UPDATE: &str = "that host needs updating to do this";
-
-/// The client services' stubs on one profile or tools socket: what a
-/// caller that speaks gRPC directly holds.
-#[cfg(feature = "grpc")]
-#[derive(Clone, Debug)]
-pub struct ClientStubs {
-    pub agents: agent_service_client::AgentServiceClient<tonic::transport::Channel>,
-    pub sessions: session_service_client::SessionServiceClient<tonic::transport::Channel>,
-}
-
-#[cfg(feature = "grpc")]
-pub fn client_stubs(channel: tonic::transport::Channel) -> ClientStubs {
-    ClientStubs {
-        agents: agent_service_client(channel.clone()),
-        sessions: session_service_client(channel),
-    }
-}
 
 /// A person's input as its kind's own message: what a client builds and
 /// what the agent of that kind decodes from [`Input::body`].

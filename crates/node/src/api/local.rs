@@ -10,9 +10,10 @@
 
 use std::sync::{Arc, Weak};
 
+use store::{AgentRow, StoreError};
 use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
-use wire::ErrorCode;
+use uuid::Uuid;
 use wire::amux::staging::draft_service_server::DraftService;
 use wire::amux::staging::inventory_service_server::InventoryService;
 use wire::amux::staging::session_service_server::SessionService;
@@ -23,12 +24,13 @@ use wire::amux::staging::{
     SubscribeInventoryResponse, SubscribeSessionRequest, SubscribeSessionResponse,
     UpdateDraftRequest, UpdateDraftResponse,
 };
+use wire::{ErrorCode, HostEntry};
 
 use crate::api::Entry;
 use crate::api::caller::{At, Caller};
 use crate::grpc::{EventStream, agent_id, status, upgrade, wire_error};
 use crate::runtime::ProfileRuntime;
-use crate::telemetry;
+use crate::{HostId, telemetry};
 
 /// Mounts the local services for `entry`, which is never a link.
 pub(in crate::api) fn mount(
@@ -268,5 +270,114 @@ impl DraftService for Local {
         Ok(Response::new(GetDraftResponse {
             draft: Some(runtime.draft(&request.get_ref().agent_id).await),
         }))
+    }
+}
+
+/// Where an agent lives, as this runtime's store knows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Owner {
+    /// One of this host's own agents.
+    Here,
+    /// A replica: the agent lives on that host.
+    Peer(HostId),
+    /// No row names it.
+    Unknown,
+}
+
+/// A host name that answers to no trusted host, or to several.
+#[derive(Debug, thiserror::Error)]
+pub enum HostNameError {
+    #[error("no trusted host is named {name}; trusted hosts: {}", .known.join(", "))]
+    NotFound { name: String, known: Vec<String> },
+    #[error("{count} trusted hosts answer to {name}")]
+    Ambiguous { name: String, count: usize },
+}
+
+impl HostNameError {
+    pub fn to_wire(&self) -> wire::Error {
+        match self {
+            Self::NotFound { .. } => wire_error(ErrorCode::NotFound, self.to_string()),
+            Self::Ambiguous { .. } => {
+                wire::Error::new(ErrorCode::FailedPrecondition, self.to_string())
+            }
+        }
+    }
+}
+
+/// Reading this node's copy of the fleet: where an agent lives, the row an
+/// id names, and the host a name names.
+impl ProfileRuntime {
+    /// Which host an agent id belongs to: this one's own row first, then
+    /// any replica.
+    pub async fn owner(&self, agent_id: &[u8]) -> Result<Owner, StoreError> {
+        Ok(match self.row_by_id(agent_id).await? {
+            None => Owner::Unknown,
+            Some(row) if row.agent.host == self.host().as_bytes() => Owner::Here,
+            Some(row) => match Uuid::from_slice(&row.agent.host) {
+                Ok(host) => Owner::Peer(host),
+                Err(_) => Owner::Unknown,
+            },
+        })
+    }
+
+    /// The row an agent id names, own or replica.
+    pub(crate) async fn row_by_id(&self, agent_id: &[u8]) -> Result<Option<AgentRow>, StoreError> {
+        let agent_id = agent_id.to_vec();
+        self.read_rows(move |store| store.agent_by_id(&agent_id))
+            .await
+    }
+
+    /// A host by the name a person uses for it, among this host and the
+    /// hosts this profile trusts: an exact match, else one ignoring case.
+    pub fn resolve_host(&self, name: &str) -> Result<HostId, HostNameError> {
+        let host = self.resolve_host_entry(name)?;
+        Uuid::from_slice(host.host_id()).map_err(|_| HostNameError::NotFound {
+            name: name.to_owned(),
+            known: Vec::new(),
+        })
+    }
+
+    /// The entry of the host [`ProfileRuntime::resolve_host`] finds, as
+    /// this host holds it.
+    pub(crate) fn resolve_host_entry(&self, name: &str) -> Result<HostEntry, HostNameError> {
+        // Trust as it stands now, not as last published: a host paired a
+        // moment ago is a host a spawn may name.
+        let published = self.published_hosts();
+        let mut hosts = vec![self.host_entry()];
+        for (host, name, _) in self.edge().map(|edge| edge.trusted()).unwrap_or_default() {
+            let id = host.as_bytes().to_vec();
+            hosts.push(
+                published
+                    .iter()
+                    .find(|entry| entry.host_id() == id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        HostEntry::trusted_host(
+                            id,
+                            name,
+                            wire::trusted::Reach::Offline(wire::Offline::default()),
+                        )
+                    }),
+            );
+        }
+        let mut matching: Vec<&HostEntry> =
+            hosts.iter().filter(|host| host.name() == name).collect();
+        if matching.is_empty() {
+            matching = hosts
+                .iter()
+                .filter(|host| host.name().eq_ignore_ascii_case(name))
+                .collect();
+        }
+        match matching.as_slice() {
+            [host] => Ok(HostEntry::clone(host)),
+            [] => Err(HostNameError::NotFound {
+                name: name.to_owned(),
+                known: hosts.iter().map(|host| host.name().to_owned()).collect(),
+            }),
+            several => Err(HostNameError::Ambiguous {
+                name: name.to_owned(),
+                count: several.len(),
+            }),
+        }
     }
 }

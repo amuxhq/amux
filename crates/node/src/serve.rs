@@ -56,8 +56,7 @@ impl From<Status> for ServeError {
             Status::Failed(CallError::OriginUnreachable) => ServeError::OriginUnreachable,
             Status::Failed(CallError::Store(why)) => ServeError::Failed(why),
             Status::Failed(
-                error @ (CallError::Peer(_)
-                | CallError::NotServed
+                error @ (CallError::NotServed
                 | CallError::Registry(_)
                 | CallError::NoBlob(_)
                 | CallError::Blob(_)
@@ -125,17 +124,6 @@ impl ProfileRuntime {
     pub async fn get_item(&self, request: &GetItemRequest) -> Result<Item, ServeError> {
         let answers = self.driver().call(Ask::GetItem(request.clone()), 1).await;
         item(answers).await
-    }
-
-    /// One item in full of one of this host's own agents, for the paired
-    /// host `from`. An agent this host only replicates is not found.
-    pub(crate) async fn peer_get_item(
-        &self,
-        from: crate::HostId,
-        request: GetItemRequest,
-    ) -> Result<Item, ServeError> {
-        let request = PeerRequest::GetItem(request);
-        item(self.driver().peer_call(core_host(from), request, 1).await).await
     }
 
     /// The one agent a reference names, across the fleet the store knows.

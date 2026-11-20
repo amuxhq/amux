@@ -5,23 +5,21 @@
 //! another host's agents is that host's to tell, so a call naming one is
 //! not found here rather than passed on.
 //!
-//! A call this host makes of a peer leaves as [`Output::Call`] under an id
-//! the core mints, and waits in the pending set until what came back
-//! arrives as [`Input::PeerAnswer`](crate::Input). A client's call on an
-//! agent another host owns is made of that host this way and answered with
-//! its reply: forwarding goes one hop, since a peer's call is never passed
-//! on.
+//! A call this host makes of a peer for itself leaves as [`Output::Call`]
+//! under an id the core mints, and waits in the pending set until what came
+//! back arrives as [`Input::PeerAnswer`](crate::Input). A client's call on
+//! an agent another host owns never reaches the core: the node carries it
+//! to that host unread.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use wire::amux::staging::follow_session_request;
-use wire::subscribe_session_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
-use crate::payload::{Answer, CallError, Opening, PeerFailure, PeerRequest, Response, Status};
-use crate::serve::{Key, answered};
+use crate::payload::{Answer, CallError, Opening, PeerRequest};
+use crate::serve::Key;
 use crate::{Daemon, Pending, codec};
 
 /// The ids the core mints for its own calls carry this bit; the driver
@@ -40,9 +38,6 @@ pub(crate) struct PeerCalls {
 /// What a call made of a peer is for.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Waiting {
-    /// A client's call forwarded to the agent's host, answered with its
-    /// reply.
-    Forward { call: CallId },
     /// A host's inventory, followed.
     Inventory { host: HostId },
     /// The stream that feeds a replica agent.
@@ -133,8 +128,8 @@ impl Pending {
 }
 
 impl Daemon {
-    /// A paired host's call. Only reads are answered here; the shell
-    /// forwards the rest.
+    /// A paired host's call. Only its reads are answered here: a report it
+    /// hands over reaches the core as a message.
     pub(crate) fn peer_call(
         &mut self,
         from: HostId,
@@ -158,41 +153,11 @@ impl Daemon {
                 self.own(&request.agent_id)
                     .and_then(|()| self.subscribe_session(call, &request.agent_id, from, out))
             }
-            PeerRequest::SubscribeSession(request) => {
-                let from = match request.from {
-                    Some(subscribe_session_request::From::After(after)) => Opening::After {
-                        revision: after.revision,
-                        cap: after.cap,
-                        generation: after.generation,
-                    },
-                    Some(subscribe_session_request::From::Tail(tail)) => Opening::Tail(tail),
-                    None => Opening::Tail(0),
-                };
-                self.own(&request.agent_id)
-                    .and_then(|()| self.subscribe_session(call, &request.agent_id, from, out))
-            }
-            PeerRequest::SubscribeInventory => self.subscribe_inventory(call, Some(own), out),
             PeerRequest::ListItems(request) => self
                 .own(&request.agent_id)
                 .and_then(|()| self.list_items(call, &request, out)),
-            PeerRequest::GetItem(request) => self
-                .own(&request.agent_id)
-                .and_then(|()| self.get_item(call, &request, out)),
-            // The shell hands a report on as a message from the child, as
-            // a message from another host goes.
-            PeerRequest::DeliverReport(_)
-            | PeerRequest::SendInput(_)
-            | PeerRequest::CreateAgent(_)
-            | PeerRequest::RenameAgent(_)
-            | PeerRequest::FileAgent(_)
-            | PeerRequest::ResumeAgent(_)
-            | PeerRequest::DeleteAgent(_)
-            | PeerRequest::SendMessage(_)
-            | PeerRequest::PutBlob(_)
-            | PeerRequest::GetBlob(_)
-            | PeerRequest::GetDiff(_)
-            | PeerRequest::GetCatalogue(_)
-            | PeerRequest::PinFolder(_) => {
+            // The shell hands a report on as a message from the child.
+            PeerRequest::DeliverReport(_) => {
                 tracing::warn!(peer = %crate::hex(&from.0), "a peer call the core does not serve");
                 Err(CallError::NotServed)
             }
@@ -207,28 +172,6 @@ impl Daemon {
             Some(_) => Ok(()),
             None => Err(CallError::NoAgent),
         }
-    }
-
-    /// Makes a client's call of the host that owns its agent.
-    pub(crate) fn forward(
-        &mut self,
-        call: CallId,
-        host: HostId,
-        request: Box<PeerRequest>,
-        out: &mut Vec<Output>,
-    ) {
-        let made = self.pending.peers.mint();
-        self.pending
-            .peers
-            .waiting
-            .insert(made, Waiting::Forward { call });
-        self.answers.forwarding(call);
-        out.push(Output::Call {
-            host,
-            call: made,
-            request: *request,
-            absorbed: false,
-        });
     }
 
     /// What came back of a call the core made of a peer.
@@ -246,26 +189,6 @@ impl Daemon {
             Waiting::Source { agent } => self.source_answered(&agent, made, answer, out),
             Waiting::Page(page) => self.page_answered(*page, answer, out),
             Waiting::Report { parent, id } => self.report_answered(&parent, &id, answer, out),
-            Waiting::Forward { call } => {
-                // A client that let its call go wants no answer.
-                if !self.release_call(call) {
-                    return;
-                }
-                match answer {
-                    Answer::Reply(reply) => answered(call, Response::Peer(reply), out),
-                    Answer::Failed(failure) => out.push(Output::EndCall {
-                        call,
-                        status: Status::Failed(CallError::Peer(failure)),
-                    }),
-                    // A forwarded call is never a stream.
-                    Answer::Session(_) | Answer::Inventory(_) | Answer::Ended => {
-                        out.push(Output::EndCall {
-                            call,
-                            status: Status::Failed(CallError::Peer(PeerFailure::Uncertain)),
-                        })
-                    }
-                }
-            }
         }
     }
 }
@@ -275,7 +198,7 @@ mod tests {
     use store::{AgentKey, AgentRow, Sqlite};
 
     use super::*;
-    use crate::payload::{CarrierKind, ClientRequest, PeerFailure, PeerReply};
+    use crate::payload::CarrierKind;
     use crate::{Input, LinkId, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
@@ -300,118 +223,6 @@ mod tests {
         let mut out = Vec::new();
         daemon.step(input, &mut out);
         out
-    }
-
-    #[test]
-    fn a_forwarded_call_waits_across_a_checkpoint_and_answers_with_the_peers_reply() {
-        let mut daemon = daemon();
-        let request = PeerRequest::FileAgent(wire::FileAgentRequest {
-            agent_id: THEIRS.to_vec(),
-            filing: wire::Filing::Closed as i32,
-        });
-        let out = step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(5),
-                request: ClientRequest::Forward {
-                    host: HostId(PEER),
-                    request: Box::new(request.clone()),
-                },
-            },
-        );
-        let [
-            Output::Call {
-                host,
-                call: made,
-                request: sent,
-                absorbed: false,
-            },
-        ] = out.as_slice()
-        else {
-            panic!("the call goes out: {out:?}");
-        };
-        assert_eq!((*host, sent), (HostId(PEER), &request));
-        assert_ne!(
-            made.0 & MINTED,
-            0,
-            "a minted id never meets an arriving one"
-        );
-        assert_eq!(daemon.pending.peer_calls(), 1);
-
-        // The pending set is the core's state: a core restored from its
-        // checkpoint answers the call when the reply comes.
-        let mut restored = Daemon::restore(&daemon.checkpoint(), store(), Default::default())
-            .expect("it restores");
-        assert_eq!(restored.pending.peer_calls(), 1);
-        let answer = Input::PeerAnswer {
-            call: *made,
-            answer: Answer::Reply(Box::new(PeerReply::Done)),
-        };
-        assert_eq!(
-            step(&mut restored, answer.clone()),
-            vec![
-                Output::Answer {
-                    call: CallId(5),
-                    response: Response::Peer(Box::new(PeerReply::Done)),
-                },
-                Output::EndCall {
-                    call: CallId(5),
-                    status: Status::Ok,
-                },
-            ]
-        );
-        assert_eq!(restored.pending.peer_calls(), 0);
-        assert_eq!(
-            step(&mut restored, answer),
-            Vec::new(),
-            "a reply comes back once"
-        );
-    }
-
-    #[test]
-    fn a_forwarded_call_that_failed_says_how_and_one_let_go_takes_no_answer() {
-        let mut daemon = daemon();
-        let forward = |call| Input::ClientCall {
-            call: CallId(call),
-            request: ClientRequest::Forward {
-                host: HostId(PEER),
-                request: Box::new(PeerRequest::GetCatalogue(
-                    wire::GetCatalogueRequest::default(),
-                )),
-            },
-        };
-        let made = |out: Vec<Output>| match out.as_slice() {
-            [Output::Call { call, .. }] => *call,
-            other => panic!("the call goes out: {other:?}"),
-        };
-        let first = made(step(&mut daemon, forward(1)));
-        let second = made(step(&mut daemon, forward(2)));
-        assert_ne!(first, second);
-        assert_eq!(
-            step(
-                &mut daemon,
-                Input::PeerAnswer {
-                    call: first,
-                    answer: Answer::Failed(PeerFailure::Uncertain),
-                }
-            ),
-            vec![Output::EndCall {
-                call: CallId(1),
-                status: Status::Failed(CallError::Peer(PeerFailure::Uncertain)),
-            }]
-        );
-        step(&mut daemon, Input::CallCancelled { call: CallId(2) });
-        assert_eq!(
-            step(
-                &mut daemon,
-                Input::PeerAnswer {
-                    call: second,
-                    answer: Answer::Reply(Box::new(PeerReply::Done)),
-                }
-            ),
-            Vec::new()
-        );
-        assert_eq!(daemon.pending.peer_calls(), 0);
     }
 
     #[test]

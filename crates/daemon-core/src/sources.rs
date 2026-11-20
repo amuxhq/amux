@@ -560,7 +560,6 @@ impl Daemon {
             host,
             call,
             request: PeerRequest::FollowAgents,
-            absorbed: true,
         });
         let follower = self.sources.followers.entry(host).or_default();
         follower.state = Following::Streaming(Box::new(Inventory {
@@ -1081,7 +1080,6 @@ impl Daemon {
                 agent_id: agent.agent.clone(),
                 from: Some(from),
             }),
-            absorbed: true,
         });
         Some((call, tail))
     }
@@ -1511,7 +1509,6 @@ impl Daemon {
                 before_order,
                 page_size: limit,
             }),
-            absorbed: true,
         });
         Ok(())
     }
@@ -1851,7 +1848,6 @@ mod tests {
                     host,
                     call,
                     request,
-                    absorbed: true,
                 } if *host == HostId(PEER) => Some((*call, request.clone())),
                 _ => None,
             })

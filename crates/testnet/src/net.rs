@@ -19,8 +19,7 @@ use std::time::Duration;
 use agent_dir::Clock;
 use node::harness::{LiveRoute, ScriptedDiscovery, scripted_discovery};
 use node::{
-    ClientApi, Daemon, Edge, EdgeOptions, LanOptions, Launch, LoopbackLink, ProfileId,
-    ProfileRuntime,
+    Daemon, Edge, EdgeOptions, LanOptions, Launch, LoopbackLink, ProfileId, ProfileRuntime,
 };
 use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV, Script, Step};
 use serde::{Deserialize, Serialize};
@@ -1353,14 +1352,6 @@ impl Net {
                 client::Surface::Phone,
             )),
         }
-    }
-
-    /// The runtime's flat client service as a person on `host` reaches
-    /// it, forwarded to another host where the agent lives there: for
-    /// clients still written against it. [`Net::person`] is the client
-    /// library's.
-    pub fn client(&self, host: &str) -> Result<ClientApi, NetError> {
-        Ok(ClientApi::new(&self.runtime(host)?, None))
     }
 
     /// The services `host`'s profile serves the phone in memory, behind the

@@ -455,15 +455,13 @@ pub enum Output {
     Rediscover,
     /// Make `request` of `host` on a channel to it, and report what came
     /// back as [`Input::PeerAnswer`] under `call`: one answer for a unary
-    /// call, one per event and then its end for a stream.
+    /// call, one per event and then its end for a stream. What comes back
+    /// is absorbed into the store, so the driver steps it with the store
+    /// lent.
     Call {
         host: HostId,
         call: CallId,
         request: PeerRequest,
-        /// What comes back is absorbed into the store, so the driver steps
-        /// it with the store lent. A forwarded call's reply reads nothing
-        /// of it, and is stepped at once.
-        absorbed: bool,
     },
     /// The core wants nothing more of a call it made: the driver lets go
     /// of its stream, and reports nothing more of it.
@@ -806,18 +804,6 @@ mod tests {
             },
             Input::PeerCall {
                 from: HostId([1; 16]),
-                call: CallId(7),
-                request: PeerRequest::SubscribeSession(wire::SubscribeSessionRequest {
-                    agent_id: vec![1, 2],
-                    from: Some(wire::subscribe_session_request::From::After(wire::After {
-                        revision: 3,
-                        cap: 4,
-                        generation: 5,
-                    })),
-                }),
-            },
-            Input::PeerCall {
-                from: HostId([1; 16]),
                 call: CallId(11),
                 request: PeerRequest::FollowSession(wire::amux::staging::FollowSessionRequest {
                     agent_id: vec![1, 2],
@@ -851,16 +837,6 @@ mod tests {
                         )),
                     }),
                 }),
-            },
-            Input::ClientCall {
-                call: CallId(8),
-                request: ClientRequest::Forward {
-                    host: HostId([2; 16]),
-                    request: Box::new(PeerRequest::FileAgent(wire::FileAgentRequest {
-                        agent_id: vec![3],
-                        filing: wire::Filing::Closed as i32,
-                    })),
-                },
             },
             Input::PeerAnswer {
                 call: CallId(9),
@@ -1053,7 +1029,6 @@ mod tests {
                         id: vec![4; 16],
                         ..Default::default()
                     }),
-                    from: crate::payload::MessageFrom::Agent(AgentId([5; 16])),
                 },
             },
             Input::Verdict {

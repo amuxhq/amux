@@ -6,13 +6,6 @@
 //! host for what it owns, on every entry. The peer service is answered to a
 //! paired daemon asking for itself, on links only.
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the caller is read by the handlers each service brings with it"
-    )
-)]
 mod caller;
 mod entry;
 mod host {
@@ -32,6 +25,7 @@ pub(crate) use caller::Surface;
 #[cfg(test)]
 pub(crate) use entry::client_entrance;
 pub(crate) use entry::{Entrance, Entry, entrance, layer};
+pub use local::Owner;
 use tonic::service::RoutesBuilder;
 
 use crate::runtime::ProfileRuntime;

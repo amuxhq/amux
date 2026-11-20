@@ -22,7 +22,7 @@ use crate::Daemon;
 use crate::ids::{AgentId, CallId, JobId};
 use crate::ingest::agent_dir;
 use crate::io::{Job, Output};
-use crate::payload::{BlobRefusal, CallError, GitRefusal, JobResult, PeerReply, Response, Status};
+use crate::payload::{BlobRefusal, CallError, GitRefusal, JobResult, Response, Status};
 use crate::serve::answered;
 
 /// An agent directory's folder of blob files.
@@ -279,11 +279,7 @@ impl Daemon {
             ) => {
                 self.diff_compared(&agent, branch.as_deref(), diff, out);
                 match patch {
-                    None => answered(
-                        call,
-                        Response::Peer(Box::new(PeerReply::Diff(diff.clone()))),
-                        out,
-                    ),
+                    None => answered(call, Response::Diff(Box::new(diff.clone())), out),
                     Some(patch) => {
                         let mut diff = diff.clone();
                         diff.patch = Some(BlobRef {
@@ -308,10 +304,10 @@ impl Daemon {
                 });
             }
             (Writing::Patch { diff, .. }, JobResult::Done) => {
-                answered(call, Response::Peer(Box::new(PeerReply::Diff(diff))), out)
+                answered(call, Response::Diff(Box::new(diff)), out)
             }
             (Writing::Put { blob, .. }, JobResult::Done) => {
-                answered(call, Response::Peer(Box::new(PeerReply::Blob(blob))), out)
+                answered(call, Response::Written(blob), out)
             }
             (Writing::Keep { .. }, JobResult::Done) => out.push(Output::EndCall {
                 call,

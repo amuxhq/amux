@@ -39,7 +39,7 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::{DumpKind, DumpLimit, Ring};
 use daemon_core::payload::{
-    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerReply,
+    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure,
     PeerRequest, Response, Status,
 };
 use daemon_core::{
@@ -95,13 +95,6 @@ pub(crate) enum Fed {
     PeerCall {
         from: HostId,
         call: CallId,
-        request: PeerRequest,
-    },
-    /// A client call forwarded to the host that owns its agent, complete
-    /// as it arrives.
-    Forward {
-        call: CallId,
-        host: HostId,
         request: PeerRequest,
     },
     /// A nudge from someone who waits for the journal to be read to its
@@ -343,17 +336,6 @@ impl Driver {
         self.open(room, |call| Fed::PeerCall {
             from,
             call,
-            request,
-        })
-        .await
-    }
-
-    /// Hands the core a client's call on an agent `host` owns, to be made
-    /// of that host, and returns its answer.
-    pub(crate) async fn forward(&self, host: HostId, request: PeerRequest) -> Answers {
-        self.open(1, |call| Fed::Forward {
-            call,
-            host,
             request,
         })
         .await
@@ -718,18 +700,6 @@ impl CoreThread {
                 }
                 return true;
             }
-            Fed::Forward {
-                call,
-                host,
-                request,
-            } => {
-                let request = ClientRequest::Forward {
-                    host,
-                    request: Box::new(request),
-                };
-                self.step(&runtime, Input::ClientCall { call, request }, &mut out);
-                return true;
-            }
             Fed::Wake => {
                 self.fire_due(&runtime, &mut out);
                 return true;
@@ -788,7 +758,6 @@ impl CoreThread {
             | Fed::Stop
             | Fed::Channel { .. }
             | Fed::Resumed { .. }
-            | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
             | Fed::Capture { .. } => None,
@@ -806,13 +775,9 @@ impl CoreThread {
             Some(Arriving::Peer(from, call, request)) => {
                 let request = *request;
                 let stream = match &request {
-                    PeerRequest::FollowAgents | PeerRequest::SubscribeInventory => {
-                        Some("inventory")
-                    }
-                    PeerRequest::FollowSession(_) | PeerRequest::SubscribeSession(_) => {
-                        Some("session")
-                    }
-                    _ => None,
+                    PeerRequest::FollowAgents => Some("inventory"),
+                    PeerRequest::FollowSession(_) => Some("session"),
+                    PeerRequest::ListItems(_) | PeerRequest::DeliverReport(_) => None,
                 };
                 if let Some(stream) = stream {
                     tracing::debug!(
@@ -1217,10 +1182,8 @@ impl CoreThread {
                 host,
                 call,
                 request,
-                absorbed,
             } => {
                 let runtime = Arc::downgrade(runtime);
-                let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
                 let task = match request {
                     request @ (PeerRequest::FollowSession(_) | PeerRequest::FollowAgents) => {
@@ -1237,16 +1200,7 @@ impl CoreThread {
                         let Some(answer) = answer else {
                             return;
                         };
-                        let answered = Input::PeerAnswer { call, answer };
-                        if absorbed {
-                            return feed(&inputs, answered).await;
-                        }
-                        // A reply that is not absorbed reads nothing of the
-                        // store: it waits on nobody's writes.
-                        reports.lock().unwrap().push_back(Report::Input(answered));
-                        if let Some(inputs) = inputs.upgrade() {
-                            let _ = inputs.try_send(Fed::Wake);
-                        }
+                        feed(&inputs, Input::PeerAnswer { call, answer }).await;
                     }),
                 };
                 self.outgoing
@@ -1659,30 +1613,26 @@ async fn send_file(
             let start = usize::try_from(range.start.min(size)).unwrap_or(usize::MAX);
             let end = usize::try_from(range.end.min(size)).unwrap_or(usize::MAX);
             let bytes = bytes.get(start..end).unwrap_or_default().to_vec();
-            let reply = PeerReply::GetBlob(wire::GetBlobResponse { bytes });
-            calls.answer(call, Response::Peer(Box::new(reply)));
+            calls.answer(call, Response::Bytes(bytes));
             calls.end(call, Status::Ok);
         }
         Err(error) => calls.end(call, failed(error)),
     }
 }
 
-/// Makes a call the core asked for of a peer, unless the profile is gone:
-/// one the core makes for itself on the peer's peer service, a client's it
-/// forwards on the client services.
+/// Makes a unary call the core asked for of a peer's peer service, unless
+/// the profile is gone.
 async fn call_peer(
     runtime: Weak<ProfileRuntime>,
     host: HostId,
     request: PeerRequest,
 ) -> Option<Answer> {
     let runtime = runtime.upgrade()?;
-    let host = host_from_core(host);
-    Some(match request {
-        request @ (PeerRequest::ListItems(_) | PeerRequest::DeliverReport(_)) => {
-            runtime.call_peer_service(host, request).await
-        }
-        request => runtime.call_peer(host, request).await,
-    })
+    Some(
+        runtime
+            .call_peer_service(host_from_core(host), request)
+            .await,
+    )
 }
 
 /// The fsync job: replaces the file at `path` with `bytes` so that a crash

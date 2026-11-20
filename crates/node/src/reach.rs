@@ -66,6 +66,17 @@ impl ProfileRuntime {
         }
     }
 
+    /// `host` as a person knows it: the name it was paired under.
+    pub(crate) fn host_name(&self, host: HostId) -> String {
+        self.edge()
+            .and_then(|edge| {
+                edge.trusted()
+                    .into_iter()
+                    .find(|(id, name, _)| *id == host && !name.is_empty())
+            })
+            .map_or_else(|| format!("host {host}"), |(_, name, _)| name)
+    }
+
     /// Why `host` has no channel, when the channel lookup did not say. A
     /// host that refused this one's certificate closed the link as it did,
     /// so a later lookup finds no route at all; the refusal stays on the

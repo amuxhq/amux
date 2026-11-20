@@ -11,6 +11,7 @@ use daemon_core::Filing;
 use node::{DAEMON_LOG, MANIFEST};
 use prost::Message as _;
 use support::*;
+use wire::amux::staging;
 use wire::{DumpRequest, Lifecycle, Phase};
 
 use crate::support;
@@ -663,7 +664,7 @@ async fn no_report_carries_a_workspaces_folder_or_its_repository() {
     let runtime = runtime(&daemon, &install);
     let agent = runtime
         .spawn(
-            wire::CreateAgentRequest {
+            staging::CreateAgentRequest {
                 new_workspace: true,
                 ..create(&repo, &format!("{}-tree", MARKER.to_lowercase()), None)
             },

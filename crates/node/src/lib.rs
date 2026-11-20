@@ -24,7 +24,6 @@ mod dispatcher;
 mod driver;
 mod dump;
 mod edge;
-mod forward;
 mod front_door;
 pub use front_door::{FrontDoor, info as profile_info};
 mod generation;
@@ -70,6 +69,7 @@ mod window;
 mod workspaces;
 
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
+pub use api::Owner;
 pub use auth::oauth::CLI_CLIENT_ID;
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{
@@ -93,9 +93,8 @@ pub use edge::{
     RelayCarrier, RelayIdentity, RelayQuic, RelayServing, SubstrateFor, UDP_BLOCKED_MEMORY,
     test_interfaces,
 };
-pub use forward::Owner;
 pub use generation::{Generation, boot_id};
-pub use grpc::{ClientApi, SURFACE_HEADER, status};
+pub use grpc::{SURFACE_HEADER, status};
 pub use identity::LinkLiveness;
 pub use install::{
     AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, LockError, PROFILES, REPLICAS, REPORTS,

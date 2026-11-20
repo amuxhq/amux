@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use prost::Message as _;
-use provider_fakes::script::{INPUT_LOG_ENV, OfferedModel, SCRIPT_ENV, Script};
+use provider_fakes::script::{INPUT_LOG_ENV, OfferedCommand, OfferedModel, SCRIPT_ENV, Script};
 use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
@@ -29,6 +29,14 @@ fn model(value: &str) -> OfferedModel {
         efforts: vec!["low".into(), "high".into()],
         default_effort: Some("low".into()),
         resolved_model: None,
+    }
+}
+
+fn command(name: &str) -> OfferedCommand {
+    OfferedCommand {
+        name: name.to_owned(),
+        description: format!("{name}, scripted"),
+        argument_hint: String::new(),
     }
 }
 
@@ -347,11 +355,12 @@ async fn a_host_that_cannot_ask_its_provider_says_so() {
     daemon.shutdown().await.unwrap();
 }
 
-/// A person's pick is what the host offers a new agent from then on.
+/// A person's pick is what later agents start with, in every client's
+/// catalogue and in the agent's own launch.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_persons_pick_is_what_the_host_offers_next() {
-    use wire::create_agent_request::Agent;
-    use wire::{ClaudeCreateConfig, CreateAgentRequest};
+async fn a_persons_pick_is_what_later_agents_start_with() {
+    use staging::create_agent_request::Agent;
+    use wire::ClaudeCreateConfig;
 
     let host = Host::new(&Script::default());
     let daemon = serving(&host.install, "boot-1", host.launch()).await;
@@ -359,23 +368,42 @@ async fn a_persons_pick_is_what_the_host_offers_next() {
     let socket = profile_socket(&runtime).await;
     let cwd = host.install.path("work");
     std::fs::create_dir_all(&cwd).unwrap();
+    let create =
+        |name: &str, model: Option<&str>, remember_model: bool| staging::CreateAgentRequest {
+            agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+            name: Some(name.into()),
+            cwd: cwd.to_string_lossy().into_owned(),
+            agent: Some(Agent::ClaudeSdk(ClaudeCreateConfig {
+                model: model.map(str::to_owned),
+                ..Default::default()
+            })),
+            remember_model,
+            ..staging::CreateAgentRequest::default()
+        };
+    let args_of = |agent: &wire::Agent| {
+        let bytes = std::fs::read(
+            host.install
+                .agent_dir(uuid::Uuid::from_slice(&agent.agent_id).unwrap())
+                .join("spec.1"),
+        )
+        .unwrap();
+        wire::AgentSpec::decode(bytes.as_slice())
+            .unwrap()
+            .provider_args
+    };
     let before = ask(&socket, wire::Provider::Claude).await;
 
+    let unpicked = runtime
+        .spawn(create("first", None, false), None)
+        .await
+        .unwrap();
+    assert!(
+        !args_of(&unpicked).contains(&"--model".to_owned()),
+        "with nothing kept, Claude decides"
+    );
+
     runtime
-        .spawn(
-            CreateAgentRequest {
-                agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                name: Some("picked".into()),
-                cwd: cwd.to_string_lossy().into_owned(),
-                agent: Some(Agent::ClaudeSdk(ClaudeCreateConfig {
-                    model: Some("haiku".into()),
-                    ..Default::default()
-                })),
-                remember_model: true,
-                ..CreateAgentRequest::default()
-            },
-            None,
-        )
+        .spawn(create("second", Some("haiku"), true), None)
         .await
         .unwrap();
     let kept = ask(&socket, wire::Provider::Claude).await;
@@ -385,9 +413,216 @@ async fn a_persons_pick_is_what_the_host_offers_next() {
     );
     assert_ne!(kept, before);
 
+    let later = runtime
+        .spawn(create("third", None, false), None)
+        .await
+        .unwrap();
+    let args = args_of(&later);
+    assert!(
+        args.windows(2).any(|pair| pair == ["--model", "haiku"]),
+        "{args:?}"
+    );
+
+    // Claude in its own terminal keeps to Claude's settings. Windows does not
+    // host terminal Claude (see docs/ARCHITECTURE.md, "Windows, as a stated
+    // cost").
+    #[cfg(unix)]
+    {
+        let terminal = runtime
+            .spawn(
+                staging::CreateAgentRequest {
+                    agent: defaults(wire::Kind::ClaudePty),
+                    ..create("fourth", None, false)
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(!args_of(&terminal).contains(&"--model".to_owned()));
+    }
+
+    // A daemon that shuts down leaves its agents running.
     kill_all(&runtime).await;
     drop((socket, runtime));
     daemon.shutdown().await.unwrap();
+}
+
+// Unix only: Windows does not host terminal Claude (see docs/ARCHITECTURE.md,
+// "Windows, as a stated cost").
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_claude_offers_what_its_hosts_claude_offers() {
+    use wire::{Kind, session_event};
+
+    let host = Host::new(&Script {
+        models: vec![model("opus"), model("haiku")],
+        commands: vec![command("review")],
+        ..Script::default()
+    });
+    let daemon = serving(&host.install, "boot-1", host.launch()).await;
+    let runtime = runtime(&daemon, &host.install);
+    let socket = profile_socket(&runtime).await;
+
+    let agent = runtime
+        .spawn(
+            staging::CreateAgentRequest {
+                agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                name: Some("terminal".into()),
+                cwd: host.install.work.to_string_lossy().into_owned(),
+                agent: defaults(Kind::ClaudePty),
+                ..staging::CreateAgentRequest::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let mut subscription = runtime
+        .subscribe_session(&agent.agent_id, 10)
+        .await
+        .unwrap();
+    let mut seen = Vec::new();
+    let named = |seen: &[wire::SessionEvent]| {
+        seen.iter().find_map(|event| match &event.of {
+            Some(session_event::Of::Snapshot(snapshot)) => snapshot.catalogue.clone(),
+            _ => None,
+        })
+    };
+    read_until(&mut subscription, &mut seen, "a catalogue", |seen| {
+        named(seen).is_some()
+    })
+    .await;
+    let blob = staging::session_service_client(socket.clone())
+        .get_blob(Request::new(staging::GetBlobRequest {
+            agent_id: agent.agent_id.clone(),
+            hash: named(&seen).unwrap(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let offered = Catalogue::decode(blob.bytes.as_slice()).unwrap();
+    // A folder with no project of its own offers what the host's Claude
+    // offers anywhere; the agent's was asked in its folder.
+    let hosts = runtime
+        .host_catalogue(node::Provider::Claude)
+        .await
+        .unwrap();
+    assert_eq!(offered.models, hosts.catalogue.models);
+    assert_eq!(offered.commands, hosts.catalogue.commands);
+    assert_eq!(
+        values(&offered.permissions, |p| &p.value),
+        ["default", "acceptEdits", "plan"],
+        "auto as the host's Claude offers it, never-ask only when launched allowing it"
+    );
+    assert!(
+        offered.permissions.iter().all(|p| !p.settable),
+        "only the terminal's own key reaches them"
+    );
+
+    drop(subscription);
+    kill_all(&runtime).await;
+    drop((socket, runtime));
+    daemon.shutdown().await.unwrap();
+}
+
+/// Terminal Claude offers the commands of the project it runs in: Claude
+/// lists a project's own commands only when asked from that project's
+/// folder, so what the agent offers is gathered there, not in the daemon's
+/// own directory. The fake stands in for that by playing the project's
+/// script when asked from inside the project.
+/// QA: a project's own slash commands never appeared in terminal Claude's
+/// command list.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use wire::{Kind, session_event};
+
+    let host = Host::new(&Script {
+        commands: vec![command("review")],
+        ..Script::default()
+    });
+    let project = host.install.path("project");
+    std::fs::create_dir_all(project.join(".claude/commands")).unwrap();
+    std::fs::write(
+        project.join(".claude/commands/deploy.md"),
+        "Deploy this project.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.join(".claude/fake-script.json"),
+        serde_json::to_string(&Script {
+            commands: vec![command("review"), command("deploy")],
+            ..Script::default()
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    // Claude as the host runs it: inside a project, the project's script.
+    let claude = host.install.path("claude-in-folder");
+    let fake = std::path::Path::new(&host.launch().claude_command).to_owned();
+    std::fs::write(
+        &claude,
+        format!(
+            "#!/bin/sh\nif [ -f .claude/fake-script.json ]; then\n  {SCRIPT_ENV}=\"$(pwd)/.claude/fake-script.json\"\n  export {SCRIPT_ENV}\nfi\nexec '{}' \"$@\"\n",
+            fake.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut launch = host.launch();
+    launch.claude_command = claude.to_string_lossy().into_owned();
+    let daemon = serving(&host.install, "boot-1", launch).await;
+    let runtime = runtime(&daemon, &host.install);
+    let socket = profile_socket(&runtime).await;
+
+    let agent = runtime
+        .spawn(
+            staging::CreateAgentRequest {
+                agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                name: Some("terminal".into()),
+                cwd: project.to_string_lossy().into_owned(),
+                agent: defaults(Kind::ClaudePty),
+                ..staging::CreateAgentRequest::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let mut subscription = runtime
+        .subscribe_session(&agent.agent_id, 10)
+        .await
+        .unwrap();
+    let mut seen = Vec::new();
+    let named = |seen: &[wire::SessionEvent]| {
+        seen.iter().find_map(|event| match &event.of {
+            Some(session_event::Of::Snapshot(snapshot)) => snapshot.catalogue.clone(),
+            _ => None,
+        })
+    };
+    read_until(&mut subscription, &mut seen, "a catalogue", |seen| {
+        named(seen).is_some()
+    })
+    .await;
+    let blob = staging::session_service_client(socket.clone())
+        .get_blob(Request::new(staging::GetBlobRequest {
+            agent_id: agent.agent_id.clone(),
+            hash: named(&seen).unwrap(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let offered = Catalogue::decode(blob.bytes.as_slice()).unwrap();
+
+    drop(subscription);
+    kill_all(&runtime).await;
+    drop((socket, runtime));
+    daemon.shutdown().await.unwrap();
+    let names = values(&offered.commands, |command| &command.name);
+    assert!(
+        names.contains(&"deploy"),
+        "the project's own command is not offered; the catalogue was gathered outside the project: {names:?}"
+    );
 }
 
 /// A desk with a scripted Codex, and a laptop paired with it and linked.

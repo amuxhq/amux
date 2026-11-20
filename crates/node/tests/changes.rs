@@ -12,6 +12,7 @@ use std::process::Command;
 
 use support::synthetic::*;
 use support::*;
+use wire::amux::staging;
 use wire::amux::staging::get_changes_request::Base;
 use wire::amux::staging::{ChangedFile, FileStatus, GetChangesResponse, PreviewDeleteResponse};
 use wire::experimental::AgentWorkspace;
@@ -305,7 +306,7 @@ async fn the_preview_says_what_a_delete_would_take() {
 
     let lead = runtime
         .spawn(
-            wire::CreateAgentRequest {
+            staging::CreateAgentRequest {
                 new_workspace: true,
                 ..create(&repo, "checkout-fix", None)
             },
@@ -392,7 +393,7 @@ async fn without_the_experiment_no_workspace_goes() {
     let runtime = runtime(&daemon, &install);
     let agent = runtime
         .spawn(
-            wire::CreateAgentRequest {
+            staging::CreateAgentRequest {
                 new_workspace: true,
                 ..create(&repo, "checkout-fix", None)
             },

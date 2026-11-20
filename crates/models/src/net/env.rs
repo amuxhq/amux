@@ -41,8 +41,8 @@ use std::sync::Arc;
 
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageFrom,
-    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status, report_envelope,
+    Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageRefusal,
+    PeerFailure, PeerReply, PeerRequest, Response, Status, report_envelope,
 };
 use daemon_core::reach::{AttemptOutcome, Dialling};
 use daemon_core::{
@@ -1659,7 +1659,9 @@ impl Transition<'_> {
         {
             client
                 .ended
-                .get_or_insert(Dbg(Status::Failed(CallError::Peer(PeerFailure::Uncertain))));
+                .get_or_insert(Dbg(Status::Failed(CallError::Store(
+                    "its host went down".to_owned(),
+                ))));
         }
         self.w.unlocking.retain(|(host, ..)| *host != h);
         for p in 0..self.w.processes.len() {
@@ -1852,10 +1854,7 @@ impl Transition<'_> {
         let served = CallId(server.next_call);
         let stream = matches!(
             request,
-            PeerRequest::FollowSession(_)
-                | PeerRequest::FollowAgents
-                | PeerRequest::SubscribeSession(_)
-                | PeerRequest::SubscribeInventory
+            PeerRequest::FollowSession(_) | PeerRequest::FollowAgents
         );
         let silent = match request {
             PeerRequest::DeliverReport(_) => Some(PeerReply::Done),
@@ -2638,17 +2637,11 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
     }
 }
 
-/// A message a paired host sent, as node's peer edge hands it to the
-/// core: a client call from the agent the sending host stamped as its
-/// sender, or from the person when it names none.
+/// A message a paired host sent, as node's host services hand it to the
+/// core: its sender is the caller the call carried, set on the envelope.
 pub fn peer_message(envelope: wire::Envelope) -> ClientRequest {
-    let from = match envelope.from.clone().and_then(|from| from.value) {
-        Some(wire::sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
-        _ => MessageFrom::PeerPerson,
-    };
     ClientRequest::SendMessage {
         envelope: Box::new(envelope),
-        from,
     }
 }
 
@@ -2675,9 +2668,6 @@ fn addressed_to_process(delivery: &Delivery) -> Option<usize> {
 fn reply_of(response: Response) -> Option<PeerReply> {
     match response {
         Response::Fetched(fetched) => Some(PeerReply::Fetched(fetched)),
-        Response::Item(item) => Some(PeerReply::Item(item)),
-        Response::Agent(agent) => Some(PeerReply::Agent(*agent)),
-        Response::Peer(reply) => Some(*reply),
         _ => None,
     }
 }
@@ -2716,22 +2706,7 @@ fn peer_request(request: &PeerRequest) -> &'static str {
         PeerRequest::FollowAgents => "FollowAgents",
         PeerRequest::FollowSession(_) => "FollowSession",
         PeerRequest::DeliverReport(_) => "DeliverReport",
-        PeerRequest::SubscribeSession(_) => "SubscribeSession",
-        PeerRequest::SubscribeInventory => "SubscribeInventory",
         PeerRequest::ListItems(_) => "ListItems",
-        PeerRequest::GetItem(_) => "GetItem",
-        PeerRequest::SendInput(_) => "SendInput",
-        PeerRequest::CreateAgent(_) => "CreateAgent",
-        PeerRequest::RenameAgent(_) => "RenameAgent",
-        PeerRequest::FileAgent(_) => "FileAgent",
-        PeerRequest::ResumeAgent(_) => "ResumeAgent",
-        PeerRequest::DeleteAgent(_) => "DeleteAgent",
-        PeerRequest::SendMessage(_) => "SendMessage",
-        PeerRequest::PutBlob(_) => "PutBlob",
-        PeerRequest::GetBlob(_) => "GetBlob",
-        PeerRequest::GetDiff(_) => "GetDiff",
-        PeerRequest::GetCatalogue(_) => "GetCatalogue",
-        PeerRequest::PinFolder(_) => "PinFolder",
     }
 }
 

@@ -18,9 +18,7 @@ use std::path::{Path, PathBuf};
 
 /// The mime type of a patch written by Diff.
 pub use daemon_core::blobs::PATCH_MIME;
-use daemon_core::payload::{
-    BlobRefusal, CallError, ClientRequest, GitRefusal, PeerReply, Response, Status,
-};
+use daemon_core::payload::{BlobRefusal, CallError, ClientRequest, GitRefusal, Response, Status};
 use git_facts::{Change, Comparison, GitError};
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
@@ -31,8 +29,8 @@ use wire::{
 };
 
 use crate::HostId;
+use crate::api::Owner;
 use crate::driver::{Ask, Delivered};
-use crate::forward::Owner;
 use crate::install::REPLICAS;
 use crate::reach::{ANSWER_PATIENCE, Unreached};
 use crate::runtime::ProfileRuntime;
@@ -165,20 +163,14 @@ impl ProfileRuntime {
             })
             .await?
         {
-            Some(Response::Peer(reply)) => match *reply {
-                PeerReply::Blob(blob) => Ok(blob),
-                other => Err(answered_with(other)),
-            },
+            Some(Response::Written(blob)) => Ok(blob),
             other => Err(answered_with(other)),
         }
     }
 
     pub async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, BlobError> {
         match self.blob_call(ClientRequest::GetBlob(request)).await? {
-            Some(Response::Peer(reply)) => match *reply {
-                PeerReply::GetBlob(blob) => Ok(blob),
-                other => Err(answered_with(other)),
-            },
+            Some(Response::Bytes(bytes)) => Ok(GetBlobResponse { bytes }),
             other => Err(answered_with(other)),
         }
     }
@@ -348,10 +340,7 @@ impl ProfileRuntime {
 
     pub async fn get_diff(&self, request: GetDiffRequest) -> Result<wire::Diff, BlobError> {
         match self.blob_call(ClientRequest::GetDiff(request)).await? {
-            Some(Response::Peer(reply)) => match *reply {
-                PeerReply::Diff(diff) => Ok(diff),
-                other => Err(answered_with(other)),
-            },
+            Some(Response::Diff(diff)) => Ok(*diff),
             other => Err(answered_with(other)),
         }
     }

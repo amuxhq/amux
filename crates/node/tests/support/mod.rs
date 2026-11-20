@@ -11,9 +11,9 @@ use std::sync::Arc;
 use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
 pub use patience::{PATIENCE, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
+use wire::amux::staging;
 use wire::{
-    AgentRef, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
-    claude_sdk_input,
+    AgentRef, ClaudeSdkInput, Input, Kind, PromptInput, PromptSubmission, claude_sdk_input,
 };
 
 /// The amux binary and the fake providers.
@@ -271,16 +271,14 @@ pub fn runtime(daemon: &Daemon, install: &Install) -> Arc<ProfileRuntime> {
 }
 
 /// A headless Claude creation in `cwd`, with a first prompt when given.
-pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> CreateAgentRequest {
-    CreateAgentRequest {
+pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> staging::CreateAgentRequest {
+    staging::CreateAgentRequest {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-        host: None,
         name: Some(name.to_owned()),
-        parent: None,
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
+        agent: defaults(Kind::ClaudeSdk),
         initial_prompt: prompt.map(|text| submission(b"p0", text)),
-        ..CreateAgentRequest::default()
+        ..staging::CreateAgentRequest::default()
     }
 }
 
@@ -429,4 +427,135 @@ impl std::io::Write for Captured {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+/// A kind's arm of a create with its default settings.
+pub fn defaults(kind: Kind) -> Option<staging::create_agent_request::Agent> {
+    use staging::create_agent_request::Agent;
+    match kind {
+        Kind::ClaudePty => Some(Agent::ClaudePty(Default::default())),
+        Kind::ClaudeSdk => Some(Agent::ClaudeSdk(Default::default())),
+        Kind::Codex => Some(Agent::Codex(Default::default())),
+        Kind::Unspecified => None,
+    }
+}
+
+/// The host services of `runtime` as `caller` reaches them in memory: a
+/// person on the profile's socket, or one of this host's agents on its
+/// tools socket, named as its row names it.
+pub async fn served_to(
+    runtime: &Arc<ProfileRuntime>,
+    caller: Option<node::AgentId>,
+) -> node::harness::InMemory {
+    use node::harness::{Calling, Served, served_as};
+    match caller {
+        None => served_as(
+            runtime,
+            Served::Profile,
+            Calling::PersonHere(analytics::Client::Terminal),
+        ),
+        Some(agent) => {
+            let name = runtime
+                .agent(agent)
+                .await
+                .map(|row| row.name)
+                .unwrap_or_default();
+            served_as(
+                runtime,
+                Served::Tools(agent),
+                Calling::Agent {
+                    host: runtime.host(),
+                    agent,
+                    name,
+                },
+            )
+        }
+    }
+}
+
+/// Acting on a host's own agents as its clients do, through its
+/// AgentService: as a person, or as the agent `caller` names.
+pub trait Acts {
+    /// Makes an agent here; an agent that calls is its parent.
+    fn spawn(
+        &self,
+        request: staging::CreateAgentRequest,
+        caller: Option<node::AgentId>,
+    ) -> impl std::future::Future<Output = Result<wire::Agent, tonic::Status>> + Send;
+
+    /// Sends the agent `envelope` is addressed to its message, under its
+    /// id, from `caller`.
+    fn send_message(
+        &self,
+        envelope: wire::Envelope,
+        caller: Option<node::AgentId>,
+    ) -> impl std::future::Future<Output = Result<staging::SendMessageResponse, tonic::Status>> + Send;
+}
+
+impl Acts for Arc<ProfileRuntime> {
+    fn spawn(
+        &self,
+        request: staging::CreateAgentRequest,
+        caller: Option<node::AgentId>,
+    ) -> impl std::future::Future<Output = Result<wire::Agent, tonic::Status>> + Send {
+        let runtime = self.clone();
+        async move {
+            let mut agents = staging::agent_service_client(served_to(&runtime, caller).await);
+            let created = agents.create_agent(request).await?.into_inner();
+            Ok(created.agent.expect("a created agent is answered"))
+        }
+    }
+
+    fn send_message(
+        &self,
+        envelope: wire::Envelope,
+        caller: Option<node::AgentId>,
+    ) -> impl std::future::Future<Output = Result<staging::SendMessageResponse, tonic::Status>> + Send
+    {
+        let runtime = self.clone();
+        async move {
+            let message = match envelope.body {
+                Some(wire::envelope::Body::Message(message)) => Some(message),
+                _ => None,
+            };
+            let request = staging::SendMessageRequest {
+                id: envelope.id,
+                agent_id: envelope.to.map(|to| to.agent_id).unwrap_or_default(),
+                context: envelope.context,
+                message,
+            };
+            let mut agents = staging::agent_service_client(served_to(&runtime, caller).await);
+            Ok(agents.send_message(request).await?.into_inner())
+        }
+    }
+}
+
+impl Install {
+    /// Options for a daemon that serves its profile's socket, as the
+    /// installed one does.
+    pub fn serving(&self, boot_id: &str, launch: Launch) -> StartOptions {
+        StartOptions {
+            front_door: Some(self.path("door.sock")),
+            ..self.options(boot_id, launch)
+        }
+    }
+}
+
+/// A channel on `runtime`'s profile socket whose calls name `authority`:
+/// `amux.local` for the node itself, or a host's id for a call the node
+/// carries to that host.
+pub async fn addressed(runtime: &ProfileRuntime, authority: &str) -> tonic::transport::Channel {
+    let path = runtime.dir().join(node::PROFILE_SOCKET);
+    tonic::transport::Endpoint::from_shared(format!("http://{authority}"))
+        .unwrap()
+        .connect_with_connector(tower::service_fn(move |_| {
+            let path = path.clone();
+            async move {
+                agent_dir::local_socket::connect(&path)
+                    .await
+                    .map(hyper_util::rt::TokioIo::new)
+            }
+        }))
+        .await
+        .expect("the socket answers")
 }

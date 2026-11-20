@@ -38,8 +38,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use daemon_core::payload::{
-    Answer, CarrierKind, ClientRequest, JobResult, MessageFrom, PeerFailure, PeerReply,
-    PeerRequest, Response, Status, report_envelope,
+    Answer, CarrierKind, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest, Response,
+    Status, report_envelope,
 };
 use daemon_core::{
     AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
@@ -1251,7 +1251,7 @@ impl<'a> Transition<'a> {
                     PARENTS,
                     Input::ClientCall {
                         call: STOP,
-                        request: ClientRequest::FileAgent {
+                        request: ClientRequest::SetFiling {
                             agent: PARENT,
                             filing: daemon_core::Filing::Closed,
                         },
@@ -1368,10 +1368,6 @@ impl<'a> Transition<'a> {
                 // The parent's driver hands the report on as a message
                 // from the child, of the host the link authenticated.
                 let envelope = report_envelope(&HOSTS[CHILDS].0, &HOSTS[PARENTS].0, report);
-                let from = match envelope.from.clone().and_then(|from| from.value) {
-                    Some(wire::sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
-                    _ => MessageFrom::PeerPerson,
-                };
                 // The parent's driver names the call by the lowest id it has
                 // free.
                 let there = (10..)
@@ -1385,7 +1381,6 @@ impl<'a> Transition<'a> {
                         call: there,
                         request: ClientRequest::SendMessage {
                             envelope: Box::new(envelope),
-                            from,
                         },
                     },
                 );

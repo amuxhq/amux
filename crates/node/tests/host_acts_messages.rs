@@ -181,9 +181,9 @@ async fn who_may_wake_a_stopped_agent_is_the_callers_to_say() {
     host.stop().await;
 }
 
-/// A message the recipient could not read whole, with an attachment this
-/// build does not know, is refused rather than delivered with a file
-/// missing, whoever sends it.
+/// A message the recipient could not read whole is refused rather than
+/// delivered as an empty message or with a file missing, whoever sends it:
+/// one with no body this build knows, or an attachment it does not know.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_this_host_cannot_read_is_refused() {
     let mut setup = Setup::new();
@@ -200,6 +200,14 @@ async fn a_message_this_host_cannot_read_is_refused() {
         let refused = host.agents(who).send_message(unreadable).await.unwrap_err();
         assert_eq!(refused.code(), Code::FailedPrecondition, "{who:?}");
         assert_eq!(refused.message(), attachments::UNREADABLE);
+
+        let bodiless = wire::amux::staging::SendMessageRequest {
+            message: None,
+            ..message(recipient, "")
+        };
+        let refused = host.agents(who).send_message(bodiless).await.unwrap_err();
+        assert_eq!(refused.code(), Code::InvalidArgument, "{who:?}");
+        assert_eq!(refused.message(), "a message carries words or attachments");
     }
     assert!(host.synthetic(recipient).inputs().is_empty());
     host.stop().await;

@@ -17,7 +17,6 @@ use wire::amux::staging::{
     self as staging, DeliverReportRequest, DeliverReportResponse, FollowAgentsRequest,
     FollowAgentsResponse, FollowSessionRequest, FollowSessionResponse, PeerServiceGetBlobRequest,
     PeerServiceGetBlobResponse, PeerServiceListItemsRequest, PeerServiceListItemsResponse,
-    follow_session_request,
 };
 
 use crate::api::caller::PairedDaemon;
@@ -83,23 +82,9 @@ impl PeerService for Peer {
         let PairedDaemon(from) = PairedDaemon::of(&request)?;
         let request = request.into_inner();
         agent_id(&request.agent_id)?;
-        let from_where = request.from.map(|from| match from {
-            follow_session_request::From::Tail(tail) => {
-                wire::subscribe_session_request::From::Tail(tail)
-            }
-            follow_session_request::From::After(after) => {
-                wire::subscribe_session_request::From::After(after)
-            }
-        });
         let subscription = self
             .runtime()?
-            .peer_subscribe_session(
-                from,
-                wire::SubscribeSessionRequest {
-                    agent_id: request.agent_id,
-                    from: from_where,
-                },
-            )
+            .peer_subscribe_session(from, request)
             .await
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
@@ -178,35 +163,14 @@ impl PeerService for Peer {
                 "a report carries its id, so one sent again is kept once",
             ));
         }
-        let child = agent_id(&request.child_agent_id)?;
-        let parent = agent_id(&request.parent_agent_id)?;
-        let Some(report) = request.report else {
+        agent_id(&request.child_agent_id)?;
+        agent_id(&request.parent_agent_id)?;
+        if request.report.is_none() {
             return Err(invalid("a report carries what the child did"));
-        };
-        let runtime = self.runtime()?;
-        // Handed to the core as a message from the child, the one path a
-        // report from another host takes there today; its recipient is
-        // this host's agent, so it is never passed on.
-        let envelope = wire::Envelope {
-            id: request.id,
-            context: None,
-            from: Some(wire::Sender {
-                value: Some(wire::sender::Value::Agent(wire::AgentSender {
-                    agent: Some(wire::AgentRef {
-                        host_id: from.as_bytes().to_vec(),
-                        agent_id: child.as_bytes().to_vec(),
-                    }),
-                    name: request.child_name,
-                })),
-            }),
-            to: Some(wire::AgentRef {
-                host_id: runtime.host().as_bytes().to_vec(),
-                agent_id: parent.as_bytes().to_vec(),
-            }),
-            body: Some(wire::envelope::Body::Report(report)),
-        };
-        runtime
-            .send_peer_message(envelope)
+        }
+        // Its recipient is this host's agent, so it is never passed on.
+        self.runtime()?
+            .deliver_report(from, request)
             .await
             .map(|_| Response::new(DeliverReportResponse {}))
             .map_err(|error| status(error.to_wire()))

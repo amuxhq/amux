@@ -142,10 +142,14 @@ fn writes(input: &Input, copying: JobId) -> bool {
             | ClientRequest::SubscribeInventory
             | ClientRequest::GetBlob(_)
             | ClientRequest::GetDiff(_) => false,
-            ClientRequest::Forward { request, .. } => peer_writes(request),
             _ => true,
         },
-        Input::PeerCall { request, .. } => peer_writes(request),
+        // A paired daemon asks this host only to read: its follows and its
+        // pages. A report it hands over reaches the core as a message.
+        Input::PeerCall { request, .. } => !matches!(
+            request,
+            PeerRequest::FollowAgents | PeerRequest::FollowSession(_) | PeerRequest::ListItems(_)
+        ),
         Input::Tick { .. }
         | Input::Timer {
             id: TimerId::Checkpoint | TimerId::Refresh(_) | TimerId::Attempt(_) | TimerId::Retry(_),
@@ -170,21 +174,6 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::Checkpointed => false,
         _ => true,
     }
-}
-
-fn peer_writes(request: &PeerRequest) -> bool {
-    !matches!(
-        request,
-        PeerRequest::FollowAgents
-            | PeerRequest::FollowSession(_)
-            | PeerRequest::SubscribeSession(_)
-            | PeerRequest::SubscribeInventory
-            | PeerRequest::ListItems(_)
-            | PeerRequest::GetItem(_)
-            | PeerRequest::GetBlob(_)
-            | PeerRequest::GetDiff(_)
-            | PeerRequest::GetCatalogue(_)
-    )
 }
 
 impl Daemon {

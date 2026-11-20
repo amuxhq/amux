@@ -5,15 +5,15 @@
 use std::sync::Arc;
 
 use analytics::{Ask, Client, Event, Kind, Origin, Recording};
-use node::{ClientApi, Daemon, Generation, ProfileRuntime, StartOptions, Telemetry};
+use node::harness::{Calling, Served, served_as};
+use node::{Daemon, Generation, ProfileRuntime, StartOptions, Telemetry};
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
-use wire::agent_service_server::AgentService as _;
-use wire::session_service_server::SessionService as _;
+use wire::amux::staging::{self, SendInputRequest};
 use wire::{
     ClaudeAnswer, ClaudeSdkInput, Input, Interrupt, Kind as WireKind, PromptInput, QuestionAnswer,
-    SendInputRequest, claude_answer, claude_sdk_input,
+    claude_answer, claude_sdk_input,
 };
 
 use crate::support;
@@ -140,14 +140,19 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     let recording = Recording::new();
     let daemon = start(&install, "boot-1", &recording).await;
     let runtime: Arc<ProfileRuntime> = runtime(&daemon, &install);
-    let person = ClientApi::new(&runtime, None).opened_as(Client::Terminal);
+    let terminal = served_as(
+        &runtime,
+        Served::Profile,
+        Calling::PersonHere(Client::Terminal),
+    );
+    let mut person = staging::agent_service_client(terminal.clone());
 
     // The terminal lists the agents when it starts; listing again within
     // the hour is the same visit.
     for _ in 0..2 {
         drop(
-            person
-                .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
+            staging::inventory_service_client(terminal.clone())
+                .subscribe_inventory(Request::new(staging::SubscribeInventoryRequest {}))
                 .await
                 .unwrap(),
         );
@@ -169,12 +174,12 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
     let interrupt = sdk(claude_sdk_input::Of::Interrupt(Interrupt {}));
     person.send_input(send(&worker, interrupt)).await.unwrap();
 
-    // The same service without the terminal's mark, as the phone calls it
-    // in process, counts no client of its own.
-    let plain = ClientApi::new(&runtime, None);
+    // The phone's app counts its own coming to the front, so its listing
+    // the agents in memory counts no client.
+    let phone = served_as(&runtime, Served::Phone, Calling::PersonHere(Client::Phone));
     drop(
-        plain
-            .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
+        staging::inventory_service_client(phone)
+            .subscribe_inventory(Request::new(staging::SubscribeInventoryRequest {}))
             .await
             .unwrap(),
     );
@@ -228,7 +233,11 @@ async fn undecodable_input_is_still_delivered() {
     let recording = Recording::new();
     let daemon = start(&install, "boot-1", &recording).await;
     let runtime: Arc<ProfileRuntime> = runtime(&daemon, &install);
-    let person = ClientApi::new(&runtime, None);
+    let mut person = staging::agent_service_client(served_as(
+        &runtime,
+        Served::Profile,
+        Calling::PersonHere(Client::Terminal),
+    ));
 
     let unreadable = [
         // Not a protobuf message: a field key with no value after it.

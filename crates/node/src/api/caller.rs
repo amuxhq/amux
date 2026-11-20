@@ -120,13 +120,6 @@ impl Caller {
         })
     }
 
-    /// Who a host-service call that arrived on a link is for: see
-    /// [`Caller::on_link`].
-    pub(crate) fn of_link_call<T>(request: &Request<T>) -> Result<Self, Status> {
-        let (peer, header) = link_call(request)?;
-        Self::on_link(peer, header)
-    }
-
     /// The caller of a host-service call, as the layer of the entry it
     /// arrived on settled it. Handlers take it from here and nowhere else,
     /// so every entry's rule for who is calling lives in one place. A call
@@ -164,13 +157,6 @@ impl PairedDaemon {
         }
         Ok(Self(peer))
     }
-
-    /// The paired daemon a peer-service call that arrived on a link is
-    /// from: see [`PairedDaemon::on_link`].
-    pub(crate) fn of_link_call<T>(request: &Request<T>) -> Result<Self, Status> {
-        let (peer, header) = link_call(request)?;
-        Self::on_link(peer, header)
-    }
 }
 
 /// Why the entry's layer could not settle a `T` for a call: the refusal a
@@ -203,21 +189,10 @@ fn settled<T: Clone + Send + Sync + 'static>(
     })
 }
 
-/// The paired host a link call came from, and the caller header it
-/// carries if any. Only a link stream whose handshake presented a trusted
-/// key is served the link's services, so a call without one is refused
-/// rather than answered as nobody.
-fn link_call<T>(request: &Request<T>) -> Result<(HostId, Option<&[u8]>), Status> {
-    let peer = link_peer(request.extensions())?;
-    let header = request
-        .metadata()
-        .get_bin(wire::CALLER_HEADER)
-        .map(|value| value.as_encoded_bytes());
-    Ok((peer, header))
-}
-
-/// The paired host a link call came from, from the request's extensions:
-/// see [`link_call`].
+/// The paired host a link call came from, from the request's extensions.
+/// Only a link stream whose handshake presented a trusted key is served
+/// the link's services, so a call without one is refused rather than
+/// answered as nobody.
 pub(in crate::api) fn link_peer(extensions: &http::Extensions) -> Result<HostId, Status> {
     match extensions.get::<BoxedGrpcConnectInfo>() {
         Some(BoxedGrpcConnectInfo {
@@ -244,35 +219,26 @@ fn refused(why: &str) -> Status {
 
 #[cfg(test)]
 mod tests {
-    use tonic::codegen::http::HeaderMap;
-    use tonic::metadata::MetadataMap;
-
     use super::*;
 
     fn host(byte: u8) -> HostId {
         HostId::from_bytes([byte; 16])
     }
 
-    /// A call as it arrives on a link from `peer`, with `header` written
-    /// beside it when there is one.
-    fn link_request(peer: HostId, header: Option<String>) -> Request<()> {
-        let mut request = Request::new(());
-        request.extensions_mut().insert(BoxedGrpcConnectInfo {
-            auth: BoxedGrpcAuth::Trusted { peer },
-        });
-        // As the carrying node writes it: the value as given, in the
-        // request's headers.
-        if let Some(header) = header {
-            let mut headers = HeaderMap::new();
-            headers.insert(wire::CALLER_HEADER, header.parse().unwrap());
-            *request.metadata_mut() = MetadataMap::from_headers(headers);
-        }
-        request
+    /// Who a host-service call on a link from `peer`, with `header` beside
+    /// it when there is one, is for, as the link's layer reads it.
+    fn on_link(peer: HostId, header: Option<String>) -> Result<Caller, Status> {
+        Caller::on_link(peer, header.as_deref().map(str::as_bytes))
+    }
+
+    /// Who a peer-service call on a link is from, as the layer reads it.
+    fn daemon_on_link(peer: HostId, header: Option<String>) -> Result<PairedDaemon, Status> {
+        PairedDaemon::on_link(peer, header.as_deref().map(str::as_bytes))
     }
 
     #[test]
     fn a_host_service_call_on_a_link_with_no_header_is_refused() {
-        let refused = Caller::of_link_call(&link_request(host(1), None)).unwrap_err();
+        let refused = on_link(host(1), None).unwrap_err();
         assert_eq!(refused.code(), tonic::Code::PermissionDenied);
     }
 
@@ -285,11 +251,11 @@ mod tests {
         ] {
             let header = caller.header(here);
             assert!(header.is_some());
-            let refused = PairedDaemon::of_link_call(&link_request(here, header)).unwrap_err();
+            let refused = daemon_on_link(here, header).unwrap_err();
             assert_eq!(refused.code(), tonic::Code::PermissionDenied);
         }
         assert_eq!(
-            PairedDaemon::of_link_call(&link_request(host(1), None)).unwrap(),
+            daemon_on_link(host(1), None).unwrap(),
             PairedDaemon(host(1))
         );
     }
@@ -302,7 +268,7 @@ mod tests {
         let agent = AgentId::from_bytes([3; 16]);
         let person = Caller::person_here(Surface::Phone).header(laptop);
         assert_eq!(
-            Caller::of_link_call(&link_request(laptop, person)).unwrap(),
+            on_link(laptop, person).unwrap(),
             Caller::Person {
                 at: At::Paired(laptop),
                 surface: Surface::Phone,
@@ -310,13 +276,13 @@ mod tests {
         );
         let coder = Caller::agent_of(laptop, agent, "coder").header(laptop);
         assert_eq!(
-            Caller::of_link_call(&link_request(laptop, coder.clone())).unwrap(),
+            on_link(laptop, coder.clone()).unwrap(),
             Caller::agent_of(laptop, agent, "coder")
         );
         // The same header on another host's link names that host's agent:
         // nothing in it can name a host.
         assert_eq!(
-            Caller::of_link_call(&link_request(desk, coder)).unwrap(),
+            on_link(desk, coder).unwrap(),
             Caller::agent_of(desk, agent, "coder")
         );
     }
@@ -343,7 +309,7 @@ mod tests {
         let peer = host(1);
         let short = wire::amux::staging::Caller::agent(vec![3; 4], "coder").to_header();
         for header in ["not base64!".to_owned(), String::new(), short] {
-            let refused = Caller::of_link_call(&link_request(peer, Some(header.clone())));
+            let refused = on_link(peer, Some(header.clone()));
             assert_eq!(
                 refused.unwrap_err().code(),
                 tonic::Code::InvalidArgument,
@@ -356,13 +322,14 @@ mod tests {
     fn a_call_not_from_a_trusted_link_is_refused() {
         let request = Request::new(());
         assert_eq!(
-            Caller::of_link_call(&request).unwrap_err().code(),
+            link_peer(request.extensions()).unwrap_err().code(),
             tonic::Code::Unauthenticated
         );
-        assert_eq!(
-            PairedDaemon::of_link_call(&request).unwrap_err().code(),
-            tonic::Code::Unauthenticated
-        );
+        let mut trusted = Request::new(());
+        trusted.extensions_mut().insert(BoxedGrpcConnectInfo {
+            auth: BoxedGrpcAuth::Trusted { peer: host(1) },
+        });
+        assert_eq!(link_peer(trusted.extensions()).unwrap(), host(1));
     }
 
     #[test]

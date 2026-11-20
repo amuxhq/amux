@@ -147,7 +147,7 @@ async fn with_the_experiment_off_a_suspended_row_is_still_woken_and_closed() {
     }
 
     let envelope = Envelope {
-        id: b"wake-up".to_vec(),
+        id: b"wake-up-message!".to_vec(),
         to: Some(wire::AgentRef {
             host_id: host(&install).as_bytes().to_vec(),
             agent_id: napper.id.as_bytes().to_vec(),
@@ -168,7 +168,7 @@ async fn with_the_experiment_off_a_suspended_row_is_still_woken_and_closed() {
     assert!(
         matches!(
             spec.bootstrap.and_then(|bootstrap| bootstrap.of),
-            Some(wire::bootstrap::Of::AgentMessage(message)) if message.id == b"wake-up"
+            Some(wire::bootstrap::Of::AgentMessage(message)) if message.id == b"wake-up-message!"
         ),
         "the message is the first input"
     );
@@ -422,7 +422,6 @@ async fn a_persons_input_to_a_row_just_suspended_waits_for_the_process_to_go() {
 /// still is, and one stopped since is refused, never started again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
-    use wire::agent_service_server::AgentService as _;
     let install = Install::new();
     let napper = SyntheticAgent::new(&install, "napper", SEGMENTS);
     napper.write_spec();
@@ -448,9 +447,9 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
         )
         .await;
     let runtime = runtime(&daemon, &install);
-    let client = node::ClientApi::new(&runtime, None);
+    let client = wire::amux::staging::agent_service_client(served_to(&runtime, None).await);
     let wake = |agent: &SyntheticAgent| {
-        tonic::Request::new(wire::ResumeAgentRequest {
+        tonic::Request::new(wire::amux::staging::ResumeAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             initial_prompt: None,
             if_suspended: true,
@@ -458,6 +457,7 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
     };
 
     let refused = client
+        .clone()
         .resume_agent(wake(&stopped))
         .await
         .expect_err("a stopped agent is not woken");
@@ -470,6 +470,7 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
     assert!(!stopped.dir.join("spec.2").exists());
 
     let woken = client
+        .clone()
         .resume_agent(wake(&napper))
         .await
         .expect("a suspended agent is woken")

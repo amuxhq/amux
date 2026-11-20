@@ -484,27 +484,46 @@ async fn a_send_cut_off_after_it_left_is_aborted_and_arrives_once() {
     pair.stop().await;
 }
 
-/// The carrier reads no body: an input's arm or field no daemon knows
-/// reaches the agent exactly as its client encoded it.
+/// No daemon reads an input's body: an arm or field no daemon knows
+/// reaches the agent exactly as its client encoded it, whether the person
+/// is on the agent's own host or carried in from a paired one.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_input_no_daemon_knows_is_carried_as_it_was_sent() {
     let (pair, _link) = Pair::new().await;
-    // A field 99 no version of the message has, then an arm 99 alone:
-    // varint key 99 << 3, value 1.
+    // A prompt with a field 99 no version of the message has, then an arm
+    // 99 alone: varint key 99 << 3, value 1.
     let unknown = [0x98, 0x06, 0x01];
-    let input = wire::Input {
-        input_id: b"from-the-laptop".to_vec(),
-        kind: wire::Kind::ClaudeSdk as i32,
-        body: unknown.to_vec(),
-    };
-    let answer = staging::agent_service_client(pair.to_desk().await)
-        .send_input(Request::new(SendInputRequest {
-            agent_id: pair.agent.id.as_bytes().to_vec(),
-            input: Some(input.clone()),
-        }))
-        .await
-        .unwrap();
-    assert_eq!(verdict(answer.get_ref()), "queued");
+    let prompt = wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+            text: "with something new".into(),
+            attachments: Vec::new(),
+        })),
+    }
+    .encode_to_vec();
+    let inputs = [
+        wire::Input {
+            input_id: b"on-the-desk".to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            body: [prompt.as_slice(), &unknown].concat(),
+        },
+        wire::Input {
+            input_id: b"from-the-laptop".to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            body: unknown.to_vec(),
+        },
+    ];
+    // The person on the agent's own host, then on the paired one.
+    let on_desk = socket(&pair.desk_runtime, "amux.local").await;
+    for (channel, input) in [(on_desk, &inputs[0]), (pair.to_desk().await, &inputs[1])] {
+        let answer = staging::agent_service_client(channel)
+            .send_input(Request::new(SendInputRequest {
+                agent_id: pair.agent.id.as_bytes().to_vec(),
+                input: Some(input.clone()),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(verdict(answer.get_ref()), "queued");
+    }
     let handed = pair
         .agent
         .inputs()
@@ -514,7 +533,14 @@ async fn an_input_no_daemon_knows_is_carried_as_it_was_sent() {
             Handed::Message(_) => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(handed, vec![input.encode_to_vec()]);
+    assert_eq!(
+        handed,
+        inputs
+            .iter()
+            .map(|input| input.encode_to_vec())
+            .collect::<Vec<_>>(),
+        "the agent got the bytes its clients sent"
+    );
     pair.stop().await;
 }
 

@@ -8,6 +8,7 @@ use std::process::Command;
 use prost::Message as _;
 use support::*;
 use wire::AgentSpec;
+use wire::amux::staging;
 
 use crate::support;
 
@@ -16,8 +17,8 @@ fn spec_name(install: &Install, agent: &wire::Agent) -> String {
     AgentSpec::decode(bytes.as_slice()).unwrap().name
 }
 
-fn unnamed(cwd: &Path) -> wire::CreateAgentRequest {
-    wire::CreateAgentRequest {
+fn unnamed(cwd: &Path) -> staging::CreateAgentRequest {
+    staging::CreateAgentRequest {
         name: None,
         ..create(cwd, "", None)
     }
@@ -91,7 +92,7 @@ async fn a_given_name_is_kept_and_a_missing_one_is_a_word_pair() {
         let id = uuid::Uuid::from_slice(&request.agent_id).unwrap();
         let created = runtime.spawn(request, None).await;
         assert!(
-            matches!(created, Err(node::RegistryError::BadName(_))),
+            matches!(&created, Err(status) if status.code() == tonic::Code::InvalidArgument),
             "{bad:?} cannot name a new agent: {created:?}"
         );
         assert!(runtime.agent(id).await.is_err(), "{bad:?} made no agent");

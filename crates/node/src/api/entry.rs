@@ -47,16 +47,6 @@ pub(crate) enum Entry {
     Link,
 }
 
-impl Entry {
-    /// The agent whose tools socket this is.
-    pub(crate) fn agent(self) -> Option<AgentId> {
-        match self {
-            Self::Tools(agent) => Some(agent),
-            Self::Profile | Self::Phone | Self::Link => None,
-        }
-    }
-}
-
 /// An entry's services as one tower service from a request to a response:
 /// what a socket serves, and what the phone calls in memory with the same
 /// generated stubs a socket's client uses.

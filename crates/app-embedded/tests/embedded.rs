@@ -496,7 +496,6 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
 /// its worktree goes.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phone_keeps_the_workspace_a_desks_row_says() {
-    use wire::agent_service_server::AgentService as _;
 
     let net = Net::start_with(
         Topology::new().host_decl(HostDecl {
@@ -543,21 +542,23 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
 
     let site = desk.work.with_file_name("repositories").join("site");
     let created = net
-        .client("desk")
+        .person("desk")
+        .await
         .unwrap()
-        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+        .host(desk.host_id.as_bytes())
+        .agents()
+        .create(wire::amux::staging::CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name: Some("fix-header".into()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            agent: Some(wire::amux::staging::create_agent_request::Agent::ClaudeSdk(
+                Default::default(),
+            )),
             new_workspace: true,
-            ..wire::CreateAgentRequest::default()
-        }))
+            ..Default::default()
+        })
         .await
-        .unwrap()
-        .into_inner()
-        .agent
-        .expect("a created agent is answered");
+        .unwrap();
     let agent = ui_state::agent_key(&created);
     let made = |app: &AppRuntime| {
         app.fleet()

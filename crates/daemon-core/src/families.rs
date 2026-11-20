@@ -2645,7 +2645,7 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.live(CHILD, "helper", Some(PARENT));
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2670,12 +2670,12 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.live(CHILD, "helper", Some(PARENT));
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: CHILD,
             filing: Filing::Pinned,
         });
         assert_eq!(refusal_of(&out, call), Some(Refusal::HasParent));
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Pinned,
         });
@@ -2689,7 +2689,7 @@ mod tests {
     fn a_resume_files_a_closed_agent_active_again() {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2778,7 +2778,7 @@ mod tests {
         said(b"model a");
         rig.step(Input::Nudge { agent: PARENT });
 
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2929,7 +2929,7 @@ mod tests {
         // A daemon that started again adopts the process, whose Hello makes
         // the next read to the journal's end announce its CaughtUp.
         rig.step(Input::AgentHello { agent: PARENT });
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2992,7 +2992,7 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.suspend(PARENT);
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -3198,7 +3198,7 @@ mod tests {
         rig.live(CHILD, "scout", None);
         rig.step(Input::Exiting { agent: CHILD });
         let (first, _) = rig.call(wake(CHILD, "go on"));
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: CHILD,
             filing: Filing::Closed,
         });

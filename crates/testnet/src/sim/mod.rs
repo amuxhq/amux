@@ -793,7 +793,7 @@ impl World for SimNet {
             &mut sim,
             h,
             &what,
-            ClientRequest::FileAgent {
+            ClientRequest::SetFiling {
                 agent: id,
                 filing: daemon_core::Filing::Closed,
             },

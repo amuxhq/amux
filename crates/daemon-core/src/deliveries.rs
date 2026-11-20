@@ -55,9 +55,7 @@ use wire::{
 use crate::families::{Caller, Refusal};
 use crate::ids::{AgentId, CallId, HostId, TimerId};
 use crate::io::Output;
-use crate::payload::{
-    Answer, CallError, MessageFrom, MessageRefusal, PeerFailure, PeerRequest, Status,
-};
+use crate::payload::{Answer, CallError, MessageRefusal, PeerFailure, PeerRequest, Status};
 use crate::peers::Waiting;
 use crate::{Daemon, codec};
 
@@ -525,7 +523,6 @@ impl Daemon {
             host,
             call: made,
             request: PeerRequest::DeliverReport(report),
-            absorbed: true,
         });
     }
 
@@ -639,15 +636,16 @@ impl Daemon {
 
     // --- the lanes -------------------------------------------------------------
 
-    /// A message a client, an own agent or a paired host sent to one of
-    /// this host's agents. The sender is stamped here from who called,
-    /// since the request cannot name one; a paired host stamped its own.
-    /// Answered once the recipient has accepted.
+    /// A message a person, an own agent or a paired host's agent sent to
+    /// one of this host's agents. Its sender is the caller, as the host
+    /// that took the call built it from who called, since the request
+    /// cannot name one; a child's report from another host names the child
+    /// of the link's peer. Who the sender is says who may wake the
+    /// recipient. Answered once the recipient has accepted.
     pub(crate) fn send_message(
         &mut self,
         call: CallId,
         mut envelope: Envelope,
-        from: MessageFrom,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
         let refused = |refusal| CallError::Message(refusal);
@@ -672,29 +670,20 @@ impl Daemon {
                 detail: Some(crate::subagents::NO_MESSAGES.to_owned()),
             })));
         }
-        let (sender, from_agent) = match from {
-            MessageFrom::Person | MessageFrom::PeerPerson => (sender::Value::Human(Human {}), None),
-            MessageFrom::Agent(caller) => {
-                let key = self.own_key(caller);
-                let name = self.store.agent(&key)?.map(|row| row.name);
-                let sender = AgentSender {
-                    agent: Some(AgentRef {
-                        host_id: self.store.own_host().to_vec(),
-                        agent_id: caller.0.to_vec(),
-                    }),
-                    name: name.unwrap_or_default(),
-                };
-                (sender::Value::Agent(sender), Some(key))
-            }
-            MessageFrom::Peer(sender) => {
+        // Anything but an agent is a person, here or at a paired host, who
+        // reads the same wherever they are.
+        let from_agent = match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
+            Some(sender::Value::Agent(sender)) => {
                 let agent = sender.agent.clone().unwrap_or_default();
-                let key = AgentKey::new(agent.host_id, agent.agent_id);
-                (sender::Value::Agent(sender), Some(key))
+                Some(AgentKey::new(agent.host_id, agent.agent_id))
+            }
+            _ => {
+                envelope.from = Some(Sender {
+                    value: Some(sender::Value::Human(Human {})),
+                });
+                None
             }
         };
-        envelope.from = Some(Sender {
-            value: Some(sender),
-        });
         // A child's report is for one incarnation of its parent.
         let incarnation = match &envelope.body {
             Some(envelope::Body::Report(report)) => Some(report.to_incarnation),
@@ -1249,7 +1238,6 @@ mod tests {
                 call,
                 request: ClientRequest::SendMessage {
                     envelope: Box::new(envelope),
-                    from: MessageFrom::Person,
                 },
             },
         );
@@ -1312,6 +1300,15 @@ mod tests {
                     host_id: OWN.to_vec(),
                     agent_id: PARENT.0.to_vec(),
                 }),
+                from: Some(Sender {
+                    value: Some(sender::Value::Agent(AgentSender {
+                        agent: Some(AgentRef {
+                            host_id: OWN.to_vec(),
+                            agent_id: CHILD.0.to_vec(),
+                        }),
+                        name: String::new(),
+                    })),
+                }),
                 ..Envelope::default()
             };
             step(
@@ -1320,7 +1317,6 @@ mod tests {
                     call: CallId(call),
                     request: ClientRequest::SendMessage {
                         envelope: Box::new(envelope),
-                        from: MessageFrom::Agent(CHILD),
                     },
                 },
             )
@@ -1372,7 +1368,6 @@ mod tests {
             call: CallId(call),
             request: ClientRequest::SendMessage {
                 envelope: Box::new(envelope.clone()),
-                from: MessageFrom::Person,
             },
         };
         step(&mut daemon, send(1));
@@ -1681,7 +1676,6 @@ mod tests {
                 Output::Call {
                     host: FAR,
                     request: PeerRequest::DeliverReport(report),
-                    absorbed: true,
                     ..
                 } => Some(report),
                 _ => None,

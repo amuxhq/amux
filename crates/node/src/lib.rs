@@ -139,6 +139,7 @@ pub mod harness {
     pub use crate::link::ByteStream;
     pub use crate::link::relay_host::RelayHost;
     pub use crate::link::run::{AuthenticatedLinkUser, LinkTokenAuthenticator};
+    pub use crate::reviews::files::files_highlighted;
     pub use crate::routing::LiveRoute;
     pub use crate::transport::{
         relay_quic_client_config_with_roots, relay_quic_server_config_from_der,

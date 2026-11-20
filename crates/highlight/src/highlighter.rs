@@ -290,6 +290,23 @@ impl Highlighter {
         }
     }
 
+    /// Highlights code on this thread and keeps nothing: the language's
+    /// grammar is built here first if it has not been, waiting for a
+    /// background build under way, and the result goes into no cache. For
+    /// a caller that keeps results of its own by something better than
+    /// content, such as a host keeping a file's highlighting by its object
+    /// id; the content cache the drawing clients share is left alone.
+    pub fn highlight_now(&self, code: &str, language: Option<Language>) -> Vec<Line> {
+        let Some(language) = language else {
+            return render::plain(code);
+        };
+        let Some(grammar) = GrammarId::of(language) else {
+            return render::diff(code);
+        };
+        self.prepare(language);
+        self.render(code, grammar)
+    }
+
     /// Builds every grammar on this thread, for a caller that wants its
     /// first frame highlighted and settled and can wait for it. Returns how
     /// long it took.
@@ -569,6 +586,46 @@ mod tests {
         highlighter.prepare(Language::Python);
         let python = highlighter.highlight("let a = 1;\n", Some(Language::Python));
         assert!(!Arc::ptr_eq(&first.lines, &python.lines));
+    }
+
+    #[test]
+    fn highlighting_now_colours_every_language_here_and_keeps_nothing() {
+        let samples = [
+            (Language::Rust, "fn main() {}\n"),
+            (Language::Swift, "let x = 1\n"),
+            (Language::TypeScript, "const x: number = 1;\n"),
+            (Language::Tsx, "const x = <div />;\n"),
+            (Language::JavaScript, "const x = 1;\n"),
+            (Language::Python, "def f():\n    return 1\n"),
+            (Language::Go, "package main\n"),
+            (Language::Shell, "echo \"hi\"\n"),
+            (Language::Json, "{\"a\": 1}\n"),
+            (Language::Yaml, "a: 1\n"),
+            (Language::Toml, "a = 1\n"),
+            (Language::C, "int main(void) { return 0; }\n"),
+            (Language::Cpp, "int main() { return 0; }\n"),
+            (Language::Java, "class A {}\n"),
+            (Language::Html, "<!-- c -->\n"),
+            (Language::Css, "a { color: red; }\n"),
+            (Language::Markdown, "# Title\n"),
+            (Language::Diff, "+a\n"),
+        ];
+        assert_eq!(samples.len(), Language::ALL.len(), "a sample for each");
+        let queue = HeldJobs::default();
+        let highlighter = queue.highlighter();
+        for (language, code) in samples {
+            let lines = highlighter.highlight_now(code, Some(language));
+            assert_eq!(lines.len(), code.lines().count(), "{language:?}");
+            let block = Highlighted::settled(lines);
+            assert!(!is_plain(&block), "{language:?}: {:?}", block.lines);
+        }
+        assert!(
+            highlighter.finished().is_empty(),
+            "nothing went into the content cache"
+        );
+        assert!(queue.is_empty(), "nothing was handed off");
+        assert!(!highlighter.busy());
+        assert_eq!(highlighter.highlight_now("a\n", None), render::plain("a\n"));
     }
 
     #[test]

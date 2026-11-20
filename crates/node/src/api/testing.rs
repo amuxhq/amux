@@ -15,7 +15,7 @@ use tonic::body::Body;
 use tonic::codegen::http;
 use tonic::service::Routes;
 
-use super::caller::{AgentRef, At, Caller, PairedDaemon};
+use super::caller::{AgentRef, At, Caller};
 use super::{Entry, routes};
 use crate::runtime::ProfileRuntime;
 use crate::{AgentId, HostId};
@@ -46,8 +46,6 @@ pub enum Calling {
         agent: AgentId,
         name: String,
     },
-    /// A paired daemon asking for itself.
-    Daemon(HostId),
 }
 
 /// The routes an entry serves, each call answered as one caller.
@@ -99,9 +97,6 @@ impl tower::Service<http::Request<Body>> for InMemory {
                     agent: AgentRef { host, agent },
                     name,
                 });
-            }
-            Calling::Daemon(host) => {
-                extensions.insert(PairedDaemon(host));
             }
         }
         self.routes.call(request)

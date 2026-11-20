@@ -65,7 +65,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tonic = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]

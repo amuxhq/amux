@@ -51,7 +51,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 toml = { workspace = true }
 tui = { workspace = true }
 unicode-width = "0.2"
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 zstd = { workspace = true }
 

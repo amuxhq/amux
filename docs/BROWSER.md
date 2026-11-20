@@ -215,12 +215,17 @@ of any framework for the apps that will inject it.
 
 The extension compiles the pure client crates (`wire`, `ui-state`, `ui-view`,
 `attachments`, `preview`) to WebAssembly because they happen to be pure, so the
-fleet model, the rows the picker draws and every `amux.v1` encoding are the
-same code the other clients run, and ship with the extension at its own
-version. Staying compatible with WebAssembly is **not** a constraint on those
-crates. If a change to a shared crate breaks the WebAssembly build, the change
-wins, and the extension does in TypeScript what it lost: decoding the fleet for
-the picker and encoding its few requests. Glue for WebAssembly lives only in
+fleet model, the rows the picker draws and every `amux.v1` encoding are the same
+code the other clients run, and ship with the extension at its own version. Code
+highlighting is not among them: it is tree-sitter and its grammars, which are C,
+and lives in `ui-code` beside `ui-view`; the extension draws no code and does
+not link it. So the WebAssembly is Rust alone, built without a C compiler, and
+it imports nothing: `core.ts` instantiates it with no imports, so a dependency
+that reaches for the browser's JavaScript (randomness, say) stops it loading.
+Staying compatible with WebAssembly is **not** a constraint on those crates. If
+a change to a shared crate breaks the WebAssembly build, the change wins, and
+the extension does in TypeScript what it lost: decoding the fleet for the picker
+and encoding its few requests. Glue for WebAssembly lives only in
 `browser-core`, whose one export takes and answers JSON; shared crates take no
 WebAssembly-specific shims or `cfg`s. The WebAssembly build runs in the
 browser's own recipes and CI job, never in `just premerge`.

@@ -295,13 +295,16 @@ lines, the definition it sits in, the code it is on as a fenced `diff` and
 then the person's words; and last, that the line numbers are a snapshot's (a
 commit of the working tree kept outside the repository), with the command
 that diffs the working tree against it:
-`GIT_INDEX_FILE=<index> GIT_ALTERNATE_OBJECT_DIRECTORIES=<objects> git -C
-<root> diff <snapshot> && GIT_INDEX_FILE=<index> git -C <root> ls-files
+`GIT_INDEX_FILE=<index> GIT_ALTERNATE_OBJECT_DIRECTORIES=<objects> git
+--no-optional-locks -c diff.autoRefreshIndex=false -C <root> diff <snapshot>
+&& GIT_INDEX_FILE=<index> git --no-optional-locks -C <root> ls-files
 --others --exclude-standard`. The index is one the host keeps of the
 snapshot beside its store, so a file that was untracked when the snapshot
 was taken is compared like any other, and the files made since are listed
 after the diff; the command writes nothing, to the repository or anywhere
-else. A comment on lines the change removed names them by the commit they
+else, that index included: a plain `git diff` writes the file times it
+finds back into the index it read, which `--no-optional-locks` alone does
+not stop, so the command turns `diff.autoRefreshIndex` off as well. A comment on lines the change removed names them by the commit they
 were removed from ("line 7 of commit …"), and so does one whose lines are no
 longer on the snapshot. The model reads it as an ordinary `text` element,
 escaped as above; the `review_attachment` live recordings of headless Claude

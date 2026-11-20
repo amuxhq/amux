@@ -785,9 +785,9 @@ mod sent_review {
                  files made since the snapshot:\n\
                  \n\
                  ```sh\n\
-                 GIT_INDEX_FILE={INDEX} GIT_ALTERNATE_OBJECT_DIRECTORIES={OBJECTS} git -C {ROOT} \
-                 diff {SNAPSHOT} && GIT_INDEX_FILE={INDEX} git -C {ROOT} ls-files --others \
-                 --exclude-standard\n\
+                 GIT_INDEX_FILE={INDEX} GIT_ALTERNATE_OBJECT_DIRECTORIES={OBJECTS} git --no-optional-locks \
+                 -c diff.autoRefreshIndex=false -C {ROOT} diff {SNAPSHOT} && GIT_INDEX_FILE={INDEX} git --no-optional-locks \
+                 -C {ROOT} ls-files --others --exclude-standard\n\
                  ```\n"
             )
         );
@@ -805,9 +805,10 @@ mod sent_review {
             format!(
                 "GIT_INDEX_FILE='/d/it'\\''s/indexes/i' \
                  GIT_ALTERNATE_OBJECT_DIRECTORIES='/d/it'\\''s/objects' \
-                 git -C '/Users/me/my shop' diff {SNAPSHOT} && \
-                 GIT_INDEX_FILE='/d/it'\\''s/indexes/i' git -C '/Users/me/my shop' \
-                 ls-files --others --exclude-standard"
+                 git --no-optional-locks -c diff.autoRefreshIndex=false -C '/Users/me/my shop' \
+                 diff {SNAPSHOT} && \
+                 GIT_INDEX_FILE='/d/it'\\''s/indexes/i' git --no-optional-locks \
+                 -C '/Users/me/my shop' ls-files --others --exclude-standard"
             )
         );
     }
@@ -823,7 +824,7 @@ mod sent_review {
             },
             &comments()[..1],
         );
-        assert!(!read.contains("git -C"), "{read}");
+        assert!(!read.contains("git --no-optional-locks"), "{read}");
         assert!(
             read.ends_with(&format!("repository's top, {ROOT}.\n")),
             "{read}"

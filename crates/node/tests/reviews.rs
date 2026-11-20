@@ -965,9 +965,9 @@ async fn a_comment_on_a_renamed_file_is_placed_in_the_file_by_its_new_name() {
 
 /// The command the agent is given diffs the working tree against the
 /// snapshot truthfully, untracked files included, lists the files made
-/// since, and writes nothing to the repository; and it runs, with the same
-/// answer, where nothing may be written at all, as in Codex's read-only
-/// sandbox.
+/// since, and writes nothing to the repository or to the snapshot's index;
+/// and it runs, with the same answer, where nothing may be written at all,
+/// as in Codex's read-only sandbox.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_agents_diff_command_is_truthful_and_writes_nothing() {
     let install = Install::new();
@@ -1003,6 +1003,9 @@ async fn the_agents_diff_command_is_truthful_and_writes_nothing() {
     );
     let git_dir = work.join(".git");
     let before = tree_state(&git_dir);
+    // The snapshot's index as the host wrote it, its file times unset, which
+    // a plain `git diff` would refresh and write back.
+    let index_before = std::fs::read(&summary.index).unwrap();
     let run = |sandboxed: bool| {
         let mut shell = if sandboxed {
             let mut shell = Command::new("sandbox-exec");
@@ -1043,6 +1046,10 @@ async fn the_agents_diff_command_is_truthful_and_writes_nothing() {
         "the new file listed last: {shown}"
     );
     assert_eq!(tree_state(&git_dir), before, "nothing in .git changed");
+    assert!(
+        std::fs::read(&summary.index).unwrap() == index_before,
+        "the snapshot's index is byte for byte as it was"
+    );
     let status = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(&work)

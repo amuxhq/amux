@@ -157,12 +157,16 @@ pub fn text(summary: &ReviewSummary, comments: &[ReviewerComment]) -> String {
 /// files through its index `index` and its objects from `objects`, from
 /// any folder, and writing nothing. The snapshot's own index stands in for
 /// the repository's, so a file untracked when the snapshot was taken is
-/// compared like any other.
+/// compared like any other. git's diff writes the file times it finds back
+/// into the index it read; it is told not to (optional locks alone do not
+/// stop it), so that index is left as the host wrote it too.
 pub fn command(root: &str, objects: &str, index: &str, snapshot: &str) -> String {
     let (root, index) = (quoted(root), quoted(index));
     format!(
-        "GIT_INDEX_FILE={index} GIT_ALTERNATE_OBJECT_DIRECTORIES={} git -C {root} diff {} && \
-         GIT_INDEX_FILE={index} git -C {root} ls-files --others --exclude-standard",
+        "GIT_INDEX_FILE={index} GIT_ALTERNATE_OBJECT_DIRECTORIES={} \
+         git --no-optional-locks -c diff.autoRefreshIndex=false -C {root} diff {} && \
+         GIT_INDEX_FILE={index} git --no-optional-locks -C {root} ls-files --others \
+         --exclude-standard",
         quoted(objects),
         quoted(snapshot)
     )

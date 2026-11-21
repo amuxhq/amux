@@ -1,0 +1,26 @@
+shell |  | agents | 0,62,402,778
+chat |  | soaker | 0,116,402,724
+chat.row.prompt | Start the long job. |  | 16,124,370,40
+chat.prose.render |  | rendered | 242,134,130,20
+chat.row.prose | Starting the long job. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.stopped | You stopped it |  | 16,207,370,20
+chat.field | Reply |  | 28,750,346,24
+chat.attach | Attach | closed | 23,779,44,44
+chat.model | fake-model · medium |  | 71,779,163,44
+chat.dictate | Dictate | idle | 287,779,44,44
+chat.send | Send |  | 335,779,44,44 (disabled)
+chat.more | More |  | 350,66,28,36
+chat.header | /p/t/a/n/c/r/work · cabin | live | 76,66,178,36
+chat.title | soaker | soaker | 76,66,178,36
+ | Attach |  | 23,779,44,44
+ | fake-model · medium |  | 71,779,163,44
+ | Dictate |  | 287,779,44,44
+ | Send |  | 335,779,44,44 (disabled)
+ | Start the long job. |  | 16,124,370,40
+ | Starting the long job. |  | 16,176,370,20
+ | You stopped it |  | 16,207,370,20
+BackButton | Agents |  | 16,62,44,44
+ | soaker, /p/t/a/n/c/r/work · cabin |  | 76,66,178,36
+ | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

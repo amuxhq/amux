@@ -1,0 +1,20 @@
+shell |  | agents | 0,62,402,778
+settled |  | signed-out | 0,174,402,666
+chat |  | oneshot | 0,116,402,724
+chat.row.prompt | Do one thing. |  | 16,124,370,40
+chat.prose.render |  | rendered | 273,134,99,20
+chat.row.prose | Done here. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.turn-end | Worked for <t> |  | 16,203,81,16
+chat.ended | Ended · this agent can’t be resumed |  | 12,784,378,46
+chat.more | More |  | 350,66,28,36
+chat.header | Settled | live | 76,66,98,36
+chat.title | oneshot | oneshot | 76,66,98,36
+ | Ended · this agent can’t be resumed |  | 28,798,242,18
+ | Do one thing. |  | 16,124,370,40
+ | Done here. |  | 16,176,370,20
+ | Worked for <t> |  | 16,203,81,16
+BackButton | Settled |  | 16,62,44,44
+ | oneshot, Settled |  | 76,66,98,36
+ | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

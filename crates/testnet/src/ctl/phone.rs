@@ -48,6 +48,9 @@ pub enum PhoneCommand {
     /// their items are drawn by the system and carry no identifier (`phone
     /// shot` shows them).
     Choose { label: String },
+    /// Go back a page, as the navigation bar's back button does: a chat
+    /// back to the fleet, or to the Settled page it was opened from.
+    Back,
     /// Type text into the element with this identifier.
     Type {
         text: String,
@@ -253,6 +256,11 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
             request(folder, json!({"kind": "choose", "label": label}))
                 .map(|reply| Outcome::new(format!("chose {label}"), reply))
         }
+        PhoneCommand::Back => {
+            request(folder, json!({"kind": "back"}))?;
+            request(folder, json!({"kind": "settle"}))
+                .map(|reply| Outcome::new("went back", reply))
+        }
         PhoneCommand::Search { text } => {
             request(folder, json!({"kind": "search", "text": text}))?;
             request(folder, json!({"kind": "settle"}))
@@ -403,6 +411,28 @@ fn tap(folder: &Folder, id: &str) -> Result<Outcome, String> {
     Ok(Outcome::new(format!("tapped {id}"), reply))
 }
 
+/// `simctl launch`'s arguments for the app on `udid`, its door announcing
+/// itself at `ready`, browsing the net's discovery `scope`.
+fn launch_args(udid: &str, ready: &str, scope: &str) -> Vec<String> {
+    vec![
+        "launch".into(),
+        udid.into(),
+        BUNDLE_ID.into(),
+        "-amux-door-ready".into(),
+        ready.into(),
+        "-amux-discovery-scope".into(),
+        scope.into(),
+        "-amux-lan-bind".into(),
+        "127.0.0.1:0".into(),
+        "-amux-element-geometry".into(),
+        // The local-network line answered, as by a person past their first
+        // run: until it is, the app does not look for computers, and no
+        // host can be paired by its code.
+        "-localNetworkExplained".into(),
+        "YES".into(),
+    ]
+}
+
 fn open(folder: &Folder, relay: bool) -> Result<Outcome, String> {
     let name = leased()?;
     let udid = udid(&name)?;
@@ -425,18 +455,7 @@ fn open(folder: &Folder, relay: bool) -> Result<Outcome, String> {
     let _ = std::fs::remove_file(&ready);
     let record = folder.record()?;
     let ready_text = ready.to_string_lossy().into_owned();
-    let mut args: Vec<String> = vec![
-        "launch".into(),
-        udid.clone(),
-        BUNDLE_ID.into(),
-        "-amux-door-ready".into(),
-        ready_text,
-        "-amux-discovery-scope".into(),
-        record.scope.clone(),
-        "-amux-lan-bind".into(),
-        "127.0.0.1:0".into(),
-        "-amux-element-geometry".into(),
-    ];
+    let mut args = launch_args(&udid, &ready_text, &record.scope);
     if relay {
         let readiness = &record.readiness;
         let cloud = readiness["cloud_url"]
@@ -754,5 +773,18 @@ mod tests {
         ] {
             assert_eq!(super::base64(bytes), encoded);
         }
+    }
+
+    /// An app opened from a session has its local-network line answered,
+    /// or it never looks for computers and `phone pair` finds none.
+    #[test]
+    fn the_app_opens_past_its_local_network_line() {
+        let args = super::launch_args("UDID", "/tmp/ready.json", "scope");
+        assert!(
+            args.windows(2)
+                .any(|pair| pair[0] == "-localNetworkExplained" && pair[1] == "YES"),
+            "{args:?}"
+        );
+        assert_eq!(&args[..3], ["launch", "UDID", super::BUNDLE_ID]);
     }
 }

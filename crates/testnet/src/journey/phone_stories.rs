@@ -58,6 +58,10 @@ const STORIES: &[(&str, Tell)] = &[
     ("local-network", local_network),
     ("push-wake", push_wake),
     ("resume", resume),
+    ("acp-conversation", super::phone_acp::conversation),
+    ("acp-interrupt-and-queue", super::phone_acp::interrupt_and_queue),
+    ("acp-unresumable", super::phone_acp::unresumable),
+    ("acp-signed-out", super::phone_acp::signed_out),
 ];
 
 /// Runs the named stories, the phone's own with `native`, or every story
@@ -154,7 +158,7 @@ fn selected(native: bool, named: Vec<String>) -> Result<Vec<String>, String> {
 // --- reading the phone ---------------------------------------------------
 
 /// The ask choice a person reads as `label`.
-fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
+pub(super) fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
     let choices = || {
         drawn
             .iter()
@@ -196,7 +200,7 @@ fn current(drawn: &Drawn, agent: &str) -> bool {
 
 /// The prompts waiting under the feed, oldest first: each one's words and
 /// how it waits.
-fn queued(drawn: &Drawn) -> Vec<(String, String)> {
+pub(super) fn queued(drawn: &Drawn) -> Vec<(String, String)> {
     let mut rows: Vec<(u32, &Value)> = drawn
         .iter()
         .filter_map(|(name, element)| {
@@ -220,12 +224,12 @@ fn queued(drawn: &Drawn) -> Vec<(String, String)> {
         .collect()
 }
 
-fn asking(drawn: &Drawn, question: &str) -> bool {
+pub(super) fn asking(drawn: &Drawn, question: &str) -> bool {
     drawn.label("ask.question") == question
 }
 
 /// How many of the chat's rows hold `text`.
-fn replies(drawn: &Drawn, text: &str) -> usize {
+pub(super) fn replies(drawn: &Drawn, text: &str) -> usize {
     drawn
         .iter()
         .filter(|(name, element)| {
@@ -330,7 +334,7 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
 /// The phone's browser finds `host`; once `amux pair` opens its pairing
 /// window the phone offers the keypad by itself, the PIN it printed is typed
 /// there and the machine it names is trusted.
-fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
+pub(super) fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
     let host_id = journey.host_id(host);
     journey.tab("Computers")?;
     journey.wait_for(&[&format!("hosts.found.{host_id}")])?;
@@ -357,7 +361,7 @@ fn open_agent(journey: &mut PhoneJourney, name: &str) -> Result<String, String> 
     Ok(agent)
 }
 
-fn send(journey: &mut PhoneJourney, text: &str) -> Result<(), String> {
+pub(super) fn send(journey: &mut PhoneJourney, text: &str) -> Result<(), String> {
     journey.type_text("chat.field", text)?;
     journey.wait(
         |drawn| drawn.enabled("chat.send"),
@@ -368,7 +372,7 @@ fn send(journey: &mut PhoneJourney, text: &str) -> Result<(), String> {
 
 /// Waits for the fleet with the agent's row on it, opening the folded
 /// section holding the row when the fleet keeps it folded away.
-fn back_to_row(
+pub(super) fn back_to_row(
     journey: &mut PhoneJourney,
     agent: &str,
     left: impl Fn(&Drawn) -> bool,
@@ -396,7 +400,7 @@ fn back_to_row(
 
 /// Leaves the chat for the fleet and opens it again, so it is read with the
 /// keyboard down.
-fn reopen(
+pub(super) fn reopen(
     journey: &mut PhoneJourney,
     agent: &str,
     ready: impl Fn(&Drawn) -> bool,
@@ -490,7 +494,7 @@ fn plan_mode(journey: &mut PhoneJourney) -> Result<(), String> {
 /// The activity bar slides while the turn runs; under reduced motion it
 /// stands still, so the screen can be photographed. Its elapsed time is
 /// masked.
-fn photograph_running(journey: &mut PhoneJourney, label: &str) -> Result<(), String> {
+pub(super) fn photograph_running(journey: &mut PhoneJourney, label: &str) -> Result<(), String> {
     journey.app(json!({"kind": "assist", "motion": true, "transparency": true}))?;
     journey.screen(label, &["chat.activity"])?;
     journey.app(json!({"kind": "assist", "motion": false, "transparency": true}))?;
@@ -1398,7 +1402,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
 
 /// Settles the open chat's agent from its menu. An idle agent is settled at
 /// once, with nothing to confirm, and the chat closes.
-fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
+pub(super) fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
     journey.tap("chat.more")?;
     journey.choose("Settle")?;
     journey.wait(|drawn| !drawn.has("chat"), "the chat closed")?;
@@ -1406,7 +1410,7 @@ fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
 }
 
 /// The Settled page from the foot of the fleet, once it lists `agent`.
-fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<(), String> {
+pub(super) fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<(), String> {
     journey.wait_for(&["home.settled"])?;
     journey.tap("home.settled")?;
     let row = format!("home.row.{agent}");
@@ -3130,7 +3134,7 @@ mod tests {
     use super::super::phone::tests::{DESK, element};
     use super::*;
 
-    const NATIVE: [&str; 8] = [
+    const NATIVE: [&str; 12] = [
         "account-sign-in",
         "one-tap-sign-in",
         "purchase-restore",
@@ -3139,6 +3143,10 @@ mod tests {
         "local-network",
         "push-wake",
         "resume",
+        "acp-conversation",
+        "acp-interrupt-and-queue",
+        "acp-unresumable",
+        "acp-signed-out",
     ];
 
     #[test]

@@ -907,6 +907,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "cwd": agent.cwd,
                         "branch": agent.git.as_ref().and_then(|git| git.branch.clone()),
                         "kind": agent.kind().as_str_name().trim_start_matches("KIND_"),
+                        "provider": agent.provider,
                         "lifecycle_name": agent.lifecycle().as_str_name().trim_start_matches("LIFECYCLE_"),
                         "phase_name": agent.phase().as_str_name().trim_start_matches("PHASE_"),
                         "working_on": agent.working_on,

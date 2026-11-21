@@ -986,14 +986,20 @@ impl Net {
 
     /// Every line `name`'s provider has read from its agent process, over
     /// all its incarnations: what it was really sent, whatever the store
-    /// made of it. Only the stdio fakes (headless Claude, Codex) log.
+    /// made of it. Only the stdio fakes (headless Claude, Codex, ACP) log.
+    /// For a host's name, what the fakes of the agents clients created on
+    /// that host read, playing the host's script.
     pub fn provider_input(&self, name: &str) -> Result<Vec<String>, NetError> {
-        self.agent(name)?;
+        let log = match self.agent(name) {
+            Ok(_) => name.to_owned(),
+            Err(_) if self.hosts.contains_key(name) => format!("{name}.host"),
+            Err(error) => return Err(error),
+        };
         let path = self
             .root
             .path()
             .join("scripts")
-            .join(format!("{name}.{INPUT_LOG}"));
+            .join(format!("{log}.{INPUT_LOG}"));
         match std::fs::read_to_string(path) {
             Ok(text) => Ok(text.lines().map(str::to_owned).collect()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
@@ -1140,6 +1146,56 @@ impl Net {
             self.hosts.get_mut(host).expect("the host").commands = commands;
         }
         Ok(())
+    }
+
+    /// The built-in ACP agents this machine has installed, which a real
+    /// host offers beside the fake one: each runs through the ACP recording
+    /// probe, so what amux wrote to it and read back is kept under the
+    /// host's recordings, by agent id. An agent not on this process's PATH
+    /// is left out, as a daemon leaves out one it cannot find; without the
+    /// probe built, none is offered.
+    fn machine_agents(&self, host: &str) -> Vec<node::agents::AgentProgram> {
+        let probe = self
+            .binaries
+            .dir()
+            .join(format!("acp-probe{}", std::env::consts::EXE_SUFFIX));
+        if !probe.is_file() {
+            tracing::warn!(%host, "acp-probe is not built; the real host offers no built-in ACP agents");
+            return Vec::new();
+        }
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let (built_ins, _) = node::agents::programs(&[]);
+        built_ins
+            .into_iter()
+            .filter_map(|program| {
+                let real = std::env::split_paths(&path)
+                    .map(|dir| dir.join(&program.command))
+                    .find(|candidate| candidate.is_file())?;
+                let mut args = vec!["--".to_owned(), real.to_string_lossy().into_owned()];
+                args.extend(program.args.iter().cloned());
+                let capture = self.recordings.join(host).join(&program.id);
+                let mut env = BTreeMap::from([(
+                    "ACP_CAPTURE_DIR".to_owned(),
+                    capture.to_string_lossy().into_owned(),
+                )]);
+                if program.id == "opencode" {
+                    // OpenCode's own default runs commands and edits without
+                    // asking; a net's agents ask, as its Claude does. The
+                    // variable is merged over OpenCode's config files for
+                    // this process only, leaving them as they are.
+                    env.insert(
+                        "OPENCODE_CONFIG_CONTENT".to_owned(),
+                        r#"{"permission":{"bash":"ask","edit":"ask"}}"#.to_owned(),
+                    );
+                }
+                Some(node::agents::AgentProgram {
+                    command: probe.to_string_lossy().into_owned(),
+                    args,
+                    env,
+                    ..program
+                })
+            })
+            .collect()
     }
 
     fn write_commands(&self, host: &str) -> Result<Commands, NetError> {
@@ -1584,6 +1640,13 @@ impl Net {
             }
         }
         resolve(&self.gates(), &mut script.steps);
+        // An ACP agent signed out until a file exists signs in when a test
+        // opens that gate, as a person signing in meanwhile would.
+        if let Some(path) = script.acp.signed_in_at.as_mut()
+            && path.is_relative()
+        {
+            *path = self.gates().join(&*path);
+        }
         let path = self
             .root
             .path()
@@ -1660,8 +1723,8 @@ impl Net {
         }
         // The host's agent programs are the fake one and those its config
         // adds, read from the file as a daemon reads a person's: a net
-        // never runs the built-in agents, which would be whatever this
-        // machine has installed.
+        // runs the built-in agents, which are whatever this machine has
+        // installed, only on a host declared real.
         launch.agents = vec![node::agents::AgentProgram {
             id: providers::FAKE_ACP_AGENT.to_owned(),
             name: "Fake ACP Agent".to_owned(),
@@ -1678,6 +1741,14 @@ impl Net {
             launch
                 .agents
                 .extend(added.into_iter().filter(|program| !program.built_in));
+        }
+        if own.decl.provider == Provider::Real {
+            // A real host's `acp` command has no real agent behind it, so
+            // it offers the machine's own in the fake one's place.
+            launch
+                .agents
+                .retain(|program| program.id != providers::FAKE_ACP_AGENT);
+            launch.agents.extend(self.machine_agents(&host.name));
         }
         launch.agent.grace_secs = AGENT_GRACE_SECS;
         launch.agent.drain_secs = 5;

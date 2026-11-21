@@ -270,6 +270,42 @@
       "claim": "A phone signed in to the account two machines are on pairs with both on its network. Opened for the first time ever, it reaches each with a full handshake; closed and opened again, it reaches each by resuming the last session with its first calls sent as early data and accepted; with one machine restarted while the phone was closed, the next launch still resumes both. After each launch the fleet reads current and the app's link log for that launch is kept beside the run."
     },
     {
+      "id": "acp-conversation",
+      "stage": 16,
+      "clients": [
+        "phone"
+      ],
+      "topology": "journeys/topologies/phone-acp.json",
+      "claim": "A person creates an agent a host runs over the Agent Client Protocol from New Agent on the phone, picking it by the name the host gives it, and its chat opens. One prompt is answered; a second asks to run a command and the card offers exactly the agent's two choices, Allow is tapped and the agent is told allow once; a third asks with the agent's three choices, Reject is tapped and the agent is told reject. The host holds each prompt once and the replies that followed each answer."
+    },
+    {
+      "id": "acp-interrupt-and-queue",
+      "stage": 16,
+      "clients": [
+        "phone"
+      ],
+      "topology": "journeys/topologies/phone-acp.json",
+      "claim": "On an Agent Client Protocol agent created from the phone, Interrupt ends a running turn: the agent is sent a cancel, the turn ends interrupted, and the words after it are never said. In the next turn two prompts sent while it works wait under the feed with Withdraw and no Send now, since this agent cannot take a prompt into a running turn; withdrawn, the newest comes back to the composer and never reaches the host; the other is sent once the turn ends, and answered."
+    },
+    {
+      "id": "acp-unresumable",
+      "stage": 16,
+      "clients": [
+        "phone"
+      ],
+      "topology": "journeys/topologies/phone-acp.json",
+      "claim": "An Agent Client Protocol agent that cannot reopen a conversation answers a prompt; settled from its chat's menu it exits on the host, and its chat on the Settled page keeps the conversation but offers no composer and no Resume, only words saying it has ended for good."
+    },
+    {
+      "id": "acp-signed-out",
+      "stage": 16,
+      "clients": [
+        "phone"
+      ],
+      "topology": "journeys/topologies/phone-acp.json",
+      "claim": "An Agent Client Protocol agent that is signed out on its host is created from the phone; its chat says it needs signing in, in the agent's own words for how, on that computer. Once it is signed in there, a message sent from the same chat opens its conversation and is answered."
+    },
+    {
       "id": "survive-daemon",
       "clients": ["system"],
       "claim": "Three agents, one of each kind, are mid-turn when amux is killed; they finish their turns into their journals with no daemon, outlive their grace and exit. Any amux command starts amux again under its supervisor, which finds them exited; a newer build is installed under the supervisor and activated; every finished turn is in the store, and resuming the exited agents loses nothing."

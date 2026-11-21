@@ -1,0 +1,184 @@
+{
+  "scope": "phone-acp",
+  "hosts": [
+    {
+      "name": "desk",
+      "lan": true,
+      "bonjour": true,
+      "script": {
+        "chunk_ms": 40,
+        "steps": [
+          {
+            "text": {
+              "chunks": [
+                "Hello ",
+                "from ",
+                "the ",
+                "fake ",
+                "agent."
+              ]
+            }
+          },
+          "turn_end",
+          {
+            "call": {
+              "kind": "execute",
+              "title": "Run the test suite",
+              "input": {
+                "command": "cargo test"
+              },
+              "ask": "once",
+              "outcome": {
+                "output": "214 passed"
+              }
+            }
+          },
+          {
+            "text": {
+              "chunks": [
+                "The suite passed."
+              ]
+            }
+          },
+          "turn_end",
+          {
+            "call": {
+              "kind": "execute",
+              "title": "rm -rf build",
+              "input": {
+                "command": "rm -rf build"
+              },
+              "ask": "always",
+              "outcome": {
+                "output": ""
+              }
+            }
+          },
+          {
+            "text": {
+              "chunks": [
+                "I left the build folder alone."
+              ]
+            }
+          },
+          "turn_end"
+        ]
+      },
+      "repositories": [
+        "work"
+      ]
+    },
+    {
+      "name": "cabin",
+      "lan": true,
+      "bonjour": true,
+      "script": {
+        "chunk_ms": 40,
+        "acp": {
+          "cancel_chunks": 0
+        },
+        "steps": [
+          {
+            "text": {
+              "chunks": [
+                "Starting the long job."
+              ]
+            }
+          },
+          {
+            "wait_for": {
+              "path": "never"
+            }
+          },
+          {
+            "text": {
+              "chunks": [
+                "This is never said."
+              ]
+            }
+          },
+          "turn_end",
+          {
+            "text": {
+              "chunks": [
+                "Running the soak."
+              ]
+            }
+          },
+          {
+            "wait_for": {
+              "path": "soak-done"
+            }
+          },
+          {
+            "text": {
+              "chunks": [
+                "The soak finished."
+              ]
+            }
+          },
+          "turn_end",
+          {
+            "text": {
+              "chunks": [
+                "Noted, checking the logs next."
+              ]
+            }
+          },
+          "turn_end"
+        ]
+      },
+      "repositories": [
+        "work"
+      ]
+    },
+    {
+      "name": "shed",
+      "lan": true,
+      "bonjour": true,
+      "script": {
+        "acp": {
+          "load": false,
+          "resume": false
+        },
+        "steps": [
+          {
+            "text": {
+              "chunks": [
+                "Done here."
+              ]
+            }
+          },
+          "turn_end"
+        ]
+      },
+      "repositories": [
+        "work"
+      ]
+    },
+    {
+      "name": "attic",
+      "lan": true,
+      "bonjour": true,
+      "script": {
+        "acp": {
+          "signed_in_at": "attic-signed-in"
+        },
+        "steps": [
+          {
+            "text": {
+              "chunks": [
+                "Signed in and ready."
+              ]
+            }
+          },
+          "turn_end"
+        ]
+      },
+      "repositories": [
+        "work"
+      ]
+    }
+  ],
+  "settle": true
+}

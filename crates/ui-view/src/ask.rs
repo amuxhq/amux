@@ -1038,7 +1038,7 @@ fn acp_permission_body(
     item_key: &str,
     permission: &wire::AcpPermission,
 ) -> AskBody {
-    use crate::rows::acp::{command_of, diff_lines, line_at};
+    use crate::rows::acp::{command_of, diff_lines};
     let tool = match state.transcript().get(item_key).map(|held| &held.body) {
         Some(ui_state::ItemBody::Acp(wire::acp_item::Kind::Tool(tool))) => tool.clone(),
         _ => wire::AcpTool {
@@ -1072,11 +1072,7 @@ fn acp_permission_body(
                 .diffs
                 .iter()
                 .flat_map(|diff| {
-                    let lines = diff_lines(
-                        diff.old_text.as_deref(),
-                        &diff.new_text,
-                        line_at(&tool, &diff.path),
-                    );
+                    let lines = diff_lines(diff.old_text.as_deref(), &diff.new_text);
                     let header = several.then(|| {
                         let (added, removed) = counts(&lines);
                         EditLine::File(crate::rows::FileRow {

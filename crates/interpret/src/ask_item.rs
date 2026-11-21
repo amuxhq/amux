@@ -243,14 +243,22 @@ impl<'de> Deserialize<'de> for Names {
     }
 }
 
+/// The member a rewritten choice keeps its constants in, in the order of
+/// the titles its `enum` offers: the option's identity is its constant, and
+/// a title is only how it reads. Clients ignore what they do not know.
+const CONSTANTS: &str = "x-amux-constants";
+
 /// A form schema with each single choice written as titled constants
 /// (`"oneOf": [{"const": "1", "title": "Tea"}, ...]`, as MCP elicitation
 /// and Antigravity's question tool write one) also given as an `enum` of
 /// its titles, so every client offers the titles to choose from; read
 /// otherwise, such a field takes typed text and nothing tells the person
-/// what the agent will accept. [`constants_for_titles`] turns a title
-/// chosen back into the constant the agent asked for. The rest is kept as
-/// written, the properties in their order.
+/// what the agent will accept. Two options titled alike read apart ("Other",
+/// "Other (2)"), since a client sends the title it shows; a default names
+/// its option's title, so the field starts on it. The constants go beside
+/// the titles, and [`constants_for_titles`] turns a title chosen back into
+/// its option's constant. A field that already has an `enum` is left as it
+/// is, and the rest is kept as written, the properties in their order.
 pub(crate) fn titled_choices(schema: &[u8]) -> Vec<u8> {
     fn rewritten(schema: &[u8]) -> Option<Vec<u8>> {
         let mut top: Ordered = serde_json::from_slice(schema).ok()?;
@@ -265,10 +273,18 @@ pub(crate) fn titled_choices(schema: &[u8]) -> Vec<u8> {
             if fields.contains_key("enum") {
                 continue;
             }
-            let Some(titles) = fields.get("oneOf").and_then(titled) else {
+            let Some(options) = fields.get("oneOf").and_then(titled) else {
                 continue;
             };
+            let titles = distinct(options.iter().map(|(title, _)| title.clone()).collect());
+            if let Some(default) = fields.get("default")
+                && let Some(at) = options.iter().position(|(_, constant)| constant == default)
+            {
+                fields.insert("default".to_owned(), Value::from(titles[at].clone()));
+            }
+            let constants: Vec<Value> = options.into_iter().map(|(_, constant)| constant).collect();
             fields.insert("enum".to_owned(), Value::from(titles));
+            fields.insert(CONSTANTS.to_owned(), Value::from(constants));
             *property = serde_json::value::to_raw_value(&fields).ok()?;
             changed = true;
         }
@@ -282,7 +298,8 @@ pub(crate) fn titled_choices(schema: &[u8]) -> Vec<u8> {
 }
 
 /// A form's answer with each title [`titled_choices`] offered in place of
-/// its constant, as the agent's schema asked for it; anything else as sent.
+/// the constant at its place, as the agent's schema asked for it; fields it
+/// did not rewrite, and a value that is none of the titles, as sent.
 pub(crate) fn constants_for_titles(content_json: &[u8], schema: &[u8]) -> Vec<u8> {
     let (Ok(Value::Object(mut content)), Ok(Value::Object(top))) = (
         serde_json::from_slice::<Value>(content_json),
@@ -293,23 +310,21 @@ pub(crate) fn constants_for_titles(content_json: &[u8], schema: &[u8]) -> Vec<u8
     let properties = top.get("properties").and_then(Value::as_object);
     let mut changed = false;
     for (name, value) in &mut content {
-        let Some(options) = properties
-            .and_then(|properties| properties.get(name))
-            .and_then(|property| property.get("oneOf"))
-            .and_then(Value::as_array)
-        else {
+        let Some(property) = properties.and_then(|properties| properties.get(name)) else {
             continue;
         };
-        let Some(chosen) = value.as_str() else {
+        let (Some(titles), Some(constants)) = (
+            property.get("enum").and_then(Value::as_array),
+            property.get(CONSTANTS).and_then(Value::as_array),
+        ) else {
             continue;
         };
-        let constant = options
+        let constant = titles
             .iter()
-            .find(|option| option_title(option) == Some(chosen))
-            .and_then(|option| option.get("const"))
-            .cloned();
+            .position(|title| title == value)
+            .and_then(|at| constants.get(at));
         if let Some(constant) = constant {
-            *value = constant;
+            *value = constant.clone();
             changed = true;
         }
     }
@@ -320,25 +335,39 @@ pub(crate) fn constants_for_titles(content_json: &[u8], schema: &[u8]) -> Vec<u8
     }
 }
 
-/// The titles of a `oneOf` that is a list of constants, a constant
-/// standing for its own title where it has none; None when it is anything
-/// else.
-fn titled(options: &Value) -> Option<Vec<String>> {
+/// Each option of a `oneOf` that is a list of constants, as (title,
+/// constant): a constant with no title reads as itself, a string as
+/// written and anything else as its JSON. None when it is anything else.
+fn titled(options: &Value) -> Option<Vec<(String, Value)>> {
     let options = options.as_array().filter(|options| !options.is_empty())?;
     options
         .iter()
-        .map(|option| option_title(option).map(str::to_owned))
+        .map(|option| {
+            let constant = option.get("const")?;
+            let title = match (option.get("title").and_then(Value::as_str), constant) {
+                (Some(title), _) => title.to_owned(),
+                (None, Value::String(constant)) => constant.clone(),
+                (None, constant) => constant.to_string(),
+            };
+            Some((title, constant.clone()))
+        })
         .collect()
 }
 
-fn option_title(option: &Value) -> Option<&str> {
-    let constant = option.get("const")?.as_str()?;
-    Some(
-        option
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or(constant),
-    )
+/// `titles` with each one already used told apart by its count ("Other",
+/// "Other (2)"), so each names one option.
+fn distinct(titles: Vec<String>) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    for title in titles {
+        let mut candidate = title.clone();
+        let mut n = 1;
+        while seen.contains(&candidate) {
+            n += 1;
+            candidate = format!("{title} ({n})");
+        }
+        seen.push(candidate);
+    }
+    seen
 }
 
 /// An object's members in the order they were written, each kept as
@@ -528,6 +557,56 @@ mod tests {
         // A value that is no title goes as it was typed.
         let typed = constants_for_titles(br#"{"q1":"Juice"}"#, &offered);
         assert_eq!(typed, br#"{"q1":"Juice"}"#);
+    }
+
+    /// Two options titled alike are told apart, and each sends its own
+    /// constant: the second "Other" sends the second value.
+    #[test]
+    fn options_titled_alike_each_send_their_own_constant() {
+        let schema = br#"{"properties":{"q":{"type":"string","oneOf":[{"const":"a","title":"Other"},{"const":"b","title":"Other"},{"const":"c","title":"Tea"}]}}}"#;
+        let offered = titled_choices(schema);
+        let read: Value = serde_json::from_slice(&offered).unwrap();
+        assert_eq!(
+            read["properties"]["q"]["enum"],
+            serde_json::json!(["Other", "Other (2)", "Tea"])
+        );
+        let sent = |title: &str| {
+            let content = serde_json::to_vec(&serde_json::json!({ "q": title })).unwrap();
+            serde_json::from_slice::<Value>(&constants_for_titles(&content, &offered)).unwrap()["q"]
+                .clone()
+        };
+        assert_eq!(sent("Other"), "a");
+        assert_eq!(sent("Other (2)"), "b");
+        assert_eq!(sent("Tea"), "c");
+    }
+
+    /// A default names its option's constant; offered, it names that
+    /// option's title, so the field starts on it, and left untouched it
+    /// goes back as the constant. Constants need not be strings.
+    #[test]
+    fn a_default_follows_its_option() {
+        let schema = br#"{"properties":{"q":{"type":"integer","default":2,"oneOf":[{"const":1,"title":"Tea"},{"const":2,"title":"Coffee"}]}}}"#;
+        let offered = titled_choices(schema);
+        let read: Value = serde_json::from_slice(&offered).unwrap();
+        assert_eq!(read["properties"]["q"]["default"], "Coffee");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&constants_for_titles(br#"{"q":"Coffee"}"#, &offered))
+                .unwrap(),
+            serde_json::json!({"q": 2})
+        );
+    }
+
+    /// A field that already offered an `enum` was not rewritten, so its
+    /// answer goes as chosen, even where its `oneOf` titles another value.
+    #[test]
+    fn a_field_that_had_an_enum_is_answered_as_chosen() {
+        let schema = br#"{"properties":{"q":{"type":"string","enum":["Tea","x"],"oneOf":[{"const":"x","title":"Tea"}]}}}"#;
+        let offered = titled_choices(schema);
+        assert_eq!(offered, schema);
+        assert_eq!(
+            constants_for_titles(br#"{"q":"Tea"}"#, &offered),
+            br#"{"q":"Tea"}"#
+        );
     }
 
     #[test]

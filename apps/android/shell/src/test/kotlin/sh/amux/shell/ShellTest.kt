@@ -297,7 +297,7 @@ class ShellTest {
     fun closingConfirmingPairingSheetAbandonsPendingPair() {
         val router = Router()
         val accounts = AccountRegistry()
-        val abandoned = mutableListOf<sh.amux.values.PendingPair>()
+        val abandoned = java.util.concurrent.CopyOnWriteArrayList<sh.amux.values.PendingPair>()
         val stores = StoreBundle(
             account = AccountId("signed-out"),
             abandonPairOp = { pending ->
@@ -349,9 +349,10 @@ class ShellTest {
         composeRule.onNodeWithTag(TestTags.PAIRING_CONFIRM).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.PAIRING_CLOSE).performClick()
         composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 2_000L) { abandoned.isNotEmpty() }
 
         assertNull(router.snapshot.pairing)
-        assertEquals(listOf(pending), abandoned)
+        assertEquals(listOf(pending), abandoned.toList())
     }
 
     @Test

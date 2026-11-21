@@ -41,7 +41,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ["address", "thread"]
 # Every test target of these crates.
-WHOLE = ["app-ffi", "app-runtime", "app-embedded", "store", "journal", "pty-host", "agent-dir"]
+WHOLE = ["app-bridge", "app-ffi", "app-jni", "app-runtime", "app-embedded", "store", "journal", "pty-host", "agent-dir"]
 # Only the library tests: the node's and the terminal client's integration
 # suites start full testnets and would blow past the sanitizer job's runtime
 # budget; the daemon and provider processes are already exercised under the

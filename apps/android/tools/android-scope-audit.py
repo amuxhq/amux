@@ -60,6 +60,11 @@ FORBIDDEN_NATIVE_SYMBOL_PATTERNS: tuple[str, ...] = (
     "testnet",
 )
 
+FORBIDDEN_DEBUG_SECTIONS: tuple[str, ...] = (
+    ".debug_info",
+    ".debug_line",
+)
+
 SQLITE_DEFINED_SYMBOLS: tuple[str, ...] = (
     "sqlite3_open",
     "sqlite3_open_v2",
@@ -68,6 +73,7 @@ SQLITE_DEFINED_SYMBOLS: tuple[str, ...] = (
 
 DEX_CLASS_DESCRIPTOR_RE = re.compile(r"Class descriptor\s*:\s*'([^']+)'")
 DT_NEEDED_RE = re.compile(r"\(NEEDED\)\s+Shared library:\s*\[([^\]]+)\]")
+ELF_SECTION_NAME_RE = re.compile(r"^\s*\[\s*\d+\]\s+(\S+)", re.MULTILINE)
 SQLITE_LIB_RE = re.compile(r"libsqlite", re.IGNORECASE)
 
 
@@ -276,6 +282,10 @@ def parse_dt_needed(readelf_output: str) -> list[str]:
     return DT_NEEDED_RE.findall(readelf_output)
 
 
+def parse_section_headers(readelf_output: str) -> list[str]:
+    return ELF_SECTION_NAME_RE.findall(readelf_output)
+
+
 def parse_nm_symbols(nm_output: str) -> list[tuple[str, str]]:
     """Return (symbol_type, symbol_name) pairs from llvm-nm/nm output."""
     parsed: list[tuple[str, str]] = []
@@ -330,6 +340,22 @@ def inspect_native_library(
             "SQLite must be statically linked"
         )
 
+    sections_out = subprocess.run(
+        [readelf_bin, "--section-headers", str(so_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    ).stdout
+    sections = parse_section_headers(sections_out)
+    if not sections:
+        raise RuntimeError(
+            f"{so_path} reported no ELF section headers; readelf output may be invalid"
+        )
+    dwarf_sections = [sec for sec in FORBIDDEN_DEBUG_SECTIONS if sec in sections]
+
     # Read full symbol table when present (optional for stripped libraries),
     # and require the dynamic symbol table (always present in ELF cdylibs).
     nm_lines: list[str] = []
@@ -365,7 +391,9 @@ def inspect_native_library(
     nm_lines.append(dyn_proc.stdout)
 
     symbols = parse_nm_symbols("\n".join(nm_lines))
-    forbidden_hits: list[str] = []
+    forbidden_hits: list[str] = [
+        f"unstripped DWARF section {sec} present" for sec in dwarf_sections
+    ]
 
     for sym_type, sym_name in symbols:
         lower = sym_name.lower()
@@ -555,7 +583,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    print("scope-audit: PASS (no debug/test classes or symbols; SQLite statically linked)", flush=True)
+    print("scope-audit: PASS (no debug/test classes, symbols or DWARF sections; SQLite statically linked)", flush=True)
     return 0
 
 

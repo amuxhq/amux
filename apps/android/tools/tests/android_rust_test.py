@@ -167,6 +167,62 @@ class AndroidRustScriptTest(unittest.TestCase):
             self.assertTrue(mod.copy_if_changed(src, dst))
             self.assertEqual(dst.read_bytes(), b"amux-jni-v2")
 
+    def test_release_build_strips_debug_sections_and_propagates_strip_failure(self):
+        mod = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rel_dir = root / "release-jniLibs"
+            calls: list[list[str]] = []
+
+            def fake_run(cmd, **kwargs):
+                calls.append(list(cmd))
+                if cmd[0] == "cargo":
+                    staging_idx = cmd.index("-o") + 1
+                    so_path = Path(cmd[staging_idx]) / "arm64-v8a" / "libamux_app.so"
+                    so_path.parent.mkdir(parents=True, exist_ok=True)
+                    so_path.write_bytes(b"\x7fELFwith-debug-info")
+                elif cmd[0] == "/fake/llvm-strip":
+                    so_path = Path(cmd[-1])
+                    so_path.write_bytes(b"\x7fELFstripped")
+                return mock.Mock(returncode=0)
+
+            with (
+                mock.patch.object(mod, "OUTPUT", root),
+                mock.patch.object(mod, "RUST_TARGETS", root / "rust-cargo"),
+                mock.patch.object(mod, "RELEASE_JNI_LIBS", rel_dir),
+                mock.patch.object(mod, "find_cargo_ndk", return_value="/fake/cargo-ndk"),
+                mock.patch.object(mod, "find_llvm_strip", return_value="/fake/llvm-strip"),
+                mock.patch.object(mod.subprocess, "run", side_effect=fake_run),
+            ):
+                mod.build_android(["arm64-v8a"], release=True, fingerprint="rel-fp", ndk="/fake/ndk")
+
+            strip_calls = [c for c in calls if c[0] == "/fake/llvm-strip"]
+            self.assertEqual(len(strip_calls), 1)
+            self.assertEqual(strip_calls[0][1], "--strip-debug")
+            self.assertEqual((rel_dir / "arm64-v8a" / "libamux_app.so").read_bytes(), b"\x7fELFstripped")
+
+            # Failure in llvm-strip must abort the release build cleanly without writing the stamp.
+            def fake_run_fail_strip(cmd, **kwargs):
+                if cmd[0] == "cargo":
+                    staging_idx = cmd.index("-o") + 1
+                    so_path = Path(cmd[staging_idx]) / "arm64-v8a" / "libamux_app.so"
+                    so_path.parent.mkdir(parents=True, exist_ok=True)
+                    so_path.write_bytes(b"\x7fELFwith-debug-info")
+                    return mock.Mock(returncode=0)
+                raise subprocess.CalledProcessError(1, cmd)
+
+            with (
+                mock.patch.object(mod, "OUTPUT", root),
+                mock.patch.object(mod, "RUST_TARGETS", root / "rust-cargo"),
+                mock.patch.object(mod, "RELEASE_JNI_LIBS", rel_dir),
+                mock.patch.object(mod, "find_cargo_ndk", return_value="/fake/cargo-ndk"),
+                mock.patch.object(mod, "find_llvm_strip", return_value="/fake/llvm-strip"),
+                mock.patch.object(mod.subprocess, "run", side_effect=fake_run_fail_strip),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    mod.build_android(["arm64-v8a"], release=True, fingerprint="rel-fp-2", ndk="/fake/ndk")
+            self.assertFalse((root / "release-jni-stamp.txt").exists())
+
     def test_cli_fingerprint_prints_sha256_hex(self):
         result = subprocess.run(
             [sys.executable, "-B", str(SCRIPT), "--host", "--fingerprint"],

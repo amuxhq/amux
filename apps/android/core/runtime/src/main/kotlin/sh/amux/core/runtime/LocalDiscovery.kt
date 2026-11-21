@@ -35,12 +35,22 @@ data class DiscoveryClaim(
  * `List<Found>` handed to [Runtime.discovered]. Separated from [NsdManager] so
  * TXT parsing, address formatting, filtering, and removal are unit-tested on JVM.
  */
-class NsdDiscoveryTracker(
+class NsdDiscoveryTracker internal constructor(
     private val only: Set<HostId>? = null,
-    private val handOver: (List<Found>) -> Unit,
+    private val handOverWithGeneration: (List<Found>, Long) -> Unit,
 ) {
+    constructor(
+        only: Set<HostId>? = null,
+        handOver: (List<Found>) -> Unit,
+    ) : this(only = only, handOverWithGeneration = { list, _ -> handOver(list) })
+
     private val foundByService = LinkedHashMap<String, Found>()
+
+    @Volatile
     private var browseGeneration: Long = 0L
+
+    /** Returns the latest browse session generation token. */
+    fun currentGeneration(): Long = browseGeneration
 
     /** Starts a fresh browse session and returns its monotonic generation token. */
     @Synchronized
@@ -58,10 +68,11 @@ class NsdDiscoveryTracker(
         generation: Long? = null,
     ) {
         if (generation != null && generation != browseGeneration) return
+        val activeGen = generation ?: browseGeneration
         val claim = parseClaim(attributes)
         if (claim == null || (only != null && claim.host !in only)) {
             if (foundByService.remove(serviceName) != null) {
-                emit()
+                emit(activeGen)
             }
             return
         }
@@ -70,7 +81,7 @@ class NsdDiscoveryTracker(
             .distinct()
         if (formattedAddrs.isEmpty()) {
             if (foundByService.remove(serviceName) != null) {
-                emit()
+                emit(activeGen)
             }
             return
         }
@@ -84,15 +95,16 @@ class NsdDiscoveryTracker(
         )
         if (foundByService[serviceName] != next) {
             foundByService[serviceName] = next
-            emit()
+            emit(activeGen)
         }
     }
 
     @Synchronized
     fun onServiceLost(serviceName: String, generation: Long? = null) {
         if (generation != null && generation != browseGeneration) return
+        val activeGen = generation ?: browseGeneration
         if (foundByService.remove(serviceName) != null) {
-            emit()
+            emit(activeGen)
         }
     }
 
@@ -101,17 +113,19 @@ class NsdDiscoveryTracker(
      * an empty snapshot so the runtime forgets computers from a previous network.
      */
     @Synchronized
-    fun forget() {
+    fun forget(): Long {
         browseGeneration += 1L
+        val nextGen = browseGeneration
         foundByService.clear()
-        emit()
+        emit(nextGen)
+        return nextGen
     }
 
     @Synchronized
     fun current(): List<Found> = foundByService.values.toList()
 
-    private fun emit() {
-        handOver(foundByService.values.toList())
+    private fun emit(generation: Long) {
+        handOverWithGeneration(foundByService.values.toList(), generation)
     }
 
     companion object {
@@ -177,12 +191,17 @@ class AndroidLocalDiscovery(
     private val executor: Executor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "amux-nsd").apply { isDaemon = true }
     }
-    private val tracker = NsdDiscoveryTracker(only = only) { list ->
-        val capturedGen = synchronized(lock) { browseGeneration }
+    internal val tracker = NsdDiscoveryTracker(only = only) { list, browseGen ->
+        dispatchSnapshot(list, browseGen)
+    }
+
+    internal fun dispatchSnapshot(snapshot: List<Found>, browseGen: Long) {
         dispatch {
-            val stillCurrent = synchronized(lock) { capturedGen == browseGeneration }
+            val stillCurrent = synchronized(lock) {
+                browseGen == browseGeneration && browseGen == tracker.currentGeneration()
+            }
             if (stillCurrent) {
-                handOver(list)
+                handOver(snapshot)
             }
         }
     }
@@ -195,6 +214,7 @@ class AndroidLocalDiscovery(
 
     override fun start() {
         val manager = nsdManager ?: return
+        var failed = false
         synchronized(lock) {
             if (browsing) return
             browsing = true
@@ -232,11 +252,15 @@ class AndroidLocalDiscovery(
                     listener,
                 )
             }.onFailure {
+                failed = true
                 browsing = false
                 discoveryListener = null
-                tracker.forget()
+                browseGeneration += 1L
                 releaseMulticastLock()
             }
+        }
+        if (failed) {
+            forgetTracker()
         }
     }
 
@@ -254,13 +278,22 @@ class AndroidLocalDiscovery(
             infoCallbacks.clear()
             releaseMulticastLock()
         }
-        tracker.forget()
+        forgetTracker()
         if (manager != null) {
             for (callback in callbacksToStop) {
                 runCatching { manager.unregisterServiceInfoCallback(callback) }
             }
             if (listenerToStop != null) {
                 runCatching { manager.stopServiceDiscovery(listenerToStop) }
+            }
+        }
+    }
+
+    private fun forgetTracker() {
+        val clearedGen = tracker.forget()
+        synchronized(lock) {
+            if (!browsing) {
+                browseGeneration = clearedGen
             }
         }
     }

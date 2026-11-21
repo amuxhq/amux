@@ -676,7 +676,7 @@ fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
 /// (`flock(LOCK_EX)`) when `renameat2(RENAME_NOREPLACE)` is unavailable on the
 /// kernel or filesystem, so concurrent first-run initializers never overwrite
 /// an already-published `device.key` and a crash cannot leave a stale lock.
-#[cfg(any(target_os = "android", test))]
+#[cfg(any(target_os = "android", all(unix, test)))]
 fn publish_new_file_locked(tmp: &Path, path: &Path) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
 
@@ -1051,6 +1051,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn locked_publish_fallback_preserves_first_writer_under_contention() {
         let dir = temp_data_dir();

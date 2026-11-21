@@ -85,6 +85,15 @@ def build_fake_apk(
     return path
 
 
+CLEAN_SECTIONS_OUT = (
+    "Section Headers:\n"
+    "  [ 0]                   NULL            0000000000000000 000000 000000\n"
+    "  [ 1] .dynsym           DYNSYM          0000000000000200 000200 001000\n"
+    "  [ 2] .text             PROGBITS        0000000000010000 010000 100000\n"
+    "  [ 3] .rodata           PROGBITS        0000000000110000 110000 020000\n"
+)
+
+
 class AndroidScopeAuditTest(unittest.TestCase):
     def test_pure_python_dex_parser_extracts_class_descriptors(self):
         dex = build_minimal_dex([
@@ -169,6 +178,8 @@ class AndroidScopeAuditTest(unittest.TestCase):
 
             def fake_run(cmd, **kwargs):
                 if "readelf" in cmd[0]:
+                    if "--section-headers" in cmd:
+                        return mock.Mock(returncode=0, stdout=CLEAN_SECTIONS_OUT, stderr="")
                     return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
                 return mock.Mock(returncode=0, stdout=nm_out, stderr="")
 
@@ -217,6 +228,8 @@ class AndroidScopeAuditTest(unittest.TestCase):
 
             def fake_run(cmd, **kwargs):
                 if "readelf" in cmd[0]:
+                    if "--section-headers" in cmd:
+                        return mock.Mock(returncode=0, stdout=CLEAN_SECTIONS_OUT, stderr="")
                     return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
                 return mock.Mock(returncode=0, stdout=nm_out, stderr="")
 
@@ -241,6 +254,8 @@ class AndroidScopeAuditTest(unittest.TestCase):
 
             def fake_run(cmd, **kwargs):
                 if "readelf" in cmd[0]:
+                    if "--section-headers" in cmd:
+                        return mock.Mock(returncode=0, stdout=CLEAN_SECTIONS_OUT, stderr="")
                     return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
                 if "--dynamic" in cmd:
                     return mock.Mock(
@@ -271,6 +286,8 @@ class AndroidScopeAuditTest(unittest.TestCase):
 
             def fake_run(cmd, **kwargs):
                 if "readelf" in cmd[0]:
+                    if "--section-headers" in cmd:
+                        return mock.Mock(returncode=0, stdout=CLEAN_SECTIONS_OUT, stderr="")
                     return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
                 if "--dynamic" in cmd:
                     return mock.Mock(returncode=0, stdout=dyn_nm_out, stderr="")
@@ -285,6 +302,39 @@ class AndroidScopeAuditTest(unittest.TestCase):
                 )
             self.assertEqual(result.forbidden_hits, ())
             self.assertIn("stripped static SQLite engine present", result.sqlite_evidence)
+
+    def test_inspect_native_library_rejects_dwarf_debug_sections(self):
+        readelf_out = " 0x0000000000000001 (NEEDED) Shared library: [libc.so]\n"
+        dwarf_sections_out = (
+            CLEAN_SECTIONS_OUT
+            + "  [ 4] .debug_info       PROGBITS        0000000000000000 130000 500000\n"
+            + "  [ 5] .debug_line       PROGBITS        0000000000000000 630000 100000\n"
+        )
+        nm_out = (
+            "0000000000123456 T Java_sh_amux_core_runtime_NativeBridge_version\n"
+            "0000000000234567 t sqlite3_open_v2\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            so = Path(tmp) / "libamux_app.so"
+            so.write_bytes(b"\x7fELFunstripped-dwarf")
+
+            def fake_run(cmd, **kwargs):
+                if "readelf" in cmd[0]:
+                    if "--section-headers" in cmd:
+                        return mock.Mock(returncode=0, stdout=dwarf_sections_out, stderr="")
+                    return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
+                return mock.Mock(returncode=0, stdout=nm_out, stderr="")
+
+            with mock.patch.object(audit.subprocess, "run", side_effect=fake_run):
+                result = audit.inspect_native_library(
+                    so,
+                    abi="arm64-v8a",
+                    readelf="llvm-readelf",
+                    nm="llvm-nm",
+                )
+            joined = "\n".join(result.forbidden_hits)
+            self.assertIn(".debug_info", joined)
+            self.assertIn(".debug_line", joined)
 
     def test_audit_apk_fails_when_native_library_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:

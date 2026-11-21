@@ -131,4 +131,22 @@ class PairingStoreTest {
         store.paired(Result.success("desk"), attempt = confirmAttempt)
         assertEquals(PairingStore.Phase.Trusted("desk"), store.snapshot.phase)
     }
+
+    @Test
+    fun normalizesLocalizedUnicodeDigitsToAsciiBeforeSubmittingPin() {
+        val store = PairingStore()
+        store.open()
+
+        // Arabic-Indic digits ٤١٨٢٠٧ must normalize to ASCII 418207.
+        store.enter("٤١٨٢٠٧")
+        assertEquals("418207", store.snapshot.digits)
+        assertEquals(
+            PairRequest.Pin(pin = "418207", addrs = emptyList(), hostId = null),
+            store.snapshot.request,
+        )
+
+        // Mixed localized/fullwidth digits with separators and extra chars normalize and truncate to 6.
+        store.enter("４１-٨ २ 0 ٧ 9")
+        assertEquals("418207", store.snapshot.digits)
+    }
 }

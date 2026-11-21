@@ -337,7 +337,15 @@ private fun PinEntryContent(
                 value = state.digits,
                 onValueChange = { typed ->
                     if (state.takingDigits) {
-                        val cleaned = typed.filter { it.isDigit() }.take(6)
+                        val cleaned = buildString(6) {
+                            for (ch in typed) {
+                                val digit = Character.digit(ch, 10)
+                                if (digit in 0..9) {
+                                    append(('0'.code + digit).toChar())
+                                    if (length == 6) break
+                                }
+                            }
+                        }
                         onAction(PairingAction.Digits(cleaned))
                     }
                 },

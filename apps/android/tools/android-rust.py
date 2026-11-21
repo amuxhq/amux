@@ -140,6 +140,30 @@ def find_android_ndk() -> str | None:
     return None
 
 
+def find_llvm_strip(ndk_path: str | None) -> str:
+    if ndk_path:
+        prebuilt = Path(ndk_path) / "toolchains" / "llvm" / "prebuilt"
+        if prebuilt.is_dir():
+            for host_dir in sorted(prebuilt.iterdir()):
+                candidate = host_dir / "bin" / "llvm-strip"
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return str(candidate)
+    found = shutil.which("llvm-strip")
+    if found:
+        return found
+    raise RuntimeError(
+        "llvm-strip was not found in the Android NDK prebuilt toolchain or on PATH"
+    )
+
+
+def strip_debug_sections(so_path: Path, strip_bin: str) -> None:
+    subprocess.run(
+        [strip_bin, "--strip-debug", str(so_path)],
+        check=True,
+        timeout=300,
+    )
+
+
 def ndk_identity(ndk_path: str | None) -> str:
     if not ndk_path:
         return "none"
@@ -197,7 +221,7 @@ def build_fingerprint(
         if mode == "release":
             spec = (
                 f"release:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:"
-                f"{SHIPPING_PROFILE}::ndk={ndk_id}"
+                f"{SHIPPING_PROFILE}:strip-debug:ndk={ndk_id}"
             )
         else:
             spec = (
@@ -313,10 +337,15 @@ def build_android(
     print(f"Building {CRATE} for Android {','.join(abis)} (API {ANDROID_PLATFORM}, {profile}{feat_note})", flush=True)
     subprocess.run(cmd, check=True, env=env, timeout=1500)
 
+    strip_bin = find_llvm_strip(resolved_ndk) if release else None
+
     for abi in abis:
         built = staging / abi / f"lib{LIB_STEM}.so"
         if not built.is_file():
             raise RuntimeError(f"expected Android JNI library at {built}, but it was not produced")
+        if release:
+            assert strip_bin is not None
+            strip_debug_sections(built, strip_bin)
         dst = jni_root / abi / f"lib{LIB_STEM}.so"
         copy_if_changed(built, dst)
         print(f"{abi}: {dst.stat().st_size} bytes ({dst})", flush=True)

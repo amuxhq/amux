@@ -147,7 +147,7 @@ class PairingStore(
     fun enter(typed: String) {
         val current = _state.value
         if (!current.taking) return
-        val filtered = typed.filter { it.isDigit() }.take(CODE_LENGTH)
+        val filtered = normalizeDigits(typed)
         _state.update {
             it.copy(
                 digits = filtered,
@@ -226,6 +226,23 @@ class PairingStore(
     companion object {
         const val CODE_LENGTH: Int = 6
         const val OFFER_WINDOW: String = "5 minutes"
+
+        /**
+         * Normalizes any decimal digits (including localized Unicode digits such
+         * as Arabic-Indic) to ASCII `'0'..'9'` so the pairing PIN matches what
+         * the Rust core validates.
+         */
+        fun normalizeDigits(typed: String, maxLength: Int = CODE_LENGTH): String {
+            val out = StringBuilder(maxLength)
+            for (ch in typed) {
+                val digit = Character.digit(ch, 10)
+                if (digit in 0..9) {
+                    out.append(('0'.code + digit).toChar())
+                    if (out.length == maxLength) break
+                }
+            }
+            return out.toString()
+        }
 
         /**
          * Returns the core's message verbatim only when the core wrote it as a

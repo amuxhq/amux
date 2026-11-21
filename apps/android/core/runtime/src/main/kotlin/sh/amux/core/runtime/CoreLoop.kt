@@ -29,6 +29,24 @@ sealed interface FleetEvent {
     data class Pairing(val status: PairingStatusView) : FleetEvent
 }
 
+/** Internal bridge seam allowing unit tests to exercise watcher failures deterministically. */
+internal interface CoreLoopBridge {
+    fun runtimeStart(configJson: String): Long
+    fun runtimeStop(handle: Long)
+    fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int
+    fun runtimeInterruptWake(handle: Long)
+    fun runtimeStep(handle: Long): String?
+}
+
+private object NativeCoreLoopBridge : CoreLoopBridge {
+    override fun runtimeStart(configJson: String): Long = NativeBridge.runtimeStart(configJson)
+    override fun runtimeStop(handle: Long) = NativeBridge.runtimeStop(handle)
+    override fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int =
+        NativeBridge.runtimeWaitWake(handle, timeoutMs)
+    override fun runtimeInterruptWake(handle: Long) = NativeBridge.runtimeInterruptWake(handle)
+    override fun runtimeStep(handle: Long): String? = NativeBridge.runtimeStep(handle)
+}
+
 /**
  * Owns the dedicated core executor and wake-fd watcher thread for one
  * [NativeBridge] runtime instance.
@@ -42,14 +60,29 @@ sealed interface FleetEvent {
  * are delivered together in one ordered [dispatch] call so continuations
  * awaiting an act always observe the post-delta UI state.
  */
-class CoreLoop(
+class CoreLoop internal constructor(
     private val dispatch: (() -> Unit) -> Unit = { it() },
     private val onProfilesMoved: (List<ProfileView>) -> Unit = {},
     private val onError: (Throwable) -> Unit = { error ->
         System.err.println("CoreLoop watcher error: $error")
         error.printStackTrace(System.err)
     },
+    private val bridge: CoreLoopBridge,
 ) : AutoCloseable {
+    constructor(
+        dispatch: (() -> Unit) -> Unit = { it() },
+        onProfilesMoved: (List<ProfileView>) -> Unit = {},
+        onError: (Throwable) -> Unit = { error ->
+            System.err.println("CoreLoop watcher error: $error")
+            error.printStackTrace(System.err)
+        },
+    ) : this(
+        dispatch = dispatch,
+        onProfilesMoved = onProfilesMoved,
+        onError = onError,
+        bridge = NativeCoreLoopBridge,
+    )
+
     private val coreThreadRef = ThreadLocal.withInitial { false }
     private val executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(
@@ -62,6 +95,7 @@ class CoreLoop(
     }
 
     private val stopping = AtomicBoolean(false)
+    private val released = AtomicBoolean(false)
     private val fleetListeners = ConcurrentHashMap<Long, (FleetEvent) -> Unit>()
     private val waitingTickets = ConcurrentHashMap<Long, CompletableFuture<String>>()
 
@@ -74,6 +108,13 @@ class CoreLoop(
     val handle: Long
         get() = runtimeHandle
 
+    internal val isExecutorShutdown: Boolean
+        get() = executor.isShutdown
+
+    internal fun awaitWatcherExit(timeoutMs: Long = WATCHER_JOIN_MS) {
+        watcherThread?.join(timeoutMs)
+    }
+
     /**
      * Starts the embedded runtime on the core thread, launches the wake-fd
      * watcher, and performs the initial step so the initial profile list is
@@ -83,7 +124,7 @@ class CoreLoop(
         val configJson = AmuxJson.json.encodeToString(config)
         return blocking {
             check(runtimeHandle == 0L) { "CoreLoop has already been started" }
-            val started = NativeBridge.runtimeStart(configJson)
+            val started = bridge.runtimeStart(configJson)
             runtimeHandle = started
             startWatcher(started)
             stepOnCore()
@@ -203,15 +244,12 @@ class CoreLoop(
      * callback without self-deadlocking on the watcher thread.
      */
     fun stop() {
-        if (!stopping.compareAndSet(false, true)) {
-            return
-        }
+        val firstStopper = stopping.compareAndSet(false, true)
         val live = runtimeHandle
-        if (live != 0L) {
-            NativeBridge.runtimeInterruptWake(live)
+        if (firstStopper && live != 0L) {
+            runCatching { bridge.runtimeInterruptWake(live) }
         }
         val watcher = watcherThread
-        watcherThread = null
         val onCoreThread = coreThreadRef.get() == true
         if (!onCoreThread && watcher != null && watcher !== Thread.currentThread()) {
             try {
@@ -220,24 +258,41 @@ class CoreLoop(
                 Thread.currentThread().interrupt()
             }
         }
+        watcherThread = null
+        releaseResources()
+    }
+
+    override fun close() {
+        stop()
+    }
+
+    private fun releaseResources() {
+        if (!released.compareAndSet(false, true)) {
+            return
+        }
         try {
             blocking {
                 val handleToStop = runtimeHandle
                 runtimeHandle = 0L
                 if (handleToStop != 0L) {
-                    NativeBridge.runtimeStop(handleToStop)
+                    bridge.runtimeStop(handleToStop)
                 }
                 failPendingTickets()
+            }
+        } catch (t: Throwable) {
+            if (t !is RejectedExecutionException) {
+                reportError(t)
+            }
+            val handleToStop = runtimeHandle
+            runtimeHandle = 0L
+            if (handleToStop != 0L) {
+                runCatching { bridge.runtimeStop(handleToStop) }
             }
         } finally {
             fleetListeners.clear()
             failPendingTickets()
             executor.shutdown()
         }
-    }
-
-    override fun close() {
-        stop()
     }
 
     private fun startWatcher(handle: Long) {
@@ -247,7 +302,7 @@ class CoreLoop(
                     var consecutiveErrors = 0
                     while (!stopping.get()) {
                         val ready = try {
-                            NativeBridge.runtimeWaitWake(handle, -1)
+                            bridge.runtimeWaitWake(handle, -1)
                         } catch (t: Throwable) {
                             if (!stopping.get()) {
                                 reportError(t)
@@ -291,8 +346,9 @@ class CoreLoop(
                     }
                 } finally {
                     if (stopping.compareAndSet(false, true)) {
-                        failPendingTickets()
+                        releaseResources()
                     }
+                    watcherThread = null
                 }
             },
             "amux-wake",
@@ -314,7 +370,7 @@ class CoreLoop(
         if (live == 0L) {
             return
         }
-        val raw = NativeBridge.runtimeStep(live) ?: return
+        val raw = bridge.runtimeStep(live) ?: return
         val stepped = AmuxJson.json.decodeFromString<Stepped>(raw)
 
         val hasWork = stepped.profiles != null ||

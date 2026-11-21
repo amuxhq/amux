@@ -1267,8 +1267,9 @@ agent's words, except a session refused `AUTH_REQUIRED`: the agent does not
 end but waits, idle and signed out (the snapshot's sign-in and a blocked
 notice say so, as for Claude), holding every prompt and message in its
 queue. Each prompt that arrives while it waits asks again, one ask at a
-time, by an `AcpReopen` effect: the agent process sends the very request it
-was refused, so a refused resume or load is asked again as itself and never
+time, by an `AcpReopen` effect; a prompt that arrives while an ask is in
+flight has it asked once more if refused, since the person may have signed
+in after it went. The agent process sends the very request it was refused, so a refused resume or load is asked again as itself and never
 becomes a new session. Once the session opens, the agent is signed in and
 the queue drains in order. The agent's host takes the sign-in its agents
 meet as its word on the provider (a conversation's newer than the helper's

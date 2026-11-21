@@ -496,6 +496,10 @@ pub struct State {
     awaiting_sign_in: bool,
     #[serde(default)]
     reopening: bool,
+    /// A prompt came while an ask was in flight: the person may have
+    /// signed in after it went, so a refusal of it is asked once more.
+    #[serde(default)]
+    reopen_again: bool,
     /// The settings a person picked that the agent has not yet said it
     /// took: once it does, the step says so, and its host keeps the pick.
     #[serde(default)]
@@ -661,6 +665,7 @@ impl State {
             picking: Default::default(),
             awaiting_sign_in: false,
             reopening: false,
+            reopen_again: false,
             requests: BTreeMap::new(),
             prompts: Vec::new(),
             sets: 0,
@@ -1280,7 +1285,12 @@ impl State {
     /// new session in place of a refused reopening). The prompt waits in
     /// the queue meanwhile, and goes once the session opens.
     fn reopen_after_sign_in(&mut self, emit: &mut Emit) {
-        if self.awaiting_sign_in && !self.reopening {
+        if !self.awaiting_sign_in {
+            return;
+        }
+        if self.reopening {
+            self.reopen_again = true;
+        } else {
             self.reopening = true;
             emit.effect(Effect::AcpReopen);
         }
@@ -1578,6 +1588,7 @@ impl State {
         // A new process asks to open the session itself.
         self.awaiting_sign_in = false;
         self.reopening = false;
+        self.reopen_again = false;
         self.shared.awaiting_sign_in(false);
         self.requests.clear();
         self.prompts.clear();

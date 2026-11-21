@@ -428,11 +428,19 @@ fn a_signed_out_agent_waits_and_a_prompt_asks_again() {
     let second = Acp::step(&mut state, prompt("b", "second"));
     assert_eq!(reopens(&second.effects), 0, "one ask in flight at a time");
 
-    // Still signed out: it waits again, and the next prompt asks again.
-    Acp::step(
+    // Still signed out. The person may have signed in after the ask went,
+    // so the prompt sent meanwhile asks once more; a refusal of that waits
+    // for the next prompt.
+    let again = Acp::step(
         &mut state,
         auth_required(interpret::acp::NEW_SESSION_REQUEST),
     );
+    assert_eq!(reopens(&again.effects), 1, "asked once more");
+    let waits = Acp::step(
+        &mut state,
+        auth_required(interpret::acp::NEW_SESSION_REQUEST),
+    );
+    assert_eq!(reopens(&waits.effects), 0, "nothing asks again on its own");
     let third = Acp::step(&mut state, prompt("c", "third"));
     assert_eq!(reopens(&third.effects), 1);
 

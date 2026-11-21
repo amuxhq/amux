@@ -1,8 +1,8 @@
 //! An ACP agent as the agent process hosts it, against fake-acp: its
 //! command over stdio, the handshake, prompts, asks, the queue, a cancel,
 //! reopening its session in a later process or ending for good when it
-//! cannot, sign-in, attachments within what it takes, and amux's own tools
-//! allowed without asking.
+//! cannot, waiting for a sign-in, attachments within what it takes, and
+//! amux's own tools allowed without asking.
 
 use agent::ExitCause;
 use provider_fakes::{AcpAgent, Call, Offer, Outcome, Step, ToolServerCall};
@@ -426,19 +426,50 @@ async fn a_refused_resume_ends_the_agent() {
     );
 }
 
-/// An agent that answers `session/new` "Authentication required" ends the
-/// incarnation, and its snapshot says it is signed out.
+/// An agent that answers `session/new` "Authentication required" stays,
+/// idle and saying it is signed out, with prompts waiting. Each prompt
+/// asks it to open the session again; once the person has signed in, the
+/// session opens and the waiting prompts go to it in order.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_signed_out_agent_ends_saying_so() {
+async fn a_signed_out_agent_waits_for_a_sign_in() {
+    let mut steps = said("one");
+    steps.extend(said("two"));
+    let account = tempfile::tempdir().unwrap();
+    let signed_in = account.path().join("signed-in");
     let agent = Agent::start(Setup {
-        signed_out: true,
-        ..acp("grok", said("hello"))
+        acp: AcpAgent {
+            signed_in_at: Some(signed_in.clone()),
+            ..AcpAgent::default()
+        },
+        ..acp("grok", steps)
     })
     .await;
-    let cause = interpreter_cause(agent.exit().await);
-    assert!(cause.contains("Authentication required"), "{cause}");
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
     let sign_in = agent.log().acp().sign_in.unwrap_or_default();
     assert_eq!(sign_in.state(), wire::SignInState::SignedOut);
+
+    daemon.prompt(b"p1", "first").await;
+    agent
+        .until("the session is asked for again", || {
+            sent(&agent, "session/new").len() == 2
+        })
+        .await;
+    assert!(sent(&agent, "session/prompt").is_empty());
+
+    std::fs::write(&signed_in, b"").unwrap();
+    daemon.prompt(b"p2", "second").await;
+    agent
+        .wait("both turns end", |log| log.turn_ends() == 2)
+        .await;
+    assert_eq!(sent(&agent, "session/new").len(), 3);
+    let prompts = sent(&agent, "session/prompt");
+    assert_eq!(prompts[0]["params"]["prompt"][0]["text"], "first");
+    assert_eq!(prompts[1]["params"]["prompt"][0]["text"], "second");
+    let sign_in = agent.log().acp().sign_in.unwrap_or_default();
+    assert_eq!(sign_in.state(), wire::SignInState::SignedIn);
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
 /// An attachment's bytes, in the agent's blob folder as its daemon puts
@@ -682,7 +713,8 @@ async fn an_agent_in_another_protocol_version_ends() {
         ..acp("opencode", said("hello"))
     })
     .await;
-    let _daemon = agent.dial().await;
+    // No daemon dials: the agent ends at the handshake, often before a
+    // dial could reach its socket, and needs no reader to end.
     let cause = interpreter_cause(agent.exit().await);
     assert!(
         cause.contains("speaks version 2 of the Agent Client Protocol"),

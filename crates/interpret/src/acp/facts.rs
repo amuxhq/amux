@@ -872,13 +872,19 @@ impl State {
                     self.shared.awaiting_sign_in(true);
                     self.awaiting_sign_in = true;
                     self.reopening = false;
-                    return self.log(
+                    self.log(
                         emit,
                         format!(
                             "{} wants a sign-in before it opens a session: {}",
                             self.agent, error.message
                         ),
                     );
+                    // A prompt that came while this ask was in flight is
+                    // asked for once more, not left for the next prompt.
+                    if std::mem::take(&mut self.reopen_again) {
+                        self.reopen_after_sign_in(emit);
+                    }
+                    return;
                 }
                 let what = if reopened {
                     "reopen its conversation"
@@ -937,6 +943,7 @@ impl State {
         self.shared.awaiting_sign_in(false);
         self.awaiting_sign_in = false;
         self.reopening = false;
+        self.reopen_again = false;
         self.opened = true;
         self.start_boundary(
             emit,

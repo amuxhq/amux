@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_accounts">Accounts</string>
+    <string name="settings_section_account_actions">Selected Account</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_section_privacy_diagnostics">Privacy &amp; Diagnostics</string>
+    <string name="settings_section_this_phone">This Phone</string>
+
+    <!-- Settings: Accounts -->
+    <string name="settings_signed_out_title">Sign in to reach your computers anywhere</string>
+    <string name="settings_signed_out_detail">An account connects this phone to your paired computers over the cloud relay. Computers on this network work without one.</string>
+    <string name="settings_sign_in">Sign In</string>
+    <string name="settings_sign_in_again">Sign In Again</string>
+    <string name="settings_signing_in">Signing in…</string>
+    <string name="settings_add_account">Add Account</string>
+    <string name="settings_account_active">Active</string>
+    <string name="settings_account_signed_out">Signed out</string>
+    <string name="settings_account_expired">Session expired</string>
+    <string name="settings_badge_pro">Pro</string>
+    <string name="settings_badge_trial">Trial</string>
+    <string name="settings_badge_included">Included</string>
+    <string name="settings_badge_free">Free</string>
+    <string name="settings_manage_subscription">Manage Subscription</string>
+    <string name="settings_upgrade">Upgrade</string>
+    <string name="settings_sign_out">Sign Out</string>
+    <string name="settings_remove_from_phone">Remove from This Phone</string>
+    <string name="settings_delete_account">Delete Account</string>
+
+    <!-- Settings: Appearance -->
+    <string name="settings_appearance_label">Theme</string>
+    <string name="settings_appearance_light">Light</string>
+    <string name="settings_appearance_dark">Dark</string>
+    <string name="settings_appearance_system">System</string>
+
+    <!-- Settings: Notifications -->
+    <string name="settings_notifications_label">Notifications</string>
+    <string name="settings_notifications_enabled">Enabled</string>
+    <string name="settings_notifications_off">Off</string>
+    <string name="settings_notifications_not_asked">Not enabled</string>
+    <string name="settings_notifications_push_coming_soon">Background push delivery is coming in a future update. Local alerts show while amux is open.</string>
+    <string name="settings_notifications_enable_button">Enable Notifications</string>
+    <string name="settings_notifications_settings_button">Notification Settings</string>
+
+    <!-- Settings: Privacy & Diagnostics -->
+    <string name="settings_share_usage_title">Share Usage Counts</string>
+    <string name="settings_share_usage_detail">Counts and choices, never what you type, your code, or file names.</string>
+    <string name="settings_auto_reports_title">Automatic Reports</string>
+    <string name="settings_auto_reports_detail">When amux catches its own bug. Never your chats, code, or file names.</string>
+    <string name="settings_report_problem">Report a Problem</string>
+    <string name="settings_export_diagnostics">Export Diagnostics</string>
+    <string name="settings_exporting_diagnostics">Exporting diagnostics…</string>
+    <string name="settings_diagnostics_exported">Diagnostics exported</string>
+    <string name="settings_contact_support">Contact Support</string>
+    <string name="settings_diagnostics_caption">A report includes a screenshot and this phone’s diagnostic dump.</string>
+
+    <!-- Settings: This phone -->
+    <string name="settings_device_name_label">Name</string>
+    <string name="settings_device_rename">Rename</string>
+    <string name="settings_device_fingerprint_label">Fingerprint</string>
+    <string name="settings_device_fingerprint_tap">Tap to copy</string>
+    <string name="settings_device_fingerprint_copied">Copied</string>
+    <string name="settings_app_version_label">Version</string>
+
+    <!-- Paywall screen -->
+    <string name="paywall_title">amux Pro</string>
+    <string name="paywall_headline">Reach your agents anywhere</string>
+    <string name="paywall_explanation">Pro reaches your computers from anywhere. Computers on this network work without it.</string>
+    <string name="paywall_period_monthly">Monthly</string>
+    <string name="paywall_period_yearly">Yearly</string>
+    <string name="paywall_period_monthly_spelled">a month</string>
+    <string name="paywall_period_yearly_spelled">a year</string>
+    <string name="paywall_subscribe">Subscribe</string>
+    <string name="paywall_subscribe_price">Subscribe · %1$s %2$s</string>
+    <string name="paywall_continue">Continue</string>
+    <string name="paywall_restore">Restore Purchases</string>
+    <string name="paywall_manage_web">Manage on amux.sh</string>
+    <string name="paywall_manage_play">Manage in Google Play</string>
+    <string name="paywall_terms">Cancel any time. A subscription bought on amux.sh carries over.</string>
+    <string name="paywall_privacy_policy">Privacy Policy</string>
+    <string name="paywall_privacy_url">https://amux.sh/privacy-policy/</string>
+    <string name="paywall_waiting_store">Waiting for Google Play…</string>
+    <string name="paywall_waiting_approval">Waiting for approval</string>
+    <string name="paywall_waiting_approval_detail">Your subscription starts when Google Play approves your purchase.</string>
+    <string name="paywall_confirming">Confirming with amux.sh…</string>
+    <string name="paywall_unconfirmed_title">Your purchase is not confirmed yet</string>
+    <string name="paywall_unconfirmed_unreachable">Your purchase is saved, and the app retries confirmation with amux.sh when it next opens.</string>
+    <string name="paywall_unconfirmed_refused">Your purchase is saved, but amux.sh could not confirm it: %1$s</string>
+    <string name="paywall_switching_on_title">Your subscription is still switching on</string>
+    <string name="paywall_switching_on_detail">amux.sh has your purchase and is still turning your subscription on. Tap Retry in a moment to check again.</string>
+    <string name="paywall_failed_title">That did not go through</string>
+    <string name="paywall_unavailable_title">In-app subscriptions are not enabled yet</string>
+    <string name="paywall_unavailable_detail">Google Play subscriptions are not enabled in this build yet. Subscribe or manage your plan on amux.sh, and it carries over to this phone automatically.</string>
+    <string name="paywall_entitled_badge_pro">Pro</string>
+    <string name="paywall_entitled_badge_trial">Trial</string>
+    <string name="paywall_entitled_play_title">Subscribed in Google Play</string>
+    <string name="paywall_entitled_appstore_title">Subscribed in the App Store</string>
+    <string name="paywall_entitled_web_title">Subscribed on amux.sh</string>
+    <string name="paywall_entitled_granted_title">Pro is on for this account</string>
+    <string name="paywall_entitled_trial_title">Pro trial is active</string>
+    <string name="paywall_entitled_play_detail">Manage your subscription in Google Play or on amux.sh.</string>
+    <string name="paywall_entitled_appstore_detail">Manage your subscription in the App Store or check status on amux.sh.</string>
+    <string name="paywall_entitled_web_detail">Manage your subscription on amux.sh.</string>
+    <string name="paywall_entitled_granted_detail">Pro is included with this account.</string>
+    <string name="paywall_entitled_trial_detail">Manage your plan or upgrade on amux.sh.</string>
+    <string name="paywall_entitled_elsewhere">Your other devices follow within a few minutes.</string>
+
+    <!-- Account sheets & dialogs -->
+    <string name="account_sheet_sign_in_title">Sign In</string>
+    <string name="account_sheet_offer_received_title">Sign in as %1$s?</string>
+    <string name="account_sheet_offer_received_detail">%1$s offers its account, so this phone reaches it from anywhere.</string>
+    <string name="account_sheet_offer_sending_title">Sign in %1$s as %2$s too?</string>
+    <string name="account_sheet_offer_sending_detail">Then this phone reaches %1$s from anywhere.</string>
+    <string name="account_sheet_offer_accept">Accept</string>
+    <string name="account_sheet_offer_decline">Decline</string>
+    <string name="account_sheet_offer_send">Offer</string>
+    <string name="account_sheet_offer_not_now">Not Now</string>
+    <string name="account_sheet_offer_unreachable_host">%1$s is offline. Open amux on %1$s, then try again.</string>
+    <string name="account_sheet_offer_unreachable_generic">That computer is offline. Open amux on it, then try again.</string>
+    <string name="account_sheet_offer_refused">Signing in didn’t work. Sign in from Settings instead.</string>
+
+    <string name="account_sheet_mismatch_title">Signed in as another account</string>
+    <string name="account_sheet_mismatch_detail">You signed in as %1$s, not %2$s.</string>
+    <string name="account_sheet_mismatch_try_again">Try Again</string>
+    <string name="account_sheet_mismatch_continue">Continue as %1$s</string>
+    <string name="account_sheet_failed_title">Sign-in did not finish</string>
+    <string name="account_sheet_failed_try_again">Try Again</string>
+    <string name="account_sheet_failed_dismiss">Dismiss</string>
+
+    <string name="account_sheet_remove_title">Remove %1$s from this phone?</string>
+    <string name="account_sheet_remove_detail">Your amux.sh account, its subscription, and your paired local computers stay as they are. This phone signs out of this account.</string>
+    <string name="account_sheet_remove_confirm">Remove</string>
+
+    <string name="account_sheet_delete_bar_title">Delete Account</string>
+    <string name="account_sheet_delete_title">Delete this account?</string>
+    <string name="account_sheet_delete_kept">Your agents and files stay on your computers.</string>
+    <string name="account_sheet_delete_lost">This phone can no longer reach them through this account.</string>
+    <string name="account_sheet_delete_permanent">This permanently deletes your amux.sh account and cannot be undone.</string>
+    <string name="account_sheet_delete_email_label">Type %1$s to confirm</string>
+    <string name="account_sheet_delete_email_description">Confirm account email</string>
+    <string name="account_sheet_delete_confirm">Delete Account</string>
+    <string name="account_sheet_delete_deleting">Deleting account…</string>
+    <string name="account_sheet_delete_blocked_title">Cancel renewal first</string>
+    <string name="account_sheet_delete_blocked_detail">Cancel your active subscription through %1$s, then tap Try Again to delete this account.</string>
+    <string name="account_sheet_delete_billing_portal">Open Billing Portal</string>
+    <string name="account_sheet_delete_try_again">Try Again</string>
+    <string name="account_sheet_delete_not_now">Not Now</string>
+    <string name="account_sheet_delete_failed_title">Nothing was deleted</string>
+</resources>

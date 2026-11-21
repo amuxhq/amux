@@ -53,6 +53,7 @@ class DoorTest {
             DoorRequest.FontScale(1.3f),
             DoorRequest.AwaitReconciled(15.0),
             DoorRequest.AwaitAgent(agent = "desk-work", seconds = 30.0),
+            DoorRequest.HpkeSelfCheck,
             DoorRequest.Shutdown,
         )
 
@@ -165,5 +166,26 @@ class DoorTest {
         val encoded = DoorCodec.encodeStartConfig(config)
         val decoded = DoorCodec.decodeStartConfig(encoded)
         assertEquals(config, decoded)
+    }
+
+    @Test
+    fun extractsDoorAuthTokenWithoutCollidingWithConnectToken() {
+        val (token1, req1) = DoorCodec.decodeEnvelope("""{"kind":"ping","door_token":"secret-1"}""")
+        assertEquals("secret-1", token1)
+        assertEquals(DoorRequest.Ping, req1)
+
+        val (token2, req2) = DoorCodec.decodeEnvelope(
+            """{"kind":"connect","relay":"http://10.0.2.2:1","token":"refresh-tok","user":"ada","door_token":"secret-2"}""",
+        )
+        assertEquals("secret-2", token2)
+        assertEquals(
+            DoorRequest.Connect(relay = "http://10.0.2.2:1", token = "refresh-tok", user = "ada"),
+            req2,
+        )
+
+        val (missingToken, _) = DoorCodec.decodeEnvelope(
+            """{"kind":"connect","relay":"http://10.0.2.2:1","token":"refresh-tok","user":"ada"}""",
+        )
+        assertEquals(null, missingToken)
     }
 }

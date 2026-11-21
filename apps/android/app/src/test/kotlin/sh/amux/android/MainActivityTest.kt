@@ -41,4 +41,28 @@ class MainActivityTest {
         assertTrue(modal is PairingModal.Link)
         assertEquals(host, (modal as PairingModal.Link).invitation.host)
     }
+
+    @Test
+    fun doorDataDirConfinementRejectsPathsOutsideAmuxDoor() {
+        val filesDir = java.nio.file.Files.createTempDirectory("amux-door-path-test").toFile()
+        try {
+            val defaultDir = DoorHost.resolveDoorDataDir(filesDir, null)
+            assertTrue(defaultDir.path.startsWith(java.io.File(filesDir, "amux-door").canonicalPath))
+
+            val subDir = DoorHost.resolveDoorDataDir(filesDir, "run-1")
+            assertTrue(subDir.path.startsWith(java.io.File(filesDir, "amux-door").canonicalPath))
+
+            for (bad in listOf("..", "../amux/installation", ".", "/tmp/escape")) {
+                var rejected = false
+                try {
+                    DoorHost.resolveDoorDataDir(filesDir, bad)
+                } catch (_: IllegalArgumentException) {
+                    rejected = true
+                }
+                assertTrue("expected door data_dir $bad to be rejected", rejected)
+            }
+        } finally {
+            filesDir.deleteRecursively()
+        }
+    }
 }

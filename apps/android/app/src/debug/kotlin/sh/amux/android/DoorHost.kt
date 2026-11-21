@@ -42,6 +42,10 @@ import sh.amux.core.runtime.RuntimeCoordinator
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.core.runtime.id
 import sh.amux.design.AppearanceMode
+import sh.amux.push.PushPrivateKey
+import sh.amux.push.Said
+import sh.amux.push.SealedPush
+import sh.amux.push.Wants
 import sh.amux.shell.PairingModal
 import sh.amux.shell.Route
 import sh.amux.shell.Tab
@@ -83,20 +87,26 @@ internal object DoorHost {
     fun attach(activity: Activity, currentComposition: Composition) {
         activityRef = WeakReference(activity)
         val intent = activity.intent
+        val doorToken = doorTokenFromIntent(intent)
+        if (doorToken == null) {
+            composition = currentComposition
+            return
+        }
         val configured = configureFromIntent(activity, currentComposition, intent)
         composition = configured
 
         val doorPort = doorPortFromIntent(intent)
         if (doorPort != null) {
-            DoorServer.start(doorPort)
+            DoorServer.start(doorPort, doorToken)
         }
     }
 
     fun onNewIntent(activity: Activity, intent: Intent?) {
         activityRef = WeakReference(activity)
+        val doorToken = doorTokenFromIntent(intent) ?: return
         val doorPort = doorPortFromIntent(intent)
         if (doorPort != null) {
-            DoorServer.start(doorPort)
+            DoorServer.start(doorPort, doorToken)
         }
     }
 
@@ -105,6 +115,9 @@ internal object DoorHost {
             activityRef = null
         }
     }
+
+    private fun doorTokenFromIntent(intent: Intent?): String? =
+        intent?.getStringExtra(DoorArgs.EXTRA_DOOR_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun doorPortFromIntent(intent: Intent?): Int? {
         if (intent == null) return null
@@ -142,11 +155,15 @@ internal object DoorHost {
         val app = activity.application as? AmuxApplication ?: return currentComposition
         val appContext = app.applicationContext
 
-        val installDir = resolveDoorDataDir(appContext.filesDir, config.dataDir)
-        val accountsFile = File(installDir.parentFile ?: appContext.filesDir, "${installDir.name}-accounts.json")
+        val installDir = try {
+            resolveDoorDataDir(appContext.filesDir, config.dataDir)
+        } catch (_: IllegalArgumentException) {
+            return currentComposition
+        }
+        val accountsFile = File(installDir.parentFile, "${installDir.name}-accounts.json")
 
-        // Stop the default composition before replacing it with the driven one.
-        currentComposition.runtime.stop()
+        // Tear down the default composition completely before replacing it.
+        currentComposition.shutdown()
 
         if (config.freshStart) {
             installDir.deleteRecursively()
@@ -182,12 +199,20 @@ internal object DoorHost {
         return driven
     }
 
-    private fun resolveDoorDataDir(filesDir: File, requested: String?): File {
-        if (requested.isNullOrBlank()) {
-            return File(File(filesDir, "amux"), "door-installation")
+    internal fun resolveDoorDataDir(filesDir: File, requested: String?): File {
+        val baseDir = File(filesDir, "amux-door").canonicalFile
+        val candidate = if (requested.isNullOrBlank()) {
+            File(baseDir, "installation")
+        } else {
+            val raw = File(requested)
+            if (raw.isAbsolute) raw else File(baseDir, requested)
+        }.canonicalFile
+        val basePath = baseDir.path
+        val candidatePath = candidate.path
+        require(candidatePath != basePath && candidatePath.startsWith("$basePath${File.separator}")) {
+            "door data_dir must remain inside $basePath"
         }
-        val candidate = File(requested)
-        return if (candidate.isAbsolute) candidate else File(File(filesDir, "amux"), requested)
+        return candidate
     }
 
     suspend fun handle(request: DoorRequest): DoorReply = withContext(Dispatchers.Main.immediate) {
@@ -221,6 +246,7 @@ internal object DoorHost {
             is DoorRequest.FontScale -> setFontScale(request.scale)
             is DoorRequest.AwaitReconciled -> awaitReconciled(request.seconds)
             is DoorRequest.AwaitAgent -> awaitAgent(request.agent, request.seconds)
+            DoorRequest.HpkeSelfCheck -> hpkeSelfCheck()
             DoorRequest.Shutdown -> {
                 activityRef?.get()?.finishAffinity()
                 DoorReply.Ack
@@ -849,8 +875,11 @@ internal object DoorHost {
 
         val scale = activity.resources.displayMetrics.density
         if (!requestedPath.isNullOrBlank()) {
-            val target = File(requestedPath).let { file ->
-                if (file.isAbsolute) file else File(File(activity.cacheDir, "door"), requestedPath)
+            val baseDir = File(activity.cacheDir, "door").canonicalFile
+            val raw = File(requestedPath)
+            val target = (if (raw.isAbsolute) raw else File(baseDir, requestedPath)).canonicalFile
+            if (!target.path.startsWith("${baseDir.path}${File.separator}")) {
+                return DoorReply.Error("capture path must remain inside ${baseDir.path}")
             }
             target.parentFile?.mkdirs()
             target.writeBytes(pngBytes)
@@ -870,4 +899,29 @@ internal object DoorHost {
             base64 = encoded,
         )
     }
+
+    /**
+     * Proves real Android Conscrypt X25519 + HKDF-SHA256 + ChaCha20-Poly1305
+     * HPKE decryption on-device using a Rust-sealed vector from `sealed-pushes.json`.
+     */
+    private fun hpkeSelfCheck(): DoorReply {
+        val rawKey = Base64.getDecoder().decode(HPKE_VECTOR_PRIVATE_KEY_B64)
+        val opened = SealedPush.open(HPKE_VECTOR_SEALED_B64, PushPrivateKey(rawKey))
+            ?: return DoorReply.Error("Conscrypt HPKE self-check failed to decrypt Rust-sealed vector")
+        val ask = opened.notice as? Said.Ask
+        val run = ask?.wants as? Wants.Run
+        if (opened.host != "11111111-1111-1111-1111-111111111111" ||
+            opened.agent != "22222222-2222-2222-2222-222222222222" ||
+            opened.name != "refactor-auth" ||
+            run?.command != "deploy --prod\n--force" ||
+            ask.why != "It ships"
+        ) {
+            return DoorReply.Error("Conscrypt HPKE self-check decoded unexpected payload: $opened")
+        }
+        return DoorReply.Ack
+    }
+
+    private const val HPKE_VECTOR_PRIVATE_KEY_B64 = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE="
+    private const val HPKE_VECTOR_SEALED_B64 =
+        "IlAm5YC0RJf8NVkomvep6peArqUkZdIQs2cVTJSplw89OmKB/cIRPicXjYUnga5HQQagDKsckOQrnwXwvjNaA8/Me5OcvrbnSWLkfcAGB5NfI4/DJQqsGLS65l+aZtmyQeWeYEtg4l82uxx4YO0Iv0EaK9OLeNjrRtjzYSWtEFHciJE1BuPUF/246B5HTf7OWzG2KCSJQ3P7N9U/awtUP+kA591am/gxQel+TKZ7yYQHUA1JYIaSLqkqpHHSNfTZwKcC1WaMc3H2EQByy5UTQcyKQ9nS+ZMWHh017tPqUppdc2tLIXUQ4/gg2K7QU0YIE8BPb6e/Frpa8L/7YW0uYqSYSmE9cy3FBF0KQgrvvDRwmsilVw=="
 }

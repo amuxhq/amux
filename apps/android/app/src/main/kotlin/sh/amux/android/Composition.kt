@@ -10,6 +10,7 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -196,6 +197,19 @@ class Composition(
             lifecycleObserver.attach(ProcessLifecycleOwner.get().lifecycle)
         }
         runtime.start()
+    }
+
+    /**
+     * Tears down this composition completely: detaches its process lifecycle
+     * observer, stops the embedded runtime, and cancels its coroutine scope.
+     */
+    fun shutdown() {
+        if (lifecycleAttached) {
+            lifecycleAttached = false
+            lifecycleObserver.detach(ProcessLifecycleOwner.get().lifecycle)
+        }
+        runtime.stop()
+        scope.cancel()
     }
 
     fun relaunch() {

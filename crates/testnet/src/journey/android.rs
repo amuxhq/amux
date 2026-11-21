@@ -276,6 +276,7 @@ struct AndroidJourney {
     ready: Readiness,
     record: Record,
     host_port: u16,
+    door_token: String,
 }
 
 impl AndroidJourney {
@@ -375,6 +376,7 @@ impl AndroidJourney {
             ready,
             record,
             host_port: 0,
+            door_token: String::new(),
         })
     }
 
@@ -428,11 +430,13 @@ impl AndroidJourney {
             .as_str()
             .unwrap_or_default()
             .to_owned();
+        self.door_token = uuid::Uuid::new_v4().to_string();
         let start_config = build_start_config(&self.ready, &scope, true);
         let start_config_json =
             serde_json::to_string(&start_config).map_err(|error| error.to_string())?;
         let launch_cmd = format!(
-            "am start -W -n {ACTIVITY} --ei amux_door_port {DEVICE_DOOR_PORT} --es amux_start_config {}",
+            "am start -W -n {ACTIVITY} --ei amux_door_port {DEVICE_DOOR_PORT} --es amux_door_token {} --es amux_start_config {}",
+            shell_quote(&self.door_token),
             shell_quote(&start_config_json)
         );
         self.adb(&["shell", &launch_cmd], Duration::from_secs(60))?;
@@ -466,7 +470,13 @@ impl AndroidJourney {
         SocketAddr::from(([127, 0, 0, 1], self.host_port))
     }
 
-    fn app(&self, request: Value) -> Result<Value, AppError> {
+    fn app(&self, mut request: Value) -> Result<Value, AppError> {
+        if let Some(obj) = request.as_object_mut() {
+            obj.insert(
+                "door_token".to_owned(),
+                Value::String(self.door_token.clone()),
+            );
+        }
         ask(self.door(), &request, Duration::from_secs(90))
     }
 
@@ -519,12 +529,7 @@ impl AndroidJourney {
 
     fn tap(&mut self, name: &str) -> Result<(), String> {
         self.wait_within(
-            |drawn| {
-                drawn
-                    .get(name)
-                    .and_then(|element| element.get("enabled"))
-                    .is_some_and(|enabled| *enabled != false)
-            },
+            |drawn| drawn.get(name).is_some_and(element_enabled),
             &format!("{name} there to tap"),
             Duration::from_secs(15),
         )?;
@@ -769,6 +774,17 @@ fn build_start_config(ready: &Readiness, scope: &str, fresh_start: bool) -> Valu
     obj
 }
 
+/// Whether an element can be acted on: matches `phone.rs::enabled`
+/// (a missing `enabled` means it can, a null one that it cannot).
+fn element_enabled(element: &Value) -> bool {
+    match element.get("enabled") {
+        None => true,
+        Some(Value::Bool(enabled)) => *enabled,
+        Some(Value::Null) => false,
+        Some(_) => true,
+    }
+}
+
 fn format_elements(elements: &[Value], ids: &BTreeMap<String, String>) -> String {
     let mut lines = Vec::new();
     for element in elements {
@@ -785,8 +801,11 @@ fn format_elements(elements: &[Value], ids: &BTreeMap<String, String>) -> String
             element["label"].as_str().unwrap_or_default(),
             element["value"].as_str().unwrap_or_default()
         ));
-        let disabled = element.get("enabled") == Some(&Value::Bool(false));
-        let state = if disabled { " (disabled)" } else { "" };
+        let state = if element_enabled(element) {
+            ""
+        } else {
+            " (disabled)"
+        };
         let mut line = format!("{name} | {words} | {}{state}", coords.join(","));
         for (id, friendly) in ids {
             line = line.replace(id, &format!("<{friendly}>"));
@@ -808,6 +827,11 @@ fn reach_host(journey: &mut AndroidJourney) -> Proved {
     let desk_addr = format!("{EMULATOR_HOST_IP}:{desk_port}");
 
     journey.launch_fresh()?;
+    journey.app(json!({"kind": "hpkeSelfCheck"}))?;
+    journey
+        .record
+        .actions
+        .push("Conscrypt HPKE self-check passed".to_owned());
     journey.wait_for(&["tab.agents", "tab.hosts"])?;
 
     // Switch to the Computers tab and announce the desk host via the door's
@@ -882,6 +906,8 @@ fn reach_host(journey: &mut AndroidJourney) -> Proved {
     )?;
 
     Ok(vec![
+        "Android Conscrypt X25519 + ChaCha20-Poly1305 HPKE decrypted Rust-sealed push vector on device"
+            .to_owned(),
         format!("Android app discovered desk ({desk_id}) on {desk_addr} in scope {scope}"),
         "desk's open pairing window raised the Compose pairing bottom sheet automatically"
             .to_owned(),

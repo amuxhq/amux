@@ -10,6 +10,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
 import sh.amux.testsupport.DoorCodec
 import sh.amux.testsupport.DoorReply
@@ -26,11 +27,17 @@ internal object DoorServer {
 
     private val lock = Any()
     private var activePort: Int? = null
+    private var activeTokenBytes: ByteArray? = null
     private var serverSocket: ServerSocket? = null
 
-    fun start(port: Int) {
+    fun start(port: Int, token: String) {
+        require(token.isNotBlank()) { "door auth token must not be blank" }
+        val tokenBytes = token.toByteArray(StandardCharsets.UTF_8)
         synchronized(lock) {
-            if (activePort == port && serverSocket?.isClosed == false) {
+            if (activePort == port &&
+                serverSocket?.isClosed == false &&
+                activeTokenBytes?.let { MessageDigest.isEqual(it, tokenBytes) } == true
+            ) {
                 return
             }
             stopLocked()
@@ -41,11 +48,12 @@ internal object DoorServer {
             }
             serverSocket = socket
             activePort = socket.localPort
+            activeTokenBytes = tokenBytes
             val boundPort = socket.localPort
             Log.i(TAG, "DoorServer listening on 127.0.0.1:$boundPort")
 
             val acceptThread = Thread(
-                { acceptLoop(socket) },
+                { acceptLoop(socket, tokenBytes) },
                 "amux-door-accept-$boundPort",
             ).apply {
                 isDaemon = true
@@ -64,12 +72,13 @@ internal object DoorServer {
         val existing = serverSocket
         serverSocket = null
         activePort = null
+        activeTokenBytes = null
         if (existing != null) {
             runCatching { existing.close() }
         }
     }
 
-    private fun acceptLoop(server: ServerSocket) {
+    private fun acceptLoop(server: ServerSocket, expectedToken: ByteArray) {
         while (!server.isClosed) {
             val client = try {
                 server.accept()
@@ -77,7 +86,7 @@ internal object DoorServer {
                 return
             }
             val worker = Thread(
-                { handleConnection(client) },
+                { handleConnection(client, expectedToken) },
                 "amux-door-conn-${client.port}",
             ).apply {
                 isDaemon = true
@@ -86,7 +95,7 @@ internal object DoorServer {
         }
     }
 
-    private fun handleConnection(client: Socket) {
+    private fun handleConnection(client: Socket, expectedToken: ByteArray) {
         client.use { socket ->
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
             val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))
@@ -99,11 +108,21 @@ internal object DoorServer {
                 val trimmed = line.trim()
                 if (trimmed.isEmpty()) continue
 
-                val request = try {
-                    DoorCodec.decodeRequest(trimmed)
+                val (providedToken, request) = try {
+                    DoorCodec.decodeEnvelope(trimmed)
                 } catch (e: Throwable) {
                     writeReply(writer, DoorReply.Error("unreadable request: ${e.message}"))
                     continue
+                }
+
+                val authorized = providedToken != null &&
+                    MessageDigest.isEqual(
+                        providedToken.toByteArray(StandardCharsets.UTF_8),
+                        expectedToken,
+                    )
+                if (!authorized) {
+                    writeReply(writer, DoorReply.Error("unauthorized door request"))
+                    return
                 }
 
                 val reply = try {

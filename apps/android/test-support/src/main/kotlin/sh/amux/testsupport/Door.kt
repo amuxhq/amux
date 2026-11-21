@@ -29,6 +29,9 @@ object DoorArgs {
     /** Integer extra naming the loopback TCP port `DoorServer` binds on `127.0.0.1`. */
     const val EXTRA_DOOR_PORT: String = "amux_door_port"
 
+    /** Per-launch shared secret required to enable automation and authenticate door calls. */
+    const val EXTRA_DOOR_TOKEN: String = "amux_door_token"
+
     /** JSON string extra carrying [DoorStartConfig] for a driven launch. */
     const val EXTRA_START_CONFIG: String = "amux_start_config"
 
@@ -130,6 +133,7 @@ sealed interface DoorRequest {
     data class FontScale(val scale: Float) : DoorRequest
     data class AwaitReconciled(val seconds: Double) : DoorRequest
     data class AwaitAgent(val agent: String, val seconds: Double) : DoorRequest
+    data object HpkeSelfCheck : DoorRequest
     data object Shutdown : DoorRequest
 }
 
@@ -166,7 +170,7 @@ object DoorCodec {
     fun encodeStartConfig(config: DoorStartConfig): String =
         json.encodeToString(DoorStartConfig.serializer(), config)
 
-    fun decodeRequest(line: String): DoorRequest {
+    fun decodeEnvelope(line: String): Pair<String?, DoorRequest> {
         val element = try {
             json.parseToJsonElement(line)
         } catch (e: Exception) {
@@ -174,6 +178,16 @@ object DoorCodec {
         }
         val obj = element as? JsonObject
             ?: throw SerializationException("door request must be a JSON object")
+        val kind = obj.optionalString("kind")
+        val token = obj.optionalString("door_token")
+            ?: obj.optionalString("doorToken")
+            ?: if (kind != "connect") obj.optionalString("token") else null
+        return token to decodeRequestObject(obj)
+    }
+
+    fun decodeRequest(line: String): DoorRequest = decodeEnvelope(line).second
+
+    private fun decodeRequestObject(obj: JsonObject): DoorRequest {
         val kind = obj.requireString("kind")
         return when (kind) {
             "ping" -> DoorRequest.Ping
@@ -237,6 +251,7 @@ object DoorCodec {
                 agent = obj.requireString("agent"),
                 seconds = obj.requireDouble("seconds"),
             )
+            "hpkeSelfCheck" -> DoorRequest.HpkeSelfCheck
             "shutdown" -> DoorRequest.Shutdown
             else -> throw SerializationException("no door request named $kind")
         }
@@ -309,6 +324,7 @@ object DoorCodec {
                 put("agent", request.agent)
                 put("seconds", request.seconds)
             }
+            DoorRequest.HpkeSelfCheck -> buildJsonObject { put("kind", "hpkeSelfCheck") }
             DoorRequest.Shutdown -> buildJsonObject { put("kind", "shutdown") }
         }
         return json.encodeToString(JsonObject.serializer(), obj)

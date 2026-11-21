@@ -10,6 +10,11 @@ use git_facts::GitError;
 use git_facts::objects::ObjectStore;
 use git_facts::snapshot::{self, Limits, Snapshot};
 
+/// Git as the tests set repositories up: with an identity of its own, and
+/// with LFS's filters emptied, so a git-lfs the machine has installed and
+/// registered (as CI runners do) never runs for a fixture. Its filter
+/// writes into `.git/lfs` the moment git hashes a tracked file, which a
+/// fixture's commit does, and that would be blamed on the snapshot.
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args([
@@ -23,6 +28,16 @@ fn git(cwd: &Path, args: &[&str]) -> String {
             "commit.gpgsign=false",
             "-c",
             "protocol.file.allow=always",
+        ])
+        .args([
+            "-c",
+            "filter.lfs.process=",
+            "-c",
+            "filter.lfs.clean=",
+            "-c",
+            "filter.lfs.smudge=",
+            "-c",
+            "filter.lfs.required=false",
         ])
         .args(args)
         .current_dir(cwd)

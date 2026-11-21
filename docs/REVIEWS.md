@@ -171,14 +171,19 @@ this at every turn end of an agent whose checkout holds a review, as a job
 off its thread, and writes the answer onto the review's row entry.
 
 **Kept snapshots.** After a snapshot is taken the review keeps the
-snapshots a round or a comment's anchor names, those a sent review waiting
-in the agent's queue names (as the agent's latest session snapshot lists
-the queue: its round will be recorded on that snapshot and its text tells
-the agent to diff against it), the latest, and the one before it, which a
-page opened before the latest was taken still shows (`Review::kept`). The
+snapshots a round or a comment's anchor names; the latest; the one before
+it, which a page opened before the latest was taken still shows; and, for
+each sent review waiting in the agent's queue (as the agent's latest
+session snapshot lists the queue), its own snapshot, which its round will
+be recorded on and its text tells the agent to diff against, and every
+snapshot the anchors of the comments it sends name (`Review::kept`). Those
+anchors can be older than the send's own snapshot, as when a draft written
+on a page still showing an older snapshot is sent from the latest summary,
+and each comment goes back to its anchor when the agent takes the send. The
 one before the latest also covers a send in the moment before the queue
-lists it: only a second refresh in that moment could drop its snapshot. The others are forgotten in the same write and their
-objects dropped from the store (`snapshot::drop`), with their indexes. An old
+lists it: only a second refresh in that moment could drop its own snapshot,
+though one refresh then could drop an older one its comments are anchored
+on. The others are forgotten in the same write and their objects dropped from the store (`snapshot::drop`), with their indexes. An old
 round still depends on the repository holding the commits beneath it: a
 rebase followed by garbage collection can remove them, and the page then
 shows that round's comments with the code stored with them.

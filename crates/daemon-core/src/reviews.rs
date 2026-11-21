@@ -237,11 +237,15 @@ pub(crate) fn sent_in<'a>(
         .collect()
 }
 
-/// The snapshots of the review `review` that sent reviews still waiting in
+/// The commits of the review `review` that sent reviews still waiting in
 /// the agent's queue name, as the agent's latest session snapshot lists
 /// the queue: the agent has not taken them, so their rounds are yet to be
-/// recorded on those snapshots, and their text tells the agent to diff
-/// against them.
+/// recorded on their snapshots, and their text tells the agent to diff
+/// against them. With each, the commit every comment it sends is anchored
+/// on, which can be an older snapshot than the send's own (a draft written
+/// on a page that still showed it, sent from the latest summary): taking
+/// the send puts each comment back on that anchor, so its snapshot must
+/// still be there for the comment to be placed.
 fn waiting_on(row: &store::AgentRow, review: &[u8]) -> Vec<String> {
     row.snapshot
         .iter()
@@ -249,7 +253,13 @@ fn waiting_on(row: &store::AgentRow, review: &[u8]) -> Vec<String> {
         .flat_map(|queued| &queued.attachments)
         .filter_map(|attachment| SENT_REVIEW.get(&attachment.experimental))
         .filter(|sent| sent.review_id == review)
-        .map(|sent| sent.snapshot)
+        .flat_map(|sent| {
+            let anchors = sent
+                .comments
+                .into_iter()
+                .filter_map(|comment| comment.anchor.map(|anchor| anchor.commit));
+            std::iter::once(sent.snapshot).chain(anchors)
+        })
         .collect()
 }
 

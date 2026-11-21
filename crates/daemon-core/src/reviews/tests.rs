@@ -957,6 +957,116 @@ fn a_snapshot_a_queued_send_names_is_kept_until_the_queue_lets_it_go() {
     assert_eq!(commits(&w), ["s3", "s4"]);
 }
 
+/// A queued send's comments can be anchored on a snapshot other than the
+/// one its text names: a person drafts on a page still showing an older
+/// snapshot, then sends from the latest summary, which places the draft
+/// there without moving its anchor. When the agent takes the send, each
+/// comment goes back to the anchor the send names, so every snapshot those
+/// anchors name is kept while it waits, not only the send's own.
+#[test]
+fn a_snapshot_a_queued_sends_comment_is_anchored_on_is_kept() {
+    let mut rig = lead();
+    // Another client has taken s2; this one's page still shows s1.
+    rig.written(
+        LEAD,
+        vec![begin(), snapshot("s1"), snapshot("s2"), put(1, "s1", "a")],
+    );
+    // Sent from the s2 summary, the comment's anchor still on s1.
+    let mut attachment = wire::Attachment::default();
+    SENT_REVIEW.put(
+        &mut attachment.experimental,
+        &SentReview {
+            review_id: REVIEW_ID.to_vec(),
+            round: 1,
+            snapshot: "s2".into(),
+            base_commit: "base".into(),
+            comments: vec![wire::experimental::ReviewSentComment {
+                id: vec![1; 16],
+                revision: 1,
+                anchor: Some(wire::experimental::ReviewAnchor {
+                    commit: "s1".into(),
+                    path: "src/lib.rs".into(),
+                    lines: Some(wire::experimental::ReviewLineRange { start: 3, end: 3 }),
+                }),
+            }],
+        },
+    );
+    let queue = |queue: Vec<wire::QueuedInput>| {
+        Some(wire::Snapshot {
+            kind: wire::Kind::Codex as i32,
+            queue,
+            ..wire::Snapshot::default()
+        })
+    };
+    rig.journal(
+        LEAD,
+        &Step {
+            snapshot: queue(vec![wire::QueuedInput {
+                input_id: b"queued".to_vec(),
+                attachments: vec![attachment.clone()],
+                ..wire::QueuedInput::default()
+            }]),
+            ..Step::default()
+        },
+    );
+    // One refresh takes s3 and moves the draft onto it: s1 is neither the
+    // draft's anchor, the latest, the one before, nor the send's snapshot.
+    let w = rig.written(
+        LEAD,
+        vec![
+            snapshot("s3"),
+            Change::DraftsMoved {
+                drafts: vec![MovedDraft {
+                    comment: vec![1; 16],
+                    anchor: Anchor {
+                        commit: "s3".into(),
+                        path: "src/lib.rs".into(),
+                        start: 3,
+                        end: 3,
+                    },
+                }],
+            },
+        ],
+    );
+    let commits: Vec<&str> = w
+        .review
+        .as_ref()
+        .unwrap()
+        .snapshots
+        .iter()
+        .map(|taken| taken.commit.as_str())
+        .collect();
+    assert_eq!(commits, ["s1", "s2", "s3"]);
+
+    // The agent takes it: the comment is sent, back on s1, which is there.
+    rig.journal(
+        LEAD,
+        &Step {
+            snapshot: queue(Vec::new()),
+            items: vec![wire::Item {
+                key: "prompt-q".into(),
+                input_id: b"queued".to_vec(),
+                text: "Have a look \u{fffc}".into(),
+                attachments: vec![attachment],
+                kind: wire::Kind::Codex as i32,
+                at_ms: 1_000,
+                ..wire::Item::default()
+            }],
+            ..Step::default()
+        },
+    );
+    let review = rig.daemon.store().review(&LEAD.0).unwrap().unwrap();
+    let comment = &review.comments[0];
+    assert_eq!(
+        (comment.round, comment.anchor.commit.as_str()),
+        (Some(1), "s1")
+    );
+    assert!(
+        review.snapshot("s1").is_some(),
+        "the sent comment's snapshot is kept"
+    );
+}
+
 #[test]
 fn start_over_removes_the_review_and_its_entry() {
     let mut rig = lead();

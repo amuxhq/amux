@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
@@ -18,21 +19,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,18 +40,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import java.io.File
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import sh.amux.design.AmuxGround
-import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AgentKey
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.AskCard
@@ -622,7 +610,9 @@ private fun ChatScreenContent(
             contentColor = colors.ink,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
+                val transcriptScrolled by remember { derivedStateOf { listState.canScrollBackward } }
                 ChatTopBar(
+                    scrolled = transcriptScrolled,
                     subject = state.subject,
                     placeLine = placeLine,
                     unconfirmed = detached || !state.subject.reachable,
@@ -799,9 +789,7 @@ private fun ChatScreenContent(
                         pendingCommandPrefix = null
                         callbacks.onDraftChange(commandToReplace)
                     },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(ChatScreenTags.COMMAND_REPLACE_CONFIRM),
+                    modifier = Modifier.testTag(ChatScreenTags.COMMAND_REPLACE_CONFIRM),
                 ) {
                     Text(
                         text = stringResource(R.string.chat_command_replace_confirm),
@@ -813,9 +801,7 @@ private fun ChatScreenContent(
             dismissButton = {
                 TextButton(
                     onClick = { pendingCommandPrefix = null },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(ChatScreenTags.COMMAND_REPLACE_KEEP),
+                    modifier = Modifier.testTag(ChatScreenTags.COMMAND_REPLACE_KEEP),
                 ) {
                     Text(
                         text = stringResource(R.string.chat_command_replace_keep),
@@ -913,39 +899,12 @@ fun ChatUnavailableScreen(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                            navigationIconContentColor = colors.ink,
-                        ),
-                        navigationIcon = {
-                            IconButton(
-                                onClick = onBack,
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(TestTags.NAV_BACK),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = backLabel,
-                                )
-                            }
-                        },
-                        title = {
-                            Text(
-                                text = title,
-                                style = AmuxTheme.typography.identifier,
-                                color = colors.ink,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.semantics { heading() },
-                            )
-                        },
-                    )
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
-                }
+                AmuxTopBar(
+                    title = title,
+                    onNavigate = onBack,
+                    navigationLabel = backLabel,
+                    navigationModifier = Modifier.testTag(TestTags.NAV_BACK),
+                )
             },
         ) { innerPadding ->
             Box(

@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,11 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,7 +36,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -45,7 +43,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.LocalAmuxPhotographed
@@ -95,49 +92,16 @@ fun PairingSheetContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .padding(bottom = Space.xl)
             .testTag(TestTags.PAIRING_SHEET),
     ) {
-        // Sheet header bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.s, vertical = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val closeLabel = stringResource(R.string.action_close)
-            IconButton(
-                onClick = { onAction(PairingAction.Cancel) },
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(TestTags.PAIRING_CLOSE),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = closeLabel,
-                    tint = colors.inkMuted,
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = headerTitle,
-                    style = AmuxTheme.typography.identifier,
-                    color = colors.ink,
-                    maxLines = 1,
-                    modifier = Modifier.semantics { heading() },
-                )
-                if (headerSubtitle != null) {
-                    Text(
-                        text = headerSubtitle,
-                        style = AmuxTheme.typography.caption,
-                        color = colors.inkMuted,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-        AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
+        AmuxSheetHeader(
+            title = headerTitle,
+            subtitle = headerSubtitle,
+            onClose = { onAction(PairingAction.Cancel) },
+            closeModifier = Modifier.testTag(TestTags.PAIRING_CLOSE),
+        )
 
         Box(
             modifier = Modifier
@@ -305,7 +269,7 @@ private fun PinEntryContent(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .thumbTarget()
+                .heightIn(min = ThumbTarget.MinSize)
                 .clickable(onClickLabel = codeLabel) { runCatching { focusRequester.requestFocus() } }
                 .semantics { contentDescription = codeLabel },
         ) {
@@ -708,7 +672,7 @@ private fun NeedsAccountContent(
             } else {
                 AmuxActionButton(
                     label = stringResource(R.string.callout_sign_in),
-                    kind = ActionButtonKind.Primary,
+                    kind = ActionButtonKind.Accent,
                     fillWidth = true,
                     onClick = onSignIn,
                     modifier = Modifier.testTag(TestTags.PAIRING_SIGN_IN),

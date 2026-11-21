@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import sh.amux.design.Motion
+import androidx.compose.animation.animateColorAsState
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import sh.amux.design.AmuxShapes
 import androidx.compose.foundation.BorderStroke
@@ -113,6 +117,7 @@ internal fun chatPlaceLine(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ChatTopBar(
+    scrolled: Boolean,
     subject: ChatSubject,
     placeLine: String,
     unconfirmed: Boolean,
@@ -138,11 +143,16 @@ internal fun ChatTopBar(
     val openOverviewDesc = stringResource(R.string.chat_header_open_overview)
     val titleSpoken = stringResource(R.string.chat_title_spoken, subject.name, placeLine, openOverviewDesc)
     var menuExpanded by remember { mutableStateOf(false) }
+    val fill by animateColorAsState(
+        targetValue = if (scrolled) colors.barScrolled else colors.ground,
+        animationSpec = Motion.standardAnimationSpec(),
+        label = "chatBarFill",
+    )
 
     Column(modifier = Modifier.testTag(ChatScreenTags.TOP_BAR)) {
         TopAppBar(
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = colors.ground,
+                containerColor = fill,
                 titleContentColor = colors.ink,
                 navigationIconContentColor = colors.ink,
                 actionIconContentColor = colors.ink,
@@ -150,9 +160,7 @@ internal fun ChatTopBar(
             navigationIcon = {
                 IconButton(
                     onClick = onBack,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(TestTags.NAV_BACK),
+                    modifier = Modifier.testTag(TestTags.NAV_BACK),
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
@@ -161,46 +169,51 @@ internal fun ChatTopBar(
                 }
             },
             title = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .thumbTarget()
-                        .clip(RoundedCornerShape(Space.s))
-                        .clickable(role = Role.Button, onClick = onOpenOverview)
-                        .semantics {
-                            heading()
-                            contentDescription = titleSpoken
-                        }
-                        .padding(vertical = Space.xs)
-                        .testTag(ChatScreenTags.TITLE),
-                    verticalArrangement = Arrangement.spacedBy(1.dp),
-                ) {
-                    Text(
-                        text = subject.name,
-                        style = AmuxTheme.typography.identifier,
-                        color = colors.ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (placeLine.isNotEmpty()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                            modifier = Modifier.testTag(ChatScreenTags.HEADER),
-                        ) {
-                            if (unconfirmed) {
-                                AmuxStateMark(
-                                    state = RowState.HostAway(subject.host),
-                                    size = 8.dp,
+                // The bar's height is fixed by Material, so its title and
+                // capsules stop growing past the size iOS caps the same
+                // header at, rather than clipping. Its menu is not capped.
+                CappedFontScale {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = ThumbTarget.MinSize)
+                            .clip(RoundedCornerShape(Space.s))
+                            .clickable(role = Role.Button, onClick = onOpenOverview)
+                            .semantics {
+                                heading()
+                                contentDescription = titleSpoken
+                            }
+                            .padding(vertical = Space.xs)
+                            .testTag(ChatScreenTags.TITLE),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
+                        Text(
+                            text = subject.name,
+                            style = AmuxTheme.typography.identifier,
+                            color = colors.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (placeLine.isNotEmpty()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                                modifier = Modifier.testTag(ChatScreenTags.HEADER),
+                            ) {
+                                if (unconfirmed) {
+                                    AmuxStateMark(
+                                        state = RowState.HostAway(subject.host),
+                                        size = 8.dp,
+                                    )
+                                }
+                                Text(
+                                    text = placeLine,
+                                    style = AmuxTheme.typography.caption,
+                                    color = colors.inkMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            Text(
-                                text = placeLine,
-                                style = AmuxTheme.typography.caption,
-                                color = colors.inkMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
                         }
                     }
                 }
@@ -221,25 +234,25 @@ internal fun ChatTopBar(
                             .testTag(ChatScreenTags.CHANGES),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Surface(
-                            shape = AmuxShapes.Pill,
-                            color = colors.sunken,
-                            border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = Space.m, vertical = Space.xs + Space.xxs),
-                                contentAlignment = Alignment.Center,
+                        CappedFontScale {
+                            Surface(
+                                shape = AmuxShapes.Pill,
+                                color = colors.sunken,
+                                border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
                             ) {
-                                DiffDeltaCounts(added = changes.added, removed = changes.removed)
+                                Box(
+                                    modifier = Modifier.padding(horizontal = Space.m, vertical = Space.xs + Space.xxs),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    DiffDeltaCounts(added = changes.added, removed = changes.removed)
+                                }
                             }
                         }
                     }
                 } else if (hasOverviewHighlights) {
                     IconButton(
                         onClick = onOpenOverview,
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(ChatScreenTags.OVERVIEW_ACTION),
+                        modifier = Modifier.testTag(ChatScreenTags.OVERVIEW_ACTION),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ListAlt,
@@ -253,9 +266,7 @@ internal fun ChatTopBar(
                 Box {
                     IconButton(
                         onClick = { menuExpanded = true },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(ChatScreenTags.MORE),
+                        modifier = Modifier.testTag(ChatScreenTags.MORE),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.MoreVert,
@@ -459,7 +470,6 @@ internal fun ChatTopBar(
                 }
             },
         )
-        AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
     }
 }
 
@@ -546,7 +556,7 @@ internal fun ChatFamilyBar(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .thumbTarget()
+                            .heightIn(min = ThumbTarget.MinSize)
                             .clickable(role = Role.Button) { childrenExpanded = !childrenExpanded }
                             .padding(horizontal = Space.m, vertical = Space.s)
                             .testTag(ChatScreenTags.FAMILY_CHILDREN),
@@ -609,7 +619,7 @@ private fun FamilyChildRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = Space.m, vertical = Space.s)
             .testTag(ChatScreenTags.familyChild(child.name)),

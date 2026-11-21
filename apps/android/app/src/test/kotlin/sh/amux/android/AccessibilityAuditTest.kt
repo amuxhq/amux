@@ -16,7 +16,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -58,7 +61,8 @@ import sh.amux.testsupport.Story
  * - Every interactive node exposes a non-empty TalkBack label (`ContentDescription`,
  *   `Text`, or `EditableText`).
  * - Every interactive node meets Android's 48.dp minimum touch target in both width
- *   and height.
+ *   and height (a review's diff lines excepted, as a dense listing).
+ * - No two touch targets overlap unless one holds the other.
  * - No visible interactive node has zero width/height or clips outside the viewport
  *   horizontally.
  * - Every screen exposes heading semantics for TalkBack heading navigation.
@@ -260,6 +264,7 @@ class AccessibilityAuditTest {
     ) {
         val minTouchDp = ThumbTarget.MinSize.value - TOUCH_TARGET_TOLERANCE_DP
         var headingCount = 0
+        val targets = mutableListOf<Pair<String, Rect>>()
 
         fun walk(node: SemanticsNode, inHorizontalScroll: Boolean) {
             val config = node.config
@@ -293,13 +298,20 @@ class AccessibilityAuditTest {
                         detail = "Interactive node $descriptor has zero layout size (${layoutSize.width}x${layoutSize.height} px)",
                     )
                 } else {
-                    // 3. Minimum 48.dp touch target check against actual layout hit area
-                    //    (M3 minimumInteractiveComponentSize and Modifier.thumbTarget() expand
-                    //    layout size to >= 48.dp; checking layout size catches unpadded custom
-                    //    clickable rows without false positives from scroll-edge clipping).
-                    val widthDp = layoutSize.width / density
-                    val heightDp = layoutSize.height / density
-                    if (widthDp < minTouchDp || heightDp < minTouchDp) {
+                    // 3. Minimum 48.dp touch target, checked against the target
+                    //    the control's layout reserves (see reservedTarget), so
+                    //    unpadded custom clickable rows still fail, without
+                    //    false positives from scroll-edge clipping.
+                    val target = reservedTarget(node)
+                    val widthDp = target.width / density
+                    val heightDp = target.height / density
+                    val tag = node.config.getOrNull(SemanticsProperties.TestTag).orEmpty()
+                    // A diff reads as a listing, each line its text's height,
+                    // as iOS draws it, and lines touch, so nothing widens their
+                    // targets; growing each to 48 dp would spread a hunk over
+                    // pages. Every line still answers to its whole width.
+                    val denseListing = tag.startsWith(DIFF_LINE_TAG_PREFIX)
+                    if (!denseListing && (widthDp < minTouchDp || heightDp < minTouchDp)) {
                         violations += AuditViolation(
                             storyId = storyId,
                             appearance = appearance,
@@ -308,6 +320,18 @@ class AccessibilityAuditTest {
                                 "${"%.1f".format(widthDp)}x${"%.1f".format(heightDp)} dp " +
                                 "(minimum ${ThumbTarget.MinSize.value.toInt()}x${ThumbTarget.MinSize.value.toInt()} dp)",
                         )
+                    }
+
+                    // A control scrolled partly out of its list's viewport takes
+                    // touches only where it shows, so the overlap check uses
+                    // just that part of its target.
+                    val own = Rect(node.positionInRoot, layoutSize.toSize())
+                    val clipped = bounds.width < own.width - CLIP_TOLERANCE_PX ||
+                        bounds.height < own.height - CLIP_TOLERANCE_PX
+                    val touchable = if (clipped) target.intersect(bounds) else target
+                    val floating = tag.startsWith(FLOATING_TAG_PREFIX)
+                    if (touchable.width > 0f && touchable.height > 0f && !floating) {
+                        targets += descriptor to touchable
                     }
 
                     // 4. Horizontal clipping check for visible items outside horizontal scrollables.
@@ -341,6 +365,27 @@ class AccessibilityAuditTest {
 
         walk(root, inHorizontalScroll = false)
 
+        // 5. No two targets overlap, unless one holds the other (a button
+        //    inside a tappable card): where they overlap, a tap has two
+        //    owners and the one drawn on top takes it, whatever the person
+        //    aimed at.
+        for (i in targets.indices) {
+            for (j in i + 1 until targets.size) {
+                val (aName, a) = targets[i]
+                val (bName, b) = targets[j]
+                val overlap = a.intersect(b)
+                if (overlap.width <= CLIP_TOLERANCE_PX || overlap.height <= CLIP_TOLERANCE_PX) continue
+                if (a.holds(b) || b.holds(a)) continue
+                violations += AuditViolation(
+                    storyId = storyId,
+                    appearance = appearance,
+                    rule = "target-overlap",
+                    detail = "Interactive nodes $aName and $bName overlap by " +
+                        "${"%.1f".format(overlap.width / density)}x${"%.1f".format(overlap.height / density)} dp",
+                )
+            }
+        }
+
         if (headingCount == 0) {
             violations += AuditViolation(
                 storyId = storyId,
@@ -350,6 +395,33 @@ class AccessibilityAuditTest {
             )
         }
     }
+
+    /**
+     * The area that answers to a touch on [node], in root coordinates and
+     * unclipped. That is the node's own bounds, unless Material's
+     * minimumInteractiveComponentSize (behind Modifier.thumbTarget()) sits in
+     * its layout's modifier chain: that modifier reserves a 48 dp area around a
+     * control drawn smaller and routes a touch anywhere in it to the control,
+     * so its own bounds are the target. Padding outside it, and the rest of
+     * the layout node, are not. Edge targets need no special case: everything
+     * after Modifier.edgeTarget() is already 48 dp.
+     */
+    private fun reservedTarget(node: SemanticsNode): Rect {
+        val own = Rect(node.positionInRoot, node.size.toSize())
+        val minimum = node.layoutInfo.getModifierInfo().firstOrNull {
+            it.modifier.javaClass.name.contains("MinimumInteractive")
+        } ?: return own
+        val coordinates = minimum.coordinates
+        if (!coordinates.isAttached) return own
+        val reserved = Rect(coordinates.positionInRoot(), coordinates.size.toSize())
+        return if (reserved.holds(own)) reserved else own
+    }
+
+    private fun Rect.holds(other: Rect): Boolean =
+        left <= other.left + CLIP_TOLERANCE_PX &&
+            top <= other.top + CLIP_TOLERANCE_PX &&
+            right >= other.right - CLIP_TOLERANCE_PX &&
+            bottom >= other.bottom - CLIP_TOLERANCE_PX
 
     private fun isInteractive(node: SemanticsNode): Boolean {
         val config = node.config
@@ -439,6 +511,16 @@ class AccessibilityAuditTest {
 
     companion object {
         private const val TOUCH_TARGET_TOLERANCE_DP = 0.5f
+
+        /**
+         * A floating action button floats over the list it belongs to, by
+         * design, and the list scrolls out from under it, so it is left out
+         * of the overlap check.
+         */
+        private const val FLOATING_TAG_PREFIX = "home.fab."
+
+        /** The test tags of a review's diff lines, drawn as a dense listing. */
+        private const val DIFF_LINE_TAG_PREFIX = "review.line."
         private const val CLIP_TOLERANCE_PX = 1.5f
     }
 }

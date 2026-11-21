@@ -1,9 +1,10 @@
 package sh.amux.features
 
-import sh.amux.design.IconSize
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,13 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -29,15 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.Changeable
 import sh.amux.values.CommandView
 import sh.amux.values.ContextView
@@ -106,42 +98,17 @@ fun ChatSettingsSheetContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(AskReviewTags.CHAT_SETTINGS_SHEET),
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.chat_settings_title),
-                style = AmuxTheme.typography.screenTitle,
-                color = colors.ink,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics { heading() },
-            )
-            val closeLabel = stringResource(R.string.action_close)
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(AskReviewTags.CHAT_SETTINGS_CLOSE),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = closeLabel,
-                    tint = colors.inkMuted,
-                    modifier = Modifier.size(IconSize.Row),
-                )
-            }
-        }
+        AmuxSheetHeader(
+            title = stringResource(R.string.chat_settings_title),
+            onClose = onDismiss,
+            closeModifier = Modifier.testTag(AskReviewTags.CHAT_SETTINGS_CLOSE),
+        )
 
         // Models
         if (view.models.isNotEmpty()) {
@@ -300,41 +267,14 @@ private fun EffortsSection(
             },
         )
         if (picksEffort) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = Space.margin),
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                efforts.forEach { effort ->
-                    FilterChip(
-                        selected = effort.current,
-                        onClick = { if (!effort.current) onPick(effort.value) },
-                        label = {
-                            Text(
-                                text = effort.value,
-                                style = AmuxTheme.typography.caption,
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = colors.ink,
-                            selectedLabelColor = colors.ground,
-                            containerColor = colors.sunken,
-                            labelColor = colors.inkMuted,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = effort.current,
-                            borderColor = colors.hairline,
-                            selectedBorderColor = colors.ink,
-                        ),
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(AskReviewTags.chatSettingsEffort(effort.value)),
-                    )
-                }
-            }
+            AmuxSegmentedChoice(
+                options = efforts,
+                selected = efforts.firstOrNull { it.current },
+                label = { it.value },
+                onSelect = { effort -> if (!effort.current) onPick(effort.value) },
+                tag = { AskReviewTags.chatSettingsEffort(it.value) },
+                modifier = Modifier.padding(horizontal = Space.margin),
+            )
         } else {
             val current = efforts.firstOrNull { it.current }
             if (current != null) {
@@ -404,7 +344,7 @@ private fun PermissionsSection(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = Space.m, vertical = Space.s),
+                            .padding(horizontal = Space.l, vertical = Space.s),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Space.m),
                     ) {
@@ -560,13 +500,13 @@ private fun CommandsSection(
                         Modifier
                             .fillMaxWidth()
                             .clickable(role = Role.Button) { onSelect(cmd) }
-                            .thumbTarget()
+                            .heightIn(min = ThumbTarget.MinSize)
                     } else {
                         Modifier.fillMaxWidth()
                     }
                     Column(
                         modifier = rowModifier
-                            .padding(horizontal = Space.m, vertical = Space.s)
+                            .padding(horizontal = Space.l, vertical = Space.s)
                             .testTag(AskReviewTags.chatSettingsCommand(cmd.name)),
                         verticalArrangement = Arrangement.spacedBy(Space.xxs),
                     ) {

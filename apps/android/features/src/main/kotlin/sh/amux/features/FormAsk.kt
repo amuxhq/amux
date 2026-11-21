@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -23,7 +26,6 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -257,18 +259,10 @@ private fun FormFieldControl(
                     )
                 }
                 val text = (value as? FormValue.Text)?.value.orEmpty()
-                OutlinedTextField(
+                AmuxField(
                     value = text,
                     onValueChange = { onValueChange(FormValue.Text(it)) },
-                    placeholder = {
-                        Text(
-                            text = field.title,
-                            style = AmuxTheme.typography.body,
-                            color = colors.inkFaint,
-                        )
-                    },
-                    textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
-                    singleLine = true,
+                    placeholder = field.title,
                     isError = problem != null,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = if (kind is FormFieldKind.Number && (kind.minimum ?: -1.0) >= 0.0) {
@@ -277,8 +271,6 @@ private fun FormFieldControl(
                             KeyboardType.Text
                         },
                     ),
-                    shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                    colors = amuxTextFieldColors(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { contentDescription = fieldLabel }
@@ -339,15 +331,18 @@ private fun FormFieldControl(
                             .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
                             .clickable(role = Role.DropdownList) { expanded = true }
                             .thumbTarget()
+                            .heightIn(min = AmuxFieldHeight)
                             .testTag(AskReviewTags.askField(field.name)),
                         shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                        color = colors.sunken,
+                        // Drawn as the text fields beside it are: the same
+                        // fill, height and text inset.
+                        color = AmuxTheme.backdrop,
                         border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = Space.m, vertical = Space.m),
+                                .padding(horizontal = Space.l, vertical = Space.s),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
@@ -382,9 +377,7 @@ private fun FormFieldControl(
                                     expanded = false
                                     onValueChange(FormValue.Choice(optionIndex))
                                 },
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(AskReviewTags.askFieldChoice(field.name, optionIndex)),
+                                modifier = Modifier.testTag(AskReviewTags.askFieldChoice(field.name, optionIndex)),
                             )
                         }
                     }
@@ -420,7 +413,7 @@ private fun FormFieldControl(
                                     val next = if (isChecked) picked - optionIndex else picked + optionIndex
                                     onValueChange(FormValue.Many(next.sorted()))
                                 }
-                                .thumbTarget()
+                                .heightIn(min = ThumbTarget.MinSize)
                                 .padding(horizontal = Space.xs)
                                 .testTag(AskReviewTags.askFieldChoice(field.name, optionIndex)),
                             verticalAlignment = Alignment.CenterVertically,

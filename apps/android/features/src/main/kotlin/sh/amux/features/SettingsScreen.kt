@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import androidx.compose.ui.text.font.FontWeight
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -23,8 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Check
@@ -33,12 +34,9 @@ import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
@@ -52,13 +50,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
-import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
@@ -223,52 +219,27 @@ fun SettingsScreen(
     val colors = AmuxTheme.colors
     val backLabel = stringResource(R.string.action_back)
     val largeText = LocalDensity.current.fontScale >= 1.3f
+    val scroll = rememberScrollState()
 
     AmuxGround(modifier = modifier.testTag(SettingsTags.SCREEN)) {
         Scaffold(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                            navigationIconContentColor = colors.ink,
-                        ),
-                        navigationIcon = {
-                            IconButton(
-                                onClick = { onAction(SettingsAction.Back) },
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(SettingsTags.BACK),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = backLabel,
-                                )
-                            }
-                        },
-                        title = {
-                            Text(
-                                text = stringResource(R.string.settings_title),
-                                style = AmuxTheme.typography.identifier,
-                                color = colors.ink,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.semantics { heading() },
-                            )
-                        },
-                    )
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
-                }
+                AmuxTopBar(
+                    title = stringResource(R.string.settings_title),
+                    scrolled = scroll.canScrollBackward,
+                    onNavigate = { onAction(SettingsAction.Back) },
+                    navigationLabel = backLabel,
+                    navigationModifier = Modifier.testTag(SettingsTags.BACK),
+                )
             },
         ) { innerPadding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scroll)
                     .windowInsetsPadding(WindowInsets.navigationBars)
                     .padding(bottom = Space.xxl)
                     .testTag(SettingsTags.SCROLL),
@@ -352,7 +323,7 @@ private fun AccountsSection(
                     } else {
                         AmuxActionButton(
                             label = stringResource(R.string.settings_sign_in),
-                            kind = ActionButtonKind.Primary,
+                            kind = ActionButtonKind.Accent,
                             fillWidth = true,
                             onClick = { onAction(SettingsAction.SignIn) },
                             modifier = Modifier.testTag(SettingsTags.SIGN_IN_BUTTON),
@@ -388,22 +359,26 @@ private fun AccountsSection(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .thumbTarget()
+                        .heightIn(min = ThumbTarget.MinSize)
                         .clickable(role = Role.Button) { onAction(SettingsAction.AddAccount) }
                         .padding(horizontal = Space.l, vertical = Space.m)
                         .testTag(SettingsTags.ADD_ACCOUNT),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.m),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Add,
-                        contentDescription = null,
-                        tint = colors.accent,
-                        modifier = Modifier.size(IconSize.Row),
-                    )
+                    // On the account rows' columns: the cross centred where
+                    // their monograms are, the words where their names start.
+                    Box(modifier = Modifier.size(AccountMonogramSize), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Outlined.Add,
+                            contentDescription = null,
+                            tint = colors.accent,
+                            modifier = Modifier.size(IconSize.Row),
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.settings_add_account),
-                        style = AmuxTheme.typography.bodyEmphasis,
+                        style = AmuxTheme.typography.body,
                         color = colors.accent,
                     )
                 }
@@ -481,7 +456,7 @@ private fun SettingsAccountRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(enabled = !account.signingIn, role = Role.Button, onClick = rowClick)
             .semantics { selected = account.selected }
             .padding(horizontal = Space.l, vertical = Space.m)
@@ -561,9 +536,7 @@ private fun AccountTrailing(
                     shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
                     color = colors.sunken,
                     border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(SettingsTags.accountSignInAgain(account.email)),
+                    modifier = Modifier.testTag(SettingsTags.accountSignInAgain(account.email)),
                 ) {
                     Box(
                         modifier = Modifier.padding(horizontal = Space.m, vertical = Space.s),
@@ -579,16 +552,13 @@ private fun AccountTrailing(
                 }
             }
             account.selected -> {
-                Icon(
-                    imageVector = Icons.Outlined.Check,
-                    contentDescription = stringResource(R.string.settings_account_active),
-                    tint = colors.ink,
-                    modifier = Modifier.size(IconSize.Control),
-                )
+                AmuxCheckMark(contentDescription = stringResource(R.string.settings_account_active))
             }
         }
     }
 }
+
+private val AccountMonogramSize = 34.dp
 
 @Composable
 private fun AccountMonogram(
@@ -597,11 +567,13 @@ private fun AccountMonogram(
     signedIn: Boolean,
 ) {
     val colors = AmuxTheme.colors
-    val fill = if (selected && signedIn) colors.ink else colors.sunken
-    val foreground = if (selected && signedIn) colors.ground else colors.inkMuted
+    // The account in use carries the interactive tint, as the account disc
+    // on the Agents screen does.
+    val fill = if (selected && signedIn) colors.accentFill else colors.sunken
+    val foreground = if (selected && signedIn) colors.onAccent else colors.inkMuted
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(AccountMonogramSize)
             .clip(CircleShape)
             .background(fill)
             .border(
@@ -676,7 +648,7 @@ private fun AppearanceSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                            .background(colors.sunken)
+                            .background(colors.segmentTrack)
                             .border(
                                 AmuxTheme.metrics.hairline,
                                 colors.hairline,
@@ -697,30 +669,13 @@ private fun AppearanceSection(
                         }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                            .background(colors.sunken)
-                            .border(
-                                AmuxTheme.metrics.hairline,
-                                colors.hairline,
-                                RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                            )
-                            .padding(Space.xs),
-                        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                    ) {
-                        options.forEach { (option, label, tag) ->
-                            AppearanceSegmentButton(
-                                label = label,
-                                chosen = selected == option,
-                                onClick = { onSelect(option) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag(tag),
-                            )
-                        }
-                    }
+                    AmuxSegmentedChoice(
+                        options = options.map { it.first },
+                        selected = selected,
+                        label = { option -> options.first { it.first == option }.second },
+                        onSelect = onSelect,
+                        tag = { option -> options.first { it.first == option }.third },
+                    )
                 }
             }
         }
@@ -736,11 +691,13 @@ private fun AppearanceSegmentButton(
 ) {
     val colors = AmuxTheme.colors
     val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius - 2.dp)
+    // Stacked when the text is too large for three segments in a row; drawn
+    // as the segmented row draws its segments.
     Box(
         modifier = modifier
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
+            .amuxSegmentThumb(chosen, shape)
             .clip(shape)
-            .background(if (chosen) colors.ink else Color.Transparent)
             .clickable(role = Role.RadioButton, onClick = onClick)
             .semantics { selected = chosen }
             .padding(horizontal = Space.m, vertical = Space.s),
@@ -748,8 +705,10 @@ private fun AppearanceSegmentButton(
     ) {
         Text(
             text = label,
-            style = if (chosen) AmuxTheme.typography.bodyEmphasis else AmuxTheme.typography.body,
-            color = if (chosen) colors.ground else colors.inkMuted,
+            style = AmuxTheme.typography.body.copy(
+                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            color = if (chosen) colors.ink else colors.inkMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -906,7 +865,7 @@ private fun SettingsToggleRow(
         onCheckedChange = onCheckedChange,
         modifier = Modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .testTag(rowTag),
         switchModifier = Modifier.testTag(switchTag),
     ) {
@@ -938,7 +897,7 @@ private fun ExportDiagnosticsRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(enabled = !busy, role = Role.Button, onClick = onExport)
             .padding(horizontal = Space.l, vertical = Space.m)
             .testTag(SettingsTags.EXPORT_DIAGNOSTICS),
@@ -1014,7 +973,7 @@ private fun ThisPhoneSection(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .thumbTarget()
+                        .heightIn(min = ThumbTarget.MinSize)
                         .padding(horizontal = Space.l, vertical = Space.m)
                         .testTag(SettingsTags.DEVICE_NAME_ROW),
                     verticalArrangement = Arrangement.spacedBy(Space.xs),
@@ -1034,7 +993,7 @@ private fun ThisPhoneSection(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .thumbTarget()
+                        .heightIn(min = ThumbTarget.MinSize)
                         .clickable(role = Role.Button) {
                             onAction(SettingsAction.CopyFingerprint(state.deviceFingerprint))
                         }
@@ -1175,7 +1134,7 @@ private fun SettingsNavigationRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.l, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
@@ -1188,12 +1147,7 @@ private fun SettingsNavigationRow(
                 largeText = largeText,
             )
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.inkFaint,
-            modifier = Modifier.size(IconSize.Row),
-        )
+        AmuxDisclosureChevron()
     }
 }
 
@@ -1207,7 +1161,7 @@ private fun SettingsActionRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.l, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
@@ -1231,7 +1185,7 @@ private fun SettingsIconRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.l, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
@@ -1249,12 +1203,7 @@ private fun SettingsIconRow(
             color = colors.ink,
             modifier = Modifier.weight(1f),
         )
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.inkFaint,
-            modifier = Modifier.size(IconSize.Row),
-        )
+        AmuxDisclosureChevron()
     }
 }
 

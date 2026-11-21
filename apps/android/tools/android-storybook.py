@@ -111,7 +111,7 @@ def ordered_areas(stories: list[dict]) -> list[str]:
 GEOMETRY_RULES = {
     "row-centre": "Row centres differ",
     "near-column": "Edge just off a shared column",
-    "tall-control": "Control drawn taller than 40 dp",
+    "tall-control": "Control drawn taller than 44 dp",
     "icon-inset": "Glyph inset from its column",
 }
 

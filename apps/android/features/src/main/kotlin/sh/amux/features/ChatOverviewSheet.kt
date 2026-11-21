@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import androidx.compose.ui.graphics.Color
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,16 +22,11 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.RadioButtonChecked
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,7 +53,6 @@ import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.ChangeTotals
 import sh.amux.values.Changes
 import sh.amux.values.Comparison
@@ -149,7 +147,7 @@ fun ChatOverviewSheetContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(AskReviewTags.OVERVIEW_SHEET),
@@ -266,9 +264,7 @@ fun ChatOverviewStopDialogContent(
             ) {
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.OVERVIEW_STOP_CANCEL),
+                    modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_CANCEL),
                 ) {
                     Text(
                         text = stringResource(R.string.action_cancel),
@@ -278,9 +274,7 @@ fun ChatOverviewStopDialogContent(
                 }
                 TextButton(
                     onClick = onConfirm,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.OVERVIEW_STOP_CONFIRM),
+                    modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_CONFIRM),
                 ) {
                     Text(
                         text = stringResource(R.string.overview_stop),
@@ -302,38 +296,18 @@ private fun OverviewPlaceHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.margin)
             .testTag(AskReviewTags.OVERVIEW_PLACE),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+        AmuxSheetHeader(
+            title = subject.name,
+            onClose = onClose,
+            closeModifier = Modifier.testTag(AskReviewTags.OVERVIEW_CLOSE),
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = Space.margin),
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            Text(
-                text = subject.name,
-                style = AmuxTheme.typography.screenTitle,
-                color = colors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            val closeLabel = stringResource(R.string.action_close)
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(AskReviewTags.OVERVIEW_CLOSE),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = closeLabel,
-                    tint = colors.inkMuted,
-                    modifier = Modifier.size(IconSize.Row),
-                )
-            }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             if (subject.host.isNotEmpty()) {
                 PlaceFactRow(label = stringResource(R.string.overview_label_host), value = subject.host)
             }
@@ -398,7 +372,7 @@ private fun OverviewTasksSection(tasks: TasksView) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Space.m),
+                    .padding(Space.l),
                 verticalArrangement = Arrangement.spacedBy(Space.s),
             ) {
                 tasks.entries.forEachIndexed { index, entry ->
@@ -468,15 +442,20 @@ private fun OverviewJobsSection(
                         JobStop.Stopping, JobStop.Unavailable -> null
                     }
                     val elapsed = ChatWords.ran(sinceMs = job.startedAtMs, now = now)
+                    // Each job's line is the Stop button's full 48 dp, so the
+                    // buttons of jobs listed one under another never overlap
+                    // and the card's edge never cuts the first one.
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = Space.m, vertical = Space.s)
+                            .padding(horizontal = Space.l)
                             .testTag(AskReviewTags.overviewJob(index)),
                         verticalArrangement = Arrangement.spacedBy(Space.xxs),
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = ThumbTarget.MinSize),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(Space.s),
                         ) {
@@ -506,19 +485,12 @@ private fun OverviewJobsSection(
                                     R.string.overview_stop_job_description,
                                     ChatWords.firstLine(job.command),
                                 )
-                                IconButton(
+                                AmuxEdgeIconButton(
+                                    icon = Icons.Outlined.StopCircle,
+                                    contentDescription = stopDescription,
                                     onClick = { onRequestStop(job, stopKey) },
-                                    modifier = Modifier
-                                        .thumbTarget()
-                                        .testTag(AskReviewTags.overviewJobStop(index)),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.StopCircle,
-                                        contentDescription = stopDescription,
-                                        tint = colors.inkMuted,
-                                        modifier = Modifier.size(IconSize.Row),
-                                    )
-                                }
+                                    modifier = Modifier.testTag(AskReviewTags.overviewJobStop(index)),
+                                )
                             }
                         }
                         val refused = job.stop as? JobStop.Refused
@@ -529,6 +501,7 @@ private fun OverviewJobsSection(
                                 color = colors.accent,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = Space.s),
                             )
                         }
                     }
@@ -558,7 +531,7 @@ private fun OverviewFailedServersSection(servers: List<ServerView>) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = Space.m, vertical = Space.s)
+                            .padding(horizontal = Space.l, vertical = Space.s)
                             .testTag(AskReviewTags.overviewServer(server.name)),
                         verticalArrangement = Arrangement.spacedBy(Space.xxs),
                     ) {
@@ -604,12 +577,12 @@ private fun OverviewUsageSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Space.margin),
-            borderColor = if (usage.blocked) colors.accent else colors.hairline,
+            borderColor = if (usage.blocked) colors.accent else Color.Transparent,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Space.m),
+                    .padding(Space.l),
                 verticalArrangement = Arrangement.spacedBy(Space.s),
             ) {
                 usage.windows.forEachIndexed { index, window ->
@@ -687,7 +660,7 @@ private fun OverviewContextSection(context: ContextView) {
         ) {
             ContextMeterBlock(
                 context = context,
-                modifier = Modifier.padding(Space.m),
+                modifier = Modifier.padding(Space.l),
             )
         }
     }
@@ -785,41 +758,14 @@ private fun OverviewChangesSection(
         )
 
         if (comparisons.size > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.margin),
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                comparisons.forEach { option ->
-                    val selected = option == comparison
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onSelectComparison(option) },
-                        label = {
-                            Text(
-                                text = ChatWords.comparison(option, base = baseBranch),
-                                style = AmuxTheme.typography.caption,
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = colors.ink,
-                            selectedLabelColor = colors.ground,
-                            containerColor = colors.sunken,
-                            labelColor = colors.inkMuted,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = selected,
-                            borderColor = colors.hairline,
-                            selectedBorderColor = colors.ink,
-                        ),
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(AskReviewTags.overviewComparison(option.name.lowercase())),
-                    )
-                }
-            }
+            AmuxSegmentedChoice(
+                options = comparisons,
+                selected = comparison,
+                label = { option -> ChatWords.comparison(option, base = baseBranch) },
+                onSelect = onSelectComparison,
+                tag = { option -> AskReviewTags.overviewComparison(option.name.lowercase()) },
+                modifier = Modifier.padding(horizontal = Space.margin),
+            )
         }
 
         if (changesError != null) {
@@ -839,9 +785,7 @@ private fun OverviewChangesSection(
                 )
                 TextButton(
                     onClick = onRetryChanges,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.OVERVIEW_CHANGES_RETRY),
+                    modifier = Modifier.testTag(AskReviewTags.OVERVIEW_CHANGES_RETRY),
                 ) {
                     Text(
                         text = stringResource(R.string.action_retry),
@@ -922,7 +866,7 @@ private fun OverviewFolderGroup(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(
                     start = Space.m,
-                    end = Space.m,
+                    end = Space.l,
                     top = Space.s,
                     bottom = Space.xxs,
                 ),
@@ -933,10 +877,10 @@ private fun OverviewFolderGroup(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(role = Role.Button) { onSelectFile(file.path) }
-                    .thumbTarget()
+                    .heightIn(min = ThumbTarget.MinSize)
                     .padding(
                         start = if (folder.path.isEmpty()) Space.m else Space.xl,
-                        end = Space.m,
+                        end = Space.l,
                         top = Space.xs,
                         bottom = Space.xs,
                     )
@@ -1078,8 +1022,8 @@ fun ChatOverviewStrip(
                         .clickable(role = Role.Button) {
                             if (onOpenReview != null) onOpenReview() else onOpenOverview()
                         }
-                        .thumbTarget()
-                        .padding(horizontal = Space.m, vertical = Space.s)
+                        .heightIn(min = ThumbTarget.MinSize)
+                        .padding(horizontal = Space.l, vertical = Space.s)
                         .testTag(AskReviewTags.OVERVIEW_STRIP_CHANGES),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.s),
@@ -1091,12 +1035,7 @@ fun ChatOverviewStrip(
                         modifier = Modifier.weight(1f),
                     )
                     DiffDeltaCounts(added = totals.added, removed = totals.removed)
-                    Icon(
-                        imageVector = Icons.Outlined.ChevronRight,
-                        contentDescription = null,
-                        tint = colors.inkFaint,
-                        modifier = Modifier.size(IconSize.Inline),
-                    )
+                    AmuxDisclosureChevron()
                 }
             }
         }
@@ -1117,8 +1056,8 @@ private fun StripRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onClick)
-            .thumbTarget()
-            .padding(horizontal = Space.m, vertical = Space.s)
+            .heightIn(min = ThumbTarget.MinSize)
+            .padding(horizontal = Space.l, vertical = Space.s)
             .semantics { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s),
@@ -1138,11 +1077,6 @@ private fun StripRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = colors.inkFaint,
-            modifier = Modifier.size(IconSize.Inline),
-        )
+        AmuxDisclosureChevron()
     }
 }

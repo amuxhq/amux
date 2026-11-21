@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
 import sh.amux.design.IconSize
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -26,7 +28,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -73,7 +74,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -90,7 +90,6 @@ import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.words.RowState
 
 /**
@@ -291,9 +290,7 @@ fun ReportOfferBanner(
             }
             TextButton(
                 onClick = onOpen,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ReportTags.OFFER_OPEN),
+                modifier = Modifier.testTag(ReportTags.OFFER_OPEN),
             ) {
                 Text(
                     text = stringResource(R.string.report_offer_open),
@@ -304,9 +301,7 @@ fun ReportOfferBanner(
             }
             IconButton(
                 onClick = onDismiss,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ReportTags.OFFER_DISMISS),
+                modifier = Modifier.testTag(ReportTags.OFFER_DISMISS),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Close,
@@ -365,43 +360,16 @@ fun ReportOverlayContent(
             .fillMaxSize()
             .testTag(ReportTags.OVERLAY),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            // Header bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.xs, vertical = Space.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = { onAction(ReportAction.Dismiss) },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(ReportTags.CLOSE),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = closeLabel,
-                        tint = colors.inkMuted,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.report_title),
-                    style = typography.identifier,
-                    color = colors.ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() }
-                        .padding(end = Space.l),
-                )
-            }
-            AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
+        Column(modifier = Modifier.fillMaxSize()) {
+            // A full-screen task, so its close sits where a pushed screen's
+            // back arrow does.
+            AmuxTopBar(
+                title = stringResource(R.string.report_title),
+                onNavigate = { onAction(ReportAction.Dismiss) },
+                navigationIcon = Icons.Outlined.Close,
+                navigationLabel = closeLabel,
+                navigationModifier = Modifier.testTag(ReportTags.CLOSE),
+            )
 
             when (val delivery = state.delivery) {
                 is ReportDeliveryUi.Sent -> {
@@ -788,7 +756,7 @@ private fun ReportFrameCanvas(
                     .padding(Space.xxs)
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(if (mark.redact) colors.ink else colors.accent),
+                    .background(if (mark.redact) colors.ink else colors.accentFill),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -892,7 +860,6 @@ private fun ReportMarksList(
                         onClick = { onToggleRedact(index) },
                         enabled = editable,
                         modifier = Modifier
-                            .thumbTarget()
                             .semantics { contentDescription = redactSpoken }
                             .testTag(ReportTags.markRedact(index)),
                     ) {
@@ -909,9 +876,7 @@ private fun ReportMarksList(
                     IconButton(
                         onClick = { onRemoveMark(index) },
                         enabled = editable,
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(ReportTags.markRemove(index)),
+                        modifier = Modifier.testTag(ReportTags.markRemove(index)),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
@@ -981,9 +946,7 @@ private fun ReportComposerDock(
                         TextButton(
                             onClick = { onAction(ReportAction.Send) },
                             enabled = canSend && !isSending,
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ReportTags.RETRY),
+                            modifier = Modifier.testTag(ReportTags.RETRY),
                         ) {
                             Text(
                                 text = stringResource(R.string.report_retry),
@@ -999,7 +962,7 @@ private fun ReportComposerDock(
                         .fillMaxWidth()
                         .heightIn(min = 72.dp)
                         .clip(noteShape)
-                        .background(colors.ground)
+                        .background(AmuxTheme.backdrop)
                         .border(AmuxTheme.metrics.hairline, colors.hairline, noteShape)
                         .padding(Space.m),
                 ) {
@@ -1020,7 +983,7 @@ private fun ReportComposerDock(
                         cursorBrush = SolidColor(colors.accent),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .thumbTarget()
+                            .heightIn(min = ThumbTarget.MinSize)
                             .semantics { contentDescription = notePlaceholder }
                             .testTag(ReportTags.NOTE),
                     )
@@ -1070,7 +1033,7 @@ private fun ReportComposerDock(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .thumbTarget()
+                            .heightIn(min = ThumbTarget.MinSize)
                             .clip(noteShape)
                             .background(colors.sunken)
                             .padding(horizontal = Space.l, vertical = Space.m)
@@ -1171,9 +1134,7 @@ private fun ReportSentContent(
                         copied = true
                         onCopyReference()
                     },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(ReportTags.COPY_RECEIPT),
+                    modifier = Modifier.testTag(ReportTags.COPY_RECEIPT),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.ContentCopy,

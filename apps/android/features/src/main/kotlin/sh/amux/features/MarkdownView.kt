@@ -68,7 +68,6 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.AmuxTypography
 import sh.amux.design.Motion
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.words.MarkdownBlock
 import sh.amux.words.MarkdownDocument
 import sh.amux.words.MarkdownText
@@ -448,9 +447,7 @@ private fun MarkdownCodeBlockView(
                         copied = true
                         onCopyCode(text)
                     },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(MarkdownViewTags.CODE_COPY),
+                    modifier = Modifier.testTag(MarkdownViewTags.CODE_COPY),
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,

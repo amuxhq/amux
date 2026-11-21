@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,14 +26,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,7 +54,6 @@ import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.words.RowState
 import sh.amux.words.hostName
 import sh.amux.words.id
@@ -191,38 +189,18 @@ fun SignInOfferSheetContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(bottom = Space.xl)
             .testTag(AccountSheetTags.SIGN_IN_OFFER_SHEET),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.s, vertical = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = { onAction(SignInOfferAction.Decline) },
-                enabled = !state.working,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(AccountSheetTags.SIGN_IN_OFFER_CLOSE),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = closeLabel,
-                    tint = colors.inkMuted,
-                )
-            }
-            Text(
-                text = stringResource(R.string.account_sheet_sign_in_title),
-                style = AmuxTheme.typography.identifier,
-                color = colors.ink,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
+        AmuxSheetHeader(
+            title = stringResource(R.string.account_sheet_sign_in_title),
+            onClose = { onAction(SignInOfferAction.Decline) },
+            closeLabel = closeLabel,
+            closeEnabled = !state.working,
+            closeModifier = Modifier.testTag(AccountSheetTags.SIGN_IN_OFFER_CLOSE),
+        )
 
         Column(
             modifier = Modifier
@@ -276,7 +254,7 @@ fun SignInOfferSheetContent(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .thumbTarget()
+                            .heightIn(min = ThumbTarget.MinSize)
                             .testTag(AccountSheetTags.SIGN_IN_OFFER_WORKING),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -411,7 +389,7 @@ fun SignInResultDialogContent(
                             onClick = { onAction(SignInResultAction.Dismiss) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .thumbTarget()
+                                .heightIn(min = ThumbTarget.MinSize)
                                 .testTag(AccountSheetTags.SIGN_IN_RESULT_DISMISS),
                         ) {
                             Text(
@@ -637,39 +615,19 @@ fun DeleteAccountSheetContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(AccountSheetTags.DELETE_SHEET),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.s, vertical = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = { onAction(DeleteAccountAction.Cancel) },
-                enabled = !state.working,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(AccountSheetTags.DELETE_CLOSE),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = closeLabel,
-                    tint = colors.inkMuted,
-                )
-            }
-            Text(
-                text = stringResource(R.string.account_sheet_delete_bar_title),
-                style = AmuxTheme.typography.identifier,
-                color = colors.ink,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
+        AmuxSheetHeader(
+            title = stringResource(R.string.account_sheet_delete_bar_title),
+            onClose = { onAction(DeleteAccountAction.Cancel) },
+            closeLabel = closeLabel,
+            closeEnabled = !state.working,
+            closeModifier = Modifier.testTag(AccountSheetTags.DELETE_CLOSE),
+        )
 
         Column(
             modifier = Modifier
@@ -756,7 +714,7 @@ fun DeleteAccountSheetContent(
                             onClick = { onAction(DeleteAccountAction.Cancel) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .thumbTarget()
+                                .heightIn(min = ThumbTarget.MinSize)
                                 .testTag(AccountSheetTags.DELETE_CANCEL),
                         ) {
                             Text(
@@ -802,29 +760,12 @@ fun DeleteAccountSheetContent(
                             style = AmuxTheme.typography.caption,
                             color = colors.inkMuted,
                         )
-                        OutlinedTextField(
+                        AmuxField(
                             value = state.typedEmail,
                             onValueChange = { onAction(DeleteAccountAction.TypeEmail(it)) },
                             enabled = !state.working,
-                            singleLine = true,
-                            textStyle = AmuxTheme.typography.mono.copy(color = colors.ink),
-                            placeholder = {
-                                Text(
-                                    text = state.email,
-                                    style = AmuxTheme.typography.mono,
-                                    color = colors.inkFaint,
-                                )
-                            },
-                            shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = colors.ink,
-                                unfocusedBorderColor = colors.hairline,
-                                disabledBorderColor = colors.hairline,
-                                focusedContainerColor = colors.sunken,
-                                unfocusedContainerColor = colors.sunken,
-                                disabledContainerColor = colors.sunken,
-                                cursorColor = colors.ink,
-                            ),
+                            textStyle = AmuxTheme.typography.mono,
+                            placeholder = state.email,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.None,
                                 autoCorrectEnabled = false,
@@ -852,7 +793,7 @@ fun DeleteAccountSheetContent(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .thumbTarget()
+                                    .heightIn(min = ThumbTarget.MinSize)
                                     .testTag(AccountSheetTags.DELETE_WORKING),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center,
@@ -963,7 +904,7 @@ fun AccountSwitcherContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .thumbTarget(minHeight = 56.dp)
+                    .heightIn(min = 56.dp)
                     .clickable(role = Role.Button) {
                         if (account.signedIn) {
                             onSelectAccount(account.id)

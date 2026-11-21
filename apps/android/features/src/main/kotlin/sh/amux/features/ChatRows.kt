@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.graphics.Color
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -65,7 +69,6 @@ import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AgentKey
 import sh.amux.values.AttachmentView
 import sh.amux.values.BlobRef
@@ -131,8 +134,14 @@ internal object RowGridMetrics {
     val GlyphCell: Dp = 20.dp
     val GlyphGap: Dp = 10.dp
     val NestedIndent: Dp = GlyphCell + GlyphGap
-    val InRunBottom: Dp = 6.dp
-    val AfterRunBottom: Dp = 12.dp
+    /** The gap under a step that the next step joins by the rail, as iOS spaces a run. */
+    val InRunBottom: Dp = 10.dp
+
+    /** The gap under the last step of a run. */
+    val AfterRunBottom: Dp = 14.dp
+
+    /** The rail's clearance from the glyph above it and the glyph below it. */
+    val RailGap: Dp = 2.dp
     val ProseBottom: Dp = 12.dp
     const val THUMBNAIL_SIZE_LIMIT: Long = 16L * 1024L * 1024L
     const val COMMAND_OUTPUT_HEAD_LINES: Int = 3
@@ -784,7 +793,7 @@ private fun ErrorRowCard(
         Modifier
             .fillMaxWidth()
             .padding(bottom = RowGridMetrics.AfterRunBottom)
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clip(RoundedCornerShape(AmuxTheme.metrics.cardRadius))
             .clickable(role = Role.Button, onClick = onToggleExpand)
             .testTag(ChatRowTags.ERROR)
@@ -965,6 +974,48 @@ internal fun callGlyph(phase: CallPhase, defaultGlyph: ImageVector): ImageVector
 internal fun isAccented(row: Row, phase: CallPhase): Boolean =
     row.attention && phase == CallPhase.Asking
 
+/**
+ * Draws a run's rail: a hairline down the glyph column at the row's outer
+ * start edge, from under the row's glyph ([fromGlyph]) or its top, to its bottom,
+ * where the next step's glyph cell begins.
+ *
+ * Apply it before any start padding: drawn after one, the line would be
+ * measured from the indented edge and a nested step's rail would jog
+ * sideways onto its own glyph instead of carrying its parent's on.
+ */
+internal fun Modifier.runRail(
+    continues: Boolean,
+    fromGlyph: Boolean,
+    color: Color,
+    width: Dp,
+): Modifier = if (!continues) {
+    this
+} else {
+    drawBehind {
+        // Measured from the row's start edge, which is its right edge when
+        // the layout runs right to left.
+        val fromStart = RunRail.x.toPx()
+        val x = if (layoutDirection == LayoutDirection.Rtl) size.width - fromStart else fromStart
+        val top = if (fromGlyph) RunRail.top.toPx() else 0f
+        val bottom = size.height - if (fromGlyph) RowGridMetrics.RailGap.toPx() else 0f
+        drawLine(
+            color = color,
+            start = Offset(x, top),
+            end = Offset(x, bottom),
+            strokeWidth = width.toPx(),
+        )
+    }
+}
+
+/** Where a run's rail runs, measured from a row's outer top-start corner. */
+internal object RunRail {
+    /** The glyph column's centre: the same for every step, nested or not. */
+    val x: Dp = RowGridMetrics.GlyphCell / 2
+
+    /** Just under the glyph cell, clear of the glyph drawn in it. */
+    val top: Dp = RowGridMetrics.GlyphCell + RowGridMetrics.RailGap
+}
+
 @Composable
 internal fun GridRow(
     kindTag: String,
@@ -1015,29 +1066,28 @@ internal fun GridRow(
 
     val railModifier = Modifier
         .fillMaxWidth()
+        .runRail(
+            continues = rail.continues,
+            // A step set in under its parent carries the parent's rail past
+            // its own glyph, so the line starts at the row's top.
+            fromGlyph = !rail.nested,
+            color = hairlineColor,
+            width = hairlinePx,
+        )
         .padding(start = if (rail.nested) RowGridMetrics.NestedIndent else 0.dp)
-        .drawBehind {
-            if (rail.continues) {
-                val x = (RowGridMetrics.GlyphCell / 2).toPx()
-                val startY = if (rail.nested) 0f else (RowGridMetrics.GlyphCell - 2.dp).toPx()
-                drawLine(
-                    color = hairlineColor,
-                    start = Offset(x, startY),
-                    end = Offset(x, size.height),
-                    strokeWidth = hairlinePx.toPx(),
-                )
-            }
-        }
-        .padding(bottom = if (rail.continues) RowGridMetrics.InRunBottom else RowGridMetrics.AfterRunBottom)
+    val gapBelow = if (rail.continues) RowGridMetrics.InRunBottom else RowGridMetrics.AfterRunBottom
 
     val resolvedActionDesc = actionDescription ?: stringResource(
         if (open) R.string.chat_row_collapse else R.string.chat_row_expand,
     )
 
+    // A step that opens takes the gap under it into its target, so the
+    // target reaches 48 dp while adding as little as it can to the run's
+    // rhythm, and ends where the next step's begins.
     val interactiveModifier = if (opens) {
         Modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clip(RoundedCornerShape(Space.s))
             .clickable(role = Role.Button, onClick = onClick)
             .semantics {
@@ -1045,13 +1095,16 @@ internal fun GridRow(
                     .filter { it.isNotEmpty() }
                     .joinToString(", ")
             }
+            .padding(bottom = gapBelow)
     } else {
-        Modifier.fillMaxWidth()
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = gapBelow)
     }
 
     Box(modifier = modifier.then(railModifier).testTag(ChatRowTags.kind(kindTag))) {
         Row(
-            modifier = interactiveModifier.padding(vertical = Space.xs),
+            modifier = interactiveModifier,
             horizontalArrangement = Arrangement.spacedBy(RowGridMetrics.GlyphGap),
             verticalAlignment = Alignment.Top,
         ) {

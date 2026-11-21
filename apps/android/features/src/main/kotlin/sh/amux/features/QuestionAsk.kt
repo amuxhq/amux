@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import sh.amux.design.AmuxShapes
 import androidx.activity.compose.BackHandler
@@ -24,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -213,9 +215,7 @@ internal fun QuestionAskSection(
                 )
                 TextButton(
                     onClick = { replying = false },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.ASK_REPLY_BACK),
+                    modifier = Modifier.testTag(AskReviewTags.ASK_REPLY_BACK),
                 ) {
                     Text(
                         text = stringResource(R.string.action_back),
@@ -224,14 +224,12 @@ internal fun QuestionAskSection(
                     )
                 }
             }
-            OutlinedTextField(
+            AmuxField(
                 value = replyText,
                 onValueChange = { replyText = it },
-                textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
+                singleLine = false,
                 minLines = 2,
                 maxLines = 5,
-                shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                colors = amuxTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = replyTitle }
@@ -308,8 +306,8 @@ internal fun QuestionAskSection(
                                     reviewing = false
                                     step = index
                                 }
+                                .heightIn(min = ThumbTarget.MinSize)
                                 .padding(horizontal = Space.m, vertical = Space.s)
-                                .thumbTarget()
                                 .testTag(AskReviewTags.askReview(index)),
                             verticalArrangement = Arrangement.spacedBy(Space.xxs),
                         ) {
@@ -436,7 +434,7 @@ internal fun QuestionAskSection(
                             val otherValue = others.getOrNull(index)
                             if (otherValue != null) {
                                 val otherLabel = stringResource(R.string.ask_question_something_else)
-                                OutlinedTextField(
+                                AmuxField(
                                     value = otherValue,
                                     onValueChange = { typed ->
                                         val nextOthers = others.toMutableList().apply { this[index] = typed }
@@ -447,22 +445,12 @@ internal fun QuestionAskSection(
                                             picks = picks.toMutableList().apply { this[index] = emptySet() }
                                         }
                                     },
-                                    placeholder = {
-                                        Text(
-                                            text = otherLabel,
-                                            style = AmuxTheme.typography.body,
-                                            color = colors.inkFaint,
-                                        )
-                                    },
-                                    textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
-                                    singleLine = true,
+                                    placeholder = otherLabel,
                                     visualTransformation = if (currentQuestion.secret) {
                                         PasswordVisualTransformation()
                                     } else {
                                         VisualTransformation.None
                                     },
-                                    shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                                    colors = amuxTextFieldColors(),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .semantics { contentDescription = otherLabel }
@@ -494,23 +482,15 @@ internal fun QuestionAskSection(
                     if (takesNote) {
                         if (noting.getOrElse(index) { false }) {
                             val notePlaceholder = stringResource(R.string.ask_question_note_placeholder)
-                            OutlinedTextField(
+                            AmuxField(
                                 value = notes.getOrElse(index) { "" },
                                 onValueChange = { typed ->
                                     notes = notes.toMutableList().apply { this[index] = typed }
                                 },
-                                placeholder = {
-                                    Text(
-                                        text = notePlaceholder,
-                                        style = AmuxTheme.typography.body,
-                                        color = colors.inkFaint,
-                                    )
-                                },
-                                textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
+                                placeholder = notePlaceholder,
+                                singleLine = false,
                                 minLines = 1,
                                 maxLines = 4,
-                                shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                                colors = amuxTextFieldColors(),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .semantics { contentDescription = notePlaceholder }
@@ -521,8 +501,10 @@ internal fun QuestionAskSection(
                                 onClick = {
                                     noting = noting.toMutableList().apply { this[index] = true }
                                 },
+                                // Clear of the buttons below, so the two
+                                // targets don't overlap.
                                 modifier = Modifier
-                                    .thumbTarget()
+                                    .padding(bottom = Space.s)
                                     .testTag(AskReviewTags.askAddNote(index)),
                                 contentPadding = PaddingValues(horizontal = Space.xs, vertical = Space.xs),
                             ) {
@@ -584,9 +566,7 @@ internal fun QuestionAskSection(
             if (replies) {
                 TextButton(
                     onClick = { replying = true },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.ASK_REPLY_LINK),
+                    modifier = Modifier.testTag(AskReviewTags.ASK_REPLY_LINK),
                     contentPadding = PaddingValues(horizontal = Space.xs, vertical = Space.xs),
                 ) {
                     Text(
@@ -652,9 +632,11 @@ private fun QuestionStepChip(
     modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
-    val container = if (current) colors.ink else colors.ground
+    // The step being answered is filled with the interactive tint, like a
+    // chosen chip, rather than an ink slab that outshouts the question.
+    val container = if (current) colors.accentFill else AmuxTheme.backdrop
     val content = when {
-        current -> colors.ground
+        current -> colors.onAccent
         done -> colors.ink
         else -> colors.inkMuted
     }
@@ -721,7 +703,7 @@ private fun QuestionOptionRow(
                 shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
             )
             .clickable(role = if (multi) Role.Checkbox else Role.RadioButton, onClick = onClick)
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .padding(horizontal = Space.m, vertical = Space.s)
             .semantics { selected = isSelected },
         verticalAlignment = Alignment.CenterVertically,

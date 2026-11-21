@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +41,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AgentKey
 import sh.amux.values.CallPhase
 import sh.amux.values.ChildAction
@@ -384,7 +385,7 @@ internal fun SubagentRowView(
                 glyph = if (standing == AgentStanding.NeedsYou) Icons.Outlined.FrontHand else Icons.Outlined.AccountTree,
                 accented = standing == AgentStanding.NeedsYou || row.attention,
                 failed = standing == AgentStanding.Failed,
-                rail = if (hasAnswer) RailJoin(continues = true, nested = rail.nested) else rail,
+                rail = rail,
                 verb = verb,
                 subject = subject,
                 subjectMono = false,
@@ -441,12 +442,20 @@ private fun SubagentAnswerToggleBlock(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // The answer has no glyph of its own; when another step follows
+            // on the rail, the rail runs through it to that step.
+            .runRail(
+                continues = rail.continues,
+                fromGlyph = false,
+                color = colors.hairline,
+                width = AmuxTheme.metrics.hairline,
+            )
             .padding(
                 start = RowGridMetrics.NestedIndent + if (rail.nested) RowGridMetrics.NestedIndent else 0.dp,
                 bottom = if (rail.continues) RowGridMetrics.InRunBottom else RowGridMetrics.AfterRunBottom,
             )
             .clip(RoundedCornerShape(Space.s))
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onToggleExpand)
             .semantics { contentDescription = toggleLabel }
             .padding(vertical = Space.xs)

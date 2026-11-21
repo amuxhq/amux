@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import sh.amux.design.spillTarget
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -261,7 +262,7 @@ internal fun FirstRunContent(
                     } else {
                         Box(
                             modifier = Modifier
-                                .thumbTarget()
+                                .spillTarget()
                                 .clip(CircleShape)
                                 .clickable(role = Role.Button) { onAction(HomeAction.SignIn) }
                                 .padding(horizontal = Space.s)

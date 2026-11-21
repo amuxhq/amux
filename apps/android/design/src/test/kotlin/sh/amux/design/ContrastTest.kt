@@ -74,12 +74,39 @@ class ContrastTest {
                 )
             }
 
-            val onAccentRatio = contrastRatio(c.onAccent, c.accent)
-            val floor = if (appearance == Appearance.Light) 4.5 else 3.0
+        }
+    }
+
+    /**
+     * Every accent fill that carries a label (a pill, a button, a chosen
+     * chip or question step, the account disc, New Agent) puts onAccent on
+     * accentFill, which is opaque, so one pair covers every surface it sits
+     * on.
+     */
+    @Test
+    fun labelsOnAnAccentFillMeetWcagAa() {
+        for (appearance in Appearance.entries) {
+            val c = AmuxDesign.App.colors(appearance)
+            val ratio = contrastRatio(c.onAccent, c.accentFill)
             assertTrue(
-                "$appearance onAccent on accent must be >= $floor:1, was ${"%.2f".format(onAccentRatio)}:1",
-                onAccentRatio >= floor,
+                "$appearance onAccent on accentFill must be >= 4.5:1 (AA), was ${"%.2f".format(ratio)}:1",
+                ratio >= 4.5,
             )
+        }
+    }
+
+    /** An accent fill is still a control's shape against the page around it. */
+    @Test
+    fun accentFillStandsOffEverySurface() {
+        for (appearance in Appearance.entries) {
+            val c = AmuxDesign.App.colors(appearance)
+            for ((surfaceName, surface) in surfacesOf(c)) {
+                val ratio = contrastRatio(c.accentFill, surface)
+                assertTrue(
+                    "$appearance accentFill on $surfaceName must be >= 3.0:1 (AA UI), was ${"%.2f".format(ratio)}:1",
+                    ratio >= 3.0,
+                )
+            }
         }
     }
 
@@ -100,6 +127,44 @@ class ContrastTest {
                     addedRatio >= addedFloor,
                 )
             }
+        }
+    }
+
+    @Test
+    fun destructiveLabelMeetsWcagAaOnTheRemovedFill() {
+        for (appearance in Appearance.entries) {
+            val c = AmuxDesign.App.colors(appearance)
+            val ratio = contrastRatio(c.onRemoved, c.removed)
+            assertTrue(
+                "$appearance onRemoved on removed must be >= 4.5:1 (AA), was ${"%.2f".format(ratio)}:1",
+                ratio >= 4.5,
+            )
+        }
+    }
+
+    /**
+     * In dark mode the chosen segment has no shadow to set it off, so its
+     * thumb must read against the track by fill alone.
+     */
+    @Test
+    fun darkChosenSegmentStandsOffItsTrack() {
+        val c = AmuxDesign.App.colors(Appearance.Dark)
+        val ratio = contrastRatio(c.selection, c.segmentTrack)
+        assertTrue(
+            "dark selection on segmentTrack must be >= 2.0:1, was ${"%.2f".format(ratio)}:1",
+            ratio >= 2.0,
+        )
+    }
+
+    @Test
+    fun chosenSegmentLabelStaysReadableOnTheSelectionFill() {
+        for (appearance in Appearance.entries) {
+            val c = AmuxDesign.App.colors(appearance)
+            val ratio = contrastRatio(c.ink, c.selection)
+            assertTrue(
+                "$appearance ink on selection must be >= 4.5:1 (AA), was ${"%.2f".format(ratio)}:1",
+                ratio >= 4.5,
+            )
         }
     }
 

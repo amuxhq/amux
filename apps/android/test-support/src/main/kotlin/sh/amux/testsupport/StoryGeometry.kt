@@ -37,8 +37,8 @@ object StoryGeometry {
     const val NEAR_MISS_MIN_DP = 1f
     const val NEAR_MISS_MAX_DP = 12f
 
-    /** iOS draws its buttons and pills no taller than this. */
-    const val CONTROL_HEIGHT_DP = 40f
+    /** iOS draws its buttons no taller than this (its button label's 44 pt minimum), and its pills and chips shorter. */
+    const val CONTROL_HEIGHT_DP = 44f
 
     /** Leaves overlapping by this share of the taller one's height sit on one row. */
     private const val ROW_OVERLAP = 0.6f
@@ -76,7 +76,7 @@ object StoryGeometry {
     enum class Rule(val wire: String, val what: String) {
         RowCentre("row-centre", "siblings on one row whose vertical centres differ"),
         NearColumn("near-column", "an edge just off a column other pieces share"),
-        TallControl("tall-control", "a control drawn taller than 40 dp"),
+        TallControl("tall-control", "a control drawn taller than 44 dp"),
         IconInset("icon-inset", "a glyph inset from the edge its neighbours share"),
     }
 

@@ -168,9 +168,7 @@ fun AttachmentChip(
             if (onRemove != null) {
                 IconButton(
                     onClick = onRemove,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(ChatRowTags.ATTACHMENT_REMOVE),
+                    modifier = Modifier.testTag(ChatRowTags.ATTACHMENT_REMOVE),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Close,

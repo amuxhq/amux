@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.compose.foundation.layout.width
 import sh.amux.design.IconSize
 import sh.amux.design.AmuxShapes
 import androidx.compose.animation.core.LinearEasing
@@ -90,6 +91,10 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.Motion
 import sh.amux.design.Space
 import sh.amux.design.thumbTarget
+import sh.amux.design.ThumbTarget
+import sh.amux.design.spillTarget
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.values.Activity
 import sh.amux.values.AttachmentView
 import sh.amux.values.CommandMatch
@@ -495,9 +500,7 @@ private fun PromptsQueueStrip(
                         val sendNowLabel = stringResource(R.string.chat_composer_send_now)
                         IconButton(
                             onClick = { callbacks.onSendNow(row) },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ChatComposerTags.queuedSendNow(index)),
+                            modifier = Modifier.testTag(ChatComposerTags.queuedSendNow(index)),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.ArrowUpward,
@@ -511,9 +514,7 @@ private fun PromptsQueueStrip(
                         val withdrawLabel = stringResource(R.string.chat_composer_withdraw)
                         IconButton(
                             onClick = { callbacks.onWithdraw(row) },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ChatComposerTags.queuedWithdraw(index)),
+                            modifier = Modifier.testTag(ChatComposerTags.queuedWithdraw(index)),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Edit,
@@ -570,9 +571,7 @@ private fun PromptsQueueStrip(
                         val resendLabel = stringResource(R.string.chat_composer_resend)
                         IconButton(
                             onClick = { callbacks.onResend(prompt.inputId) },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ChatComposerTags.underwayResend(index)),
+                            modifier = Modifier.testTag(ChatComposerTags.underwayResend(index)),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Refresh,
@@ -584,9 +583,7 @@ private fun PromptsQueueStrip(
                         val discardLabel = stringResource(R.string.chat_composer_discard)
                         IconButton(
                             onClick = { callbacks.onDiscard(prompt.inputId) },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ChatComposerTags.underwayDiscard(index)),
+                            modifier = Modifier.testTag(ChatComposerTags.underwayDiscard(index)),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Close,
@@ -626,9 +623,7 @@ private fun PromptsQueueStrip(
                     val dismissLabel = stringResource(R.string.chat_composer_dismiss)
                     IconButton(
                         onClick = { callbacks.onDismissRefused(prompt.inputId) },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(ChatComposerTags.refusedDismiss(index)),
+                        modifier = Modifier.testTag(ChatComposerTags.refusedDismiss(index)),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
@@ -691,7 +686,7 @@ private fun SlashMatchesPopup(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .thumbTarget()
+                        .heightIn(min = ThumbTarget.MinSize)
                         .clickable(role = Role.Button, onClick = { onPick(match) })
                         .semantics { contentDescription = spoken }
                         .padding(horizontal = Space.l, vertical = Space.s)
@@ -836,12 +831,15 @@ private fun StandardComposerCard(
                 state = field.state,
                 inputTransformation = field.typing,
                 textStyle = typography.body.copy(color = colors.ink),
-                cursorBrush = SolidColor(colors.ink),
+                cursorBrush = SolidColor(colors.accent),
                 lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
+                // The field is drawn its text's height, so the card does not
+                // grow around a one-line draft; its touch area still reaches
+                // 48 dp, growing up into the card's padding only, since the
+                // controls' targets sit close below it.
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = Space.xxs)
-                    .thumbTarget()
+                    .spillTarget(spill = Alignment.Bottom)
                     .semantics { contentDescription = placeholder }
                     .testTag(ChatComposerTags.INPUT_FIELD),
                 decorator = { innerTextField ->
@@ -882,22 +880,24 @@ private fun StandardComposerCard(
             ) {
                 Box {
                     val attachLabel = stringResource(R.string.chat_composer_attach)
-                    IconButton(
+                    // The disc's edge sits on the card's text column; its
+                    // 48 dp target spills into the card's padding.
+                    AmuxEdgeTarget(
+                        footprint = ComposerDisc,
                         onClick = { attachMenuOpen = !attachMenuOpen },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(ChatComposerTags.ATTACH_BUTTON),
+                        contentDescription = attachLabel,
+                        modifier = Modifier.testTag(ChatComposerTags.ATTACH_BUTTON),
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(ComposerDisc)
                                 .clip(CircleShape)
                                 .background(colors.sunken),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Add,
-                                contentDescription = attachLabel,
+                                contentDescription = null,
                                 tint = colors.ink,
                                 modifier = Modifier.size(IconSize.Control),
                             )
@@ -921,9 +921,7 @@ private fun StandardComposerCard(
                                 attachMenuOpen = false
                                 callbacks.onAttach(AttachChoice.Photo)
                             },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ChatComposerTags.ATTACH_MENU_PHOTO),
+                            modifier = Modifier.testTag(ChatComposerTags.ATTACH_MENU_PHOTO),
                         )
                         DropdownMenuItem(
                             text = { Text(text = stringResource(R.string.chat_composer_attach_file)) },
@@ -938,9 +936,7 @@ private fun StandardComposerCard(
                                 attachMenuOpen = false
                                 callbacks.onAttach(AttachChoice.File)
                             },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(ChatComposerTags.ATTACH_MENU_FILE),
+                            modifier = Modifier.testTag(ChatComposerTags.ATTACH_MENU_FILE),
                         )
                     }
                 }
@@ -955,19 +951,17 @@ private fun StandardComposerCard(
                             R.string.chat_composer_dictate
                         },
                     )
-                    IconButton(
+                    // Drawn by its glyph so the controls row stays the
+                    // disc's height; the gap keeps its 48 dp target clear of
+                    // the send disc's.
+                    AmuxEdgeIconButton(
+                        icon = if (state.dictationActive) Icons.Outlined.StopCircle else Icons.Outlined.Mic,
+                        contentDescription = dictateLabel,
                         onClick = callbacks.onToggleDictation,
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(ChatComposerTags.DICTATE_BUTTON),
-                    ) {
-                        Icon(
-                            imageVector = if (state.dictationActive) Icons.Outlined.StopCircle else Icons.Outlined.Mic,
-                            contentDescription = dictateLabel,
-                            tint = if (state.dictationActive) colors.accent else colors.inkMuted,
-                            modifier = Modifier.size(IconSize.Row),
-                        )
-                    }
+                        tint = if (state.dictationActive) colors.accent else colors.inkMuted,
+                        modifier = Modifier.testTag(ChatComposerTags.DICTATE_BUTTON),
+                    )
+                    Spacer(modifier = Modifier.width(Space.xl))
                 }
 
                 ComposerPrimaryControl(
@@ -1108,6 +1102,9 @@ private fun ControlsSummaryStrip(
     }
 }
 
+/** The composer's round attach, send and stop controls, as iOS draws them. */
+private val ComposerDisc = 34.dp
+
 @Composable
 private fun ComposerPrimaryControl(
     state: ChatComposerState,
@@ -1131,9 +1128,7 @@ private fun ComposerPrimaryControl(
                     disabledContentColor = colors.inkFaint,
                 ),
                 contentPadding = PaddingValues(horizontal = Space.l, vertical = Space.s),
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ChatComposerTags.RESUME_BUTTON),
+                modifier = Modifier.testTag(ChatComposerTags.RESUME_BUTTON),
             ) {
                 Text(
                     text = resumeLabel,
@@ -1144,22 +1139,22 @@ private fun ComposerPrimaryControl(
         }
         !state.hasDraft && state.isWorking -> {
             val interruptLabel = stringResource(R.string.chat_composer_interrupt)
-            IconButton(
+            AmuxEdgeTarget(
+                footprint = ComposerDisc,
                 onClick = callbacks.onInterrupt,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ChatComposerTags.INTERRUPT_BUTTON),
+                contentDescription = interruptLabel,
+                modifier = Modifier.testTag(ChatComposerTags.INTERRUPT_BUTTON),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(ComposerDisc)
                         .clip(CircleShape)
                         .background(colors.ink),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Stop,
-                        contentDescription = interruptLabel,
+                        imageVector = Icons.Filled.Stop,
+                        contentDescription = null,
                         tint = colors.ground,
                         modifier = Modifier.size(IconSize.Control),
                     )
@@ -1172,23 +1167,23 @@ private fun ComposerPrimaryControl(
             val sendLabel = stringResource(
                 if (state.isWorking) R.string.chat_composer_queue else R.string.chat_composer_send,
             )
-            IconButton(
+            AmuxEdgeTarget(
+                footprint = ComposerDisc,
                 onClick = callbacks.onSend,
+                contentDescription = sendLabel,
                 enabled = enabled,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ChatComposerTags.SEND_BUTTON),
+                modifier = Modifier.testTag(ChatComposerTags.SEND_BUTTON),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(ComposerDisc)
                         .clip(CircleShape)
                         .background(if (enabled) colors.ink else colors.sunken),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.ArrowUpward,
-                        contentDescription = sendLabel,
+                        contentDescription = null,
                         tint = if (enabled) colors.ground else colors.inkFaint,
                         modifier = Modifier.size(IconSize.Control),
                     )

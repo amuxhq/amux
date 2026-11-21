@@ -34,7 +34,6 @@ import java.io.File
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.Row
 
 /** Attachment preview currently opened in a full-screen dialog. */
@@ -103,9 +102,7 @@ internal fun AttachmentPreviewDialog(
                 )
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(ChatScreenTags.PREVIEW_CLOSE),
+                    modifier = Modifier.testTag(ChatScreenTags.PREVIEW_CLOSE),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Close,

@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Spacer
 import sh.amux.design.IconSize
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
@@ -23,7 +26,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Archive
@@ -43,15 +45,10 @@ import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -68,7 +65,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -80,7 +76,10 @@ import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
+import androidx.compose.ui.draw.clip
+import sh.amux.design.spillTarget
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.push.Said
 import sh.amux.push.Wants
 import sh.amux.values.ActivityKind
@@ -184,103 +183,65 @@ fun AgentsHome(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                            navigationIconContentColor = colors.ink,
-                            actionIconContentColor = colors.ink,
-                        ),
-                        navigationIcon = {
-                            if (state.scope == HomeScope.Closed) {
-                                val backLabel = stringResource(R.string.action_back)
-                                IconButton(
-                                    onClick = { onAction(HomeAction.Back) },
-                                    modifier = Modifier
-                                        .thumbTarget()
-                                        .testTag(TestTags.SETTLED_BACK),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                        contentDescription = backLabel,
-                                    )
+                val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
+                AmuxTopBar(
+                    title = stringResource(
+                        if (state.scope == HomeScope.Fleet) R.string.home_title else R.string.home_settled_title,
+                    ),
+                    large = state.scope == HomeScope.Fleet,
+                    subtitle = subtitleText,
+                    // A count is never the accent: the rows that need you
+                    // carry it, and the line only says how many.
+                    subtitleModifier = Modifier.testTag(TestTags.HOME_SUBTITLE),
+                    scrolled = scrolled,
+                    onNavigate = if (state.scope == HomeScope.Closed) {
+                        { onAction(HomeAction.Back) }
+                    } else {
+                        null
+                    },
+                    navigationModifier = Modifier.testTag(TestTags.SETTLED_BACK),
+                    below = if (searchVisible) {
+                        {
+                            FleetSearchBar(
+                                filter = state.filter,
+                                needYouCount = state.needYou,
+                                machines = state.machines,
+                                onFilterChange = { onAction(HomeAction.Filter(it)) },
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                ) {
+                    if (showSearchControl) {
+                        val searchDesc = stringResource(R.string.home_search_button)
+                        IconButton(
+                            onClick = {
+                                if (searchVisible) {
+                                    if (state.filtering) {
+                                        onAction(HomeAction.Filter(FleetFilter(words = "", only = null)))
+                                    }
+                                    onSearchExpandedChange(false)
+                                } else {
+                                    onSearchExpandedChange(true)
                                 }
-                            }
-                        },
-                        title = {
-                            Column {
-                                Text(
-                                    text = stringResource(
-                                        if (state.scope == HomeScope.Fleet) {
-                                            R.string.home_title
-                                        } else {
-                                            R.string.home_settled_title
-                                        },
-                                    ),
-                                    style = AmuxTheme.typography.screenTitle,
-                                    color = colors.ink,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.semantics { heading() },
-                                )
-                                if (subtitleText != null) {
-                                    Text(
-                                        text = subtitleText,
-                                        style = AmuxTheme.typography.caption,
-                                        color = if (state.needYou > 0) colors.accent else colors.inkMuted,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.testTag(TestTags.HOME_SUBTITLE),
-                                    )
-                                }
-                            }
-                        },
-                        actions = {
-                            if (showSearchControl) {
-                                val searchDesc = stringResource(R.string.home_search_button)
-                                IconButton(
-                                    onClick = {
-                                        if (searchVisible) {
-                                            if (state.filtering) {
-                                                onAction(HomeAction.Filter(FleetFilter(words = "", only = null)))
-                                            }
-                                            onSearchExpandedChange(false)
-                                        } else {
-                                            onSearchExpandedChange(true)
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .thumbTarget()
-                                        .testTag(TestTags.HOME_SEARCH_TOGGLE),
-                                ) {
-                                    Icon(
-                                        imageVector = if (searchVisible) Icons.Outlined.Close else Icons.Outlined.Search,
-                                        contentDescription = searchDesc,
-                                        tint = colors.inkMuted,
-                                    )
-                                }
-                            }
-                            if (state.scope == HomeScope.Fleet) {
-                                AmuxAccountAvatar(
-                                    account = state.selectedAccount,
-                                    onClick = { onAction(HomeAction.OpenAccountMenu) },
-                                    modifier = Modifier
-                                        .padding(end = Space.xs)
-                                        .testTag(TestTags.HOME_ACCOUNT_MENU),
-                                )
-                            }
-                        },
-                    )
-                    if (searchVisible) {
-                        FleetSearchBar(
-                            filter = state.filter,
-                            needYouCount = state.needYou,
-                            machines = state.machines,
-                            onFilterChange = { onAction(HomeAction.Filter(it)) },
+                            },
+                            modifier = Modifier.testTag(TestTags.HOME_SEARCH_TOGGLE),
+                        ) {
+                            Icon(
+                                imageVector = if (searchVisible) Icons.Outlined.Close else Icons.Outlined.Search,
+                                contentDescription = searchDesc,
+                                tint = colors.inkMuted,
+                            )
+                        }
+                    }
+                    if (state.scope == HomeScope.Fleet) {
+                        AmuxAccountAvatar(
+                            account = state.selectedAccount,
+                            onClick = { onAction(HomeAction.OpenAccountMenu) },
+                            modifier = Modifier.testTag(TestTags.HOME_ACCOUNT_MENU),
                         )
                     }
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
                 }
             },
             floatingActionButton = {
@@ -289,8 +250,10 @@ fun AgentsHome(
                     ExtendedFloatingActionButton(
                         onClick = { onAction(HomeAction.NewAgent) },
                         expanded = fabExpanded,
-                        containerColor = colors.ink,
-                        contentColor = colors.ground,
+                        // New Agent is the screen's one way to start
+                        // something, so it takes the interactive tint.
+                        containerColor = colors.accentFill,
+                        contentColor = colors.onAccent,
                         icon = {
                             Icon(
                                 imageVector = Icons.Outlined.Add,
@@ -468,33 +431,23 @@ private fun FleetSearchBar(
             .padding(bottom = Space.s),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        OutlinedTextField(
+        AmuxField(
             value = filter.words,
             onValueChange = { onFilterChange(filter.copy(words = it)) },
-            singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.home_search_placeholder),
-                    style = AmuxTheme.typography.detail,
-                    color = colors.inkFaint,
-                )
-            },
+            placeholder = stringResource(R.string.home_search_placeholder),
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Outlined.Search,
                     contentDescription = null,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(IconSize.Control),
                 )
             },
-            trailingIcon = {
-                if (filter.words.isNotEmpty()) {
+            trailingIcon = if (filter.words.isNotEmpty()) {
+                {
                     val clearLabel = stringResource(R.string.home_search_clear)
                     IconButton(
                         onClick = { onFilterChange(filter.copy(words = "")) },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(TestTags.HOME_SEARCH_CLEAR),
+                        modifier = Modifier.testTag(TestTags.HOME_SEARCH_CLEAR),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
@@ -504,35 +457,16 @@ private fun FleetSearchBar(
                         )
                     }
                 }
+            } else {
+                null
             },
-            shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = colors.raised,
-                unfocusedContainerColor = colors.raised,
-                focusedBorderColor = colors.ink,
-                unfocusedBorderColor = colors.hairline,
-                focusedTextColor = colors.ink,
-                unfocusedTextColor = colors.ink,
-            ),
-            textStyle = AmuxTheme.typography.body,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Space.margin)
                 .testTag(TestTags.HOME_SEARCH),
         )
 
-        val chipColors = FilterChipDefaults.filterChipColors(
-            containerColor = colors.raised,
-            labelColor = colors.inkMuted,
-            selectedContainerColor = colors.ink,
-            selectedLabelColor = colors.ground,
-        )
-        val chipBorder = FilterChipDefaults.filterChipBorder(
-            enabled = true,
-            selected = false,
-            borderColor = colors.hairline,
-            selectedBorderColor = colors.ink,
-        )
+        val chipColors = amuxFilterChipColors()
 
         Row(
             modifier = Modifier
@@ -547,13 +481,12 @@ private fun FleetSearchBar(
                 label = {
                     Text(
                         text = stringResource(R.string.home_filter_all),
-                        style = AmuxTheme.typography.detail,
+                        style = AmuxTheme.typography.caption,
                     )
                 },
                 colors = chipColors,
-                border = chipBorder,
+                border = amuxFilterChipBorder(filter.only == null),
                 modifier = Modifier
-                    .thumbTarget()
                     .testTag(TestTags.homeFilter("all")),
             )
             FilterChip(
@@ -569,13 +502,12 @@ private fun FleetSearchBar(
                         } else {
                             stringResource(R.string.home_filter_needs_you)
                         },
-                        style = AmuxTheme.typography.detail,
+                        style = AmuxTheme.typography.caption,
                     )
                 },
                 colors = chipColors,
-                border = chipBorder,
+                border = amuxFilterChipBorder(filter.only == FleetOnly.NeedsYou),
                 modifier = Modifier
-                    .thumbTarget()
                     .testTag(TestTags.homeFilter("needs-you")),
             )
             FilterChip(
@@ -587,13 +519,12 @@ private fun FleetSearchBar(
                 label = {
                     Text(
                         text = stringResource(R.string.home_filter_working),
-                        style = AmuxTheme.typography.detail,
+                        style = AmuxTheme.typography.caption,
                     )
                 },
                 colors = chipColors,
-                border = chipBorder,
+                border = amuxFilterChipBorder(filter.only == FleetOnly.Working),
                 modifier = Modifier
-                    .thumbTarget()
                     .testTag(TestTags.homeFilter("working")),
             )
             if (machines.size > 1) {
@@ -608,13 +539,12 @@ private fun FleetSearchBar(
                         label = {
                             Text(
                                 text = PlaceNames.host(host.name),
-                                style = AmuxTheme.typography.detail,
+                                style = AmuxTheme.typography.caption,
                             )
                         },
                         colors = chipColors,
-                        border = chipBorder,
+                        border = amuxFilterChipBorder(selected),
                         modifier = Modifier
-                            .thumbTarget()
                             .testTag(TestTags.homeFilter("host.${host.name}")),
                     )
                 }
@@ -882,9 +812,10 @@ private fun AgentListRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(rowClickableModifier)
+                .heightIn(min = AgentRowMinHeight)
                 .padding(
                     start = Space.margin + indent,
-                    end = Space.xs,
+                    end = Space.margin,
                     top = Space.m,
                     bottom = Space.m,
                 ),
@@ -927,10 +858,10 @@ private fun AgentListRow(
                     if (row.pinned) {
                         val pinnedDesc = stringResource(R.string.home_row_pinned)
                         Icon(
-                            imageVector = Icons.Outlined.PushPin,
+                            imageVector = Icons.Filled.PushPin,
                             contentDescription = pinnedDesc,
                             tint = colors.inkFaint,
-                            modifier = Modifier.size(IconSize.Small),
+                            modifier = Modifier.size(12.dp),
                         )
                     }
                 }
@@ -968,13 +899,21 @@ private fun AgentListRow(
                 } else {
                     stringResource(R.string.home_family_show, row.children, row.name)
                 }
-                Row(
+                // The toggle's 48 dp target reaches left over the row's text
+                // rather than right, so it ends where the More button's
+                // target begins and a tap between them has one owner.
+                Box(
                     modifier = Modifier
-                        .thumbTarget()
+                        .padding(start = Space.s)
+                        .widthIn(min = ThumbTarget.MinSize)
+                        .heightIn(min = ThumbTarget.MinSize)
+                        .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
                         .clickable(role = Role.Button, onClick = onToggleFamily)
-                        .padding(horizontal = Space.s)
                         .semantics { contentDescription = toggleDesc }
                         .testTag(TestTags.homeFamily(row.name)),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xs),
                 ) {
@@ -997,22 +936,22 @@ private fun AgentListRow(
                         modifier = Modifier.size(IconSize.Inline),
                     )
                 }
+                }
             }
 
             val moreDesc = stringResource(R.string.action_more_options)
-            IconButton(
+            // Room for the More button's target to spill into, so it meets
+            // the family toggle's target instead of covering it.
+            Spacer(modifier = Modifier.width(AmuxEdgeSpill))
+            AmuxEdgeIconButton(
+                icon = Icons.Outlined.MoreVert,
+                contentDescription = moreDesc,
                 onClick = onOpenMenu,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(menuTag),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.MoreVert,
-                    contentDescription = moreDesc,
-                    tint = colors.inkFaint,
-                    modifier = Modifier.size(IconSize.Control),
-                )
-            }
+                size = IconSize.Control,
+                ink = GlyphInk.MoreVert,
+                tint = colors.inkFaint,
+                modifier = Modifier.testTag(menuTag),
+            )
         }
 
         if (showDivider) {
@@ -1020,6 +959,9 @@ private fun AgentListRow(
         }
     }
 }
+
+/** iOS's agent row minimum: a one-line row is no shorter than a two-line one. */
+private val AgentRowMinHeight = 64.dp
 
 private fun fallbackPreview(state: RowState): FleetWords.Line? {
     if (state.namesTheHost) return null
@@ -1079,7 +1021,7 @@ private fun SettledFooterRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .thumbTarget(minHeight = 56.dp)
+                .heightIn(min = 56.dp)
                 .clickable(role = Role.Button, onClick = onClick)
                 .padding(horizontal = Space.margin, vertical = Space.m)
                 .testTag(TestTags.HOME_SETTLED_ROW),
@@ -1217,15 +1159,7 @@ private fun AgentRowActionSheet(
                 .padding(bottom = Space.xl)
                 .testTag(TestTags.HOME_ROW_ACTIONS_SHEET),
         ) {
-            Text(
-                text = row.name,
-                style = AmuxTheme.typography.identifier,
-                color = colors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.s),
-            )
-            AmuxHairline()
+            AmuxSheetHeader(title = row.name)
             if (row.pinnable) {
                 if (row.pinned) {
                     AmuxActionRow(

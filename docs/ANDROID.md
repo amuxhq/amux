@@ -72,7 +72,7 @@ Retrofit), with OkHttp and `kotlinx.serialization` behind plain interfaces.
 | `:core:words` | Pure JVM | Wording and markdown parsing (`ChatWords`, `FleetWords`, `FleetRow`, `DeleteWords`, `SignInWords`, `PlaceNames`, `Elapsed`, `Markdown`, `RowState`, `RunPlacement`, `Subagents`); zero Android imports, runs on the JVM |
 | `:push` | Pure JVM | Generated `Said.kt`, `OpenedPush`, `PushWords` and `PushAlert`; its test fixtures hold the HPKE opener (`X25519` + `HKDF-SHA256` + `ChaCha20-Poly1305`, info `amux push 1`) and key store, which only the debug door and tests link; zero Rust and zero Android UI |
 | `:core:runtime` | Android library | JNI `NativeBridge`, `CoreLoop`, `Runtime`, `Profile`, `Chat`, `RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `ReviewModel`, `FleetStore`, `HostsStore`, `PairingStore`, `NewAgentStore`, `AccountRegistry`, `SignInStore`, `SignInOffers`, `RemovalStore`, `DeletionStore`, `EntitlementWatch`, `AndroidLocalDiscovery`, `AndroidNetworkWatch`, `AppLifecycleObserver`, `AmuxCloudService`, `ReportStore` / `ReportAssembly`, and the `PushRegistrar` and `BillingStoreFront` seams |
-| `:design` | Android library (Compose) | Light and dark neutral grey ramp (`ground`, `raised`, `sunken`, `hairline`, `ink`, `inkMuted`, `inkFaint`), single chromatic attention accent, muted diff tones, bundled `InstrumentSans` and `GeistMono` fonts, tonal surfaces with `1.dp` hairlines (Material You Dynamic Color explicitly disabled), spacing, motion and 48 dp touch-target helper (`thumbTarget`) |
+| `:design` | Android library (Compose) | Light and dark neutral grey ramp (`ground`, `raised`, `sunken`, `hairline`, `ink`, `inkMuted`, `inkFaint`), single chromatic accent, muted diff tones, bundled `InstrumentSans` and `GeistMono` fonts, tonal surfaces with `1.dp` hairlines (Material You Dynamic Color explicitly disabled), spacing, motion and 48 dp touch-target helpers (`thumbTarget`, `edgeTarget`, `spillTarget`) |
 | `:features` | Android library (Compose) | Pure `@Composable` screens and components (`AgentsHome`, `FirstRun`, `HostsTab`, `HostPage`, `PairingSheet`, `ChatScreen`, `ChatRows`, `ChatComposer`, `AskCardView`, `ChatOverviewSheet`, `ChatSettingsSheet`, `ReviewPage`, `NewAgentScreen`, `AgentDialogs`, `SettingsScreen`, `PaywallScreen`, `AccountSheets`, `ReportSheet`, `StoreFailureScreen`) taking immutable state and action callbacks |
 | `:shell` | Android library (Compose) | `Router`, `Route`, `Shell` (2-tab Material 3 `NavigationBar`, left-aligned `TopAppBar`, top-right account avatar menu, full-screen Settings route, Extended FAB, predictive back), `DeepLink`, `OAuthBrowser`, `AndroidSpeechDictation`, `ShellPlatform`, `NotificationChannels`, one route composable per screen (`AgentsRoute`, `HostsRoute`, `ChatRoute`, `ChangesRoute`, `SettingsRoute`, `NewAgentRoute`) that collects its own stores, and pure per-screen mappers (`ChatMappers`, `AgentsMappers`, `HostsMappers` and the rest) |
 | `:test-support` | Android library (debug/test only) | `Door` NDJSON protocol, `ScriptedChat`, `ScriptedCloudService`, `ScriptedBillingStoreFront` and `Stories` aligned with `tests/stories.json`; never linked into `release` |
@@ -146,15 +146,26 @@ its ground.
 ## Visual design and Android conventions
 
 The app keeps amux's visual identity: neutral grey surfaces, one chromatic
-accent spent strictly on "needs you" and failures, muted diff green/red, bundled
-`InstrumentSans` and `GeistMono` typefaces scaled via `sp`, and no spinners.
+accent, muted diff green/red, bundled `InstrumentSans` and `GeistMono`
+typefaces scaled via `sp`, and no spinners. As on iOS, the accent is the
+interactive tint (the account disc, New Agent, a callout's action pill,
+switches, links, Sign In, chosen chips and the chosen-account check) and the
+mark of what needs you and what failed. It never marks a count: "2 need you"
+is set in muted ink, and the rows that need you carry the accent.
 Material You Dynamic Color is explicitly disabled so wallpaper tinting never
 washes neutral surfaces with colour.
 
 Platform chrome follows Android conventions:
 
 - **Tonal surfaces and hairlines:** Material 3 neutral tonal surfaces with `1.dp`
-  hairlines and subtle elevation replace iOS glass materials.
+  hairlines and subtle elevation replace iOS glass materials. Sheets and
+  dialogs sit on `raised`, and a card inside one on `sunken`; a card or text
+  field reads the surface it sits on (`AmuxTheme.cardFill`,
+  `AmuxTheme.backdrop`) rather than picking a fill.
+- **Bars:** every screen uses `AmuxTopBar` (an inline title, or a large one on
+  a tab's root) and every sheet `AmuxSheetHeader`. Neither draws a rule under
+  it; its fill steps off the page once content scrolls under it. The chat
+  header's text stops growing at 1.15×, where iOS caps it.
 - **Navigation and Back:** 2-tab Material 3 `NavigationBar` (**Agents**, **Computers**),
   left-aligned `TopAppBar` with standard back arrow, top-right account avatar
   opening an account switcher sheet, **Settings** pushed as a full-screen route,
@@ -169,8 +180,13 @@ Platform chrome follows Android conventions:
 - **Edge-to-edge and IME:** `MainActivity` runs edge-to-edge with
   `windowSoftInputMode="adjustResize"`, and `ChatScreen` tracks the soft
   keyboard cleanly via `WindowInsets.navigationBars.union(WindowInsets.ime)`.
-- **Touch targets:** Interactive controls enforce a minimum 48 dp target via
-  `thumbTarget()`.
+- **Touch targets:** every control answers to at least 48 dp, but is drawn
+  at its own size: Material controls reserve the room themselves, and
+  `thumbTarget()` does the same for custom ones. `edgeTarget()` and
+  `AmuxEdgeIconButton` let a trailing cross or a composer disc sit on the
+  content edge while its target spills into the padding. Full-width rows take
+  a 48 dp minimum height instead; a diff line, as wide as the screen, is drawn
+  its text's height.
 
 ## Accounts, lifecycle and backup exclusion
 

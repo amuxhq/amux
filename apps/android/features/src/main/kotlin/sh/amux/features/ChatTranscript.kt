@@ -341,9 +341,7 @@ private fun TranscriptNoticeRow(
         if (onRetry != null) {
             TextButton(
                 onClick = onRetry,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ChatScreenTags.PAGING_RETRY),
+                modifier = Modifier.testTag(ChatScreenTags.PAGING_RETRY),
             ) {
                 Text(
                     text = stringResource(R.string.action_retry),

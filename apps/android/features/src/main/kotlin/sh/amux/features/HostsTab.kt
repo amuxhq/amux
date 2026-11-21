@@ -1,5 +1,11 @@
 package sh.amux.features
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.PersonOff
@@ -22,8 +27,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,15 +35,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.HostView
 import sh.amux.values.Offline
 import sh.amux.values.Platform
@@ -61,6 +61,7 @@ fun HostsTab(
 ) {
     val colors = AmuxTheme.colors
     val subtitle = hostsSubtitle(state)
+    val listState = rememberLazyListState()
 
     AmuxGround(
         modifier = modifier.testTag(TestTags.HOSTS_SCREEN),
@@ -69,37 +70,14 @@ fun HostsTab(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                        ),
-                        title = {
-                            Column {
-                                Text(
-                                    text = stringResource(R.string.hosts_title),
-                                    style = AmuxTheme.typography.screenTitle,
-                                    color = colors.ink,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.semantics { heading() },
-                                )
-                                if (subtitle != null) {
-                                    Text(
-                                        text = subtitle,
-                                        style = AmuxTheme.typography.caption,
-                                        color = colors.inkMuted,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.testTag(TestTags.HOSTS_SUBTITLE),
-                                    )
-                                }
-                            }
-                        },
-                    )
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
-                }
+                val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
+                AmuxTopBar(
+                    title = stringResource(R.string.hosts_title),
+                    large = true,
+                    subtitle = subtitle,
+                    subtitleModifier = Modifier.testTag(TestTags.HOSTS_SUBTITLE),
+                    scrolled = scrolled,
+                )
             },
         ) { innerPadding ->
             if (state.hosts.isEmpty() && state.discovered.isEmpty()) {
@@ -110,6 +88,7 @@ fun HostsTab(
                     onAction = onAction,
                     contentPadding = innerPadding,
                     clock = clock,
+                    listState = listState,
                 )
             }
         }
@@ -190,6 +169,7 @@ private fun HostsListContent(
     onAction: (HostsAction) -> Unit,
     contentPadding: PaddingValues,
     clock: ElapsedClock,
+    listState: LazyListState,
 ) {
     val grouped = HostReachGroup.entries.mapNotNull { group ->
         val matching = state.hosts.filter { host ->
@@ -204,6 +184,7 @@ private fun HostsListContent(
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .testTag(TestTags.HOSTS_LIST),
@@ -304,7 +285,7 @@ private fun HostRowItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .thumbTarget(minHeight = 56.dp)
+            .heightIn(min = 56.dp)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.l, vertical = Space.m)
             .testTag(TestTags.hostsRow(host.name)),
@@ -336,12 +317,7 @@ private fun HostRowItem(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = colors.inkFaint,
-            modifier = Modifier.size(IconSize.Control),
-        )
+        AmuxDisclosureChevron()
     }
 }
 

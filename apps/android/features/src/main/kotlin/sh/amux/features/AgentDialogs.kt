@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.Backdrop
+import sh.amux.design.ProvideAmuxBackdrop
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -40,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxTheme
 import sh.amux.design.LocalAmuxPhotographed
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.DeleteWarning
 import sh.amux.values.WorkspaceGoes
@@ -376,6 +377,7 @@ private fun AgentDialogCard(
         tonalElevation = AlertDialogDefaults.TonalElevation,
         modifier = modifier.widthIn(min = 280.dp, max = 560.dp),
     ) {
+        ProvideAmuxBackdrop(Backdrop.Raised) {
         Column(modifier = Modifier.padding(Space.xl)) {
             Text(
                 text = title,
@@ -393,6 +395,7 @@ private fun AgentDialogCard(
                 buttons()
             }
         }
+        }
     }
 }
 
@@ -409,7 +412,7 @@ private fun DialogTextButton(
     TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.thumbTarget(),
+        modifier = modifier,
     ) {
         Text(
             text = label,

@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,19 +17,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
@@ -37,17 +33,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.words.RowState
 
 /** Semantic test tags for [PaywallScreen] and its interactive controls. */
@@ -177,56 +170,21 @@ fun PaywallScreen(
     val colors = AmuxTheme.colors
     val backLabel = stringResource(R.string.action_back)
     val largeText = LocalDensity.current.fontScale >= 1.3f
+    val scroll = rememberScrollState()
 
     AmuxGround(modifier = modifier.testTag(PaywallTags.SCREEN)) {
         Scaffold(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                            navigationIconContentColor = colors.ink,
-                        ),
-                        navigationIcon = {
-                            IconButton(
-                                onClick = { onAction(PaywallAction.Back) },
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(PaywallTags.BACK),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = backLabel,
-                                )
-                            }
-                        },
-                        title = {
-                            Column {
-                                Text(
-                                    text = stringResource(R.string.paywall_title),
-                                    style = AmuxTheme.typography.identifier,
-                                    color = colors.ink,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.semantics { heading() },
-                                )
-                                if (!state.accountEmail.isNullOrBlank()) {
-                                    Text(
-                                        text = state.accountEmail,
-                                        style = AmuxTheme.typography.caption,
-                                        color = colors.inkMuted,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        },
-                    )
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
-                }
+                AmuxTopBar(
+                    title = stringResource(R.string.paywall_title),
+                    subtitle = state.accountEmail?.takeIf { it.isNotBlank() },
+                    scrolled = scroll.canScrollBackward,
+                    onNavigate = { onAction(PaywallAction.Back) },
+                    navigationLabel = backLabel,
+                    navigationModifier = Modifier.testTag(PaywallTags.BACK),
+                )
             },
             bottomBar = {
                 PaywallBottomBar(state = state, onAction = onAction)
@@ -236,7 +194,7 @@ fun PaywallScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scroll)
                     .padding(horizontal = Space.margin, vertical = Space.l),
                 verticalArrangement = Arrangement.spacedBy(Space.l),
             ) {
@@ -534,13 +492,12 @@ private fun PlanCard(
         shape = shape,
         color = colors.raised,
         contentColor = colors.ink,
-        border = BorderStroke(
-            width = if (isSelected) 1.5.dp else AmuxTheme.metrics.hairline,
-            color = if (isSelected) colors.ink else colors.hairline,
-        ),
+        // The radio alone shows the choice, as on iOS; a ring as well made
+        // three bright marks for one selection in dark mode.
+        border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .semantics { selected = isSelected },
     ) {
@@ -628,9 +585,7 @@ private fun PaywallTerms(
         )
         TextButton(
             onClick = { onAction(PaywallAction.OpenLegalUrl(privacyUrl)) },
-            modifier = Modifier
-                .thumbTarget()
-                .testTag(PaywallTags.PRIVACY_LINK),
+            modifier = Modifier.testTag(PaywallTags.PRIVACY_LINK),
         ) {
             Text(
                 text = stringResource(R.string.paywall_privacy_policy),
@@ -719,7 +674,7 @@ private fun PaywallBottomBar(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .thumbTarget()
+                                .heightIn(min = ThumbTarget.MinSize)
                                 .testTag(PaywallTags.WAITING_LINE),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
@@ -838,9 +793,7 @@ private fun RestorePurchasesButton(
     TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier
-            .thumbTarget()
-            .testTag(PaywallTags.RESTORE_BUTTON),
+        modifier = Modifier.testTag(PaywallTags.RESTORE_BUTTON),
     ) {
         Text(
             text = stringResource(R.string.paywall_restore),

@@ -120,7 +120,7 @@ class AndroidStorybookTest(unittest.TestCase):
             index_path, _ = storybook.write_gallery(out_dir)
             html = index_path.read_text(encoding="utf-8")
             self.assertIn("1 alignment near-miss", html)
-            self.assertIn("Control drawn taller than 40 dp", html)
+            self.assertIn("Control drawn taller than 44 dp", html)
             self.assertIn("&quot;Pair&quot; drawn 48.0dp tall", html)
             self.assertIn('href="#fleet.busy"', html)
 

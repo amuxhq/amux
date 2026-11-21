@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,18 +15,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -39,14 +37,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import sh.amux.design.AmuxGround
-import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.HostView
 import sh.amux.values.Offline
 import sh.amux.values.Provider
@@ -127,6 +122,7 @@ fun HostPage(
     val reachLine = host?.let { hostReachLine(it, state, clock) }
     var confirmingRevoke by remember { mutableStateOf(false) }
     var copiedKey by remember { mutableStateOf<String?>(null) }
+    val scroll = rememberScrollState()
 
     AmuxGround(
         modifier = modifier.testTag(HostPageTags.SCREEN),
@@ -135,52 +131,14 @@ fun HostPage(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                            navigationIconContentColor = colors.ink,
-                        ),
-                        navigationIcon = {
-                            val backLabel = stringResource(R.string.action_back)
-                            IconButton(
-                                onClick = { onAction(HostPageAction.Back) },
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(HostPageTags.BACK),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = backLabel,
-                                )
-                            }
-                        },
-                        title = {
-                            Column {
-                                Text(
-                                    text = host?.name ?: stringResource(R.string.host_page_title_fallback),
-                                    style = AmuxTheme.typography.screenTitle,
-                                    color = colors.ink,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.semantics { heading() },
-                                )
-                                if (reachLine != null) {
-                                    Text(
-                                        text = reachLine,
-                                        style = AmuxTheme.typography.caption,
-                                        color = colors.inkMuted,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.testTag(HostPageTags.REACH),
-                                    )
-                                }
-                            }
-                        },
-                    )
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
-                }
+                AmuxTopBar(
+                    title = host?.name ?: stringResource(R.string.host_page_title_fallback),
+                    subtitle = reachLine,
+                    subtitleModifier = Modifier.testTag(HostPageTags.REACH),
+                    scrolled = scroll.canScrollBackward,
+                    onNavigate = { onAction(HostPageAction.Back) },
+                    navigationModifier = Modifier.testTag(HostPageTags.BACK),
+                )
             },
         ) { innerPadding ->
             if (host == null) {
@@ -202,7 +160,7 @@ fun HostPage(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(scroll)
                         .padding(top = Space.m, bottom = Space.xxl),
                     verticalArrangement = Arrangement.spacedBy(Space.l),
                 ) {
@@ -562,7 +520,7 @@ private fun CopyableMonoRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.l, vertical = Space.m)
             .semantics { contentDescription = effectiveDescription },

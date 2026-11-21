@@ -6,6 +6,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -292,7 +293,8 @@ data class AmuxDesign(
 
     val typography: AmuxTypography
         get() = AmuxTypography(
-            screenTitle = spec(TextRole.ScreenTitle).toTextStyle(),
+            // Headings break balanced, so a two-line title never ends on one word.
+            screenTitle = spec(TextRole.ScreenTitle).toTextStyle().copy(lineBreak = LineBreak.Heading),
             sectionTitle = spec(TextRole.SectionTitle).toTextStyle(),
             identifier = spec(TextRole.Identifier).toTextStyle(),
             body = spec(TextRole.Body).toTextStyle(),

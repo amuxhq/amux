@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -17,7 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -35,7 +36,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AskCard
 import sh.amux.values.ChoiceOutcome
 import sh.amux.values.EditLine
@@ -166,7 +166,7 @@ private fun AskScopeChoiceRow(
             .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
             .border(AmuxTheme.metrics.hairline, colors.hairline, RoundedCornerShape(AmuxTheme.metrics.controlRadius))
             .clickable(role = Role.Button, onClick = onClick)
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .padding(horizontal = Space.m, vertical = Space.s),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
@@ -194,12 +194,7 @@ private fun AskScopeChoiceRow(
                 )
             }
         }
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = colors.inkFaint,
-            modifier = Modifier.size(IconSize.Inline),
-        )
+        AmuxDisclosureChevron()
     }
 }
 

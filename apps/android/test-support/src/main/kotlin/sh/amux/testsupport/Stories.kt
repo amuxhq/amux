@@ -1,5 +1,7 @@
 package sh.amux.testsupport
 
+import sh.amux.design.Backdrop
+import sh.amux.design.ProvideAmuxBackdrop
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -1134,7 +1136,8 @@ object Stories {
     /**
      * A sheet raised over the screen it was raised from, drawn with the chrome
      * the app's `ModalBottomSheet`s draw: Material's expanded shape, scrim and
-     * drag handle, and the ground container every one of those sheets passes.
+     * drag handle, and the raised container `AmuxSheet` gives every one of
+ * them, with the raised backdrop its content reads.
      *
      * The real sheet is a window of its own, which a single-root capture and
      * the accessibility sweep cannot see; this draws the same pieces in one.
@@ -1163,13 +1166,15 @@ object Stories {
                     .widthIn(max = BottomSheetDefaults.SheetMaxWidth)
                     .fillMaxWidth(),
                 shape = BottomSheetDefaults.ExpandedShape,
-                color = colors.ground,
+                color = colors.raised,
                 contentColor = colors.ink,
                 tonalElevation = 0.dp,
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    BottomSheetDefaults.DragHandle(modifier = Modifier.align(Alignment.CenterHorizontally))
-                    content()
+                ProvideAmuxBackdrop(Backdrop.Raised) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        BottomSheetDefaults.DragHandle(modifier = Modifier.align(Alignment.CenterHorizontally))
+                        content()
+                    }
                 }
             }
         }

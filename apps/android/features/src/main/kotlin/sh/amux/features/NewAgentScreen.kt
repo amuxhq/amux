@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.backdrop
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,13 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.PushPin
@@ -34,14 +33,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -58,7 +53,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -68,7 +62,6 @@ import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.Changeable
 import sh.amux.values.Directory
@@ -232,6 +225,7 @@ fun NewAgentScreen(
     val fontScale = LocalDensity.current.fontScale
     val isLargeText = fontScale >= 1.3f
     var activePicker by remember { mutableStateOf<ActiveNewAgentPicker?>(null) }
+    val scroll = rememberScrollState()
 
     val hostName = state.selectedHost?.name ?: stringResource(R.string.new_agent_host_fallback)
     val providerTitle = providerLabel(state.provider)
@@ -243,40 +237,12 @@ fun NewAgentScreen(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
             topBar = {
-                Column {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colors.ground,
-                            titleContentColor = colors.ink,
-                            navigationIconContentColor = colors.ink,
-                        ),
-                        navigationIcon = {
-                            val backDesc = stringResource(R.string.action_back)
-                            IconButton(
-                                onClick = { onAction(NewAgentAction.Back) },
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(NewAgentTags.BACK),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = backDesc,
-                                )
-                            }
-                        },
-                        title = {
-                            Text(
-                                text = stringResource(R.string.new_agent_title),
-                                style = AmuxTheme.typography.screenTitle,
-                                color = colors.ink,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.semantics { heading() },
-                            )
-                        },
-                    )
-                    AmuxHairline(color = colors.hairline.copy(alpha = 0.6f))
-                }
+                AmuxTopBar(
+                    title = stringResource(R.string.new_agent_title),
+                    scrolled = scroll.canScrollBackward,
+                    onNavigate = { onAction(NewAgentAction.Back) },
+                    navigationModifier = Modifier.testTag(NewAgentTags.BACK),
+                )
             },
             bottomBar = {
                 NewAgentStartBar(
@@ -292,7 +258,7 @@ fun NewAgentScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scroll)
                     .padding(top = Space.s, bottom = Space.xl),
                 verticalArrangement = Arrangement.spacedBy(Space.l),
             ) {
@@ -377,7 +343,6 @@ fun NewAgentScreen(
                                             borderColor = colors.hairline,
                                         ),
                                         modifier = Modifier
-                                            .thumbTarget()
                                             .semantics { contentDescription = chipSpoken }
                                             .testTag(NewAgentTags.recentChip(dir.name)),
                                     )
@@ -544,32 +509,12 @@ fun NewAgentScreen(
                 ) {
                     AmuxSectionHeader(title = stringResource(R.string.new_agent_section_name))
                     val nameLabel = stringResource(R.string.new_agent_name_label)
-                    OutlinedTextField(
+                    AmuxField(
                         value = state.name,
                         onValueChange = { onAction(NewAgentAction.UpdateName(it)) },
-                        singleLine = true,
                         isError = state.nameProblem != null,
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.new_agent_name_placeholder),
-                                style = AmuxTheme.typography.mono,
-                                color = colors.inkFaint,
-                            )
-                        },
-                        textStyle = AmuxTheme.typography.mono.copy(color = colors.ink),
-                        shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = colors.raised,
-                            unfocusedContainerColor = colors.raised,
-                            errorContainerColor = colors.raised,
-                            focusedBorderColor = colors.ink,
-                            unfocusedBorderColor = colors.hairline,
-                            errorBorderColor = colors.removed,
-                            focusedTextColor = colors.ink,
-                            unfocusedTextColor = colors.ink,
-                            errorTextColor = colors.ink,
-                            cursorColor = colors.ink,
-                        ),
+                        placeholder = stringResource(R.string.new_agent_name_placeholder),
+                        textStyle = AmuxTheme.typography.mono,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = Space.margin)
@@ -768,12 +713,7 @@ private fun ProviderChipBar(
     onSelect: (Provider) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val chipColors = FilterChipDefaults.filterChipColors(
-        containerColor = colors.raised,
-        labelColor = colors.inkMuted,
-        selectedContainerColor = colors.ink,
-        selectedLabelColor = colors.ground,
-    )
+    val chipColors = amuxFilterChipColors()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -794,15 +734,8 @@ private fun ProviderChipBar(
                     )
                 },
                 colors = chipColors,
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = isSelected,
-                    borderColor = colors.hairline,
-                    selectedBorderColor = colors.ink,
-                ),
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(NewAgentTags.providerChip(item)),
+                border = amuxFilterChipBorder(isSelected),
+                modifier = Modifier.testTag(NewAgentTags.providerChip(item)),
             )
         }
     }
@@ -829,7 +762,7 @@ private fun NewAgentFieldRow(
     }
     val rowModifier = modifier
         .fillMaxWidth()
-        .thumbTarget()
+        .heightIn(min = ThumbTarget.MinSize)
         .let {
             if (enabled) it.clickable(role = Role.Button, onClick = onClick) else it
         }
@@ -859,12 +792,7 @@ private fun NewAgentFieldRow(
                 )
             }
             if (showChevron) {
-                Icon(
-                    imageVector = Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint = colors.inkFaint,
-                    modifier = Modifier.size(IconSize.Control),
-                )
+                AmuxDisclosureChevron()
             }
         }
     } else {
@@ -889,12 +817,7 @@ private fun NewAgentFieldRow(
                 modifier = Modifier.weight(1f),
             )
             if (showChevron) {
-                Icon(
-                    imageVector = Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint = colors.inkFaint,
-                    modifier = Modifier.size(IconSize.Control),
-                )
+                AmuxDisclosureChevron()
             }
         }
     }
@@ -933,10 +856,8 @@ private fun WorktreeToggleRow(
             Switch(
                 checked = checked,
                 onCheckedChange = null,
-                colors = amuxInkSwitchColors(),
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(NewAgentTags.WORKTREE_SWITCH),
+                colors = amuxSwitchColors(),
+                modifier = Modifier.testTag(NewAgentTags.WORKTREE_SWITCH),
             )
         }
     } else {
@@ -945,7 +866,7 @@ private fun WorktreeToggleRow(
             onCheckedChange = onCheckedChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .thumbTarget()
+                .heightIn(min = ThumbTarget.MinSize)
                 .testTag(NewAgentTags.WORKTREE_ROW),
             switchModifier = Modifier.testTag(NewAgentTags.WORKTREE_SWITCH),
         ) {
@@ -982,68 +903,43 @@ fun NewAgentDirectoriesContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(NewAgentTags.BROWSE_SHEET),
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.new_agent_browse_title),
-                style = AmuxTheme.typography.screenTitle,
-                color = colors.ink,
-                modifier = Modifier.weight(1f),
-            )
+        AmuxSheetHeader(title = stringResource(R.string.new_agent_browse_title)) {
             TextButton(
                 onClick = { onAction(NewAgentAction.SetBrowsing(false)) },
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(NewAgentTags.BROWSE_DONE),
+                modifier = Modifier.testTag(NewAgentTags.BROWSE_DONE),
             ) {
                 Text(
                     text = stringResource(R.string.new_agent_browse_done),
                     style = AmuxTheme.typography.bodyEmphasis,
-                    color = colors.ink,
+                    color = colors.accent,
                 )
             }
         }
 
-        // Search bar
         if (state.listing != NewAgentListingUi.Unavailable) {
-            OutlinedTextField(
+            AmuxField(
                 value = state.query,
                 onValueChange = { onAction(NewAgentAction.UpdateQuery(it)) },
-                singleLine = true,
-                placeholder = {
-                    Text(
-                        text = stringResource(R.string.new_agent_browse_search_placeholder),
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkFaint,
-                    )
-                },
+                placeholder = stringResource(R.string.new_agent_browse_search_placeholder),
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Outlined.Search,
                         contentDescription = null,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Control),
                     )
                 },
-                trailingIcon = {
-                    if (state.query.isNotEmpty()) {
+                trailingIcon = if (state.query.isNotEmpty()) {
+                    {
                         val clearLabel = stringResource(R.string.new_agent_browse_search_clear)
                         IconButton(
                             onClick = { onAction(NewAgentAction.UpdateQuery("")) },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(NewAgentTags.BROWSE_SEARCH_CLEAR),
+                            modifier = Modifier.testTag(NewAgentTags.BROWSE_SEARCH_CLEAR),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Close,
@@ -1053,18 +949,9 @@ fun NewAgentDirectoriesContent(
                             )
                         }
                     }
+                } else {
+                    null
                 },
-                textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
-                shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = colors.raised,
-                    unfocusedContainerColor = colors.raised,
-                    focusedBorderColor = colors.ink,
-                    unfocusedBorderColor = colors.hairline,
-                    focusedTextColor = colors.ink,
-                    unfocusedTextColor = colors.ink,
-                    cursorColor = colors.ink,
-                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Space.margin)
@@ -1193,28 +1080,11 @@ fun NewAgentDirectoriesContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.s),
             ) {
-                OutlinedTextField(
+                AmuxField(
                     value = state.typedPath,
                     onValueChange = { onAction(NewAgentAction.UpdateTypedPath(it)) },
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.new_agent_browse_typed_placeholder),
-                            style = AmuxTheme.typography.monoSmall,
-                            color = colors.inkFaint,
-                        )
-                    },
-                    textStyle = AmuxTheme.typography.mono.copy(color = colors.ink),
-                    shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = colors.raised,
-                        unfocusedContainerColor = colors.raised,
-                        focusedBorderColor = colors.ink,
-                        unfocusedBorderColor = colors.hairline,
-                        focusedTextColor = colors.ink,
-                        unfocusedTextColor = colors.ink,
-                        cursorColor = colors.ink,
-                    ),
+                    placeholder = stringResource(R.string.new_agent_browse_typed_placeholder),
+                    textStyle = AmuxTheme.typography.mono,
                     modifier = Modifier
                         .weight(1f)
                         .testTag(NewAgentTags.BROWSE_TYPED),
@@ -1268,7 +1138,7 @@ private fun DirectorySection(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .thumbTarget()
+                            .heightIn(min = ThumbTarget.MinSize)
                             .clickable(role = Role.Button) { onChoose(dir) }
                             .padding(start = Space.l, end = Space.s, top = Space.s, bottom = Space.s)
                             .semantics {
@@ -1305,24 +1175,17 @@ private fun DirectorySection(
                             )
                         }
                         if (chosen) {
-                            Icon(
-                                imageVector = Icons.Outlined.Check,
-                                contentDescription = null,
-                                tint = colors.ink,
-                                modifier = Modifier.size(IconSize.Control),
-                            )
+                            AmuxCheckMark()
                         }
                     }
                     IconButton(
                         onClick = { onTogglePin(dir, !pinned) },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(NewAgentTags.browsePin(dir.name)),
+                        modifier = Modifier.testTag(NewAgentTags.browsePin(dir.name)),
                     ) {
                         Icon(
                             imageVector = if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
                             contentDescription = pinDesc,
-                            tint = if (pinned) colors.ink else colors.inkFaint,
+                            tint = if (pinned) colors.accent else colors.inkFaint,
                             modifier = Modifier.size(IconSize.Control),
                         )
                     }
@@ -1344,7 +1207,7 @@ private fun HostPickerSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(NewAgentTags.HOST_SHEET),
@@ -1400,7 +1263,7 @@ private fun ChoicePickerSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.ground)
+            .background(AmuxTheme.backdrop)
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(NewAgentTags.PICKER_SHEET),
@@ -1435,32 +1298,7 @@ private fun PickerSheetHeader(
     title: String,
     onDismiss: () -> Unit,
 ) {
-    val colors = AmuxTheme.colors
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Space.margin),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = title,
-            style = AmuxTheme.typography.screenTitle,
-            color = colors.ink,
-            modifier = Modifier.weight(1f),
-        )
-        val closeLabel = stringResource(R.string.action_close)
-        IconButton(
-            onClick = onDismiss,
-            modifier = Modifier.thumbTarget(),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Close,
-                contentDescription = closeLabel,
-                tint = colors.inkMuted,
-                modifier = Modifier.size(IconSize.Row),
-            )
-        }
-    }
+    AmuxSheetHeader(title = title, onClose = onDismiss)
 }
 
 @Composable

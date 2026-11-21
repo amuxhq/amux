@@ -30,8 +30,6 @@ import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,7 +51,6 @@ import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.values.AskBody
 import sh.amux.values.AskCard
 import sh.amux.values.CardState
@@ -143,7 +140,9 @@ fun AskCardView(
         modifier = modifier
             .fillMaxWidth()
             .testTag(AskReviewTags.ASK_CARD),
-        shape = RoundedCornerShape(AmuxTheme.metrics.cardRadius),
+        // Docked over the transcript, the card takes the floating radius,
+        // as iOS's does.
+        shape = RoundedCornerShape(AmuxTheme.metrics.floatRadius),
         color = colors.raised,
         borderColor = if (card.state is CardState.Open || card.state is CardState.Rejected) {
             colors.accent.copy(alpha = 0.45f)
@@ -235,7 +234,7 @@ private fun AskCardHeader(
             modifier = Modifier
                 .size(28.dp)
                 .clip(CircleShape)
-                .background(colors.accent),
+                .background(colors.accentFill),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -274,19 +273,13 @@ private fun AskCardHeader(
         if (card.stopsTurn) {
             Box {
                 val moreLabel = stringResource(R.string.action_more_options)
-                IconButton(
+                AmuxEdgeIconButton(
+                    icon = Icons.Outlined.MoreHoriz,
+                    contentDescription = moreLabel,
                     onClick = { menuExpanded = true },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.ASK_MORE),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.MoreHoriz,
-                        contentDescription = moreLabel,
-                        tint = colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Row),
-                    )
-                }
+                    ink = GlyphInk.More,
+                    modifier = Modifier.testTag(AskReviewTags.ASK_MORE),
+                )
                 DropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
@@ -312,9 +305,7 @@ private fun AskCardHeader(
                             menuExpanded = false
                             onInterrupt()
                         },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(AskReviewTags.ASK_INTERRUPT_MENU),
+                        modifier = Modifier.testTag(AskReviewTags.ASK_INTERRUPT_MENU),
                     )
                 }
             }
@@ -496,9 +487,7 @@ private fun AskCardBody(
                     if (body.lines.size > DIFF_PREVIEW_LIMIT) {
                         TextButton(
                             onClick = { showWholeDiff = !showWholeDiff },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(AskReviewTags.ASK_DIFF_TOGGLE),
+                            modifier = Modifier.testTag(AskReviewTags.ASK_DIFF_TOGGLE),
                             contentPadding = PaddingValues(horizontal = Space.xs, vertical = Space.xs),
                         ) {
                             Text(
@@ -637,9 +626,7 @@ internal fun NoteStepSection(
             }
             TextButton(
                 onClick = onBack,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(AskReviewTags.ASK_NOTE_BACK),
+                modifier = Modifier.testTag(AskReviewTags.ASK_NOTE_BACK),
             ) {
                 Text(
                     text = stringResource(R.string.action_back),
@@ -650,21 +637,13 @@ internal fun NoteStepSection(
         }
 
         if (takesNote) {
-            OutlinedTextField(
+            AmuxField(
                 value = note,
                 onValueChange = onNoteChange,
-                placeholder = {
-                    Text(
-                        text = stringResource(R.string.ask_note_placeholder),
-                        style = AmuxTheme.typography.body,
-                        color = colors.inkFaint,
-                    )
-                },
-                textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
+                placeholder = stringResource(R.string.ask_note_placeholder),
+                singleLine = false,
                 minLines = 2,
                 maxLines = 5,
-                shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                colors = amuxTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = heading }

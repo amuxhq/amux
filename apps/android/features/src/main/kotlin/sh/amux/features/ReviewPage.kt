@@ -1,5 +1,11 @@
 package sh.amux.features
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.lazy.rememberLazyListState
+import sh.amux.design.ThumbTarget
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -29,18 +35,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ModeComment
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,7 +61,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -164,6 +165,7 @@ fun ReviewPage(
         state.comments.groupingBy { it.path }.eachCount()
     }
     val fileLabels = remember(files) { shortFileLabels(files.map { it.path }) }
+    val diffList = rememberLazyListState()
 
     Scaffold(
         modifier = modifier
@@ -172,70 +174,46 @@ fun ReviewPage(
         containerColor = colors.ground,
         contentColor = colors.ink,
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = colors.ground,
-                    titleContentColor = colors.ink,
-                    navigationIconContentColor = colors.ink,
-                ),
-                navigationIcon = {
-                    val backLabel = stringResource(R.string.action_back)
-                    IconButton(
-                        onClick = { onAction(ReviewPageAction.Back) },
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(AskReviewTags.REVIEW_BACK),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = backLabel,
-                        )
-                    }
-                },
-                title = {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.review_title),
-                            style = AmuxTheme.typography.bodyEmphasis,
-                            color = colors.ink,
-                            maxLines = 1,
-                            modifier = Modifier.semantics { heading() },
-                        )
-                        if (state.doc != null && files.isNotEmpty()) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = ChatWords.files(files.size),
-                                    style = AmuxTheme.typography.caption,
-                                    color = colors.inkMuted,
-                                )
-                                DiffDeltaCounts(
-                                    added = state.doc.added,
-                                    removed = state.doc.removed,
-                                )
-                            }
-                        }
-                    }
-                },
-                actions = {
-                    if (commentCount > 0) {
-                        TextButton(
-                            onClick = { onAction(ReviewPageAction.SendReview) },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(AskReviewTags.REVIEW_SEND),
+            val scrolled by remember { derivedStateOf { diffList.canScrollBackward } }
+            AmuxTopBar(
+                title = stringResource(R.string.review_title),
+                scrolled = scrolled,
+                onNavigate = { onAction(ReviewPageAction.Back) },
+                navigationModifier = Modifier.testTag(AskReviewTags.REVIEW_BACK),
+                subtitleContent = if (state.doc != null && files.isNotEmpty()) {
+                    {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = stringResource(R.string.review_send_count, commentCount),
-                                style = AmuxTheme.typography.bodyEmphasis,
-                                color = colors.accent,
+                                text = ChatWords.files(files.size),
+                                style = AmuxTheme.typography.caption,
+                                color = colors.inkMuted,
+                            )
+                            DiffDeltaCounts(
+                                added = state.doc.added,
+                                removed = state.doc.removed,
                             )
                         }
                     }
+                } else {
+                    null
                 },
-            )
+            ) {
+                if (commentCount > 0) {
+                    TextButton(
+                        onClick = { onAction(ReviewPageAction.SendReview) },
+                        modifier = Modifier.testTag(AskReviewTags.REVIEW_SEND),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.review_send_count, commentCount),
+                            style = AmuxTheme.typography.bodyEmphasis,
+                            color = colors.accent,
+                        )
+                    }
+                }
+            }
         },
     ) { innerPadding ->
         Box(
@@ -310,9 +288,7 @@ fun ReviewPage(
                             )
                             TextButton(
                                 onClick = { onAction(ReviewPageAction.Retry) },
-                                modifier = Modifier
-                                    .thumbTarget()
-                                    .testTag(AskReviewTags.REVIEW_RETRY),
+                                modifier = Modifier.testTag(AskReviewTags.REVIEW_RETRY),
                             ) {
                                 Text(
                                     text = stringResource(R.string.action_retry),
@@ -357,6 +333,7 @@ fun ReviewPage(
                     val fileLevelComments = indexedComments.filter { (_, c) -> c.line == 0 && c.oldLine == 0 }
 
                     LazyColumn(
+                        state = diffList,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
@@ -606,9 +583,7 @@ private fun ReviewFileHeader(
         TextButton(
             enabled = enabled,
             onClick = onCommentOnFile,
-            modifier = Modifier
-                .thumbTarget()
-                .testTag(AskReviewTags.REVIEW_FILE_COMMENT),
+            modifier = Modifier.testTag(AskReviewTags.REVIEW_FILE_COMMENT),
         ) {
             Icon(
                 imageVector = Icons.Outlined.ModeComment,
@@ -682,10 +657,12 @@ private fun ReviewDiffLineRow(
     }
     val spoken = ChatWords.spoken(line)
 
+    // A diff reads as a listing, one line under the next as on iOS. Each
+    // line is as wide as the screen, so it is drawn its text's height
+    // rather than grown to 48 dp, which would spread a hunk over pages.
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget()
             .background(background)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.s, vertical = Space.xs)
@@ -743,15 +720,18 @@ private fun ReviewCommentThreadRow(
             .fillMaxWidth()
             .background(colors.raised)
             .clickable(role = Role.Button, onClick = onClick)
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
+            .height(IntrinsicSize.Min)
             .padding(horizontal = Space.margin, vertical = Space.s),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s),
     ) {
+        // The bar runs the comment's full height, so a long comment still
+        // reads as one note attached to the line above it.
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(24.dp)
+                .fillMaxHeight()
                 .clip(RoundedCornerShape(2.dp))
                 .background(colors.accent),
         )
@@ -817,21 +797,13 @@ private fun ReviewCommentComposer(
                 style = AmuxTheme.typography.bodyEmphasis,
                 color = colors.ink,
             )
-            OutlinedTextField(
+            AmuxField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = {
-                    Text(
-                        text = placeholder,
-                        style = AmuxTheme.typography.body,
-                        color = colors.inkFaint,
-                    )
-                },
-                textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
+                placeholder = placeholder,
+                singleLine = false,
                 minLines = 2,
                 maxLines = 5,
-                shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                colors = amuxTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = placeholder }
@@ -845,9 +817,7 @@ private fun ReviewCommentComposer(
                 if (onDelete != null) {
                     TextButton(
                         onClick = onDelete,
-                        modifier = Modifier
-                            .thumbTarget()
-                            .testTag(AskReviewTags.REVIEW_COMMENT_DELETE),
+                        modifier = Modifier.testTag(AskReviewTags.REVIEW_COMMENT_DELETE),
                     ) {
                         Text(
                             text = stringResource(R.string.review_delete_comment),
@@ -859,9 +829,7 @@ private fun ReviewCommentComposer(
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(
                     onClick = onCancel,
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.REVIEW_COMMENT_CANCEL),
+                    modifier = Modifier.testTag(AskReviewTags.REVIEW_COMMENT_CANCEL),
                 ) {
                     Text(
                         text = stringResource(R.string.action_cancel),

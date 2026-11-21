@@ -40,7 +40,7 @@ class StoryGeometryTest {
     }
 
     @Test
-    fun aOneLabelControlDrawnTallerThanFortyDpIsFlaggedByItsShapeNotItsBounds() {
+    fun aOneLabelControlDrawnTallerThanFortyFourDpIsFlaggedByItsShapeNotItsBounds() {
         // Both lay out 48 dp tall; only the one that draws 48 dp of shape is flagged.
         val pill = Element(1, Kind.Control, "Pair", 16f, 0f, 396f, 48f, leaf = false, drawnTop = 0f, drawnBottom = 48f, texts = 1)
         val button = Element(2, Kind.Control, "Pair", 16f, 100f, 396f, 148f, leaf = false, drawnTop = 104f, drawnBottom = 144f, texts = 1)

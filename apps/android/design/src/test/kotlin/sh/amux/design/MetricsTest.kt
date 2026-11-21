@@ -3,6 +3,8 @@ package sh.amux.design
 import androidx.compose.animation.core.SnapSpec
 import androidx.compose.animation.core.TweenSpec
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,29 +40,49 @@ class MetricsTest {
     }
 
     @Test
-    fun thumbTargetModifierEnforcesAtLeast48DpBounds() {
+    fun thumbTargetReservesFortyEightDpButDrawsTheControlAtItsOwnSize() {
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light) {
                 Box(
                     modifier = Modifier
-                        .testTag("small-control")
-                        .thumbTarget(minWidth = 20.dp, minHeight = 20.dp),
+                        .testTag("reserved")
+                        .thumbTarget(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Box(modifier = Modifier.size(16.dp))
+                    Box(modifier = Modifier.testTag("drawn").size(width = 60.dp, height = 32.dp))
                 }
             }
         }
 
-        val bounds = composeRule.onNodeWithTag("small-control").getUnclippedBoundsInRoot()
-        assertTrue(
-            "thumbTarget width must be >= 48.dp, was ${bounds.width}",
-            bounds.width >= 48.dp,
-        )
-        assertTrue(
-            "thumbTarget height must be >= 48.dp, was ${bounds.height}",
-            bounds.height >= 48.dp,
-        )
+        val reserved = composeRule.onNodeWithTag("reserved").getUnclippedBoundsInRoot()
+        assertEquals(60.dp, reserved.width)
+        assertEquals(48.dp, reserved.height)
+        val drawn = composeRule.onNodeWithTag("drawn").getUnclippedBoundsInRoot()
+        assertEquals(32.dp, drawn.height)
+        assertEquals(8.dp, drawn.top - reserved.top)
+    }
+
+    @Test
+    fun edgeTargetTakesTheGlyphsRoomAndCentresAFortyEightDpTargetOnIt() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light) {
+                Row(modifier = Modifier.padding(24.dp)) {
+                    Box(modifier = Modifier.testTag("before").size(40.dp))
+                    Box(modifier = Modifier.edgeTarget(width = 20.dp).testTag("target"))
+                    Box(modifier = Modifier.testTag("after").size(40.dp))
+                }
+            }
+        }
+
+        val before = composeRule.onNodeWithTag("before").getUnclippedBoundsInRoot()
+        val target = composeRule.onNodeWithTag("target").getUnclippedBoundsInRoot()
+        val after = composeRule.onNodeWithTag("after").getUnclippedBoundsInRoot()
+        assertEquals(48.dp, target.width)
+        assertEquals(48.dp, target.height)
+        // The row gives the target only the glyph's 20 dp; the rest spills
+        // 14 dp to each side, over its neighbours' edges.
+        assertEquals(20.dp, after.left - before.right)
+        assertEquals(before.right - 14.dp, target.left)
     }
 
     @Test

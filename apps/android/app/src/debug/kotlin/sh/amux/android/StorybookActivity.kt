@@ -38,12 +38,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
 import sh.amux.design.Space
-import sh.amux.design.thumbTarget
 import sh.amux.features.AmuxRowCard
 import sh.amux.features.AmuxSectionHeader
 import sh.amux.testsupport.Stories
@@ -102,7 +102,6 @@ private fun StorybookBrowser(initialStoryId: String?) {
                     navigationIcon = {
                         IconButton(
                             onClick = { selected = null },
-                            modifier = Modifier.thumbTarget(),
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
@@ -216,7 +215,7 @@ private fun AppearanceToggleButton(
     appearance: Appearance,
     onToggle: () -> Unit,
 ) {
-    IconButton(onClick = onToggle, modifier = Modifier.thumbTarget()) {
+    IconButton(onClick = onToggle) {
         Icon(
             imageVector = if (appearance == Appearance.Light) {
                 Icons.Outlined.DarkMode
@@ -238,7 +237,7 @@ private fun StoryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .thumbTarget(minHeight = 56.dp)
+            .heightIn(min = 56.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = Space.l, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,

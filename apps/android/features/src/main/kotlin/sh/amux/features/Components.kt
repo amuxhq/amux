@@ -1,5 +1,18 @@
 package sh.amux.features
 
+import sh.amux.design.Appearance
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material3.ripple
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -74,6 +87,42 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.Motion
 import sh.amux.design.Space
 import sh.amux.design.thumbTarget
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.SegmentedButtonColors
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import kotlin.math.roundToInt
+import sh.amux.design.AmuxShapes
+import sh.amux.design.Backdrop
+import sh.amux.design.ProvideAmuxBackdrop
+import sh.amux.design.ThumbTarget
+import sh.amux.design.backdrop
+import sh.amux.design.edgeTarget
 import sh.amux.words.RowState
 
 /**
@@ -180,7 +229,9 @@ fun AmuxStatusChip(
     accent: Boolean = false,
 ) {
     val colors = AmuxTheme.colors
-    val background = if (accent) colors.accent.copy(alpha = 0.14f) else colors.sunken
+    // An accent chip keeps the surface under it: accent text on a pale
+    // accent wash falls under 4.5:1, and on the surface itself it passes.
+    val background = if (accent) AmuxTheme.backdrop else colors.sunken
     val foreground = if (accent) colors.accent else colors.inkMuted
     Surface(
         modifier = modifier,
@@ -250,7 +301,16 @@ fun AmuxRowCard(
 }
 
 /**
- * Neutral empty-state / callout card built on [AmuxPanel].
+ * A callout as a card: a quiet sunken surface with its mark, a one-line title
+ * and a one-line detail, and the action's words in a small accent pill.
+ *
+ * The whole card is the button, so the pill is only its label and a press
+ * anywhere on the card acts; the card's 60 dp height is well past the 48 dp a
+ * thumb needs. A card that can be put away draws its close cross as a second
+ * button beside the first rather than inside it, so a press on the cross is
+ * never taken as a press on the card. A card with no action is inert, and one
+ * whose action is under way ([working]) shows its working mark and ignores a
+ * second press.
  */
 @Composable
 fun AmuxEmptyCard(
@@ -266,32 +326,44 @@ fun AmuxEmptyCard(
     onDismiss: (() -> Unit)? = null,
 ) {
     val colors = AmuxTheme.colors
-    val cardModifier = if (onCardClick != null && buttonLabel == null) {
-        modifier
+    val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
+    val act = onButtonClick ?: onCardClick
+    val pill = buttonLabel?.takeIf { onButtonClick != null }
+    Row(
+        modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AmuxTheme.metrics.cardRadius))
-            .clickable(role = Role.Button, onClick = onCardClick)
-    } else {
-        modifier.fillMaxWidth()
-    }
-    AmuxPanel(modifier = cardModifier) {
+            .heightIn(min = CalloutMinHeight)
+            .clip(shape)
+            .background(colors.sunken)
+            .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val face = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .let { base ->
+                if (act == null) {
+                    base
+                } else {
+                    base
+                        .clickable(enabled = !working, role = Role.Button, onClick = act)
+                        .let { if (buttonTestTag != null && pill != null) it.testTag(buttonTestTag) else it }
+                }
+            }
+            .padding(start = Space.m, end = if (onDismiss != null) 0.dp else Space.m)
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.l, vertical = Space.m),
+            modifier = face,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.m),
         ) {
-            when {
-                working -> {
-                    AmuxStateMark(state = RowState.Working, size = 12.dp)
-                }
-                icon != null -> {
-                    Icon(
+            Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                when {
+                    working -> AmuxStateMark(state = RowState.Working, size = 12.dp)
+                    icon != null -> Icon(
                         imageVector = icon,
                         contentDescription = null,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Row),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
@@ -303,43 +375,74 @@ fun AmuxEmptyCard(
                     text = title,
                     style = AmuxTheme.typography.bodyEmphasis,
                     color = colors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (!detail.isNullOrEmpty()) {
                     Text(
                         text = detail,
-                        style = AmuxTheme.typography.detail,
+                        style = AmuxTheme.typography.caption,
                         color = colors.inkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            if (buttonLabel != null && onButtonClick != null) {
-                AmuxActionButton(
-                    label = buttonLabel,
-                    kind = ActionButtonKind.Primary,
-                    onClick = onButtonClick,
-                    modifier = if (buttonTestTag != null) Modifier.testTag(buttonTestTag) else Modifier,
+            when {
+                pill != null -> AmuxPill(label = pill)
+                act != null && onDismiss == null -> AmuxDisclosureChevron()
+            }
+        }
+        if (onDismiss != null) {
+            val dismissLabel = stringResource(R.string.callout_dismiss)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(ThumbTarget.MinSize)
+                    .clickable(role = Role.Button, onClickLabel = dismissLabel, onClick = onDismiss)
+                    .semantics { contentDescription = dismissLabel },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = null,
+                    tint = colors.inkFaint,
+                    modifier = Modifier.size(IconSize.Inline),
                 )
-            }
-            if (onDismiss != null) {
-                val dismissLabel = stringResource(R.string.callout_dismiss)
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.thumbTarget(),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = dismissLabel,
-                        tint = colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Control),
-                    )
-                }
             }
         }
     }
 }
 
+/** A callout card's minimum height, as iOS draws it. */
+private val CalloutMinHeight = 60.dp
+
 /**
- * Top-right account avatar control meeting Android's 48.dp touch target floor.
+ * An action's words in a small accent capsule: the label of a larger target
+ * (a callout card, a row), never a target of its own.
+ */
+@Composable
+fun AmuxPill(label: String, modifier: Modifier = Modifier) {
+    val colors = AmuxTheme.colors
+    Box(
+        modifier = modifier
+            .height(30.dp)
+            .clip(AmuxShapes.Pill)
+            .background(colors.accentFill)
+            .padding(horizontal = Space.m),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = AmuxTheme.typography.caption.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.onAccent,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Top-right account avatar control: a 32 dp disc in a 48 dp touch area.
  */
 @Composable
 fun AmuxAccountAvatar(
@@ -363,8 +466,10 @@ fun AmuxAccountAvatar(
         contentAlignment = Alignment.Center,
     ) {
         if (account != null) {
-            val fill = if (account.signedIn) colors.ink else colors.sunken
-            val foreground = if (account.signedIn) colors.ground else colors.inkMuted
+            // The disc is the screen's account control, so it takes the
+            // interactive tint when signed in.
+            val fill = if (account.signedIn) colors.accentFill else colors.sunken
+            val foreground = if (account.signedIn) colors.onAccent else colors.inkMuted
             Box(
                 modifier = Modifier
                     .size(32.dp)
@@ -409,11 +514,17 @@ enum class ActionButtonKind {
     Destructive,
     Outline,
     Quiet,
+
+    /** An interactive tint for the one way in, such as Sign In. */
+    Accent,
 }
 
 /**
  * Consistent amux button preserving the colour rule: primary actions use
  * neutral ink (never flooding the attention accent), destructive uses removed.
+ *
+ * Drawn 44 dp tall, as iOS draws its buttons; Material's own minimum
+ * interactive size gives each one its 48 dp touch area without drawing it.
  */
 @Composable
 fun AmuxActionButton(
@@ -428,7 +539,8 @@ fun AmuxActionButton(
     val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
     val baseModifier = modifier
         .let { if (fillWidth) it.fillMaxWidth() else it }
-        .thumbTarget()
+        .heightIn(min = ButtonHeight)
+    val padding = PaddingValues(horizontal = Space.l, vertical = Space.s)
 
     when (kind) {
         ActionButtonKind.Primary -> {
@@ -442,7 +554,7 @@ fun AmuxActionButton(
                     disabledContainerColor = colors.sunken,
                     disabledContentColor = colors.inkFaint,
                 ),
-                contentPadding = PaddingValues(horizontal = Space.l, vertical = Space.m),
+                contentPadding = padding,
                 modifier = baseModifier,
             ) {
                 Text(
@@ -460,11 +572,33 @@ fun AmuxActionButton(
                 shape = shape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.removed,
-                    contentColor = Color.White,
+                    contentColor = colors.onRemoved,
                     disabledContainerColor = colors.sunken,
                     disabledContentColor = colors.inkFaint,
                 ),
-                contentPadding = PaddingValues(horizontal = Space.l, vertical = Space.m),
+                contentPadding = padding,
+                modifier = baseModifier,
+            ) {
+                Text(
+                    text = label,
+                    style = AmuxTheme.typography.bodyEmphasis,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        ActionButtonKind.Accent -> {
+            Button(
+                onClick = onClick,
+                enabled = enabled,
+                shape = shape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accentFill,
+                    contentColor = colors.onAccent,
+                    disabledContainerColor = colors.sunken,
+                    disabledContentColor = colors.inkFaint,
+                ),
+                contentPadding = padding,
                 modifier = baseModifier,
             ) {
                 Text(
@@ -486,7 +620,7 @@ fun AmuxActionButton(
                     disabledContainerColor = colors.sunken,
                     disabledContentColor = colors.inkFaint,
                 ),
-                contentPadding = PaddingValues(horizontal = Space.l, vertical = Space.m),
+                contentPadding = padding,
                 modifier = baseModifier,
             ) {
                 Text(
@@ -507,7 +641,7 @@ fun AmuxActionButton(
                     contentColor = colors.ink,
                     disabledContentColor = colors.inkFaint,
                 ),
-                contentPadding = PaddingValues(horizontal = Space.l, vertical = Space.m),
+                contentPadding = padding,
                 modifier = baseModifier,
             ) {
                 Text(
@@ -520,6 +654,9 @@ fun AmuxActionButton(
         }
     }
 }
+
+/** iOS's button height; a larger font grows the button past it. */
+private val ButtonHeight = 44.dp
 
 /**
  * Formats a 64-character hex fingerprint in groups of four so a person can
@@ -567,8 +704,10 @@ fun AmuxSheet(
         containerColor = colors.raised,
         contentColor = colors.ink,
         contentWindowInsets = contentWindowInsets,
-        content = content,
-    )
+    ) {
+        val sheet = this
+        ProvideAmuxBackdrop(Backdrop.Raised) { sheet.content() }
+    }
 }
 
 /** One action in a sheet or menu list: a glyph and its label, red when it destroys. */
@@ -586,7 +725,7 @@ fun AmuxActionRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .thumbTarget(minHeight = minHeight)
+            .heightIn(min = minHeight)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.margin, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
@@ -634,7 +773,7 @@ fun AmuxRadioRow(
                 role = Role.RadioButton,
                 onClick = onClick,
             )
-            .thumbTarget()
+            .heightIn(min = ThumbTarget.MinSize)
             .padding(horizontal = Space.s, vertical = Space.s),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.xs),
@@ -691,7 +830,7 @@ fun AmuxSwitchRow(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(horizontal = Space.l, vertical = Space.m),
     enabled: Boolean = true,
-    colors: SwitchColors = amuxInkSwitchColors(),
+    colors: SwitchColors = amuxSwitchColors(),
     switchModifier: Modifier = Modifier,
     spacing: Dp = Space.m,
     labels: @Composable RowScope.() -> Unit,
@@ -704,6 +843,7 @@ fun AmuxSwitchRow(
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
             )
+            .heightIn(min = ThumbTarget.MinSize)
             .padding(contentPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing),
@@ -714,7 +854,7 @@ fun AmuxSwitchRow(
             onCheckedChange = null,
             enabled = enabled,
             colors = colors,
-            modifier = switchModifier.thumbTarget(),
+            modifier = switchModifier,
         )
     }
 }
@@ -757,33 +897,605 @@ internal fun ConsequenceRow(
     }
 }
 
-/** Neutral ink switch colours for settings and choices that are not asks. */
-@Composable
-internal fun amuxInkSwitchColors(): SwitchColors = SwitchDefaults.colors(
-    checkedThumbColor = AmuxTheme.colors.ground,
-    checkedTrackColor = AmuxTheme.colors.ink,
-    checkedBorderColor = AmuxTheme.colors.ink,
-    uncheckedThumbColor = AmuxTheme.colors.inkMuted,
-    uncheckedTrackColor = AmuxTheme.colors.sunken,
-    uncheckedBorderColor = AmuxTheme.colors.hairline,
-)
-
-/** Switch colours for an ask, where turning one on is what the agent waits on. */
+/**
+ * Switch colours everywhere: on is the accent track with a white thumb, as on
+ * iOS, since a switch is an interactive control and the accent is the
+ * interactive tint. Off is a quiet sunken track.
+ */
 @Composable
 internal fun amuxSwitchColors(): SwitchColors = SwitchDefaults.colors(
     checkedThumbColor = AmuxTheme.colors.onAccent,
     checkedTrackColor = AmuxTheme.colors.accent,
+    checkedBorderColor = AmuxTheme.colors.accent,
     uncheckedThumbColor = AmuxTheme.colors.inkMuted,
     uncheckedTrackColor = AmuxTheme.colors.sunken,
     uncheckedBorderColor = AmuxTheme.colors.hairline,
 )
 
+/**
+ * Text field colours: filled with the surface the field sits on, so a field
+ * in a card is the card's colour rather than a black hole in a grey card.
+ */
 @Composable
 internal fun amuxTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = AmuxTheme.colors.ink,
     unfocusedBorderColor = AmuxTheme.colors.hairline,
     errorBorderColor = AmuxTheme.colors.accent,
-    focusedContainerColor = AmuxTheme.colors.ground,
-    unfocusedContainerColor = AmuxTheme.colors.ground,
-    cursorColor = AmuxTheme.colors.ink,
+    focusedContainerColor = AmuxTheme.backdrop,
+    unfocusedContainerColor = AmuxTheme.backdrop,
+    disabledContainerColor = AmuxTheme.backdrop,
+    errorContainerColor = AmuxTheme.backdrop,
+    cursorColor = AmuxTheme.colors.accent,
 )
+
+// --- Bars, headers and trailing marks ---------------------------------------
+
+/**
+ * The one top bar every screen uses.
+ *
+ * A pushed screen gets iOS's inline title: one 17 sp semibold line with an
+ * optional caption under it. A tab's root screen ([large]) gets the large
+ * title instead. Either way the bar grows with its text rather than clipping
+ * it, so a two-line title at the largest font scale still fits, and it has no
+ * rule under it: once content has scrolled under it ([scrolled]) its fill
+ * steps off the page, as Material's scrolled bar does.
+ *
+ * With [onNavigate], a back arrow (or [navigationIcon]) leads, and the title
+ * starts where Material's bar puts it; without one, the title starts on the
+ * screen margin. [below] draws under the title row on the same fill, for a
+ * search field that belongs to the bar. [subtitleContent] stands in for
+ * [subtitle] when the caption line carries coloured counts.
+ */
+@Composable
+fun AmuxTopBar(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    subtitleColor: Color = AmuxTheme.colors.inkMuted,
+    subtitleModifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
+    large: Boolean = false,
+    scrolled: Boolean = false,
+    onNavigate: (() -> Unit)? = null,
+    navigationIcon: ImageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+    navigationLabel: String? = null,
+    navigationModifier: Modifier = Modifier,
+    subtitleContent: (@Composable () -> Unit)? = null,
+    below: (@Composable ColumnScope.() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    val colors = AmuxTheme.colors
+    val fill by animateColorAsState(
+        targetValue = if (scrolled) colors.barScrolled else colors.ground,
+        animationSpec = Motion.standardAnimationSpec(),
+        label = "barFill",
+    )
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(fill)
+            .windowInsetsPadding(TopAppBarDefaults.windowInsets),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = TopBarMinHeight)
+                .padding(horizontal = BarEdgeInset),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onNavigate != null) {
+                IconButton(onClick = onNavigate, modifier = navigationModifier) {
+                    Icon(
+                        imageVector = navigationIcon,
+                        contentDescription = navigationLabel ?: stringResource(R.string.action_back),
+                        tint = colors.ink,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(
+                        start = if (onNavigate != null) BarEdgeInset else Space.margin - BarEdgeInset,
+                        end = BarEdgeInset,
+                    )
+                    .padding(vertical = Space.s),
+            ) {
+                Text(
+                    text = title,
+                    style = if (large) AmuxTheme.typography.screenTitle else AmuxTheme.typography.identifier,
+                    color = colors.ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = titleModifier.semantics { heading() },
+                )
+                if (subtitleContent != null) {
+                    CompositionLocalProvider(LocalTextStyle provides AmuxTheme.typography.caption) {
+                        subtitleContent()
+                    }
+                } else if (!subtitle.isNullOrEmpty()) {
+                    Text(
+                        text = subtitle,
+                        style = AmuxTheme.typography.caption,
+                        color = subtitleColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = subtitleModifier,
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, content = actions)
+        }
+        below?.invoke(this)
+    }
+}
+
+/** Material's top bar height, kept as the bar's minimum. */
+private val TopBarMinHeight = 64.dp
+
+/** Material's inset between a bar's edge and its 48 dp icon buttons. */
+private val BarEdgeInset = 4.dp
+
+/**
+ * The one header every sheet uses: the title on the content margin in the
+ * pushed bar's inline style, an optional caption under it, and a close cross
+ * whose glyph sits on the trailing content edge. Like the top bar it draws no
+ * rule; it changes fill once the sheet's content has [scrolled] under it.
+ */
+@Composable
+fun AmuxSheetHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    titleModifier: Modifier = Modifier,
+    scrolled: Boolean = false,
+    onClose: (() -> Unit)? = null,
+    closeLabel: String? = null,
+    closeModifier: Modifier = Modifier,
+    closeEnabled: Boolean = true,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
+    val colors = AmuxTheme.colors
+    val fill by animateColorAsState(
+        targetValue = if (scrolled) colors.sunken else AmuxTheme.backdrop,
+        animationSpec = Motion.standardAnimationSpec(),
+        label = "sheetHeaderFill",
+    )
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(fill)
+            .heightIn(min = ThumbTarget.MinSize + Space.s)
+            .padding(horizontal = Space.margin, vertical = Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.m),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = AmuxTheme.typography.identifier,
+                color = colors.ink,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = titleModifier.semantics { heading() },
+            )
+            if (!subtitle.isNullOrEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = AmuxTheme.typography.caption,
+                    color = colors.inkMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        trailing()
+        if (onClose != null) {
+            AmuxEdgeIconButton(
+                icon = Icons.Outlined.Close,
+                contentDescription = closeLabel ?: stringResource(R.string.action_close),
+                onClick = onClose,
+                ink = GlyphInk.Close,
+                tint = colors.ink,
+                enabled = closeEnabled,
+                modifier = closeModifier,
+            )
+        }
+    }
+}
+
+/**
+ * How much of a Material glyph's 24-unit box its ink fills across, so an
+ * edge-aligned button can put the ink, not the box, on the content edge.
+ */
+object GlyphInk {
+    const val Close = 14f / 24f
+    const val More = 16f / 24f
+    const val MoreVert = 4f / 24f
+    const val Stop = 12f / 24f
+    const val Default = 20f / 24f
+}
+
+/**
+ * The least room an edge button takes. A glyph narrower than this would spill
+ * its 48 dp target past the screen margin and off the screen's edge; it sits
+ * a hair inside the content edge instead.
+ */
+private val EdgeLeastFootprint = ThumbTarget.MinSize - Space.margin * 2
+
+/**
+ * The most an edge button's target spills past the room it takes, on each
+ * side: a neighbouring target this far away meets it without overlapping.
+ */
+val AmuxEdgeSpill = (ThumbTarget.MinSize - EdgeLeastFootprint) / 2
+
+/**
+ * An icon button whose glyph sits on the content edge it shares with the text
+ * around it, while its touch area stays 48 dp and spills into the padding.
+ * See [edgeTarget]. [ink] is the share of the icon box the glyph fills across
+ * ([GlyphInk]); [modifier] lands on the 48 dp target, so test tags go there.
+ */
+@Composable
+fun AmuxEdgeIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = IconSize.Row,
+    ink: Float = GlyphInk.Default,
+    tint: Color = AmuxTheme.colors.inkMuted,
+    enabled: Boolean = true,
+) {
+    AmuxEdgeTarget(
+        footprint = maxOf(size * ink, EdgeLeastFootprint),
+        footprintHeight = size,
+        onClick = onClick,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        enabled = enabled,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(size),
+        )
+    }
+}
+
+/**
+ * A control drawn [footprint] wide (a disc, a glyph) that takes only that
+ * room in its row and centres a 48 dp touch target on it. See [edgeTarget].
+ */
+@Composable
+fun AmuxEdgeTarget(
+    footprint: Dp,
+    onClick: () -> Unit,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    footprintHeight: Dp = footprint,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .edgeTarget(footprint, footprintHeight)
+            .then(modifier)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+/**
+ * The one disclosure chevron: auto-mirrored, so it points the way the screen
+ * reads, and laid out by its ink rather than its icon box, so its tip sits on
+ * the same trailing edge as a switch or a check mark in the next row.
+ */
+@Composable
+fun AmuxDisclosureChevron(
+    modifier: Modifier = Modifier,
+    tint: Color = AmuxTheme.colors.inkFaint,
+) {
+    InkBox(icon = Icons.AutoMirrored.Outlined.KeyboardArrowRight, inkStart = 8.59f, inkEnd = 16f, tint = tint, modifier = modifier)
+}
+
+/**
+ * The chosen-row check mark, in the accent as iOS draws it, laid out by its
+ * ink so it ends on the card's trailing edge.
+ */
+@Composable
+fun AmuxCheckMark(
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    tint: Color = AmuxTheme.colors.accent,
+) {
+    InkBox(
+        icon = Icons.Outlined.Check,
+        inkStart = 3.41f,
+        inkEnd = 21f,
+        tint = tint,
+        modifier = if (contentDescription != null) {
+            modifier.semantics { this.contentDescription = contentDescription }
+        } else {
+            modifier
+        },
+    )
+}
+
+/**
+ * Draws [icon] at [IconSize.Row] but reports only its ink, from [inkStart]
+ * to [inkEnd] in the icon's 24-unit box, as its width. Placement is relative,
+ * so in a right-to-left layout the mirrored glyph's ink lands on the
+ * mirrored edge.
+ */
+@Composable
+private fun InkBox(icon: ImageVector, inkStart: Float, inkEnd: Float, tint: Color, modifier: Modifier) {
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = tint,
+        modifier = modifier
+            .layout { measurable, _ ->
+                val box = IconSize.Row.roundToPx()
+                val placeable = measurable.measure(Constraints.fixed(box, box))
+                val start = (box * inkStart / 24f).roundToInt()
+                val end = (box * inkEnd / 24f).roundToInt()
+                layout(end - start, box) {
+                    // A mirrored glyph's ink sits as far from the box's end as
+                    // the unmirrored one's does from its start.
+                    val offset = if (layoutDirection == LayoutDirection.Rtl) box - end else start
+                    placeable.place(-offset, 0)
+                }
+            },
+    )
+}
+
+/**
+ * Draws a segmented choice's thumb on the chosen segment. In light mode the
+ * white thumb sits on a pale track, so a shadow and an edge set it off; in
+ * dark mode its fill is clearly lighter than the track, as on iOS.
+ */
+@Composable
+internal fun Modifier.amuxSegmentThumb(chosen: Boolean, shape: Shape): Modifier {
+    if (!chosen) return this
+    val colors = AmuxTheme.colors
+    val light = AmuxTheme.appearance == Appearance.Light
+    return this
+        .then(if (light) Modifier.shadow(elevation = 2.dp, shape = shape) else Modifier)
+        .clip(shape)
+        .background(colors.selection)
+        .then(if (light) Modifier.border(AmuxTheme.metrics.hairline, colors.hairline, shape) else Modifier)
+}
+
+/**
+ * The one text field: outlined, filled with the surface it sits on, about
+ * 44 dp tall with one line, and its text inset by the same 16 dp as a card's
+ * rows, so a field in a card lines up with the card's text.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AmuxField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    isError: Boolean = false,
+    textStyle: TextStyle = AmuxTheme.typography.body,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    interactionSource: MutableInteractionSource? = null,
+) {
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    val fieldColors = amuxTextFieldColors()
+    val colors = AmuxTheme.colors
+    val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .thumbTarget()
+            .defaultMinSize(minHeight = AmuxFieldHeight),
+        enabled = enabled,
+        readOnly = readOnly,
+        textStyle = textStyle.copy(color = if (enabled) colors.ink else colors.inkFaint),
+        cursorBrush = SolidColor(colors.accent),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = singleLine,
+        minLines = minLines,
+        maxLines = maxLines,
+        visualTransformation = visualTransformation,
+        interactionSource = source,
+        decorationBox = { inner ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = inner,
+                enabled = enabled,
+                singleLine = singleLine,
+                visualTransformation = visualTransformation,
+                interactionSource = source,
+                isError = isError,
+                placeholder = placeholder?.let {
+                    {
+                        Text(
+                            text = it,
+                            style = textStyle,
+                            color = colors.inkFaint,
+                            maxLines = if (singleLine) 1 else Int.MAX_VALUE,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+                leadingIcon = leadingIcon,
+                trailingIcon = trailingIcon,
+                colors = fieldColors,
+                contentPadding = PaddingValues(horizontal = Space.l, vertical = FieldVerticalPadding),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = enabled,
+                        isError = isError,
+                        interactionSource = source,
+                        colors = fieldColors,
+                        shape = shape,
+                        focusedBorderThickness = AmuxTheme.metrics.hairline * 1.5f,
+                        unfocusedBorderThickness = AmuxTheme.metrics.hairline,
+                    )
+                },
+            )
+        },
+    )
+}
+
+/** With the body line, the padding that draws a one-line field 44 dp tall. */
+private val FieldVerticalPadding = 11.dp
+/** The one field height, as iOS draws its fields; a larger font grows it. */
+internal val AmuxFieldHeight = 44.dp
+
+/**
+ * Holds [content]'s text at no more than [maxScale] of its size, for a bar
+ * whose height cannot grow with the text (the chat's header capsules). iOS
+ * caps the same header at its extra-large text size, about 1.15×.
+ */
+@Composable
+fun CappedFontScale(maxScale: Float = 1.15f, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    if (density.fontScale <= maxScale) {
+        content()
+    } else {
+        CompositionLocalProvider(
+            LocalDensity provides Density(density.density, maxScale),
+            content = content,
+        )
+    }
+}
+
+/**
+ * Filter chip colours: a chosen chip is filled with the accent, the
+ * interactive tint, rather than with ink, which made it the brightest slab on
+ * a dark screen. It is a solid fill, not a wash: accent text on a pale accent
+ * wash falls under 4.5:1 on every surface a chip sits on.
+ */
+@Composable
+internal fun amuxFilterChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = AmuxTheme.backdrop,
+    labelColor = AmuxTheme.colors.inkMuted,
+    iconColor = AmuxTheme.colors.inkMuted,
+    selectedContainerColor = AmuxTheme.colors.accentFill,
+    selectedLabelColor = AmuxTheme.colors.onAccent,
+    selectedLeadingIconColor = AmuxTheme.colors.onAccent,
+    selectedTrailingIconColor = AmuxTheme.colors.onAccent,
+)
+
+/** A chip's edge: a hairline round a chip at rest, none round a chosen one. */
+@Composable
+internal fun amuxFilterChipBorder(selected: Boolean) = FilterChipDefaults.filterChipBorder(
+    enabled = true,
+    selected = selected,
+    borderColor = AmuxTheme.colors.hairline,
+    selectedBorderColor = Color.Transparent,
+)
+
+/**
+ * One choice of a few, side by side, drawn as iOS's segmented control: a
+ * track with the chosen segment on a thumb and its label in semibold. Each
+ * segment answers to a 48 dp-tall target while the track is drawn
+ * [SegmentTrackHeight] tall, and segments meet edge to edge, so no two
+ * targets overlap. TalkBack reads it as a group of radio buttons. [tag] gives
+ * each segment its test tag.
+ */
+@Composable
+fun <T> AmuxSegmentedChoice(
+    options: List<T>,
+    selected: T?,
+    label: @Composable (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    tag: (T) -> String? = { null },
+    enabled: Boolean = true,
+) {
+    val colors = AmuxTheme.colors
+    val track = colors.segmentTrack
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ThumbTarget.MinSize)
+            .drawBehind {
+                val height = SegmentTrackHeight.toPx()
+                val radius = SegmentTrackRadius.toPx()
+                drawRoundRect(
+                    color = track,
+                    topLeft = Offset(0f, (size.height - height) / 2),
+                    size = Size(size.width, height),
+                    cornerRadius = CornerRadius(radius, radius),
+                )
+            }
+            .padding(horizontal = SegmentInset)
+            .selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        options.forEach { option ->
+            val chosen = option == selected
+            val source = remember { MutableInteractionSource() }
+            val thumbShape = RoundedCornerShape(SegmentTrackRadius - SegmentInset)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = ThumbTarget.MinSize)
+                    .selectable(
+                        selected = chosen,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        interactionSource = source,
+                        indication = null,
+                        onClick = { onSelect(option) },
+                    )
+                    .then(tag(option)?.let { Modifier.testTag(it) } ?: Modifier),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(SegmentTrackHeight - SegmentInset * 2)
+                        .amuxSegmentThumb(chosen, thumbShape)
+                        .clip(thumbShape)
+                        .indication(source, ripple())
+                        .padding(horizontal = Space.s),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label(option),
+                        style = AmuxTheme.typography.detail.copy(
+                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                        ),
+                        color = when {
+                            !enabled -> colors.inkFaint
+                            chosen -> colors.ink
+                            else -> colors.inkMuted
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** iOS's segmented control: a 32 pt track (36 dp here, for Android's type). */
+private val SegmentTrackHeight = 36.dp
+
+/** The track's corner radius, and the thumb's inset from the track's edge. */
+private val SegmentTrackRadius = 9.dp
+private val SegmentInset = 2.dp

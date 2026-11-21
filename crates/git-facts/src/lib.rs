@@ -1581,19 +1581,29 @@ const DIFF_OPTIONS: &[&str] = &[
     "-O/dev/null",
 ];
 
-/// `core.hooksPath` set to a folder that is never made, for every call
-/// beside [`CONFIG`]: git finds no hook there, so none of the person's
-/// runs. Git runs `post-index-change` whenever it writes an index, the
-/// copies a snapshot and a moved check write included, and a person's hook
-/// is for their own work on their own index, whatever else it does. A
-/// folder that is not there needs nothing made or removed, and is read the
-/// same way on every platform.
+/// `core.hooksPath` set where no hook can be, for every call beside
+/// [`CONFIG`]: git finds no hook there, so none of the person's runs. Git
+/// runs `post-index-change` whenever it writes an index, the copies a
+/// snapshot and a moved check write included, and a person's hook is for
+/// their own work on their own index, whatever else it does.
+///
+/// On Unix that is `/dev/null`, which is not a folder, so nothing can ever
+/// be put inside it. A folder that merely isn't there would not do: in a
+/// temporary directory shared by every user, as `/tmp` is on Linux, anyone
+/// could make it and put a hook in it, and git would run that hook as the
+/// person. Windows gives each user a temporary directory of their own, and
+/// a folder that is never made inside it is read as holding no hooks.
 fn no_hooks() -> &'static std::ffi::OsStr {
     static NO_HOOKS: std::sync::LazyLock<std::ffi::OsString> = std::sync::LazyLock::new(|| {
         let mut setting = std::ffi::OsString::from("core.hooksPath=");
-        setting.push(
-            std::env::temp_dir().join(format!("amux-git-facts-no-hooks-{}", std::process::id())),
-        );
+        if cfg!(unix) {
+            setting.push("/dev/null");
+        } else {
+            setting.push(
+                std::env::temp_dir()
+                    .join(format!("amux-git-facts-no-hooks-{}", std::process::id())),
+            );
+        }
         setting
     });
     &NO_HOOKS

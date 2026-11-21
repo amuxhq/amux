@@ -472,7 +472,7 @@ pub struct ProfileRuntime {
     /// them.
     pins: crate::repositories::Pins,
     /// Where this host offers to start an agent, as its own entry says.
-    folders: Mutex<Vec<wire::Folder>>,
+    folders: crate::repositories::Offered,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict
@@ -775,7 +775,7 @@ impl ProfileRuntime {
             onboarding,
             remember_pick,
             pins,
-            folders: Mutex::new(Vec::new()),
+            folders: crate::repositories::Offered::default(),
         });
         core.expect("built with the runtime").start(&runtime.driver);
         runtime.tell_own_host();
@@ -1169,7 +1169,7 @@ impl ProfileRuntime {
 
     /// Where this host offers to start an agent, as its own entry says.
     pub(crate) fn folders(&self) -> Vec<wire::Folder> {
-        self.folders.lock().unwrap().clone()
+        self.folders.get()
     }
 
     /// Works out again where this host offers to start an agent, off the
@@ -1178,6 +1178,9 @@ impl ProfileRuntime {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
         };
+        // Numbered as it is asked for, after whatever change asked for it,
+        // so the latest-numbered refresh reads the latest settings.
+        let number = self.folders.ask();
         let runtime = Arc::downgrade(self);
         handle.spawn(async move {
             let Some(held) = runtime.upgrade() else {
@@ -1210,13 +1213,7 @@ impl ProfileRuntime {
             let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            let moved = {
-                let mut held = runtime.folders.lock().unwrap();
-                let moved = *held != folders;
-                *held = folders;
-                moved
-            };
-            if moved {
+            if runtime.folders.found(number, folders) {
                 runtime.tell_own_host();
             }
         });

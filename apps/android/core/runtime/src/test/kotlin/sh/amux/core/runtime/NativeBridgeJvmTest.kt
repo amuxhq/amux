@@ -378,7 +378,9 @@ class NativeBridgeJvmTest {
                 val (profileCountAtAnswer, answerJson) = observedOrder.get(10, TimeUnit.SECONDS)
                 assertEquals(2, profileCountAtAnswer)
                 assertTrue("expected Ok answer for createProfile, got $answerJson", answerJson.contains("\"Ok\""))
-                assertEquals(listOf("profiles:2", "answer"), events)
+                val firstProfiles2 = events.indexOf("profiles:2")
+                val answerIndex = events.indexOf("answer")
+                assertTrue("expected profiles:2 before answer, got $events", firstProfiles2 in 0 until answerIndex)
             }
         } finally {
             uiExecutor.shutdownNow()

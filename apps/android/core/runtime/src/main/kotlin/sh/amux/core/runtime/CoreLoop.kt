@@ -196,49 +196,55 @@ class CoreLoop(
     private fun startWatcher(handle: Long) {
         val thread = Thread(
             {
-                var consecutiveErrors = 0
-                while (!stopping.get()) {
-                    val ready = try {
-                        NativeBridge.runtimeWaitWake(handle, -1)
-                    } catch (t: Throwable) {
-                        if (!stopping.get()) {
-                            reportError(t)
-                        }
-                        break
-                    }
-                    if (ready < 0 || stopping.get()) {
-                        break
-                    }
-                    if (ready > 0) {
-                        try {
-                            executor.submit { stepOnCore() }.get()
-                            consecutiveErrors = 0
-                        } catch (e: RejectedExecutionException) {
-                            if (!stopping.get()) {
-                                reportError(e)
-                            }
-                            break
-                        } catch (e: ExecutionException) {
-                            val cause = e.cause ?: e
-                            if (!stopping.get()) {
-                                reportError(cause)
-                            }
-                            consecutiveErrors += 1
-                            if (cause is Error || cause is BridgeException || consecutiveErrors >= MAX_CONSECUTIVE_WATCHER_ERRORS) {
-                                break
-                            }
-                        } catch (e: InterruptedException) {
-                            if (!stopping.get()) {
-                                Thread.currentThread().interrupt()
-                                reportError(e)
-                            }
-                            break
+                try {
+                    var consecutiveErrors = 0
+                    while (!stopping.get()) {
+                        val ready = try {
+                            NativeBridge.runtimeWaitWake(handle, -1)
                         } catch (t: Throwable) {
                             if (!stopping.get()) {
                                 reportError(t)
                             }
                             break
                         }
+                        if (ready < 0 || stopping.get()) {
+                            break
+                        }
+                        if (ready > 0) {
+                            try {
+                                executor.submit { stepOnCore() }.get()
+                                consecutiveErrors = 0
+                            } catch (e: RejectedExecutionException) {
+                                if (!stopping.get()) {
+                                    reportError(e)
+                                }
+                                break
+                            } catch (e: ExecutionException) {
+                                val cause = e.cause ?: e
+                                if (!stopping.get()) {
+                                    reportError(cause)
+                                }
+                                consecutiveErrors += 1
+                                if (cause is Error || cause is BridgeException || consecutiveErrors >= MAX_CONSECUTIVE_WATCHER_ERRORS) {
+                                    break
+                                }
+                            } catch (e: InterruptedException) {
+                                if (!stopping.get()) {
+                                    Thread.currentThread().interrupt()
+                                    reportError(e)
+                                }
+                                break
+                            } catch (t: Throwable) {
+                                if (!stopping.get()) {
+                                    reportError(t)
+                                }
+                                break
+                            }
+                        }
+                    }
+                } finally {
+                    if (stopping.compareAndSet(false, true)) {
+                        failPendingTickets()
                     }
                 }
             },
@@ -274,22 +280,29 @@ class CoreLoop(
 
         if (hasWork) {
             dispatch {
-                for (moved in stepped.fleets) {
-                    fleetListeners[moved.fleet]?.invoke(FleetEvent.Fleet(moved.delta))
+                try {
+                    for (moved in stepped.fleets) {
+                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Fleet(moved.delta))
+                    }
+                    for (moved in stepped.chats) {
+                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Chat(moved.delta))
+                    }
+                    for (moved in stepped.signInOffers) {
+                        fleetListeners[moved.fleet]?.invoke(FleetEvent.SignInOffers(moved.offers))
+                    }
+                    for (moved in stepped.onboarding) {
+                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Onboarding(moved.onboarding))
+                    }
+                    for (moved in stepped.pairing) {
+                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Pairing(moved.status))
+                    }
+                    stepped.profiles?.let(onProfilesMoved)
+                } catch (t: Throwable) {
+                    for (answer in stepped.answers) {
+                        waitingTickets.remove(answer.ticket)?.completeExceptionally(t)
+                    }
+                    throw t
                 }
-                for (moved in stepped.chats) {
-                    fleetListeners[moved.fleet]?.invoke(FleetEvent.Chat(moved.delta))
-                }
-                for (moved in stepped.signInOffers) {
-                    fleetListeners[moved.fleet]?.invoke(FleetEvent.SignInOffers(moved.offers))
-                }
-                for (moved in stepped.onboarding) {
-                    fleetListeners[moved.fleet]?.invoke(FleetEvent.Onboarding(moved.onboarding))
-                }
-                for (moved in stepped.pairing) {
-                    fleetListeners[moved.fleet]?.invoke(FleetEvent.Pairing(moved.status))
-                }
-                stepped.profiles?.let(onProfilesMoved)
                 for (answer in stepped.answers) {
                     waitingTickets.remove(answer.ticket)?.complete(answer.json)
                 }

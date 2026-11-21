@@ -21,11 +21,14 @@ android {
     }
 
     sourceSets {
+        getByName("main") {
+            jniLibs.setSrcDirs(emptyList<Any>())
+        }
         getByName("debug") {
-            jniLibs.srcDir(debugJniLibsDir)
+            jniLibs.setSrcDirs(listOf(debugJniLibsDir))
         }
         getByName("release") {
-            jniLibs.srcDir(releaseJniLibsDir)
+            jniLibs.setSrcDirs(listOf(releaseJniLibsDir))
         }
     }
 
@@ -78,7 +81,7 @@ val verifyReleaseJniLibs = tasks.register("verifyReleaseJniLibs") {
 }
 
 tasks.matching {
-    it.name == "mergeReleaseJniLibFolders" || it.name == "preReleaseBuild"
+    it.name == "mergeReleaseJniLibFolders"
 }.configureEach {
     dependsOn(verifyReleaseJniLibs)
 }

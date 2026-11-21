@@ -267,30 +267,33 @@ fn open_profile_handle(runtime_handle: i64, profile_id: &str) -> Result<i64, Str
 }
 
 fn close_profile_handle(handle: i64) {
-    let slot = profiles()
+    let Some(slot) = get_profile(handle) else {
+        return;
+    };
+    let child_chats = slot.chats.lock().unwrap_or_else(|p| p.into_inner()).take();
+    if let Some(child_chats) = child_chats {
+        for chat_handle in child_chats {
+            close_chat_handle(chat_handle);
+        }
+    }
+    {
+        let mut guard = slot.inner.write().unwrap_or_else(|p| p.into_inner());
+        if let Some(profile) = guard.take() {
+            profile.close();
+        }
+    }
+    profiles()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .remove(&handle);
-    if let Some(slot) = slot {
-        if let Some(runtime_slot) = get_runtime(slot.runtime_handle)
-            && let Some(children) = runtime_slot
-                .profiles
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .as_mut()
-        {
-            children.remove(&handle);
-        }
-        let child_chats = slot.chats.lock().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(child_chats) = child_chats {
-            for chat_handle in child_chats {
-                close_chat_handle(chat_handle);
-            }
-        }
-        let profile = slot.inner.write().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(profile) = profile {
-            profile.close();
-        }
+    if let Some(runtime_slot) = get_runtime(slot.runtime_handle)
+        && let Some(children) = runtime_slot
+            .profiles
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_mut()
+    {
+        children.remove(&handle);
     }
 }
 
@@ -337,21 +340,29 @@ fn close_chat_handle(handle: i64) {
     let slot = chats()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .remove(&handle);
-    if let Some(slot) = slot {
-        if let Some(profile_slot) = get_profile(slot.profile_handle)
-            && let Some(children) = profile_slot
-                .chats
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .as_mut()
-        {
-            children.remove(&handle);
-        }
-        let chat = slot.inner.write().unwrap_or_else(|p| p.into_inner()).take();
-        if let Some(chat) = chat {
+        .get(&handle)
+        .cloned();
+    let Some(slot) = slot else {
+        return;
+    };
+    {
+        let mut guard = slot.inner.write().unwrap_or_else(|p| p.into_inner());
+        if let Some(chat) = guard.take() {
             chat.close();
         }
+    }
+    chats()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&handle);
+    if let Some(profile_slot) = get_profile(slot.profile_handle)
+        && let Some(children) = profile_slot
+            .chats
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_mut()
+    {
+        children.remove(&handle);
     }
 }
 

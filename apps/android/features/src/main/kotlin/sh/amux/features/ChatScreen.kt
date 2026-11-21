@@ -604,6 +604,25 @@ private fun ChatScreenContent(
         Triple(state.keys.firstOrNull(), state.keys.lastOrNull(), totalTailAnchor),
     )
 
+    suspend fun pinTranscriptToBottom(lastIndex: Int) {
+        if (lastIndex < 0) return
+        programmaticScrollCount += 1
+        try {
+            listState.scrollToItem(lastIndex)
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()
+            if (lastVisible != null && lastVisible.index == info.totalItemsCount - 1) {
+                val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
+                if (overflow > 0) {
+                    listState.scrollBy(overflow.toFloat())
+                }
+            }
+        } finally {
+            programmaticScrollEpoch += 1
+            programmaticScrollCount -= 1
+        }
+    }
+
     LaunchedEffect(
         state.following,
         state.toNewest,
@@ -614,28 +633,34 @@ private fun ChatScreenContent(
     ) {
         if (state.following && totalTailAnchor > 0) {
             val totalItems = listState.layoutInfo.totalItemsCount
-            val lastIndex = if (totalItems > 0) totalItems - 1 else totalTailAnchor - 1
-            if (lastIndex >= 0) {
-                programmaticScrollCount += 1
-                try {
-                    listState.scrollToItem(lastIndex)
-                    val info = listState.layoutInfo
-                    val lastVisible = info.visibleItemsInfo.lastOrNull()
-                    if (lastVisible != null && lastVisible.index == info.totalItemsCount - 1) {
-                        val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
-                        if (overflow > 0) {
-                            listState.scrollBy(overflow.toFloat())
-                        }
-                    }
-                } finally {
-                    programmaticScrollEpoch += 1
-                    programmaticScrollCount -= 1
-                }
-            }
+            val lastIndex = maxOf(totalItems, totalTailAnchor) - 1
+            pinTranscriptToBottom(lastIndex)
             initialFollowDone = true
         } else if (!state.following || totalTailAnchor == 0) {
             initialFollowDone = true
         }
+    }
+
+    // Re-pin to the newest row when following and the feed viewport or laid-out item
+    // count changes (e.g., IME opens/closes, footer banner appears/disappears, or
+    // LazyColumn lays out newly appended rows after the first composition pass).
+    LaunchedEffect(listState, state.following) {
+        if (!state.following) return@LaunchedEffect
+        snapshotFlow {
+            val info = listState.layoutInfo
+            info.viewportEndOffset to info.totalItemsCount
+        }
+            .distinctUntilChanged()
+            .collect { (viewportEnd, totalItems) ->
+                if (
+                    viewportEnd > 0 &&
+                    totalItems > 0 &&
+                    !listState.isScrollInProgress &&
+                    !isNearTranscriptBottom(listState)
+                ) {
+                    pinTranscriptToBottom(totalItems - 1)
+                }
+            }
     }
 
     // Any scroll outside our own auto-follow calls (touch drag, wheel, keyboard,

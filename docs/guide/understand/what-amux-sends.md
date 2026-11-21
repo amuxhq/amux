@@ -33,8 +33,11 @@ off:
   doesn't see a variable set in your shell profile, so on a desktop the
   setting above is the switch that always works.
 
-Only the published `amux` and the published phone apps send anything. Builds
-from source and test runs never do.
+Debug builds and test runs never send usage counts. The published `amux`
+binary and Release builds of the phone apps—including a locally built
+Android Release APK or iPhone Release build without `debug-tools`—follow
+your **Send usage counts** / **Share Usage** / **Share Usage Counts**
+setting and `DO_NOT_TRACK`.
 
 ## Where it goes
 

@@ -330,19 +330,39 @@ def inspect_native_library(
             "SQLite must be statically linked"
         )
 
-    # Read full symbol table when present, plus dynamic symbols (always present in ELF cdylibs).
+    # Read full symbol table when present (optional for stripped libraries),
+    # and require the dynamic symbol table (always present in ELF cdylibs).
     nm_lines: list[str] = []
-    for flags in (["--demangle"], ["--dynamic", "--demangle"]):
-        proc = subprocess.run(
-            [nm_bin, *flags, str(so_path)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
+    full_proc = subprocess.run(
+        [nm_bin, "--demangle", str(so_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    if full_proc.returncode == 0 and full_proc.stdout:
+        nm_lines.append(full_proc.stdout)
+
+    dyn_proc = subprocess.run(
+        [nm_bin, "--dynamic", "--demangle", str(so_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    if dyn_proc.returncode != 0:
+        detail = (dyn_proc.stderr or dyn_proc.stdout).strip()
+        raise RuntimeError(
+            f"{nm_bin} --dynamic --demangle failed on {so_path} "
+            f"(exit {dyn_proc.returncode}): {detail or 'no error output'}"
         )
-        if proc.returncode == 0 and proc.stdout:
-            nm_lines.append(proc.stdout)
+    if not dyn_proc.stdout.strip():
+        raise RuntimeError(
+            f"{nm_bin} --dynamic --demangle produced no symbols for {so_path}"
+        )
+    nm_lines.append(dyn_proc.stdout)
 
     symbols = parse_nm_symbols("\n".join(nm_lines))
     forbidden_hits: list[str] = []

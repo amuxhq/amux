@@ -3270,6 +3270,23 @@ fn report(journey: &mut AndroidJourney) -> Proved {
     if first["report_json"] != retry["report_json"] || first["files"] != retry["files"] {
         return Err("the retry did not hand over the same report".to_owned());
     }
+    let files = strings(&retry["files"]);
+    if files.is_empty() {
+        return Err("the report carries no files".to_owned());
+    }
+    for name in &files {
+        let first_bytes = std::fs::read(received.join("1").join(name))
+            .map_err(|error| format!("reading first report file {name}: {error}"))?;
+        let retry_bytes = std::fs::read(received.join("2").join(name))
+            .map_err(|error| format!("reading retry report file {name}: {error}"))?;
+        if first_bytes != retry_bytes {
+            return Err(format!(
+                "retry uploaded different bytes for {name} ({} vs {} bytes)",
+                first_bytes.len(),
+                retry_bytes.len()
+            ));
+        }
+    }
     let header = &retry["report_json"];
     if retry["account"] != "ada" || header["kind"] != "report" {
         return Err(format!("the report reads {retry}"));
@@ -3277,7 +3294,6 @@ fn report(journey: &mut AndroidJourney) -> Proved {
     if header["note"] != REPORT_NOTE {
         return Err(format!("the report does not carry the note: {header}"));
     }
-    let files = strings(&retry["files"]);
     let screen = received.join("2/frame.png");
     if std::fs::metadata(&screen).map_or(true, |metadata| metadata.len() == 0) {
         return Err(format!(

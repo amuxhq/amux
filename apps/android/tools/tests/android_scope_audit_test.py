@@ -232,6 +232,60 @@ class AndroidScopeAuditTest(unittest.TestCase):
             self.assertIn("testnet::launch", joined)
             self.assertIn("+debug-tools", joined)
 
+    def test_inspect_native_library_fails_when_dynamic_nm_fails(self):
+        readelf_out = " 0x0000000000000001 (NEEDED) Shared library: [libc.so]\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            so = Path(tmp) / "libamux_app.so"
+            # Even with embedded static SQLite markers, a failing --dynamic nm scan must fail.
+            so.write_bytes(b"\x7fELFSQLite format 3\x00sqlite_master")
+
+            def fake_run(cmd, **kwargs):
+                if "readelf" in cmd[0]:
+                    return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
+                if "--dynamic" in cmd:
+                    return mock.Mock(
+                        returncode=2,
+                        stdout="",
+                        stderr="nm: unrecognized option `--dynamic'",
+                    )
+                return mock.Mock(returncode=1, stdout="", stderr="nm: no symbols")
+
+            with mock.patch.object(audit.subprocess, "run", side_effect=fake_run):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"nm --dynamic --demangle failed.*exit 2.*unrecognized option",
+                ):
+                    audit.inspect_native_library(
+                        so,
+                        abi="arm64-v8a",
+                        readelf="llvm-readelf",
+                        nm="nm",
+                    )
+
+    def test_inspect_native_library_allows_stripped_full_symbols_when_dynamic_nm_succeeds(self):
+        readelf_out = " 0x0000000000000001 (NEEDED) Shared library: [libc.so]\n"
+        dyn_nm_out = "0000000000123456 T Java_sh_amux_core_runtime_NativeBridge_version\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            so = Path(tmp) / "libamux_app.so"
+            so.write_bytes(b"\x7fELFSQLite format 3\x00sqlite_master")
+
+            def fake_run(cmd, **kwargs):
+                if "readelf" in cmd[0]:
+                    return mock.Mock(returncode=0, stdout=readelf_out, stderr="")
+                if "--dynamic" in cmd:
+                    return mock.Mock(returncode=0, stdout=dyn_nm_out, stderr="")
+                return mock.Mock(returncode=1, stdout="", stderr="no symbols")
+
+            with mock.patch.object(audit.subprocess, "run", side_effect=fake_run):
+                result = audit.inspect_native_library(
+                    so,
+                    abi="arm64-v8a",
+                    readelf="llvm-readelf",
+                    nm="llvm-nm",
+                )
+            self.assertEqual(result.forbidden_hits, ())
+            self.assertIn("stripped static SQLite engine present", result.sqlite_evidence)
+
     def test_audit_apk_fails_when_native_library_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             apk = build_fake_apk(

@@ -1,22 +1,34 @@
 package sh.amux.android
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -183,6 +195,54 @@ class AccessibilityAuditTest {
         }
     }
 
+    @Test
+    fun clippedNonScrollableControlFailsHorizontalClipCheck() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                    Row(
+                        modifier = Modifier.wrapContentWidth(
+                            align = Alignment.Start,
+                            unbounded = true,
+                        ),
+                    ) {
+                        Text(
+                            text = "Heading",
+                            modifier = Modifier
+                                .width(390.dp)
+                                .semantics { heading() },
+                        )
+                        Box(
+                            modifier = Modifier
+                                .requiredSize(width = 80.dp, height = 48.dp)
+                                .clickable(onClick = {})
+                                .testTag("clipped.action"),
+                        ) {
+                            Text("Overflow")
+                        }
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        val root = composeRule.onRoot(useUnmergedTree = false).fetchSemanticsNode()
+        val violations = mutableListOf<AuditViolation>()
+        auditTree(
+            storyId = "synthetic.clip",
+            appearance = Appearance.Light,
+            root = root,
+            density = composeRule.density.density,
+            viewportWidthPx = root.boundsInRoot.width,
+            viewportHeightPx = root.boundsInRoot.height,
+            violations = violations,
+        )
+        assertTrue(
+            "Expected horizontal-clip violation for clipped non-scrollable control, got: $violations",
+            violations.any { it.rule == "horizontal-clip" && it.detail.contains("clipped.action") },
+        )
+    }
+
     private fun auditTree(
         storyId: String,
         appearance: Appearance,
@@ -245,15 +305,20 @@ class AccessibilityAuditTest {
                     }
 
                     // 4. Horizontal clipping check for visible items outside horizontal scrollables.
+                    //    Use clipped boundsInRoot only to decide visibility, and check horizontal
+                    //    extent against unclipped root coordinates so a non-scrollable layout
+                    //    clipping a control past the viewport edge fails the audit.
                     val visibleOnScreen = bounds.width > 0f && bounds.height > 0f
                     if (!inHorizontalScroll && visibleOnScreen) {
-                        if (bounds.left < -CLIP_TOLERANCE_PX || bounds.right > viewportWidthPx + CLIP_TOLERANCE_PX) {
+                        val unclippedLeft = node.positionInRoot.x
+                        val unclippedRight = unclippedLeft + layoutSize.width
+                        if (unclippedLeft < -CLIP_TOLERANCE_PX || unclippedRight > viewportWidthPx + CLIP_TOLERANCE_PX) {
                             violations += AuditViolation(
                                 storyId = storyId,
                                 appearance = appearance,
                                 rule = "horizontal-clip",
                                 detail = "Interactive node $descriptor extends outside viewport " +
-                                    "[${"%.1f".format(bounds.left / density)}dp..${"%.1f".format(bounds.right / density)}dp] " +
+                                    "[${"%.1f".format(unclippedLeft / density)}dp..${"%.1f".format(unclippedRight / density)}dp] " +
                                     "vs viewport 0..${"%.1f".format(viewportWidthPx / density)}dp",
                             )
                         }

@@ -780,21 +780,19 @@ internal object DoorHost {
         target.config.getOrNull(SemanticsActions.RequestFocus)?.action?.invoke()
         awaitFrame()
 
-        val setTextAction = target.config.getOrNull(SemanticsActions.SetText)?.action
-        if (setTextAction != null) {
-            val existing = target.config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty()
-            val separator = if (existing.isNotEmpty() && !existing.last().isWhitespace()) " " else ""
-            val updated = existing + separator + text
-            if (setTextAction.invoke(AnnotatedString(updated))) {
-                awaitFrame()
-                return DoorReply.Ack
-            }
-        }
-
         val insertAction = target.config.getOrNull(SemanticsActions.InsertTextAtCursor)?.action
         if (insertAction != null && insertAction.invoke(AnnotatedString(text))) {
             awaitFrame()
             return DoorReply.Ack
+        }
+
+        val setTextAction = target.config.getOrNull(SemanticsActions.SetText)?.action
+        if (setTextAction != null) {
+            val existing = target.config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty()
+            if (setTextAction.invoke(AnnotatedString(existing + text))) {
+                awaitFrame()
+                return DoorReply.Ack
+            }
         }
         return DoorReply.Error("failed to paste into $identifier")
     }

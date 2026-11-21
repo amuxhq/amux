@@ -1170,9 +1170,13 @@ async fn mid_merge_the_snapshot_holds_the_markers() {
         text.contains("<<<<<<<") && text.contains(">>>>>>>"),
         "{text}"
     );
+    // The snapshot holds the file as git stores it: where git checks text
+    // out with CRLF (Git for Windows' own default), it is stored with LF.
     assert_eq!(
         text,
-        std::fs::read_to_string(root.join("base.txt")).unwrap()
+        std::fs::read_to_string(root.join("base.txt"))
+            .unwrap()
+            .replace("\r\n", "\n")
     );
     assert!(
         !snapshot::moved(

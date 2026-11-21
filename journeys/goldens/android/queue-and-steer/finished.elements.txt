@@ -1,6 +1,6 @@
 shell |  |  | 0,0,411,923
 screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,600
+chat.feed |  |  | 0,119,411,572
 chat.row.<id> |  |  | 16,131,379,52
 chat.row.kind.prompt |  |  | 16,131,379,40
 markdown.root | Run the soak. |  | 283,141,98,20
@@ -17,8 +17,8 @@ chat.row.kind.prose |  |  | 16,347,379,20
 markdown.root | The run finished. |  | 16,347,379,20
 chat.row.turn:1 | Worked for <t> |  | 16,379,379,28
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Dictate, Send |  | 12,728,387,164
-chat.field | Reply |  | 28,742,355,20
+chat.composer | Reply, Attach, Dictate, Send |  | 12,699,387,192
+chat.field | Reply |  | 28,714,355,48
 chat.controls | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,355,48
 chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,196,48
 chat.attach | Attach |  | 28,831,48,48
@@ -26,5 +26,5 @@ chat.dictate | Dictate |  | 283,831,48,48
 chat.send | Send |  | 335,831,48,48 (disabled)
 chat.topBar | Back, worker, /p/t/a/n/d/work · desk, Open Overview, worker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
 nav.back | Back |  | 4,62,48,48
-chat.title | worker, /p/t/a/n/d/work · desk, Open Overview, worker, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.title | worker, /p/t/a/n/d/work · desk, Open Overview, worker, /p/t/a/n/d/work · desk |  | 56,62,299,48
 chat.more | More Options |  | 359,62,48,48

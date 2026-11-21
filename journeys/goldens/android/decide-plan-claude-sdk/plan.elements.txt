@@ -16,5 +16,5 @@ ask.approve | Approve |  | 28,827,173,48
 ask.choice.2 | Send back… |  | 210,827,174,48
 chat.topBar | Back, planner, /p/t/a/n/d/work · desk, Open Overview, planner, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
 nav.back | Back |  | 4,62,48,48
-chat.title | planner, /p/t/a/n/d/work · desk, Open Overview, planner, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.title | planner, /p/t/a/n/d/work · desk, Open Overview, planner, /p/t/a/n/d/work · desk |  | 56,62,299,48
 chat.more | More Options |  | 359,62,48,48

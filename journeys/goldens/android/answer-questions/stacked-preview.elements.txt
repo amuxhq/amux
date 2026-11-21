@@ -24,5 +24,5 @@ ask.skip | Skip |  | 210,767,174,48
 ask.reply | Reply instead |  | 28,827,110,48
 chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
 nav.back | Back |  | 4,62,48,48
-chat.title | asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.title | asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk |  | 56,62,299,48
 chat.more | More Options |  | 359,62,48,48

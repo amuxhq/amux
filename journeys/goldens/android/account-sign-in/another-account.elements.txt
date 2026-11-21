@@ -15,9 +15,9 @@ settings.notifications | Notifications, Not enabled, Background push delivery is
 settings.notifications.status | Not enabled |  | 290,704,90,20
 settings.notifications.action | Enable Notifications |  | 32,787,347,48
 settings.privacy.share-usage | Share Usage Counts, Counts and choices, never what you type, your code, or file names. |  | 16,895,379,4
-settings.privacy.share-usage.switch |  |  | 0,0,0,0
+settings.privacy.share-usage.switch | Share Usage Counts |  | 0,0,0,0
 settings.privacy.auto-reports | Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 0,0,0,0
-settings.privacy.auto-reports.switch |  |  | 0,0,0,0
+settings.privacy.auto-reports.switch | Automatic Reports |  | 0,0,0,0
 settings.diagnostics.report | Report a Problem |  | 0,0,0,0
 settings.diagnostics.export | Export Diagnostics |  | 0,0,0,0
 settings.diagnostics.support | Contact Support |  | 0,0,0,0

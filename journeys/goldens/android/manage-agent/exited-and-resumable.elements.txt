@@ -1,6 +1,6 @@
 shell |  |  | 0,0,411,923
 screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,571
+chat.feed |  |  | 0,119,411,542
 chat.row.<id> |  |  | 16,131,379,52
 chat.row.kind.prompt |  |  | 16,131,379,40
 markdown.root | Say hello. |  | 313,141,69,20
@@ -9,9 +9,9 @@ chat.row.kind.prose |  |  | 16,183,379,20
 markdown.root | Ready when you are. |  | 16,183,379,20
 chat.row.turn:1 | Worked for <t> |  | 16,215,379,28
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Dictate, Resume |  | 12,698,387,194
-chat.exited | Settled, desk |  | 28,710,355,20
-chat.field | Reply |  | 28,742,355,20
+chat.composer | Reply, Attach, Dictate, Resume |  | 12,670,387,222
+chat.exited | Settled, desk |  | 28,682,355,20
+chat.field | Reply |  | 28,714,355,48
 chat.controls | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,355,48
 chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,196,48
 chat.attach | Attach |  | 28,831,48,48
@@ -19,5 +19,5 @@ chat.dictate | Dictate |  | 237,831,48,48
 chat.resume | Resume |  | 290,831,94,48
 chat.topBar | Back, helper, Settled, Open Overview, helper, Settled, More Options |  | 0,0,411,119
 nav.back | Back |  | 4,62,48,48
-chat.title | helper, Settled, Open Overview, helper, Settled |  | 56,63,299,46
+chat.title | helper, Settled, Open Overview, helper, Settled |  | 56,62,299,48
 chat.more | More Options |  | 359,62,48,48

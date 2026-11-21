@@ -25,7 +25,7 @@ use acp_protocol::elicitation::CreateElicitationResponse;
 use acp_protocol::session::SessionConfigOption;
 use acp_protocol::{
     AgentMessage, AgentNotification, AgentRequest, ClientMessage, ClientNotification,
-    ClientRequest, ClientResponse, ContentBlock, RequestId, SessionUpdate,
+    ClientRequest, ClientResponse, ContentBlock, RequestId, SessionUpdate, xai,
 };
 use base64::Engine as _;
 use serde::Deserialize;
@@ -56,6 +56,8 @@ enum Asked {
     Permission,
     Form,
     Link,
+    /// Grok's questions, to read the labels it was answered with by.
+    Question(Vec<xai::Question>),
 }
 
 fn key(id: &RequestId) -> String {
@@ -172,6 +174,20 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     if let Some(what) = asked_for(line) {
                         asks += 1;
                         asked.insert(key(&id), (what, super::ask_key(asks)));
+                    }
+                }
+                Ok(AgentMessage::Extension { extension, .. })
+                    if extension.method == xai::ASK_USER_QUESTION =>
+                {
+                    if let (Some(id), Ok(request)) = (
+                        extension.id,
+                        serde_json::from_value::<xai::AskUserQuestionRequest>(extension.params),
+                    ) {
+                        asks += 1;
+                        asked.insert(
+                            key(&id),
+                            (Asked::Question(request.questions), super::ask_key(asks)),
+                        );
                     }
                 }
                 Ok(AgentMessage::Notification {
@@ -329,6 +345,25 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     ));
                 }
             }
+            ClientMessage::ExtensionAnswer {
+                id,
+                answer: xai::ExtensionAnswer::AskUserQuestion(answer),
+                ..
+            } => {
+                let Some((Asked::Question(questions), ask_key)) = asked.remove(&key(&id)) else {
+                    continue;
+                };
+                if let Some(answers) = question_answer(&questions, &answer) {
+                    prompts += 1;
+                    push(input(
+                        format!("p{process}-{prompts}"),
+                        acp_input::Of::Answer(AcpAnswer {
+                            ask_key,
+                            of: Some(acp_answer::Of::Question(answers)),
+                        }),
+                    ));
+                }
+            }
             // Refusals of the agent's requests, which the interpreter makes
             // itself, and anything else the client wrote.
             _ => {}
@@ -339,6 +374,46 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
     }
     events.push(Event::ProviderExit { code: Some(0) });
     Ok(events)
+}
+
+/// The person's answers to Grok's questions as the client sent them: each
+/// label picked by its place, other words as typed, and a question left out
+/// skipped. None for an answer the interpreter sends itself (cancelled) or
+/// one no person's answer stands for.
+fn question_answer(
+    questions: &[xai::Question],
+    answer: &xai::AskUserQuestionResponse,
+) -> Option<wire::QuestionAnswer> {
+    let given = match answer.outcome {
+        xai::QuestionOutcome::Accepted => answer.answers.clone().unwrap_or_default(),
+        xai::QuestionOutcome::SkipInterview => BTreeMap::new(),
+        _ => return None,
+    };
+    let answers = questions
+        .iter()
+        .map(|question| {
+            let said = match given.get(&question.question) {
+                None => Vec::new(),
+                Some(xai::QuestionAnswer::One(one)) => vec![one.clone()],
+                Some(xai::QuestionAnswer::Many(many)) => many.clone(),
+            };
+            let mut response = wire::QuestionResponse::default();
+            let mut other = Vec::new();
+            for said in said {
+                match question
+                    .options
+                    .iter()
+                    .position(|option| option.label == said)
+                {
+                    Some(at) => response.selected.push(at as u32),
+                    None => other.push(said),
+                }
+            }
+            response.other = (!other.is_empty()).then(|| other.join(", "));
+            response
+        })
+        .collect();
+    Some(wire::QuestionAnswer { answers })
 }
 
 /// What a line of the agent's asks the person for, if it is an ask.

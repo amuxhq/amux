@@ -33,6 +33,9 @@ use acp_protocol::session::{
     SessionConfigOption, SessionConfigOptionCategory, SessionModeState, SessionModelState,
 };
 use acp_protocol::update::ToolKind;
+use acp_protocol::xai::{
+    AskUserQuestionResponse, ExtensionAnswer, QuestionAnswer, QuestionOutcome,
+};
 use acp_protocol::{
     ClientMessage, ClientNotification, ClientRequest, ClientResponse, ContentBlock, Empty, Extra,
     RequestId, RpcError,
@@ -160,6 +163,12 @@ pub struct Quirks {
     /// How the agent names a call to a tool server's tool, by which a call
     /// to amux's own server is told from the rest.
     pub tool_naming: ToolNaming,
+    /// The agent's question tool asks outside ACP, with Grok's
+    /// `_x.ai/ask_user_question`: questions with options, answered by what
+    /// was picked or typed under each question's text
+    /// ([`acp_protocol::xai`]). Seen in `grok-question`; the answer's shape
+    /// is what Grok took when answered live.
+    pub xai_questions: bool,
 }
 
 /// How an agent names a tool server's tool on its calls. ACP gives a call
@@ -238,6 +247,7 @@ pub fn quirks(agent: &str) -> Quirks {
             signed_in_method: Some("cached_token"),
             offers_in_initialize: true,
             tool_naming: ToolNaming::DoubleUnderscore,
+            xai_questions: true,
             ..Quirks::default()
         },
         "opencode" => Quirks {
@@ -624,6 +634,7 @@ fn work_item(ask: &AcpAsk, closed: Option<wire::AskClosed>) -> Option<AskItem> {
     let asked = match &ask.body {
         Some(acp_ask::Body::Form(form)) => wire_ask_item::Ask::Form(form.clone()),
         Some(acp_ask::Body::Link(link)) => wire_ask_item::Ask::Link(link.clone()),
+        Some(acp_ask::Body::Question(question)) => wire_ask_item::Ask::Question(question.clone()),
         Some(acp_ask::Body::Permission(_)) | None => return None,
     };
     let item = ask_item::opened(asked);
@@ -838,6 +849,10 @@ impl State {
 
     /// Answers the agent's request an ask key names, once.
     fn respond(&mut self, emit: &mut Emit, key: &str, response: ClientResponse) {
+        self.respond_as(emit, key, Response::Acp(response));
+    }
+
+    fn respond_as(&mut self, emit: &mut Emit, key: &str, response: Response) {
         let Some(id) = self
             .ask_requests
             .remove(key)
@@ -845,7 +860,15 @@ impl State {
         else {
             return;
         };
-        self.write(emit, &ClientMessage::response(id, response));
+        let message = match response {
+            Response::Acp(response) => ClientMessage::response(id, response),
+            Response::Vendor(answer) => ClientMessage::ExtensionAnswer {
+                id,
+                answer,
+                extra: Extra::new(),
+            },
+        };
+        self.write(emit, &message);
     }
 
     /// A key for the ask the agent's request `id` opens. Keys are amux's
@@ -1316,15 +1339,7 @@ impl State {
         });
         self.write(emit, &ClientMessage::notification(cancel));
         for ask in self.shared.close_all_asks() {
-            let response = match &ask.body {
-                Some(acp_ask::Body::Permission(_)) => ClientResponse::RequestPermission(
-                    acp_protocol::client::RequestPermissionResponse::cancelled(),
-                ),
-                _ => ClientResponse::ElicitationCreate(CreateElicitationResponse::Cancel(
-                    Empty::default(),
-                )),
-            };
-            self.respond(emit, &ask.key, response);
+            self.respond_as(emit, &ask.key, cancelled(ask.body.as_ref()));
             self.dismiss(emit, &ask);
         }
     }
@@ -1518,28 +1533,40 @@ impl State {
                 self.emit_ask_item(emit, &ask, Some(ask_item::link_answered(sent.action)));
                 self.shared.accept(emit, id, false);
             }
+            (Some(acp_ask::Body::Question(asked)), acp_answer::Of::Question(answer)) => {
+                let (Some(response), Some(closed)) = (
+                    question_response(asked, &answer),
+                    ask_item::answered(asked, &answer),
+                ) else {
+                    return self.shared.reject(emit, id, Refusal::Unsupported);
+                };
+                if self.shared.answer(emit, id, &key).is_none() {
+                    return;
+                }
+                self.respond_as(emit, &key, Response::Vendor(response));
+                self.emit_ask_item(emit, &ask, Some(closed));
+                self.shared.accept(emit, id, false);
+            }
             // The person's words instead of an answer: the ask is
             // withdrawn and the turn cancelled, which closes every other ask
             // of it, and the words are the next prompt.
             (Some(body), acp_answer::Of::Reply(reply)) => {
-                let permission = matches!(body, acp_ask::Body::Permission(_));
                 if self.shared.answer(emit, id, &key).is_none() {
                     return;
                 }
-                let response = if permission {
-                    ClientResponse::RequestPermission(
-                        acp_protocol::client::RequestPermissionResponse::cancelled(),
-                    )
-                } else {
-                    ClientResponse::ElicitationCreate(CreateElicitationResponse::Cancel(
-                        Empty::default(),
-                    ))
-                };
-                self.respond(emit, &key, response);
-                if permission {
-                    self.decide(emit, &ask.item_key, wire::DecisionOutcome::Denied);
-                } else {
-                    self.emit_ask_item(emit, &ask, Some(ask_item::outcome(AskOutcome::Replied)));
+                self.respond_as(emit, &key, cancelled(Some(body)));
+                match body {
+                    acp_ask::Body::Permission(_) => {
+                        self.decide(emit, &ask.item_key, wire::DecisionOutcome::Denied)
+                    }
+                    acp_ask::Body::Question(asked) => {
+                        let closed = ask_item::replied(asked, &reply)
+                            .unwrap_or_else(|| ask_item::outcome(AskOutcome::Replied));
+                        self.emit_ask_item(emit, &ask, Some(closed));
+                    }
+                    _ => {
+                        self.emit_ask_item(emit, &ask, Some(ask_item::outcome(AskOutcome::Replied)))
+                    }
                 }
                 self.interrupt(emit);
                 let prompt = wire::PromptInput {
@@ -1637,6 +1664,73 @@ fn action_response(
             FormAction::Unspecified => return None,
         },
     )
+}
+
+/// What amux writes to answer one of the agent's requests: an ACP answer,
+/// or one to a vendor's own request.
+enum Response {
+    Acp(ClientResponse),
+    Vendor(ExtensionAnswer),
+}
+
+/// The answer that closes an ask nobody answered, as its request takes it.
+fn cancelled(body: Option<&acp_ask::Body>) -> Response {
+    match body {
+        Some(acp_ask::Body::Permission(_)) => Response::Acp(ClientResponse::RequestPermission(
+            acp_protocol::client::RequestPermissionResponse::cancelled(),
+        )),
+        Some(acp_ask::Body::Question(_)) => Response::Vendor(ExtensionAnswer::AskUserQuestion(
+            AskUserQuestionResponse::new(QuestionOutcome::Cancelled, None),
+        )),
+        _ => Response::Acp(ClientResponse::ElicitationCreate(
+            CreateElicitationResponse::Cancel(Empty::default()),
+        )),
+    }
+}
+
+/// Grok's answer to its questions: under each question's text, the label
+/// picked, the labels picked and any words typed of one that takes
+/// several, or the words typed. A question with nothing picked or typed is
+/// left out, which Grok reads as unanswered. With none answered the
+/// questions are declined (`cancelled`: Grok goes on with its best
+/// judgment); Grok's own skip is for its plan interview, and tells it to
+/// finish the plan. None when a pick names no option.
+fn question_response(
+    asked: &wire::QuestionAsk,
+    answer: &wire::QuestionAnswer,
+) -> Option<ExtensionAnswer> {
+    let mut answers = BTreeMap::new();
+    for (question, response) in asked.questions.iter().zip(&answer.answers) {
+        let mut said = response
+            .selected
+            .iter()
+            .map(|at| {
+                question
+                    .options
+                    .get(*at as usize)
+                    .map(|option| option.label.clone())
+            })
+            .collect::<Option<Vec<_>>>()?;
+        said.extend(
+            response
+                .other
+                .clone()
+                .filter(|other| !other.trim().is_empty()),
+        );
+        let answer = match (question.multi_select, said.len()) {
+            (_, 0) => continue,
+            (false, 1) => QuestionAnswer::One(said.remove(0)),
+            (false, _) => QuestionAnswer::One(said.join(", ")),
+            (true, _) => QuestionAnswer::Many(said),
+        };
+        answers.insert(question.question.clone(), answer);
+    }
+    let response = if answers.is_empty() {
+        AskUserQuestionResponse::new(QuestionOutcome::Cancelled, None)
+    } else {
+        AskUserQuestionResponse::new(QuestionOutcome::Accepted, Some(answers))
+    };
+    Some(ExtensionAnswer::AskUserQuestion(response))
 }
 
 impl Checkpoint for State {
@@ -1922,6 +2016,16 @@ fn describe_ask(ask: &AcpAsk) -> String {
         ),
         Some(acp_ask::Body::Form(form)) => format!("{}:form {}", ask.key, clip(&form.message, 40)),
         Some(acp_ask::Body::Link(link)) => format!("{}:link {}", ask.key, clip(&link.message, 40)),
+        Some(acp_ask::Body::Question(question)) => format!(
+            "{}:question {}",
+            ask.key,
+            question
+                .questions
+                .iter()
+                .map(|question| clip(&question.question, 40))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ),
         None => format!("{}:?", ask.key),
     }
 }

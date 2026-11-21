@@ -235,6 +235,7 @@ fn acp_ask(answer: &wire::AcpAnswer) -> Option<Ask> {
     use wire::acp_answer::Of;
     Some(match answer.of.as_ref()? {
         Of::Option(_) => Ask::Permission,
+        Of::Question(_) => Ask::Question,
         Of::Form(_) => Ask::Form,
         Of::Link(_) => Ask::Link,
         Of::Reply(_) => Ask::Question,

@@ -1225,7 +1225,12 @@ async fn question(cx: &Cx, notes: &mut Notes) -> Result<Verdict, String> {
     notes.add(format!("requests from the agent: {requests:?}"));
     close(conn, &session, notes).await;
     Ok(
-        if requests.iter().any(|method| method == "elicitation/create") {
+        if requests.iter().any(|method| {
+            matches!(
+                method.as_str(),
+                "elicitation/create" | "_x.ai/ask_user_question"
+            )
+        }) {
             Verdict::Pass
         } else {
             Verdict::Finding

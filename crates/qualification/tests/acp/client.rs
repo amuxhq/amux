@@ -235,7 +235,7 @@ impl Conn {
 
     /// What the client answers a request from the agent: permission by
     /// the scenario's policy, forms filled or declined, links accepted,
-    /// and anything else (the file-system and terminal methods the client
+    /// Grok's questions with their first options, and anything else (the file-system and terminal methods the client
     /// did not offer) refused as unknown.
     fn answer(&self, request: &Value) -> Value {
         let id = request["id"].clone();
@@ -261,6 +261,20 @@ impl Conn {
                 json!({"action": "accept", "content": fill(&params["requestedSchema"])})
             }
             "elicitation/create" => json!({"action": "decline"}),
+            // Grok's questions: each answered with its first option, by its
+            // label under the question's text.
+            "_x.ai/ask_user_question" => {
+                let answers: serde_json::Map<String, Value> = params["questions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|question| {
+                        let label = question["options"][0]["label"].clone();
+                        Some((question["question"].as_str()?.to_owned(), label))
+                    })
+                    .collect();
+                json!({"outcome": "accepted", "answers": answers})
+            }
             method => {
                 return json!({"jsonrpc": "2.0", "id": id, "error": {
                     "code": -32601, "message": format!("method not found: {method}"),

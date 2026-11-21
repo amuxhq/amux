@@ -12,6 +12,7 @@ use acp_protocol::update::{
 };
 use acp_protocol::{
     AgentMessage, AgentNotification, AgentRequest, ContentBlock, Extension, RequestId, RpcError,
+    xai,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -686,14 +687,22 @@ impl State {
         self.emit_ask_item(emit, &ask, None);
     }
 
-    /// A vendor's own method. A request is refused at once, so the agent
-    /// does not wait on amux for it: Grok's questions and tool-server
-    /// forms (`grok-question`, `grok-elicitation`) included, as the answer
-    /// it would take was never recorded. A notification on the known list
-    /// is dropped by name, Grok's compaction report aside; one not on it
-    /// is logged, so a new one is seen without being drawn.
+    /// A vendor's own method. Grok's questions open a question ask where
+    /// the agent's quirks say it asks that way (`grok-question`). Any other
+    /// request is refused at once, so the agent does not wait on amux for
+    /// it: Grok's tool-server forms (`grok-elicitation`) included, as the
+    /// answer they would take was never recorded. A notification on the
+    /// known list is dropped by name, Grok's compaction report aside; one
+    /// not on it is logged, so a new one is seen without being drawn.
     fn extension(&mut self, emit: &mut Emit, extension: Extension) {
         if let Some(id) = extension.id.clone() {
+            if extension.method == xai::ASK_USER_QUESTION
+                && self.quirks().xai_questions
+                && let Ok(request) =
+                    serde_json::from_value::<xai::AskUserQuestionRequest>(extension.params.clone())
+            {
+                return self.xai_question(emit, id, request);
+            }
             self.refuse_request(emit, id, &extension.method);
         }
         if extension.method == XAI_SESSION_NOTIFICATION
@@ -721,6 +730,61 @@ impl State {
                 ),
             );
         }
+    }
+
+    /// Grok's questions as a question ask: each with its options, one or
+    /// several to pick, and words of the person's own taken too, as Grok
+    /// takes them. One that comes while amux cancels the turn is answered
+    /// cancelled at once, as every open ask was.
+    fn xai_question(
+        &mut self,
+        emit: &mut Emit,
+        id: RequestId,
+        request: xai::AskUserQuestionRequest,
+    ) {
+        if self.cancelled {
+            self.asks_seen += 1;
+            let answer = xai::ExtensionAnswer::AskUserQuestion(xai::AskUserQuestionResponse::new(
+                xai::QuestionOutcome::Cancelled,
+                None,
+            ));
+            return self.write(
+                emit,
+                &acp_protocol::ClientMessage::ExtensionAnswer {
+                    id,
+                    answer,
+                    extra: acp_protocol::Extra::new(),
+                },
+            );
+        }
+        let questions = request
+            .questions
+            .into_iter()
+            .map(|question| wire::Question {
+                header: String::new(),
+                question: question.question,
+                multi_select: question.multi_select.flatten().unwrap_or(false),
+                options: question
+                    .options
+                    .into_iter()
+                    .map(|option| wire::QuestionOption {
+                        label: option.label,
+                        description: option.description.unwrap_or_default(),
+                        ..Default::default()
+                    })
+                    .collect(),
+                allow_other: true,
+                secret: false,
+            })
+            .collect();
+        self.work_ask(
+            emit,
+            &id,
+            acp_ask::Body::Question(wire::QuestionAsk {
+                questions,
+                provider_dialog: false,
+            }),
+        );
     }
 
     fn unknown(&mut self, emit: &mut Emit, unknown: acp_protocol::Unknown) {

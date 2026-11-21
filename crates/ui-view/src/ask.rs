@@ -923,7 +923,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
 }
 
 /// An ACP agent's ask: a permission with exactly the options it offered, in
-/// its order, or a form or link. Its refusal (the one-time one of a
+/// its order, a form or link, or questions its own tool put. Its refusal (the one-time one of a
 /// permission, a form's or link's decline) takes the person's words, which
 /// go instead of answering (see [`with_note`]).
 fn acp(state: &SessionState, ask: &wire::AcpAsk) -> (AskBody, Vec<Choice>) {
@@ -935,6 +935,11 @@ fn acp(state: &SessionState, ask: &wire::AcpAsk) -> (AskBody, Vec<Choice>) {
         })
     };
     let (body, mut choices) = match &ask.body {
+        // Answered question by question, as Claude's and Codex's are.
+        Some(Body::Question(q)) => (
+            AskBody::Question(q.questions.iter().map(question).collect()),
+            vec![],
+        ),
         Some(Body::Permission(permission)) => {
             use wire::AcpPermissionKind as Kind;
             let choices = permission
@@ -1154,8 +1159,11 @@ pub fn question_answer(card: &AskCard, given: &[QuestionResponse]) -> Answer {
             of: Some(wire::codex_answer::Of::Question(answers)),
             ..Default::default()
         }),
-        // No ACP ask is a question: such an answer sends nothing.
-        wire::Kind::Acp | wire::Kind::Unspecified => Answer::Acp(wire::AcpAnswer::default()),
+        wire::Kind::Acp => Answer::Acp(wire::AcpAnswer {
+            of: Some(wire::acp_answer::Of::Question(answers)),
+            ..Default::default()
+        }),
+        wire::Kind::Unspecified => Answer::Acp(wire::AcpAnswer::default()),
         wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => Answer::Claude(ClaudeAnswer {
             of: Some(claude_answer::Of::Question(answers)),
             ..Default::default()

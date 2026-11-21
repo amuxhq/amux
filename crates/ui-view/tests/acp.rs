@@ -295,8 +295,6 @@ fn a_permission_offers_exactly_the_agents_options_and_a_reply_instead() {
     );
     let reply = reply_answer(&card, "talk first", &[]);
     assert_eq!(instead(sent(&reply, "").of), "talk first");
-    // No ACP ask is a question, so a question's answer sends nothing.
-    assert_eq!(answer_input(&card, &question_answer(&card, &[]), ""), None);
 }
 
 /// Model, thought level and mode are picked from what the agent offers and

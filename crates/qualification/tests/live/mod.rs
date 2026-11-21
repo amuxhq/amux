@@ -2021,6 +2021,7 @@ fn ask_token(ask: &OpenAsk) -> String {
             Some(wire::acp_ask::Body::Permission(_)) => "permission",
             Some(wire::acp_ask::Body::Form(_)) => "form",
             Some(wire::acp_ask::Body::Link(_)) => "link",
+            Some(wire::acp_ask::Body::Question(_)) => "question",
             None => "empty",
         },
     }

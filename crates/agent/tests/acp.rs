@@ -5,7 +5,8 @@
 //! amux's own tools allowed without asking.
 
 use agent::ExitCause;
-use provider_fakes::{AcpAgent, Call, Offer, Outcome, Step, ToolServerCall};
+use provider_fakes::script::Question;
+use provider_fakes::{AcpAgent, Ask, Call, Offer, Outcome, Step, ToolServerCall};
 use support::*;
 use wire::Kind;
 
@@ -162,6 +163,65 @@ async fn a_permission_is_asked_and_answered() {
         .find(|line| line["result"]["outcome"]["outcome"] == "selected")
         .expect("the permission's answer");
     assert_eq!(answered["result"]["outcome"]["optionId"], "allow");
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+/// Grok's questions come in its own request rather than ACP's; the agent
+/// raises them as a question ask, and the labels picked go back in the
+/// answer Grok reads, keyed by each question's text.
+#[tokio::test(flavor = "multi_thread")]
+async fn groks_questions_are_asked_and_answered_by_label() {
+    let agent = Agent::start(acp(
+        "grok",
+        vec![
+            Step::Ask(Ask::Question {
+                questions: vec![Question {
+                    question: "Tea or coffee?".into(),
+                    header: String::new(),
+                    options: vec!["Tea".into(), "Coffee".into()],
+                    multi_select: false,
+                    other: false,
+                    secret: false,
+                }],
+            }),
+            Step::TurnEnd,
+        ],
+    ))
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "ask me").await, Verdict::Accepted);
+    agent
+        .wait("the ask opens", |log| !log.ask_keys().is_empty())
+        .await;
+    let ask = agent.log().ask_keys()[0].clone();
+    let answer = input(
+        b"a1",
+        wire::acp_input::Of::Answer(wire::AcpAnswer {
+            ask_key: ask,
+            of: Some(wire::acp_answer::Of::Question(wire::QuestionAnswer {
+                answers: vec![wire::QuestionResponse {
+                    selected: vec![1],
+                    ..Default::default()
+                }],
+            })),
+        }),
+    );
+    assert_eq!(daemon.input(answer).await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    assert!(agent.log().ask_keys().is_empty());
+    let answered = agent
+        .provider_input()
+        .into_iter()
+        .find(|line| line["result"]["outcome"] == "accepted")
+        .expect("the questions' answer");
+    assert_eq!(
+        answered["result"]["answers"],
+        serde_json::json!({"Tea or coffee?": "Coffee"})
+    );
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }

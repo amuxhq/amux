@@ -86,7 +86,7 @@ get exactly the choices it offers.
 A message you send while an agent works waits its turn, and you can withdraw
 it until then. Only Antigravity takes a waiting message into the turn it's
 running, so only Antigravity offers Send Now. When an agent asks you a
-question with set answers, you pick one.
+question with set answers, you pick one, or several where the agent allows.
 
 Some agents can't reopen a conversation in a new process. Such an agent
 never suspends. When its process ends, for example because the computer

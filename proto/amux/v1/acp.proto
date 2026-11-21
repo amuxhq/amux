@@ -184,6 +184,11 @@ message AcpAsk {
     AcpPermission permission = 3;
     FormAsk form = 4;
     LinkAsk link = 5;
+    // Questions with options to pick from, put by an agent's own question
+    // tool where it has one outside ACP (Grok's `_x.ai/ask_user_question`).
+    // A build without it refused such a request, so the agent saw its tool
+    // fail and no ask opened.
+    QuestionAsk question = 6;
   }
 }
 
@@ -248,6 +253,9 @@ message AcpAnswer {
     // The person's words instead: the turn is cancelled, which closes the
     // ask, and the words go as the next prompt.
     ReplyInstead reply = 5;
+    // A question ask's answers, one per question in its order; a question
+    // with nothing picked or typed is skipped.
+    QuestionAnswer question = 6;
   }
 }
 

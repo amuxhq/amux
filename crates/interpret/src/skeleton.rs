@@ -405,7 +405,17 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
         "status",
         &["pending", "in_progress", "completed", "failed", "cancelled"],
     ),
-    ("outcome", &["selected", "cancelled"]),
+    // A permission's outcome; Grok's questions' (`grok-question`).
+    (
+        "outcome",
+        &[
+            "selected",
+            "cancelled",
+            "accepted",
+            "chat_about_this",
+            "skip_interview",
+        ],
+    ),
     (
         "stopReason",
         &[
@@ -1089,7 +1099,7 @@ fn kept(subtree: &str) -> &'static [&'static str] {
 
 /// The fields of a vendor's own ACP method that the ACP interpreter reads,
 /// by method and by place in the line, kept as names though the protocol
-/// crate leaves a vendor's params untyped: Grok's compaction report, told
+/// crate leaves this vendor method's params untyped: Grok's compaction report, told
 /// by its update's tag, with its token counts (`grok-compact`).
 const ACP_VENDOR_FIELDS: &[(&str, &[Place])] = &[(
     "_x.ai/session_notification",

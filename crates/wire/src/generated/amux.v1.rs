@@ -5419,7 +5419,7 @@ pub struct AcpAsk {
     /// AskItem.
     #[prost(string, tag = "2")]
     pub item_key: ::prost::alloc::string::String,
-    #[prost(oneof = "acp_ask::Body", tags = "3, 4, 5")]
+    #[prost(oneof = "acp_ask::Body", tags = "3, 4, 5, 6")]
     pub body: ::core::option::Option<acp_ask::Body>,
 }
 /// Nested message and enum types in `AcpAsk`.
@@ -5432,6 +5432,12 @@ pub mod acp_ask {
         Form(super::FormAsk),
         #[prost(message, tag = "5")]
         Link(super::LinkAsk),
+        /// Questions with options to pick from, put by an agent's own question
+        /// tool where it has one outside ACP (Grok's `_x.ai/ask_user_question`).
+        /// A build without it refused such a request, so the agent saw its tool
+        /// fail and no ask opened.
+        #[prost(message, tag = "6")]
+        Question(super::QuestionAsk),
     }
 }
 impl ::prost::Name for AcpAsk {
@@ -5534,7 +5540,7 @@ pub struct AcpAnswer {
     /// AcpAsk.key.
     #[prost(string, tag = "1")]
     pub ask_key: ::prost::alloc::string::String,
-    #[prost(oneof = "acp_answer::Of", tags = "2, 3, 4, 5")]
+    #[prost(oneof = "acp_answer::Of", tags = "2, 3, 4, 5, 6")]
     pub of: ::core::option::Option<acp_answer::Of>,
 }
 /// Nested message and enum types in `AcpAnswer`.
@@ -5552,6 +5558,10 @@ pub mod acp_answer {
         /// ask, and the words go as the next prompt.
         #[prost(message, tag = "5")]
         Reply(super::ReplyInstead),
+        /// A question ask's answers, one per question in its order; a question
+        /// with nothing picked or typed is skipped.
+        #[prost(message, tag = "6")]
+        Question(super::QuestionAnswer),
     }
 }
 impl ::prost::Name for AcpAnswer {

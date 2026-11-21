@@ -1188,3 +1188,106 @@ fn a_forms_titled_choices_are_offered_by_title_and_sent_as_constants() {
             "result": {"action": "accept", "content": {"q1": "2"}}})]
     );
 }
+
+/// Grok's question request, two questions, the first taking several.
+fn grok_questions(id: u64) -> Event {
+    rpc(
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "_x.ai/ask_user_question",
+        "params": {"sessionId": "s1", "toolCallId": "c1", "mode": "default", "questions": [
+            {"question": "Which drinks?", "multiSelect": true,
+                "options": [{"label": "Tea"}, {"label": "Coffee"}, {"label": "Juice"}]},
+            {"question": "Hot or cold?", "multiSelect": null,
+                "options": [{"label": "Hot"}, {"label": "Cold"}]}]}}),
+    )
+}
+
+fn answer_questions(ask: &str, answers: Vec<wire::QuestionResponse>) -> Event {
+    Event::Input(wire::Input::new(
+        b"q".to_vec(),
+        wire::AcpInput {
+            of: Some(wire::acp_input::Of::Answer(wire::AcpAnswer {
+                ask_key: ask.to_owned(),
+                of: Some(wire::acp_answer::Of::Question(wire::QuestionAnswer {
+                    answers,
+                })),
+            })),
+        },
+    ))
+}
+
+/// Grok's questions are a question ask; the answer names the labels picked,
+/// a list for a question taking several, and the words typed for one
+/// answered in the person's own words.
+#[test]
+fn groks_questions_are_answered_by_label_and_typed_words() {
+    let mut state = opened("grok", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "ask me"));
+    Acp::step(&mut state, grok_questions(4));
+    let asked = &state.shared().asks().open_asks()[0];
+    let Some(wire::acp_ask::Body::Question(question)) = &asked.body else {
+        panic!("not a question: {asked:?}");
+    };
+    assert!(question.questions[0].multi_select);
+    assert!(!question.questions[1].multi_select);
+    assert!(
+        question
+            .questions
+            .iter()
+            .all(|question| question.allow_other)
+    );
+    let key = asked.key.clone();
+    let answered = Acp::step(
+        &mut state,
+        answer_questions(
+            &key,
+            vec![
+                wire::QuestionResponse {
+                    selected: vec![0, 2],
+                    ..Default::default()
+                },
+                wire::QuestionResponse {
+                    other: Some("lukewarm".into()),
+                    ..Default::default()
+                },
+            ],
+        ),
+    );
+    assert_eq!(
+        writes(&answered.effects),
+        vec![serde_json::json!({"jsonrpc": "2.0", "id": 4, "result": {
+            "outcome": "accepted",
+            "answers": {"Which drinks?": ["Tea", "Juice"], "Hot or cold?": "lukewarm"}}})]
+    );
+    assert!(state.shared().asks().is_empty());
+}
+
+/// Every question skipped is a decline, which Grok goes on from with its
+/// own judgment.
+#[test]
+fn groks_questions_all_skipped_are_declined() {
+    let mut state = opened("grok", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "ask me"));
+    Acp::step(&mut state, grok_questions(4));
+    let key = state.shared().asks().open_asks()[0].key.clone();
+    let answered = Acp::step(
+        &mut state,
+        answer_questions(&key, vec![wire::QuestionResponse::default(); 2]),
+    );
+    assert_eq!(
+        writes(&answered.effects),
+        vec![serde_json::json!({"jsonrpc": "2.0", "id": 4, "result": {"outcome": "cancelled"}})]
+    );
+}
+
+/// Grok's request is Grok's: another agent sending it is told the method
+/// is not found, and nothing opens.
+#[test]
+fn groks_question_request_is_refused_from_another_agent() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "ask me"));
+    let asked = Acp::step(&mut state, grok_questions(4));
+    let written = writes(&asked.effects);
+    assert_eq!(written.len(), 1, "{written:?}");
+    assert_eq!(written[0]["error"]["code"], -32601);
+    assert!(state.shared().asks().is_empty());
+}

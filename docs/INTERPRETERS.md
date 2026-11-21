@@ -1241,6 +1241,7 @@ beyond ACP.
 | `grok` | The turn's tokens are in the prompt answer's `_meta` | `grok-prompt` |
 | `grok` | `initialize` lists the `cached_token` auth method only while signed in | `grok-catalogue`, `grok-signed_out` |
 | `grok` | `initialize`'s `_meta` lists the models with their efforts, and the commands, so the host's copy has them without a session | `grok-catalogue` |
+| `grok` | Its question tool asks in Grok's own `_x.ai/ask_user_question`, answered with the labels picked (or the words typed) by question text | `grok-question` |
 | each | How a call to a tool server's tool is named: `mcp_<server>_<tool>` and `Run …` (`antigravity`), `<server>_<tool>` (`opencode`), `<server>__<tool>` in `use_tool`'s input (`grok`); an added agent any of these | `agy-elicitation`, `opencode-elicitation`, `grok-elicitation` |
 
 What is generic, though only one agent shows it: a setting change's
@@ -1362,13 +1363,21 @@ copies a file the agent names to where the agent reads unasked.
 are a `oneOf` of constants with titles (as Antigravity's questions are,
 `agy-question`) is offered as a choice of the titles, and the answer sends
 the agent the constant of the title picked, so no client reads such a field
-as typed text. Replying instead withdraws the ask, cancels the turn and
+as typed text. Grok's `_x.ai/ask_user_question` opens a question ask on
+the tool's row, one question per question it sends, each taking one answer
+or several as it says, with typed words allowed. The answer is Grok's own
+shape, `{"outcome": "accepted", "answers": {<question>: <label> | [<labels>]}}`,
+read from what Grok 1.0.92 accepted live since it is not published; a
+question nobody answered is left out, and an ask with every question
+skipped is answered `cancelled`, which Grok tells its model as declined.
+(Grok's `skip_interview` ends its plan interview, a different thing, and
+is never sent.) Replying instead withdraws the ask, cancels the turn and
 queues the words.
 
-**What is not read.** A vendor method (`_` prefix) that is a request is
-answered "method not found" at once, Grok's questions and tool-server forms
-included (`grok-question`, `grok-elicitation`), since the answer they would
-take was never recorded. A vendor notification on
+**What is not read.** A vendor method (`_` prefix) that is any other
+request is answered "method not found" at once, Grok's tool-server forms
+included (`grok-elicitation`, `_x.ai/mcp/elicit`), since the answer they
+would take was never recorded. A vendor notification on
 `acp_protocol::EXTENSIONS` is dropped by name, except Grok's automatic
 compaction report (`grok-compact`), which draws a compaction; one not on the
 list is logged and never drawn. Requests for files or terminals, which amux

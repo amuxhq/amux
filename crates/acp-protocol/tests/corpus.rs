@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use acp_protocol::xai::ExtensionAnswer;
 use acp_protocol::{AgentMessage, AgentResponse, ClientMessage, ClientResponse, RequestId};
 use serde_json::Value;
 
@@ -198,6 +199,10 @@ fn answered(line: &Line) -> Option<(RequestId, Option<Value>)> {
                     .map(|response| serde_json::to_value(response).expect("answers serialize"));
                 Some((id, result))
             }
+            ClientMessage::ExtensionAnswer { id, answer, .. } => Some((
+                id,
+                Some(serde_json::to_value(answer).expect("answers serialize")),
+            )),
             _ => None,
         }
     }
@@ -207,6 +212,9 @@ fn answered(line: &Line) -> Option<(RequestId, Option<Value>)> {
 fn reread(from_agent: bool, method: &str, result: &Value) -> Result<Value, String> {
     let answer = if from_agent {
         AgentResponse::strict_read(method, result)
+            .map(|answer| answer.map(|answer| serde_json::to_value(answer).unwrap()))
+    } else if method.starts_with('_') {
+        ExtensionAnswer::strict_read(method, result)
             .map(|answer| answer.map(|answer| serde_json::to_value(answer).unwrap()))
     } else {
         ClientResponse::strict_read(method, result)

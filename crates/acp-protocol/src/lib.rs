@@ -47,6 +47,7 @@ pub mod content;
 pub mod elicitation;
 pub mod session;
 pub mod update;
+pub mod xai;
 
 use std::fmt;
 
@@ -91,14 +92,14 @@ pub const ITEM_LISTS: &[&str] = &[];
 
 /// The extension methods agents are known to send, which [`strict`] accepts:
 /// each was seen in a recording of the agent named beside it. Their params
-/// are vendor data and stay untyped.
+/// are vendor data and stay untyped, except a request [`xai`] types.
 pub const EXTENSIONS: &[&str] = &[
     // Grok: its product announcements and settings, at start.
     "_x.ai/announcements/update",
     "_x.ai/settings/update",
-    // Grok: requests for the person, questions with options to pick and an
-    // MCP server's form, which a client that does not know them answers
-    // "method not found".
+    // Grok: requests for the person. Its questions with options to pick are
+    // typed in [`xai`]; an MCP server's form, whose answer was never
+    // recorded, a client that does not know it answers "method not found".
     "_x.ai/ask_user_question",
     "_x.ai/mcp/elicit",
     // Grok: its MCP servers starting, and each server's state.
@@ -386,6 +387,14 @@ pub enum ClientMessage {
         extension: Extension,
         extra: Extra,
     },
+    /// The answer to a vendor's request this crate types
+    /// ([`xai::ExtensionAnswer`]). Read only where the line is no answer to
+    /// an ACP request.
+    ExtensionAnswer {
+        id: RequestId,
+        answer: xai::ExtensionAnswer,
+        extra: Extra,
+    },
     /// Only [`decode_client`] produces this: a line amux would not write.
     Unknown(Unknown),
 }
@@ -522,11 +531,14 @@ pub fn fields(line: &[u8]) -> Option<Fields> {
             AgentMessage::Unknown(_) => return,
         };
         probe::heard_at("", extra.keys().cloned());
-        if let AgentMessage::Response {
-            result: Ok(result), ..
-        } = &message
-        {
-            AgentResponse::read_as_each(result);
+        match &message {
+            AgentMessage::Response {
+                result: Ok(result), ..
+            } => AgentResponse::read_as_each(result),
+            AgentMessage::Extension { extension, .. } => {
+                xai::read_params(&extension.method, &extension.params);
+            }
+            _ => {}
         }
     })
 }
@@ -540,7 +552,8 @@ pub fn client_fields(line: &[u8]) -> Option<Fields> {
                 ClientMessage::Request { extra, .. }
                 | ClientMessage::Response { extra, .. }
                 | ClientMessage::Notification { extra, .. }
-                | ClientMessage::Extension { extra, .. },
+                | ClientMessage::Extension { extra, .. }
+                | ClientMessage::ExtensionAnswer { extra, .. },
             ) => extra,
             Ok(ClientMessage::Unknown(_)) => return envelope_only(line),
             Err(_) => return,
@@ -593,6 +606,11 @@ pub fn encode(message: &ClientMessage) -> Vec<u8> {
             notification.params(),
         ),
         ClientMessage::Extension { extension, extra } => extension_envelope(extension, extra),
+        ClientMessage::ExtensionAnswer { id, answer, extra } => {
+            let mut object = envelope(extra, None, Some(id), Value::Null);
+            object.insert("result".into(), to_value(answer));
+            object
+        }
         ClientMessage::Unknown(unknown) => return unknown.raw.get().as_bytes().to_vec(),
     };
     serde_json::to_vec(&object).expect("a JSON object serializes")
@@ -885,6 +903,21 @@ fn decode_client_object(
             })
         }
         (None, Some(id)) => {
+            // An answer to a vendor's request is one that reads exactly as
+            // a vendor answer this crate types and as none of ACP's, which
+            // a tolerant read alone would take for an empty answer.
+            let vendor = rest
+                .get("result")
+                .filter(|result| macros::strictly(|| ClientResponse::deserialize(*result)).is_err())
+                .and_then(|result| macros::strictly(|| xai::ExtensionAnswer::first(result)).ok());
+            if let Some(answer) = vendor {
+                rest.remove("result");
+                if !params.is_null() {
+                    rest.insert("params".into(), params);
+                }
+                let extra = envelope_extra(&raw, None, rest)?;
+                return Ok(ClientMessage::ExtensionAnswer { id, answer, extra });
+            }
             let response = answer(&raw, &mut rest, params, |result| {
                 serde_json::from_value::<ClientResponse>(result).map_err(|error| {
                     unknown(

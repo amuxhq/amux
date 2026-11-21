@@ -44,7 +44,8 @@ message that names a provider. Claude and Codex have provider ids too (`claude`,
 closed list of providers.
 
 amux offers an agent no file-system and no terminal client capabilities, so the agent does its own I/O. It does
-offer elicitation forms and links, which become asks.
+offer elicitation forms and links, which become asks, and Grok's own question request
+(`_x.ai/ask_user_question`), which becomes a question ask.
 
 ## Quirks by agent id
 

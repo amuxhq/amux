@@ -173,6 +173,7 @@ pub(crate) fn acp_ask(asked: &wire::AcpAsk, more: u32, _plan_title: &str) -> Not
         Some(acp_ask::Body::Permission(permission)) => other(&permission.title),
         Some(acp_ask::Body::Form(form)) => from_server(&form.server, &form.message),
         Some(acp_ask::Body::Link(link)) => from_server(&link.server, &link.message),
+        Some(acp_ask::Body::Question(asked)) => question(asked),
         None => other(""),
     };
     wants_ask(&asked.key, wants, "", more)

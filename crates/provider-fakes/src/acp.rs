@@ -8,8 +8,8 @@
 //! prompt plays the script's steps up to its next `turn_end` (or `stop`)
 //! and is answered with the stop reason. Tool calls are `session/update`s
 //! announcing the call and its progress; asks are the agent's requests
-//! (`session/request_permission`, `elicitation/create`) that hold the turn
-//! until the host answers.
+//! (`session/request_permission`, `elicitation/create`, and Grok's own
+//! `_x.ai/ask_user_question`) that hold the turn until the host answers.
 //!
 //! Where the recorded agents differ, the script's [`AcpAgent`] chooses:
 //! what the agent offers at `initialize` (reopening a session, images),
@@ -38,9 +38,10 @@ use crate::script::{
 };
 use crate::{DRIFT_EXIT, Mode};
 
-/// The asks an ACP agent raises: a permission request, and the agent's own
-/// question as a form (Antigravity's, `agy-question`).
-pub const RAISES: &[&str] = &["permission", "form"];
+/// The asks an ACP agent raises: a permission request, the agent's own
+/// question as a form (Antigravity's, `agy-question`), and its questions
+/// through Grok's own request (`grok-question`).
+pub const RAISES: &[&str] = &["permission", "form", "question"];
 /// The steps only an ACP agent plays.
 pub const PLAYS: &[&str] = &["call", "tool_server", "context", "title", "stop"];
 /// The version `agentInfo` reports when the script names none.
@@ -774,6 +775,7 @@ impl Engine {
                 Step::Ask(Ask::Form {
                     message, schema, ..
                 }) => self.form(&message, &schema).await,
+                Step::Ask(Ask::Question { questions }) => self.questions(&questions).await,
                 Step::Call(call) => self.call(call, None).await,
                 Step::ToolServer(call) => self.call(server_call(call), None).await,
                 Step::Context { used, size } => {
@@ -1076,6 +1078,73 @@ impl Engine {
             .await;
         let status = if accepted { "completed" } else { "failed" };
         self.tool_update("tool_call_update", &base, status, json!({}))
+            .await;
+    }
+
+    /// Questions as Grok asks them: its question tool's call, whose
+    /// questions go to the client in Grok's own request and whose answer
+    /// is the picked labels by question (`grok-question`).
+    async fn questions(&mut self, questions: &[crate::script::Question]) {
+        self.next_call += 1;
+        let asked: Vec<Value> = questions
+            .iter()
+            .map(|question| {
+                let options: Vec<Value> = question
+                    .options
+                    .iter()
+                    .map(|option| json!({"description": option.description(), "label": option.label()}))
+                    .collect();
+                // Grok writes null for a question taking one answer.
+                let multi = question.multi_select.then_some(true);
+                json!({"multiSelect": multi, "options": options, "question": question.question})
+            })
+            .collect();
+        let base = json!({
+            "kind": "other",
+            "rawInput": {"questions": asked},
+            "title": "ask_user_question",
+            "toolCallId": format!("call-{}", self.next_call),
+        });
+        self.tool_update("tool_call", &base, "pending", json!({}))
+            .await;
+        // Grok's ids are numbers counted from 0.
+        let id = json!(self.next_request);
+        self.next_request += 1;
+        let mut params = json!({
+            "mode": "default",
+            "questions": asked,
+            "toolCallId": base["toolCallId"],
+        });
+        if let Some(session) = &self.session {
+            params["sessionId"] = json!(session.id);
+        }
+        self.send(&json!({"id": id, "jsonrpc": "2.0", "method": acp_protocol::xai::ASK_USER_QUESTION, "params": params}))
+            .await;
+        let answer = self.answer(&key(&id)).await;
+        if self.cancelled() || self.exit.is_some() {
+            return;
+        }
+        let result = answer
+            .map(|answer| answer["result"].clone())
+            .unwrap_or_default();
+        let (status, said) = if result["outcome"] == "accepted" {
+            let answers: Vec<String> = result["answers"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(question, answer)| format!("{question:?}={answer}"))
+                .collect();
+            let said = format!(
+                "User has answered your questions: {}. You can now continue with the user's answers in mind.",
+                answers.join(", ")
+            );
+            ("completed", said)
+        } else {
+            ("failed", "User declined to answer questions.".to_owned())
+        };
+        let done =
+            json!({"content": [{"type": "content", "content": {"type": "text", "text": said}}]});
+        self.tool_update("tool_call_update", &base, status, done)
             .await;
     }
 

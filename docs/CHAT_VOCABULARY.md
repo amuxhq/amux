@@ -267,6 +267,9 @@ agent says each one is:
 - **A form or a link the agent asks itself** is `Form` or `Link` named for the agent, with `Submit` or `OpenLink`
   and a `Decline` that takes words instead. A field whose answers are titled constants (`oneOf` of `const` and
   `title`) arrives as a choice of the titles, and the agent is sent the constant of the one picked.
+- **Grok's question tool** is an `AskBody::Question` card, as Claude's and Codex's are, and settles as a
+  `Questions` row: each question with its options, one answer or several as Grok says, and your own words allowed
+  for each. Skipping every question declines them, and Grok goes on with its own judgment.
 - **Session facts.** Usage has no windows or credits; settings are picks of the agent's models, efforts and modes.
   A new agent starts on the agent's own mode unless the person picks one: the agent marks none of its modes
   normal, so none is chosen for it.
@@ -287,7 +290,7 @@ Once settled, an ask leaves one of two things behind, because rows are one per i
   rather than guessed.
 - **An ask that is the work is its own row**, `RowKind::Ask(AskRow)`, which resolves in place: `Question`
   (Claude's question tool: its questions, then each `AnswerView` with the picks, what was typed and whether it was
-  hidden, whether it was skipped, and the note), `Questions` (Codex), `Plan` with its title, body, `PlanVerdict`, the permission an approval switched to (`mode`, `mode_name`) and send-back note, `Form` with the
+  hidden, whether it was skipped, and the note), `Questions` (Codex and Grok), `Plan` with its title, body, `PlanVerdict`, the permission an approval switched to (`mode`, `mode_name`) and send-back note, `Form` with the
   fields sent by their titles (the name where the form gives none), `Link`, `Grant` with what was `Granted` and for how long, and `Unanswerable`. Each carries a
   `Resolution`: `Open`, `Answered`, `Declined`, `Cancelled` or `Dismissed`.
 

@@ -646,6 +646,7 @@ pub fn acp_input(body: &[u8]) -> InputShape {
                 Some(Of::Form(_)) => "form",
                 Some(Of::Link(_)) => "link",
                 Some(Of::Reply(_)) => "reply",
+                Some(Of::Question(_)) => "question",
             };
             answer_of(answer.ask_key, arm)
         }

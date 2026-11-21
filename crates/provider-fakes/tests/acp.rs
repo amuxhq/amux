@@ -702,6 +702,41 @@ async fn a_form_asks_through_elicitation_and_goes_on_once_answered() {
     assert_eq!(said, ["Tea"]);
 }
 
+/// Questions go as Grok asks them, in its own request with a number for an
+/// id, and the call completes on the labels picked.
+#[tokio::test]
+async fn questions_ask_through_groks_request_and_go_on_once_answered() {
+    let sessions = scratch();
+    let mut agent = Agent::started(
+        json!({"steps": [
+            {"ask": {"question": {"questions": [{
+                "question": "Do you prefer tea or coffee?", "header": "",
+                "options": [{"label": "Tea", "description": "You prefer tea."},
+                            {"label": "Coffee", "description": "You prefer coffee."}]
+            }]}}},
+            "turn_end"
+        ]}),
+        sessions.path(),
+    )
+    .await;
+    let prompt = agent.prompt("ask me").await;
+    let asked = agent.asked("_x.ai/ask_user_question").await;
+    assert!(asked["id"].is_u64(), "{asked}");
+    assert_eq!(asked["params"]["sessionId"], agent.session.as_str());
+    assert_eq!(
+        asked["params"]["questions"][0]["options"][1]["label"],
+        "Coffee"
+    );
+    assert_eq!(asked["params"]["questions"][0]["multiSelect"], Value::Null);
+    agent
+        .reply(
+            &asked,
+            json!({"outcome": "accepted", "answers": {"Do you prefer tea or coffee?": "Tea"}}),
+        )
+        .await;
+    assert_eq!(agent.statuses_until(prompt).await, ["completed"]);
+}
+
 #[tokio::test]
 async fn a_tool_server_call_names_its_server_and_asks_for_it() {
     let sessions = scratch();

@@ -354,7 +354,7 @@ fn acp_cards_answer_the_interpreter() {
     let answered = answer_all::<Acp>(Kind::Acp, "acp");
     assert_eq!(
         answered,
-        BTreeSet::from(["command", "edit", "form", "link", "tool"]),
+        BTreeSet::from(["command", "edit", "form", "link", "question", "tool"]),
         "card bodies answered"
     );
 }

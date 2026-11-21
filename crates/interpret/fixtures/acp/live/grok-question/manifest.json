@@ -2,12 +2,12 @@
   "spec": "grok-question",
   "recorded": {
     "provider": "grok",
-    "version": "1.0.89",
+    "version": "1.0.92",
     "model": "grok-4.7-build-fast",
-    "at": "2026-11-20T19:27:46.212809Z"
+    "at": "2026-11-21T13:34:00.34457Z"
   },
   "content": {
-    "io.jsonl": "sha256:b36db4029ce5bc1e4ca4d2dfb81209c0288343a36d1c38b6ff140041c3ead0ff",
+    "io.jsonl": "sha256:171d8f5cb021e3aeac36a744876f401d883a8184ce41490be538211eca1a4d3a",
     "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
   },
   "redaction": {
@@ -16,7 +16,7 @@
     "personal_identifiers": 4
   },
   "session_ids": [
-    "01a1fa6a-1983-7721-ab0d-e5b085613ec4"
+    "01a1fe50-2d8e-7a91-80da-6cdc6c0fbb07"
   ],
   "provider_extra": {
     "driven_by": "the scripted ACP client, in the live qualification lane",

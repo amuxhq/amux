@@ -35,6 +35,7 @@ kotlin {
 dependencies {
     implementation(project(":core:values"))
     implementation(project(":core:words"))
+    implementation(project(":push"))
     implementation(project(":core:runtime"))
     implementation(project(":design"))
     implementation(project(":features"))

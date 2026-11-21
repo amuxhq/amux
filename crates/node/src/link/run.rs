@@ -986,13 +986,19 @@ async fn run_established(
     while let Ok(message) = out_rx.try_recv() {
         let _ = write_message(&mut sink, &message).await;
     }
-    // Evict this link from the registry and close its carrier *before*
-    // reporting `PeerRevoked` to the core, so a caller woken by the core's
-    // revoked mark never finds a lingering carrier on the dying link.
-    registered.leave(close_reason).await;
-    carrier.close(close_reason);
     if peer_revoked_us {
+        // Evict this link and close its carrier and sibling links before
+        // telling the core `PeerRevoked`, then report `LinkDown` after
+        // `PeerRevoked`: callers woken by the revoked mark find no lingering
+        // carrier, and `reach` already sees `revoked` on `LinkDown` so it
+        // does not start a spurious redial.
+        ctx.links.remove(&link).await;
+        carrier.close(close_reason);
         peer_revoked(&ctx, link, peer_host.id).await;
+        registered.leave(close_reason).await;
+    } else {
+        registered.leave(close_reason).await;
+        carrier.close(close_reason);
     }
     LinkEvent {
         event: LinkTransition::Down,

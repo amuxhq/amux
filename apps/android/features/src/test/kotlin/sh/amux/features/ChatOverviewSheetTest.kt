@@ -47,7 +47,6 @@ class ChatOverviewSheetTest {
     private val nowMs = 1_750_000_000_000L
 
     private fun sampleState(): ChatOverviewState = ChatOverviewState(
-        canReview = true,
         subject = ChatSubjectUi(
             name = "refactor-auth",
             host = "studio",
@@ -160,29 +159,13 @@ class ChatOverviewSheetTest {
         // Context
         composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_CONTEXT).performScrollTo().assertIsDisplayed()
 
-        // Changed files tap opens review
-        composeRule.onNodeWithTag(AskReviewTags.overviewFile("src/auth/token.rs")).performScrollTo().performClick()
-        assertEquals(ChatOverviewAction.OpenReview("src/auth/token.rs"), actions.last())
-    }
-
-    @Test
-    fun changedFilesWithNoWayToReviewAreOnlyListed() {
-        val actions = mutableListOf<ChatOverviewAction>()
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                ChatOverviewSheetContent(
-                    state = sampleState().copy(canReview = false),
-                    onAction = { actions += it },
-                )
-            }
-        }
-
+        // The changed files are listed only; the link under them opens the review.
         composeRule.onNodeWithTag(AskReviewTags.overviewFile("src/auth/token.rs"))
             .performScrollTo()
             .assertIsDisplayed()
             .assertHasNoClickAction()
-        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_REVIEW).assertDoesNotExist()
-        assertTrue(actions.none { it is ChatOverviewAction.OpenReview })
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_REVIEW).performScrollTo().performClick()
+        assertEquals(ChatOverviewAction.OpenReview, actions.last())
     }
 
     @Test

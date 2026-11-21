@@ -46,6 +46,8 @@ import sh.amux.values.FileRow
 import sh.amux.values.PatchLine
 import sh.amux.values.LineKind
 import sh.amux.words.ChatWords
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.AnnotatedString
 
 @Composable
 internal fun PermissionAskSection(
@@ -211,17 +213,20 @@ private const val DIFF_WHOLE_CAP: Int = 400
 internal sealed interface EditLine {
     data class File(val value: FileRow) : EditLine
     data class Hunk(val newStart: Int) : EditLine
-    data class Line(val value: PatchLine) : EditLine
+    /** A patch line, and where it is: its file's place in the patch, and its place among that file's lines. */
+    data class Line(val value: PatchLine, val file: Int = 0, val index: Int = 0) : EditLine
 }
 
 /**
  * An edit's patch as the preview's lines: each file's header in a patch of
  * several, each hunk's start where the provider said it, then its lines.
  */
-internal fun editLines(patch: List<FilePatch>): List<EditLine> = patch.flatMap { file ->
+internal fun editLines(patch: List<FilePatch>): List<EditLine> = patch.flatMapIndexed { fileIndex, file ->
+    var index = 0
     listOfNotNull(file.file?.let { EditLine.File(it) }) +
         file.hunks.flatMap { hunk ->
-            listOfNotNull(hunk.start?.let { EditLine.Hunk(it.new) }) + hunk.lines.map { EditLine.Line(it) }
+            listOfNotNull(hunk.start?.let { EditLine.Hunk(it.new) }) +
+                hunk.lines.map { EditLine.Line(it, file = fileIndex, index = index++) }
         }
 }
 
@@ -237,8 +242,24 @@ internal fun editLines(patch: List<FilePatch>): List<EditLine> = patch.flatMap {
 internal fun EditDiffPreview(
     lines: List<EditLine>,
     showWhole: Boolean,
+    /** The patch [lines] were read from, whose code is coloured file by file. */
+    patch: List<FilePatch> = emptyList(),
+    /** The file an edit of one file is in, which its patch does not name. */
+    path: String = "",
 ) {
     val colors = AmuxTheme.colors
+    // Every file's part is asked for, shown or folded away, so showing the
+    // whole diff asks for nothing new.
+    val coloured = patch.mapIndexed { index, file ->
+        key(index) {
+            rememberHighlighted(CodeHighlighting.Request.Patch(path = file.file?.path ?: path, hunks = file.hunks))
+        }
+    }
+    val runs = remember(patch, coloured) {
+        patch.mapIndexed { index, file ->
+            coloured[index].runsFor(file.hunks.flatMap { hunk -> hunk.lines.map { it.text } })
+        }
+    }
     val shown = if (showWhole) lines.take(DIFF_WHOLE_CAP) else lines.take(DIFF_PREVIEW_LIMIT)
     val addedTint = colors.added.copy(alpha = 0.18f)
     val removedTint = colors.removed.copy(alpha = 0.18f)
@@ -264,21 +285,24 @@ internal fun EditDiffPreview(
                 shown.forEach { editLine ->
                     val (text, ink, wash) = when (editLine) {
                         is EditLine.File -> Triple(
-                            ChatWords.fileHeader(editLine.value),
+                            AnnotatedString(ChatWords.fileHeader(editLine.value)),
                             colors.inkMuted,
                             Color.Transparent,
                         )
                         is EditLine.Hunk -> Triple(
-                            stringResource(R.string.ask_diff_line_start, editLine.newStart),
+                            AnnotatedString(stringResource(R.string.ask_diff_line_start, editLine.newStart)),
                             colors.inkFaint,
                             Color.Transparent,
                         )
                         is EditLine.Line -> {
-                            val patch = editLine.value
-                            when (patch.kind) {
-                                LineKind.Added -> Triple("+" + patch.text, colors.ink, addedTint)
-                                LineKind.Removed -> Triple("-" + patch.text, colors.ink, removedTint)
-                                LineKind.Context -> Triple(" " + patch.text, colors.ink, Color.Transparent)
+                            val line = editLine.value
+                            val code = runs.getOrNull(editLine.file)?.getOrNull(editLine.index)
+                                ?.let { colors.codeText(it) }
+                                ?: AnnotatedString(line.text)
+                            when (line.kind) {
+                                LineKind.Added -> Triple(AnnotatedString("+") + code, colors.ink, addedTint)
+                                LineKind.Removed -> Triple(AnnotatedString("-") + code, colors.ink, removedTint)
+                                LineKind.Context -> Triple(AnnotatedString(" ") + code, colors.ink, Color.Transparent)
                             }
                         }
                     }

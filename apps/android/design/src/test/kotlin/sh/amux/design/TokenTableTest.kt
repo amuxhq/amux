@@ -14,7 +14,7 @@ import org.junit.Test
  */
 class TokenTableTest {
     @Test
-    fun allElevenColourTokensMatchAmuxDesignRamp() {
+    fun everyColourTokenMatchesAmuxDesignRamp() {
         val expected = listOf(
             Triple("ground", 0xFFFFFF, 0x000000),
             Triple("raised", 0xFFFFFF, 0x1C1C1E),
@@ -27,6 +27,12 @@ class TokenTableTest {
             Triple("onAccent", 0xFFFFFF, 0xFFFFFF),
             Triple("added", 0x29854F, 0x70C78C),
             Triple("removed", 0xA8333D, 0xE68080),
+            Triple("keyword", 0x873A9A, 0xD49CE6),
+            Triple("string", 0x964220, 0xE89F7A),
+            Triple("number", 0x755600, 0xD9B65C),
+            Triple("type", 0x1A636C, 0x72C3CC),
+            Triple("function", 0x4A4FA3, 0xA8ACF2),
+            Triple("comment", 0x5A5A61, 0x9B9BA2),
         )
 
         val actual = AmuxDesign.App.colours
@@ -69,6 +75,12 @@ class TokenTableTest {
             onAccent        #FFFFFF  #FFFFFF
             added           #29854F  #70C78C
             removed         #A8333D  #E68080
+            keyword         #873A9A  #D49CE6
+            string          #964220  #E89F7A
+            number          #755600  #D9B65C
+            type            #1A636C  #72C3CC
+            function        #4A4FA3  #A8ACF2
+            comment         #5A5A61  #9B9BA2
 
             metric           value
             cardRadius      16

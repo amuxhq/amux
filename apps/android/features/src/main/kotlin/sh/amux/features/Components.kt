@@ -116,6 +116,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
@@ -1337,6 +1338,93 @@ fun AmuxField(
         decorationBox = { inner ->
             OutlinedTextFieldDefaults.DecorationBox(
                 value = value,
+                innerTextField = inner,
+                enabled = enabled,
+                singleLine = singleLine,
+                visualTransformation = visualTransformation,
+                interactionSource = source,
+                isError = isError,
+                placeholder = placeholder?.let {
+                    {
+                        Text(
+                            text = it,
+                            style = textStyle,
+                            color = colors.inkFaint,
+                            maxLines = if (singleLine) 1 else Int.MAX_VALUE,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+                leadingIcon = leadingIcon,
+                trailingIcon = trailingIcon,
+                colors = fieldColors,
+                contentPadding = PaddingValues(horizontal = Space.l, vertical = FieldVerticalPadding),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = enabled,
+                        isError = isError,
+                        interactionSource = source,
+                        colors = fieldColors,
+                        shape = shape,
+                        focusedBorderThickness = AmuxTheme.metrics.hairline * 1.5f,
+                        unfocusedBorderThickness = AmuxTheme.metrics.hairline,
+                    )
+                },
+            )
+        },
+    )
+}
+
+/**
+ * The one text field holding where its caret is, for a field that opens on
+ * text already written and should put the caret after it rather than
+ * before. Drawn as the [String] one is.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AmuxField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    isError: Boolean = false,
+    textStyle: TextStyle = AmuxTheme.typography.body,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    interactionSource: MutableInteractionSource? = null,
+) {
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    val fieldColors = amuxTextFieldColors()
+    val colors = AmuxTheme.colors
+    val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .thumbTarget()
+            .defaultMinSize(minHeight = AmuxFieldHeight),
+        enabled = enabled,
+        readOnly = readOnly,
+        textStyle = textStyle.copy(color = if (enabled) colors.ink else colors.inkFaint),
+        cursorBrush = SolidColor(colors.accent),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = singleLine,
+        minLines = minLines,
+        maxLines = maxLines,
+        visualTransformation = visualTransformation,
+        interactionSource = source,
+        decorationBox = { inner ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value.text,
                 innerTextField = inner,
                 enabled = enabled,
                 singleLine = singleLine,

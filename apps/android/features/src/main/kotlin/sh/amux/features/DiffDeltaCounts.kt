@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
 
@@ -15,6 +16,7 @@ internal fun DiffDeltaCounts(
     added: Int,
     removed: Int,
     modifier: Modifier = Modifier,
+    style: TextStyle = AmuxTheme.typography.monoSmall,
 ) {
     val colors = AmuxTheme.colors
     Row(
@@ -25,14 +27,14 @@ internal fun DiffDeltaCounts(
         if (added > 0) {
             Text(
                 text = stringResource(R.string.review_diff_added, added),
-                style = AmuxTheme.typography.monoSmall,
+                style = style,
                 color = colors.added,
             )
         }
         if (removed > 0) {
             Text(
                 text = stringResource(R.string.review_diff_removed, removed),
-                style = AmuxTheme.typography.monoSmall,
+                style = style,
                 color = colors.removed,
             )
         }

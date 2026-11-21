@@ -48,6 +48,13 @@ import sh.amux.values.PhaseView
 import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
 import sh.amux.values.Resolution
+import sh.amux.values.ReviewBanner
+import sh.amux.values.ReviewChip
+import sh.amux.values.ReviewContextAsk
+import sh.amux.values.ReviewGap
+import sh.amux.values.ReviewHeader
+import sh.amux.values.ReviewOutcome
+import sh.amux.values.ReviewView
 import sh.amux.values.ReviewStatus
 import sh.amux.values.RouteKind
 import sh.amux.values.Row
@@ -745,11 +752,9 @@ class ChatWordsTest {
     }
 
     @Test
-    fun theReviewSaysHowMuchChangedAndWhatAttachingCarries() {
+    fun theReviewSaysHowMuchChangedAndWhatASentReviewCarries() {
         assertEquals("1 file, 18 added, 2 removed", ChatWords.changes(files = 1, added = 18, removed = 2))
         assertEquals("4 files, 0 added, 28 removed", ChatWords.changes(files = 4, added = 0, removed = 28))
-        assertEquals("Attach Review · 1 comment", ChatWords.attachReview(1))
-        assertEquals("Attach Review · 3 comments", ChatWords.attachReview(3))
         assertEquals("Comment on 1 line", ChatWords.commentOn(1))
         assertEquals("Comment on 5 lines", ChatWords.commentOn(5))
         assertEquals(
@@ -762,6 +767,34 @@ class ChatWordsTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun theReviewPageSaysWhatItIsAgainstAndWhatItsActsCameTo() {
+        val header = ReviewHeader(
+            baseBranch = "main", baseCommit = "b", snapshot = "s", view = ReviewView.All, comparedWith = "b",
+            comparedBase = "", views = emptyList(), rounds = 0, files = 3, added = 9, removed = 2, drafts = 2,
+            sent = 1, discardDrafts = true, startOver = true,
+        )
+        assertEquals("Since main", ChatWords.reviewAgainst(header))
+        assertEquals("Uncommitted", ChatWords.reviewAgainst(header.copy(baseBranch = "")))
+        assertEquals("Since your last review", ChatWords.reviewAgainst(header.copy(view = ReviewView.SinceLast)))
+        assertEquals("3 files · +9 \u22122 · 2 drafts · 1 sent", ChatWords.reviewCounts(header))
+        assertEquals("Review · 1 comment", ChatWords.reviewChip(ReviewChip(comments = 1, moved = false)))
+        assertEquals("Discard 3 drafts?", ChatWords.discardDrafts(3))
+        assertEquals("Done · 1 draft", ChatWords.reviewDone(1))
+        assertEquals("Lines 41\u201342", ChatWords.reviewLines(41, 42))
+        assertEquals("Line 7", ChatWords.reviewLines(7, 7))
+        val ask = ReviewContextAsk(path = "a.rs", commit = "s", start = 46, end = 65, definition = null)
+        assertEquals("20 lines down", ChatWords.reviewMore(ask, up = false))
+        assertEquals("Up to impl Store", ChatWords.reviewMore(ask.copy(definition = "impl Store"), up = true))
+        assertEquals("The rest of the file", ChatWords.reviewGap(ReviewGap(path = "a.rs", loading = false)))
+        assertEquals("Refresh", ChatWords.reviewBannerAction(ReviewBanner.ChangedSince))
+        assertNull(ChatWords.reviewBannerAction(ReviewBanner.NotOffered))
+        assertNull(ChatWords.reviewNotice(ReviewOutcome.Done))
+        assertNull(ChatWords.reviewNotice(ReviewOutcome.Unavailable))
+        assertEquals("no space", ChatWords.reviewNotice(ReviewOutcome.Failed("no space")))
+        assertEquals("This chat is closed.", ChatWords.reviewNotice(null))
     }
 
     @Test

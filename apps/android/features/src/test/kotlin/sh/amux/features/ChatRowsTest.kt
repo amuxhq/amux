@@ -4,6 +4,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasText
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -239,8 +240,7 @@ class ChatRowsTest {
     }
 
     @Test
-    fun rendersFileChangeAndDispatchesOpenFile() {
-        val openedFiles = mutableListOf<FileRow>()
+    fun rendersFileChangeRowsListedOnly() {
         val edited = FileRow(path = "src/lib.rs", change = FileChangeView.Edited, added = 14, removed = 3)
         val created = FileRow(path = "src/new.rs", change = FileChangeView.Created(lines = 42), added = 42, removed = 0)
         val row = makeRow(
@@ -252,7 +252,6 @@ class ChatRowsTest {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 ChatRowView(
                     row = row,
-                    callbacks = ChatRowCallbacks(onOpenFileChange = { openedFiles += it }),
                 )
             }
         }
@@ -260,8 +259,8 @@ class ChatRowsTest {
         composeRule.onNodeWithText("src/lib.rs").assertIsDisplayed()
         composeRule.onNodeWithText("src/new.rs").assertIsDisplayed()
         composeRule.onNodeWithText("Created").assertIsDisplayed()
-        composeRule.onAllNodesWithTag(ChatRowTags.FILE_CHANGE_ITEM)[0].performClick()
-        assertEquals(listOf(edited), openedFiles)
+        // A landed edit's files open nothing: the review opens from the chat's header.
+        composeRule.onAllNodesWithTag(ChatRowTags.FILE_CHANGE_ITEM)[0].assertHasNoClickAction()
     }
 
     @Test

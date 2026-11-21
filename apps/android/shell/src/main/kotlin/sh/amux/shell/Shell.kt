@@ -225,6 +225,11 @@ fun Shell(
                                 router = router,
                                 dictation = dictation,
                             )
+                            is Route.Review -> ReviewRoute(
+                                agent = route.agent,
+                                stores = stores,
+                                router = router,
+                            )
                             is Route.Host -> HostRoute(
                                 host = route.host,
                                 stores = stores,

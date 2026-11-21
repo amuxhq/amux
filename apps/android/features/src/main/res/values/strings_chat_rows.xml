@@ -58,7 +58,6 @@
     <string name="chat_row_file_moved">Moved</string>
     <string name="chat_row_file_writing">Writing</string>
     <string name="chat_row_file_moved_path">%1$s → %2$s</string>
-    <string name="chat_row_file_open_diff">Open diff for %1$s</string>
 
     <!-- ChatRows: session events & agent messages -->
     <string name="chat_row_stopped">You stopped it</string>

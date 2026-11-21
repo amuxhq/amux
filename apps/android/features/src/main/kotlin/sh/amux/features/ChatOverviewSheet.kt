@@ -97,8 +97,6 @@ data class ChatOverviewState(
     val comparison: Comparison = Comparison.Uncommitted,
     val baseBranch: String? = null,
     val changeTotals: ChangeTotals? = null,
-    /** Whether the changed files open for review; without, they are only listed. */
-    val canReview: Boolean = false,
     val nowMs: Long = 0L,
 )
 
@@ -107,7 +105,7 @@ sealed interface ChatOverviewAction {
     data class StopJob(val key: String) : ChatOverviewAction
     data class SelectComparison(val comparison: Comparison) : ChatOverviewAction
     data object RetryChanges : ChatOverviewAction
-    data class OpenReview(val filePath: String? = null) : ChatOverviewAction
+    data object OpenReview : ChatOverviewAction
     data object Dismiss : ChatOverviewAction
 }
 
@@ -188,11 +186,7 @@ fun ChatOverviewSheetContent(
             baseBranch = state.baseBranch,
             onSelectComparison = { onAction(ChatOverviewAction.SelectComparison(it)) },
             onRetryChanges = { onAction(ChatOverviewAction.RetryChanges) },
-            onOpenReview = if (state.canReview) {
-                { path: String? -> onAction(ChatOverviewAction.OpenReview(path)) }
-            } else {
-                null
-            },
+            onOpenReview = { onAction(ChatOverviewAction.OpenReview) },
         )
 
         if (overview != null && overview.failedServers.isNotEmpty()) {
@@ -609,7 +603,7 @@ private fun OverviewChangesSection(
     baseBranch: String?,
     onSelectComparison: (Comparison) -> Unit,
     onRetryChanges: () -> Unit,
-    onOpenReview: ((String?) -> Unit)?,
+    onOpenReview: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
     val comparisonMatches = changesComparison == null || changesComparison == comparison
@@ -678,28 +672,23 @@ private fun OverviewChangesSection(
         } else if (matchedChanges != null && matchedChanges.totals.files > 0) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 matchedChanges.folders.forEach { folder ->
-                    OverviewFolderGroup(
-                        folder = folder,
-                        onSelectFile = onOpenReview?.let { open -> { path -> open(path) } },
-                    )
+                    OverviewFolderGroup(folder = folder)
                 }
             }
-            if (onOpenReview != null) {
-                val reviewLabel = stringResource(R.string.overview_review_changes)
-                Text(
-                    text = reviewLabel,
-                    style = AmuxTheme.typography.bodyEmphasis,
-                    color = colors.accent,
-                    modifier = Modifier
-                        .padding(horizontal = Space.margin - Space.s)
-                        .clip(RoundedCornerShape(Space.s))
-                        .clickable(role = Role.Button) { onOpenReview(null) }
-                        .heightIn(min = ThumbTarget.MinSize)
-                        .wrapContentHeight(Alignment.CenterVertically)
-                        .padding(horizontal = Space.s)
-                        .testTag(AskReviewTags.OVERVIEW_REVIEW),
-                )
-            }
+            val reviewLabel = stringResource(R.string.overview_review_changes)
+            Text(
+                text = reviewLabel,
+                style = AmuxTheme.typography.bodyEmphasis,
+                color = colors.accent,
+                modifier = Modifier
+                    .padding(horizontal = Space.margin - Space.s)
+                    .clip(RoundedCornerShape(Space.s))
+                    .clickable(role = Role.Button, onClick = onOpenReview)
+                    .heightIn(min = ThumbTarget.MinSize)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = Space.s)
+                    .testTag(AskReviewTags.OVERVIEW_REVIEW),
+            )
         } else {
             val emptyMessage = if (matchedChanges == null && totals != null) {
                 stringResource(R.string.overview_changes_listing)
@@ -718,12 +707,9 @@ private fun OverviewChangesSection(
     }
 }
 
-/** A folder's path, then its files under it; files at the root stand alone. */
+/** A folder's path, then its files under it; files at the root stand alone. Listed only: the review opens from the link under them. */
 @Composable
-private fun OverviewFolderGroup(
-    folder: Folder,
-    onSelectFile: ((String) -> Unit)?,
-) {
+private fun OverviewFolderGroup(folder: Folder) {
     val colors = AmuxTheme.colors
     Column(modifier = Modifier.fillMaxWidth()) {
         if (folder.path.isNotEmpty()) {
@@ -747,13 +733,6 @@ private fun OverviewFolderGroup(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (onSelectFile != null) {
-                            Modifier.clickable(role = Role.Button) { onSelectFile(file.path) }
-                        } else {
-                            Modifier
-                        },
-                    )
                     .semantics(mergeDescendants = true) {
                         contentDescription = spokenFile
                     }

@@ -1,6 +1,7 @@
 package sh.amux.design
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -126,6 +127,36 @@ class ContrastTest {
                     "$appearance added on $surfaceName must be >= $addedFloor:1, was ${"%.2f".format(addedRatio)}:1",
                     addedRatio >= addedFloor,
                 )
+            }
+        }
+    }
+
+    @Test
+    fun codeColoursReadOnTheWellAndUnderEitherDiffTint() {
+        for (appearance in Appearance.entries) {
+            val c = AmuxDesign.App.colors(appearance)
+            val grounds = listOf(
+                "ground" to c.ground,
+                "sunken" to c.sunken,
+                "added tint" to c.addedTint.compositeOver(c.ground),
+                "removed tint" to c.removedTint.compositeOver(c.ground),
+            )
+            val inks = listOf(
+                "keyword" to c.syntax.keyword,
+                "string" to c.syntax.string,
+                "number" to c.syntax.number,
+                "type" to c.syntax.type,
+                "function" to c.syntax.function,
+                "comment" to c.syntax.comment,
+            )
+            for ((groundName, ground) in grounds) {
+                for ((inkName, ink) in inks) {
+                    val ratio = contrastRatio(ink, ground)
+                    assertTrue(
+                        "$appearance $inkName on $groundName must be >= 4.5:1, was ${"%.2f".format(ratio)}:1",
+                        ratio >= 4.5,
+                    )
+                }
             }
         }
     }

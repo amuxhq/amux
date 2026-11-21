@@ -59,6 +59,14 @@ import sh.amux.values.SubagentGroup
 import sh.amux.values.TasksView
 import sh.amux.values.UsageView
 import sh.amux.words.EMPTY_GROUP_STATE
+import sh.amux.values.SentReviewRef
+import sh.amux.values.ReviewPage
+import sh.amux.values.ReviewOutcome
+import sh.amux.values.ReviewContextAsk
+import sh.amux.values.ReviewChoice
+import sh.amux.values.ReviewChip
+import sh.amux.values.ReviewChange
+import sh.amux.values.ReviewAnchor
 
 /**
  * A chat with no native runtime behind it: scripted rows, frame, ask card,
@@ -118,6 +126,8 @@ class ScriptedChat(
         val rows: MutableList<String> = mutableListOf(),
         var reloaded: Boolean = false,
         var session: Boolean = false,
+        /** The review page moved. */
+        var review: Boolean = false,
     ) {
         fun arrived(keys: List<String>) {
             above.addAll(keys)
@@ -324,7 +334,8 @@ class ScriptedChat(
             taken.rows.toSet() - taken.below.toSet() - taken.above.toSet()
         }
         val rows = ordered.filter { it.id in wanted }.map { folding(it, openRuns, openGroups) }
-        if (keys == null && rows.isEmpty() && !taken.session) return null
+        val review = if (taken.review) reviewShown else null
+        if (keys == null && rows.isEmpty() && !taken.session && review == null) return null
         val session = taken.session
         ChatDelta(
             chat = id,
@@ -334,6 +345,7 @@ class ScriptedChat(
             frame = if (session) current else null,
             keys = keys,
             overview = if (session) facts else null,
+            review = review,
             settings = if (session) offered else null,
         )
     }
@@ -362,6 +374,7 @@ class ScriptedChat(
             frame = current,
             keys = KeysMoved.Reload(ordered.map { it.id }),
             overview = facts,
+            review = reviewShown,
             settings = offered,
         )
     }
@@ -563,6 +576,143 @@ class ScriptedChat(
         actOutcome
     }
 
+    // --- The review page ---------------------------------------------------
+
+    /** The page opening the review shows. The script's page never composes itself. */
+    var reviewOnOpening: ReviewPage?
+        get() = lock.withLock { scriptedReview }
+        set(value) = lock.withLock { scriptedReview = value }
+
+    /** Where any selection's comment goes, while a page is open. */
+    var anchorForAnySelection: ReviewAnchor?
+        get() = lock.withLock { anchoring }
+        set(value) = lock.withLock { anchoring = value }
+
+    /** What every act on the review answers. */
+    var reviewAnswer: ReviewOutcome? = ReviewOutcome.Done
+
+    /** Holds every act on the review until [answerReview], for a test that watches one waiting. */
+    var holdsReview: Boolean = false
+    private var heldReview: CompletableDeferred<Unit>? = null
+
+    private var scriptedReview: ReviewPage? = null
+    private var anchoring: ReviewAnchor? = null
+
+    /** The page open on the chat, as handed over last. */
+    private var reviewShown: ReviewPage? = null
+    private val _reviewOpens = mutableListOf<Pair<String?, Boolean>>()
+    private val _reviewEdits = mutableListOf<List<ReviewChange>>()
+    private val _reviewFetches = mutableListOf<List<String>>()
+    private val _reviewContexts = mutableListOf<ReviewContextAsk>()
+    private val _reviewChoices = mutableListOf<ReviewChoice>()
+    private val _sentWithReview = mutableListOf<Draft>()
+    private val _roundsOpened = mutableListOf<SentReviewRef>()
+    private var scriptedRound: ReviewPage? = null
+
+    /** Each open of the review, as its base branch and whether it refreshed. */
+    val reviewOpens: List<Pair<String?, Boolean>> get() = lock.withLock { _reviewOpens.toList() }
+    val reviewEdits: List<List<ReviewChange>> get() = lock.withLock { _reviewEdits.toList() }
+    val reviewFetches: List<List<String>> get() = lock.withLock { _reviewFetches.toList() }
+    val reviewContexts: List<ReviewContextAsk> get() = lock.withLock { _reviewContexts.toList() }
+    val reviewChoices: List<ReviewChoice> get() = lock.withLock { _reviewChoices.toList() }
+    val sentWithReview: List<Draft> get() = lock.withLock { _sentWithReview.toList() }
+    val roundsOpened: List<SentReviewRef> get() = lock.withLock { _roundsOpened.toList() }
+    var reviewCloses: Int = 0
+        private set
+
+    /** What opening a sent review's round shows: null for a host that no longer holds it. */
+    var roundOnOpening: ReviewPage?
+        get() = lock.withLock { scriptedRound }
+        set(value) = lock.withLock { scriptedRound = value }
+
+    /**
+     * A page already open on the chat, as a model opening on the chat finds
+     * it: for a story drawn with no open to wait for.
+     */
+    fun openedReview(page: ReviewPage) {
+        lock.withLock {
+            scriptedReview = page
+            reviewShown = page
+        }
+    }
+
+    /** The runtime composed the open page anew: the next delta carries it. */
+    fun showReview(page: ReviewPage) {
+        lock.withLock {
+            scriptedReview = page
+            reviewShown = page
+            pending.review = true
+        }
+    }
+
+    fun answerReview() {
+        val waiter = lock.withLock {
+            holdsReview = false
+            heldReview.also { heldReview = null }
+        }
+        waiter?.complete(Unit)
+    }
+
+    private suspend fun reviewAnswered(): ReviewOutcome? {
+        val waiter = lock.withLock {
+            if (!holdsReview) return@withLock null
+            heldReview ?: CompletableDeferred<Unit>().also { heldReview = it }
+        }
+        waiter?.await()
+        return reviewAnswer
+    }
+
+    override suspend fun sendWithReview(draft: Draft): Result<SendOutcome> {
+        lock.withLock { _sentWithReview.add(draft) }
+        sendFailure?.let { return Result.failure(it) }
+        return Result.success(SendOutcome(inputId = listOf(1), state = InputState.Sent))
+    }
+
+    override suspend fun openReview(baseBranch: String?, refresh: Boolean): ReviewOutcome? {
+        lock.withLock {
+            _reviewOpens.add(baseBranch to refresh)
+            reviewShown = scriptedReview
+            pending.review = scriptedReview != null
+        }
+        return reviewAnswered()
+    }
+
+    override suspend fun reviewFiles(paths: List<String>): ReviewOutcome? {
+        lock.withLock { _reviewFetches.add(paths) }
+        return reviewAnswered()
+    }
+
+    override suspend fun reviewContext(ask: ReviewContextAsk): ReviewOutcome? {
+        lock.withLock { _reviewContexts.add(ask) }
+        return reviewAnswered()
+    }
+
+    override suspend fun editReview(changes: List<ReviewChange>): ReviewOutcome? {
+        lock.withLock { _reviewEdits.add(changes) }
+        return reviewAnswered()
+    }
+
+    override fun chooseInReview(choice: ReviewChoice) {
+        lock.withLock { _reviewChoices.add(choice) }
+    }
+
+    override fun reviewPage(): ReviewPage? = lock.withLock { reviewShown }
+
+    override fun reviewAnchor(from: Int, to: Int): ReviewAnchor? =
+        lock.withLock { if (reviewShown == null) null else anchoring }
+
+    override fun closeReview() {
+        lock.withLock {
+            reviewShown = null
+            reviewCloses += 1
+        }
+    }
+
+    override suspend fun reviewRound(sent: SentReviewRef): ReviewPage? = lock.withLock {
+        _roundsOpened.add(sent)
+        scriptedRound
+    }
+
     override fun keptDraft(): Draft? = lock.withLock { initialKeptDraft }
 
     override fun keep(draft: Draft) {
@@ -588,6 +738,7 @@ class ScriptedChat(
             refused: List<RefusedPrompt> = emptyList(),
             switchedAway: Boolean = false,
             ended: String? = null,
+            reviewChip: ReviewChip? = null,
         ): ChatFrame = ChatFrame(
             agent = agent,
             name = name,
@@ -615,6 +766,7 @@ class ScriptedChat(
             context = null,
             ended = ended,
             git = null,
+            reviewChip = reviewChip,
             signIn = null,
         )
 

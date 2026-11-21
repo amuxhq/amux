@@ -39,7 +39,19 @@ import sh.amux.values.PhaseView
 import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
 import sh.amux.values.Resolution
+import sh.amux.values.ReviewBanner
+import sh.amux.values.ReviewChip
+import sh.amux.values.ReviewCommentAt
+import sh.amux.values.ReviewCommentState
+import sh.amux.values.ReviewContextAsk
+import sh.amux.values.ReviewEmpty
+import sh.amux.values.ReviewFileFlag
+import sh.amux.values.ReviewGap
+import sh.amux.values.ReviewHeader
+import sh.amux.values.ReviewNoLines
+import sh.amux.values.ReviewOutcome
 import sh.amux.values.ReviewStatus
+import sh.amux.values.ReviewView
 import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Run
@@ -640,14 +652,186 @@ object ChatWords {
     fun changes(files: Int, added: Int, removed: Int): String =
         "${files(files)}, $added added, $removed removed"
 
-    fun attachReview(count: Int): String =
-        if (count == 1) "Attach Review · 1 comment" else "Attach Review · $count comments"
-
     /** `"1 line"`, `"12 lines"`. */
     fun lines(count: Int): String = if (count == 1) "1 line" else "$count lines"
 
     fun commentOn(lines: Int): String =
         if (lines == 1) "Comment on 1 line" else "Comment on $lines lines"
+
+    // The agent's review
+
+    /**
+     * `"Review · 3 comments"`: the composer's chip while the agent's review
+     * holds drafts, which the next send carries.
+     */
+    fun reviewChip(chip: ReviewChip): String = "Review · ${comments(chip.comments)}"
+
+    /** Beside the chip when the agent changed code after the drafts were written on it. */
+    const val REVIEW_CHIP_MOVED: String = "Written on older code"
+
+    /** The chip's ✕ asks this before the drafts go. */
+    fun discardDrafts(count: Int): String =
+        if (count == 1) "Discard 1 draft?" else "Discard $count drafts?"
+
+    const val DISCARD_DRAFTS_DETAIL: String = "Comments not yet sent are deleted. Sent comments stay."
+
+    const val START_OVER_QUESTION: String = "Start the review over?"
+
+    const val START_OVER_DETAIL: String =
+        "Every comment on it is deleted, sent or not, and the next look is a first look. The chat keeps what was sent."
+
+    /** A view's name on the switch between them. */
+    fun reviewView(view: ReviewView): String = when (view) {
+        ReviewView.All -> "All changes"
+        ReviewView.SinceLast -> "Since your last review"
+    }
+
+    /** What the view shown compares against: `"Since main"`, `"Uncommitted"`, `"Since your last review"`. */
+    fun reviewAgainst(header: ReviewHeader): String = when {
+        header.view == ReviewView.SinceLast -> "Since your last review"
+        header.baseBranch.isEmpty() -> "Uncommitted"
+        else -> "Since ${header.baseBranch}"
+    }
+
+    /** `"3 files · +12 −4 · 2 drafts · 1 sent"`: the view's counts and the review's comments. */
+    fun reviewCounts(header: ReviewHeader): String {
+        val parts = mutableListOf(files(header.files), "+${header.added} \u2212${header.removed}")
+        if (header.drafts > 0) parts += if (header.drafts == 1) "1 draft" else "${header.drafts} drafts"
+        if (header.sent > 0) parts += "${header.sent} sent"
+        return parts.joinToString(" · ")
+    }
+
+    /** Said above the files. */
+    fun reviewBanner(banner: ReviewBanner): String = when (banner) {
+        ReviewBanner.ChangedSinceYouStarted ->
+            "Changed since you started. Refreshing moves your drafts to the code as it is now."
+        ReviewBanner.ChangedSince -> "The agent changed code since this snapshot."
+        is ReviewBanner.MovedDrafts -> if (banner.count == 1) {
+            "Refreshing moved 1 draft. If its lines were edited, it is now on its file."
+        } else {
+            "Refreshing moved ${banner.count} drafts. Any whose lines were edited are now on their files."
+        }
+        ReviewBanner.MergeUnderway ->
+            "A merge or rebase was under way, so conflicted files hold their markers."
+        ReviewBanner.NotOffered ->
+            "This agent\u2019s computer doesn\u2019t offer reviews. Its reviews experiment is off, or its amux is older than reviews."
+        ReviewBanner.NotARepository -> "This agent\u2019s folder isn\u2019t a git repository, so it has no review."
+        ReviewBanner.RoundGone ->
+            "The round\u2019s snapshot is gone from the agent\u2019s computer. Its comments show with the code saved with them."
+        is ReviewBanner.SnapshotFailed -> "Couldn\u2019t take a snapshot of the working tree: ${banner.message}"
+        ReviewBanner.Unreachable ->
+            "This agent\u2019s computer can\u2019t be reached. What was loaded still reads, but comments can\u2019t be saved until it\u2019s back."
+    }
+
+    /** What a banner offers to do about it, when anything. */
+    fun reviewBannerAction(banner: ReviewBanner): String? = when (banner) {
+        ReviewBanner.ChangedSinceYouStarted, ReviewBanner.ChangedSince -> "Refresh"
+        is ReviewBanner.SnapshotFailed -> "Try Again"
+        else -> null
+    }
+
+    const val REVIEW_OPENING: String = "Opening the review\u2026"
+
+    fun reviewEmpty(empty: ReviewEmpty): String = when (empty) {
+        ReviewEmpty.Nothing -> "Nothing to review: no changes and no comments."
+        ReviewEmpty.NothingSince -> "Nothing changed since your last review."
+    }
+
+    fun reviewNoLines(why: ReviewNoLines): String = when (why) {
+        ReviewNoLines.Binary -> "A binary file, with no lines to show"
+        ReviewNoLines.TooLarge -> "Too large a change to show here"
+    }
+
+    /** Why a file starts folded. */
+    fun reviewFlag(flag: ReviewFileFlag): String = when (flag) {
+        ReviewFileFlag.Generated -> "Generated"
+        ReviewFileFlag.Lockfile -> "Lock file"
+        ReviewFileFlag.Vendored -> "Vendored"
+        ReviewFileFlag.Large -> "Large"
+    }
+
+    /** `"Draft"`, `"Sent in round 2"`. */
+    fun reviewCommentState(state: ReviewCommentState): String = when (state) {
+        ReviewCommentState.Draft -> "Draft"
+        is ReviewCommentState.Sent -> "Sent in round ${state.round}"
+    }
+
+    /** Where a comment sits, when it is not under its lines: null for one that is. */
+    fun reviewCommentAt(at: ReviewCommentAt): String? = when (at) {
+        is ReviewCommentAt.Lines -> null
+        ReviewCommentAt.File -> "On the file"
+        ReviewCommentAt.Outdated -> "Outdated"
+    }
+
+    /** Beside a sent comment whose code nearby changed since it was sent. */
+    const val REVIEW_CHANGED_NEAR: String = "The code near it changed"
+
+    /** `"Line 41"`, `"Lines 41–42"`. */
+    fun reviewLines(start: Int, end: Int): String =
+        if (start == end) "Line $start" else "Lines $start\u2013$end"
+
+    /** What a gap holds: `"12 hidden lines"`, or after the file's last hunk, `"The rest of the file"`. */
+    fun reviewGap(gap: ReviewGap): String {
+        val hidden = gap.hidden ?: return "The rest of the file"
+        return if (hidden == 1) "1 hidden line" else "$hidden hidden lines"
+    }
+
+    /** What one of a gap's asks loads: `"Up to fn open"`, `"Down to the end of fn open"`, or `"20 lines up"`. */
+    fun reviewMore(ask: ReviewContextAsk, up: Boolean): String {
+        val count = if (ask.end >= ask.start) ask.end - ask.start + 1 else 0
+        val label = ask.definition
+        return when {
+            label != null && up -> "Up to $label"
+            label != null -> "Down to the end of $label"
+            up -> "${lines(count)} up"
+            else -> "${lines(count)} down"
+        }
+    }
+
+    /**
+     * The foot of a page holding drafts, which goes back to the chat whose
+     * next message sends them: `"Done · 3 drafts"`.
+     */
+    fun reviewDone(drafts: Int): String = if (drafts == 1) "Done · 1 draft" else "Done · $drafts drafts"
+
+    /** A selection nothing can be written on: across files, or with no line. */
+    const val REVIEW_ONE_FILE: String = "Select lines in one file"
+
+    /** Under a renamed file's path. */
+    fun reviewRenamedFrom(old: String): String = "Renamed from $old"
+
+    /** Under a file listed only for the comments on it. */
+    const val REVIEW_OUTSIDE_CHANGE: String = "No longer part of the change"
+
+    /** Under a file that changed since the last round was sent. */
+    const val REVIEW_CHANGED_SINCE_LAST: String = "Changed since your last review"
+
+    /** A sent review's round, as its sheet is titled: `"Round 2"`. */
+    fun reviewRound(number: Int): String = "Round $number"
+
+    /** Above a sent review's text, when the agent's computer no longer holds its round. */
+    const val REVIEW_ROUND_GONE: String =
+        "The agent\u2019s computer no longer holds this round, so this is what the agent read."
+
+    /** Above a sent review's text, when the agent's computer can't be reached and none of its round was loaded. */
+    const val REVIEW_ROUND_UNREACHABLE: String =
+        "The agent\u2019s computer can\u2019t be reached and none of this round was loaded, so this is what the agent read."
+
+    /** From a sent review's round to the review as it is now. */
+    const val REVIEW_OPEN_REVIEW: String = "Open the Review"
+
+    /**
+     * What an act on the review came to, when the page does not say it
+     * itself: null once done, or when a banner on the page already says why.
+     */
+    fun reviewNotice(outcome: ReviewOutcome?): String? = when (outcome) {
+        ReviewOutcome.Done, ReviewOutcome.Unavailable -> null
+        ReviewOutcome.Unreachable -> "This agent\u2019s computer can\u2019t be reached, so nothing changed."
+        ReviewOutcome.NotConfirmed ->
+            "The connection dropped before the agent\u2019s computer answered. The page shows what it says next."
+        is ReviewOutcome.Failed -> outcome.value
+        null -> "This chat is closed."
+    }
 
     // Around the composer
 

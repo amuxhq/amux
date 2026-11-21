@@ -16,8 +16,15 @@ import sh.amux.values.KeysMoved
 import sh.amux.values.Overview
 import sh.amux.values.PageOutcome
 import sh.amux.values.QuestionResponse
+import sh.amux.values.ReviewAnchor
+import sh.amux.values.ReviewChange
+import sh.amux.values.ReviewChoice
+import sh.amux.values.ReviewContextAsk
+import sh.amux.values.ReviewOutcome
+import sh.amux.values.ReviewPage
 import sh.amux.values.Row
 import sh.amux.values.SendOutcome
+import sh.amux.values.SentReviewRef
 import sh.amux.values.SettingChange
 
 /**
@@ -56,6 +63,57 @@ interface ChatSource {
     suspend fun switchBack(): ActOutcome? = ActOutcome.Done
     fun keptDraft(): Draft? = null
     fun keep(draft: Draft) {}
+
+    // The agent's review, read and changed at the agent's host. The page
+    // open on the chat moves in the deltas' `review`. A source whose agent
+    // has no review (its host offers none) keeps these defaults: there is
+    // never a page, a chip or drafts to send.
+
+    /**
+     * Sends the draft with the review's drafts after its words, naming
+     * exactly those comments; nothing goes when the review holds none.
+     */
+    suspend fun sendWithReview(draft: Draft): Result<SendOutcome> =
+        Result.failure(RuntimeFailure("This agent has no review to send."))
+
+    /**
+     * Opens the review page on the chat, or opens the open one again:
+     * [baseBranch] picks the base anew, [refresh] takes a snapshot even with
+     * drafts, moving them onto it.
+     */
+    suspend fun openReview(baseBranch: String?, refresh: Boolean): ReviewOutcome? = ReviewOutcome.Unavailable
+
+    /** Fetches these files' bodies for the view the page shows. */
+    suspend fun reviewFiles(paths: List<String>): ReviewOutcome? = ReviewOutcome.Unavailable
+
+    /** Loads the lines one of a gap's asks names. */
+    suspend fun reviewContext(ask: ReviewContextAsk): ReviewOutcome? = ReviewOutcome.Unavailable
+
+    /** Makes changes to the review, all or none; with no page open too. */
+    suspend fun editReview(changes: List<ReviewChange>): ReviewOutcome? = ReviewOutcome.Unavailable
+
+    /** A choice made on the page; the next delta carries the page drawn so. */
+    fun chooseInReview(choice: ReviewChoice) {}
+
+    /** The page open on the chat, as handed over from now; null with none. */
+    fun reviewPage(): ReviewPage? = null
+
+    /**
+     * The lines a selection of the handed page's rows, from one index to
+     * another, would be commented on; null for a selection with no line or
+     * across files.
+     */
+    fun reviewAnchor(from: Int, to: Int): ReviewAnchor? = null
+
+    /** Closes the page: no delta carries it again. */
+    fun closeReview() {}
+
+    /**
+     * The page of the round a review sent into the chat closed, read from
+     * the agent's host apart from any page open on the chat; null once the
+     * host holds none of it, when the text the agent read is what shows.
+     */
+    suspend fun reviewRound(sent: SentReviewRef): ReviewPage? = null
 }
 
 /** An open chat session tracked by [StoreBundle]. */
@@ -221,6 +279,69 @@ class Chat internal constructor(
     override fun fetchBlob(hash: List<Int>) {
         val hashJson = AmuxJson.json.encodeToString(hash)
         withOpen(Unit) { live -> NativeBridge.sessionFetchBlob(live, hashJson) }
+    }
+
+    override suspend fun sendWithReview(draft: Draft): Result<SendOutcome> {
+        val actJson = AmuxJson.json.encodeToString<ChatAct>(ChatAct.SendWithReview(draft))
+        return act { live -> NativeBridge.sessionAct(live, actJson) }
+    }
+
+    override suspend fun openReview(baseBranch: String?, refresh: Boolean): ReviewOutcome? =
+        reviewAct { live -> NativeBridge.reviewOpen(live, baseBranch, refresh) }
+
+    override suspend fun reviewFiles(paths: List<String>): ReviewOutcome? {
+        val pathsJson = AmuxJson.json.encodeToString(paths)
+        return reviewAct { live -> NativeBridge.reviewFiles(live, pathsJson) }
+    }
+
+    override suspend fun reviewContext(ask: ReviewContextAsk): ReviewOutcome? {
+        val askJson = AmuxJson.json.encodeToString(ask)
+        return reviewAct { live -> NativeBridge.reviewContext(live, askJson) }
+    }
+
+    override suspend fun editReview(changes: List<ReviewChange>): ReviewOutcome? {
+        val changesJson = AmuxJson.json.encodeToString(changes)
+        return reviewAct { live -> NativeBridge.reviewEdit(live, changesJson) }
+    }
+
+    override fun chooseInReview(choice: ReviewChoice) {
+        val choiceJson = AmuxJson.json.encodeToString(choice)
+        withOpen(Unit) { live -> NativeBridge.reviewChoose(live, choiceJson) }
+    }
+
+    override fun reviewPage(): ReviewPage? = withOpen(null) { live ->
+        NativeBridge.reviewPage(live)?.let { Bridge.decodeNullable<ReviewPage>(it) }
+    }
+
+    override fun reviewAnchor(from: Int, to: Int): ReviewAnchor? {
+        if (from < 0 || to < 0) return null
+        return withOpen(null) { live ->
+            NativeBridge.reviewAnchor(live, from, to)?.let { Bridge.decodeNullable<ReviewAnchor>(it) }
+        }
+    }
+
+    override fun closeReview() {
+        withOpen(Unit) { live -> NativeBridge.reviewClose(live) }
+    }
+
+    override suspend fun reviewRound(sent: SentReviewRef): ReviewPage? {
+        val sentJson = AmuxJson.json.encodeToString(sent)
+        return reviewValue { live -> NativeBridge.reviewRound(live, sentJson) }
+    }
+
+    /** A review act's `ReviewOutcome`; null once the chat or the runtime has closed. */
+    private suspend fun reviewAct(start: (Long) -> Long): ReviewOutcome? = reviewValue(start)
+
+    private suspend inline fun <reified T> reviewValue(noinline start: (Long) -> Long): T? {
+        val raw = try {
+            loop.awaitAct { withOpen(0L, start) }
+        } catch (c: CancellationException) {
+            throw c
+        } catch (_: Throwable) {
+            return null
+        }
+        if (Bridge.isErrAnswer(raw)) return null
+        return Bridge.decodeNullable<T>(raw)
     }
 
     private suspend inline fun <reified T> act(

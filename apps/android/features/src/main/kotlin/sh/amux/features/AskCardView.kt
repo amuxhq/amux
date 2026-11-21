@@ -502,6 +502,8 @@ private fun AskCardBody(
                     EditDiffPreview(
                         lines = lines,
                         showWhole = showWholeDiff,
+                        patch = body.patch,
+                        path = body.path,
                     )
                     if (lines.size > DIFF_PREVIEW_LIMIT) {
                         val toggleLabel = stringResource(

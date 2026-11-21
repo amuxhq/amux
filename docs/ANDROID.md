@@ -71,10 +71,10 @@ Retrofit), with OkHttp and `kotlinx.serialization` behind plain interfaces.
 | `:core:values` | Pure JVM | Generated `Values.kt` mirroring every Rust value that crosses the bridge, produced by `cargo run -p ios-tools -- kotlin-types`; never edited by hand, zero Android imports |
 | `:core:words` | Pure JVM | Wording and markdown parsing (`ChatWords`, `FleetWords`, `FleetRow`, `DeleteWords`, `SignInWords`, `PlaceNames`, `Elapsed`, `Markdown`, `RowState`, `RunPlacement`, `Subagents`); zero Android imports, runs on the JVM |
 | `:push` | Pure JVM | Generated `Said.kt`, `OpenedPush`, `PushWords` and `PushAlert`; its test fixtures hold the HPKE opener (`X25519` + `HKDF-SHA256` + `ChaCha20-Poly1305`, info `amux push 1`) and key store, which only the debug door and tests link; zero Rust and zero Android UI |
-| `:core:runtime` | Android library | JNI `NativeBridge`, `CoreLoop`, `Runtime`, `Profile`, `Chat`, `RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `FleetStore`, `HostsStore`, `PairingStore`, `NewAgentStore`, `AccountRegistry`, `SignInStore`, `SignInOffers`, `RemovalStore`, `DeletionStore`, `EntitlementWatch`, `AndroidLocalDiscovery`, `AndroidNetworkWatch`, `AppLifecycleObserver`, `AmuxCloudService`, `ReportStore` / `ReportAssembly`, and the `PushRegistrar` and `BillingStoreFront` seams |
+| `:core:runtime` | Android library | JNI `NativeBridge`, `CoreLoop`, `Runtime`, `Profile`, `Chat`, `RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `ReviewSession`, `FleetStore`, `HostsStore`, `PairingStore`, `NewAgentStore`, `AccountRegistry`, `SignInStore`, `SignInOffers`, `RemovalStore`, `DeletionStore`, `EntitlementWatch`, `AndroidLocalDiscovery`, `AndroidNetworkWatch`, `AppLifecycleObserver`, `AmuxCloudService`, `ReportStore` / `ReportAssembly`, and the `PushRegistrar` and `BillingStoreFront` seams |
 | `:design` | Android library (Compose) | Light and dark neutral grey ramp (`ground`, `raised`, `sunken`, `hairline`, `ink`, `inkMuted`, `inkFaint`), single chromatic accent, muted diff tones, bundled `InstrumentSans` and `GeistMono` fonts, tonal surfaces with `1.dp` hairlines (Material You Dynamic Color explicitly disabled), spacing, motion and 48 dp touch-target helpers (`thumbTarget`, `edgeTarget`, `spillTarget`) |
-| `:features` | Android library (Compose) | Pure `@Composable` screens and components (`AgentsHome`, `FirstRun`, `HostsTab`, `HostPage`, `PairingSheet`, `ChatScreen`, `ChatRows`, `ChatComposer`, `AskCardView`, `ChatOverviewSheet`, `ChatSettingsSheet`, `NewAgentScreen`, `AgentDialogs`, `SettingsScreen`, `PaywallScreen`, `AccountSheets`, `ReportSheet`, `StoreFailureScreen`) taking immutable state and action callbacks |
-| `:shell` | Android library (Compose) | `Router`, `Route`, `Shell` (2-tab Material 3 `NavigationBar`, left-aligned `TopAppBar`, top-right account avatar menu, full-screen Settings route, Extended FAB, predictive back), `DeepLink`, `OAuthBrowser`, `AndroidSpeechDictation`, `ShellPlatform`, `NotificationChannels`, one route composable per screen (`AgentsRoute`, `HostsRoute`, `ChatRoute`, `SettingsRoute`, `NewAgentRoute`) that collects its own stores, and pure per-screen mappers (`ChatMappers`, `AgentsMappers`, `HostsMappers` and the rest) |
+| `:features` | Android library (Compose) | Pure `@Composable` screens and components (`AgentsHome`, `FirstRun`, `HostsTab`, `HostPage`, `PairingSheet`, `ChatScreen`, `ChatRows`, `ChatComposer`, `AskCardView`, `ChatOverviewSheet`, `ChatSettingsSheet`, `ReviewScreen`, `ReviewRows`, `ReviewRoundSheet`, `NewAgentScreen`, `AgentDialogs`, `SettingsScreen`, `PaywallScreen`, `AccountSheets`, `ReportSheet`, `StoreFailureScreen`) taking immutable state and action callbacks, and `CodeHighlighting`, the shared view's code colours fetched off the main thread and kept by content |
+| `:shell` | Android library (Compose) | `Router`, `Route`, `Shell` (2-tab Material 3 `NavigationBar`, left-aligned `TopAppBar`, top-right account avatar menu, full-screen Settings route, Extended FAB, predictive back), `DeepLink`, `OAuthBrowser`, `AndroidSpeechDictation`, `ShellPlatform`, `NotificationChannels`, one route composable per screen (`AgentsRoute`, `HostsRoute`, `ChatRoute`, `ReviewRoute`, `SettingsRoute`, `NewAgentRoute`) that collects its own stores, and pure per-screen mappers (`ChatMappers`, `AgentsMappers`, `HostsMappers` and the rest) |
 | `:test-support` | Android library (debug/test only) | `Door` NDJSON protocol, `ScriptedChat`, `ScriptedCloudService`, `ScriptedBillingStoreFront` and `Stories` aligned with `tests/stories.json`; never linked into `release` |
 | `:app` | Android application | `AmuxApplication`, edge-to-edge portrait `MainActivity`, `Composition.kt`, `ReportFreezer`, `FileProvider`; under `src/debug/`: `DoorServer`, `DoorHost`, `StorybookActivity` and debug hooks; under `src/release/`: no-op hooks |
 
@@ -187,6 +187,20 @@ Platform chrome follows Android conventions:
   content edge while its target spills into the padding. Full-width rows take
   a 48 dp minimum height instead; a diff line, as wide as the screen, is drawn
   its text's height.
+- **Selecting lines in a review:** a tap selects a line and a tap on another
+  line of its file stretches the selection; a hold then drag draws one, as
+  text is selected. The drag is a pointer handler on the review's
+  `LazyColumn` watching the `Initial` pass: it takes nothing until the hold's
+  time is up with the finger still, so a swipe that moves first scrolls, and
+  a hold that finds no line under it (a file's head) leaves the press to the
+  row's own long-press menu. Lines are found by the list's visible items,
+  the selection stays in the file it began in, and a finger in the 56 dp band
+  at either edge runs the list, faster the deeper in. TalkBack selects with a
+  custom action on each line.
+- **The review over its chat:** `Route.Review` is pushed over the chat, whose
+  route leaves composition; `ReviewRoute` takes its own lease on the chat, so
+  the chat stays open and its deltas keep carrying the page, and closes the
+  page when it leaves.
 
 ## Accounts, lifecycle and backup exclusion
 

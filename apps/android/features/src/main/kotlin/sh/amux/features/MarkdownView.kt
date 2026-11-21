@@ -160,12 +160,15 @@ fun MarkdownView(
                 onOpenLink = onOpenLink,
             )
         }
-        document.blocks.forEach { block ->
+        document.blocks.forEachIndexed { index, block ->
             MarkdownBlockView(
                 block = block,
                 workingNote = workingNote,
                 onOpenLink = onOpenLink,
                 onCopyCode = onCopyCode,
+                // The last block of a reply still streaming is the one
+                // still being written.
+                streaming = streaming && index == document.blocks.lastIndex,
             )
         }
     }
@@ -257,6 +260,7 @@ private fun MarkdownBlockView(
     workingNote: Boolean,
     onOpenLink: (OpenableLink) -> Unit,
     onCopyCode: (String) -> Unit,
+    streaming: Boolean = false,
 ) {
     when (block) {
         is MarkdownBlock.Heading -> MarkdownHeadingBlock(
@@ -279,6 +283,7 @@ private fun MarkdownBlockView(
             language = block.language,
             text = block.text,
             onCopyCode = onCopyCode,
+            streaming = streaming,
         )
         is MarkdownBlock.Quote -> MarkdownQuoteBlockView(
             lines = block.lines,
@@ -414,6 +419,8 @@ private fun MarkdownCodeBlockView(
     language: String?,
     text: String,
     onCopyCode: (String) -> Unit,
+    /** The block still being written: the open fence of text still arriving. */
+    streaming: Boolean = false,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
@@ -483,8 +490,16 @@ private fun MarkdownCodeBlockView(
                     if (isDiff) {
                         DiffCodeLines(text = text)
                     } else {
+                        // Drawn plain at once, then in the colours of its
+                        // tokens as the shared view answers.
+                        val answer = rememberHighlighted(
+                            CodeHighlighting.Request.Block(code = text, info = language.orEmpty(), streaming = streaming),
+                        )
+                        val coloured = remember(text, answer, colors) {
+                            answer?.let { colors.codeText(it.runsFor(codeLines(text))) }
+                        }
                         Text(
-                            text = text,
+                            text = coloured ?: AnnotatedString(text),
                             style = typography.mono,
                             color = colors.ink,
                             softWrap = false,

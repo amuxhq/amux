@@ -62,6 +62,7 @@ data class AmuxColors(
     val onAccent: Color,
     val added: Color,
     val removed: Color,
+    val syntax: SyntaxColors,
 ) {
     /** Subtle line-highlight backdrop for added diff lines. */
     val addedTint: Color
@@ -113,6 +114,17 @@ data class AmuxColors(
     val barScrolled: Color
         get() = if (dark) raised else sunken
 }
+
+/** [Syntax] resolved for one appearance. */
+@Immutable
+data class SyntaxColors(
+    val keyword: Color,
+    val string: Color,
+    val number: Color,
+    val type: Color,
+    val function: Color,
+    val comment: Color,
+)
 
 /** The dark-mode [AmuxColors.accentFill]; see there. */
 private val DarkAccentFill = Ramp.rgbToColor(0x2272BD)

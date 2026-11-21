@@ -107,15 +107,41 @@ can always reply in your own words instead.
 
 ## Reviewing changes
 
-Open an agent's changes from its chat to read every file it touched, one after
-another in a single scroll. Tap a file's name to fold it away or open it again,
-or use the list button at the top right to jump to a file. Tap a line and
-comment on it with **Add to Review**, or hold a file's name to comment on the
-whole file. **Attach Review** puts your comments into the composer as one
-review, ready to send to the agent.
-The count on the chat covers the agent's whole folder; if the folder changed
-since the agent last finished a turn, opening its changes brings the count up
-to date.
+Open an agent's changes from its chat: the changes count at the top, **Review
+Changes** in the **⋮** menu, the overview's **Review changes**, or the review
+chip in the message box. Reviews need the reviews experiment on the agent's
+computer; [Reviewing changes](reviews.md) explains how to switch it on, and how
+comments, rounds and **Since your last review** work. Without it, the review
+says the computer doesn't offer reviews. On the phone:
+
+- **Reading:** the review holds still while you read. If the agent changes
+  code meanwhile, the page says so and **Refresh** brings it up to date;
+  pulling the page down does the same. Tap a file's name to fold or open it,
+  and the list button at the top jumps between files. Tap the arrows on
+  hidden lines to show more of the file above or below a change. The switch
+  at the top changes between **Since your last review** and **All changes**.
+- **Commenting:** tap a line to select it, and tap another line in the same
+  file to stretch the selection to it. Or hold a line for a moment and drag,
+  the way you select text: hold your finger near the top or bottom of the
+  screen and the page scrolls to take the selection further. A quick swipe
+  still scrolls. Then tap **Comment on 3 lines** at the bottom, or press Back
+  to let the selection go. To comment on a whole file, hold its name and
+  choose **Comment on the File**. With TalkBack, each line offers **Select
+  line**, and a file's name offers **Comment on the File**.
+- **Changing a comment:** tap it to change its words or delete it.
+- **Sending:** while you have drafts, the message box shows a
+  **Review · 3 comments** chip, and whatever you send next carries them, with
+  your message as the summary; you can send the chip alone, even while the
+  agent is working. **Done** at the bottom of the review takes you back
+  there. Tap the chip's **✕** to discard the drafts instead.
+- **Starting over:** the **⋮** menu discards your drafts, or deletes the
+  whole review so the next look is a first look. Both ask first.
+
+A review you sent shows in the chat as a chip. Tap it to see that round
+again ([Look back at a round](reviews.md#look-back-at-a-round)).
+
+Code in the agent's replies and in the edits it asks to make is coloured by
+kind, the same way on every app.
 
 ## Computers
 

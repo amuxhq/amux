@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import sh.amux.values.AttachmentView
 import sh.amux.values.ActOutcome
 import sh.amux.values.ActivityKind
 import sh.amux.values.AskCard
@@ -38,6 +39,7 @@ import sh.amux.values.FormField
 import sh.amux.values.FormProblem
 import sh.amux.values.FormValue
 import sh.amux.values.GroupState
+import sh.amux.values.InputState
 import sh.amux.values.KeysMoved
 import sh.amux.values.Kind
 import sh.amux.values.Lands
@@ -47,11 +49,16 @@ import sh.amux.values.PageOutcome
 import sh.amux.values.QuestionResponse
 import sh.amux.values.QueuedRow
 import sh.amux.values.RefusedPrompt
+import sh.amux.values.ReviewChange
+import sh.amux.values.ReviewChip
+import sh.amux.values.ReviewPage
 import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Run
 import sh.amux.values.RunCounts
 import sh.amux.values.SentPrompt
+import sh.amux.values.SentReviewRef
+import sh.amux.values.Segment
 import sh.amux.values.SettingChange
 import sh.amux.values.SettingsView
 import sh.amux.values.SubagentGroup
@@ -104,6 +111,13 @@ sealed interface ChatPaging {
 
     data class Failed(val reason: String) : ChatPaging
 }
+
+/** A review sent into the chat, as its chip names it, for opening its round. */
+data class SentRound(
+    val sent: SentReviewRef,
+    /** What the agent read, shown when its host no longer holds the round. */
+    val text: String,
+)
 
 /** Observable state of one row cell, keyed by row id. */
 data class RowCellState(
@@ -228,6 +242,15 @@ data class ChatUiState(
      * chip), so the composer can tell which of its edits [draft] answers.
      */
     val typedEdits: Int = 0,
+    /**
+     * The composer's chip while the agent's review holds drafts: "Review ·
+     * 3 comments". From the agent's row, so it shows on every client of the
+     * agent, and the next send carries the drafts. Its ✕ discards them, once
+     * the person confirms; there is no sending without them.
+     */
+    val reviewChip: ReviewChip? = null,
+    /** The round of a review sent into the chat, opened from its chip; the screen raises it. */
+    val roundOpened: SentRound? = null,
 ) {
     val arrivalsHeld: Boolean
         get() = frame?.arrivalsHeld == true
@@ -238,11 +261,15 @@ data class ChatUiState(
     val hasDraft: Boolean
         get() = draft.isNotBlank() || attachments.isNotEmpty()
 
+    /** Something to send: the draft, or the review's drafts under the chip, which go with or without words. */
+    val hasMessage: Boolean
+        get() = hasDraft || reviewChip != null
+
     val canSend: Boolean
         get() = frame != null &&
             !sending &&
             uploading == 0 &&
-            hasDraft &&
+            hasMessage &&
             frame.composer.mode == Composer.Send &&
             frame.caughtUp
 
@@ -365,6 +392,22 @@ class ChatModel(
     private data class PastedRun(val at: Int, val text: String)
     private var pasted: PastedRun? = null
 
+    /**
+     * The agent's review page while it is open on the chat: the review read
+     * and written at the agent's host, which every client of the agent sees.
+     */
+    var reviewPage: ReviewSession? = null
+        private set
+
+    /**
+     * The chip a send carried the review's drafts under, held back until the
+     * agent's row says something new of them: the host marks the drafts sent
+     * as it accepts the message, and the chip would otherwise offer them
+     * again for the moment before the row says so.
+     */
+    private var sentChip: ReviewChip? = null
+    private var roundOpened: SentRound? = null
+
     private var loadingHintJob: Job? = null
     private val blobCache = BlobLruCache(maxBytes = blobCacheMaxBytes)
 
@@ -399,6 +442,7 @@ class ChatModel(
     val canSend: Boolean get() = _state.value.canSend
     val canResume: Boolean get() = _state.value.canResume
     val hasDraft: Boolean get() = _state.value.hasDraft
+    val reviewChip: ReviewChip? get() = _state.value.reviewChip
 
     init {
         val opening = source.opening()
@@ -446,6 +490,7 @@ class ChatModel(
         }
         fill(delta.rows)
         show(delta)
+        delta.review?.let { page -> reviewPage?.apply(page) }
         if (delta.rows.isNotEmpty()) {
             openIfLanded()
         }
@@ -793,6 +838,7 @@ class ChatModel(
                 keeping = null
             }
             frame = cleaned
+            if (sentChip != null && cleaned.reviewChip != sentChip) sentChip = null
         }
         delta.ask?.let { moved ->
             ask = moved.card
@@ -1393,6 +1439,64 @@ class ChatModel(
         publish()
     }
 
+    // --- The agent's review ------------------------------------------------
+
+    /**
+     * Opens the agent's review page for a look, on the page already open on
+     * the chat when there is one. The page moves with the chat's deltas
+     * until [closeReviewPage].
+     */
+    fun openReviewPage(): ReviewSession {
+        val page = reviewPage?.takeIf { !it.closed } ?: ReviewSession(source = source, scope = scope)
+        reviewPage = page
+        page.open()
+        return page
+    }
+
+    /**
+     * The review page left the screen: the chat stops following the review
+     * for it. The review, its drafts and the chip stay.
+     */
+    fun closeReviewPage() {
+        reviewPage?.close()
+        reviewPage = null
+    }
+
+    /** Raises the round a review sent into the chat closed, from its chip. */
+    fun open(round: SentRound) {
+        roundOpened = round
+        publish()
+    }
+
+    fun closeRound() {
+        if (roundOpened == null) return
+        roundOpened = null
+        publish()
+    }
+
+    /**
+     * The page of a sent review's round, read from the agent's host apart
+     * from the page open on the chat; null once the host holds none of it.
+     */
+    suspend fun reviewRound(sent: SentReviewRef): ReviewPage? = source.reviewRound(sent)
+
+    /**
+     * The chip's ✕, once the person confirmed it: deletes the review's drafts
+     * at the agent's host, with or without its page open. The chip goes when
+     * the agent's row says they did.
+     */
+    fun discardReviewDrafts(): Job {
+        notice = null
+        publish()
+        return scope.launch {
+            val outcome = source.editReview(listOf(ReviewChange.DiscardDrafts))
+            notice = ChatWords.reviewNotice(outcome)
+            publish()
+        }
+    }
+
+    private fun currentReviewChip(): ReviewChip? = frame?.reviewChip?.takeIf { it != sentChip }
+
     // --- Sending, Queueing & Acts ------------------------------------------
 
     /**
@@ -1464,7 +1568,12 @@ class ChatModel(
 
     private fun sendAsTyped(): Job = sendDraft(sent = composed, clearCurrentDraft = true)
 
+    /**
+     * Sends [sent], with the review's drafts after its words while the chip
+     * offers them.
+     */
     private fun sendDraft(sent: Draft, clearCurrentDraft: Boolean): Job {
+        val chip = currentReviewChip()
         if (clearCurrentDraft) {
             clearDraftInternal()
         }
@@ -1472,13 +1581,25 @@ class ChatModel(
         notice = null
         setFollowing(true)
         toNewest += 1
+        if (chip != null) sentChip = chip
         publish()
         return scope.launch {
-            val outcome = source.send(sent)
+            val outcome = if (chip == null) source.send(sent) else source.sendWithReview(sent)
             sending = false
             outcome.onFailure { failure ->
                 restore(sent)
                 notice = failure.failureDescription
+                if (chip != null) sentChip = null
+            }
+            outcome.onSuccess { landed ->
+                // Refused, or not known to have landed: the drafts are still
+                // the review's on the agent's computer, which marks them sent
+                // only once the agent takes the message, so the chip shows
+                // them again rather than hiding what may never have gone.
+                when (landed.state) {
+                    is InputState.Rejected, InputState.Uncertain -> if (chip != null) sentChip = null
+                    InputState.Sent, InputState.Queued, InputState.Settled -> Unit
+                }
             }
             publish()
         }
@@ -1510,14 +1631,25 @@ class ChatModel(
         }
     }
 
+    /**
+     * Takes a queued prompt back; its words and attachments return to the
+     * draft. What it held is read before it leaves the queue. A review it
+     * carried does not come back with it: withdrawn, it closed no round, so
+     * its comments are drafts still, the chip shows them again, and the next
+     * send reads them as they are then.
+     */
     fun withdraw(queued: QueuedRow): Job? {
         val taken = source.draftOf(queued.inputId)
+        val carriedReview = queued.text.any { segment ->
+            segment is Segment.Attachment && segment.value is AttachmentView.SentReview
+        }
         return act(
             body = { it.withdraw(queued.inputId) },
             onDone = {
                 if (taken != null) {
                     restore(taken)
                 }
+                if (carriedReview) sentChip = null
             },
         )
     }
@@ -1736,6 +1868,8 @@ class ChatModel(
             activitySubject = activitySubject,
             draftImages = draftImages(),
             typedEdits = typedEdits,
+            reviewChip = currentReviewChip(),
+            roundOpened = roundOpened,
         )
     }
 

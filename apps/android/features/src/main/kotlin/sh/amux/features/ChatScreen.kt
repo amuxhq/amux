@@ -54,6 +54,9 @@ import kotlinx.coroutines.flow.flowOf
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
+import sh.amux.values.SentReviewRef
+import sh.amux.values.ReviewPage
+import sh.amux.values.ReviewChip
 import sh.amux.values.AgentKey
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.AskCard
@@ -234,6 +237,10 @@ data class ChatScreenState(
     val dictationDenied: Boolean = false,
     /** Whether the dock's task row starts open, as a story pictures it. */
     val dockOpen: Boolean = false,
+    /** The review's drafts the next message sends, shown as a chip in the composer. */
+    val reviewChip: ReviewChip? = null,
+    /** The sent review whose round is raised over the chat. */
+    val round: OpenedRound? = null,
 ) {
     val arrivalsHeld: Boolean
         get() = frame?.arrivalsHeld == true
@@ -278,11 +285,19 @@ data class ChatScreenCallbacks(
     val onToggleGroup: (rowId: String) -> Unit = {},
     val onOpenAgent: (AgentKey) -> Unit = {},
     /**
-     * Opens the agent's changes for review, at a file when one is named;
-     * null hides every way into review: the changes capsule, its menu
-     * item, the overview's changed files and the file rows of landed edits.
+     * Opens the agent's review page: from the changes capsule and its menu
+     * item, the overview's changes, the composer's review chip and a sent
+     * review's round. Each shows whenever the chat has what it opens; with
+     * the host's reviews experiment off the page itself says so.
      */
-    val onOpenReview: ((filePath: String?) -> Unit)? = null,
+    val onOpenReview: () -> Unit = {},
+    /** Discards the review's drafts, confirmed from the composer's chip. */
+    val onDiscardReviewDrafts: () -> Unit = {},
+    /** Raises the round a sent review closed, from its chip in the chat. */
+    val onOpenRound: (sent: SentReviewRef, text: String) -> Unit = { _, _ -> },
+    val onCloseRound: () -> Unit = {},
+    /** Reads a sent review's round from the agent's computer; null once it holds none of it. */
+    val readRound: suspend (SentReviewRef) -> ReviewPage? = { null },
     val onOpenAttachment: (BlobRef) -> Unit = {},
     val onOpenAttachmentExternally: (File) -> Unit = {},
     val onShareAttachment: (File) -> Unit = {},
@@ -612,7 +627,6 @@ private fun ChatScreenContent(
             onToggleRun = callbacks.onToggleRun,
             onToggleGroup = callbacks.onToggleGroup,
             onOpenAgent = callbacks.onOpenAgent,
-            onOpenFileChange = callbacks.onOpenReview?.let { open -> { fileRow -> open(fileRow.path) } },
             onOpenImage = { hash, label ->
                 val blob = BlobRef(hash = hash, name = label, mime = "image/png", size = 0L)
                 val bytes = if (hash.isNotEmpty()) rowSource.imageBytes(blob) else null
@@ -639,6 +653,7 @@ private fun ChatScreenContent(
                         }
                     }
                     is AttachmentView.File -> callbacks.onOpenAttachment(view.value)
+                    is AttachmentView.SentReview -> callbacks.onOpenRound(view.review, view.text)
                     else -> Unit
                 }
             },
@@ -666,13 +681,13 @@ private fun ChatScreenContent(
                     subject = state.subject,
                     placeLine = placeLine,
                     unconfirmed = detached || !state.subject.reachable,
-                    changes = state.changes.takeIf { callbacks.onOpenReview != null },
+                    changes = state.changes,
                     hasOverviewHighlights = state.hasOverviewHighlights,
                     settingsAvailable = state.settings != null,
                     onBack = callbacks.onBack,
                     onOpenOverview = { overviewOpen = true },
                     onOpenSettings = { settingsOpen = true },
-                    onOpenReview = { callbacks.onOpenReview?.invoke(null) },
+                    onOpenReview = callbacks.onOpenReview,
                     onPin = callbacks.onPin,
                     onUnpin = callbacks.onUnpin,
                     onOpenRename = { renameOpen = true },
@@ -757,6 +772,16 @@ private fun ChatScreenContent(
     }
 
     // Modal sheets & dialogs owned by ChatScreen
+    state.round?.let { round ->
+        ReviewRoundSheet(
+            sent = round.sent,
+            text = round.text,
+            read = { callbacks.readRound(round.sent) },
+            onOpenReview = callbacks.onOpenReview,
+            onClose = callbacks.onCloseRound,
+        )
+    }
+
     if (overviewOpen) {
         ChatOverviewModalSheet(
             clock = clock,
@@ -771,16 +796,15 @@ private fun ChatScreenContent(
                 comparison = state.comparison,
                 baseBranch = state.frame?.git?.baseBranch,
                 changeTotals = state.changes,
-                canReview = callbacks.onOpenReview != null,
             ),
             onAction = { action ->
                 when (action) {
                     is ChatOverviewAction.StopJob -> callbacks.onStopJob(action.key)
                     is ChatOverviewAction.SelectComparison -> callbacks.onSelectComparison(action.comparison)
                     ChatOverviewAction.RetryChanges -> callbacks.onRetryChangedFiles()
-                    is ChatOverviewAction.OpenReview -> {
+                    ChatOverviewAction.OpenReview -> {
                         overviewOpen = false
-                        callbacks.onOpenReview?.invoke(action.filePath)
+                        callbacks.onOpenReview()
                     }
                     ChatOverviewAction.Dismiss -> overviewOpen = false
                 }

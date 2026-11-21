@@ -102,6 +102,15 @@ import sh.amux.values.Row
 import sh.amux.values.Scope
 import sh.amux.values.SettingsView
 import sh.amux.values.Waiting
+import sh.amux.features.ReviewScreen
+import sh.amux.features.ReviewScreenState
+import sh.amux.features.ReviewCommentSheetContent
+import sh.amux.features.ReviewRoundContent
+import sh.amux.features.ReviewPlaceholderScreen
+import sh.amux.core.runtime.ReviewSession
+import sh.amux.values.ReviewBanner
+import sh.amux.values.ReviewChip
+import sh.amux.values.ReviewPage
 import sh.amux.words.ChatWords
 import sh.amux.words.EMPTY_GROUP_STATE
 
@@ -150,12 +159,6 @@ object Stories {
      */
     val IOS_ONLY_STORIES: Map<String, String> = mapOf(
         "hosts.network-refused" to "Android asks no permission to look on the network; a phone that cannot look says so on the first run (fleet.first-run-refused).",
-        "review.page" to "Android draws no review page until it is rebuilt on the host's review page.",
-        "review.since-last" to "Android draws no review page until it is rebuilt on the host's review page.",
-        "review.drafts-stale" to "Android draws no review page until it is rebuilt on the host's review page.",
-        "review.empty" to "Android draws no review page until it is rebuilt on the host's review page.",
-        "review.not-offered" to "Android draws no review page until it is rebuilt on the host's review page.",
-        "review.round" to "Android draws no review page until it is rebuilt on the host's review page.",
     )
 
     private val F = CatalogFixtures
@@ -1096,6 +1099,124 @@ object Stories {
             )
         },
 
+        // --- Review --------------------------------------------------------
+        // The iOS catalogue's review examples, by its ids, drawn from the
+        // pages the shared runtime would hand over for one invented review.
+        reviewStory("page", "Review page", "All changes on a first look: three files, the lock file folded, two drafts.") {
+            ReviewStoryScreen(R.page())
+        },
+        reviewStory("selection", "Lines selected", "Two lines of a file selected, with the comment they take at the foot.") {
+            ReviewStoryScreen(R.page(), selectTwoLines = true)
+        },
+        reviewStory("comment", "Writing a comment", "The comment sheet raised over the lines it is about.") {
+            val page = R.page()
+            SheetStoryFrame(background = { ReviewStoryScreen(page, selectTwoLines = true) }) {
+                ReviewCommentSheetContent(
+                    title = ChatWords.commentOn(3),
+                    initial = "",
+                    key = "comment",
+                    editing = false,
+                    onDismiss = {},
+                    onAct = {},
+                    focusOnOpen = false,
+                )
+            }
+        },
+        reviewStory("editing", "Editing a comment", "A draft opened to be reworded or deleted.") {
+            val page = R.page()
+            val comment = R.firstComment(page)
+            SheetStoryFrame(background = { ReviewStoryScreen(page) }) {
+                ReviewCommentSheetContent(
+                    title = comment?.let { ChatWords.reviewCommentState(it.state) }.orEmpty(),
+                    initial = comment?.text.orEmpty(),
+                    key = "editing",
+                    editing = true,
+                    onDismiss = {},
+                    onAct = {},
+                    focusOnOpen = false,
+                )
+            }
+        },
+        reviewStory("folded", "Files folded", "Every file folded to its head.") {
+            ReviewStoryScreen(R.page(folded = true))
+        },
+        reviewStory(
+            "since-last",
+            "Since your last review",
+            "The next look: the two views, comments sent and outdated or near changed code, and a draft on a new line.",
+        ) {
+            ReviewStoryScreen(R.sinceLast())
+        },
+        reviewStory("drafts-stale", "Drafts on an older snapshot", "The page held on its drafts' snapshot after the agent changed code, offering to refresh.") {
+            ReviewStoryScreen(R.page(banners = listOf(ReviewBanner.ChangedSinceYouStarted)))
+        },
+        reviewStory("moved-drafts", "Drafts moved", "A refresh moved two drafts onto the new snapshot.") {
+            ReviewStoryScreen(R.page(banners = listOf(ReviewBanner.MovedDrafts(count = 2))))
+        },
+        reviewStory("empty", "Nothing to review", "The review page with nothing left to review.") {
+            ReviewStoryScreen(R.empty())
+        },
+        reviewStory("nothing-since", "Nothing since the last round", "Nothing changed since the last round, which still lists the comment sent in it.") {
+            ReviewStoryScreen(R.nothingSince())
+        },
+        reviewStory("not-offered", "Reviews not offered", "An agent whose computer runs no reviews: the page says so.") {
+            ReviewStoryScreen(R.notOffered())
+        },
+        reviewStory("opening", "Review opening", "The page before the review's summary arrives.") {
+            ReviewStoryScreen(ReviewSession.OPENING)
+        },
+        reviewStory("large-text", "Review page (large text)", "The review page at Android's largest text size.", fontScale = LARGEST_FONT_SCALE) {
+            ReviewStoryScreen(R.page())
+        },
+        reviewStory("round", "A sent round", "What a sent review opens: the round it closed, its whole diff with each comment on its lines.") {
+            SheetStoryFrame(background = { StoryChatScreen(conversationChat()) }) {
+                ReviewRoundContent(sent = R.sent, text = R.sentText, asked = true, round = R.round(), onOpenReview = {}, onClose = {})
+            }
+        },
+        reviewStory("round-text", "A sent round no longer held", "A round the computer no longer holds: the text the agent read.") {
+            SheetStoryFrame(background = { StoryChatScreen(conversationChat()) }) {
+                ReviewRoundContent(sent = R.sent, text = R.sentText, asked = true, round = null, onOpenReview = {}, onClose = {})
+            }
+        },
+        reviewStory("reading", "Reading the changes", "The review page while its chat is still opening.") {
+            ReviewPlaceholderScreen(failure = null, onBack = {})
+        },
+        Story(
+            id = "composer.review-chip",
+            area = "Review",
+            title = "Review chip in the composer",
+            description = "The review's drafts as a chip after the draft's words, which the next send carries.",
+        ) {
+            StoryChatScreen(
+                chat(
+                    rows = F.conversation,
+                    frame = ScriptedChat.frame(phase = PhaseView.Idle, reviewChip = ReviewChip(comments = 3, moved = false)),
+                    strip = opus,
+                    draft = "These three, then run the suite.",
+                    canSend = true,
+                ),
+            )
+        },
+        Story(
+            id = "composer.review-chip-working",
+            area = "Review",
+            title = "Review chip while the agent works",
+            description = "The chip alone while the agent works, after the code moved: the round button still sends.",
+        ) {
+            StoryChatScreen(
+                chat(
+                    rows = F.working,
+                    frame = ScriptedChat.frame(
+                        phase = PhaseView.Working,
+                        activity = F.workingActivity,
+                        reviewChip = ReviewChip(comments = 1, moved = true),
+                    ),
+                    strip = opus,
+                    canSend = true,
+                ),
+            )
+        },
+
         // --- System --------------------------------------------------------
         Story(
             id = "store.failure",
@@ -1202,6 +1323,37 @@ object Stories {
             }
         }
 
+    // --- Review ---------------------------------------------------------------
+
+    private val R = ReviewStory
+
+    private fun reviewStory(
+        id: String,
+        title: String,
+        description: String,
+        fontScale: Float = 1.0f,
+        content: @Composable () -> Unit,
+    ): Story = Story(
+        id = "review.$id",
+        area = "Review",
+        title = title,
+        description = description,
+        fontScale = fontScale,
+        content = content,
+    )
+
+    /** The review page as the app draws it for [page], with the store's two lines selected when asked. */
+    @Composable
+    private fun ReviewStoryScreen(page: ReviewPage, selectTwoLines: Boolean = false) {
+        val (from, to) = R.twoLines(page)
+        val state = ReviewScreenState(
+            page = page,
+            selected = if (selectTwoLines) minOf(from, to)..maxOf(from, to) else null,
+            anchor = if (selectTwoLines) R.anchor else null,
+        )
+        ReviewScreen(state = state, onAction = {})
+    }
+
     // --- Chats ----------------------------------------------------------------
 
     private class StoryChat(val state: ChatScreenState, val source: StaticChatRowSource)
@@ -1233,6 +1385,7 @@ object Stories {
         draft: String = "",
         questionDraft: QuestionDraft? = null,
         canResume: Boolean = false,
+        canSend: Boolean = false,
         loadingHint: Boolean = false,
     ): StoryChat {
         val folded = rows.map { ScriptedChat.folding(it, open = emptySet(), groups = openGroups) }
@@ -1253,6 +1406,7 @@ object Stories {
             loadingHint = loadingHint,
             draft = draft,
             canResume = canResume,
+            canSend = canSend,
             comparisons = if (git?.baseBranch == null) {
                 listOf(Comparison.Uncommitted)
             } else {
@@ -1262,6 +1416,7 @@ object Stories {
             activitySubject = running?.let { key -> folded.firstOrNull { it.id == key } }?.let(ChatWords::subject),
             keptQuestionDraft = questionDraft,
             dictationEnabled = true,
+            reviewChip = shown.reviewChip,
         )
         val source = StaticChatRowSource(
             rows = folded,

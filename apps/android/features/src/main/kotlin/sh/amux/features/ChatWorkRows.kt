@@ -190,7 +190,6 @@ internal fun FileChangeRowView(
     rail: RailJoin,
     unresolvedFailure: Boolean,
     denialNote: String?,
-    onOpenFileChange: ((FileRow) -> Unit)?,
 ) {
     val tail = listOf(ChatWords.state(state, decided = row.decision != null).orEmpty())
     if (files.isEmpty()) {
@@ -213,7 +212,6 @@ internal fun FileChangeRowView(
             val isLast = index == files.lastIndex
             val extra = if (index == 0) ChatWords.meta(tail, row, note = false) else ""
             val (glyph, verb, subject, baseMeta) = fileChangePresentation(file)
-            val openLabel = stringResource(R.string.chat_row_file_open_diff, file.path)
             GridRow(
                 kindTag = "file-change",
                 glyph = callGlyph(state, glyph),
@@ -226,10 +224,6 @@ internal fun FileChangeRowView(
                 subjectEmphasis = verb.isEmpty(),
                 meta = baseMeta.then(extra),
                 quote = if (index == 0) denialNote else null,
-                opens = onOpenFileChange != null,
-                pushes = onOpenFileChange != null,
-                actionDescription = openLabel.takeIf { onOpenFileChange != null },
-                onClick = { onOpenFileChange?.invoke(file) },
                 modifier = Modifier.testTag(ChatRowTags.FILE_CHANGE_ITEM),
             )
         }

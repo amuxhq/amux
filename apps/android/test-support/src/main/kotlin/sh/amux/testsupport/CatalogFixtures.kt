@@ -80,6 +80,27 @@ import sh.amux.values.UsageLabel
 import sh.amux.values.UsageState
 import sh.amux.values.UsageView
 import sh.amux.values.UsageWindowView
+import sh.amux.values.TokenKind
+import sh.amux.values.SentReviewRef
+import sh.amux.values.ReviewViewTab
+import sh.amux.values.ReviewView
+import sh.amux.values.ReviewRun
+import sh.amux.values.ReviewRowOf
+import sh.amux.values.ReviewRow
+import sh.amux.values.ReviewPage
+import sh.amux.values.ReviewHunkHead
+import sh.amux.values.ReviewHeader
+import sh.amux.values.ReviewGap
+import sh.amux.values.ReviewFileHead
+import sh.amux.values.ReviewFileFlag
+import sh.amux.values.ReviewEmpty
+import sh.amux.values.ReviewContextAsk
+import sh.amux.values.ReviewCommentState
+import sh.amux.values.ReviewCommentRow
+import sh.amux.values.ReviewCommentAt
+import sh.amux.values.ReviewCodeLine
+import sh.amux.values.ReviewBanner
+import sh.amux.values.ReviewAnchor
 
 /**
  * The iOS catalogue's invented content, value for value: the chats, asks
@@ -963,4 +984,339 @@ internal object CatalogFixtures {
         changeable = Changeability(Changeable.Pick, Changeable.Pick, Changeable.Pick, Changeable.NotOffered),
         commands = emptyList(),
     )
+}
+
+/**
+ * An invented review of one agent's change to how its store opens: the pages
+ * the shared runtime would hand over for it, as the iOS catalogue's review
+ * examples draw them.
+ */
+object ReviewStory {
+    const val SNAPSHOT: String = "5a1c0e7d9b3f42a8c6e1d0f9b7a5c3e1d2f4a6b8"
+    const val BASE: String = "b0e2d4f6a8c1e3a5c7e9b1d3f5a7c9e1b3d5f7a9"
+    const val LAST_ROUND: String = "3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3a5c7e9b1d"
+    const val OPEN: String = "crates/store/src/open.rs"
+    const val LIB: String = "crates/store/src/lib.rs"
+    const val LOCK: String = "Cargo.lock"
+
+    val anchor: ReviewAnchor = ReviewAnchor(commit = SNAPSHOT, path = OPEN, start = 41, end = 42)
+
+    val sent: SentReviewRef = SentReviewRef(reviewId = listOf(1), round = 1, inputId = listOf(0x0a))
+
+    /** What the agent read of the first round. */
+    val sentText: String = """
+        crates/store/src/open.rs, line 41, in impl Store › pub fn open:
+        +        let conn = Connection::open(path)?;
+        Return the store’s own error, not rusqlite’s.
+
+        crates/store/src/open.rs, line 42, in impl Store › pub fn open:
+        +        conn.busy_timeout(BUSY)?;
+        Name it for what it waits on.
+    """.trimIndent()
+
+    /** The removed line 41 to the added line 42 of the store's open, by row. */
+    fun twoLines(page: ReviewPage): Pair<Int, Int> =
+        index("l/$OPEN/41/0", page) to index("l/$OPEN/0/42", page)
+
+    fun index(key: String, page: ReviewPage): Int = page.rows.indexOfFirst { it.key == key }.coerceAtLeast(0)
+
+    fun firstComment(page: ReviewPage): ReviewCommentRow? =
+        page.rows.firstNotNullOfOrNull { (it.of as? ReviewRowOf.Comment)?.value }
+
+    // --- Pages ---------------------------------------------------------------
+
+    /**
+     * All changes on a first look: three files, the lock file folded, and two
+     * drafts, one on the lines it is about and one on a whole file.
+     */
+    fun page(banners: List<ReviewBanner> = emptyList(), folded: Boolean = false): ReviewPage {
+        val rows = mutableListOf<ReviewRow>()
+        rows += head(OPEN, added = 2, removed = 1, comments = 1, folded = folded)
+        if (!folded) {
+            rows += openBody(
+                drafts = listOf(
+                    comment(
+                        listOf(0x01), OPEN, "Why five seconds? The phone’s store waits two.",
+                        ReviewCommentState.Draft, ReviewCommentAt.Lines(start = 42, end = 42),
+                    ),
+                ),
+            )
+        }
+        rows += head(LIB, added = 3, removed = 0, comments = 1, folded = folded)
+        if (!folded) {
+            rows += comment(
+                listOf(0x02), LIB, "Keep the flags beside the open that uses them.",
+                ReviewCommentState.Draft, ReviewCommentAt.File,
+            )
+            rows += libBody()
+        }
+        rows += head(LOCK, added = 4, removed = 1, flags = listOf(ReviewFileFlag.Lockfile), folded = true)
+        return ReviewPage(
+            banners = banners, rows = rows, toFetch = emptyList(), opening = false, empty = null,
+            header = header(view = ReviewView.All, files = 3, added = 9, removed = 2, drafts = 2, sent = 0, rounds = 0),
+        )
+    }
+
+    /**
+     * The next look, since the last round: one file changed since, an earlier
+     * comment sent and outdated, another whose code nearby changed, and a
+     * draft on a new line.
+     */
+    fun sinceLast(): ReviewPage {
+        val sentInFirst = ReviewCommentState.Sent(round = 1)
+        val rows = listOf(
+            head(OPEN, added = 1, removed = 1, comments = 3, changedSinceLast = true),
+            comment(
+                listOf(0x0a), OPEN, "Return the store’s own error, not rusqlite’s.", sentInFirst,
+                ReviewCommentAt.Outdated,
+                snippet = listOf(line(OPEN, LineKind.Removed, old = 41, text = "        let conn = Connection::open(path)?;")),
+                folded = true,
+            ),
+            gap(OPEN, hidden = 39, up = ask(OPEN, 1, 39, "impl Store"), down = null),
+            hunk(OPEN, old = 40, new = 40, listOf("impl Store", "pub fn open")),
+            code(OPEN, LineKind.Context, old = 40, new = 40, text = "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
+            code(OPEN, LineKind.Context, old = 41, new = 41, text = "        let conn = Connection::open_with_flags(path, FLAGS)?;"),
+            code(OPEN, LineKind.Removed, old = 42, text = "        conn.busy_timeout(BUSY)?;", changed = listOf("BUSY")),
+            code(
+                OPEN, LineKind.Added, new = 42, text = "        conn.busy_timeout(BUSY_WAIT)?;",
+                changed = listOf("BUSY_WAIT"), commented = true,
+            ),
+            comment(
+                listOf(0x0b), OPEN, "Name it for what it waits on.", sentInFirst,
+                ReviewCommentAt.Lines(start = 42, end = 42), changedNear = true,
+            ),
+            comment(
+                listOf(0x03), OPEN, "Thanks. Two seconds matches the phone.", ReviewCommentState.Draft,
+                ReviewCommentAt.Lines(start = 42, end = 42),
+            ),
+            code(OPEN, LineKind.Context, old = 43, new = 43, text = "        migrate(&conn)?;"),
+            gap(OPEN, hidden = null, up = null, down = ask(OPEN, 44, 63, null)),
+        )
+        return ReviewPage(
+            banners = emptyList(), rows = rows, toFetch = emptyList(), opening = false, empty = null,
+            header = header(view = ReviewView.SinceLast, files = 1, added = 1, removed = 1, drafts = 1, sent = 2, rounds = 1),
+        )
+    }
+
+    /** Nothing left to review. */
+    fun empty(): ReviewPage = ReviewPage(
+        banners = emptyList(), rows = emptyList(), toFetch = emptyList(), opening = false, empty = ReviewEmpty.Nothing,
+        header = header(view = ReviewView.All, files = 0, added = 0, removed = 0, drafts = 0, sent = 0, rounds = 0),
+    )
+
+    /** Nothing changed since the last round, which still lists the comment sent in it. */
+    fun nothingSince(): ReviewPage = ReviewPage(
+        banners = emptyList(),
+        rows = listOf(
+            head(OPEN, added = 0, removed = 0, comments = 1),
+            comment(
+                listOf(0x0b), OPEN, "Name it for what it waits on.", ReviewCommentState.Sent(round = 1),
+                ReviewCommentAt.Lines(start = 42, end = 42),
+                snippet = listOf(line(OPEN, LineKind.Added, new = 42, text = "        conn.busy_timeout(BUSY)?;")),
+            ),
+        ),
+        toFetch = emptyList(), opening = false, empty = ReviewEmpty.NothingSince,
+        header = header(view = ReviewView.SinceLast, files = 0, added = 0, removed = 0, drafts = 0, sent = 1, rounds = 1),
+    )
+
+    /** An agent whose computer runs no reviews. */
+    fun notOffered(): ReviewPage = ReviewPage(
+        banners = listOf(ReviewBanner.NotOffered), rows = emptyList(), toFetch = emptyList(),
+        opening = false, empty = null, header = null,
+    )
+
+    /**
+     * The first round as its chip opens it: its whole diff, from main to the
+     * round's snapshot, with the two comments it sent on their lines.
+     */
+    fun round(): ReviewPage {
+        val scope = listOf("impl Store", "pub fn open")
+        val sentInFirst = ReviewCommentState.Sent(round = 1)
+        val rows = listOf(
+            head(OPEN, added = 2, removed = 0, comments = 2),
+            hunk(OPEN, old = 40, new = 40, scope),
+            code(OPEN, LineKind.Context, old = 40, new = 40, text = "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
+            code(OPEN, LineKind.Added, new = 41, text = "        let conn = Connection::open(path)?;", commented = true),
+            comment(
+                listOf(0x0a), OPEN, "Return the store’s own error, not rusqlite’s.", sentInFirst,
+                ReviewCommentAt.Lines(start = 41, end = 41), scope = scope,
+            ),
+            code(OPEN, LineKind.Added, new = 42, text = "        conn.busy_timeout(BUSY)?;", commented = true),
+            comment(
+                listOf(0x0b), OPEN, "Name it for what it waits on.", sentInFirst,
+                ReviewCommentAt.Lines(start = 42, end = 42), scope = scope,
+            ),
+            code(OPEN, LineKind.Context, old = 41, new = 43, text = "        migrate(&conn)?;"),
+            code(OPEN, LineKind.Context, old = 42, new = 44, text = "        Ok(Store { conn })"),
+            code(OPEN, LineKind.Context, old = 43, new = 45, text = "    }"),
+            head(LIB, added = 3, removed = 0),
+        ) + libBody()
+        return ReviewPage(
+            banners = emptyList(), rows = rows, toFetch = emptyList(), opening = false, empty = null,
+            header = ReviewHeader(
+                baseBranch = "main", baseCommit = BASE, snapshot = LAST_ROUND, view = ReviewView.All,
+                comparedWith = BASE, comparedBase = "", views = listOf(ReviewViewTab(view = ReviewView.All, files = 2)),
+                rounds = 0, files = 2, added = 5, removed = 0, drafts = 0, sent = 2,
+                discardDrafts = false, startOver = true,
+            ),
+        )
+    }
+
+    // --- Pieces --------------------------------------------------------------
+
+    private fun header(
+        view: ReviewView,
+        files: Int,
+        added: Int,
+        removed: Int,
+        drafts: Int,
+        sent: Int,
+        rounds: Int,
+    ): ReviewHeader {
+        val views = mutableListOf(ReviewViewTab(view = ReviewView.All, files = 3))
+        if (rounds > 0) views += ReviewViewTab(view = ReviewView.SinceLast, files = 1)
+        return ReviewHeader(
+            baseBranch = "main", baseCommit = BASE, snapshot = SNAPSHOT, view = view,
+            comparedWith = if (view == ReviewView.All) BASE else LAST_ROUND,
+            comparedBase = if (view == ReviewView.All) "" else BASE,
+            views = views, rounds = rounds, files = files, added = added, removed = removed,
+            drafts = drafts, sent = sent, discardDrafts = drafts > 0, startOver = true,
+        )
+    }
+
+    /** The change to how the store opens: a gap above, the hunk in `impl Store › pub fn open`, and the rest below. */
+    private fun openBody(drafts: List<ReviewRow>): List<ReviewRow> = listOf(
+        gap(OPEN, hidden = 39, up = ask(OPEN, 1, 39, "impl Store"), down = null),
+        hunk(OPEN, old = 40, new = 40, listOf("impl Store", "pub fn open")),
+        code(OPEN, LineKind.Context, old = 40, new = 40, text = "    pub fn open(path: &Path) -> Result<Store, StoreError> {"),
+        code(OPEN, LineKind.Removed, old = 41, text = "        let conn = Connection::open(path)?;", changed = listOf("open")),
+        code(
+            OPEN, LineKind.Added, new = 41, text = "        let conn = Connection::open_with_flags(path, FLAGS)?;",
+            changed = listOf("open_with_flags", "FLAGS"),
+        ),
+        code(OPEN, LineKind.Added, new = 42, text = "        conn.busy_timeout(BUSY)?;", commented = true),
+    ) + drafts + listOf(
+        code(OPEN, LineKind.Context, old = 42, new = 43, text = "        migrate(&conn)?;"),
+        code(OPEN, LineKind.Context, old = 43, new = 44, text = "        Ok(Store { conn })"),
+        code(OPEN, LineKind.Context, old = 44, new = 45, text = "    }"),
+        gap(OPEN, hidden = null, up = null, down = ask(OPEN, 46, 65, null)),
+    )
+
+    private fun libBody(): List<ReviewRow> = listOf(
+        gap(LIB, hidden = 11, up = ask(LIB, 1, 11, null), down = null),
+        hunk(LIB, old = 12, new = 12, emptyList()),
+        code(LIB, LineKind.Context, old = 12, new = 12, text = "use rusqlite::{Connection, OpenFlags};"),
+        code(LIB, LineKind.Added, new = 13, text = "const FLAGS: OpenFlags = OpenFlags::SQLITE_OPEN_READ_WRITE;"),
+        code(LIB, LineKind.Added, new = 14, text = "/// How long a write waits on another before giving up."),
+        code(LIB, LineKind.Added, new = 15, text = "const BUSY: Duration = Duration::from_secs(5);"),
+    )
+
+    private fun head(
+        path: String,
+        added: Int,
+        removed: Int,
+        comments: Int = 0,
+        flags: List<ReviewFileFlag> = emptyList(),
+        folded: Boolean = false,
+        changedSinceLast: Boolean = false,
+    ): ReviewRow = ReviewRow(
+        key = "f/$path",
+        of = ReviewRowOf.File(
+            ReviewFileHead(
+                path = path, status = FileStatus.Modified, added = added, removed = removed, binary = false,
+                language = "rust", flags = flags, folded = folded || flags.isNotEmpty(),
+                changedSinceLast = changedSinceLast, inChange = true, comments = comments,
+                outline = emptyList(), oldPath = null,
+            ),
+        ),
+    )
+
+    private fun hunk(path: String, old: Int, new: Int, scope: List<String>): ReviewRow = ReviewRow(
+        key = "h/$path/$old/$new",
+        of = ReviewRowOf.Hunk(ReviewHunkHead(path = path, oldCommit = BASE, oldStart = old, newStart = new, scope = scope)),
+    )
+
+    private fun gap(path: String, hidden: Int?, up: ReviewContextAsk?, down: ReviewContextAsk?): ReviewRow = ReviewRow(
+        key = "g/$path/${up?.start ?: down?.start ?: 0}",
+        of = ReviewRowOf.Gap(ReviewGap(path = path, loading = false, down = down, hidden = hidden, up = up)),
+    )
+
+    private fun ask(path: String, start: Int, end: Int, definition: String?): ReviewContextAsk =
+        ReviewContextAsk(path = path, commit = SNAPSHOT, start = start, end = end, definition = definition)
+
+    private fun comment(
+        id: List<Int>,
+        path: String,
+        text: String,
+        state: ReviewCommentState,
+        at: ReviewCommentAt,
+        changedNear: Boolean = false,
+        snippet: List<ReviewCodeLine> = emptyList(),
+        scope: List<String> = emptyList(),
+        folded: Boolean = false,
+    ): ReviewRow = ReviewRow(
+        key = "c/" + id.joinToString("") { "%02x".format(it) },
+        of = ReviewRowOf.Comment(
+            ReviewCommentRow(
+                id = id, path = path, text = text, state = state, at = at, changedNear = changedNear,
+                scope = scope, snippet = snippet, folded = folded,
+            ),
+        ),
+    )
+
+    private fun code(
+        path: String,
+        kind: LineKind,
+        old: Int? = null,
+        new: Int? = null,
+        text: String,
+        changed: List<String> = emptyList(),
+        commented: Boolean = false,
+    ): ReviewRow = ReviewRow(
+        key = "l/$path/${old ?: 0}/${new ?: 0}",
+        of = ReviewRowOf.Line(line(path, kind, old, new, text, changed, commented)),
+    )
+
+    private fun line(
+        path: String,
+        kind: LineKind,
+        old: Int? = null,
+        new: Int? = null,
+        text: String,
+        changed: List<String> = emptyList(),
+        commented: Boolean = false,
+    ): ReviewCodeLine = ReviewCodeLine(
+        path = path, kind = kind, text = text, runs = runs(text, changed), commented = commented,
+        extra = false, newLine = new, oldLine = old,
+    )
+
+    /** A line as the host would colour it: Rust's keywords, types, numbers and comments, and the words named changed. */
+    private fun runs(text: String, changed: List<String>): List<ReviewRun> {
+        if (text.trimStart().startsWith("//")) return listOf(ReviewRun(text = text, kind = TokenKind.Comment, changed = false))
+        val keywords = setOf("pub", "fn", "let", "impl", "const", "use", "mut", "return")
+        val out = mutableListOf<ReviewRun>()
+        val word = StringBuilder()
+        fun flush() {
+            if (word.isEmpty()) return
+            val w = word.toString()
+            val kind = when {
+                w in keywords -> TokenKind.Keyword
+                w[0].isUpperCase() && w != w.uppercase() -> TokenKind.Type
+                w[0].isDigit() -> TokenKind.Number
+                else -> TokenKind.Plain
+            }
+            out += ReviewRun(text = w, kind = kind, changed = w in changed)
+            word.clear()
+        }
+        for (character in text) {
+            if (character.isLetterOrDigit() || character == '_') {
+                word.append(character)
+            } else {
+                flush()
+                out += ReviewRun(text = character.toString(), kind = TokenKind.Plain, changed = false)
+            }
+        }
+        flush()
+        return out
+    }
 }

@@ -42,6 +42,7 @@ import sh.amux.core.runtime.DictationState
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.PickedAttachment
 import sh.amux.core.runtime.RuntimeFailure
+import sh.amux.core.runtime.SentRound
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.core.runtime.failureDescription
 import sh.amux.design.AmuxGround
@@ -356,6 +357,11 @@ internal fun ChatRoute(
             onToggleRun = { rowId -> model.toggleRun(rowId) },
             onToggleGroup = { rowId -> model.toggleGroup(rowId) },
             onOpenAgent = { target -> router.push(Route.Conversation(target)) },
+            onOpenReview = { router.push(Route.Review(agent)) },
+            onDiscardReviewDrafts = { model.discardReviewDrafts() },
+            onOpenRound = { sent, text -> model.open(SentRound(sent = sent, text = text)) },
+            onCloseRound = { model.closeRound() },
+            readRound = { sent -> model.reviewRound(sent) },
             onOpenAttachment = { blob -> model.openAttachment(blob) },
             onOpenAttachmentExternally = { file -> ShellPlatform.openOrShareFile(context, file) },
             onShareAttachment = { file -> ShellPlatform.shareFile(context, file) },

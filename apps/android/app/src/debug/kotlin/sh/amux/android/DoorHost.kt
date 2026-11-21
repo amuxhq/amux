@@ -1147,6 +1147,7 @@ internal object DoorHost {
                 Tab.Hosts -> "hosts"
             }
             is Route.Conversation -> "conversation"
+            is Route.Review -> "review"
             is Route.Host -> "host"
             Route.Settled -> "settled"
             Route.Settings -> "settings"

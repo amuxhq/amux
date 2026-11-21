@@ -105,6 +105,16 @@ class HostsStore(
     internal var actions: HostActions? = null
 
     private var unsettled: MutableSet<HostId>? = null
+
+    /**
+     * The machines read linked as the app came forward, with the link each
+     * was read on. Those links went while the app was away, but a listing
+     * can still say they are up until the runtime has heard them go, so a
+     * machine is settled by being read linked only on a newer link. The
+     * listings in between are not all read, so one saying the old link went
+     * may never be seen.
+     */
+    private var linkedBefore: MutableMap<HostId, Long> = mutableMapOf()
     private var patienceJob: Job? = null
     private val departures = mutableMapOf<HostId, Long>()
 
@@ -119,9 +129,24 @@ class HostsStore(
      * Called whenever the app enters the foreground: links were dropped while
      * backgrounded, so previously offline hosts without a dial error settle
      * gracefully as "connecting" until they answer, fail, or patience elapses.
+     *
+     * The machines listed last are settled again at once, so what is drawn
+     * as connecting never waits on the next listing: a machine stopped while
+     * the app was away changes nothing the phone hears until its dial fails,
+     * and nothing else may be listed before then. Whether such a machine
+     * reads connecting or away then depends neither on the order the app
+     * heard its link go and came forward in, nor on anything listed after.
      */
     fun cameForward() {
         unsettled = null
+        val hosts = _state.value.hosts
+        linkedBefore = hosts.filter { it.online }
+            .mapNotNull { host -> host.id?.let { it to host.link } }
+            .toMap(mutableMapOf())
+        if (hosts.isNotEmpty()) {
+            val connecting = settle(hosts)
+            _state.update { it.copy(connecting = connecting) }
+        }
         patienceJob?.cancel()
         patienceJob = scope?.launch {
             delay(connectingPatienceMs)
@@ -134,6 +159,7 @@ class HostsStore(
         patienceJob?.cancel()
         patienceJob = null
         unsettled = mutableSetOf()
+        linkedBefore = mutableMapOf()
         _state.update { it.copy(connecting = emptySet()) }
     }
 
@@ -182,19 +208,31 @@ class HostsStore(
         }
     }
 
+    /**
+     * Settles every machine a listing says is linked or out of reach for a
+     * known reason: a failed dial, a revoked trust, a signed-out phone or a
+     * free plan. Settled stays settled until the app next comes forward, so
+     * a machine whose dial failed reads away while it is retried. Returns
+     * the machines to draw as connecting.
+     */
     private fun settle(trusted: List<HostView>): Set<HostId> {
         val ids = trusted.mapNotNull { it.id }.toSet()
         val currentUnsettled = unsettled ?: ids.toMutableSet()
         for (host in trusted) {
             val id = host.id ?: continue
+            val before = linkedBefore[id]
+            if (host.online && before != null && host.link <= before) continue
+            linkedBefore.remove(id)
             val waiting = host.reach == Reach.Offline(Offline.Plain) && host.lastDialError == null
             if (!waiting) {
                 currentUnsettled.remove(id)
             }
         }
         currentUnsettled.retainAll(ids)
+        linkedBefore.keys.retainAll(ids)
         unsettled = currentUnsettled
-        return currentUnsettled.toSet()
+        // One still read linked is drawn linked, whatever settles it.
+        return currentUnsettled - linkedBefore.keys
     }
 
     /** Remembers that the user dismissed the auto-prompt for [id]'s current open window. */

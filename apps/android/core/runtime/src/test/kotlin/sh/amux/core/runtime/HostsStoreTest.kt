@@ -35,9 +35,10 @@ class HostsStoreTest {
         addrs: List<String> = emptyList(),
         pairingOpen: Boolean = false,
         lastDialError: String? = null,
+        link: Long = 0L,
     ): HostView = HostView(
         hostId = id.bytes,
-        link = 0L,
+        link = link,
         name = name,
         local = local,
         trusted = trusted,
@@ -164,5 +165,79 @@ class HostsStoreTest {
         )
         assertFalse(store.snapshot.rosterBehind)
         store.stopWaiting()
+    }
+
+    /**
+     * Coming forward, a machine the last listing read out of reach with no
+     * failed dial is connecting at once: the next listing may not come until
+     * its dial ends, as for a machine stopped while the app was away.
+     */
+    @Test
+    fun comingForwardWaitsOnTheMachinesListedLast() {
+        val hosts = HostsStore()
+        val listed = listOf(
+            hostView(host1, "studio", reach = Reach.Offline(Offline.Plain)),
+            hostView(host2, "mini", reach = Reach.Offline(Offline.Plain), lastDialError = "connection refused"),
+            hostView(cand1, "nova", reach = Reach.Online(RouteKind.Direct)),
+        )
+        hosts.show(listed)
+        hosts.stopWaiting()
+        assertEquals(emptySet<HostId>(), hosts.snapshot.connecting)
+
+        hosts.cameForward()
+        assertEquals("a failed dial is known already", setOf(host1), hosts.snapshot.connecting)
+        hosts.show(listed)
+        assertEquals("the same listing again changes nothing", setOf(host1), hosts.snapshot.connecting)
+    }
+
+    /**
+     * A machine read linked as the app comes forward lost that link while the
+     * app was away, though a listing may say it is linked until the runtime
+     * hears it go: whichever comes first, the machine is connecting after
+     * both, and a link read after it went settles it.
+     */
+    @Test
+    fun aLinkFromBeforeComingForwardSettlesNothing() {
+        val linked = listOf(hostView(host1, "studio", reach = Reach.Online(RouteKind.Direct)))
+        val unlinked = listOf(hostView(host1, "studio", reach = Reach.Offline(Offline.Plain)))
+
+        val first = HostsStore()
+        first.show(linked)
+        first.show(unlinked)
+        first.cameForward()
+        assertEquals("the link went first", setOf(host1), first.snapshot.connecting)
+
+        val later = HostsStore()
+        later.show(linked)
+        later.cameForward()
+        later.show(linked)
+        assertEquals("drawn linked while it is read so", emptySet<HostId>(), later.snapshot.connecting)
+        later.show(unlinked)
+        assertEquals("the app came forward first", setOf(host1), later.snapshot.connecting)
+
+        later.show(linked)
+        assertEquals("linked again since", emptySet<HostId>(), later.snapshot.connecting)
+        later.show(unlinked)
+        assertEquals("a machine that answered and went is gone", emptySet<HostId>(), later.snapshot.connecting)
+    }
+
+    /**
+     * The listing that says a link from before coming forward went can be
+     * skipped, the runtime listing the machine linked again by the next one
+     * the phone reads: a newer link settles it all the same, and when that
+     * link goes the machine is gone, not connecting.
+     */
+    @Test
+    fun aNewerLinkSettlesAMachineWhoseUnlinkedReadWasSkipped() {
+        val hosts = HostsStore()
+        hosts.show(listOf(hostView(host1, "studio", reach = Reach.Online(RouteKind.Direct), link = 1L)))
+        hosts.cameForward()
+        hosts.show(listOf(hostView(host1, "studio", reach = Reach.Online(RouteKind.Direct), link = 1L)))
+        assertEquals("drawn linked while it is read so", emptySet<HostId>(), hosts.snapshot.connecting)
+
+        hosts.show(listOf(hostView(host1, "studio", reach = Reach.Online(RouteKind.Direct), link = 2L)))
+        assertEquals(emptySet<HostId>(), hosts.snapshot.connecting)
+        hosts.show(listOf(hostView(host1, "studio", reach = Reach.Offline(Offline.Plain), link = 2L)))
+        assertEquals("a machine that answered since and went is gone", emptySet<HostId>(), hosts.snapshot.connecting)
     }
 }

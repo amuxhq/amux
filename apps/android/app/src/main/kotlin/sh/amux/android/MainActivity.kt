@@ -11,15 +11,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import sh.amux.design.AmuxTheme
 import sh.amux.design.AppearanceMode
 import sh.amux.features.SettingsNotificationStatus
+import sh.amux.features.LocalCodeHighlighting
 import sh.amux.features.NetworkSight
 import sh.amux.core.runtime.LocalNetworkSight
 import sh.amux.features.StoreFailureScreen
+import sh.amux.shell.BridgeCodeHighlighting
 import sh.amux.shell.Shell
 
 class MainActivity : ComponentActivity() {
@@ -82,55 +85,58 @@ class MainActivity : ComponentActivity() {
 
             DebugHooks.ContentWrapper {
                 AmuxTheme(appearanceMode = appearanceMode) {
-                    val storeFailure = coordinatorState.storeFailure
-                    if (storeFailure != null) {
-                        StoreFailureScreen(
-                            message = storeFailure,
-                            onRelaunch = { appComposition.relaunch() },
-                        )
-                    } else {
-                        Shell(
-                            router = appComposition.router,
-                            accounts = appComposition.accounts,
-                            stores = activeStores,
-                            deviceName = appComposition.deviceName,
-                            offerNotifications = appComposition.pushDeliveryEnabled &&
-                                !notificationsDismissed &&
-                                notificationStatus != SettingsNotificationStatus.Enabled,
-                            signingIn = signInState.working,
-                            networkSight = when (localNetwork) {
-                                LocalNetworkSight.Looking -> NetworkSight.Looking
-                                LocalNetworkSight.NoLocalNetwork -> NetworkSight.NoLocalNetwork
-                                LocalNetworkSight.BrowseFailed -> NetworkSight.BrowseFailed
-                            },
-                            onAction = { action ->
-                                appComposition.handleShellAction(
-                                    action = action,
-                                    activityContext = this@MainActivity,
-                                    requestNotificationPermission = {
-                                        notificationPermissionLauncher.launch(
-                                            Manifest.permission.POST_NOTIFICATIONS,
-                                        )
-                                    },
-                                    reportFreezer = reportFreezer,
-                                )
-                            },
-                            appearanceMode = appearanceMode,
-                            notificationStatus = notificationStatus,
-                            pushDeliveryComingSoon = !appComposition.pushDeliveryEnabled,
-                            shareUsage = coordinatorState.shareUsage,
-                            autoReports = coordinatorState.autoReports,
-                            appVersion = appComposition.appVersion,
-                            diagnosticsExport = diagnosticsExport,
-                            cloudEndpoint = appComposition.cloud.endpoint,
-                            signIn = appComposition.signIn,
-                            paywall = appComposition.paywall,
-                            paywallStoreUnavailable = appComposition.paywallStoreUnavailable,
-                            removal = appComposition.removal,
-                            deletion = appComposition.deletion,
-                            report = appComposition.report,
-                            dictation = appComposition.dictation,
-                        )
+                    // Code on screen is coloured by the shared view, through the bridge.
+                    CompositionLocalProvider(LocalCodeHighlighting provides BridgeCodeHighlighting) {
+                        val storeFailure = coordinatorState.storeFailure
+                        if (storeFailure != null) {
+                            StoreFailureScreen(
+                                message = storeFailure,
+                                onRelaunch = { appComposition.relaunch() },
+                            )
+                        } else {
+                            Shell(
+                                router = appComposition.router,
+                                accounts = appComposition.accounts,
+                                stores = activeStores,
+                                deviceName = appComposition.deviceName,
+                                offerNotifications = appComposition.pushDeliveryEnabled &&
+                                    !notificationsDismissed &&
+                                    notificationStatus != SettingsNotificationStatus.Enabled,
+                                signingIn = signInState.working,
+                                networkSight = when (localNetwork) {
+                                    LocalNetworkSight.Looking -> NetworkSight.Looking
+                                    LocalNetworkSight.NoLocalNetwork -> NetworkSight.NoLocalNetwork
+                                    LocalNetworkSight.BrowseFailed -> NetworkSight.BrowseFailed
+                                },
+                                onAction = { action ->
+                                    appComposition.handleShellAction(
+                                        action = action,
+                                        activityContext = this@MainActivity,
+                                        requestNotificationPermission = {
+                                            notificationPermissionLauncher.launch(
+                                                Manifest.permission.POST_NOTIFICATIONS,
+                                            )
+                                        },
+                                        reportFreezer = reportFreezer,
+                                    )
+                                },
+                                appearanceMode = appearanceMode,
+                                notificationStatus = notificationStatus,
+                                pushDeliveryComingSoon = !appComposition.pushDeliveryEnabled,
+                                shareUsage = coordinatorState.shareUsage,
+                                autoReports = coordinatorState.autoReports,
+                                appVersion = appComposition.appVersion,
+                                diagnosticsExport = diagnosticsExport,
+                                cloudEndpoint = appComposition.cloud.endpoint,
+                                signIn = appComposition.signIn,
+                                paywall = appComposition.paywall,
+                                paywallStoreUnavailable = appComposition.paywallStoreUnavailable,
+                                removal = appComposition.removal,
+                                deletion = appComposition.deletion,
+                                report = appComposition.report,
+                                dictation = appComposition.dictation,
+                            )
+                        }
                     }
                 }
             }

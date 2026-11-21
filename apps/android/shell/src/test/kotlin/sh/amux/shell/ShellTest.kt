@@ -67,6 +67,7 @@ import sh.amux.design.Appearance
 import sh.amux.design.AppearanceMode
 import sh.amux.features.AccountSheetTags
 import sh.amux.features.AskReviewTags
+import sh.amux.features.ReviewTags
 import sh.amux.features.ChatComposerTags
 import sh.amux.features.ChatScreenTags
 import sh.amux.features.HostPageTags
@@ -147,6 +148,7 @@ import sh.amux.values.SettingChange
 import sh.amux.values.SettingsView
 import sh.amux.values.SignInOfferOutcome
 import sh.amux.values.SignInOfferView
+import sh.amux.values.ReviewOutcome
 import sh.amux.words.EMPTY_GROUP_STATE
 
 @RunWith(RobolectricTestRunner::class)
@@ -558,6 +560,92 @@ class ShellTest {
         expanded = false,
         secondLine = SecondLine.LastSaid("Ready for the next step."),
     )
+
+    /**
+     * The review is pushed over its chat, whose route then leaves the screen:
+     * the review holds the chat open, past the time a chat no route shows is
+     * kept, so the chat's deltas keep carrying the page.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun theChatStaysOpenUnderItsReviewPastRetention() {
+        val router = Router()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val (hostId, desk) = sampleDeskHost("88888888-8888-8888-8888-888888888888")
+        val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 8 })
+        val agentRow = sampleFleetRow(agentKey, "desk-review")
+
+        var nowMs = 1_000L
+        var openCount = 0
+        val testScope = TestScope(StandardTestDispatcher())
+        val fakeChat = FakeShellChat(agentKey)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            scope = testScope,
+            clock = { nowMs },
+            sessionRetentionMs = 5_000L,
+            chatBridge = FakeShellChatBridge(),
+            opener = {
+                openCount += 1
+                fakeChat
+            },
+        )
+        stores.hosts.show(listOf(desk))
+        stores.fleet.show(
+            FleetView(
+                sections = listOf(
+                    FleetSection(kind = SectionKind.Live, families = 1, foldedByDefault = false, rows = listOf(agentRow)),
+                ),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(router = router, accounts = accounts, stores = stores, deviceName = "Pixel 9")
+            }
+        }
+
+        composeRule.onNodeWithTag(TestTags.homeRow("desk-review")).performClick()
+        composeRule.waitForIdle()
+        testScope.runCurrent()
+        composeRule.waitForIdle()
+        assertEquals(1, openCount)
+
+        // The chat's changes capsule pushes its review, which opens at the host.
+        composeRule.onNodeWithTag(ChatScreenTags.CHANGES).performClick()
+        composeRule.waitForIdle()
+        testScope.runCurrent()
+        composeRule.onNodeWithTag(ReviewTags.SCREEN).assertIsDisplayed()
+        assertEquals(1, fakeChat.reviewOpens)
+        nowMs += 10_000L
+        testScope.advanceTimeBy(10_000L)
+        testScope.runCurrent()
+        assertFalse("the chat must not close while its review is shown", fakeChat.closed)
+        assertEquals(1, openCount)
+
+        // Back to the chat: the review page closes, the chat stays.
+        composeRule.runOnIdle { router.pop() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        assertEquals(1, fakeChat.reviewCloses)
+        nowMs += 10_000L
+        testScope.advanceTimeBy(10_000L)
+        testScope.runCurrent()
+        assertFalse("the chat must not close after returning to it", fakeChat.closed)
+        assertEquals(1, openCount)
+
+        // Leaving the chat lets it go once the retention passes.
+        composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
+        composeRule.waitForIdle()
+        nowMs += 6_000L
+        testScope.advanceTimeBy(6_000L)
+        testScope.runCurrent()
+        assertTrue("the chat closes after retention once no route shows it", fakeChat.closed)
+        assertNull("an evicted chat is not held", stores.leaseCached(agentKey))
+    }
 
     @Test
     fun conversationReopensAutomaticallyWhenProfileVersionAdvances() {
@@ -1305,6 +1393,17 @@ class ShellTest {
         var closed: Boolean = false
         val sent = mutableListOf<Draft>()
         val answeredChoices = mutableListOf<Pair<String, Int>>()
+        var reviewOpens = 0
+        var reviewCloses = 0
+
+        override suspend fun openReview(baseBranch: String?, refresh: Boolean): ReviewOutcome? {
+            reviewOpens += 1
+            return ReviewOutcome.Done
+        }
+
+        override fun closeReview() {
+            reviewCloses += 1
+        }
 
         private val initialRows = listOf(
             Row(

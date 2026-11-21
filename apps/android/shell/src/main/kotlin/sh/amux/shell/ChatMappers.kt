@@ -7,6 +7,7 @@ import sh.amux.core.runtime.ChatModel
 import sh.amux.core.runtime.ChatPaging
 import sh.amux.core.runtime.ChatUiState
 import sh.amux.core.runtime.QuestionDraft as RuntimeQuestionDraft
+import sh.amux.features.OpenedRound
 import sh.amux.features.ChatOpenedAttachmentUi
 import sh.amux.features.ChatPagingUi
 import sh.amux.features.ChatRequestedOverlay
@@ -168,6 +169,8 @@ object ChatMappers {
             dictationActive = chat.dictation.active,
             dictationSentence = chat.dictation.sentence,
             dictationDenied = chat.dictation.phase == DictationState.Phase.Denied,
+            reviewChip = chat.reviewChip,
+            round = chat.roundOpened?.let { OpenedRound(sent = it.sent, text = it.text) },
         )
     }
 

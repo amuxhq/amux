@@ -89,6 +89,14 @@ import sh.amux.words.EMPTY_GROUP_STATE
 import sh.amux.words.nativeStop
 import sh.amux.words.subagentGroupStanding
 import sh.amux.words.subagentGroupState
+import org.junit.Assert.assertNotSame
+import sh.amux.values.SentReviewRef
+import sh.amux.values.ReviewEmpty
+import sh.amux.values.ReviewBanner
+import sh.amux.values.ReviewOutcome
+import sh.amux.values.ReviewChange
+import sh.amux.values.ReviewPage
+import sh.amux.values.ReviewChip
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatModelTest {
@@ -217,8 +225,10 @@ class ChatModelTest {
             sentOffered = offered
             val nextAgents = if (sentAgents == agents) null else agents
             sentAgents = agents
+            val nextReview = if (reviewMoved) reviewOpen else null
+            reviewMoved = false
             if (keysMoved == null && rows.isEmpty() && nextFrame == null && nextAsk == null &&
-                nextOverview == null && nextSettings == null && nextAgents == null
+                nextOverview == null && nextSettings == null && nextAgents == null && nextReview == null
             ) {
                 return null
             }
@@ -230,6 +240,7 @@ class ChatModelTest {
                 frame = nextFrame,
                 keys = keysMoved,
                 overview = nextOverview,
+                review = nextReview,
                 settings = nextSettings,
             )
         }
@@ -428,6 +439,43 @@ class ChatModelTest {
             keptDrafts.add(draft)
         }
 
+        // The agent's review.
+        val sentWithReview = mutableListOf<Draft>()
+        var withReview: Result<SendOutcome>? = null
+        /** What opening the review shows on the chat. */
+        var reviewToShow: ReviewPage? = null
+        /** The page open on the chat, as the next delta carries it when [reviewMoved]. */
+        var reviewOpen: ReviewPage? = null
+        var reviewMoved = false
+        var reviewOpens = 0
+        var reviewCloses = 0
+        val reviewEdits = mutableListOf<List<ReviewChange>>()
+        var editAnswer: ReviewOutcome? = ReviewOutcome.Done
+
+        override suspend fun sendWithReview(draft: Draft): Result<SendOutcome> {
+            sentWithReview.add(draft)
+            return withReview ?: Result.success(SendOutcome(inputId = listOf(100 + sentWithReview.size), state = InputState.Sent))
+        }
+
+        override suspend fun openReview(baseBranch: String?, refresh: Boolean): ReviewOutcome? {
+            reviewOpens += 1
+            reviewOpen = reviewToShow
+            reviewMoved = reviewToShow != null
+            return ReviewOutcome.Done
+        }
+
+        override suspend fun editReview(changes: List<ReviewChange>): ReviewOutcome? {
+            reviewEdits.add(changes)
+            return editAnswer
+        }
+
+        override fun reviewPage(): ReviewPage? = reviewOpen
+
+        override fun closeReview() {
+            reviewCloses += 1
+            reviewOpen = null
+        }
+
         private fun drawn(frame: ChatFrame): ChatFrame {
             val activity = frame.composer.activity
             return if (activity != null && activity.sinceMs > 0L) {
@@ -525,6 +573,7 @@ class ChatModelTest {
         kind: Kind = Kind.ClaudeSdk,
         switchedAway: Boolean = false,
         ended: String? = null,
+        reviewChip: ReviewChip? = null,
     ): ChatFrame = ChatFrame(
         agent = AgentKey(host = listOf(1), agent = listOf(2)),
         name = "a",
@@ -543,6 +592,7 @@ class ChatModelTest {
         context = null,
         ended = ended,
         git = null,
+        reviewChip = reviewChip,
         signIn = null,
     )
 
@@ -1665,4 +1715,201 @@ class ChatModelTest {
         assertTrue(interrupting.isCancelled)
         assertNull(model.snapshot.notice)
     }
+
+    // --- The review ----------------------------------------------------------
+
+    @Test
+    fun theChipFromTheRowSendsTheReviewsDrafts() = runTest {
+        val chip = ReviewChip(comments = 2, moved = false)
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame(reviewChip = chip))
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        assertEquals(chip, model.reviewChip)
+        assertFalse(model.snapshot.hasDraft)
+        assertTrue("the chip's drafts are a message", model.snapshot.hasMessage)
+        assertTrue(model.snapshot.canSend)
+
+        model.type("Look at these first.")
+        model.send()!!.join()
+        assertEquals(listOf("Look at these first."), source.sentWithReview.map { it.text })
+        assertTrue(source.sent.isEmpty())
+        assertNull("the drafts just sent are not offered again", model.reviewChip)
+        assertFalse(model.snapshot.canSend)
+
+        // Before the row says they were sent, a send carries words alone.
+        model.type("And the docs.")
+        model.send()!!.join()
+        assertEquals(listOf("And the docs."), source.sent.map { it.text })
+
+        // The host marked them sent: the row has no chip. A chip after it is new drafts.
+        source.current = source.current.copy(reviewChip = null)
+        source.deliver(model)
+        assertNull(model.reviewChip)
+        source.current = source.current.copy(reviewChip = chip)
+        source.deliver(model)
+        assertEquals("a chip like the one sent is new drafts", chip, model.reviewChip)
+
+        // The chip alone sends.
+        model.send()!!.join()
+        assertEquals(2, source.sentWithReview.size)
+        source.current = source.current.copy(reviewChip = ReviewChip(comments = 3, moved = true))
+        source.deliver(model)
+        assertEquals(ReviewChip(comments = 3, moved = true), model.reviewChip)
+    }
+
+    /** While the agent works the chip is a message, so the round button sends rather than interrupts. */
+    @Test
+    fun theChipAloneIsAMessageWhileTheAgentWorks() {
+        val source = FakeChat(
+            listOf(proseRow("a", 1)),
+            chatFrame(phase = PhaseView.Working, reviewChip = ReviewChip(comments = 1, moved = true)),
+        )
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
+        assertFalse(model.snapshot.hasDraft)
+        assertTrue(model.snapshot.hasMessage)
+        assertTrue(model.snapshot.canSend)
+    }
+
+    /**
+     * A queued prompt that carried the review, withdrawn, closed no round:
+     * its words come back without the review, and the chip is back, so the
+     * next send reads the drafts as they are then.
+     */
+    @Test
+    fun aWithdrawnReviewPromptBringsTheChipBack() = runTest {
+        val chip = ReviewChip(comments = 2, moved = false)
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame(phase = PhaseView.Working, reviewChip = chip))
+        source.withReview = Result.success(SendOutcome(inputId = listOf(7), state = InputState.Queued))
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        model.type("Look at these.")
+        model.send()!!.join()
+        assertNull("held back while the prompt waits", model.reviewChip)
+
+        // The bridge's draft of a queued prompt never carries the review.
+        source.drafts[listOf(7)] = draftOf("Look at these.")
+        val sent = SentReviewRef(reviewId = listOf(1), round = 1, inputId = listOf(7))
+        val queued = QueuedRow(
+            inputId = listOf(7),
+            text = listOf(
+                Segment.Text("Look at these. "),
+                Segment.Attachment(AttachmentView.SentReview(comments = 2, review = sent, text = "")),
+            ),
+            steered = false,
+            canWithdraw = true,
+            canSendNow = true,
+            fromAgent = null,
+        )
+        model.withdraw(queued)!!.join()
+        assertEquals(listOf(listOf(7)), source.withdrawn)
+        assertEquals("Look at these.", model.draft)
+        assertEquals("the drafts are the chip's again", chip, model.reviewChip)
+
+        model.send()!!.join()
+        assertEquals("the next send reads the drafts afresh", 2, source.sentWithReview.size)
+    }
+
+    @Test
+    fun aSendWithTheReviewThatFailsKeepsTheWordsAndTheChip() = runTest {
+        val chip = ReviewChip(comments = 1, moved = false)
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame(reviewChip = chip))
+        source.withReview = Result.failure(RuntimeFailure("the review holds no drafts to send"))
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        model.type("Summary.")
+        model.send()!!.join()
+        assertEquals("Summary.", model.draft)
+        assertEquals("the review holds no drafts to send", model.snapshot.notice)
+        assertEquals(chip, model.reviewChip)
+
+        // Not known to have landed: the drafts stay drafts until the agent
+        // takes a message carrying them, so the chip shows them again.
+        source.withReview = Result.success(SendOutcome(inputId = listOf(8), state = InputState.Uncertain))
+        model.send()!!.join()
+        assertEquals(chip, model.reviewChip)
+    }
+
+    @Test
+    fun withoutAChipASendCarriesNoReview() = runTest {
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        assertNull(model.reviewChip)
+        assertFalse("nothing to send", model.snapshot.canSend)
+        model.type("Hello.")
+        model.send()!!.join()
+        assertEquals(1, source.sent.size)
+        assertTrue(source.sentWithReview.isEmpty())
+    }
+
+    /**
+     * The page opens for a look, moves with the chat's deltas while it is
+     * open, and stops when it closes; each look opens the review again.
+     */
+    @Test
+    fun theReviewPageFollowsTheChatsDeltasWhileOpen() = runTest {
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
+        val page = ReviewPage(
+            banners = listOf(ReviewBanner.ChangedSince), rows = emptyList(), toFetch = emptyList(),
+            opening = false, empty = ReviewEmpty.Nothing, header = null,
+        )
+        source.reviewToShow = page
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        assertNull(model.reviewPage)
+        val session = model.openReviewPage()
+        assertSame(session, model.reviewPage)
+        session.latest?.join()
+        assertEquals(1, source.reviewOpens)
+        source.deliver(model)
+        assertEquals(page, session.page)
+
+        val moved = page.copy(banners = emptyList())
+        source.reviewOpen = moved
+        source.reviewMoved = true
+        source.deliver(model)
+        assertEquals(moved, session.page)
+
+        val again = model.openReviewPage()
+        assertSame("the page open on the chat is the one looked at again", session, again)
+        again.latest?.join()
+        assertEquals(2, source.reviewOpens)
+
+        model.closeReviewPage()
+        assertNull(model.reviewPage)
+        assertTrue(session.closed)
+        assertEquals(1, source.reviewCloses)
+        source.reviewOpen = page
+        source.reviewMoved = true
+        source.deliver(model)
+        assertEquals("a closed page is handed nothing", moved, session.page)
+
+        source.reviewOpen = null
+        val next = model.openReviewPage()
+        assertNotSame(session, next)
+        assertEquals(ReviewSession.OPENING, next.page)
+        next.latest?.join()
+    }
+
+    @Test
+    fun theChipsCrossDiscardsTheDraftsAtTheHost() = runTest {
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame(reviewChip = ReviewChip(comments = 2, moved = false)))
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        model.discardReviewDrafts().join()
+        assertEquals(listOf(listOf(ReviewChange.DiscardDrafts)), source.reviewEdits)
+        assertNull(model.snapshot.notice)
+        assertNull("no page opens for it", model.reviewPage)
+
+        source.editAnswer = ReviewOutcome.Unreachable
+        model.discardReviewDrafts().join()
+        assertEquals("This agent\u2019s computer can\u2019t be reached, so nothing changed.", model.snapshot.notice)
+    }
+
+    @Test
+    fun aSentRoundIsRaisedAndReadFromTheHost() = runTest {
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        val sent = SentReviewRef(reviewId = listOf(1), round = 1, inputId = listOf(7))
+        model.open(SentRound(sent = sent, text = "Name it."))
+        assertEquals(SentRound(sent = sent, text = "Name it."), model.snapshot.roundOpened)
+        assertNull("a host that keeps no rounds answers none", model.reviewRound(sent))
+        model.closeRound()
+        assertNull(model.snapshot.roundOpened)
+    }
 }
+

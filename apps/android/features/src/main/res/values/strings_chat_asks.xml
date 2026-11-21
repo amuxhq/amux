@@ -96,24 +96,4 @@
     <string name="chat_settings_cycle">Cycle</string>
     <string name="chat_settings_permission_by_typing">To change permission, type %1$s in the composer.</string>
     <string name="chat_settings_mode_by_typing">To change mode, type %1$s in the composer.</string>
-
-    <!-- Diff review page -->
-    <string name="review_title">Review</string>
-    <string name="review_add_to_review">Add to Review</string>
-    <string name="review_save_comment">Save</string>
-    <string name="review_delete_comment">Delete</string>
-    <string name="review_edit_comment_title">Edit Comment</string>
-    <string name="review_comment_on_line">Comment on line %1$d</string>
-    <string name="review_comment_on_old_line">Comment on removed line %1$d</string>
-    <string name="review_comment_on_file">Comment on file</string>
-    <string name="review_comment_placeholder">Write a comment</string>
-    <string name="review_files">Files</string>
-    <string name="review_binary_file">Binary file</string>
-    <string name="review_empty_title">No changes</string>
-    <string name="review_empty_detail">There are no changes to review right now.</string>
-    <string name="review_loading_title">Loading changes…</string>
-    <string name="review_loading_detail">Reading the diff from the computer.</string>
-    <string name="review_error_title">Could not load changes</string>
-    <string name="review_diff_added">+%1$d</string>
-    <string name="review_diff_removed">−%1$d</string>
 </resources>

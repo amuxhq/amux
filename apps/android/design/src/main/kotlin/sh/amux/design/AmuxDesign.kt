@@ -20,6 +20,27 @@ import androidx.compose.ui.unit.sp
  * without hunting for a badge — which is why there is a single chromatic
  * accent and every other structural token is a neutral grey.
  */
+/**
+ * The colours code is drawn in, the second exception to the neutral ramp.
+ * Code is read by its tokens, and every editor and terminal an agent's code
+ * comes from colours them, so a block drawn in one ink reads as a wall. They
+ * are kept quiet so a page of code does not out-shout the accent: dark,
+ * desaturated hues on light and pale ones on dark, none of them the accent's
+ * azure (code is never waiting for anyone) nor the green and red of a
+ * change, which a diff lays under its lines. Each holds 4.5:1 or more on the
+ * code well and on both diff tints, in both appearances.
+ */
+@Immutable
+data class Syntax(
+    val keyword: Ramp,
+    val string: Ramp,
+    /** Numbers and other literal constants. */
+    val number: Ramp,
+    val type: Ramp,
+    val function: Ramp,
+    val comment: Ramp,
+)
+
 @Immutable
 data class AmuxDesign(
     val name: String,
@@ -34,6 +55,7 @@ data class AmuxDesign(
     val onAccent: Ramp,
     val added: Ramp,
     val removed: Ramp,
+    val syntax: Syntax,
     val faces: Faces,
     val metrics: Metrics,
     val type: TypeScale,
@@ -103,6 +125,12 @@ data class AmuxDesign(
             "onAccent" to onAccent,
             "added" to added,
             "removed" to removed,
+            "keyword" to syntax.keyword,
+            "string" to syntax.string,
+            "number" to syntax.number,
+            "type" to syntax.type,
+            "function" to syntax.function,
+            "comment" to syntax.comment,
         )
 
     fun colors(appearance: Appearance): AmuxColors = AmuxColors(
@@ -117,6 +145,14 @@ data class AmuxDesign(
         onAccent = onAccent.color(appearance),
         added = added.color(appearance),
         removed = removed.color(appearance),
+        syntax = SyntaxColors(
+            keyword = syntax.keyword.color(appearance),
+            string = syntax.string.color(appearance),
+            number = syntax.number.color(appearance),
+            type = syntax.type.color(appearance),
+            function = syntax.function.color(appearance),
+            comment = syntax.comment.color(appearance),
+        ),
     )
 
     /**
@@ -330,6 +366,16 @@ data class AmuxDesign(
             onAccent = Ramp(0xFFFFFF, 0xFFFFFF),
             added = Ramp(0x29854F, 0x70C78C),
             removed = Ramp(0xA8333D, 0xE68080),
+            // Violet, brick, ochre, teal, indigo and a grey that recedes, each
+            // set to read on the well and under an edit's tints.
+            syntax = Syntax(
+                keyword = Ramp(0x873A9A, 0xD49CE6),
+                string = Ramp(0x964220, 0xE89F7A),
+                number = Ramp(0x755600, 0xD9B65C),
+                type = Ramp(0x1A636C, 0x72C3CC),
+                function = Ramp(0x4A4FA3, 0xA8ACF2),
+                comment = Ramp(0x5A5A61, 0x9B9BA2),
+            ),
             faces = Faces.Instrument,
             metrics = Metrics(
                 cardRadius = 16.dp,

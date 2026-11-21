@@ -110,6 +110,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import sh.amux.design.AmuxChrome
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
@@ -147,6 +148,11 @@ import sh.amux.words.EMPTY_GROUP_STATE
 import sh.amux.words.nativeRunner
 import sh.amux.words.nativeTakesNoMessages
 import sh.amux.words.signInDetail
+import sh.amux.values.ReviewChip
+import androidx.compose.material.icons.outlined.RateReview
+import androidx.compose.foundation.border
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 
 /**
  * What the composer's `+` attach menu offers.
@@ -197,6 +203,9 @@ object ChatComposerTags {
     const val SLASH_POPUP: String = "chat.slash.popup"
     const val ATTACHMENTS_ROW: String = "chat.attachments"
     const val ATTACHING: String = "chat.attaching"
+    const val REVIEW_CHIP: String = "chat.review.chip"
+    const val REVIEW_DISCARD: String = "chat.review.discard"
+    const val REVIEW_DISCARD_CONFIRM: String = "chat.review.discard.confirm"
     const val MODEL_CHIP: String = "chat.model"
     const val ATTACH_BUTTON: String = "chat.attach"
     const val ATTACH_MENU_PHOTO: String = "chat.attach.photo"
@@ -257,6 +266,8 @@ data class ChatComposerState(
     val slashMatches: List<CommandMatch> = emptyList(),
     val attachments: List<ComposerAttachmentUi> = emptyList(),
     val uploadingCount: Int = 0,
+    /** The review's drafts the next message sends, while the agent's review holds any. */
+    val reviewChip: ReviewChip? = null,
     val controls: ControlsSummary? = null,
     val context: ContextView? = null,
     val settingsAvailable: Boolean = true,
@@ -268,6 +279,13 @@ data class ChatComposerState(
 ) {
     val hasDraft: Boolean
         get() = draft.trim().isNotEmpty() || attachments.isNotEmpty()
+
+    /**
+     * A message is the draft or the review's chip alone, which goes with or
+     * without words, so either one sends rather than interrupts.
+     */
+    val hasMessage: Boolean
+        get() = hasDraft || reviewChip != null
 
     val isWorking: Boolean
         get() = phase is PhaseView.Working
@@ -284,6 +302,10 @@ data class ChatComposerCallbacks(
     val onInterrupt: () -> Unit = {},
     val onAttach: (AttachChoice) -> Unit = {},
     val onRemoveAttachment: (index: Int) -> Unit = {},
+    /** Opens the review page from the composer's review chip. */
+    val onOpenReview: () -> Unit = {},
+    /** Discards the review's drafts, once the person confirmed it from the chip. */
+    val onDiscardReviewDrafts: () -> Unit = {},
     val onPickCommand: (CommandMatch) -> Unit = {},
     val onSendNow: (QueuedRow) -> Unit = {},
     val onWithdraw: (QueuedRow) -> Unit = {},
@@ -1068,10 +1090,22 @@ private fun StandardComposerCard(
                 }
             }
 
-            if (state.attachments.isNotEmpty() || state.uploadingCount > 0) {
+            if (state.attachments.isNotEmpty() || state.uploadingCount > 0 || state.reviewChip != null) {
+                // The field's touch area grows up from its text's foot to
+                // reach 48 dp; with chips above, that room is kept clear so
+                // the chips' targets and the field's do not overlap. A little
+                // is spared for a line drawn tighter than its line height.
+                val lineHeight = typography.body.lineHeight
+                val clearance = if (lineHeight.isSpecified) {
+                    val line = with(LocalDensity.current) { lineHeight.toDp() }
+                    (ThumbTarget.MinSize - line - (Space.s + Space.xxs) + Space.xs).coerceAtLeast(0.dp)
+                } else {
+                    0.dp
+                }
                 FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(bottom = clearance)
                         .testTag(ChatComposerTags.ATTACHMENTS_ROW),
                     horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
                     verticalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
@@ -1091,6 +1125,15 @@ private fun StandardComposerCard(
                             modifier = Modifier
                                 .align(Alignment.CenterVertically)
                                 .testTag(ChatComposerTags.ATTACHING),
+                        )
+                    }
+                    // Last, as the review goes after the message's words.
+                    state.reviewChip?.let { chip ->
+                        ReviewChipView(
+                            chip = chip,
+                            onOpen = callbacks.onOpenReview,
+                            onDiscard = callbacks.onDiscardReviewDrafts,
+                            modifier = Modifier.align(Alignment.CenterVertically),
                         )
                     }
                 }
@@ -1400,7 +1443,7 @@ private fun ComposerTapTarget(
 private val ModelChipHeight = 30.dp
 
 /** The font scale from which the model chip takes its own row. */
-private const val LARGE_TEXT_SCALE = 1.3f
+internal const val LARGE_TEXT_SCALE = 1.3f
 
 /** The composer's round attach, send and stop controls, as iOS draws them. */
 private val ComposerDisc = 34.dp
@@ -1442,7 +1485,7 @@ private fun ComposerPrimaryControl(
                 }
             }
         }
-        !state.hasDraft && state.isWorking -> {
+        !state.hasMessage && state.isWorking -> {
             val interruptLabel = stringResource(R.string.chat_composer_interrupt)
             AmuxEdgeTarget(
                 footprint = ComposerDisc,
@@ -1468,7 +1511,7 @@ private fun ComposerPrimaryControl(
         }
         else -> {
             val waiting = state.composer.mode is Composer.Waiting
-            val enabled = state.canSend && state.hasDraft && !waiting
+            val enabled = state.canSend && state.hasMessage && !waiting
             val sendLabel = stringResource(
                 if (state.isWorking) R.string.chat_composer_queue else R.string.chat_composer_send,
             )
@@ -1844,4 +1887,125 @@ internal fun rememberDraftField(
         }
     }
     return field
+}
+
+/**
+ * The review's chip among the draft's attachments while the agent's review
+ * holds drafts: "Review \u00B7 3 comments", and when the agent changed code
+ * after they were written, that too. A tap opens the review page; its close
+ * mark discards the drafts once the person confirms, since there is no
+ * sending without them. Accented apart from the files beside it: it is the
+ * person's own work, kept on the agent's computer, not something picked.
+ */
+@Composable
+private fun ReviewChipView(
+    chip: ReviewChip,
+    onOpen: () -> Unit,
+    onDiscard: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    val words = ChatWords.reviewChip(chip)
+    val spoken = if (chip.moved) "$words, ${ChatWords.REVIEW_CHIP_MOVED}" else words
+    val openLabel = stringResource(R.string.review_chip_open)
+    val discardLabel = stringResource(R.string.review_discard_drafts)
+    val large = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
+    var confirming by remember { mutableStateOf(false) }
+    Row(
+        modifier = modifier
+            .clip(AmuxShapes.Pill)
+            .background(colors.accent.copy(alpha = 0.12f))
+            .border(AmuxTheme.metrics.hairline, colors.accent.copy(alpha = 0.35f), AmuxShapes.Pill),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = ThumbTarget.MinSize)
+                .clickable(role = Role.Button, onClickLabel = openLabel, onClick = onOpen)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = spoken
+                    if (chip.moved) stateDescription = "moved"
+                }
+                .testTag(ChatComposerTags.REVIEW_CHIP)
+                .padding(start = Space.s + Space.xxs, end = Space.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.RateReview,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(IconSize.Small),
+            )
+            Column(modifier = Modifier.weight(1f, fill = false)) {
+                if (chip.moved && !large) {
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(color = colors.ink)) { append(words) }
+                            withStyle(SpanStyle(color = colors.inkFaint)) { append(" \u00B7 ") }
+                            withStyle(SpanStyle(color = colors.inkMuted)) { append(ChatWords.REVIEW_CHIP_MOVED) }
+                        },
+                        style = typography.caption,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Text(
+                        text = words,
+                        style = typography.caption,
+                        color = colors.ink,
+                        maxLines = if (large) 2 else 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (chip.moved) {
+                        Text(
+                            text = ChatWords.REVIEW_CHIP_MOVED,
+                            style = typography.caption,
+                            color = colors.inkMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        IconButton(
+            onClick = { confirming = true },
+            modifier = Modifier.testTag(ChatComposerTags.REVIEW_DISCARD),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = discardLabel,
+                tint = colors.inkFaint,
+                modifier = Modifier.size(IconSize.Inline),
+            )
+        }
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            containerColor = colors.raised,
+            titleContentColor = colors.ink,
+            textContentColor = colors.inkMuted,
+            title = { Text(text = ChatWords.discardDrafts(chip.comments), style = typography.bodyEmphasis) },
+            text = { Text(text = ChatWords.DISCARD_DRAFTS_DETAIL, style = typography.detail) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirming = false
+                        onDiscard()
+                    },
+                    modifier = Modifier.testTag(ChatComposerTags.REVIEW_DISCARD_CONFIRM),
+                ) {
+                    Text(text = discardLabel, style = typography.bodyEmphasis, color = colors.removed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) {
+                    Text(text = stringResource(R.string.action_cancel), style = typography.body, color = colors.inkMuted)
+                }
+            },
+        )
+    }
 }

@@ -136,6 +136,18 @@ alternate most snapshots would touch the repository's packs. The cost is that
 the first snapshot stores every tree of the working tree again; later ones
 share them.
 
+In a partial clone git fetches any object it looks for and lacks, and with
+the store as its object directory every object of the repository looks
+lacking: a link whose times changed is compared by its blob, and dropping
+asks after kept commits the store may not hold. So every call whose object
+directory is the store, or the throwaway folder `moved` writes into, runs
+with lazy fetching off (`GIT_NO_LAZY_FETCH`, honoured from git 2.44): an
+object it does not see is missing, as in a full clone, and nothing goes over
+the network, waits on credentials or leaves a pack in the store. Reads, with
+the repository as git's object directory, are left to fetch as the person's
+own `git diff` would, as `GetChanges` does: in a partial clone a comparison
+needing a blob the clone never fetched fetches it into the repository.
+
 Edge cases, each with a test in
 [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs):
 a folder outside a repository has no review; a snapshot from a subfolder is
@@ -145,8 +157,9 @@ since git can record one only by its commit; a link is stored as a link; a
 snapshot taken mid-merge or mid-rebase (or cherry-pick or revert) holds the
 conflict markers as content and says a merge was under way; a file LFS
 tracks is stored as the pointer LFS would commit for it, worked out in
-process from the file's SHA-256 and size, and LFS's filters never run. A
-sparse index is untested.
+process from the file's SHA-256 and size, and LFS's filters never run; in
+a partial clone, taking, asking whether the tree moved and dropping fetch
+nothing. A sparse index is untested.
 
 **Has the tree moved?** `snapshot::moved` answers whether the working tree
 differs from a snapshot without storing anything: untracked files are marked
@@ -544,7 +557,7 @@ client keyed by review, path and content; and a review belongs to one agent.
 
 | What | Where | Run |
 | --- | --- | --- |
-| Snapshots: nothing in `.git` changes taking, asking or dropping; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
+| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
 | `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
 | `GetFiles`: colouring from whole files, scopes and outlines on either side, more context, since-last limits, caps, the object-id cache, snippets | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |
 | A person on a paired host reviewing through the carrier, the copy following the entry, deletion removing rows, folder and copy; agents, tools sockets, copies and hosts without the experiment refused | `spec_reviews` in [`crates/testnet/tests/`](../crates/testnet/tests/) | `just suite many-daemon-protocol-spec` |

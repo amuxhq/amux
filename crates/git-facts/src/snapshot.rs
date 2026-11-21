@@ -436,7 +436,7 @@ pub async fn moved(
     ];
     args.extend(crate::DIFF_OPTIONS);
     args.extend([snapshot, "--"]);
-    let mut diff = crate::command(root, Some(&index), &args);
+    let mut diff = objects::own_objects(root, Some(&index), &args);
     diff.env("GIT_OBJECT_DIRECTORY", throwaway.dir()).env(
         "GIT_ALTERNATE_OBJECT_DIRECTORIES",
         objects::alternates(&[&repository.objects, store.dir()]),

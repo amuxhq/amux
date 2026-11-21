@@ -939,6 +939,125 @@ async fn drop_keeps_named_snapshots_readable() {
     );
 }
 
+/// The files under `dir` that are packs or parts of one: what a fetch
+/// leaves behind.
+fn packs(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut folders = vec![dir.to_owned()];
+    while let Some(folder) = folders.pop() {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in entries {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                folders.push(path);
+            } else if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("pack-"))
+            {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// A partial clone, made over `file://` from a bare repository that serves
+/// filtered fetches and any object asked for by id, as a hosting service
+/// does: only the checkout's blobs are fetched, and git fetches any other
+/// object it finds it lacks. With the store as git's only object directory
+/// every object of the repository looks lacking, so without a guard a
+/// snapshot would fetch: a link whose times changed is compared by reading
+/// its blob, and dropping asks after a kept commit the store never held.
+/// Taking, asking whether the tree moved and dropping fetch nothing, into
+/// the store or the repository.
+#[tokio::test]
+async fn in_a_partial_clone_nothing_is_fetched() {
+    let origin = repository();
+    let work = origin.path();
+    for round in ["first", "second"] {
+        write(work, "base.txt", &format!("{round}\n"));
+        #[cfg(unix)]
+        {
+            let _ = std::fs::remove_file(work.join("link"));
+            std::os::unix::fs::symlink(format!("{round}-target"), work.join("link")).unwrap();
+        }
+        git(work, &["add", "--all"]);
+        git(work, &["commit", "-q", "-m", round]);
+    }
+    let served = tempfile::tempdir().unwrap();
+    let bare = served.path().join("origin.git");
+    git(
+        served.path(),
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            &work.to_string_lossy(),
+            "origin.git",
+        ],
+    );
+    git(&bare, &["config", "uploadpack.allowFilter", "true"]);
+    git(&bare, &["config", "uploadpack.allowAnySHA1InWant", "true"]);
+    // A `file://` URL, since a plain path clones locally and ignores the
+    // filter.
+    let path = bare.to_string_lossy().replace('\\', "/");
+    let url = match path.starts_with('/') {
+        true => format!("file://{path}"),
+        false => format!("file:///{path}"),
+    };
+    git(
+        served.path(),
+        &["clone", "-q", "--filter=blob:none", &url, "clone"],
+    );
+    let root = served.path().join("clone");
+    let root = root.as_path();
+    assert_eq!(
+        git(root, &["config", "remote.origin.promisor"]),
+        "true",
+        "the clone is a partial one"
+    );
+    write(root, "base.txt", "edited\n");
+    write(root, "new.txt", "new\n");
+    // The same link made again: its times and inode differ from the
+    // index's, so git compares it by its blob.
+    #[cfg(unix)]
+    {
+        std::fs::remove_file(root.join("link")).unwrap();
+        std::os::unix::fs::symlink("second-target", root.join("link")).unwrap();
+    }
+    std::thread::sleep(Duration::from_millis(1100));
+
+    let store = store();
+    let before = manifest(root);
+    let taken = take(root, &store.store).await;
+    assert!(
+        !snapshot::moved(root, &store.store, &LIMITS, &taken.commit, &taken.omitted)
+            .await
+            .unwrap()
+    );
+    let head = git(root, &["rev-parse", "HEAD"]);
+    snapshot::drop(root, &store.store, [&taken.commit, &head])
+        .await
+        .unwrap();
+    assert_eq!(packs(store.store.dir()), Vec::<PathBuf>::new());
+    unchanged(&before, root, "a snapshot in a partial clone");
+    assert_eq!(
+        read(root, &store.store, &taken.commit, "base.txt")
+            .await
+            .unwrap(),
+        b"edited\n"
+    );
+    assert_eq!(
+        read(root, &store.store, &taken.commit, "new.txt")
+            .await
+            .unwrap(),
+        b"new\n"
+    );
+}
+
 /// Mid-merge, the snapshot says a merge is under way and holds the
 /// conflicted file with its markers, as the working tree does.
 #[tokio::test]

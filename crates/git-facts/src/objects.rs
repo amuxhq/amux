@@ -59,7 +59,7 @@ impl ObjectStore {
         index: Option<&Path>,
         args: &[&str],
     ) -> tokio::process::Command {
-        let mut command = crate::command(cwd, index, args);
+        let mut command = own_objects(cwd, index, args);
         command
             .env("GIT_OBJECT_DIRECTORY", &self.dir)
             .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES");
@@ -75,12 +75,32 @@ impl ObjectStore {
         objects: &Path,
         args: &[&str],
     ) -> tokio::process::Command {
-        let mut command = crate::command(cwd, None, args);
+        let mut command = own_objects(cwd, None, args);
         command
             .env("GIT_OBJECT_DIRECTORY", &self.dir)
             .env("GIT_ALTERNATE_OBJECT_DIRECTORIES", alternates(&[objects]));
         command
     }
+}
+
+/// Git with `args` in `cwd`, as [`crate::command`] runs it, for a call
+/// whose object directory is one of this crate's rather than the
+/// repository's. In a partial clone git fetches from the promisor remote
+/// any object it looks for and lacks, and with a store as the object
+/// directory every object of the repository looks lacking: one look (a
+/// link whose times changed is compared by its blob, a kept commit is asked
+/// after) would start a fetch over the network, maybe waiting on
+/// credentials nobody is there to give, and leave its pack in the store.
+/// Git 2.44 and later honour `GIT_NO_LAZY_FETCH`; an object not found is
+/// then missing, as in any other clone, which every such call allows for.
+pub(crate) fn own_objects(
+    cwd: &Path,
+    index: Option<&Path>,
+    args: &[&str],
+) -> tokio::process::Command {
+    let mut command = crate::command(cwd, index, args);
+    command.env("GIT_NO_LAZY_FETCH", "1");
+    command
 }
 
 /// `dirs` as git reads `GIT_ALTERNATE_OBJECT_DIRECTORIES`: separated as

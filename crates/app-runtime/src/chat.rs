@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
@@ -31,8 +31,8 @@ pub struct Chat {
     session: Arc<Session>,
     /// Told when the chat closes, so the session narrows again.
     fleet: Weak<Fleet>,
-    changes: Coalescer<Key>,
-    watcher: OnceLock<JoinHandle<()>>,
+    changes: Arc<Coalescer<Key>>,
+    watcher: JoinHandle<()>,
     clock: Arc<dyn client::Clock>,
     /// The changed files the overview last fetched.
     changed_files: Mutex<Option<wire::Diff>>,
@@ -71,24 +71,12 @@ impl Chat {
         // The fleet moving changes no row, but it moves how each agent a
         // row opens stands, which the delta carries.
         let mut fleet_changed = fleet.upgrade().map(|fleet| fleet.changed());
-        let chat = Arc::new(Chat {
-            id,
-            agent,
-            session,
-            fleet,
-            changes: Coalescer::new(wake),
-            watcher: OnceLock::new(),
-            clock,
-            changed_files: Mutex::new(None),
-            open_runs: Mutex::new(HashSet::new()),
-            folds_turns: AtomicBool::new(false),
-            open_turns: Mutex::new(HashSet::new()),
-            kept,
-            sent: Mutex::new(None),
-        });
-        // Spawned once the chat exists, so every change it sees finds the
-        // chat; it ends when the chat is dropped or the session ends.
-        let watched = Arc::downgrade(&chat);
+        let changes = Arc::new(Coalescer::new(wake));
+        // The watcher holds only weak references to the coalescer and session,
+        // never to `Chat` itself, so it cannot delay `Drop` (and `fleet.close`)
+        // past the caller dropping its handle.
+        let watched_changes = Arc::downgrade(&changes);
+        let watched_session = Arc::downgrade(&session);
         let watcher = tokio::spawn(async move {
             loop {
                 let fleet_moved = async {
@@ -102,30 +90,46 @@ impl Chat {
                         if moved.is_err() {
                             return;
                         }
-                        let Some(chat) = watched.upgrade() else {
+                        let (Some(changes), Some(session)) =
+                            (watched_changes.upgrade(), watched_session.upgrade())
+                        else {
                             return;
                         };
-                        let changes = chat.session.take_changes();
-                        chat.changes
-                            .push(changes.keys, changes.reloaded, changes.session);
+                        let batch = session.take_changes();
+                        changes.push(batch.keys, batch.reloaded, batch.session);
                     }
                     moved = fleet_moved => {
                         if !moved {
                             fleet_changed = None;
                             continue;
                         }
-                        let Some(chat) = watched.upgrade() else {
+                        let (Some(changes), Some(session)) =
+                            (watched_changes.upgrade(), watched_session.upgrade())
+                        else {
                             return;
                         };
-                        if chat.opens_agents() {
-                            chat.changes.push(Vec::new(), false, true);
+                        if opens_agents(&session) {
+                            changes.push(Vec::new(), false, true);
                         }
                     }
                 }
             }
         });
-        let _ = chat.watcher.set(watcher);
-        chat
+        Arc::new(Chat {
+            id,
+            agent,
+            session,
+            fleet,
+            changes,
+            watcher,
+            clock,
+            changed_files: Mutex::new(None),
+            open_runs: Mutex::new(HashSet::new()),
+            folds_turns: AtomicBool::new(false),
+            open_turns: Mutex::new(HashSet::new()),
+            kept,
+            sent: Mutex::new(None),
+        })
     }
 
     /// The id the host's wake names this chat by.
@@ -200,16 +204,6 @@ impl Chat {
         }
         let keys = ui_view::turn_keys(&self.session.state(), &end);
         self.changes.push(keys, false, false);
-    }
-
-    /// Whether any held row opens an agent, whose state a fleet change may
-    /// have moved.
-    fn opens_agents(&self) -> bool {
-        self.session
-            .state()
-            .transcript()
-            .iter()
-            .any(|held| ui_state::opens(&held.body).is_some())
     }
 
     /// How each agent the held rows open stands, and each group of them,
@@ -671,13 +665,21 @@ impl Chat {
 
 impl Drop for Chat {
     fn drop(&mut self) {
-        if let Some(watcher) = self.watcher.get() {
-            watcher.abort();
-        }
+        self.watcher.abort();
         if let Some(fleet) = self.fleet.upgrade() {
             fleet.close(&self.agent);
         }
     }
+}
+
+/// Whether any held row opens an agent, whose state a fleet change may
+/// have moved.
+fn opens_agents(session: &Session) -> bool {
+    session
+        .state()
+        .transcript()
+        .iter()
+        .any(|held| ui_state::opens(&held.body).is_some())
 }
 
 pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) -> ChatFrame {

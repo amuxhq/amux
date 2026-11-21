@@ -36,3 +36,22 @@ case "$target" in
     *) target="$here/$target" ;;
 esac
 echo "TESTNET_BINARIES=$target/debug" >> "$NEXTEST_ENV"
+
+# On macOS, spawning a freshly compiled binary triggers Gatekeeper / XProtect /
+# dyld first-launch assessment. Doing that concurrently across parallel test
+# processes can starve per-test startup deadlines (docs/TESTING.md); warm each
+# built binary once here, before any test starts.
+if [ "$(uname -s)" = Darwin ]; then
+    for bin in \
+        "$target/debug/amux" \
+        "$target/debug/fake-claude-pty" \
+        "$target/debug/fake-claude-sdk" \
+        "$target/debug/fake-codex" \
+        "$target/debug/fake-amux" \
+        "$target/debug/examples/amux_stand_in"
+    do
+        if [ -x "$bin" ]; then
+            "$bin" --version </dev/null >/dev/null 2>&1 || true
+        fi
+    done
+fi

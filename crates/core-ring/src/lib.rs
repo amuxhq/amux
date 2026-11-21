@@ -38,6 +38,25 @@ pub struct Ring<T> {
     inputs: PhantomData<fn(&T)>,
 }
 
+/// One or more JSON lines buffered to append to a [`Ring`] in one write.
+#[derive(Default)]
+pub struct Batch {
+    bytes: Vec<u8>,
+}
+
+impl Batch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Encodes one line into the batch.
+    pub fn push<U: Serialize + ?Sized>(&mut self, item: &U) -> io::Result<()> {
+        serde_json::to_writer(&mut self.bytes, item).map_err(io::Error::other)?;
+        self.bytes.push(b'\n');
+        Ok(())
+    }
+}
+
 /// What a ring holds for resuming: the newest checkpoint and the inputs
 /// written after it.
 pub struct Saved<T> {
@@ -95,13 +114,23 @@ impl<T: Serialize + DeserializeOwned> Ring<T> {
     /// Appends one line that reads back as a `T`, for a writer that holds
     /// what it records borrowed. Fails as [`Ring::append`] does.
     pub fn append_as<U: Serialize + ?Sized>(&mut self, input: &U) -> io::Result<()> {
-        let mut line = serde_json::to_vec(input).map_err(io::Error::other)?;
-        line.push(b'\n');
-        if let Err(error) = self.segment.1.write_all(&line) {
+        let mut batch = Batch::new();
+        batch.push(input)?;
+        self.append_batch(&batch)
+    }
+
+    /// Appends a pre-encoded batch of JSON lines in a single write, so a live
+    /// reader copying the segment never sees an input without the lines that
+    /// belong to its step. A failed write leaves the ring as it was.
+    pub fn append_batch(&mut self, batch: &Batch) -> io::Result<()> {
+        if batch.bytes.is_empty() {
+            return Ok(());
+        }
+        if let Err(error) = self.segment.1.write_all(&batch.bytes) {
             self.undo(self.offset);
             return Err(error);
         }
-        self.offset += line.len() as u64;
+        self.offset += batch.bytes.len() as u64;
         Ok(())
     }
 
@@ -260,5 +289,19 @@ mod tests {
 
         let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
         assert_eq!(saved.inputs, vec![Tick { at_ms: 1 }, Tick { at_ms: 3 }]);
+    }
+
+    #[test]
+    fn a_batch_appends_multiple_lines_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let facts = dir.path().join("facts");
+        let mut ring = Ring::<Tick>::open(facts.clone(), 1 << 20, b"state").unwrap();
+        let mut batch = Batch::new();
+        batch.push(&Tick { at_ms: 1 }).unwrap();
+        batch.push(&Tick { at_ms: 2 }).unwrap();
+        ring.append_batch(&batch).unwrap();
+
+        let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
+        assert_eq!(saved.inputs, vec![Tick { at_ms: 1 }, Tick { at_ms: 2 }]);
     }
 }

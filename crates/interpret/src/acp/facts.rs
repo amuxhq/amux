@@ -1130,15 +1130,17 @@ impl State {
                         Outcome::Completed,
                         Some(ended(Notice::Refusal, "The model refused to go on.")),
                     ),
+                    // A stop at a limit is not a failure: the turn ended
+                    // there, and its notice says which limit.
                     StopReason::MaxTokens => (
-                        Outcome::Failed,
+                        Outcome::Completed,
                         Some(ended(
                             Notice::MaxTokens,
                             "The turn reached the model's token limit.",
                         )),
                     ),
                     StopReason::MaxTurnRequests => (
-                        Outcome::Failed,
+                        Outcome::Completed,
                         Some(ended(
                             Notice::MaxTurnRequests,
                             "The turn reached the agent's limit on model requests.",

@@ -93,7 +93,7 @@ snapshot WORKING queue=[] working_on="Last try." at=1800000000000 agent=my-own-a
 item tool:c2 tool final at=1800000000000 text="" EDIT SUCCEEDED "Write notes.md" at=/work/notes.md diff=/work/notes.md(new) +1
 ## 26 fact {"channel":"rpc","json":{"id":"amux-prompt-7034","jsonrpc":"2.0","result":{"stopReason":"max_tokens","usage":{"inputTokens":6,"outputTokens":4,"totalTokens":10}}}}
 item notice:6 notice final at=1800000000000 text="The turn reached the model's token limit." MAX_TOKENS WARNING -
-item turn:4 turn final at=1800000000000 text="" #4 TURN_OUTCOME_FAILED started=1800000000000
+item turn:4 turn final at=1800000000000 text="" #4 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot IDLE queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
 turn_end 4 last=-
 ## 27 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"session_info_update","title":"Test check"}}}}

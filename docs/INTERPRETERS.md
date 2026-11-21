@@ -1318,7 +1318,8 @@ withdrawn; only a person's queued prompt can.
 **Turns.** A turn ends at the answer to its last prompt: `end_turn`
 completes it, `cancelled` interrupts it (stopped, after a stop), `refusal`
 completes it with a refusal notice, `max_tokens` and `max_turn_requests`
-fail it with a notice, an error fails it with an error row. Usage comes
+complete it with a notice saying which limit stopped it (a stop at a limit
+is not a failure), an error fails it with an error row. Usage comes
 from the answer (`usage`, or Grok's `_meta`); an answer with neither
 clears the turn's token counts and keeps the session's cost. The context
 meter comes from `usage_update`. Calls still running at the turn's end are cancelled and

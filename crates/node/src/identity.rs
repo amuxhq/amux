@@ -611,16 +611,68 @@ pub(crate) fn create_private_file(path: &Path, bytes: &[u8]) -> Result<(), Ident
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    match fs::hard_link(&tmp, path) {
-        Ok(()) => {
-            let _ = fs::remove_file(&tmp);
-            Ok(())
-        }
+    match publish_new_file(&tmp, path) {
+        Ok(()) => Ok(()),
         Err(error) => {
             let _ = fs::remove_file(&tmp);
             Err(IdentityError::Io(error))
         }
     }
+}
+
+#[cfg(not(target_os = "android"))]
+fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    fs::hard_link(tmp, path)?;
+    let _ = fs::remove_file(tmp);
+    Ok(())
+}
+
+/// Android SELinux denies `link(2)` (`fs::hard_link`) on `app_data_file` for
+/// untrusted apps, so publish the synced temporary file with `renameat2`
+/// (`RENAME_NOREPLACE`) to keep atomic create-without-overwrite semantics.
+#[cfg(target_os = "android")]
+fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    const RENAME_NOREPLACE: libc::c_uint = 1;
+
+    let from = CString::new(tmp.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "interior NUL in temp path",
+        )
+    })?;
+    let to = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "interior NUL in target path",
+        )
+    })?;
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            RENAME_NOREPLACE,
+        )
+    };
+    if rc == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
+        if path.try_exists()? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "target file already exists",
+            ));
+        }
+        return fs::rename(tmp, path);
+    }
+    Err(error)
 }
 
 pub(crate) fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {

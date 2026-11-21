@@ -143,7 +143,8 @@ amux.sh:
 - **Usage counts,** which you can turn off. See
   [What amux sends](what-amux-sends.md).
 - **Problem reports,** only when you send one, or automatically if you turned
-  that on. One you send includes the screen you froze, chat text and all. See [What amux sends](what-amux-sends.md#problem-reports).
+  that on. One you send includes the screen you froze, with any chat text left
+  visible on it (on Android you can black out areas before sending). See [What amux sends](what-amux-sends.md#problem-reports).
 
 ## The browser extension
 

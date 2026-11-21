@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: What to check when amux isn't running, a computer is out of reach, or an agent can't carry on, and how to send a report.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 ## Start with amux status
@@ -127,8 +127,12 @@ holds your messages, your code, or your file and folder names
 - **In the terminal app**, press `b` on home, or Ctrl+A then `b` in a chat. The
   screen freezes: drag over anything that looks wrong, add a note, and press
   Enter.
-- **On the iPhone**, take a screenshot and the app offers to report it, or use
+- **On iPhone**, take a screenshot and the app offers to report it, or use
   **Report a Problem** under **Help** in Settings.
+- **On Android**, take a screenshot and a banner offers to open **Report a
+  Problem** (you can drag boxes to mark what's wrong or tap **Hide** to black
+  out sensitive areas before sending), or use **Report a Problem** under
+  **Privacy & Diagnostics** in Settings.
 - **From the shell**, run `amux dump --reason "what looks wrong" --send`.
 
 Reports go to your amux account, so you need to be signed in to send one. A copy

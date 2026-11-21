@@ -2,7 +2,7 @@
 title: Browser extension
 description: Comment on any web page, the way you review a diff, and send the comments to an agent.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 The amux extension for Chrome lets you point at what you mean on a web page

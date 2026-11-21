@@ -23,16 +23,18 @@ off:
   app's Settings, or run `amux config set telemetry false`. amux
   stops sending at once, and nothing it records while off is sent later.
   `amux status` says whether it's on.
-- **On the iPhone:** turn off **Share Usage** under **You**, in
-  **This phone**. The app's App Store privacy label lists what it collects.
+- **On the iPhone:** turn off **Share Usage** in **Settings**. The app's App
+  Store privacy label lists what it collects.
+- **On Android:** turn off **Share Usage Counts** under **Privacy &
+  Diagnostics** in **Settings**.
 - **With `DO_NOT_TRACK`:** amux started with `DO_NOT_TRACK` set to anything
   but empty or `0` sends nothing, whatever the setting says. It has to be set
   where amux starts, though. amux started at login, or by a service manager,
   doesn't see a variable set in your shell profile, so on a desktop the
   setting above is the switch that always works.
 
-Only the published `amux` and the App Store app send anything. Builds from
-source and test runs never do.
+Only the published `amux` and the published phone apps send anything. Builds
+from source and test runs never do.
 
 ## Where it goes
 
@@ -94,7 +96,7 @@ a field for free text.
 | `updated` | amux starts on a newer version than last time. | `from_version`, `to_version` |
 | `update_rolled_back` | amux starts on an older version than last time, because the newer one was put back. | `from_version`, `to_version` |
 | `daemon_crashed` | amux starts and finds that its last run stopped without shutting down, with the computer still up. | `crashed_version`: the version that stopped. |
-| `client_opened` | The terminal client starts, the Mac app opens, the iPhone app comes to the front, or the browser extension connects; at most once an hour. | `surface`: `terminal`, `mac`, `phone` or `browser`. |
+| `client_opened` | The terminal client starts, the Mac app opens, the iPhone or Android app comes to the front, or the browser extension connects; at most once an hour. | `surface`: `terminal`, `mac`, `phone` or `browser`. |
 | `agent_created` | A new agent is started. | `kind`; `on`: `this_host` or `paired_host`, with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper). |
 | `prompt_sent` | A prompt you sent is accepted. | `kind`; `on` and `remote_host` as above; `queued`: whether it waits behind a turn already running. |
 | `ask_answered` | Your answer to an agent's question or request is accepted. | `kind`; `on` and `remote_host` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
@@ -134,16 +136,20 @@ before that is not counted.
 ## Problem reports
 
 Problem reports are separate from usage counts. A report goes to amux.sh only
-when you send one yourself, from the terminal app or the phone, or
+when you send one yourself, from the terminal app, iPhone or Android, or
 automatically when amux catches one of its own bugs, if you turned on
 automatic reports. Automatic reports are off unless you turn them on: setting
 up asks, and you can change it later with **Send reports automatically** in
-Settings, **Send Automatic Reports** on the phone, or
-`amux config set auto_reports true`.
+Settings, **Send Automatic Reports** on iPhone, **Automatic Reports** on
+Android, or `amux config set auto_reports true`.
 
 A report you send yourself includes the screen you froze to report it, as
-you saw it, with your marks and your note. If a chat was on screen, its
-visible text goes with the report, so look before you send.
+you saw it, with your marks and your note. On both iPhone and Android, taking a
+screenshot inside amux offers to open **Report a Problem** (which you can
+dismiss if you just wanted a regular screenshot). On Android, you can also tap
+any box you dragged and choose **Hide** to black out sensitive text or details
+in the image before it leaves your phone. Anything you leave visible on that
+screen—including chat text—goes with the report, so look before you send.
 
 Everything else in a report, and the whole of an automatic one, carries the
 shape of what went wrong, not its content. Which steps ran, in what order,

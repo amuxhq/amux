@@ -1,13 +1,14 @@
 ---
 title: Connect your phone
-description: Get amux for iPhone, pair it with your computer, and reach your agents at home or away.
+description: Get amux for iPhone or Android, pair it with your computer, and reach your agents at home or away.
 sidebar:
   order: 3
 ---
 
-[amux for iPhone](https://apps.apple.com/us/app/amux/id6760197635) shows the
-agents on your computers, lets you answer them, and starts new ones. The
-agents run on your computers; the phone is where you follow and steer them.
+amux for [iPhone](https://apps.apple.com/us/app/amux/id6760197635) and
+[Android](../use/android.md) shows the agents on your computers, lets you
+answer them, and starts new ones. The agents run on your computers; the phone
+is where you follow and steer them.
 
 ## Pair your phone
 
@@ -70,6 +71,7 @@ the QR code: it carries the computer's Tailscale address. See
 
 ## Next
 
-- [The iPhone app](../use/iphone.md): everything the app does.
+- [The iPhone app](../use/iphone.md): everything the iPhone app does.
+- [The Android app](../use/android.md): everything the Android app does.
 - [Add another computer](add-another-computer.md): your phone pairs with each
   computer on its own.

@@ -27,7 +27,7 @@ Other tools a full checkout uses:
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
-- JDK 21, the Android SDK/NDK, and `cargo-ndk` build the Android app (`just --list android`).
+- JDK 21, the Android SDK/NDK, and `cargo-ndk` build the Android app (see [the Android app](ANDROID.md), `just --list android`).
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds and tests the browser extension under
   `js/` (`just browser build`, `just browser test`). Biome formats and lints it
@@ -108,7 +108,7 @@ The root [`justfile`](../justfile) is the task contract, and `just --list`
 shows every recipe. The iPhone and Android apps' recipes are modules:
 `just --list ios` (`just ios build`, `just ios verify`) and
 `just --list android` (`just android lint`, `just android unit`,
-`just android build`). Every recipe runs its
+`just android build`, `just android verify`). Every recipe runs its
 command under `scripts/bounded`, a wall-clock bound that uses GNU `timeout`
 where present and a small fallback elsewhere; a firing bound is a hang to
 diagnose, not a slow machine. `AMUX_GIT_SHA` is exported from the current
@@ -136,6 +136,11 @@ The recipes a build or change usually needs:
 | `just android graph-check` | Prove the `app-jni` graph carries no provider, host, schema, or test crate |
 | `just android unit` | Build the host JNI library and run all Android JVM and Robolectric unit suites |
 | `just android build` | Build the Android JNI library and debug APK |
+| `just android storybook` | Render the headless Robolectric/Roborazzi PNG gallery into `target/android/storybook/index.html` |
+| `just android journey` | Drive the Android debug APK on `amux-android-1` against real daemons and relay (`testnet journey android`) |
+| `just android accessibility` | Run the Android ATF and Compose semantics accessibility audit (TalkBack names and ≥ 48 dp targets) |
+| `just android scope-audit` | Build the Release APK and verify no debug surfaces or `debug-tools` symbols ship and SQLite is bundled |
+| `just android verify` | Run the full ordered Android verification sequence (lint, script tests, graph check, unit, storybook, scope audit, journeys, accessibility) |
 | `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 

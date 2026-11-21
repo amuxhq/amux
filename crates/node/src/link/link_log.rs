@@ -434,3 +434,75 @@ mod tests {
         }
     }
 }
+
+/// The link log the test process writes, as the daemon's log would hold it.
+/// It is the process's one subscriber, not one scoped to a test: a scoped
+/// one misses events written on other threads, and events whose callsites
+/// another test's thread registered first, while none was listening.
+#[cfg(test)]
+pub(crate) mod captured {
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    use crate::HostId;
+
+    #[derive(Clone, Default)]
+    pub(crate) struct Traces(Arc<Mutex<Vec<u8>>>);
+
+    /// The capture, set up as the process's subscriber on first use.
+    pub(crate) fn log() -> &'static Traces {
+        static TRACES: OnceLock<Traces> = OnceLock::new();
+        TRACES.get_or_init(|| {
+            use tracing_subscriber::Layer as _;
+            use tracing_subscriber::layer::SubscriberExt as _;
+            use tracing_subscriber::util::SubscriberInitExt as _;
+
+            let traces = Traces::default();
+            let writer = traces.clone();
+            tracing_subscriber::registry()
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(move || writer.clone())
+                        .with_filter(tracing_subscriber::filter::Targets::new().with_target(
+                            super::TARGET,
+                            tracing_subscriber::filter::LevelFilter::INFO,
+                        )),
+                )
+                .try_init()
+                .expect("no other subscriber in node's unit tests");
+            traces
+        })
+    }
+
+    impl std::io::Write for Traces {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Traces {
+        /// What `host` wrote to the link log.
+        pub(crate) fn link_log(&self, host: HostId) -> Vec<super::LinkEvent> {
+            self.lines(super::LinkEvent::parse, host)
+        }
+
+        /// The calls `host` carried, as its log reads them back.
+        pub(crate) fn carried(&self, host: HostId) -> Vec<super::CarriedCall> {
+            self.lines(super::CarriedCall::parse, host)
+        }
+
+        fn lines<T>(&self, parse: fn(&str) -> Option<(HostId, T)>, host: HostId) -> Vec<T> {
+            String::from_utf8_lossy(&self.0.lock().unwrap())
+                .lines()
+                .filter_map(parse)
+                .filter(|(writer, _)| *writer == host)
+                .map(|(_, event)| event)
+                .collect()
+        }
+    }
+}

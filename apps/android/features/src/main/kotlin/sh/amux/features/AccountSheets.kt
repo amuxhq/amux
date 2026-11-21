@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -680,7 +681,9 @@ fun DeleteAccountSheetContent(
                 text = stringResource(R.string.account_sheet_delete_title),
                 style = AmuxTheme.typography.screenTitle,
                 color = colors.ink,
-                modifier = Modifier.testTag(AccountSheetTags.DELETE_TITLE),
+                modifier = Modifier
+                    .semantics { heading() }
+                    .testTag(AccountSheetTags.DELETE_TITLE),
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {

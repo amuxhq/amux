@@ -1167,6 +1167,9 @@ private fun PlanAskSection(
                         checked = autoAccept,
                         onCheckedChange = onAutoAcceptChange,
                         colors = amuxSwitchColors(),
+                        modifier = Modifier
+                            .thumbTarget()
+                            .semantics { contentDescription = switchTitle },
                     )
                 }
             }
@@ -1405,10 +1408,14 @@ private fun FormFieldControl(
                             )
                         }
                     }
+                    val switchLabel = field.title.ifEmpty { field.name }
                     Switch(
                         checked = checked,
                         onCheckedChange = { onValueChange(FormValue.Toggle(it)) },
                         colors = amuxSwitchColors(),
+                        modifier = Modifier
+                            .thumbTarget()
+                            .semantics { contentDescription = switchLabel },
                     )
                 }
             }

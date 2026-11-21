@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -132,6 +133,7 @@ fun PairingSheetContent(
                     style = AmuxTheme.typography.identifier,
                     color = colors.ink,
                     maxLines = 1,
+                    modifier = Modifier.semantics { heading() },
                 )
                 if (headerSubtitle != null) {
                     Text(
@@ -311,7 +313,9 @@ private fun PinEntryContent(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { runCatching { focusRequester.requestFocus() } },
+                .thumbTarget()
+                .clickable(onClickLabel = codeLabel) { runCatching { focusRequester.requestFocus() } }
+                .semantics { contentDescription = codeLabel },
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

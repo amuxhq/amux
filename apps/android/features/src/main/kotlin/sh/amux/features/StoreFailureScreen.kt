@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxTheme
@@ -54,7 +56,9 @@ fun StoreFailureScreen(
                 text = stringResource(R.string.store_failure_title),
                 style = typography.screenTitle,
                 color = colors.ink,
-                modifier = Modifier.testTag(TestTags.STORE_FAILURE_TITLE),
+                modifier = Modifier
+                    .semantics { heading() }
+                    .testTag(TestTags.STORE_FAILURE_TITLE),
             )
             Spacer(modifier = Modifier.height(Space.s))
             Text(

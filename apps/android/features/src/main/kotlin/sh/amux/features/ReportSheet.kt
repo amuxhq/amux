@@ -1026,6 +1026,7 @@ private fun ReportComposerDock(
                         cursorBrush = SolidColor(colors.accent),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .thumbTarget()
                             .semantics { contentDescription = notePlaceholder }
                             .testTag(ReportTags.NOTE),
                     )

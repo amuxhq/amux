@@ -823,10 +823,14 @@ private fun StandardComposerCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = Space.xxs)
+                    .thumbTarget()
                     .semantics { contentDescription = placeholder }
                     .testTag(ChatComposerTags.INPUT_FIELD),
                 decorationBox = { innerTextField ->
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
                         if (state.draft.isEmpty()) {
                             Text(
                                 text = placeholder,

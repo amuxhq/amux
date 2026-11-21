@@ -38,7 +38,12 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             all { test ->
-                for (prop in listOf("amux.storybook.capture", "amux.storybook.filter", "amux.storybook.out")) {
+                for (prop in listOf(
+                    "amux.storybook.capture",
+                    "amux.storybook.filter",
+                    "amux.storybook.out",
+                    "amux.accessibility.filter",
+                )) {
                     System.getProperty(prop)?.let { value ->
                         test.systemProperty(prop, value)
                     }
@@ -71,7 +76,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 

@@ -93,6 +93,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1084,6 +1085,7 @@ fun ChatUnavailableScreen(
                                 color = colors.ink,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.semantics { heading() },
                             )
                         },
                     )
@@ -1200,9 +1202,13 @@ private fun ChatTopBar(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .thumbTarget()
                         .clip(RoundedCornerShape(Space.s))
                         .clickable(role = Role.Button, onClick = onOpenOverview)
-                        .semantics { contentDescription = titleSpoken }
+                        .semantics {
+                            heading()
+                            contentDescription = titleSpoken
+                        }
                         .padding(vertical = Space.xs)
                         .testTag(ChatScreenTags.TITLE),
                     verticalArrangement = Arrangement.spacedBy(1.dp),
@@ -2308,21 +2314,14 @@ fun ChatRenameDialogContent(
                 color = colors.ink,
             )
             Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
+                val renamePlaceholder = stringResource(R.string.chat_rename_placeholder)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(inputShape)
                         .background(colors.raised)
-                        .border(AmuxTheme.metrics.hairline, colors.hairline, inputShape)
-                        .padding(horizontal = Space.m, vertical = Space.m),
+                        .border(AmuxTheme.metrics.hairline, colors.hairline, inputShape),
                 ) {
-                    if (draft.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.chat_rename_placeholder),
-                            style = AmuxTheme.typography.mono,
-                            color = colors.inkFaint,
-                        )
-                    }
                     BasicTextField(
                         value = draft,
                         onValueChange = { draft = it },
@@ -2331,7 +2330,25 @@ fun ChatRenameDialogContent(
                         cursorBrush = SolidColor(if (photographed) Color.Unspecified else colors.ink),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .thumbTarget()
+                            .padding(horizontal = Space.m)
+                            .semantics { contentDescription = renamePlaceholder }
                             .testTag(ChatScreenTags.RENAME_INPUT),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (draft.isEmpty()) {
+                                    Text(
+                                        text = renamePlaceholder,
+                                        style = AmuxTheme.typography.mono,
+                                        color = colors.inkFaint,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
                     )
                 }
                 if (problem != null && trimmed.isNotEmpty()) {

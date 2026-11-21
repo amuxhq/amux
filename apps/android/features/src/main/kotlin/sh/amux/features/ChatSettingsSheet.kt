@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,7 +132,9 @@ fun ChatSettingsSheetContent(
                 text = stringResource(R.string.chat_settings_title),
                 style = AmuxTheme.typography.screenTitle,
                 color = colors.ink,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() },
             )
             val closeLabel = stringResource(R.string.action_close)
             IconButton(
@@ -558,7 +561,7 @@ private fun SettingsRadioRow(
     ) {
         RadioButton(
             selected = current,
-            onClick = if (enabled || current) onClick else null,
+            onClick = null,
             enabled = enabled || current,
             colors = RadioButtonDefaults.colors(
                 selectedColor = colors.ink,

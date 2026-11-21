@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -237,6 +238,7 @@ fun AgentsHome(
                                     color = colors.ink,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.semantics { heading() },
                                 )
                                 if (subtitleText != null) {
                                     Text(
@@ -317,7 +319,9 @@ fun AgentsHome(
                                 style = AmuxTheme.typography.bodyEmphasis,
                             )
                         },
-                        modifier = Modifier.testTag(TestTags.HOME_FAB_NEW_AGENT),
+                        modifier = Modifier
+                            .semantics { contentDescription = newAgentLabel }
+                            .testTag(TestTags.HOME_FAB_NEW_AGENT),
                     )
                 }
             },
@@ -710,7 +714,9 @@ private fun FleetSearchBar(
                 },
                 colors = chipColors,
                 border = chipBorder,
-                modifier = Modifier.testTag(TestTags.homeFilter("all")),
+                modifier = Modifier
+                    .thumbTarget()
+                    .testTag(TestTags.homeFilter("all")),
             )
             FilterChip(
                 selected = filter.only == FleetOnly.NeedsYou,
@@ -730,7 +736,9 @@ private fun FleetSearchBar(
                 },
                 colors = chipColors,
                 border = chipBorder,
-                modifier = Modifier.testTag(TestTags.homeFilter("needs-you")),
+                modifier = Modifier
+                    .thumbTarget()
+                    .testTag(TestTags.homeFilter("needs-you")),
             )
             FilterChip(
                 selected = filter.only == FleetOnly.Working,
@@ -746,7 +754,9 @@ private fun FleetSearchBar(
                 },
                 colors = chipColors,
                 border = chipBorder,
-                modifier = Modifier.testTag(TestTags.homeFilter("working")),
+                modifier = Modifier
+                    .thumbTarget()
+                    .testTag(TestTags.homeFilter("working")),
             )
             if (machines.size > 1) {
                 for (host in machines.sortedBy { it.name.lowercase() }) {
@@ -765,7 +775,9 @@ private fun FleetSearchBar(
                         },
                         colors = chipColors,
                         border = chipBorder,
-                        modifier = Modifier.testTag(TestTags.homeFilter("host.${host.name}")),
+                        modifier = Modifier
+                            .thumbTarget()
+                            .testTag(TestTags.homeFilter("host.${host.name}")),
                     )
                 }
             }

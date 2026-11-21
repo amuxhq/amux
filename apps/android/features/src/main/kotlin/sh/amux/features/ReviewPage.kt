@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -204,6 +205,7 @@ fun ReviewPage(
                             style = AmuxTheme.typography.bodyEmphasis,
                             color = colors.ink,
                             maxLines = 1,
+                            modifier = Modifier.semantics { heading() },
                         )
                         if (state.doc != null && files.isNotEmpty()) {
                             Row(
@@ -529,11 +531,14 @@ fun ReviewPage(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.BottomCenter,
                 ) {
+                    val dismissLabel = stringResource(R.string.action_close)
                     AmuxScrim(
-                        modifier = Modifier.clickable {
-                            commentTarget = null
-                            commentText = ""
-                        },
+                        modifier = Modifier
+                            .clickable(onClickLabel = dismissLabel) {
+                                commentTarget = null
+                                commentText = ""
+                            }
+                            .semantics { contentDescription = dismissLabel },
                     )
                     ReviewCommentComposer(
                         target = activeTarget,
@@ -765,11 +770,12 @@ private fun ReviewDiffLineRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .thumbTarget()
             .background(background)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.s, vertical = Space.xs)
             .semantics { contentDescription = spoken },
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = line.oldLine?.toString().orEmpty(),

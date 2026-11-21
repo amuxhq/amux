@@ -1658,6 +1658,17 @@ impl Net {
                 );
             }
         }
+        // The host's only agent program is the fake one: a net never runs
+        // the built-in agents, which would be whatever this machine has
+        // installed.
+        launch.agents = vec![node::agents::AgentProgram {
+            id: providers::FAKE_ACP_AGENT.to_owned(),
+            name: "Fake ACP Agent".to_owned(),
+            command: own.commands.acp.to_string_lossy().into_owned(),
+            args: vec!["acp".to_owned()],
+            env: BTreeMap::new(),
+            built_in: false,
+        }];
         launch.agent.grace_secs = AGENT_GRACE_SECS;
         launch.agent.drain_secs = 5;
         if let Some(mib) = self.facts_ring_mib {

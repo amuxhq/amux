@@ -86,13 +86,15 @@ pub(crate) struct Wrappers<'a> {
 pub(crate) struct Commands {
     pub claude: PathBuf,
     pub codex: PathBuf,
-    /// The fake ACP agent with the agent's script, for an ACP agent
-    /// configured to run it. A net has no real ACP agents set up.
-    // Nothing in the net launches an ACP agent by itself: a test names
-    // this command in the agent's configuration.
-    #[allow(dead_code)]
+    /// The fake ACP agent with the agent's script, which every host runs
+    /// as the agent [`FAKE_ACP_AGENT`]. A net has no real ACP agents set
+    /// up.
     pub acp: PathBuf,
 }
+
+/// The id a client creates an ACP agent by to have its host run the fake
+/// ACP agent, playing the host's script.
+pub const FAKE_ACP_AGENT: &str = "fake-acp";
 
 /// Records an agent's provider for the host's commands to find when it
 /// starts: the real one, or a fake of `kind` playing `script`.

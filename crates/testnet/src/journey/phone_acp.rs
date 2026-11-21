@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use super::common::*;
 use super::phone::{Drawn, Launch, PhoneJourney, labelled};
 use super::phone_stories::{
-    choice, open_settled, pair_by_code, photograph_running, queued, reopen, replies,
-    send, settle_from_menu,
+    choice, open_settled, pair_by_code, photograph_running, queued, reopen, replies, send,
+    settle_from_menu,
 };
 use super::{Proved, negative_control, never_sent, phase, quoted, reflected_once};
 use crate::FAKE_ACP_AGENT;
@@ -194,11 +194,7 @@ pub(super) fn conversation(journey: &mut PhoneJourney) -> Proved {
 
     // OpenCode's three: allow once, always allow, or reject.
     send(journey, CLEAN)?;
-    permission_card(
-        journey,
-        "rm -rf build",
-        &["Allow", "Always allow", "Deny…"],
-    )?;
+    permission_card(journey, "rm -rf build", &["Allow", "Always allow", "Deny…"])?;
     journey.screen("asked-three", &[])?;
     // Denied with nothing said: the agent's own refusal.
     journey.tap("ask.deny")?;

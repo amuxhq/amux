@@ -690,6 +690,9 @@ mod tests {
         )
         .unwrap();
         let read = read_topology(&path).unwrap();
-        assert_eq!(read["agents"][0]["script_file"], json!(dir.path().join("a.json")));
+        assert_eq!(
+            read["agents"][0]["script_file"],
+            json!(dir.path().join("a.json"))
+        );
     }
 }

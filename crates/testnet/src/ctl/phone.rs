@@ -258,8 +258,7 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
         }
         PhoneCommand::Back => {
             request(folder, json!({"kind": "back"}))?;
-            request(folder, json!({"kind": "settle"}))
-                .map(|reply| Outcome::new("went back", reply))
+            request(folder, json!({"kind": "settle"})).map(|reply| Outcome::new("went back", reply))
         }
         PhoneCommand::Search { text } => {
             request(folder, json!({"kind": "search", "text": text}))?;

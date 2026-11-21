@@ -59,7 +59,10 @@ const STORIES: &[(&str, Tell)] = &[
     ("push-wake", push_wake),
     ("resume", resume),
     ("acp-conversation", super::phone_acp::conversation),
-    ("acp-interrupt-and-queue", super::phone_acp::interrupt_and_queue),
+    (
+        "acp-interrupt-and-queue",
+        super::phone_acp::interrupt_and_queue,
+    ),
     ("acp-unresumable", super::phone_acp::unresumable),
     ("acp-signed-out", super::phone_acp::signed_out),
 ];

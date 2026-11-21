@@ -145,7 +145,7 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun notificationsRowHandlesNotAskedAndConfiguredStates() {
+    fun notificationsRowShowsHonestComingSoonStatusWithoutActionButtonWhenPushNotEnabled() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -160,18 +160,43 @@ class SettingsScreenTest {
         }
 
         composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_CARD).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Coming soon").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Background push notifications are not yet enabled in this version of amux.",
+        ).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).assertDoesNotExist()
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun notificationsRowHandlesNotAskedAndConfiguredStatesWhenPushEnabled() {
+        val actions = mutableListOf<SettingsAction>()
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                SettingsScreen(
+                    state = SettingsScreenState(
+                        notificationStatus = SettingsNotificationStatus.NotAsked,
+                        pushDeliveryComingSoon = false,
+                    ),
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_CARD).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Enable Notifications").performScrollTo().performClick()
         assertEquals(SettingsAction.EnableNotifications, actions.last())
     }
 
     @Test
-    fun notificationsRowOpensSystemSettingsWhenEnabledOrOff() {
+    fun notificationsRowOpensSystemSettingsWhenEnabledOrOffAndPushEnabled() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 SettingsScreen(
                     state = SettingsScreenState(
                         notificationStatus = SettingsNotificationStatus.Enabled,
+                        pushDeliveryComingSoon = false,
                     ),
                     onAction = { actions += it },
                 )
@@ -275,7 +300,7 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag(SettingsTags.APPEARANCE_DARK).performScrollTo().performClick()
         assertEquals(SettingsAction.SetAppearance(SettingsAppearance.Dark), actions.last())
 
-        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).performScrollTo().performClick()
-        assertEquals(SettingsAction.OpenNotificationSettings, actions.last())
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_STATUS).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).assertDoesNotExist()
     }
 }

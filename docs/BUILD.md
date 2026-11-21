@@ -138,7 +138,7 @@ The recipes a build or change usually needs:
 | `just android build` | Build the Android JNI library and debug APK |
 | `just android storybook` | Render the headless Robolectric/Roborazzi PNG gallery into `target/android/storybook/index.html` |
 | `just android journey` | Drive the Android debug APK on `amux-android-1` against real daemons and relay (`testnet journey android`) |
-| `just android accessibility` | Run the Android ATF and Compose semantics accessibility audit (TalkBack names and ≥ 48 dp targets) |
+| `just android accessibility` | Run the Android Robolectric Compose semantics, bounds, 48 dp touch-target, heading and WCAG contrast-token audit (`AccessibilityAuditTest`) |
 | `just android scope-audit` | Build the Release APK and verify no debug surfaces or `debug-tools` symbols ship and SQLite is bundled |
 | `just android verify` | Run the full ordered Android verification sequence (lint, script tests, graph check, unit, storybook, scope audit, journeys, accessibility) |
 | `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |

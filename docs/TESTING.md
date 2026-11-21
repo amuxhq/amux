@@ -103,7 +103,7 @@ A lane says when and where a suite runs.
 | --- | --- | --- |
 | fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` and the Android gate (`android.yml`) when a push touches those paths |
 | system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the store on the simulator in `just ios captures` |
-| journey | Clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); iPhone journeys and accessibility audit in `just ios captures`, and Android emulator journeys and ATF/semantics accessibility audit via `just android journey` and `just android accessibility` |
+| journey | Clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); iPhone journeys and accessibility audit in `just ios captures`, and Android emulator journeys and Robolectric Compose semantics, bounds, touch-target, heading and contrast accessibility audit via `just android journey` and `just android accessibility` |
 | tool | The repository's own machinery: scripts, source policy, CI command surface, the iOS and Android release scope audits. | Beside the fast lane (`just ios scope-audit`, `just android scope-audit`) |
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |
 
@@ -185,7 +185,7 @@ just ios unit                              # phone package and app-hosted unit s
 just ios journey                           # the shared stories on the phone; `-- <story>` for one
 just android unit                          # Android host-JNI, JVM and Robolectric unit suites
 just android storybook                     # Android headless PNG gallery for visual review
-just android accessibility                 # Android ATF and Compose semantics accessibility audit
+just android accessibility                 # Android Robolectric Compose semantics, bounds, touch-target, heading and WCAG contrast audit
 just android scope-audit                   # Android Release APK debug-surface and SQLite linkage audit
 just android journey                       # Android stories on amux-android-1; `<story>` for one
 just live claude_sdk all                   # live compatibility for one kind (qualification)

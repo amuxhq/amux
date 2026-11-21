@@ -11,11 +11,10 @@ settings.appearance | Theme, Light, Dark, System |  | 16,524,379,120
 settings.appearance.light | Light |  | 36,576,110,48
 settings.appearance.dark | Dark |  | 151,576,110,48
 settings.appearance.system | System |  | 265,576,110,48
-settings.notifications | Notifications, Not enabled, Background push delivery is coming in a future update. Local alerts show while amux is open., Enable Notifications |  | 16,688,379,163
-settings.notifications.status | Not enabled |  | 290,704,90,20
-settings.notifications.action | Enable Notifications |  | 32,787,347,48
-settings.privacy.share-usage | Share Usage Counts, Counts and choices, never what you type, your code, or file names. |  | 16,895,379,4
-settings.privacy.share-usage.switch | Share Usage Counts |  | 0,0,0,0
+settings.notifications | Notifications, Coming soon, Background push notifications are not yet enabled in this version of amux. |  | 16,688,379,102
+settings.notifications.status | Coming soon |  | 281,704,99,20
+settings.privacy.share-usage | Share Usage Counts, Counts and choices, never what you type, your code, or file names. |  | 16,835,379,64
+settings.privacy.share-usage.switch | Share Usage Counts |  | 327,853,52,46
 settings.privacy.auto-reports | Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 0,0,0,0
 settings.privacy.auto-reports.switch | Automatic Reports |  | 0,0,0,0
 settings.diagnostics.report | Report a Problem |  | 0,0,0,0

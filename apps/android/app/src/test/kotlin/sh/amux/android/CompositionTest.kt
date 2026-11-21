@@ -271,4 +271,53 @@ class CompositionTest {
             dir.deleteRecursively()
         }
     }
+
+    @Test
+    fun pushDeliveryEnabledReflectsWhetherPushRegistrarIsNoOp() {
+        val (defaultComp, defaultDir) = testComposition()
+        try {
+            assertFalse(
+                "default NoOpPushRegistrar must report pushDeliveryEnabled = false",
+                defaultComp.pushDeliveryEnabled,
+            )
+        } finally {
+            defaultComp.shutdown()
+            defaultDir.deleteRecursively()
+        }
+
+        val tempRoot = Files.createTempDirectory("amux-comp-push-test").toFile()
+        val app = RuntimeEnvironment.getApplication()
+        val customPush = object : sh.amux.core.runtime.PushRegistrar {
+            override fun updateAccounts(accounts: List<sh.amux.core.runtime.PushAccount>) = Unit
+            override fun updatePermitted(permitted: Boolean) = Unit
+            override fun updateToken(token: ByteArray) = Unit
+            override suspend fun withdraw(account: AccountId) = Unit
+            override suspend fun settled() = Unit
+        }
+        val customComp = Composition(
+            context = app,
+            overrides = CompositionOverrides(
+                cloud = ScriptedCloudService(),
+                billing = StubBillingStoreFront(),
+                pushRegistrar = customPush,
+                authPresenter = ScriptedWebAuth(),
+                dictation = FakeDictation(),
+                useSystemDiscovery = false,
+                autoStart = false,
+                attachProcessLifecycle = false,
+                installationDir = File(tempRoot, "install"),
+                accountsFile = File(tempRoot, "accounts.json"),
+                prefsName = "amux_test_${tempRoot.name}",
+            ),
+        )
+        try {
+            assertTrue(
+                "custom PushRegistrar should enable push delivery UI",
+                customComp.pushDeliveryEnabled,
+            )
+        } finally {
+            customComp.shutdown()
+            tempRoot.deleteRecursively()
+        }
+    }
 }

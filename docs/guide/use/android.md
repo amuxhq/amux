@@ -148,10 +148,8 @@ carries over to your Android phone automatically.
 
 ## Notifications
 
-Background push notifications are not available yet on Android and are coming in
-a future update. While amux is open, local alerts still let you know when an
-agent needs you. You can turn notification permission on or open Android's
-notification settings under **Notifications** in **Settings**.
+Notifications are not yet delivered on Android in this release and are planned
+for a future update.
 
 ## Settings, problem reports and diagnostics
 

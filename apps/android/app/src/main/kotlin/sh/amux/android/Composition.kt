@@ -139,6 +139,9 @@ class Composition(
     val paywallStoreUnavailable: Boolean
         get() = billing is StubBillingStoreFront
 
+    val pushDeliveryEnabled: Boolean
+        get() = pushRegistrar !is NoOpPushRegistrar
+
     val router: Router = Router()
     val signIn: SignInStore = SignInStore()
     val paywall: PaywallStore = PaywallStore(manageUrl = cloud.endpoint.accountPageUrl)

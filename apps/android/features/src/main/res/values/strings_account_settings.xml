@@ -37,10 +37,11 @@
 
     <!-- Settings: Notifications -->
     <string name="settings_notifications_label">Notifications</string>
+    <string name="settings_notifications_coming_soon">Coming soon</string>
     <string name="settings_notifications_enabled">Enabled</string>
     <string name="settings_notifications_off">Off</string>
     <string name="settings_notifications_not_asked">Not enabled</string>
-    <string name="settings_notifications_push_coming_soon">Background push delivery is coming in a future update. Local alerts show while amux is open.</string>
+    <string name="settings_notifications_push_coming_soon">Background push notifications are not yet enabled in this version of amux.</string>
     <string name="settings_notifications_enable_button">Enable Notifications</string>
     <string name="settings_notifications_settings_button">Notification Settings</string>
 

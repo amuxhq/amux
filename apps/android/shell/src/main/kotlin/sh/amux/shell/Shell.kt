@@ -193,6 +193,7 @@ fun Shell(
     modifier: Modifier = Modifier,
     appearanceMode: AppearanceMode = AppearanceMode.System,
     notificationStatus: SettingsNotificationStatus = SettingsNotificationStatus.NotAsked,
+    pushDeliveryComingSoon: Boolean = true,
     shareUsage: Boolean = true,
     autoReports: Boolean = false,
     appVersion: String = "",
@@ -236,7 +237,9 @@ fun Shell(
     var settingsFingerprintCopied by remember { mutableStateOf(false) }
     var wasOnSettings by remember { mutableStateOf(false) }
 
-    val signedIn = accountsState.accounts.any { it.signedIn }
+    val isSelectedSignedIn = accountsState.accounts.firstOrNull {
+        it.account.id == accountsState.selected
+    }?.signedIn == true
 
     LaunchedEffect(routerState.topRoute) {
         val onSettingsNow = routerState.topRoute == Route.Settings
@@ -303,7 +306,7 @@ fun Shell(
         activePairingModal is PairingModal.Link &&
             StateMappers.invitationNeedsAccount(activePairingModal.invitation, hostsState.discovered)
     }
-    LaunchedEffect(activePairingModal, signedIn, stores, profileReady, linkNeedsAccount) {
+    LaunchedEffect(activePairingModal, isSelectedSignedIn, stores, profileReady, linkNeedsAccount) {
         when (activePairingModal) {
             is PairingModal.Code -> {
                 startedLinkKey = null
@@ -314,7 +317,7 @@ fun Shell(
             }
             is PairingModal.Link -> {
                 val invitation = activePairingModal.invitation
-                if (startedLinkKey != invitation.link && (!linkNeedsAccount || signedIn)) {
+                if (startedLinkKey != invitation.link && (!linkNeedsAccount || isSelectedSignedIn)) {
                     if (stores.pairLink(
                             link = invitation.link,
                             relayOnly = linkNeedsAccount,
@@ -657,6 +660,7 @@ fun Shell(
                                 signIn = signInState,
                                 appearance = appearanceMode,
                                 notificationStatus = notificationStatus,
+                                pushDeliveryComingSoon = pushDeliveryComingSoon,
                                 shareUsage = shareUsage,
                                 autoReports = autoReports,
                                 diagnosticsExport = diagnosticsExport,
@@ -808,7 +812,7 @@ fun Shell(
         if (reportOpen) {
             val reportUi = StateMappers.toReportUiState(
                 report = reportState,
-                signedIn = signedIn,
+                signedIn = isSelectedSignedIn,
             )
             if (reportUi != null) {
                 ReportOverlay(
@@ -874,7 +878,7 @@ fun Shell(
         val sheetState = StateMappers.toPairingSheetState(
             pairing = pairingState,
             modal = activePairingModal,
-            signedIn = signedIn,
+            signedIn = isSelectedSignedIn,
             signingIn = effectiveSigningIn,
             nowMs = stores.pairing.nowMs,
             discovered = hostsState.discovered,

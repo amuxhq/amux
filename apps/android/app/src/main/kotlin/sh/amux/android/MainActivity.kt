@@ -91,7 +91,8 @@ class MainActivity : ComponentActivity() {
                             accounts = appComposition.accounts,
                             stores = activeStores,
                             deviceName = appComposition.deviceName,
-                            offerNotifications = !notificationsDismissed &&
+                            offerNotifications = appComposition.pushDeliveryEnabled &&
+                                !notificationsDismissed &&
                                 notificationStatus != SettingsNotificationStatus.Enabled,
                             signingIn = signInState.working,
                             onAction = { action ->
@@ -108,6 +109,7 @@ class MainActivity : ComponentActivity() {
                             },
                             appearanceMode = appearanceMode,
                             notificationStatus = notificationStatus,
+                            pushDeliveryComingSoon = !appComposition.pushDeliveryEnabled,
                             shareUsage = coordinatorState.shareUsage,
                             autoReports = coordinatorState.autoReports,
                             appVersion = appComposition.appVersion,

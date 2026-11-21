@@ -2,6 +2,7 @@ package sh.amux.shell
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -39,6 +40,7 @@ import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.NewAgentBridge
 import sh.amux.core.runtime.NewAgentSource
 import sh.amux.core.runtime.OpenChat
+import sh.amux.core.runtime.PairingInvitation
 import sh.amux.core.runtime.PaywallStore
 import sh.amux.core.runtime.Plan
 import sh.amux.core.runtime.RemovalStore
@@ -1242,6 +1244,104 @@ class ShellTest {
         assertNotNull(ui)
         assertTrue("expected non-null billing warning", !ui!!.billingWarning.isNullOrBlank())
         assertTrue(ui.billingWarning!!.startsWith("Renews on "))
+    }
+
+    @Test
+    fun signedOutSelectedAccountGatesRelayPairingAndReportSendEvenWhenAnotherAccountIsSignedIn() {
+        val scope = TestScope(StandardTestDispatcher())
+        var pairCalls = 0
+        val accounts = AccountRegistry(
+            makeStores = { id ->
+                StoreBundle(
+                    account = id,
+                    scope = scope,
+                    beginPairOp = {
+                        pairCalls += 1
+                        Result.failure(RuntimeFailure("should not pair when selected profile is signed out"))
+                    },
+                )
+            },
+        )
+        accounts.show(
+            listOf(
+                ProfileView(
+                    id = "prof-out",
+                    label = "Ada",
+                    subject = "sub-out",
+                    account = AccountView(
+                        binding = AccountBinding.SignedOut,
+                        email = "ada@example.com",
+                        name = "Ada",
+                        picture = "",
+                        pro = false,
+                        relay = RelayLink.Off,
+                    ),
+                ),
+                ProfileView(
+                    id = "prof-in",
+                    label = "Grace",
+                    subject = "sub-in",
+                    account = AccountView(
+                        binding = AccountBinding.SignedIn,
+                        email = "grace@example.com",
+                        name = "Grace",
+                        picture = "",
+                        pro = true,
+                        relay = RelayLink.Connected,
+                    ),
+                ),
+            ),
+        )
+        accounts.select(AccountId("sub-out"))
+        val stores = accounts.stores!!
+
+        val router = Router()
+        val relayHost = HostId(UUID.fromString("33333333-4444-5555-6666-777777777777"))
+        router.presentPairing(
+            PairingModal.Link(
+                PairingInvitation(
+                    host = relayHost,
+                    addrs = emptyList(),
+                    link = "https://amux.sh/p#relay-only-test",
+                ),
+            ),
+        )
+
+        val report = ReportStore()
+        val actions = mutableListOf<ShellAction>()
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                    report = report,
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        // Relay-only invitation must show the sign-in prompt and must NOT start pairing.
+        composeRule.onNodeWithTag(TestTags.PAIRING_SIGN_IN).assertIsDisplayed()
+        assertEquals(0, pairCalls)
+        composeRule.onNodeWithTag(TestTags.PAIRING_SIGN_IN).performClick()
+        assertTrue(ShellAction.SignIn in actions)
+
+        // Report overlay on the signed-out selected profile must show the signed-out notice and not send.
+        val capture = ReportCapture(
+            frame = FrozenFrame(byteArrayOf(1, 2, 3), 400.0, 800.0, 2.0),
+            dump = CompletableDeferred(Result.failure(RuntimeException("no dump"))),
+            route = "agents",
+            account = AccountId("sub-out"),
+        )
+        report.begin { capture }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(ReportTags.OVERLAY).assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportTags.SIGNED_OUT).assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportTags.SEND).assertIsNotEnabled()
     }
 
     private class FakeShellChatBridge : ChatBridge {

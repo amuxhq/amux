@@ -765,10 +765,14 @@ private fun NotificationsSection(
     onAction: (SettingsAction) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val statusText = when (status) {
-        SettingsNotificationStatus.Enabled -> stringResource(R.string.settings_notifications_enabled)
-        SettingsNotificationStatus.Off -> stringResource(R.string.settings_notifications_off)
-        SettingsNotificationStatus.NotAsked -> stringResource(R.string.settings_notifications_not_asked)
+    val statusText = if (pushDeliveryComingSoon) {
+        stringResource(R.string.settings_notifications_coming_soon)
+    } else {
+        when (status) {
+            SettingsNotificationStatus.Enabled -> stringResource(R.string.settings_notifications_enabled)
+            SettingsNotificationStatus.Off -> stringResource(R.string.settings_notifications_off)
+            SettingsNotificationStatus.NotAsked -> stringResource(R.string.settings_notifications_not_asked)
+        }
     }
     val actionLabel = when (status) {
         SettingsNotificationStatus.NotAsked -> stringResource(R.string.settings_notifications_enable_button)
@@ -809,18 +813,19 @@ private fun NotificationsSection(
                         style = AmuxTheme.typography.detail,
                         color = colors.inkMuted,
                     )
+                } else {
+                    AmuxActionButton(
+                        label = actionLabel,
+                        kind = if (status == SettingsNotificationStatus.NotAsked) {
+                            ActionButtonKind.Primary
+                        } else {
+                            ActionButtonKind.Outline
+                        },
+                        fillWidth = true,
+                        onClick = { onAction(actionEvent) },
+                        modifier = Modifier.testTag(SettingsTags.NOTIFICATIONS_ACTION),
+                    )
                 }
-                AmuxActionButton(
-                    label = actionLabel,
-                    kind = if (status == SettingsNotificationStatus.NotAsked) {
-                        ActionButtonKind.Primary
-                    } else {
-                        ActionButtonKind.Outline
-                    },
-                    fillWidth = true,
-                    onClick = { onAction(actionEvent) },
-                    modifier = Modifier.testTag(SettingsTags.NOTIFICATIONS_ACTION),
-                )
             }
         }
     }

@@ -33,7 +33,7 @@ Two callers use it in different ways:
 | Rust, Swift, Go, Python, Java, C, C++ | `tree-sitter-<language>` | C++ runs C's query, then its own |
 | TypeScript, TSX, JavaScript | `tree-sitter-typescript`, `tree-sitter-javascript` | TypeScript and TSX run JavaScript's query, then their own |
 | Shell | `tree-sitter-bash` | Also every shell and console transcript a fence names |
-| JSON, YAML, TOML | `tree-sitter-json`, `-yaml`, `-toml-ng` | Keys take `Keyword` |
+| JSON, YAML, TOML | `tree-sitter-json`, `-yaml`, `-toml-ng` | YAML and TOML keys take `Keyword`; JSON's are strings, `String` |
 | HTML, CSS | `tree-sitter-html`, `-css` | HTML's `script` and `style` bodies are coloured as JavaScript and CSS |
 | Markdown | `tree-sitter-md` | Its block and inline grammars; headings `Keyword`, code spans and fences `String` |
 | Diff | none | Coloured by each line's `+` or `-`; a `---` line followed by `+++` is a file header |
@@ -253,7 +253,11 @@ the grammar list.
 
 | What | Where | Run |
 | --- | --- | --- |
-| A snippet per language with chosen tokens' kinds; fence words, extensions, names and `#!` lines; diff prefixes; a grammar plain until its held build runs; HTML waiting for JavaScript and CSS; the content cache; the streaming throttle with held jobs and stepped instants; every query compiles | [`crates/highlight/src/tests.rs`](../crates/highlight/src/tests.rs), `language.rs` | `just test-crate highlight` |
+| A snippet per language with chosen tokens' kinds | [`crates/highlight/src/tests.rs`](../crates/highlight/src/tests.rs) | `just test-crate highlight` |
+| Fence words, extensions, names and `#!` lines | `crates/highlight/src/language.rs` | `just test-crate highlight` |
+| A grammar plain until its held build runs; HTML waiting for JavaScript and CSS; the content cache; the streaming throttle with held jobs and stepped instants | `crates/highlight/src/highlighter.rs` | `just test-crate highlight` |
+| Diff prefixes | `crates/highlight/src/render.rs` | `just test-crate highlight` |
+| Every grammar's queries compile | `crates/highlight/src/grammar.rs` | `just test-crate highlight` |
 | Each language's definitions against its sample file: labels, kinds, lines, parents, chains and outlines | [`crates/highlight/src/definitions/tests.rs`](../crates/highlight/src/definitions/tests.rs) | `just test-crate highlight` |
 | A block plain until its grammar is built, unknown and diff fences, streaming, both sides of a hunk coloured apart, hunks coloured apart, a script's later hunks | [`crates/ui-code/src/lib.rs`](../crates/ui-code/src/lib.rs) | `just test-crate ui-code` |
 | The JSON shape of `HighlightedCode` | `crates/ui-view/src/code.rs` | `just test-crate ui-view` |

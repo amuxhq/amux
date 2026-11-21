@@ -139,10 +139,11 @@ embedded runtime reads no configuration file and runs with the defaults.
    worded "64 MB") of its own bytes; the RPC message limit sits 1 MiB above
    it so a `PutBlobRequest` at the limit fits with its framing.
 
-6. **Reviews.** The review rows hold only while the `reviews` experiment is
-   on, on the agent's host for the daemon's and in the client for the
-   client's. Every one is reasoned; none has been measured against real
-   reviews yet.
+6. **Reviews.** The daemon's review rows hold only while the `reviews`
+   experiment is on at the agent's host. The client's hold whenever a client
+   reviews: no experiment gates them on the client, which reaches a review
+   wherever a host offers one. Every one is reasoned;
+   none has been measured against real reviews yet.
 
 ## Related constants
 

@@ -69,10 +69,8 @@ Each says which kind it is. Spawn is the only ask today: an `AgentAsk`
 whose `spawn` arm holds the create and whose `host_id` names the host by id,
 the agent's own when empty, answered with the `CreateAgentResponse` or the
 words of the refusal. A later build can add another ask, and an agent
-process from before it refuses it in words. The spawn ask moved to a new
-number when the create stopped naming its host, so a tool server and an
-agent process from either side of that change refuse each other's spawn in
-words rather than make a child on the wrong host.
+process from before it refuses it in words. The spawn ask's first number,
+used while the create named its host, stays reserved.
 The socket carries no gRPC, because an ask has one answer and the tool
 server turns every refusal into words for the model anyway. A tool server
 whose agent process has no such socket (a process started by a build from

@@ -1263,7 +1263,17 @@ process sends no session request. Likewise a refused resume or load ends the
 incarnation and opens nothing in its place, so an agent's session never
 changes under it. A refused or unreadable `initialize`, a refused session,
 or a new session's answer naming no session, ends the incarnation with the
-agent's words; an `AUTH_REQUIRED` refusal also says signed out.
+agent's words, except a session refused `AUTH_REQUIRED`: the agent does not
+end but waits, idle and signed out (the snapshot's sign-in and a blocked
+notice say so, as for Claude), holding every prompt and message in its
+queue. Each prompt that arrives while it waits asks again, one ask at a
+time, by an `AcpReopen` effect: the agent process sends the very request it
+was refused, so a refused resume or load is asked again as itself and never
+becomes a new session. Once the session opens, the agent is signed in and
+the queue drains in order. The agent's host takes the sign-in its agents
+meet as its word on the provider (a conversation's newer than the helper's
+last ask), and publishes its entry as soon as an ingest step brings an ACP
+snapshot whose sign-in disagrees with it.
 
 **What the agent process does.** It starts the agent's command and
 arguments over stdio, sends `initialize` (elicitation forms and links, no

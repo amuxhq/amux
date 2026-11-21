@@ -172,6 +172,10 @@ pub struct Provider {
     /// What an ACP agent's prompts may carry, as its `initialize` answer
     /// said; None for the other kinds.
     takes: Option<Arc<std::sync::Mutex<crate::acp::Takes>>>,
+    /// An ACP agent's: the request that opened its session, as the
+    /// handshake sent it, which the interpreter has sent again once a
+    /// person may have signed in ([`Effect::AcpReopen`]).
+    acp_opening: Option<Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
 }
 
 /// Asked of headless Claude so a command's row can open on what it is for
@@ -340,6 +344,7 @@ impl Provider {
             subagents: Default::default(),
             census: Vec::new(),
             takes: None,
+            acp_opening: None,
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
@@ -617,6 +622,7 @@ impl Provider {
             subagents: Default::default(),
             census: Vec::new(),
             takes: None,
+            acp_opening: None,
         })
     }
 
@@ -767,6 +773,8 @@ impl Provider {
 
         let stdin: Stdin = Arc::new(tokio::sync::Mutex::new(Some(stdin)));
         let handshake = stdin.clone();
+        let opening_sent: Arc<std::sync::Mutex<Option<Vec<u8>>>> = Arc::default();
+        let sent = opening_sent.clone();
         let unanswered = events.clone();
         let agent = if spec.provider.is_empty() {
             spec.provider_command.clone()
@@ -813,6 +821,7 @@ impl Provider {
             else {
                 return;
             };
+            *sent.lock().expect("never poisoned") = Some(request.clone());
             if write_line(&handshake, &request).await.is_err() {
                 return;
             }
@@ -843,6 +852,7 @@ impl Provider {
             subagents: Default::default(),
             census: Vec::new(),
             takes: Some(takes),
+            acp_opening: Some(opening_sent),
         })
     }
 
@@ -996,6 +1006,7 @@ impl Provider {
             subagents: Default::default(),
             census: Vec::new(),
             takes: None,
+            acp_opening: None,
         })
     }
 
@@ -1046,6 +1057,17 @@ impl Provider {
             Effect::ProviderSession { id } => {
                 self.adopt_session(&id).await;
                 Ok(())
+            }
+            Effect::AcpReopen => {
+                let request = self
+                    .acp_opening
+                    .as_ref()
+                    .and_then(|sent| sent.lock().expect("never poisoned").clone());
+                match request {
+                    Some(request) => self.write_line(&request).await,
+                    // The handshake has not sent it yet; it will.
+                    None => Ok(()),
+                }
             }
             Effect::FollowTranscript { path } => {
                 let path = PathBuf::from(path);

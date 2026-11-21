@@ -388,7 +388,7 @@ impl Engine {
     }
 
     async fn new_session(&mut self, id: Value, params: &Value) {
-        if self.signed_out {
+        if self.is_signed_out() {
             self.signed_out_error(&id).await;
             return;
         }
@@ -423,7 +423,7 @@ impl Engine {
                 .await;
             return;
         }
-        if self.signed_out {
+        if self.is_signed_out() {
             self.signed_out_error(&id).await;
             return;
         }
@@ -465,6 +465,16 @@ impl Engine {
         self.save();
         self.result(&id, answer).await;
         self.offer_commands().await;
+    }
+
+    /// Signed out by the script, or until its sign-in file appears.
+    fn is_signed_out(&self) -> bool {
+        self.signed_out
+            || self
+                .agent
+                .signed_in_at
+                .as_ref()
+                .is_some_and(|path| !path.exists())
     }
 
     async fn signed_out_error(&mut self, id: &Value) {

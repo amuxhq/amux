@@ -578,6 +578,10 @@ pub struct Ingested {
     /// in these frames, the newest of each, for the host to keep. The kind
     /// and provider are read with it.
     pub picked: Option<wire::PickTaken>,
+    /// An ACP agent's provider id and the sign-in its newest snapshot in
+    /// these frames says, where it says one: the host's word on whether the
+    /// provider is signed in follows what its agents meet.
+    pub acp_sign_in: Option<(String, wire::SignInState)>,
     pub end: IngestEnd,
     /// How far the step found the agent's journal, as a global offset:
     /// the journal cut here reads as the step read it.

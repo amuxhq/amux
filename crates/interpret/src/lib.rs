@@ -404,6 +404,12 @@ pub enum Effect {
         request: Vec<u8>,
         attachments: Vec<wire::Attachment>,
     },
+    /// An ACP agent: send the request that opens the session again, as the
+    /// agent process first sent it (the same `session/new`,
+    /// `session/resume` or `session/load`), after the agent refused it for
+    /// want of a sign-in. The agent process holds the request, since it
+    /// built it.
+    AcpReopen,
 }
 
 /// The provider's own injection channel for agent messages.

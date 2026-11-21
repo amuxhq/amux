@@ -545,6 +545,11 @@ pub struct Shared<A: OpenAsk> {
     /// reads it so, and suspends it rather than continuing a turn.
     #[serde(default)]
     ended_idle: bool,
+    /// The provider will not open its session until the person signs in:
+    /// the agent reads idle, waiting on them, not starting, though it takes
+    /// no prompt yet, and what is sent waits in the queue.
+    #[serde(default)]
+    awaiting_sign_in: bool,
     /// What the provider process holds that ending it would lose: its
     /// scheduled wake-ups, a grant for its session, and a turn it owes.
     /// Absent from a checkpoint an earlier build wrote.
@@ -657,6 +662,7 @@ impl<A: OpenAsk> Shared<A> {
             stopping: false,
             leaving: false,
             ended_idle: false,
+            awaiting_sign_in: false,
             held: Held::default(),
             idle_since_ms: None,
             housekeeping: false,
@@ -911,7 +917,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn phase(&self) -> Phase {
         if !self.asks.is_empty() {
             Phase::NeedsYou
-        } else if !self.started && !self.ended_idle {
+        } else if !self.started && !self.ended_idle && !self.awaiting_sign_in {
             Phase::Starting
         } else if self.busy || self.housekeeping {
             Phase::Working
@@ -1459,6 +1465,12 @@ impl<A: OpenAsk> Shared<A> {
         ) {
             self.trouble = None;
         }
+    }
+
+    /// The provider refused to start until the person signs in, or (false)
+    /// has started after all: see the field.
+    pub fn awaiting_sign_in(&mut self, waiting: bool) {
+        self.awaiting_sign_in = waiting;
     }
 
     pub fn stopped_by(&mut self, why: wire::BlockedNotice) {

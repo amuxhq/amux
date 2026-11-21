@@ -20,7 +20,9 @@ Grok. It can also run any other agent that speaks the Agent Client Protocol
 A computer offers one of these once the agent is installed there, so that
 amux finds its program on the `PATH` it starts agents with. amux never
 installs an agent for you. Sign in to each agent its own way before you start
-one, for example with `opencode auth login`.
+one, for example with `opencode auth login`. An agent started before you signed
+in waits and says it isn't signed in. Whatever you send it waits too. Sign in,
+then send it a message, and it starts and answers everything in order.
 
 New Agent, in the terminal and in the Mac and iPhone apps, lists every agent
 the chosen computer offers, by name, your own among them. An agent that isn't

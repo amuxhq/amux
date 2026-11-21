@@ -865,8 +865,20 @@ impl State {
             Ok(result) => result,
             Err(error) => {
                 if error.code == acp_protocol::error_code::AUTH_REQUIRED {
+                    // Not an end: the agent waits, signed out, as Claude
+                    // does, and the next prompt asks it again.
                     self.sign_in = Some(signed(wire::SignInState::SignedOut));
                     self.shared.stopped_by(crate::notice::signed_out());
+                    self.shared.awaiting_sign_in(true);
+                    self.awaiting_sign_in = true;
+                    self.reopening = false;
+                    return self.log(
+                        emit,
+                        format!(
+                            "{} wants a sign-in before it opens a session: {}",
+                            self.agent, error.message
+                        ),
+                    );
                 }
                 let what = if reopened {
                     "reopen its conversation"
@@ -922,6 +934,9 @@ impl State {
         // An agent that gives a session needs no sign-in it lacks.
         self.sign_in = Some(signed(wire::SignInState::SignedIn));
         self.shared.signed_in();
+        self.shared.awaiting_sign_in(false);
+        self.awaiting_sign_in = false;
+        self.reopening = false;
         self.opened = true;
         self.start_boundary(
             emit,

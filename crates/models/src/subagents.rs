@@ -148,6 +148,7 @@ mod tests {
                 kind: 0,
                 provider: String::new(),
                 picked: None,
+                acp_sign_in: None,
                 end: IngestEnd::Read,
                 seen: 0,
                 skipped: 0,

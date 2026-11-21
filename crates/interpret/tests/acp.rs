@@ -373,6 +373,127 @@ fn a_refused_reopening_ends_the_agent_and_starts_nothing() {
     assert!(writes(&stepped.effects).is_empty());
 }
 
+/// The sign-in an ACP snapshot in `stepped` says, if it says one.
+fn said_sign_in(stepped: &interpret::Stepped) -> Option<wire::SignInState> {
+    use prost::Message as _;
+    let snapshot = stepped.step.snapshot.as_ref()?;
+    let body = wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()?;
+    Some(body.sign_in?.state())
+}
+
+fn reopens(effects: &[Effect]) -> usize {
+    effects
+        .iter()
+        .filter(|effect| matches!(effect, Effect::AcpReopen))
+        .count()
+}
+
+fn auth_required(id: &str) -> Event {
+    rpc(serde_json::json!({"jsonrpc": "2.0", "id": id,
+        "error": {"code": acp_protocol::error_code::AUTH_REQUIRED,
+            "message": "Authentication required"}}))
+}
+
+/// An agent that will not open its session until the person signs in does
+/// not end: it waits idle, says it is signed out, and holds what is sent.
+/// A prompt asks it again, once, by the same request; once the session
+/// opens it is signed in and the held prompts go, in order.
+#[test]
+fn a_signed_out_agent_waits_and_a_prompt_asks_again() {
+    let (mut state, _) = Acp::initial(&spec("opencode"));
+    let refused = Acp::step(
+        &mut state,
+        auth_required(interpret::acp::NEW_SESSION_REQUEST),
+    );
+    assert_eq!(exit_cause(&refused.effects), None, "not an end");
+    assert_eq!(said_sign_in(&refused), Some(wire::SignInState::SignedOut));
+    assert_eq!(
+        refused
+            .step
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.phase()),
+        Some(wire::Phase::Idle),
+        "waiting on the person, not starting"
+    );
+    assert_eq!(
+        reopens(&refused.effects),
+        0,
+        "nothing asks again on its own"
+    );
+
+    let first = Acp::step(&mut state, prompt("a", "first"));
+    assert_eq!(reopens(&first.effects), 1, "the prompt asks again");
+    assert!(writes(&first.effects).is_empty(), "the prompt waits");
+    let second = Acp::step(&mut state, prompt("b", "second"));
+    assert_eq!(reopens(&second.effects), 0, "one ask in flight at a time");
+
+    // Still signed out: it waits again, and the next prompt asks again.
+    Acp::step(
+        &mut state,
+        auth_required(interpret::acp::NEW_SESSION_REQUEST),
+    );
+    let third = Acp::step(&mut state, prompt("c", "third"));
+    assert_eq!(reopens(&third.effects), 1);
+
+    let opened = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {"sessionId": "s1"}}),
+        ),
+    );
+    assert_eq!(said_sign_in(&opened), Some(wire::SignInState::SignedIn));
+    let sent = writes(&opened.effects);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["method"], "session/prompt");
+    assert_eq!(sent[0]["params"]["prompt"][0]["text"], "first");
+}
+
+/// A refused reopening of a saved conversation is asked again as the same
+/// reopening, never as a new session: a fresh conversation is never passed
+/// off as the old one resumed.
+#[test]
+fn a_signed_out_reopening_is_asked_again_as_itself() {
+    let (mut state, _) = Acp::initial(&spec("antigravity"));
+    Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {"sessionId": "s1"}}),
+        ),
+    );
+    Acp::step(&mut state, Event::ProviderExit { code: Some(0) });
+    let (mut state, _) = Acp::reincarnate(
+        state,
+        &wire::AgentSpec {
+            incarnation: 2,
+            ..spec("antigravity")
+        },
+    );
+    let refused = Acp::step(&mut state, auth_required(interpret::acp::RESUME_REQUEST));
+    assert_eq!(exit_cause(&refused.effects), None);
+    let asked = Acp::step(&mut state, prompt("a", "again"));
+    assert_eq!(
+        reopens(&asked.effects),
+        1,
+        "the agent process sends its resume again"
+    );
+    assert!(
+        writes(&asked.effects).is_empty(),
+        "the interpreter writes no session of its own"
+    );
+    // A new session answered in its place is refused as ever.
+    let fresh = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {"sessionId": "s2"}}),
+        ),
+    );
+    assert!(exit_cause(&fresh.effects).is_some());
+}
+
 #[test]
 fn a_new_session_must_name_itself() {
     let (mut state, _) = Acp::initial(&spec("antigravity"));

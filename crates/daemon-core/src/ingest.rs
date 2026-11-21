@@ -84,6 +84,7 @@ impl Daemon {
                 kind: 0,
                 provider: String::new(),
                 picked: None,
+                acp_sign_in: None,
                 end: IngestEnd::Failed(error.to_string()),
                 seen,
                 skipped: 0,
@@ -150,6 +151,7 @@ impl Daemon {
             kind: 0,
             provider: String::new(),
             picked: None,
+            acp_sign_in: None,
             end: if batch.more {
                 IngestEnd::More
             } else {
@@ -182,6 +184,19 @@ impl Daemon {
                     held.model = newer.model.or(held.model);
                     held.effort = newer.effort.or(held.effort);
                     held
+                });
+            report.acp_sign_in = batch
+                .frames
+                .iter()
+                .rev()
+                .find_map(|(_, step)| step.snapshot.as_ref())
+                .filter(|snapshot| snapshot.kind == wire::Kind::Acp as i32)
+                .and_then(|snapshot| {
+                    use prost::Message as _;
+                    let body = wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()?;
+                    let state = body.sign_in?.state();
+                    let agent = body.agent?;
+                    (state != wire::SignInState::Unspecified).then_some((agent, state))
                 });
             if (report.turn_ends > 0 || report.picked.is_some())
                 && let Some(row) = self.store.agent(&key)?
@@ -479,6 +494,7 @@ mod tests {
                 kind: 0,
                 provider: String::new(),
                 picked: None,
+                acp_sign_in: None,
                 end: IngestEnd::More,
                 seen: end,
                 skipped: 0,

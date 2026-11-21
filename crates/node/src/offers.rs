@@ -274,6 +274,13 @@ impl Offers {
         own.chain(agents).collect()
     }
 
+    /// Whether the host's copy for `provider` says it is signed in; None
+    /// before it has one.
+    pub(crate) fn signed_in(&self, provider: &str) -> Option<bool> {
+        let held = self.held.lock().unwrap();
+        held.get(provider).map(|held| held.offer.signed_in)
+    }
+
     /// What the host's entry lists for `provider`, if it lists it.
     fn listed(&self, provider: &str, launch: &Launch) -> Option<ProviderOnHost> {
         self.on_host(launch)
@@ -362,6 +369,8 @@ pub(crate) struct Learned {
     /// The sign-in state the newest conversation that knew one was in: a
     /// session refused as signed out says so.
     pub sign_in: wire::SignInState,
+    /// When that conversation said it.
+    pub sign_in_at_ms: i64,
 }
 
 /// The copy an ACP agent's helper answer and its conversations make
@@ -384,8 +393,12 @@ fn agent_catalogue(
         offer.catalogue = Some(catalogue);
     }
     let acp = offer.acp.get_or_insert_default();
-    if acp.sign_in() == wire::SignInState::Unspecified
-        && learned.sign_in != wire::SignInState::Unspecified
+    // A conversation's word is what the agent did when asked to open a
+    // session; it stands over what `initialize` let the helper guess
+    // unless the helper asked later.
+    if learned.sign_in != wire::SignInState::Unspecified
+        && (acp.sign_in() == wire::SignInState::Unspecified
+            || learned.sign_in_at_ms >= asked.asked_at_ms)
     {
         acp.set_sign_in(learned.sign_in);
         offer.signed_in = learned.sign_in != wire::SignInState::SignedOut;
@@ -815,6 +828,7 @@ impl ProfileRuntime {
             .max_by_key(|conversation| conversation.at_ms)
         {
             learned.sign_in = conversation.sign_in;
+            learned.sign_in_at_ms = conversation.at_ms;
         }
         Ok(learned)
     }
@@ -882,6 +896,7 @@ mod tests {
         let learned = Learned {
             catalogue: Some(catalogue("gemini-4")),
             sign_in: SignInState::Unspecified,
+            sign_in_at_ms: 0,
         };
         let after = agent_catalogue(&helper, learned, &Default::default());
         assert_eq!(after.catalogue.models[0].value, "gemini-4");
@@ -897,11 +912,30 @@ mod tests {
         let learned = Learned {
             catalogue: Some(catalogue("grok-4")),
             sign_in: SignInState::SignedOut,
+            sign_in_at_ms: 0,
         };
         let offer = agent_catalogue(&helper, learned, &Default::default());
         assert_eq!(offer.catalogue.models[0].value, "grok-5");
-        assert!(offer.signed_in, "initialize showed it signed in");
+        assert!(
+            offer.signed_in,
+            "initialize, asked later, showed it signed in"
+        );
         assert_eq!(offer.acp.unwrap().sign_in(), SignInState::SignedIn);
+    }
+
+    /// A conversation refused as signed out after the helper last asked is
+    /// the newer word, whatever `initialize` guessed.
+    #[test]
+    fn a_later_conversation_says_the_sign_in() {
+        let helper = asked(Some(catalogue("grok-5")), SignInState::SignedIn);
+        let learned = Learned {
+            catalogue: None,
+            sign_in: SignInState::SignedOut,
+            sign_in_at_ms: 2,
+        };
+        let offer = agent_catalogue(&helper, learned, &Default::default());
+        assert!(!offer.signed_in);
+        assert_eq!(offer.acp.unwrap().sign_in(), SignInState::SignedOut);
     }
 
     /// Where `initialize` cannot tell, a conversation refused as signed out
@@ -914,6 +948,7 @@ mod tests {
             Learned {
                 catalogue: None,
                 sign_in: SignInState::SignedOut,
+                sign_in_at_ms: 0,
             },
             &Default::default(),
         );

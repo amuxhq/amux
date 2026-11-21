@@ -490,6 +490,12 @@ pub struct State {
     /// The values the first session started with, which a pick of none
     /// returns to.
     starting: BTreeMap<Category, String>,
+    /// The agent refused to open the session until the person signs in;
+    /// a prompt asks it again, and `reopening` says an ask is in flight.
+    #[serde(default)]
+    awaiting_sign_in: bool,
+    #[serde(default)]
+    reopening: bool,
     /// The settings a person picked that the agent has not yet said it
     /// took: once it does, the step says so, and its host keeps the pick.
     #[serde(default)]
@@ -653,6 +659,8 @@ impl State {
             wanted,
             starting: BTreeMap::new(),
             picking: Default::default(),
+            awaiting_sign_in: false,
+            reopening: false,
             requests: BTreeMap::new(),
             prompts: Vec::new(),
             sets: 0,
@@ -1263,6 +1271,19 @@ impl State {
         if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, from) {
             self.submit(emit, entry, false);
         }
+        self.reopen_after_sign_in(emit);
+    }
+
+    /// A prompt came while the agent would not open its session for want
+    /// of a sign-in: the person may have signed in since, so the agent
+    /// process asks it again, by the very request it was refused (never a
+    /// new session in place of a refused reopening). The prompt waits in
+    /// the queue meanwhile, and goes once the session opens.
+    fn reopen_after_sign_in(&mut self, emit: &mut Emit) {
+        if self.awaiting_sign_in && !self.reopening {
+            self.reopening = true;
+            emit.effect(Effect::AcpReopen);
+        }
     }
 
     /// Cancels the running turn the ACP way: a `session/cancel`
@@ -1315,6 +1336,7 @@ impl State {
                 {
                     self.submit(emit, entry, false);
                 }
+                self.reopen_after_sign_in(emit);
             }
             // An agent's message is its sender's to take back, not a
             // person's.
@@ -1553,6 +1575,10 @@ impl State {
     /// What lived only in the agent's process.
     fn forget_process(&mut self) {
         self.opened = false;
+        // A new process asks to open the session itself.
+        self.awaiting_sign_in = false;
+        self.reopening = false;
+        self.shared.awaiting_sign_in(false);
         self.requests.clear();
         self.prompts.clear();
         self.cancelled = false;

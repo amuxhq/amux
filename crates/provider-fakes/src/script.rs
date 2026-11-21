@@ -181,6 +181,9 @@ pub struct AcpAgent {
     /// A request method the agent never answers, as an agent stuck at its
     /// start would not (`initialize`, `session/new`, ...).
     pub unanswered: Option<String>,
+    /// Signed out until this file exists, as an agent a person signs in to
+    /// meanwhile: each session it is asked to open checks again.
+    pub signed_in_at: Option<PathBuf>,
 }
 
 impl Default for AcpAgent {
@@ -198,6 +201,7 @@ impl Default for AcpAgent {
             cancel_chunks: 2,
             refuse_reopen: false,
             forgets_settings: false,
+            signed_in_at: None,
             protocol_version: 1,
             unanswered: None,
         }

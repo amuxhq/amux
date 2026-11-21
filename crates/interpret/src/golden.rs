@@ -2213,6 +2213,7 @@ fn named_catalogue(step: &Step) -> Option<&[u8]> {
 fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
     match effect {
         Effect::ProviderWrite(bytes) => format!("write {}", display_bytes(bytes)),
+        Effect::AcpReopen => "reopen the session".to_owned(),
         Effect::Reply { input_id, verdict } => {
             format!("reply {} {}", display_id(input_id), verdict_name(verdict))
         }

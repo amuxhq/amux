@@ -771,5 +771,6 @@ fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
             "shape": json_shape(alias, kind, request),
             "attachments": attachments.len(),
         }),
+        Effect::AcpReopen => json!({ "effect": "acp_reopen" }),
     }
 }

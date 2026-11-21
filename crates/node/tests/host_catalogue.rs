@@ -1137,3 +1137,204 @@ async fn an_acp_agents_pick_is_kept_once_the_agent_took_it() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// Whether the newest entry in `seen` for `host` says `provider` is signed
+/// in.
+fn says_signed_in(seen: &[wire::InventoryEvent], host: uuid::Uuid, provider: &str) -> Option<bool> {
+    seen.iter().rev().find_map(|event| match &event.of {
+        Some(inventory_event::Of::Host(entry)) if entry.host_id() == host.as_bytes() => entry
+            .provider(provider)
+            .and_then(wire::ProviderOnHost::signed_in),
+        _ => None,
+    })
+}
+
+/// An ACP agent that will not open its session until the person signs in
+/// stays, signed out, holding what is sent; the host's entry says the agent
+/// is signed out as soon as it is refused. Once the person has signed in, a
+/// prompt opens the session, what waited runs in order, and the entry says
+/// it is signed in again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
+    use provider_fakes::script::Step;
+    let signed_in = tempfile::tempdir().unwrap();
+    let signed_in = signed_in.path().join("signed-in");
+    let host = Host::new(&Script {
+        steps: vec![
+            text("First answer."),
+            Step::TurnEnd,
+            text("Second answer."),
+            Step::TurnEnd,
+        ],
+        acp: provider_fakes::script::AcpAgent {
+            signed_in_at: Some(signed_in.clone()),
+            ..Default::default()
+        },
+        ..Script::default()
+    });
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let daemon = host
+        .install
+        .start("boot-1", with_acp_agent(&host, &sessions))
+        .await;
+    let runtime = support::runtime(&daemon, &host.install);
+    let here = runtime.host();
+    assert!(
+        runtime.agent_catalogue("mine").await.unwrap().signed_in,
+        "initialize cannot tell, and nothing is called signed out on a guess"
+    );
+    let mut inventory = runtime.subscribe_inventory().await.unwrap();
+    let mut seen = Vec::new();
+    read_inventory_until(&mut inventory, &mut seen, "the opening", |seen| {
+        seen.iter()
+            .any(|event| matches!(event.of, Some(inventory_event::Of::CaughtUp(_))))
+    })
+    .await;
+
+    let cwd = host.install.path("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let agent = runtime
+        .spawn(
+            wire::CreateAgentRequest {
+                agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                name: Some("chat".into()),
+                cwd: cwd.to_string_lossy().into_owned(),
+                agent: Some(wire::create_agent_request::Agent::Acp(
+                    wire::AcpCreateConfig {
+                        agent: "mine".into(),
+                        ..Default::default()
+                    },
+                )),
+                ..wire::CreateAgentRequest::default()
+            },
+            None,
+        )
+        .await
+        .expect("the agent starts");
+    let key = store::AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+    let row_holds = |what: &'static str,
+                     holds: fn(&store::AgentRow, &wire::AcpSnapshot) -> bool| {
+        let key = key.clone();
+        let runtime = runtime.clone();
+        async move {
+            until(what, || {
+                let key = key.clone();
+                let runtime = runtime.clone();
+                async move {
+                    let row = runtime
+                        .read_store(move |store| store.agent(&key).unwrap())
+                        .await
+                        .unwrap()
+                        .ok_or("no row")?;
+                    let snapshot = row
+                        .snapshot
+                        .as_ref()
+                        .and_then(|snapshot| {
+                            wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()
+                        })
+                        .unwrap_or_default();
+                    holds(&row, &snapshot).then_some(()).ok_or(format!(
+                        "phase {} lifecycle {} sign-in {:?}",
+                        row.phase, row.lifecycle, snapshot.sign_in
+                    ))
+                }
+            })
+            .await
+            .unwrap();
+        }
+    };
+    let signed_out = |row: &store::AgentRow, snapshot: &wire::AcpSnapshot| {
+        row.lifecycle == wire::Lifecycle::Live as i32
+            && row.phase == wire::Phase::Idle as i32
+            && snapshot.sign_in.as_ref().map(wire::SignIn::state)
+                == Some(wire::SignInState::SignedOut)
+    };
+    row_holds("the agent waiting, signed out", signed_out).await;
+    read_inventory_until(
+        &mut inventory,
+        &mut seen,
+        "the entry saying signed out",
+        |seen| says_signed_in(seen, here, "mine") == Some(false),
+    )
+    .await;
+
+    let prompt = |text: &str| {
+        let runtime = runtime.clone();
+        let agent_id = agent.agent_id.clone();
+        let text = text.to_owned();
+        async move {
+            let verdict = runtime
+                .send_input(&wire::SendInputRequest {
+                    agent_id,
+                    input: Some(wire::Input::new(
+                        uuid::Uuid::new_v4().as_bytes().to_vec(),
+                        wire::AcpInput {
+                            of: Some(wire::acp_input::Of::Prompt(wire::PromptInput {
+                                text,
+                                attachments: Vec::new(),
+                            })),
+                        },
+                    )),
+                })
+                .await
+                .unwrap();
+            assert!(
+                matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
+                "{verdict:?}"
+            );
+        }
+    };
+    // Still signed out: the prompt asks again, is refused, and waits.
+    prompt("First question.").await;
+    until("the agent asked again", || async {
+        let asked = host.asked("\"session/new\"");
+        (asked >= 2).then_some(()).ok_or(format!("{asked} asks"))
+    })
+    .await
+    .unwrap();
+    row_holds("the agent still waiting, signed out", signed_out).await;
+
+    // Signed in now: the next prompt opens the session, and both run.
+    std::fs::write(&signed_in, "").unwrap();
+    prompt("Second question.").await;
+    let answered = |row: &store::AgentRow, snapshot: &wire::AcpSnapshot| {
+        row.lifecycle == wire::Lifecycle::Live as i32
+            && row.phase == wire::Phase::Idle as i32
+            && snapshot.sign_in.as_ref().map(wire::SignIn::state)
+                == Some(wire::SignInState::SignedIn)
+            && row
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.queue.is_empty())
+    };
+    row_holds("the session open and the queue drained", answered).await;
+    let said = {
+        let key = key.clone();
+        runtime
+            .read_store(move |store| {
+                store
+                    .last_n(&key, 50)
+                    .unwrap()
+                    .into_iter()
+                    .map(|item| item.text)
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap()
+    };
+    let at = |text: &str| said.iter().position(|said| said == text);
+    assert!(
+        at("First answer.") < at("Second answer.") && at("Second answer.").is_some(),
+        "{said:?}"
+    );
+    read_inventory_until(
+        &mut inventory,
+        &mut seen,
+        "the entry saying signed in",
+        |seen| says_signed_in(seen, here, "mine") == Some(true),
+    )
+    .await;
+    drop((inventory, runtime));
+    daemon.shutdown().await.unwrap();
+}

@@ -2000,9 +2000,25 @@ impl ProfileRuntime {
     }
 
     /// Counts what one ingest step committed.
-    pub(crate) fn ingested(&self, report: &daemon_core::Ingested) {
+    pub(crate) fn ingested(self: &Arc<Self>, report: &daemon_core::Ingested) {
         if report.frames == 0 {
             return;
+        }
+        // An ACP agent met a sign-in, or found it gone: the host's entry
+        // says so now, not at the next ask of what the agent offers.
+        if let Some((provider, state)) = &report.acp_sign_in
+            && self.offers().signed_in(provider) != Some(*state != wire::SignInState::SignedOut)
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            let runtime = Arc::downgrade(self);
+            let provider = provider.clone();
+            handle.spawn(async move {
+                if let Some(runtime) = runtime.upgrade()
+                    && let Err(error) = runtime.agent_catalogue(&provider).await
+                {
+                    tracing::debug!(provider, %error, "republishing an agent's sign-in");
+                }
+            });
         }
         // A person's pick the agent's program took: kept off the core's
         // thread, as a pick made at creation is.

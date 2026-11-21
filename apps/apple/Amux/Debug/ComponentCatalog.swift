@@ -948,9 +948,7 @@ enum ReviewStory {
 
     static let anchor = ReviewAnchor(commit: snapshot, path: open, start: 41, end: 42)
 
-    static let sent = SentReviewRef(
-        reviewId: [1], round: 1,
-        comments: [SentCommentRef(id: [0x0a], revision: 1), SentCommentRef(id: [0x0b], revision: 1)])
+    static let sent = SentReviewRef(reviewId: [1], round: 1, inputId: [0x0a])
 
     /// What the agent read of the first round.
     static let sentText = """

@@ -96,18 +96,16 @@ final class ReviewPageTests: XCTestCase {
         XCTAssertEqual(ComposerBox.primary(resuming: true, hasMessage: true, working: true), .resume)
     }
 
-    /// A sent review names its round for good by its review and exactly the
-    /// comments it sent at their revisions, so two sends are two rounds,
-    /// and a review started over is another.
-    func testASentReviewNamesItsRoundByItsReviewAndComments() {
-        let one = SentRound(sent: SentReviewRef(reviewId: [1], round: 1, comments: [.init(id: [1], revision: 1), .init(id: [2], revision: 1)]), text: "")
-        let same = SentRound(sent: SentReviewRef(reviewId: [1], round: 3, comments: [.init(id: [1], revision: 1), .init(id: [2], revision: 1)]), text: "x")
-        let next = SentRound(sent: SentReviewRef(reviewId: [1], round: 2, comments: [.init(id: [3], revision: 1)]), text: "")
-        let over = SentRound(sent: SentReviewRef(reviewId: [2], round: 1, comments: [.init(id: [1], revision: 1), .init(id: [2], revision: 1)]), text: "")
-        let edited = SentRound(sent: SentReviewRef(reviewId: [1], round: 2, comments: [.init(id: [1], revision: 2), .init(id: [2], revision: 1)]), text: "")
+    /// A sent review names its round for good by its review and the input
+    /// that sent it, so two sends are two rounds, even carrying the same
+    /// comments, and a review started over is another.
+    func testASentReviewNamesItsRoundByItsReviewAndInput() {
+        let one = SentRound(sent: SentReviewRef(reviewId: [1], round: 1, inputId: [7]), text: "")
+        let same = SentRound(sent: SentReviewRef(reviewId: [1], round: 3, inputId: [7]), text: "x")
+        let next = SentRound(sent: SentReviewRef(reviewId: [1], round: 1, inputId: [8]), text: "")
+        let over = SentRound(sent: SentReviewRef(reviewId: [2], round: 1, inputId: [7]), text: "")
         XCTAssertEqual(one.id, same.id)
-        XCTAssertNotEqual(one.id, edited.id, "the same comments at another revision are another message")
-        XCTAssertNotEqual(one.id, next.id)
+        XCTAssertNotEqual(one.id, next.id, "another input is another message")
         XCTAssertNotEqual(one.id, over.id)
     }
 }

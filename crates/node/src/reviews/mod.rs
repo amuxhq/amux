@@ -613,6 +613,7 @@ async fn summary(
             .map(|round| ReviewRound {
                 snapshot: round.snapshot.clone(),
                 base_commit: round.base_commit.clone(),
+                input_id: round.input_id.clone(),
             })
             .collect(),
         files: wire_files,

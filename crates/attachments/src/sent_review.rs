@@ -54,8 +54,10 @@ pub fn entry(attachment: &Attachment) -> Option<SentReview> {
 
 /// The attachment that sends `comments` from the review `summary`
 /// describes: the text the agent reads, and the entry naming exactly those
-/// comments at the revision the text was written from, the round the
-/// sender expects to close, and the snapshot the text's lines are on.
+/// comments at the revision and on the anchor the text was written from,
+/// the round the sender expects to close, and the snapshot the text's lines
+/// are on with the base commit it was shown against, which the round is
+/// recorded on.
 pub fn attachment(summary: &ReviewSummary, comments: &[ReviewerComment]) -> Attachment {
     let mut attachment = Attachment {
         of: Some(Of::Text(InlineText {
@@ -71,11 +73,14 @@ pub fn attachment(summary: &ReviewSummary, comments: &[ReviewerComment]) -> Atta
             round: u32::try_from(summary.rounds.len())
                 .unwrap_or(u32::MAX)
                 .saturating_add(1),
+            snapshot: summary.snapshot.clone(),
+            base_commit: summary.base_commit.clone(),
             comments: comments
                 .iter()
                 .map(|comment| ReviewSentComment {
                     id: comment.id.clone(),
                     revision: comment.revision,
+                    anchor: comment.anchor.clone(),
                 })
                 .collect(),
         },

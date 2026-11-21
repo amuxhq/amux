@@ -139,6 +139,7 @@ mod tests {
                 .map(|id| wire::experimental::ReviewSentComment {
                     id: id.to_vec(),
                     revision: 1,
+                    anchor: None,
                 })
                 .to_vec(),
             ..Default::default()

@@ -53,7 +53,8 @@ with,
 the commit HEAD was at when it began, and the repository's common git
 directory; the snapshots it keeps, each with the base commit its all changes
 run from and every other base it has been shown against; the rounds sent,
-each with its snapshot and base commit; and the comments. Two agents
+each with the snapshot and base commit its text was written on and the
+input that closed it; and the comments. Two agents
 sharing a folder each have a review of their own of the same tree. A
 review's rows go with its agent, in the store's `remove_agent`.
 
@@ -157,9 +158,13 @@ this at every turn end of an agent whose checkout holds a review, as a job
 off its thread, and writes the answer onto the review's row entry.
 
 **Kept snapshots.** After a snapshot is taken the review keeps the
-snapshots a round or a comment's anchor names, the latest, and the one
-before it, which a page opened before the latest was taken still shows
-(`Review::kept`). The others are forgotten in the same write and their
+snapshots a round or a comment's anchor names, those a sent review waiting
+in the agent's queue names (as the agent's latest session snapshot lists
+the queue: its round will be recorded on that snapshot and its text tells
+the agent to diff against it), the latest, and the one before it, which a
+page opened before the latest was taken still shows (`Review::kept`). The
+one before the latest also covers a send in the moment before the queue
+lists it: only a second refresh in that moment could drop its snapshot. The others are forgotten in the same write and their
 objects dropped from the store (`snapshot::drop`), with their indexes. An old
 round still depends on the repository holding the commits beneath it: a
 rebase followed by garbage collection can remove them, and the page then
@@ -309,9 +314,10 @@ A send carries the drafts as a **sent review**: a `text` attachment named
 `review` that the client builds from what a read-only open answered
 (`attachments::sent_review::attachment`), with an entry,
 `Attachment.experimental["reviews/1"]`, a `SentReview` naming the review,
-the snapshot the text's lines are on, the round the client expects, and
-exactly the comments it sends, each with the revision the text was written
-from ([sent reviews](ATTACHMENTS.md#sent-reviews)). The client builds it
+the snapshot the text's lines are on and the base commit it was shown
+against, the round the client expects, and exactly the comments it sends,
+each with the revision and anchor the text was written from
+([sent reviews](ATTACHMENTS.md#sent-reviews)). The client builds it
 because a host never rewrites a message: what the agent reads is what the
 person sent, and only the sender knows which comments it chose.
 
@@ -321,8 +327,13 @@ journal, in the store transaction that commits the item and moves the
 journal's cursor past it (`rounds_delivered`, called from the daemon core's
 ingest). Of the comments the entry names, those still drafts at the
 revision named are marked sent, in a round numbered as it arrives and
-recorded on the review's latest snapshot with its base commit; each keeps the
-revision it was sent at (`sent_revision`). So:
+recorded on the snapshot and base commit the entry names, with the id of
+the input the agent took; each keeps the revision it was sent at
+(`sent_revision`) and goes back to the anchor the text names, which a
+refresh after the text was built moved without raising its revision. So
+the round is the code the sender saw, whatever was refreshed before the
+agent took it, and since-last runs from it. Two sends in one input close
+one round. So:
 
 - a prompt waiting in the queue has closed nothing, and one withdrawn from
   the queue leaves its comments drafts;
@@ -333,13 +344,14 @@ revision it was sent at (`sent_revision`). So:
 - a crash between the item and the round is impossible: both land or
   neither, and ingest reads the journal again.
 
-A client finds the round a sent review closed by its comments: the round in
-which the comments it names were sent at the revisions it names
-(`ui_runtime::review::round_of`). The sender's expected round and snapshot
-are not used for that, because a refresh between building and delivery
-records the round on a later snapshot. A message whose comments were edited
-before the agent took it closed none, and opens the text the agent read, as
-does one whose round the host no longer holds.
+A client finds the round a sent review closed by the input it was sent in:
+the chat's chip names the id of the item that holds it, and the round is
+the one recorded with that input (`ui_runtime::review::round_of`). Not by
+its comments: two sends queued at once can carry the same comment, the
+first closing a round with it and the second another without it. A message
+whose comments were all sent or edited before the agent took it closed
+none, and opens the text the agent read, as does one whose round the host
+no longer holds, or whose comments have all been deleted.
 
 ### What the agent reads
 
@@ -508,11 +520,11 @@ client keyed by review, path and content; and a review belongs to one agent.
 | What | Where | Run |
 | --- | --- | --- |
 | Snapshots: nothing in `.git` changes taking, asking or dropping; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
-| `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
+| `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
 | `GetFiles`: colouring from whole files, scopes and outlines on either side, more context, since-last limits, caps, the object-id cache, snippets | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |
 | A person on a paired host reviewing through the carrier, the copy following the entry, deletion removing rows, folder and copy; agents, tools sockets, copies and hosts without the experiment refused | `spec_reviews` in [`crates/testnet/tests/`](../crates/testnet/tests/) | `just suite many-daemon-protocol-spec` |
 | The page as rows, compared comments, a removed-only hunk, the trailing gap; changed words | [`crates/ui-view/tests/reviews.rs`](../crates/ui-view/tests/reviews.rs) and its golden, `changed_words.rs` | `just test-crate ui-view` |
-| Fetching, caching, following the row, rounds found by their comments | [`crates/ui-runtime/tests/review.rs`](../crates/ui-runtime/tests/review.rs) | `just test-crate ui-runtime` |
+| Fetching, caching, following the row, rounds found by the input that closed them | [`crates/ui-runtime/tests/review.rs`](../crates/ui-runtime/tests/review.rs) | `just test-crate ui-runtime` |
 | The sent review's text and entry, and body escaping | [`crates/attachments/tests/attachments.rs`](../crates/attachments/tests/attachments.rs) | `just test-crate attachments` |
 | The terminal's page and keys; the `attachment-or-review` journey on the terminal and the phone | `crates/tui/src/tests.rs`, [`journeys/`](../journeys/manifest.json) | `just test-tui`, `just journey terminal attachment-or-review`, `just ios journey attachment-or-review` |
 | A real Claude and Codex reading a sent review: each quotes the code exactly and runs the command, Codex inside its read-only sandbox | the `review_attachment` scenario | `just live claude_sdk review_attachment`, `just live codex review_attachment` |

@@ -32,8 +32,9 @@ pub enum AttachmentView {
         text: String,
     },
     /// A review sent into the chat: the comments it sent, the review and
-    /// round it names, and the text the agent read, which is what opening
-    /// it shows when the agent's host no longer has the round.
+    /// the input it was sent in, and the text the agent read, which is what
+    /// opening it shows when no round of the review was closed by that
+    /// input, or the agent's host no longer has it.
     SentReview {
         comments: u32,
         review: SentReviewRef,
@@ -51,10 +52,10 @@ pub enum AttachmentView {
 }
 
 impl AttachmentView {
-    /// The attachment as a chip shows it. Its name is drawn without
-    /// direction controls, which would make `invoice\u{202E}fdp.exe` read
-    /// as a PDF.
-    pub fn of(attachment: &Attachment) -> AttachmentView {
+    /// The attachment as a chip shows it, held by the input `input_id`
+    /// (empty for one not yet sent). Its name is drawn without direction
+    /// controls, which would make `invoice\u{202E}fdp.exe` read as a PDF.
+    pub fn of(attachment: &Attachment, input_id: &[u8]) -> AttachmentView {
         use wire::attachment::Of;
         let named = |blob: &BlobRef| BlobRef {
             name: without_direction_controls(&blob.name),
@@ -69,14 +70,7 @@ impl AttachmentView {
                     review: SentReviewRef {
                         review_id: sent.review_id,
                         round: sent.round,
-                        comments: sent
-                            .comments
-                            .into_iter()
-                            .map(|comment| SentCommentRef {
-                                id: comment.id,
-                                revision: comment.revision,
-                            })
-                            .collect(),
+                        input_id: input_id.to_vec(),
                     },
                     text: text.text.clone(),
                 }
@@ -109,24 +103,14 @@ impl AttachmentView {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SentReviewRef {
     pub review_id: Vec<u8>,
-    /// The round the sending client expected it to be; the agent's host
-    /// numbers rounds as the agent takes the messages, so the comments name
-    /// the round.
+    /// The round the sending client expected it to be, shown while the
+    /// round is read; the agent's host numbers rounds as the agent takes
+    /// the messages.
     pub round: u32,
-    /// Exactly the comments it sent, each at the revision it sent: the
-    /// round this message closed is the one whose comments the agent took
-    /// at those revisions, and a message that closed none names no
-    /// comment's sent revision.
-    pub comments: Vec<SentCommentRef>,
-}
-
-/// A comment a sent review carries, at the revision its text was written
-/// from.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SentCommentRef {
-    pub id: Vec<u8>,
-    pub revision: u64,
+    /// The input the message holding it was: the round this message closed
+    /// is the one the host recorded with this input, and a message that
+    /// closed none names none.
+    pub input_id: Vec<u8>,
 }
 
 /// The largest image a client downloads by itself to draw its thumbnail. A
@@ -135,21 +119,24 @@ pub struct SentCommentRef {
 /// this number too, in `Thumbnail.sizeLimit`.
 pub const THUMBNAIL_SIZE_LIMIT: u64 = 16 * 1024 * 1024;
 
-/// Splits text at its placeholders. A placeholder with no attachment left
-/// is dropped; attachments with no placeholder follow the text.
-pub fn segments(text: &str, attachments: &[Attachment]) -> Vec<Segment> {
+/// Splits text at its placeholders, the text of the input `input_id`
+/// (empty for one not yet sent). A placeholder with no attachment left is
+/// dropped; attachments with no placeholder follow the text.
+pub fn segments(text: &str, attachments: &[Attachment], input_id: &[u8]) -> Vec<Segment> {
     let mut out = Vec::new();
     let mut attachments = attachments.iter();
     for (index, prose) in text.split(PLACEHOLDER).enumerate() {
         if index > 0
             && let Some(attachment) = attachments.next()
         {
-            out.push(Segment::Attachment(AttachmentView::of(attachment)));
+            out.push(Segment::Attachment(AttachmentView::of(attachment, input_id)));
         }
         if !prose.is_empty() {
             out.push(Segment::Text(prose.to_owned()));
         }
     }
-    out.extend(attachments.map(|attachment| Segment::Attachment(AttachmentView::of(attachment))));
+    out.extend(
+        attachments.map(|attachment| Segment::Attachment(AttachmentView::of(attachment, input_id))),
+    );
     out
 }

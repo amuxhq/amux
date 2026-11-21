@@ -390,14 +390,14 @@ fn attachments_keep_their_positions() {
         })),
         ..Default::default()
     };
-    let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
+    let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()], &[]);
     assert_eq!(
         tokens,
         vec![
             Segment::Text("see ".into()),
-            Segment::Attachment(AttachmentView::of(&image)),
+            Segment::Attachment(AttachmentView::of(&image, &[])),
             Segment::Text(" and ".into()),
-            Segment::Attachment(AttachmentView::of(&text)),
+            Segment::Attachment(AttachmentView::of(&text, &[])),
             Segment::Text(".".into()),
         ]
     );
@@ -417,7 +417,7 @@ fn attachments_keep_their_positions() {
             rows[0].kind,
             RowKind::Prompt {
                 text: vec![
-                    Segment::Attachment(AttachmentView::of(&image)),
+                    Segment::Attachment(AttachmentView::of(&image, &[])),
                     Segment::Text("first".into())
                 ],
                 steered: false
@@ -2421,7 +2421,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
         *text,
         vec![
             Segment::Text("second look at this ".into()),
-            Segment::Attachment(AttachmentView::of(&file)),
+            Segment::Attachment(AttachmentView::of(&file, &[])),
         ]
     );
 }

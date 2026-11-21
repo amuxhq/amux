@@ -67,7 +67,7 @@ pub use rows::{
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
 pub use segments::{
-    AttachmentView, Segment, SentCommentRef, SentReviewRef, THUMBNAIL_SIZE_LIMIT, segments,
+    AttachmentView, Segment, SentReviewRef, THUMBNAIL_SIZE_LIMIT, segments,
 };
 pub use settings::{
     Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,

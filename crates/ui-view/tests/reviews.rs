@@ -358,6 +358,7 @@ fn second_look() -> ReviewSummary {
         rounds: vec![ReviewRound {
             snapshot: LAST_ROUND.into(),
             base_commit: BASE.into(),
+            input_id: b"the last round's prompt".to_vec(),
         }],
         since_last: vec![changed("src/store.rs", wire::FileStatus::Changed, 1, 0)],
         comments: vec![
@@ -847,6 +848,7 @@ fn an_undo_since_the_last_round_is_listed_fetched_and_shown() {
         rounds: vec![ReviewRound {
             snapshot: LAST_ROUND.into(),
             base_commit: BASE.into(),
+            input_id: b"the last round's prompt".to_vec(),
         }],
         since_last: vec![
             changed("made.txt", wire::FileStatus::Deleted, 0, 1),
@@ -1178,7 +1180,7 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
         ..Default::default()
     };
     assert!(matches!(
-        AttachmentView::of(&attachment),
+        AttachmentView::of(&attachment, b"the prompt"),
         AttachmentView::Text { .. }
     ));
     SENT_REVIEW.put(
@@ -1186,35 +1188,31 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
         &SentReview {
             review_id: b"review".to_vec(),
             round: 2,
+            snapshot: SNAPSHOT.into(),
+            base_commit: BASE.into(),
             comments: vec![
                 ReviewSentComment {
                     id: b"d1".to_vec(),
                     revision: 1,
+                    anchor: None,
                 },
                 ReviewSentComment {
                     id: b"d3".to_vec(),
                     revision: 2,
+                    anchor: None,
                 },
             ],
         },
     );
+    // The chip names the input that held it, by which its round is found.
     assert_eq!(
-        segments(PLACEHOLDER.to_string().as_str(), &[attachment]),
+        segments(PLACEHOLDER.to_string().as_str(), &[attachment], b"the prompt"),
         [Segment::Attachment(AttachmentView::SentReview {
             comments: 2,
             review: SentReviewRef {
                 review_id: b"review".to_vec(),
                 round: 2,
-                comments: vec![
-                    SentCommentRef {
-                        id: b"d1".to_vec(),
-                        revision: 1,
-                    },
-                    SentCommentRef {
-                        id: b"d3".to_vec(),
-                        revision: 2,
-                    },
-                ],
+                input_id: b"the prompt".to_vec(),
             },
             text: "src/store.rs:41\nWhy the flags?".into(),
         })]

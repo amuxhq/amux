@@ -447,19 +447,20 @@ pub(crate) async fn edit_closed(review: &Review, changes: Vec<ReviewChange>) -> 
     }
 }
 
-/// The page of the round a sent review closed, `review_id` and the
-/// comments `sent` as its attachment names them: its whole diff, every file
-/// open, with the comments it sent, read from the agent's host as any look at it is; with
-/// the host out of reach, from what this process loaded of it, and the page
-/// says so. With the host out of reach and none of the round loaded, a page
-/// with nothing but that to say. None when the host holds none of the
-/// round, and the chat shows the text the agent read instead.
+/// The page of the round of the review `review_id` that the input
+/// `input_id` closed, the message holding the sent review: its whole diff,
+/// every file open, with the comments it sent, read from the agent's host
+/// as any look at it is; with the host out of reach, from what this process
+/// loaded of it, and the page says so. With the host out of reach and none
+/// of the round loaded, a page with nothing but that to say. None when the
+/// input closed no round or the host holds none of it, and the chat shows
+/// the text the agent read instead.
 pub(crate) async fn round_page(
     review: &Review,
     review_id: &[u8],
-    sent: &[ui_view::SentCommentRef],
+    input_id: &[u8],
 ) -> Option<ReviewPage> {
-    let round = match review.round(review_id, sent).await {
+    let round = match review.round(review_id, input_id).await {
         Ok(round) => round?,
         Err(error) if ui_runtime::review::unreachable(&error) => {
             let state = ReviewPageState {
@@ -1029,6 +1030,7 @@ mod tests {
         fake.host().summary.rounds.push(ReviewRound {
             snapshot: "4444444444444444444444444444444444444444".into(),
             base_commit: BASE.into(),
+            input_id: b"the prompt".to_vec(),
         });
         let opened = page(&fake);
         let page = &opened.page;
@@ -1110,6 +1112,7 @@ mod tests {
             host.summary.rounds.push(ReviewRound {
                 snapshot: SNAPSHOT.into(),
                 base_commit: BASE.into(),
+                input_id: b"the prompt".to_vec(),
             });
             host.summary.comments.push(ReviewerComment {
                 id: b"sent".to_vec(),
@@ -1131,10 +1134,7 @@ mod tests {
                 ..ReviewerComment::default()
             });
         }
-        let sent = [ui_view::SentCommentRef {
-            id: b"sent".to_vec(),
-            revision: 1,
-        }];
+        let sent = b"the prompt";
 
         // With the host out of reach before anything was loaded, the page
         // says only that.
@@ -1142,14 +1142,14 @@ mod tests {
             wire::ErrorReason::HostUnreachable,
             "the desk is away",
         )));
-        let unloaded = round_page(&review, b"review-1", &sent)
+        let unloaded = round_page(&review, b"review-1", sent)
             .await
             .expect("a page saying the host is away");
         assert_eq!(unloaded.banners, vec![ReviewBanner::Unreachable]);
         assert!(unloaded.header.is_none());
         fake.host().failing = None;
 
-        let round = round_page(&review, b"review-1", &sent)
+        let round = round_page(&review, b"review-1", sent)
             .await
             .expect("the host holds the round");
         assert!(round.banners.is_empty(), "{:?}", round.banners);
@@ -1190,7 +1190,7 @@ mod tests {
             wire::ErrorReason::HostUnreachable,
             "the desk is away",
         )));
-        let away = round_page(&review, b"review-1", &sent)
+        let away = round_page(&review, b"review-1", sent)
             .await
             .expect("what was loaded still reads");
         assert_eq!(away.banners, vec![ReviewBanner::Unreachable]);
@@ -1198,7 +1198,7 @@ mod tests {
 
         fake.host().failing = None;
         assert_eq!(
-            round_page(&review, b"review-2", &sent).await,
+            round_page(&review, b"review-2", sent).await,
             None,
             "the review was started over"
         );
@@ -1207,7 +1207,7 @@ mod tests {
             .comments
             .retain(|comment| comment.id != b"sent");
         assert_eq!(
-            round_page(&review, b"review-1", &sent).await,
+            round_page(&review, b"review-1", sent).await,
             None,
             "every comment it sent is deleted"
         );

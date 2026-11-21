@@ -232,11 +232,33 @@ fn entry(drafts: u32, counter: u64, moved: bool) -> ReviewRowEntry {
     }
 }
 
-/// A send of the comments `ids`, each at its first revision.
+/// A send of the comments `ids`, each at its first revision, written on
+/// s1 shown against `base`, as the input of its own the agent took.
 fn sent(review: [u8; 16], ids: &[u8]) -> Change {
+    sent_on(review, ids, "s1", "base")
+}
+
+/// [`sent`], written on `snapshot` shown against `base`, each comment named
+/// on line 3 of `snapshot` as `put` writes it there.
+fn sent_on(review: [u8; 16], ids: &[u8], snapshot: &str, base: &str) -> Change {
     Change::Sent {
         review: review.to_vec(),
-        comments: ids.iter().map(|id| (vec![*id; 16], 1)).collect(),
+        input: format!("input {ids:?} on {snapshot}").into_bytes(),
+        snapshot: snapshot.into(),
+        base_commit: base.into(),
+        comments: ids
+            .iter()
+            .map(|id| SentComment {
+                comment: vec![*id; 16],
+                revision: 1,
+                anchor: Some(Anchor {
+                    commit: snapshot.into(),
+                    path: "src/lib.rs".into(),
+                    start: 3,
+                    end: 3,
+                }),
+            })
+            .collect(),
     }
 }
 
@@ -460,7 +482,7 @@ fn a_send_marks_exactly_the_named_drafts_in_a_round_numbered_on_arrival() {
 }
 
 #[test]
-fn a_send_marks_only_the_revision_it_was_written_from_on_the_latest_snapshot() {
+fn a_send_marks_only_the_revision_it_was_written_from_on_the_snapshot_it_names() {
     let mut rig = lead();
     rig.written(
         LEAD,
@@ -481,16 +503,30 @@ fn a_send_marks_only_the_revision_it_was_written_from_on_the_latest_snapshot() {
         .map(|comment| comment.revision)
         .collect();
     assert_eq!(revisions, [1, 2], "a put raises the revision");
-    // A refresh took s2 meanwhile, whose base the rule found anew.
+    // A refresh took s2 meanwhile, whose base the rule found anew, and
+    // moved comment 1 onto it.
     rig.written(
         LEAD,
-        vec![Change::Snapshot {
-            commit: "s2".into(),
-            base_commit: "base 2".into(),
-            base_name: "main".into(),
-            omitted: Vec::new(),
-            merging: false,
-        }],
+        vec![
+            Change::Snapshot {
+                commit: "s2".into(),
+                base_commit: "base 2".into(),
+                base_name: "main".into(),
+                omitted: Vec::new(),
+                merging: false,
+            },
+            Change::DraftsMoved {
+                drafts: vec![MovedDraft {
+                    comment: vec![1; 16],
+                    anchor: Anchor {
+                        commit: "s2".into(),
+                        path: "src/lib.rs".into(),
+                        start: 5,
+                        end: 5,
+                    },
+                }],
+            },
+        ],
     );
     let w = rig.written(LEAD, vec![sent(REVIEW_ID, &[1, 2])]);
     assert_eq!(w.round, Some(1));
@@ -509,18 +545,43 @@ fn a_send_marks_only_the_revision_it_was_written_from_on_the_latest_snapshot() {
     };
     assert_eq!(
         (round.snapshot.as_str(), round.base_commit.as_str()),
-        ("s2", "base 2"),
-        "recorded on the latest snapshot, with its base"
+        ("s1", "base"),
+        "recorded on the snapshot the text was written on, with its base then"
+    );
+    assert_eq!(round.input_id, b"input [1, 2] on s1", "with the input");
+    let one = &review.comments[0];
+    assert_eq!(
+        (one.anchor.commit.as_str(), one.anchor.start),
+        ("s1", 3),
+        "the moved draft is sent on the lines the text names"
+    );
+    assert!(
+        review.snapshot("s1").is_some(),
+        "s1 is kept: the round names it"
     );
 
     // The next message carries comment 2 at revision 2 and closes round 2
     // with it; each sent comment keeps the revision the agent took, which
     // names the message that sent it, through later edits.
+    let Change::Sent {
+        review: id,
+        snapshot,
+        base_commit,
+        mut comments,
+        ..
+    } = sent_on(REVIEW_ID, &[2], "s2", "base 2")
+    else {
+        unreachable!()
+    };
+    comments[0].revision = 2;
     let w = rig.written(
         LEAD,
         vec![Change::Sent {
-            review: REVIEW_ID.to_vec(),
-            comments: vec![(vec![2; 16], 2)],
+            review: id,
+            input: b"the second".to_vec(),
+            snapshot,
+            base_commit,
+            comments,
         }],
     );
     assert_eq!(w.round, Some(2));
@@ -568,11 +629,14 @@ fn taken_prompt(input: &[u8], ids: &[u8]) -> Step {
         &SentReview {
             review_id: REVIEW_ID.to_vec(),
             round: 1,
+            snapshot: "s1".into(),
+            base_commit: "base".into(),
             comments: ids
                 .iter()
                 .map(|id| wire::experimental::ReviewSentComment {
                     id: vec![*id; 16],
                     revision: 1,
+                    anchor: None,
                 })
                 .collect(),
         },
@@ -792,6 +856,109 @@ fn a_new_snapshot_forgets_those_the_review_no_longer_keeps() {
         ],
     );
     assert_eq!(commits(&w), ["s3a", "s4"]);
+}
+
+/// One input carrying two sends of the review closes one round, the one
+/// the chat's chip for that input opens.
+#[test]
+fn two_sends_in_one_input_close_one_round() {
+    let mut rig = lead();
+    rig.written(
+        LEAD,
+        vec![
+            begin(),
+            snapshot("s1"),
+            put(1, "s1", "a"),
+            put(2, "s1", "b"),
+        ],
+    );
+    let with_input = |change: Change| match change {
+        Change::Sent {
+            review,
+            snapshot,
+            base_commit,
+            comments,
+            ..
+        } => Change::Sent {
+            review,
+            input: b"one input".to_vec(),
+            snapshot,
+            base_commit,
+            comments,
+        },
+        other => other,
+    };
+    let w = rig.written(
+        LEAD,
+        vec![
+            with_input(sent(REVIEW_ID, &[1])),
+            with_input(sent(REVIEW_ID, &[2])),
+        ],
+    );
+    let review = w.review.unwrap();
+    assert_eq!(review.rounds.len(), 1, "{:?}", review.rounds);
+    assert_eq!(
+        review
+            .comments
+            .iter()
+            .map(|c| c.round)
+            .collect::<Vec<_>>(),
+        [Some(1), Some(1)]
+    );
+}
+
+/// A sent review waiting in the agent's queue names the snapshot its
+/// round will be recorded on and its text tells the agent to diff
+/// against: refreshes meanwhile keep it, and once the queue no longer
+/// holds it, it may go.
+#[test]
+fn a_snapshot_a_queued_send_names_is_kept_until_the_queue_lets_it_go() {
+    let mut rig = lead();
+    rig.written(LEAD, vec![begin(), snapshot("s1"), put(1, "s1", "a")]);
+    let mut queued = wire::QueuedInput {
+        input_id: b"queued".to_vec(),
+        ..wire::QueuedInput::default()
+    };
+    queued.attachments = taken_prompt(b"queued", &[1]).items[0].attachments.clone();
+    let queue = |queue: Vec<wire::QueuedInput>| Step {
+        snapshot: Some(wire::Snapshot {
+            kind: wire::Kind::Codex as i32,
+            queue,
+            ..wire::Snapshot::default()
+        }),
+        ..Step::default()
+    };
+    rig.journal(LEAD, &queue(vec![queued]));
+    let onto = |commit: &str| Change::DraftsMoved {
+        drafts: vec![MovedDraft {
+            comment: vec![1; 16],
+            anchor: Anchor {
+                commit: commit.into(),
+                path: "src/lib.rs".into(),
+                start: 0,
+                end: 0,
+            },
+        }],
+    };
+    let commits = |w: &Written| {
+        w.review
+            .as_ref()
+            .unwrap()
+            .snapshots
+            .iter()
+            .map(|taken| taken.commit.clone())
+            .collect::<Vec<_>>()
+    };
+    // Two refreshes move the draft on: s1 is neither its anchor, the
+    // latest, nor the one before, but the queued send names it.
+    rig.written(LEAD, vec![snapshot("s2"), onto("s2")]);
+    let w = rig.written(LEAD, vec![snapshot("s3"), onto("s3")]);
+    assert_eq!(commits(&w), ["s1", "s2", "s3"]);
+
+    // Withdrawn: the queue is empty, and the next snapshot lets s1 go.
+    rig.journal(LEAD, &queue(Vec::new()));
+    let w = rig.written(LEAD, vec![snapshot("s4"), onto("s4")]);
+    assert_eq!(commits(&w), ["s3", "s4"]);
 }
 
 #[test]

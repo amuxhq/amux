@@ -258,6 +258,8 @@ fn review_pages() -> Vec<(&'static str, &'static str, crate::chat::review::Page)
 const REVIEW_BASE: &str = "b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9";
 const REVIEW_ROUND: &str = "4f2a9c1e7b3d5f6a8c0e2b4d6f8a0c2e4b6d8f0a";
 const REVIEW_SNAPSHOT: &str = "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d";
+/// The prompt whose taking closed the review's one round.
+const REVIEW_ROUND_INPUT: &[u8] = b"the round's prompt";
 
 /// Rust's runs, roughly as the host's highlighter colours them: keywords,
 /// the name before a call, types and strings.
@@ -640,6 +642,7 @@ pub fn review_since_last() -> crate::chat::review::Page {
         rounds: vec![ReviewRound {
             snapshot: REVIEW_ROUND.into(),
             base_commit: REVIEW_BASE.into(),
+            input_id: REVIEW_ROUND_INPUT.to_vec(),
         }],
         since_last: vec![changed_file(
             "src/store.rs",
@@ -676,18 +679,8 @@ pub fn review_round() -> crate::chat::review::Page {
         .summary
         .clone()
         .expect("the next look's summary");
-    let sent: Vec<ui_view::SentCommentRef> = summary
-        .comments
-        .iter()
-        .filter_map(|comment| {
-            Some(ui_view::SentCommentRef {
-                id: comment.id.clone(),
-                revision: comment.sent_revision?,
-            })
-        })
-        .collect();
-    let (_, mut round) =
-        ui_runtime::review::round_of(&summary, &summary.id, &sent).expect("the round");
+    let (_, mut round) = ui_runtime::review::round_of(&summary, &summary.id, REVIEW_ROUND_INPUT)
+        .expect("the round");
     round.files = first_look_summary().files;
     // The round's snapshot, before the agent made close keep sync_all's
     // error.
@@ -1478,16 +1471,7 @@ fn row_sets() -> Vec<RowSet> {
                                 review: ui_view::SentReviewRef {
                                     review_id: vec![1; 16],
                                     round: 1,
-                                    comments: vec![
-                                        ui_view::SentCommentRef {
-                                            id: vec![1],
-                                            revision: 1,
-                                        },
-                                        ui_view::SentCommentRef {
-                                            id: vec![2],
-                                            revision: 1,
-                                        },
-                                    ],
+                                    input_id: vec![7; 16],
                                 },
                                 text: "Two comments on src/sum.rs.".into(),
                             }),

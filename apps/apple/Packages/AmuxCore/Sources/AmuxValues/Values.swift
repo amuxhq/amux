@@ -947,8 +947,9 @@ public enum AttachmentView: Codable, Hashable, Sendable {
     /// which a sent message shows in place of the chip.
     case text(name: String, lines: UInt32, text: String)
     /// A review sent into the chat: the comments it sent, the review and
-    /// round it names, and the text the agent read, which is what opening
-    /// it shows when the agent's host no longer has the round.
+    /// the input it was sent in, and the text the agent read, which is what
+    /// opening it shows when no round of the review was closed by that
+    /// input, or the agent's host no longer has it.
     case sentReview(comments: UInt32, review: SentReviewRef, text: String)
     /// Comments on a web page: the page's title, or its address when it
     /// has none, the comment count, and the screenshots of the regions the
@@ -7888,23 +7889,6 @@ public enum SendState: String, Codable, Hashable, Sendable, CaseIterable {
     case sent = "Sent"
 }
 
-/// A comment a sent review carries, at the revision its text was written
-/// from.
-public struct SentCommentRef: Codable, Hashable, Sendable {
-    public var id: [UInt8]
-    public var revision: UInt64
-
-    public init(id: [UInt8], revision: UInt64) {
-        self.id = id
-        self.revision = revision
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case revision
-    }
-}
-
 /// A prompt of this client's on its way to the agent.
 public struct SentPrompt: Codable, Hashable, Sendable {
     public var inputId: [UInt8]
@@ -7930,26 +7914,25 @@ public struct SentPrompt: Codable, Hashable, Sendable {
 /// The review a sent review's attachment names, for opening its round.
 public struct SentReviewRef: Codable, Hashable, Sendable {
     public var reviewId: [UInt8]
-    /// The round the sending client expected it to be; the agent's host
-    /// numbers rounds as the agent takes the messages, so the comments name
-    /// the round.
+    /// The round the sending client expected it to be, shown while the
+    /// round is read; the agent's host numbers rounds as the agent takes
+    /// the messages.
     public var round: UInt32
-    /// Exactly the comments it sent, each at the revision it sent: the
-    /// round this message closed is the one whose comments the agent took
-    /// at those revisions, and a message that closed none names no
-    /// comment's sent revision.
-    public var comments: [SentCommentRef]
+    /// The input the message holding it was: the round this message closed
+    /// is the one the host recorded with this input, and a message that
+    /// closed none names none.
+    public var inputId: [UInt8]
 
-    public init(reviewId: [UInt8], round: UInt32, comments: [SentCommentRef]) {
+    public init(reviewId: [UInt8], round: UInt32, inputId: [UInt8]) {
         self.reviewId = reviewId
         self.round = round
-        self.comments = comments
+        self.inputId = inputId
     }
 
     private enum CodingKeys: String, CodingKey {
         case reviewId = "review_id"
         case round
-        case comments
+        case inputId = "input_id"
     }
 }
 

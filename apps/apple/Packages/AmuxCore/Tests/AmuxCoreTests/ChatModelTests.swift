@@ -1374,9 +1374,7 @@ final class ChatModelTests: XCTestCase {
 
         // The bridge's draft of a queued prompt never carries the review.
         source.drafts[[7]] = Draft(words: "Look at these.", attachments: [])
-        let sent = SentReviewRef(
-            reviewId: [1], round: 1,
-            comments: [SentCommentRef(id: [1], revision: 1), SentCommentRef(id: [2], revision: 1)])
+        let sent = SentReviewRef(reviewId: [1], round: 1, inputId: [7])
         let queued = QueuedRow(
             inputId: [7],
             text: [.text("Look at these. "), .attachment(.sentReview(comments: 2, review: sent, text: ""))],

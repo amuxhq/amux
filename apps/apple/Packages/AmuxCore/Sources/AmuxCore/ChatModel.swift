@@ -138,13 +138,13 @@ public struct SentRound: Identifiable, Equatable, Sendable {
         self.text = text
     }
 
-    /// The review and exactly the comments sent, each at its revision,
-    /// name one message's round for good: the host records each comment
-    /// sent, at the revision sent, in one round only.
+    /// The review and the input that sent it name one message's round for
+    /// good: the host records the round with the input whose taking closed
+    /// it.
     public var id: String {
-        let named = [sent.reviewId]
-            + sent.comments.flatMap { [$0.id, withUnsafeBytes(of: $0.revision.bigEndian, Array.init)] }
-        return named.map { $0.map { String(format: "%02x", $0) }.joined() }.joined(separator: "/")
+        [sent.reviewId, sent.inputId]
+            .map { $0.map { String(format: "%02x", $0) }.joined() }
+            .joined(separator: "/")
     }
 }
 

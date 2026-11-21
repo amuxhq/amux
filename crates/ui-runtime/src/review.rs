@@ -629,12 +629,12 @@ impl Review {
     }
 
     /// The round a sent review closed, read for its page: the review as its
-    /// host holds it now, without changing it, and of it the round that
-    /// message closed, the one whose comments the agent took at the
-    /// revisions `sent` names; its whole diff is listed and the body of
-    /// every file it shows fetched. The host records a round on its latest
-    /// snapshot when the agent takes the message, so the round is found by
-    /// its comments, not by the snapshot the sender named.
+    /// host holds it now, without changing it, and of it the round the
+    /// input `input_id` closed when the agent took it, the message holding
+    /// the sent review; its whole diff is listed and the body of every file
+    /// it shows fetched. Two sends queued at once may carry the same
+    /// comments, so the round is found by the input that closed it, never
+    /// by the comments it names.
     ///
     /// With the host out of reach, the round is read from what this process
     /// loaded, and the error is the host's when that holds none of it. When
@@ -646,18 +646,18 @@ impl Review {
     pub async fn round(
         &self,
         review_id: &[u8],
-        sent: &[ui_view::SentCommentRef],
+        input_id: &[u8],
     ) -> Result<Option<Round>, ReviewError> {
         let mut notices = Vec::new();
         let (summary, (number, mut round)) = match self.read().await {
-            Ok(summary) => match round_of(&summary, review_id, sent) {
+            Ok(summary) => match round_of(&summary, review_id, input_id) {
                 Some(round) => (summary, round),
                 None => return Ok(None),
             },
             Err(error) if unreachable(&error) => {
                 notices.push(ui_view::ReviewNotice::Unreachable);
                 let held = self.summary().and_then(|summary| {
-                    let round = round_of(&summary, review_id, sent)?;
+                    let round = round_of(&summary, review_id, input_id)?;
                     Some((summary, round))
                 });
                 match held {
@@ -826,41 +826,34 @@ fn written_on(anchor: &ReviewAnchor, snapshot: &str) -> ReviewPlacement {
     }
 }
 
-/// The round of `summary`, the review as its host holds it now, that a
-/// message sending the comments `sent` of the review `review_id` closed, as
-/// a review of its own, and its number: the round whose comments the agent
-/// took at exactly the revisions the message named. It is the round's
-/// snapshot compared with the base commit it was recorded with, and of the
-/// comments that message sent those still on the review, each on the lines
-/// it was written on. The round's files are for the caller to list
+/// The round of `summary`, the review as its host holds it now, that the
+/// input `input_id` closed when the agent took it, sending comments of the
+/// review `review_id`, as a review of its own, and its number. It is the
+/// round's snapshot compared with the base commit it was recorded with, and
+/// the comments sent in it still on the review, each on the lines it was
+/// written on. The round's files are for the caller to list
 /// ([`Review::list`]). None when `summary` is of another review, as after
-/// starting over, or when the message closed no round of it: a comment it
-/// carried was edited before the agent took it, so another message sent it.
+/// starting over; when the input closed no round of it, its comments all
+/// sent or edited before the agent took it; or when the review no longer
+/// holds any comment of the round.
 pub fn round_of(
     summary: &ReviewSummary,
     review_id: &[u8],
-    sent: &[ui_view::SentCommentRef],
+    input_id: &[u8],
 ) -> Option<(u32, ReviewSummary)> {
-    if summary.id != review_id || review_id.is_empty() {
+    if summary.id != review_id || review_id.is_empty() || input_id.is_empty() {
         return None;
     }
-    let delivered = |comment: &ReviewerComment| {
-        sent.iter()
-            .any(|sent| sent.id == comment.id && comment.sent_revision == Some(sent.revision))
-    };
-    let number = summary
+    let at = summary
+        .rounds
+        .iter()
+        .position(|round| round.input_id == input_id)?;
+    let round = &summary.rounds[at];
+    let number = u32::try_from(at + 1).ok()?;
+    let comments: Vec<ReviewerComment> = summary
         .comments
         .iter()
-        .filter(|comment| delivered(comment))
-        .filter_map(|comment| comment.round)
-        .min()?;
-    let round = (number as usize)
-        .checked_sub(1)
-        .and_then(|at| summary.rounds.get(at))?;
-    let comments = summary
-        .comments
-        .iter()
-        .filter(|comment| comment.round == Some(number) && delivered(comment))
+        .filter(|comment| comment.round == Some(number))
         .map(|comment| ReviewerComment {
             // Where it sits on a later snapshot is not where it was sent.
             placement: comment
@@ -870,6 +863,9 @@ pub fn round_of(
             ..comment.clone()
         })
         .collect();
+    if comments.is_empty() {
+        return None;
+    }
     Some((
         number,
         ReviewSummary {

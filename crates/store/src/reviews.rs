@@ -46,9 +46,10 @@ CREATE TABLE IF NOT EXISTS exp_reviews_1_bases (
 ) STRICT;
 CREATE TABLE IF NOT EXISTS exp_reviews_1_rounds (
   review_id   BLOB    NOT NULL,
-  n           INTEGER NOT NULL,             -- from 1, in the order the host accepted them
-  snapshot    TEXT    NOT NULL,             -- the snapshot its comments were made on
-  base_commit TEXT    NOT NULL,             -- the commit that snapshot was shown against
+  n           INTEGER NOT NULL,             -- from 1, in the order the agent took them
+  snapshot    TEXT    NOT NULL,             -- the snapshot the sent text was written on
+  base_commit TEXT    NOT NULL,             -- the commit that snapshot was shown against then
+  input_id    BLOB    NOT NULL,             -- the input the agent took that closed it
   sent_ms     INTEGER NOT NULL,
   PRIMARY KEY (review_id, n)
 ) STRICT;
@@ -115,12 +116,16 @@ pub struct Taken {
 /// A round sent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Round {
-    /// From 1, in the order the host accepted the messages that sent them.
+    /// From 1, in the order the agent took the messages that sent them.
     pub n: u32,
-    /// The snapshot its comments were made on.
+    /// The snapshot the sent text was written on.
     pub snapshot: String,
-    /// The commit that snapshot was shown against.
+    /// The commit that snapshot was shown against when the text was
+    /// written.
     pub base_commit: String,
+    /// The input the agent took that closed it: the id of the prompt or
+    /// message carrying the sent review.
+    pub input_id: Vec<u8>,
     pub sent_ms: i64,
 }
 
@@ -183,10 +188,12 @@ impl Review {
     }
 
     /// The snapshots the review still needs: each one a round or a
-    /// comment's anchor names, the latest, and the one before it, which a
-    /// page opened before the latest was taken still shows. Any other may
-    /// go.
-    pub fn kept(&self) -> BTreeSet<String> {
+    /// comment's anchor names, each one `waiting` names (the snapshots of
+    /// sent reviews the agent has not taken yet, whose rounds will be
+    /// recorded on them and whose text tells the agent to diff against
+    /// them), the latest, and the one before it, which a page opened before
+    /// the latest was taken still shows. Any other may go.
+    pub fn kept<'a>(&'a self, waiting: impl IntoIterator<Item = &'a str>) -> BTreeSet<String> {
         let named: BTreeSet<&str> = self
             .rounds
             .iter()
@@ -196,6 +203,7 @@ impl Review {
                     .iter()
                     .map(|comment| comment.anchor.commit.as_str()),
             )
+            .chain(waiting)
             .collect();
         self.snapshots
             .iter()
@@ -484,13 +492,15 @@ impl ReviewWriter<'_> {
     /// Records a round the review sent.
     pub fn add_round(&self, review: &[u8], round: &Round) -> Result<(), StoreError> {
         self.rows.conn.execute(
-            "INSERT INTO exp_reviews_1_rounds (review_id, n, snapshot, base_commit, sent_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO exp_reviews_1_rounds \
+             (review_id, n, snapshot, base_commit, input_id, sent_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 review,
                 round.n,
                 round.snapshot,
                 round.base_commit,
+                round.input_id,
                 round.sent_ms
             ],
         )?;
@@ -571,7 +581,7 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
     review.rounds = rows
         .conn
         .prepare_cached(
-            "SELECT n, snapshot, base_commit, sent_ms FROM exp_reviews_1_rounds \
+            "SELECT n, snapshot, base_commit, input_id, sent_ms FROM exp_reviews_1_rounds \
              WHERE review_id = ?1 ORDER BY n",
         )?
         .query_map(params![review.id], |row| {
@@ -579,7 +589,8 @@ fn read_review(rows: &Rows<'_>, agent: &[u8]) -> Result<Option<Review>, StoreErr
                 n: row.get(0)?,
                 snapshot: row.get(1)?,
                 base_commit: row.get(2)?,
-                sent_ms: row.get(3)?,
+                input_id: row.get(3)?,
+                sent_ms: row.get(4)?,
             })
         })?
         .collect::<Result<_, _>>()?;

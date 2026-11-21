@@ -979,6 +979,7 @@ fn chat_segments(held: &Held) -> Vec<Segment> {
     segments(
         &without_direction_controls(&held.item.text),
         &held.item.attachments,
+        &held.item.input_id,
     )
 }
 

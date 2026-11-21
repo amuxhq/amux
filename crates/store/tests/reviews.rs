@@ -121,6 +121,7 @@ fn a_review_reads_back_as_written() {
                 n: 1,
                 snapshot: "s2".into(),
                 base_commit: "base".into(),
+                input_id: b"input".to_vec(),
                 sent_ms: 7,
             },
         )?;
@@ -279,16 +280,21 @@ fn the_kept_snapshots_are_those_named_the_latest_and_the_one_before() {
                 n: 1,
                 snapshot: "s3".into(),
                 base_commit: "base".into(),
+                input_id: b"input".to_vec(),
                 sent_ms: 7,
             },
         )
     })
     .unwrap();
-    let kept = review(&store, b"agent").kept();
+    let kept = review(&store, b"agent").kept([]);
     // s4 is the one before the latest, which a page opened before s5 was
     // taken may still show.
     let expected: BTreeSet<String> = ["s2", "s3", "s4", "s5"].map(String::from).into();
     assert_eq!(kept, expected);
+    // A sent review still waiting in the agent's queue keeps the snapshot
+    // it names; a commit no snapshot of the review is, nothing.
+    let waiting: BTreeSet<String> = ["s1", "s2", "s3", "s4", "s5"].map(String::from).into();
+    assert_eq!(review(&store, b"agent").kept(["s1", "gone"]), waiting);
 
     write(&mut store, b"agent", |w| w.keep_snapshots(REVIEW, &kept)).unwrap();
     let read = review(&store, b"agent");
@@ -299,7 +305,7 @@ fn the_kept_snapshots_are_those_named_the_latest_and_the_one_before() {
             .collect::<Vec<_>>(),
         ["s2", "s3", "s4", "s5"]
     );
-    assert_eq!(read.kept(), expected, "keeping is stable");
+    assert_eq!(read.kept([]), expected, "keeping is stable");
 }
 
 /// An agent's review goes with its row; another agent's stays.
@@ -323,6 +329,7 @@ fn a_review_goes_with_its_agents_row() {
                     n: 1,
                     snapshot: "s1".into(),
                     base_commit: "base".into(),
+                    input_id: b"input".to_vec(),
                     sent_ms: 7,
                 },
             )

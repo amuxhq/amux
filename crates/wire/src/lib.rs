@@ -871,14 +871,22 @@ mod tests {
         let sent = experimental::SentReview {
             review_id: b"review".to_vec(),
             round: 2,
+            snapshot: "4f2a".into(),
+            base_commit: "9c1e".into(),
             comments: vec![
                 experimental::ReviewSentComment {
                     id: b"first".to_vec(),
                     revision: 1,
+                    anchor: Some(experimental::ReviewAnchor {
+                        commit: "4f2a".into(),
+                        path: "src/store.rs".into(),
+                        lines: Some(experimental::ReviewLineRange { start: 3, end: 4 }),
+                    }),
                 },
                 experimental::ReviewSentComment {
                     id: b"second".to_vec(),
                     revision: 3,
+                    anchor: None,
                 },
             ],
         };

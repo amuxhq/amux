@@ -603,16 +603,8 @@ async fn an_edit_on_a_page_held_behind_shows_its_comments() {
     );
 }
 
-/// A comment a sent review names, at the revision it sent.
-fn sent_at(id: &[u8], revision: u64) -> ui_view::SentCommentRef {
-    ui_view::SentCommentRef {
-        id: id.to_vec(),
-        revision,
-    }
-}
-
 /// A sent review opens its round: read without changing the review, found
-/// by its comments, its whole diff listed and the body of every file of it
+/// by the input that closed it, its whole diff listed and the body of every file of it
 /// fetched from the round's base to its snapshot, a lockfile the review
 /// folds included, so the round's page opens it with the comment on it.
 #[tokio::test]
@@ -625,6 +617,7 @@ async fn a_round_reads_its_whole_diff() {
     now.rounds = vec![ReviewRound {
         snapshot: first.clone(),
         base_commit: "a".repeat(40),
+        input_id: b"the prompt".to_vec(),
     }];
     now.comments = vec![
         ReviewerComment {
@@ -656,12 +649,7 @@ async fn a_round_reads_its_whole_diff() {
     let reading = tokio::spawn({
         let review = review.clone();
         async move {
-            review
-                .round(
-                    b"review-1",
-                    &[sent_at(b"sent", 1), sent_at(b"on the lock", 1)],
-                )
-                .await
+            review.round(b"review-1", b"the prompt").await
         }
     });
     let (request, reply) = calls.review_open().await;
@@ -749,7 +737,7 @@ async fn a_round_reads_its_whole_diff() {
     ));
     let reading = tokio::spawn({
         let again = again.clone();
-        async move { again.round(b"review-1", &[sent_at(b"sent", 1)]).await }
+        async move { again.round(b"review-1", b"the prompt").await }
     });
     let (_, reply) = calls.review_open().await;
     reply.send(Ok(now.clone())).ok();
@@ -763,7 +751,7 @@ async fn a_round_reads_its_whole_diff() {
     let round = reading.await.unwrap().unwrap().expect("the round");
     assert!(round.summary.files.is_empty());
     assert_eq!(round.notices, [ui_view::ReviewNotice::RoundGone]);
-    assert_eq!(round.summary.comments.len(), 1, "the one this chip names");
+    assert_eq!(round.summary.comments.len(), 2, "the round's comments");
 
     // With the host out of reach and nothing loaded, the host's error.
     let empty = Arc::new(Review::with_cache(
@@ -772,7 +760,7 @@ async fn a_round_reads_its_whole_diff() {
     ));
     let reading = tokio::spawn({
         let empty = empty.clone();
-        async move { empty.round(b"review-1", &[sent_at(b"sent", 1)]).await }
+        async move { empty.round(b"review-1", b"the prompt").await }
     });
     let (_, reply) = calls.review_open().await;
     reply.send(Err(host_unreachable())).ok();
@@ -875,10 +863,12 @@ async fn a_chats_review_is_addressed_to_the_agents_host() {
 }
 
 /// A round is the round's snapshot against the base it was recorded with,
-/// and of the comments it sent those still on the review, each on the lines
-/// it was written on rather than where a later snapshot placed it.
+/// and the comments sent in it still on the review, each on the lines it
+/// was written on rather than where a later snapshot placed it. It is found
+/// by the input whose taking closed it, never by the comments a chip names:
+/// two sends queued at once can carry the same comment.
 #[test]
-fn a_round_is_its_snapshot_and_the_comments_it_sent() {
+fn a_round_is_found_by_the_input_that_closed_it() {
     let first = "1".repeat(40);
     let comment = |id: &[u8], round: Option<u32>| ReviewerComment {
         id: id.to_vec(),
@@ -899,32 +889,35 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
         ..ReviewerComment::default()
     };
     let mut now = summary(&"9".repeat(40), &paths(2));
+    // Two sends were queued at once: the first carried "a", the second
+    // "a" and "b". The first, taken first, closed round 1 with "a"; the
+    // second closed round 2 with "b" alone.
     now.rounds = vec![
         ReviewRound {
             snapshot: first.clone(),
             base_commit: "a".repeat(40),
+            input_id: b"first send".to_vec(),
+        },
+        ReviewRound {
+            snapshot: first.clone(),
+            base_commit: "a".repeat(40),
+            input_id: b"second send".to_vec(),
         },
         ReviewRound {
             snapshot: "2".repeat(40),
             base_commit: "b".repeat(40),
+            input_id: b"all deleted".to_vec(),
         },
     ];
     now.stale = true;
-    // Edited after one message carried it at revision 1, so that message
-    // closed nothing, and a later one sent it at revision 2 in round 2;
-    // edited again since, which a sent comment may be.
-    let mut edited = comment(b"edited", Some(2));
-    edited.revision = 3;
-    edited.sent_revision = Some(2);
     now.comments = vec![
-        comment(b"sent", Some(1)),
-        comment(b"other round", Some(2)),
+        comment(b"a", Some(1)),
+        comment(b"b", Some(2)),
         comment(b"draft", None),
-        edited,
     ];
-    let sent = vec![sent_at(b"sent", 1), sent_at(b"deleted since", 1)];
 
-    let (number, round) = ui_runtime::review::round_of(&now, b"review-1", &sent).expect("held");
+    let (number, round) =
+        ui_runtime::review::round_of(&now, b"review-1", b"first send").expect("held");
     assert_eq!(number, 1);
     assert_eq!(round.snapshot, first);
     assert_eq!(
@@ -934,7 +927,7 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
     );
     assert!(round.rounds.is_empty() && round.files.is_empty() && !round.stale);
     assert_eq!(round.comments.len(), 1);
-    assert_eq!(round.comments[0].id, b"sent");
+    assert_eq!(round.comments[0].id, b"a");
     assert_eq!(round.comments[0].round, Some(1));
     assert_eq!(
         round.comments[0].placement,
@@ -950,27 +943,27 @@ fn a_round_is_its_snapshot_and_the_comments_it_sent() {
     );
     assert_eq!(all(&round).from, "a".repeat(40));
 
-    // Started over since, or every comment it sent deleted: the host holds
-    // none of the round.
-    assert_eq!(ui_runtime::review::round_of(&now, b"review-2", &sent), None);
-    assert_eq!(
-        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"deleted since", 1)]),
-        None
-    );
-    // A draft is not sent, whatever names it.
-    assert_eq!(
-        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"draft", 1)]),
-        None
-    );
-    // The message that carried the edited comment at revision 1 closed no
-    // round: it opens none, not the round a later message closed. That one
-    // opens round 2, whatever the comment's revision has become.
-    assert_eq!(
-        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"edited", 1)]),
-        None
-    );
+    // The second send's chip opens the round it closed, though it carried
+    // "a" too.
     let (number, round) =
-        ui_runtime::review::round_of(&now, b"review-1", &[sent_at(b"edited", 2)]).expect("held");
+        ui_runtime::review::round_of(&now, b"review-1", b"second send").expect("held");
     assert_eq!(number, 2);
-    assert_eq!(round.comments.len(), 1);
+    let ids: Vec<&[u8]> = round.comments.iter().map(|c| c.id.as_slice()).collect();
+    assert_eq!(ids, [b"b".as_slice()]);
+
+    // Started over since, a round whose comments were all deleted, an
+    // input that closed no round, or none named: the chat shows the text.
+    assert_eq!(
+        ui_runtime::review::round_of(&now, b"review-2", b"first send"),
+        None
+    );
+    assert_eq!(
+        ui_runtime::review::round_of(&now, b"review-1", b"all deleted"),
+        None
+    );
+    assert_eq!(
+        ui_runtime::review::round_of(&now, b"review-1", b"closed nothing"),
+        None
+    );
+    assert_eq!(ui_runtime::review::round_of(&now, b"review-1", b""), None);
 }

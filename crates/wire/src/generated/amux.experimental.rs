@@ -45,6 +45,17 @@ pub struct SentReview {
     /// never claim one number.
     #[prost(uint32, tag = "2")]
     pub round: u32,
+    /// The snapshot the text's line numbers are on: ReviewSummary.snapshot of
+    /// the summary the text was written from. The round is recorded on it, so
+    /// a refresh before the agent takes the message moves no round onto code
+    /// the sender never saw, and the host keeps it while the message waits in
+    /// the agent's queue.
+    #[prost(string, tag = "3")]
+    pub snapshot: ::prost::alloc::string::String,
+    /// The commit that snapshot was shown against for all changes when the
+    /// text was written: ReviewSummary.base_commit. The round's base commit.
+    #[prost(string, tag = "5")]
+    pub base_commit: ::prost::alloc::string::String,
     /// Exactly the comments sent, each as it was when the text was written:
     /// the host marks sent those still drafts at that revision, and no others.
     #[prost(message, repeated, tag = "4")]
@@ -69,6 +80,12 @@ pub struct ReviewSentComment {
     /// ReviewerComment.revision, as the text was written from it.
     #[prost(uint64, tag = "2")]
     pub revision: u64,
+    /// ReviewerComment.anchor, as the text was written from it: the lines the
+    /// text names. A refresh moves a draft's anchor without raising its
+    /// revision, so a comment marked sent takes this anchor back, on the
+    /// snapshot its round is recorded on.
+    #[prost(message, optional, tag = "3")]
+    pub anchor: ::core::option::Option<ReviewAnchor>,
 }
 impl ::prost::Name for ReviewSentComment {
     const NAME: &'static str = "ReviewSentComment";
@@ -180,15 +197,22 @@ impl ::prost::Name for ReviewSummary {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReviewRound {
-    /// The snapshot the round was recorded on: the review's latest when the
-    /// agent took the message sending it.
+    /// The snapshot the round's text was written on: SentReview.snapshot of
+    /// the message that sent it.
     #[prost(string, tag = "1")]
     pub snapshot: ::prost::alloc::string::String,
-    /// The commit that snapshot is compared against for all changes. A
-    /// round's whole diff is GetFiles with this as `from`, the snapshot as
-    /// `snapshot`, and REVIEW_VIEW_ALL.
+    /// The commit that snapshot was shown against for all changes when the
+    /// text was written. A round's whole diff is GetFiles with this as `from`,
+    /// the snapshot as `snapshot`, and REVIEW_VIEW_ALL.
     #[prost(string, tag = "2")]
     pub base_commit: ::prost::alloc::string::String,
+    /// The input the agent took that closed the round: Item.input_id of the
+    /// prompt or message carrying the sent review. A client opens the round
+    /// a sent review in the chat closed by this, the id of the item holding
+    /// it; a message whose comments were all sent or edited before the agent
+    /// took it closed no round, and names none.
+    #[prost(bytes = "vec", tag = "4")]
+    pub input_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for ReviewRound {
     const NAME: &'static str = "ReviewRound";

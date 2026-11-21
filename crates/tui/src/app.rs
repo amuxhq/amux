@@ -2081,7 +2081,7 @@ impl App {
                 // snapshot that page shows never moves under it.
                 let reviews = chat.session.reviews();
                 self.spawn(async move {
-                    let round = Box::new(reviews.round(&review.review_id, &review.comments).await);
+                    let round = Box::new(reviews.round(&review.review_id, &review.input_id).await);
                     Some(AppEvent::ReviewRound {
                         agent_id,
                         review,

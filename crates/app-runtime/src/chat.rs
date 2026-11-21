@@ -481,18 +481,18 @@ impl Chat {
         }
     }
 
-    /// The page of the round a sent review in the chat closed, named as its
-    /// attachment names it: its whole diff and the comments it sent. None
-    /// when the agent's host no longer holds the round, and the chat shows
-    /// the text the agent read instead. It is read apart from the review
-    /// page open on the chat, so the snapshot that page shows never moves
-    /// under it.
+    /// The page of the round a sent review in the chat closed, named by its
+    /// review and the input that sent it: its whole diff and the comments
+    /// it sent. None when that input closed no round, or the agent's host
+    /// no longer holds it, and the chat shows the text the agent read
+    /// instead. It is read apart from the review page open on the chat, so
+    /// the snapshot that page shows never moves under it.
     pub async fn review_round(
         &self,
         review_id: &[u8],
-        sent: &[ui_view::SentCommentRef],
+        input_id: &[u8],
     ) -> Option<ui_view::ReviewPage> {
-        crate::review::round_page(&self.session.reviews(), review_id, sent).await
+        crate::review::round_page(&self.session.reviews(), review_id, input_id).await
     }
 
     /// The agent's review: the open page's, or one read for a send.

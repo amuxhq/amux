@@ -299,17 +299,18 @@ live recordings of headless Claude and Codex check that each quotes the code
 exactly and can run the command, Codex inside its read-only sandbox.
 
 Its `reviews/1` entry is a `SentReview`: the review's id, the round the
-client expects to close, the snapshot the text's lines are on and exactly the
-comments it sends, each with the revision the text was written from. The
-agent's host reads it when the agent takes the prompt or message, and marks
-sent those comments still drafts at that revision, closing a round
-([rounds](REVIEWS.md#rounds)); it never rewrites the attachment. A client
-draws an attachment with the entry as a sent review
-(`AttachmentView::SentReview`) that opens the round that message closed: the
-one whose comments were sent at the revisions the entry names. A message
-whose comments were edited before the agent took it closed none, and opens
-the text the agent read, as does one whose round the host no longer holds; a
-build that reads no entry draws it as pasted text.
+client expects to close, the snapshot the text's lines are on with the base
+commit it was shown against, and exactly the comments it sends, each with
+the revision and anchor the text was written from. The agent's host reads it
+when the agent takes the prompt or message, and marks sent those comments
+still drafts at that revision, closing a round on that snapshot with the
+input's id ([rounds](REVIEWS.md#rounds)); it never rewrites the attachment.
+A client draws an attachment with the entry as a sent review
+(`AttachmentView::SentReview`, naming the input that holds it) that opens the
+round that input closed. A message whose comments were all sent or edited
+before the agent took it closed none, and opens the text the agent read, as
+does one whose round the host no longer holds; a build that reads no entry
+draws it as pasted text.
 
 ## Tests
 

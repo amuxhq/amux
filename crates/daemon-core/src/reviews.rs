@@ -21,7 +21,7 @@
 //! it. A prompt still queued, and so one a person can withdraw, has closed
 //! nothing.
 
-use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -123,17 +123,24 @@ pub enum Change {
     DraftsMoved { drafts: Vec<MovedDraft> },
     /// Deletes the review: its agent has none until the next begins.
     StartOver,
-    /// The agent took a message sending comments of the review `review`:
-    /// exactly the comments named that are still drafts at the revision
-    /// named are marked sent, in a round numbered next and recorded on the
-    /// review's latest snapshot, which is where its drafts sit. A send that
-    /// marks none (another review's, one sent already, or one whose
-    /// comments were all edited since) closes no round.
+    /// The agent took the input `input`, a prompt or message sending
+    /// comments of the review `review`: exactly the comments named that are
+    /// still drafts at the revision named are marked sent, each back on the
+    /// anchor the text was written from, in a round numbered next and
+    /// recorded on the snapshot and base commit the text was written on,
+    /// with the input that closed it. A send that marks none (another
+    /// review's, one sent already, or one whose comments were all edited
+    /// since) closes no round. A second send in the same input marks its
+    /// comments in the round the first closed.
     Sent {
         review: Vec<u8>,
-        /// Each comment's id and the revision the sent text was written
-        /// from.
-        comments: Vec<(Vec<u8>, u64)>,
+        input: Vec<u8>,
+        /// The snapshot the sent text's lines are on.
+        snapshot: String,
+        /// The commit that snapshot was shown against when the text was
+        /// written.
+        base_commit: String,
+        comments: Vec<SentComment>,
     },
     /// Whether the tree has moved since `snapshot`, when that is still the
     /// latest. Says nothing new about the review itself, so the counter
@@ -164,6 +171,17 @@ pub struct Anchor {
     /// From 1, both ends included; zero to zero is the whole file.
     pub start: u32,
     pub end: u32,
+}
+
+/// A comment a sent review names, as the text was written from it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SentComment {
+    pub comment: Vec<u8>,
+    /// The revision the text was written from.
+    pub revision: u64,
+    /// The lines the text names; none when the entry names none, and the
+    /// comment keeps its own.
+    pub anchor: Option<Anchor>,
 }
 
 /// A draft's anchor on a later snapshot.
@@ -200,13 +218,38 @@ pub struct Written {
 }
 
 /// What the agent's journal said it took, read for the sent reviews in it:
-/// the attachments of each item a prompt or message became.
-pub(crate) fn sent_in<'a>(items: impl IntoIterator<Item = &'a wire::Item>) -> Vec<SentReview> {
+/// the attachments of each item a prompt or message became, each with the
+/// id of the input it was.
+pub(crate) fn sent_in<'a>(
+    items: impl IntoIterator<Item = &'a wire::Item>,
+) -> Vec<(&'a [u8], SentReview)> {
     items
         .into_iter()
         .filter(|item| !item.input_id.is_empty())
-        .flat_map(|item| &item.attachments)
+        .flat_map(|item| {
+            item.attachments.iter().filter_map(|attachment| {
+                Some((
+                    item.input_id.as_slice(),
+                    SENT_REVIEW.get(&attachment.experimental)?,
+                ))
+            })
+        })
+        .collect()
+}
+
+/// The snapshots of the review `review` that sent reviews still waiting in
+/// the agent's queue name, as the agent's latest session snapshot lists
+/// the queue: the agent has not taken them, so their rounds are yet to be
+/// recorded on those snapshots, and their text tells the agent to diff
+/// against them.
+fn waiting_on(row: &store::AgentRow, review: &[u8]) -> Vec<String> {
+    row.snapshot
+        .iter()
+        .flat_map(|snapshot| &snapshot.queue)
+        .flat_map(|queued| &queued.attachments)
         .filter_map(|attachment| SENT_REVIEW.get(&attachment.experimental))
+        .filter(|sent| sent.review_id == review)
+        .map(|sent| sent.snapshot)
         .collect()
 }
 
@@ -232,12 +275,27 @@ pub(crate) fn rounds_delivered(
     }
     let changes: Vec<Change> = sent
         .into_iter()
-        .map(|sent| Change::Sent {
+        .map(|(input, sent)| Change::Sent {
             review: sent.review_id,
+            input: input.to_vec(),
+            snapshot: sent.snapshot,
+            base_commit: sent.base_commit,
             comments: sent
                 .comments
                 .into_iter()
-                .map(|comment| (comment.id, comment.revision))
+                .map(|comment| SentComment {
+                    comment: comment.id,
+                    revision: comment.revision,
+                    anchor: comment.anchor.map(|anchor| {
+                        let lines = anchor.lines.unwrap_or_default();
+                        Anchor {
+                            commit: anchor.commit,
+                            path: anchor.path,
+                            start: lines.start,
+                            end: lines.end,
+                        }
+                    }),
+                })
                 .collect(),
         })
         .collect();
@@ -430,7 +488,8 @@ fn apply(
     if effect.snapshot
         && let Some(review) = &review
     {
-        writer.keep_snapshots(&review.id, &review.kept())?;
+        let waiting = waiting_on(&row, &review.id);
+        writer.keep_snapshots(&review.id, &review.kept(waiting.iter().map(String::as_str)))?;
     }
     let review = if effect.snapshot {
         writer.review()?
@@ -583,38 +642,56 @@ fn apply_one(
         }
         Change::Sent {
             review: sent,
+            input,
+            snapshot,
+            base_commit,
             comments,
         } => {
-            let Some(latest) = review.latest().filter(|_| *sent == review.id) else {
+            if *sent != review.id || snapshot.is_empty() {
                 return Ok(());
-            };
-            let named: BTreeSet<(&[u8], u64)> = comments
+            }
+            let named: HashMap<(&[u8], u64), &SentComment> = comments
                 .iter()
-                .map(|(id, revision)| (id.as_slice(), *revision))
+                .map(|comment| ((comment.comment.as_slice(), comment.revision), comment))
                 .collect();
-            let marked: Vec<&Comment> = review
+            let marked: Vec<(&Comment, &SentComment)> = review
                 .drafts()
-                .filter(|draft| named.contains(&(draft.id.as_slice(), draft.revision)))
+                .filter_map(|draft| {
+                    Some((draft, *named.get(&(draft.id.as_slice(), draft.revision))?))
+                })
                 .collect();
             if marked.is_empty() {
                 return Ok(());
             }
-            let n = review.rounds.last().map_or(0, |round| round.n) + 1;
-            writer.add_round(
-                &review.id,
-                &Round {
-                    n,
-                    snapshot: latest.commit.clone(),
-                    base_commit: latest.base_commit.clone(),
-                    sent_ms: now_ms,
-                },
-            )?;
-            for draft in marked {
+            let n = match review.rounds.iter().find(|round| round.input_id == *input) {
+                Some(round) => round.n,
+                None => {
+                    let n = review.rounds.last().map_or(0, |round| round.n) + 1;
+                    writer.add_round(
+                        &review.id,
+                        &Round {
+                            n,
+                            snapshot: snapshot.clone(),
+                            base_commit: base_commit.clone(),
+                            input_id: input.clone(),
+                            sent_ms: now_ms,
+                        },
+                    )?;
+                    n
+                }
+            };
+            for (draft, named) in marked {
                 writer.put_comment(
                     &review.id,
                     &Comment {
                         round: Some(n),
                         sent_revision: Some(draft.revision),
+                        // A refresh after the text was written moved the
+                        // draft; what was sent is where the text says.
+                        anchor: named.anchor.as_ref().map_or_else(
+                            || draft.anchor.clone(),
+                            stored,
+                        ),
                         ..draft.clone()
                     },
                 )?;

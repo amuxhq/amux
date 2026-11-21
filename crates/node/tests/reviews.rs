@@ -207,6 +207,7 @@ impl Host {
                         n,
                         snapshot: summary.snapshot.clone(),
                         base_commit: summary.base_commit.clone(),
+                        input_id: format!("round {n}").into_bytes(),
                         sent_ms: 1,
                     },
                 )?;
@@ -1470,6 +1471,99 @@ mod sent {
         assert_eq!(sent.rounds[0].snapshot, snapshot);
         assert_eq!(sent.rounds[0].base_commit, drafted.base_commit);
         host.stop().await;
+    }
+
+    /// The agent's queue holding the prompt `input` carrying `attachments`,
+    /// as its session snapshot lists it while the agent is busy.
+    fn queued(input: &[u8], attachments: Vec<Attachment>) -> wire::Step {
+        let mut step = snapshot_step(&[]);
+        step.snapshot.as_mut().unwrap().queue = vec![wire::QueuedInput {
+            input_id: input.to_vec(),
+            text: "Have a look \u{fffc}".to_owned(),
+            attachments,
+            ..wire::QueuedInput::default()
+        }];
+        step
+    }
+
+    /// The text names the snapshot it was written on, and the round is
+    /// that snapshot, however often the person refreshes before the agent
+    /// takes the prompt: the host keeps the snapshot while the prompt
+    /// waits in the queue, the comment is sent on the lines the text names,
+    /// and since-last runs from it, so what changed after it shows.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_round_is_the_snapshot_its_text_names_through_refreshes_before_it_is_taken() {
+        let install = Install::new();
+        feature_branch(&install.work);
+        let mut agent = live_agent(&install);
+        let host = Host::start(install).await;
+        let first = host.open(&agent).await;
+        let drafted = host
+            .edit(
+                &agent,
+                vec![put("one", &first.snapshot, "notes.txt", 25, 25)],
+            )
+            .await;
+        let sending = review(&drafted, &["one"]);
+        let input = uuid::Uuid::new_v4().as_bytes().to_vec();
+        prompt_as(&host, &agent, &input, vec![sending.clone()]).await;
+        agent.append(&queued(&input, vec![sending.clone()]));
+        agent.nudge().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Two refreshes while it waits, the tree moving before each: the
+        // draft moves on, two lines down, and its first snapshot is neither
+        // its anchor, the latest, nor the one before.
+        let work = host.install.work.clone();
+        std::fs::write(
+            work.join("notes.txt"),
+            numbered(1, &[(25, "feature")]),
+        )
+        .unwrap();
+        let second = host.refresh(&agent).await;
+        std::fs::write(
+            work.join("notes.txt"),
+            numbered(2, &[(25, "feature")]),
+        )
+        .unwrap();
+        let third = host.refresh(&agent).await;
+        assert_ne!(second.snapshot, first.snapshot);
+        assert_ne!(third.snapshot, second.snapshot);
+        assert_eq!(at(&third, "one"), lines(27, 27));
+        assert!(
+            readable(&work, &third.objects, &first.snapshot),
+            "kept while the prompt naming it waits"
+        );
+        assert!(std::path::Path::new(&drafted.index).is_file());
+
+        agent.append(&reflected(&input, vec![sending]));
+        agent.nudge().await;
+        drafts_become(&host, &agent, 0).await;
+        let sent = host.open(&agent).await;
+        let [round] = sent.rounds.as_slice() else {
+            panic!("one round: {:?}", sent.rounds);
+        };
+        assert_eq!(round.snapshot, first.snapshot, "the snapshot the text names");
+        assert_eq!(round.base_commit, drafted.base_commit);
+        assert_eq!(round.input_id, input, "closed by the prompt the agent took");
+        let anchor = comment(&sent, "one").anchor.clone().unwrap();
+        assert_eq!(
+            (anchor.commit.as_str(), anchor.lines.unwrap().start),
+            (first.snapshot.as_str(), 25),
+            "sent on the lines the text names"
+        );
+        assert_eq!(at(&sent, "one"), lines(27, 27));
+        assert_eq!(
+            paths_of(&sent.since_last),
+            ["notes.txt"],
+            "since-last runs from the snapshot sent"
+        );
+        assert!(readable(&work, &sent.objects, &first.snapshot));
+        host.stop().await;
+    }
+
+    fn paths_of(files: &[wire::ChangedFile]) -> Vec<&str> {
+        files.iter().map(|file| file.path.as_str()).collect()
     }
 
     /// A snapshot step whose queue holds `queue`: the agent's queue after

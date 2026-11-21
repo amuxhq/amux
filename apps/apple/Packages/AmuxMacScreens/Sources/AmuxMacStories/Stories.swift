@@ -849,11 +849,7 @@ public enum Stories {
                 .attachment(.sentReview(
                     comments: 2,
                     review: SentReviewRef(
-                        reviewId: Array("review".utf8), round: 1,
-                        comments: [
-                            SentCommentRef(id: Array("sent-dial".utf8), revision: 1),
-                            SentCommentRef(id: Array("sent-settled".utf8), revision: 1),
-                        ]),
+                        reviewId: Array("review".utf8), round: 1, inputId: Array("r10".utf8)),
                     text: sentText)),
             ],
             steered: false)),

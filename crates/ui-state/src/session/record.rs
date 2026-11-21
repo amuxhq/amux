@@ -424,9 +424,12 @@ mod tests {
         let sent = SentReview {
             review_id: b"review".to_vec(),
             round: 1,
+            snapshot: "4f2a".into(),
+            base_commit: "9c1e".into(),
             comments: vec![wire::experimental::ReviewSentComment {
                 id: b"first".to_vec(),
                 revision: 1,
+                anchor: None,
             }],
         };
         let mut held = Attachment {

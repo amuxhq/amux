@@ -182,6 +182,7 @@ impl Host {
                         n,
                         snapshot: summary.snapshot.clone(),
                         base_commit: summary.base_commit.clone(),
+                        input_id: format!("round {n}").into_bytes(),
                         sent_ms: 1,
                     },
                 )

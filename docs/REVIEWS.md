@@ -89,7 +89,12 @@ The loop, as the host answers it:
 One call at a time works on an agent's review (a per-agent lock in
 `reviews/mod.rs`): two opens at once take one snapshot, and an edit never
 lands between a refresh reading the drafts and moving them. A read-only open
-takes no lock and reads the store once.
+takes no lock and reads the store once. Deleting the agent holds the same
+lock while it removes the agent's directory, so it waits for a snapshot
+under way rather than removing the folder under git's writes; and only a
+snapshot makes the `review` folder, inside the agent's directory as it
+stands, so an open that read the agent's row before the delete and takes
+its turn after it finds the directory gone and answers `NOT_FOUND`.
 
 **The base** is found only when a person opens the review, by the rule
 `GetChanges` uses: the base branch the `Open` names, else the one the
@@ -587,7 +592,7 @@ client keyed by review, path and content; and a review belongs to one agent.
 | What | Where | Run |
 | --- | --- | --- |
 | Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large and unreadable files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable, and what only dropped ones held goes, packed or loose; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
-| `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
+| `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, deleting the agent while a snapshot is taken, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
 | `GetFiles`: colouring from whole files, scopes and outlines on either side, more context, since-last limits, caps, the object-id cache, snippets | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |
 | A person on a paired host reviewing through the carrier, the copy following the entry, deletion removing rows, folder and copy; agents, tools sockets, copies and hosts without the experiment refused | `spec_reviews` in [`crates/testnet/tests/`](../crates/testnet/tests/) | `just suite many-daemon-protocol-spec` |
 | The page as rows, compared comments, a removed-only hunk, the trailing gap; changed words | [`crates/ui-view/tests/reviews.rs`](../crates/ui-view/tests/reviews.rs) and its golden, `changed_words.rs` | `just test-crate ui-view` |

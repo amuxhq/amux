@@ -42,7 +42,7 @@ extension EnvironmentValues {
 
 /// An attachment in a message: an image's picture, or a chip that opens the
 /// file, or for a review sent into the chat, its round. What cannot be
-/// opened, a paste or a review of a patch, stays a plain chip.
+/// opened, a paste or a page's comments, stays a plain chip.
 struct MessageAttachment: View {
     @Environment(\.attachmentAccess) private var access
     let view: AttachmentView

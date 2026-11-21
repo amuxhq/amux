@@ -774,8 +774,8 @@ private struct CodeLineRow: View {
     @State private var hovering = false
 
     var body: some View {
-        // Wrapped, never cut, hanging under its own indent, as on the
-        // review over a patch.
+        // Wrapped, never cut, hanging under its own indent, as a diff's
+        // lines are in an ask card (`PatchText`).
         let (indent, code) = PatchText.split(line.text)
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(line.oldLine.map(String.init) ?? "")

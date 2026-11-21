@@ -181,7 +181,7 @@ final class PhoneDecisionsTests: XCTestCase {
             ScriptedChat(
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
                 strip: ScriptedChat.strip(background: 2)),
-            family: oneChild)
+            subject: CatalogFixtures.workingSubject, family: oneChild)
         let found = try await chatMenuItem("Settle")
         let (button, close) = try XCTUnwrap(found)
         MenuSource.run(close, from: button)

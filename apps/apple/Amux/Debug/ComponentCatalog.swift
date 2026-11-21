@@ -769,7 +769,7 @@ enum ComponentCatalog {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .working),
                     strip: ScriptedChat.strip(background: 2))
-            }, family: F.family, showing: .close),
+            }, subject: F.workingSubject, family: F.family, showing: .close),
             chat("delete", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
             }, subject: F.closedSubject, showing: .delete),
@@ -1151,6 +1151,11 @@ enum CatalogFixtures {
     static let subject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct))
+    /// Working, with 2 background jobs and a subagent, which settling cuts.
+    static let workingSubject = ChatSubject(
+        name: subject.name, host: subject.host, directory: subject.directory, branch: subject.branch,
+        reach: subject.reach,
+        settle: SettleWarning(backgroundJobs: 2, subagents: 1, resumable: true, providerSubagent: false, turn: .working))
     static let closedSubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct), filing: .closed)

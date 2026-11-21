@@ -401,25 +401,27 @@ final class AppModel {
         if place.host == host { place.host = nil }
     }
 
-    /// An agent the person asked to settle whose program cannot reopen its
-    /// conversation, so settling it waits for them to say yes.
-    var endingForGood: AgentKey?
+    /// An agent the person asked to settle when settling it cuts work short
+    /// or ends a conversation nothing can reopen, so settling it waits for
+    /// them to say yes.
+    var settling: AgentKey?
 
-    /// What settling `agent` ends for good, when its program cannot reopen
-    /// the conversation; nil when a message resumes it.
-    func settleEndsForGood(_ agent: AgentKey) -> String? {
-        guard let row = row(agent) else { return nil }
-        let offered = HostId(bytes: agent.host).flatMap { stores?.hosts.host($0) }?.providers ?? []
-        if ChatWords.resumable(provider: row.card.provider, offered: offered) { return nil }
-        return ChatWords.settleEndsForGood(provider: row.card.providerName)
+    /// What settling `agent` costs, as its question says it, by the
+    /// fleet's shared rule; nil when settling it goes at once.
+    func settleQuestion(_ agent: AgentKey) -> String? {
+        guard let warning = stores?.settleWarning(agent), warning.asks else { return nil }
+        let row = row(agent)
+        let cuts = ChatWords.closeCuts(name: row?.name ?? agent.description, warning)
+        let after = ChatWords.settleEndsForGood(provider: row?.card.providerName ?? "", warning)
+            ?? "Its chat and edits stay, and a message resumes it."
+        return [cuts, "Settling stops it now.", after].compactMap { $0 }.joined(separator: " ")
     }
 
-    /// Acts as the person asked, except that settling an agent that cannot
-    /// be resumed is asked about first: settled, its conversation ends for
-    /// good.
+    /// Acts as the person asked, except that settling is asked about first
+    /// when it cuts work short or ends the conversation for good.
     func request(_ act: AgentAct, on agent: AgentKey) async {
-        if act == .close, settleEndsForGood(agent) != nil {
-            endingForGood = agent
+        if act == .close, settleQuestion(agent) != nil {
+            settling = agent
             return
         }
         await self.act(act, on: agent)

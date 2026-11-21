@@ -386,13 +386,6 @@ public enum ChatWords {
         String(localized: "\(provider) can’t reopen this conversation, so settling ends it for good.")
     }
 
-    /// Whether an agent can be resumed once settled, by what its host says
-    /// its provider can do. A provider the host does not list reads as not
-    /// resumable, the safe reading: settling it is asked about first.
-    public static func resumable(provider: String, offered: [HostProvider]) -> Bool {
-        offered.first { $0.provider == provider }?.capabilities.resumable ?? false
-    }
-
     public static func text(of segments: [Segment]) -> String {
         segments.map { segment in
             switch segment {
@@ -681,24 +674,21 @@ public enum ChatWords {
 
     /// What closing an agent cuts short, as the close confirm says it:
     /// "desk-1 is working and has 2 background jobs and 1 subagent." Nil when
-    /// closing cuts nothing under way, so it closes without asking.
-    public static func closeCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
-        let turn: Turn = switch phase {
+    /// closing cuts nothing under way.
+    public static func closeCuts(name: String, _ warning: SettleWarning) -> String? {
+        let turn: Turn = switch warning.turn {
         case .working?: .working
         case .needsYou?: .needsYou
-        default: .none
+        case nil: .none
         }
-        return closeCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+        return closeCuts(
+            name: name, turn: turn, jobs: Int(warning.backgroundJobs), subAgents: Int(warning.subagents))
     }
 
-    /// The same, from what a fleet row knows of the agent.
-    public static func closeCuts(name: String, attention: Attention, jobs: Int, subAgents: Int) -> String? {
-        let turn: Turn = switch attention {
-        case .working: .working
-        case .needsYou: .needsYou
-        default: .none
-        }
-        return closeCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+    /// What settling ends for good, when nothing can reopen the agent's
+    /// conversation; nil when a message resumes it.
+    public static func settleEndsForGood(provider: String, _ warning: SettleWarning) -> String? {
+        warning.endsForGood ? settleEndsForGood(provider: provider) : nil
     }
 
     /// Whether a turn is under way that a close would cut.
@@ -1079,4 +1069,17 @@ public enum ChatWords {
     public static func position(_ card: AskCard) -> String? {
         card.count > 1 ? String(localized: "\(card.position) of \(card.count)") : nil
     }
+}
+
+/// The shared settle rule, as the fleet's own `SettleWarning` methods say it.
+extension SettleWarning {
+    /// Settling cuts work short: a turn, a background job or a subagent.
+    public var cuts: Bool { turn != nil || backgroundJobs > 0 || subagents > 0 }
+
+    /// Settling ends the conversation for good: nothing resumes it. A
+    /// provider's subagent goes with its parent, so it never loses anything.
+    public var endsForGood: Bool { !resumable && !providerSubagent }
+
+    /// Whether to ask before settling; otherwise a message undoes it.
+    public var asks: Bool { cuts || endsForGood }
 }

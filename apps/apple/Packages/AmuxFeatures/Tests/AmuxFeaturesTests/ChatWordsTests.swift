@@ -67,18 +67,29 @@ final class ChatWordsTests: XCTestCase {
             "OpenCode can’t reopen this conversation, so settling ends it for good.")
     }
 
-    func testWhetherASettledAgentResumesIsWhatItsHostSays() {
-        let offered = { (resumable: Bool) in
-            [HostProvider(
-                provider: "opencode", name: "OpenCode", signInHint: "", version: "",
-                capabilities: Capabilities(
-                    stopsJob: false, switchesBack: false, attachable: false, resumable: resumable,
-                    sendsNow: false, images: false, files: false, passesUnknownCommands: false),
-                signedIn: true)]
+    func testSettlingAsksWhenItCutsWorkOrEndsTheConversationForGood() {
+        let warning = { (turn: SettleTurn?, jobs: UInt32, resumable: Bool, native: Bool) in
+            SettleWarning(
+                backgroundJobs: jobs, subagents: 0, resumable: resumable, providerSubagent: native, turn: turn)
         }
-        XCTAssertFalse(ChatWords.resumable(provider: "opencode", offered: offered(false)))
-        XCTAssertTrue(ChatWords.resumable(provider: "opencode", offered: offered(true)))
-        XCTAssertFalse(ChatWords.resumable(provider: "opencode", offered: []), "unlisted: asked about first")
+        let idle = warning(nil, 0, true, false)
+        XCTAssertFalse(idle.asks, "a message undoes it")
+        XCTAssertNil(ChatWords.closeCuts(name: "desk-1", idle))
+        XCTAssertNil(ChatWords.settleEndsForGood(provider: "OpenCode", idle))
+
+        let working = warning(.working, 2, true, false)
+        XCTAssertTrue(working.asks)
+        XCTAssertEqual(ChatWords.closeCuts(name: "desk-1", working), "desk-1 is working and has 2 background jobs.")
+
+        let unresumable = warning(nil, 0, false, false)
+        XCTAssertTrue(unresumable.asks)
+        XCTAssertFalse(unresumable.cuts)
+        XCTAssertEqual(
+            ChatWords.settleEndsForGood(provider: "OpenCode", unresumable),
+            "OpenCode can’t reopen this conversation, so settling ends it for good.")
+
+        let native = warning(nil, 0, false, true)
+        XCTAssertFalse(native.asks, "a provider's subagent goes with its parent")
     }
 
     func testARefusedStepFoldsAsDeniedNotAsWhatItWouldHaveDone() {

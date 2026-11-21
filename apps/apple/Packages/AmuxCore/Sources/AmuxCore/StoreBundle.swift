@@ -516,6 +516,12 @@ public final class StoreBundle {
         return outcome
     }
 
+    /// What settling an agent costs, by the fleet's shared rule; nil when
+    /// nothing is running or the fleet does not hold it.
+    public func settleWarning(_ agent: AgentKey) -> SettleWarning? {
+        profile?.settleWarning(agent)
+    }
+
     /// What deleting an agent does to its workspace, for its confirmation
     /// to say before anyone agrees to it: nil when the workspace stays. It
     /// may wait on the agent's host, which alone knows what an agent with no

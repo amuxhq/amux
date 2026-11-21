@@ -7370,6 +7370,47 @@ public struct SettingsView: Codable, Hashable, Sendable {
     }
 }
 
+public enum SettleTurn: String, Codable, Hashable, Sendable, CaseIterable {
+    case working = "Working"
+    case needsYou = "NeedsYou"
+}
+
+/// What settling an agent costs, for the confirm a client shows first:
+/// the work it cuts short, and whether a message resumes the agent after.
+/// Every client words it; [`SettleWarning::asks`] is when to ask at all.
+public struct SettleWarning: Codable, Hashable, Sendable {
+    public var backgroundJobs: UInt32
+    /// Its live descendants: those its host counts, or those this fleet
+    /// sees when it sees more.
+    public var subagents: UInt32
+    /// A message resumes it once settled: its program reopens the
+    /// conversation in a later process. When not, settling ends the
+    /// conversation for good. A provider subagent takes no messages and
+    /// goes with its parent, so it is never said to lose anything.
+    public var resumable: Bool
+    /// A subagent its parent's provider runs.
+    public var providerSubagent: Bool
+    /// The turn under way, which settling ends: working, or holding an
+    /// ask open, which settling leaves unanswered.
+    public var turn: SettleTurn?
+
+    public init(backgroundJobs: UInt32, subagents: UInt32, resumable: Bool, providerSubagent: Bool, turn: SettleTurn?) {
+        self.backgroundJobs = backgroundJobs
+        self.subagents = subagents
+        self.resumable = resumable
+        self.providerSubagent = providerSubagent
+        self.turn = turn
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case backgroundJobs = "background_jobs"
+        case subagents
+        case resumable
+        case providerSubagent = "provider_subagent"
+        case turn
+    }
+}
+
 /// One step of onboarding, in the order clients show them.
 public enum SetupStep: String, Codable, Hashable, Sendable, CaseIterable {
     /// Connect a phone: the pairing window.

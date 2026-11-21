@@ -31,7 +31,7 @@ use tokio::task::JoinHandle;
 pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
 use ui_state::AgentKey;
-use ui_view::{FamilyHeader, FleetCard, FleetView, Repository};
+use ui_view::{FamilyHeader, FleetCard, FleetView, Repository, SettleWarning};
 use values::{AgentAct, Directories, Directory, Draft, HostProvider, NewAgent};
 pub use values::{FleetDelta, HostView};
 use wire::{CreateAgentRequest, DeleteAgentRequest, DumpRequest, Filing, Kind, RenameAgentRequest};
@@ -197,6 +197,10 @@ impl AppRuntime {
 
     pub fn family_header(&self, agent: &AgentKey) -> Option<FamilyHeader> {
         ui_view::family_header(&self.fleet.state(), &self.local_host, &agent.agent)
+    }
+
+    pub fn settle_warning(&self, agent: &AgentKey) -> Option<SettleWarning> {
+        ui_view::settle_warning(&self.fleet.state(), agent)
     }
 
     pub fn hosts(&self) -> Vec<HostView> {

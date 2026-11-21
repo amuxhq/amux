@@ -104,6 +104,9 @@ public struct AgentsHome: View {
     /// Asks what deleting an agent does to its workspace, for the delete's
     /// dialog to say.
     private let deleteWarning: @MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>
+    /// What settling an agent costs, by the fleet's shared rule: whether
+    /// to ask first, and what the question says.
+    private let settleWarning: @MainActor (AgentKey) -> SettleWarning?
     private let scope: HomeScope
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -133,10 +136,12 @@ public struct AgentsHome: View {
         signingIn: Bool = false,
         scope: HomeScope = .fleet,
         deleteWarning: (@MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>)? = nil,
+        settleWarning: @escaping @MainActor (AgentKey) -> SettleWarning? = { _ in nil },
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.scope = scope
         self.deleteWarning = deleteWarning ?? { _ in await DeleteWords.unasked() }
+        self.settleWarning = settleWarning
         self.store = model
         self.accounts = accounts
         self.hosts = hosts
@@ -590,14 +595,10 @@ public struct AgentsHome: View {
     /// Closes at once, or asks first when that would cut work short or end
     /// a conversation its program cannot reopen.
     private func close(_ row: FleetRow) {
-        let cuts = ChatWords.closeCuts(
-            name: row.name, attention: row.attention, jobs: Int(row.card.backgroundJobs),
-            subAgents: Int(row.card.descendants))
-        let offered = HostId(bytes: row.id.host).flatMap { hosts.host($0) }?.providers ?? []
-        let endsForGood = ChatWords.resumable(provider: row.card.provider, offered: offered)
-            ? nil : ChatWords.settleEndsForGood(provider: row.card.providerName)
-        if cuts != nil || endsForGood != nil {
-            confirming = .close(row, cuts: cuts, endsForGood: endsForGood)
+        if let warning = settleWarning(row.id), warning.asks {
+            confirming = .close(
+                row, cuts: ChatWords.closeCuts(name: row.name, warning),
+                endsForGood: ChatWords.settleEndsForGood(provider: row.card.providerName, warning))
         } else {
             actions(.close(row.id))
         }

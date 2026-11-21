@@ -38,12 +38,17 @@ public struct ChatSubject: Equatable, Sendable {
     /// no folder and cannot be messaged, so it is never deleted on its own
     /// and has no address to copy.
     public let native: Bool
+    /// What settling it costs, by the fleet's shared rule; nil when the
+    /// fleet does not hold it.
+    public let settle: SettleWarning?
+    /// Its program's name, as its host lists it.
+    public let provider: String
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
         connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
         filing: Filing = .open, topLevel: Bool = true, workspaceGoes: WorkspaceGoes? = nil,
-        native: Bool = false
+        native: Bool = false, settle: SettleWarning? = nil, provider: String = ""
     ) {
         self.name = name
         self.host = host
@@ -58,6 +63,8 @@ public struct ChatSubject: Equatable, Sendable {
         self.topLevel = topLevel
         self.workspaceGoes = workspaceGoes
         self.native = native
+        self.settle = settle
+        self.provider = provider
     }
 
     public var reachable: Bool { reach.online }
@@ -414,29 +421,25 @@ public struct ChatScreen: View {
     }
 
     /// What closing would cut short, when anything.
-    static func closeCuts(model: ChatModel, subject: ChatSubject, descendants: Int) -> String? {
-        ChatWords.closeCuts(
-            name: subject.name, phase: model.frame?.phase,
-            jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
-            subAgents: descendants)
+    static func closeCuts(subject: ChatSubject) -> String? {
+        subject.settle.flatMap { ChatWords.closeCuts(name: subject.name, $0) }
     }
 
     /// What settling this agent ends for good, when its program cannot
     /// reopen the conversation; nil when a message resumes it.
-    static func endsForGood(model: ChatModel) -> String? {
-        guard let frame = model.frame, !frame.capabilities.resumable else { return nil }
-        return ChatWords.settleEndsForGood(provider: frame.provider.name)
+    static func endsForGood(model: ChatModel, subject: ChatSubject) -> String? {
+        subject.settle.flatMap {
+            ChatWords.settleEndsForGood(provider: model.frame?.provider.name ?? subject.provider, $0)
+        }
     }
 
     /// Closes at once, or asks first when that would cut work short or end
     /// a conversation that cannot be reopened.
     private func close() {
-        if Self.closeCuts(model: model, subject: subject, descendants: descendants) == nil,
-            Self.endsForGood(model: model) == nil
-        {
-            actions(.close)
-        } else {
+        if subject.settle?.asks == true {
             showing = .close
+        } else {
+            actions(.close)
         }
     }
 
@@ -724,8 +727,8 @@ public struct ChatStanding: View {
                 }
             case .close?:
                 CloseCard(
-                    name: subject.name, cuts: ChatScreen.closeCuts(model: model, subject: subject, descendants: descendants),
-                    endsForGood: ChatScreen.endsForGood(model: model), cancel: { showing = nil }
+                    name: subject.name, cuts: ChatScreen.closeCuts(subject: subject),
+                    endsForGood: ChatScreen.endsForGood(model: model, subject: subject), cancel: { showing = nil }
                 ) {
                     showing = nil
                     actions(.close)

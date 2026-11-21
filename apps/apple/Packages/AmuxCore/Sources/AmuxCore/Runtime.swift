@@ -519,6 +519,16 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
+    /// What settling an agent costs, by the shared rule: whether to ask
+    /// first, and what to say.
+    public func settleWarning(_ agent: AgentKey) -> SettleWarning? {
+        call(nil) { live in
+            Bridge.json(agent).withCString {
+                Bridge.read(SettleWarning?.self, amux_fleet_settle_warning(live, $0))
+            } ?? nil
+        }
+    }
+
     // MARK: - The profile
 
     /// Whether every listed agent keeps a source open now.

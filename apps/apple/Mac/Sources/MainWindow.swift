@@ -27,27 +27,27 @@ struct AppWindow: View {
                     if let created, model.starting != nil { model.started(created) }
                 }
                 .alert(
-                    endingTitle, isPresented: endingForGood, presenting: model.endingForGood
+                    settlingTitle, isPresented: settling, presenting: model.settling
                 ) { agent in
-                    Button("Cancel", role: .cancel) { model.endingForGood = nil }
+                    Button("Cancel", role: .cancel) { model.settling = nil }
                     Button("Settle", role: .destructive) {
-                        model.endingForGood = nil
+                        model.settling = nil
                         Task { await model.act(.close, on: agent) }
                     }
                 } message: { agent in
-                    Text(model.settleEndsForGood(agent) ?? "")
+                    Text(model.settleQuestion(agent) ?? "")
                 }
             }
         }
     }
 
-    /// Settling an agent that cannot be resumed, asked about first.
-    private var endingForGood: Binding<Bool> {
-        Binding(get: { model.endingForGood != nil }, set: { if !$0 { model.endingForGood = nil } })
+    /// A settle that cuts work short or cannot be undone, asked about first.
+    private var settling: Binding<Bool> {
+        Binding(get: { model.settling != nil }, set: { if !$0 { model.settling = nil } })
     }
 
-    private var endingTitle: String {
-        model.endingForGood.flatMap { model.row($0)?.name }.map { "Settle \($0)?" } ?? "Settle?"
+    private var settlingTitle: String {
+        model.settling.flatMap { model.row($0)?.name }.map { "Settle \($0)?" } ?? "Settle?"
     }
 
     /// The centre: the open agent's chat, the new-agent page, or a host.

@@ -604,6 +604,10 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     let card_json = take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) });
     assert_eq!(card_json["name"], "worker");
     assert_eq!(card_json["host"], "desk");
+    // SAFETY: the runtime is live; the string lives for the call.
+    let warning = take(unsafe { amux_fleet_settle_warning(phone.profile, agent_c.as_ptr()) });
+    assert_eq!(warning["background_jobs"], 0, "{warning}");
+    assert!(warning["resumable"].is_boolean(), "{warning}");
     let hosts = phone.seen.borrow().fleets[&phone.fleet].1.clone();
     assert_eq!(hosts[0]["local"], true, "{hosts}");
     assert!(hosts.to_string().contains("\"desk\""));

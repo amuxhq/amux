@@ -64,6 +64,8 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::FleetRow,
         ui_view::FleetCard,
         ui_view::FamilyHeader,
+        ui_view::SettleWarning,
+        ui_view::SettleTurn,
         ui_view::Offline,
         ui_view::ReviewDoc,
         ui_view::SettingsView,

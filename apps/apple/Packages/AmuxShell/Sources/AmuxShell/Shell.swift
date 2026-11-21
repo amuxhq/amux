@@ -590,7 +590,9 @@ private struct ChatPage: View {
             filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true,
             workspaceGoes: card?.workspaceGoes,
-            native: card?.native ?? false)
+            native: card?.native ?? false,
+            settle: stores.profile?.settleWarning(agent),
+            provider: card?.providerName ?? "")
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 
@@ -659,7 +661,8 @@ private struct AgentsTab: View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
             offerNotifications: offerNotifications, signingIn: signingIn, scope: scope,
-            deleteWarning: { [stores] in await stores.deleteWarning($0) }
+            deleteWarning: { [stores] in await stores.deleteWarning($0) },
+            settleWarning: { [stores] in stores.settleWarning($0) }
         ) { action in
             switch action {
             case .close(let agent): Task { _ = await stores.close(agent) }

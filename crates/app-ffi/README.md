@@ -201,6 +201,8 @@ says so; the return releases them, or reloads the newest rows when more
 arrived than the window holds.
 
 Other reads return at once: `amux_fleet_card`, `amux_fleet_family`,
+`amux_fleet_settle_warning` (what settling an agent costs, and so whether to
+ask first),
 `amux_runtime_source_policy_listed`. Some reads need
 no handle, because they are the shared rules applied to values the phone
 already holds: `amux_agent_name_problem` (why a name cannot name an agent),

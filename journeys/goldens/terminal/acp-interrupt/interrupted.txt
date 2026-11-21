@@ -1,0 +1,34 @@
+
+  runner │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Start the long job.                                                                              hh:mm
+
+
+    Starting the long job.
+
+    You stopped it
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message runner                                                                                       │
+  ╰──────────────────────────────────────────────────────────────────────── fake-model (medium) · default ─╯
+
+  shift+tab mode   ctrl+a more

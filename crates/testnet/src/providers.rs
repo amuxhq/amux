@@ -96,6 +96,10 @@ pub(crate) struct Commands {
 /// ACP agent, playing the host's script.
 pub const FAKE_ACP_AGENT: &str = "fake-acp";
 
+/// Set in the environment of an agent a host's config adds: the script its
+/// fake ACP agent plays, over the host's own. Its input log lies beside it.
+pub(crate) const AGENT_SCRIPT_ENV: &str = "TESTNET_AGENT_SCRIPT";
+
 /// Records an agent's provider for the host's commands to find when it
 /// starts: the real one, or a fake of `kind` playing `script`.
 pub(crate) fn choose(
@@ -321,8 +325,11 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
         fake_tail(&format!("fake={}\n", fake(FakeKind::Codex))),
     );
     let acp = format!(
-        "{}{}{}",
+        "{}{}{}{}",
         header("acp"),
+        format_args!(
+            "if [ -n \"${{{AGENT_SCRIPT_ENV}:-}}\" ]; then script=${AGENT_SCRIPT_ENV} input=${{{AGENT_SCRIPT_ENV}%.json}}.input; fi\n"
+        ),
         real_branch("ACP", None, ""),
         fake_tail(&format!(
             "fake={}

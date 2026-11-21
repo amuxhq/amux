@@ -1,0 +1,34 @@
+
+  amux
+
+  + New Agent
+
+
+  ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  › ○ helper  Helper · /tmp/journey/aj-xxxxxxxx/net/desk/work                                          [x]
+      Hello from Helper.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  enter open   a attach   / filter   n new   ? keys

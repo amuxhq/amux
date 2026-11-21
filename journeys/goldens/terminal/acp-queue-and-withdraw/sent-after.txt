@@ -1,0 +1,34 @@
+
+  soaker │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+    Run the soak.                                                                                    hh:mm
+
+
+    Starting the soak.
+
+    The soak finished.
+
+    Worked <t>
+
+
+    Then log the peak.                                                                               hh:mm
+
+
+    Logged the peak.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message soaker                                                                                       │
+  ╰──────────────────────────────────────────────────────────────────────── fake-model (medium) · default ─╯
+
+  shift+tab mode   ctrl+a more

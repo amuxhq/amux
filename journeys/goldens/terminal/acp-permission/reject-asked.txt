@@ -1,0 +1,34 @@
+
+  gatekeeper │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                        [Diff] │ [Home]
+
+
+
+
+
+
+    Apply the migrations.                                                                            hh:mm
+
+
+  ▸ Ran 1 command
+
+    The migration ran.
+
+    Worked <t>
+
+
+    Clean the build folder.                                                                          hh:mm
+
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ● Wants to use                                                                                         │
+  │ Delete the build folder                                                                                │
+  │ {                                                                                                      │
+  │   "command": "rm -rf build"                                                                            │
+  │ }                                                                                                      │
+  │                                                                                                        │
+  │ › 1. Yes                                                                                               │
+  │   2. Always allow                                                                                      │
+  │   3. No  esc · tab to add a note                                                                       │
+  ╰──────────────────────────────────────────────────────────────────────── fake-model (medium) · default ─╯
+
+  enter choose   ctrl+x interrupt   ctrl+a more

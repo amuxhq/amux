@@ -1,0 +1,34 @@
+
+  helper │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Say hello.                                                                                       hh:mm
+
+
+    Hello from Helper.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message helper                                                                                       │
+  ╰──────────────────────────────────────────────────────────────────────── fake-model (medium) · default ─╯
+
+  shift+tab mode   ctrl+a more

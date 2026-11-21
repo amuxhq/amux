@@ -76,7 +76,7 @@ pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Received, Relay, Ticket};
 pub use router::{Router, RouterKind};
 pub use sim::{SimNet, SimOptions};
 pub use topology::{
-    AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
-    TopologyError,
+    AccountDecl, AgentDecl, ConfiguredAgent, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl,
+    TierDecl, Topology, TopologyError,
 };
 pub use world::World;

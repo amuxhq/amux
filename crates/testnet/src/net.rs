@@ -1658,9 +1658,10 @@ impl Net {
                 );
             }
         }
-        // The host's only agent program is the fake one: a net never runs
-        // the built-in agents, which would be whatever this machine has
-        // installed.
+        // The host's agent programs are the fake one and those its config
+        // adds, read from the file as a daemon reads a person's: a net
+        // never runs the built-in agents, which would be whatever this
+        // machine has installed.
         launch.agents = vec![node::agents::AgentProgram {
             id: providers::FAKE_ACP_AGENT.to_owned(),
             name: "Fake ACP Agent".to_owned(),
@@ -1669,6 +1670,15 @@ impl Net {
             env: BTreeMap::new(),
             built_in: false,
         }];
+        if let Ok(config) = settings::InstallationConfig::from_file(&own.info.config) {
+            let (added, warnings) = node::agents::configured(&config);
+            for warning in warnings {
+                tracing::warn!(host = %host.name, "{warning}");
+            }
+            launch
+                .agents
+                .extend(added.into_iter().filter(|program| !program.built_in));
+        }
         launch.agent.grace_secs = AGENT_GRACE_SECS;
         launch.agent.drain_secs = 5;
         if let Some(mib) = self.facts_ring_mib {
@@ -1753,6 +1763,17 @@ impl Net {
         std::fs::write(&config, self.installation_toml(decl, &dir, &data_dir)?)?;
         if let Some(script) = &decl.script {
             self.write_script(&format!("{}.host", decl.name), script.clone())?;
+        }
+        for (id, agent) in &decl.agents {
+            let mut script = agent.script.clone();
+            // Signed in once a test opens that gate, as a person signing in
+            // meanwhile would.
+            if let Some(path) = script.acp.signed_in_at.as_mut()
+                && path.is_relative()
+            {
+                *path = self.gates().join(&*path);
+            }
+            self.write_script(&configured_script(&decl.name, id), script)?;
         }
         let process = decl.runs_as_process().then(|| ProcessHost {
             amux: if decl.supervised {
@@ -1866,6 +1887,24 @@ impl Net {
             ));
             if let Some(mib) = self.facts_ring_mib {
                 text.push_str(&format!("facts_ring_mib = {mib}\n"));
+            }
+        }
+        // Each agent the host's config adds runs the host's own `acp`
+        // command, the fake ACP agent, on the script written for it.
+        for (id, agent) in &decl.agents {
+            let script = self
+                .root
+                .path()
+                .join("scripts")
+                .join(format!("{}.json", configured_script(&decl.name, id)));
+            text.push_str(&format!(
+                "[agents.{id}]\ncommand = {}\nargs = [\"acp\"]\nenv = {{ {} = {} }}\n",
+                quoted(&dir.join("bin").join("acp")),
+                providers::AGENT_SCRIPT_ENV,
+                quoted(&script),
+            ));
+            if let Some(name) = &agent.name {
+                text.push_str(&format!("name = {name:?}\n"));
             }
         }
         if decl.provider == Provider::Real {
@@ -4109,6 +4148,12 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 }
 
 /// An input id as a failure message shows it.
+/// The name a configured agent's script and input log go by in the net's
+/// `scripts/`: `<host>.<id>.agent`.
+pub(crate) fn configured_script(host: &str, id: &str) -> String {
+    format!("{host}.{id}.agent")
+}
+
 /// A host's installation config `text` with the settings in `added`, both
 /// TOML, laid over it: a table in both is merged key by key, and any other
 /// value in `added` replaces the one in `text`.

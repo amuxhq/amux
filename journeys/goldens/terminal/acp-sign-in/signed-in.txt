@@ -1,0 +1,34 @@
+
+  locked │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+    Are you there?                                                                                   hh:mm
+
+
+    Signed in and ready.
+
+    Worked <t>
+
+
+    Now read this too.                                                                               hh:mm
+
+
+    Read the second message too.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message locked                                                                                       │
+  ╰──────────────────────────────────────────────────────────────────────── fake-model (medium) · default ─╯
+
+  shift+tab mode   ctrl+a more

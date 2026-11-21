@@ -172,6 +172,48 @@
       "claim": "A headless Claude agent starts four subagents in one turn. Its chat keeps the earlier turn in view and folds the four calls into one row with their combined state, two finished, one waiting on the person and one running; opened, each call reads its own subagent's state, the asking one waiting on you. The finished subagent's chat shows its own prompt, steps and answer under a composer that takes no messages. The asking subagent's permission is answered in its own chat and reaches Claude as that subagent's answer. Stop in another subagent's chat asks first, then reaches Claude as a stop of that subagent's task, which ends stopped while the parent's turn goes on to its reply."
     },
     {
+      "id": "acp-create-from-config",
+      "stage": 16,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-acp.json",
+      "claim": "A person's config on the desk adds agents that speak the Agent Client Protocol. New Agent in the terminal lists them by the names their entries give; Helper, picked and started with a prompt, opens its chat on its reply. The desk lists it as an agent of its own, holding the prompt once, and the program Helper's entry names opened one session and was sent exactly that prompt."
+    },
+    {
+      "id": "acp-permission",
+      "stage": 16,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-acp.json",
+      "claim": "An Agent Client Protocol agent asks to run a command offering two choices, and the ask in the composer's box offers exactly those; Yes is taken. It then asks with three choices, Yes, Always allow and No, and No is taken. The agent is answered with the options it offered, allow and then reject, and each turn goes on to its reply."
+    },
+    {
+      "id": "acp-interrupt",
+      "stage": 16,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-acp.json",
+      "claim": "An Agent Client Protocol agent's turn runs until it is interrupted: ctrl+x ends it saying so, the agent is sent one cancel, the words after it are never said, and the next prompt is answered."
+    },
+    {
+      "id": "acp-queue-and-withdraw",
+      "stage": 16,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-acp.json",
+      "claim": "Prompts sent while an Agent Client Protocol agent works queue under the feed with Withdraw and no Send Now, since the agent cannot take a prompt into a running turn. The newest, withdrawn, returns to the composer and is cleared, and never reaches the host or the agent; the other is sent once the turn ends, as a turn of its own, and is answered."
+    },
+    {
+      "id": "acp-ends-for-good",
+      "stage": 16,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-acp.json",
+      "claim": "An Agent Client Protocol agent that cannot reopen a conversation answers a prompt, and its program then ends. Its chat keeps the conversation, says it has ended because the agent can't reopen it, offers no resume and takes no message; the desk lists it exited, and its program was never asked to reopen a session."
+    },
+    {
+      "id": "acp-sign-in",
+      "stage": 16,
+      "clients": ["terminal"],
+      "topology": "journeys/topologies/terminal-acp.json",
+      "claim": "An Agent Client Protocol agent signed out on the desk is started from New Agent; its chat says so, in the agent's own words for how to sign in, and the message waits. Signed in on the desk, a second message opens its conversation, and both reach the agent in the order they were sent and are answered."
+    },
+    {
       "id": "account-sign-in",
       "stage": 16,
       "clients": ["phone"],

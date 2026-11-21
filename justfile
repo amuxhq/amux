@@ -196,7 +196,7 @@ journey CLIENT NAME *ARGS: target-check
     if [ "${3-}" = -- ]; then shift 3; else shift 2; fi
     case "{{CLIENT}}" in
     terminal)
-        {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin testnet
+        {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin fake-acp --bin testnet
         if [ "{{NAME}}" = all ]; then
             {{bounded}} 3000 target/debug/testnet journey terminal all
         else

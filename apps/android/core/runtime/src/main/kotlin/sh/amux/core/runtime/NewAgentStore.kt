@@ -549,8 +549,16 @@ class NewAgentStore(
      */
     fun pinFolder(directory: Directory, pinned: Boolean) {
         val host = _state.value.machine ?: return
-        applyPinOptimistically(directory, pinned)
         val runtimeSource = source ?: return
+        // A listing asked for before this pin can answer from before it and
+        // undo the move, so it is dropped and asked again once the pin lands.
+        val listingDropped = directoryJob?.isActive == true
+        if (listingDropped) {
+            directoryJob?.cancel()
+            directoryJob = null
+            directoryGeneration += 1
+        }
+        applyPinOptimistically(directory, pinned)
         scope.launch {
             val result = try {
                 runtimeSource.pinFolder(host, directory.path, pinned)
@@ -560,9 +568,14 @@ class NewAgentStore(
                 Result.failure(RuntimeFailure(t.failureDescription))
             }
             if (_state.value.machine != host) return@launch
+            val current = _state.value
             result.onFailure { error ->
                 _state.update { it.copy(failure = error.failureDescription) }
-                val current = _state.value
+                // The cached unsearched listing holds the refused move too;
+                // while a search shows, only the host can put it right.
+                if (current.searchesTheMachine) unfilteredListing = null
+            }
+            if (result.isFailure || listingDropped) {
                 val query = if (current.searchesTheMachine) current.query.trim() else ""
                 fetchDirectories(host, query = query, quiet = true)
             }

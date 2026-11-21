@@ -361,4 +361,86 @@ class RuntimeCoordinatorTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun aStartAfterStoppingAStartThatIsStillOpeningWaitsForItsRuntimeToStop() {
+        val tempDir = Files.createTempDirectory("amux-coordinator-restart").toFile()
+        val mainExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "test-restart-main").apply { isDaemon = true }
+        }
+        val mainDispatcher = mainExecutor.asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + mainDispatcher)
+        val dispatch: (() -> Unit) -> Unit = { block -> mainExecutor.execute(block) }
+
+        val events = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val handles = java.util.concurrent.atomic.AtomicLong(0)
+        val stopRang = java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.CountDownLatch>()
+        fun rang(handle: Long) = stopRang.computeIfAbsent(handle) { java.util.concurrent.CountDownLatch(1) }
+        val bridge = object : CoreLoopBridge {
+            override fun runtimeStart(configJson: String): Long = handles.incrementAndGet()
+            override fun runtimeStop(handle: Long) {
+                events.add("stopped $handle")
+            }
+            override fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int {
+                rang(handle).await(10, java.util.concurrent.TimeUnit.SECONDS)
+                return -1
+            }
+            override fun runtimeInterruptWake(handle: Long) = rang(handle).countDown()
+            override fun runtimeStep(handle: Long): String? = null
+        }
+
+        val firstEntered = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val releaseFirst = java.util.concurrent.CountDownLatch(1)
+        val starts = java.util.concurrent.atomic.AtomicInteger(0)
+        val coordinator = RuntimeCoordinator(
+            registry = AccountRegistry(makeStores = { id -> StoreBundle(account = id, scope = scope) }),
+            installationDir = tempDir,
+            deviceName = "Restart Test",
+            signedOutStores = StoreBundle(account = AccountId("signed-out"), scope = scope),
+            scope = scope,
+            ioDispatcher = Dispatchers.IO,
+            dispatch = dispatch,
+            options = RuntimeCoordinator.Options(lan = false),
+            starter = RuntimeStarter { config, disp, onProfilesMoved, onStopped ->
+                val n = starts.incrementAndGet()
+                events.add("starting $n")
+                if (n == 1) {
+                    firstEntered.complete(Unit)
+                    releaseFirst.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                } else {
+                    secondEntered.complete(Unit)
+                }
+                Runtime.start(
+                    config,
+                    CoreLoop(dispatch = disp, onProfilesMoved = onProfilesMoved, onStopped = onStopped, bridge = bridge),
+                )
+            },
+        )
+
+        try {
+            runBlocking(mainDispatcher) {
+                coordinator.start()
+                withTimeout(5_000L) { firstEntered.await() }
+                // Relaunch twice while the first start is still opening.
+                coordinator.stop()
+                coordinator.stop()
+                coordinator.start()
+                releaseFirst.countDown()
+                withTimeout(10_000L) { secondEntered.await() }
+                assertEquals(
+                    "the second start waits until the first runtime let the installation go",
+                    listOf("starting 1", "stopped 1", "starting 2"),
+                    events.toList(),
+                )
+                assertNotNull(withTimeout(10_000L) { coordinator.awaitStarted() })
+            }
+        } finally {
+            releaseFirst.countDown()
+            runBlocking { coordinator.stop().join() }
+            scope.cancel()
+            mainExecutor.shutdownNow()
+            tempDir.deleteRecursively()
+        }
+    }
 }

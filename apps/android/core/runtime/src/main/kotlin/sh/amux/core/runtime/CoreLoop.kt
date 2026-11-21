@@ -16,8 +16,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import sh.amux.values.ChatDelta
 import sh.amux.values.FleetDelta
 import sh.amux.values.OnboardingState
@@ -386,6 +389,9 @@ class CoreLoop internal constructor(
             AmuxJson.json.parseToJsonElement(raw).jsonObject
         } catch (e: IllegalArgumentException) {
             reportError(UnreadableStep(e))
+            // Any waiting act may have been answered in this step, and no
+            // later step answers it again, so each one is told now.
+            failTickets(waitingTickets.keys.toList())
             return
         }
         val answers = readAnswers(whole["answers"])
@@ -441,7 +447,10 @@ class CoreLoop internal constructor(
         }
     }
 
-    /** Reads each answer on its own, so one this build cannot read loses only itself. */
+    /**
+     * Reads each answer on its own, so one this build cannot read loses only
+     * itself; its act, when the ticket can still be read, is told so.
+     */
     private fun readAnswers(element: JsonElement?): List<StepAnswer> {
         val listed = element as? JsonArray ?: return emptyList()
         return listed.mapNotNull { item ->
@@ -449,7 +458,18 @@ class CoreLoop internal constructor(
                 AmuxJson.json.decodeFromJsonElement<StepAnswer>(item)
             } catch (e: IllegalArgumentException) {
                 reportError(UnreadableStep(e))
-                null
+                val ticket = ((item as? JsonObject)?.get("ticket") as? JsonPrimitive)?.longOrNull
+                ticket?.let { StepAnswer(ticket = it, json = UNREADABLE_ANSWER) }
+            }
+        }
+    }
+
+    /** Answers [tickets] as unreadable, in order with the deltas around them. */
+    private fun failTickets(tickets: List<Long>) {
+        if (tickets.isEmpty()) return
+        dispatch {
+            for (ticket in tickets) {
+                waitingTickets.remove(ticket)?.complete(UNREADABLE_ANSWER)
             }
         }
     }
@@ -514,11 +534,13 @@ class CoreLoop internal constructor(
 
     companion object {
         const val STOPPED_ANSWER: String = """{"Err":"the runtime has stopped"}"""
+        internal const val UNREADABLE_ANSWER: String =
+            """{"Err":"the runtime answered in a shape this app cannot read"}"""
         private const val WATCHER_JOIN_MS: Long = 5_000L
     }
 }
 
-private val runtimeLog: Logger = Logger.getLogger("sh.amux.core.runtime")
+internal val runtimeLog: Logger = Logger.getLogger("sh.amux.core.runtime")
 
 /** Where the bridge's own failures go: logcat on Android, standard error on the JVM. */
 internal fun logWatcherError(error: Throwable) {

@@ -478,6 +478,76 @@ class NewAgentStoreTest {
     }
 
     @Test
+    fun aListingAskedForBeforeAPinCannotUndoIt() = runTest {
+        val hostPinned = mutableSetOf("/src/web", "/src/relay")
+        val held = CompletableDeferred<Unit>()
+        val source = FakeNewAgentSource().apply {
+            // Each listing is what the host held when it was asked for.
+            directoriesHandler = { _, _, _ ->
+                val asked = hostListing(hostPinned.toSet())
+                held.await()
+                Result.success(asked)
+            }
+            catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
+            pinHandler = { _, path, pinned ->
+                if (pinned) hostPinned.add(path) else hostPinned.remove(path)
+                Result.success(Unit)
+            }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        runCurrent()
+        assertEquals(1, source.directoryQueries.size)
+
+        val notes = Directory(path = "/src/notes", name = "notes")
+        store.pinFolder(notes, pinned = true)
+        runCurrent()
+        held.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue("the listing from before the pin must not unpin it", store.snapshot.isPinned(notes.path))
+        assertEquals("the host is asked again once the pin lands", 2, source.directoryQueries.size)
+        assertEquals(ListingState.Ready, store.snapshot.listing)
+        store.close()
+    }
+
+    @Test
+    fun aPinRefusedDuringASearchStaysRefusedWhenTheSearchClears() = runTest {
+        val filler = List(NewAgentStore.DIRECTORY_LIMIT) { i ->
+            Directory(path = "/src/repo-$i", name = "repo-$i")
+        }
+        val notes = Directory(path = "/src/notes", name = "notes")
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, query, _ ->
+                if (query.isEmpty()) {
+                    Result.success(Directories(recent = filler, repositories = emptyList()))
+                } else {
+                    Result.success(Directories(recent = listOf(notes), repositories = emptyList()))
+                }
+            }
+            catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
+            pinHandler = { _, _, _ -> Result.failure(RuntimeFailure("disk read-only")) }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        advanceUntilIdle()
+        store.updateQuery("notes")
+        advanceUntilIdle()
+        assertTrue(store.snapshot.searchesTheMachine)
+
+        store.pinFolder(notes, pinned = true)
+        assertTrue(store.snapshot.isPinned(notes.path))
+        advanceUntilIdle()
+        assertFalse(store.snapshot.isPinned(notes.path))
+        assertEquals("disk read-only", store.snapshot.failure)
+
+        store.updateQuery("")
+        advanceUntilIdle()
+        assertFalse("clearing the search must not bring the refused pin back", store.snapshot.isPinned(notes.path))
+        store.close()
+    }
+
+    @Test
     fun cappedListingDebouncesRemoteSearchAndFallbackWorksWhenUnavailable() = runTest {
         val cappedRepos = List(NewAgentStore.DIRECTORY_LIMIT) { i ->
             Directory(path = "/src/repo-$i", name = "repo-$i")

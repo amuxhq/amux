@@ -2,6 +2,7 @@ package sh.amux.core.runtime
 
 import java.io.File
 import java.io.IOException
+import java.util.logging.Level
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -321,11 +322,13 @@ class AccountRegistry(
                 target.writeText(json, StandardCharsets.UTF_8)
                 tmp.delete()
             }
-        } catch (_: IOException) {
+        } catch (e: Exception) {
             // The next change writes everything again. Until then a lost write
             // costs which account opens first next launch and the counts an
             // account row shows before its fleet opens; the runtime holds the
-            // accounts themselves.
+            // accounts themselves. Nothing is let through: the writer scope
+            // has no handler, so a throw here would end the app.
+            runtimeLog.log(Level.WARNING, "accounts file not written: ${e.message ?: e}", e)
         }
     }
 

@@ -307,6 +307,10 @@ class RuntimeCoordinator(
         val previous = teardown
         val job = teardownScope.launch {
             previous?.join()
+            // A start cancelled here may still hand back a runtime, which its
+            // own job then stops; waiting for that job keeps a later start
+            // from opening the installation while that runtime still holds it.
+            jobToCancel?.join()
             runtimeToStop?.stop()
         }
         teardown = job

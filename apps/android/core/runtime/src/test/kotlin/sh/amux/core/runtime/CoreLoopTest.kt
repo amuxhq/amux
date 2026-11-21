@@ -189,4 +189,46 @@ class CoreLoopTest {
         assertFalse(loop.isRunning())
         assertEquals("a stop asked for is not a stop by itself", null, stopped.get())
     }
+
+    @Test
+    fun aStepThatCannotBeReadAtAllAnswersEveryWaitingAct() {
+        val wake = CountDownLatch(1)
+        val stopRang = CountDownLatch(1)
+        val waits = AtomicInteger(0)
+        val steps = AtomicInteger(0)
+
+        val bridge = object : CoreLoopBridge {
+            override fun runtimeStart(configJson: String): Long = 6L
+            override fun runtimeStop(handle: Long) = Unit
+
+            override fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int {
+                val gate = if (waits.incrementAndGet() == 1) wake else stopRang
+                assertTrue(gate.await(5, TimeUnit.SECONDS))
+                return 1
+            }
+
+            override fun runtimeInterruptWake(handle: Long) {
+                stopRang.countDown()
+            }
+
+            override fun runtimeStep(handle: Long): String? = when (steps.incrementAndGet()) {
+                1 -> null
+                2 -> """{"answers":[{"ticket":7,"json":"""
+                else -> null
+            }
+        }
+
+        val loop = CoreLoop(onError = {}, bridge = bridge)
+        loop.start(dummyConfig)
+
+        val waiting = listOf(loop.submitAct { 7L }, loop.submitAct { 8L })
+        // Both tickets are taken on the core thread before the step runs.
+        loop.submitAct { 0L }.get(5, TimeUnit.SECONDS)
+        wake.countDown()
+        for (act in waiting) {
+            assertEquals(CoreLoop.UNREADABLE_ANSWER, act.get(5, TimeUnit.SECONDS))
+        }
+        assertTrue(loop.isRunning())
+        loop.stop()
+    }
 }

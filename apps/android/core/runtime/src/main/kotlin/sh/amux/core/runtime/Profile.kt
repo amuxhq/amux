@@ -206,9 +206,16 @@ class Profile internal constructor(
         val agentJson = AmuxJson.json.encodeToString(agent)
         return try {
             loop.runOnCore(dispose = Chat::close) {
-                val chatHandle = withOpen(0L) { live ->
-                    NativeBridge.sessionOpen(live, agentJson, tail)
+                // Opening a chat can take a while, and the main thread takes
+                // this lock on every fleet delta, so the open runs outside it.
+                // A profile closed meanwhile is safe to call: the native side
+                // refuses a closed handle, and closes a chat that opened as
+                // its profile closed.
+                val live = lock.withLock { if (open) handle else 0L }
+                if (live == 0L) {
+                    throw RuntimeFailure("the chat did not open")
                 }
+                val chatHandle = NativeBridge.sessionOpen(live, agentJson, tail)
                 if (chatHandle == 0L) {
                     throw RuntimeFailure("the chat did not open")
                 }

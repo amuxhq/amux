@@ -637,6 +637,13 @@ pub(super) fn key_event(key: &str) -> Option<KeyEvent> {
     Some(KeyEvent::new(code, modifiers))
 }
 
+/// The agent says how much it may do only through its modes, offering no
+/// permissions to pick (most ACP agents: `default`, `accept-edits`,
+/// `plan`), so asking for its permission picks its mode.
+pub(crate) fn modes_stand_for_permissions(view: &ui_view::SettingsView) -> bool {
+    view.changeable.permission != Changeable::Pick && view.changeable.mode == Changeable::Pick
+}
+
 /// What Shift+Tab changes: the next mode where the agent offers modes;
 /// else its own next permission where it only cycles; else the next
 /// settable permission that still asks before acting. None where neither

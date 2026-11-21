@@ -380,6 +380,13 @@ impl Setup {
 
     /// What Shift+Tab steps, as its hint names it: the mode when the agent
     /// offers modes, else the permission.
+    /// The agent says how much it may do only through its modes (an ACP
+    /// agent's `default`, `plan` and the like) and offers no permissions:
+    /// what asks for its permission picks its mode instead.
+    pub fn modes_stand_for_permissions(&self) -> bool {
+        crate::chat::modes_stand_for_permissions(&self.view())
+    }
+
     pub fn cycles(&self) -> &'static str {
         match crate::chat::next_control(&self.view()) {
             Some(SettingChange::Mode(_)) => "mode",

@@ -36,7 +36,10 @@ use ui_state::{Composer, InputState, InputWhat, Key, SessionState};
 pub use ui_view::Comparison;
 use ui_view::{AskCard, CardState, Reach, ask_card, overview, queue_rows};
 use wire::Attachment;
-pub(crate) use words::{FREE_PLAN_AWAY, Keys, activity_words, keys, next_control, refusal_words};
+pub(crate) use words::{
+    FREE_PLAN_AWAY, Keys, activity_words, keys, modes_stand_for_permissions, next_control,
+    refusal_words,
+};
 use words::{
     Hint, edge_title, ended_box, ends_with_exit, exit_words, has_draft, key_event, native_box,
     native_hint, problem_words, quiet_activity, refused_command_words, settled, sign_in_notice,

@@ -1112,6 +1112,11 @@ impl Home {
         let Some(setup) = &mut self.draft.setup else {
             return;
         };
+        let item = if item == Setting::Permission && setup.modes_stand_for_permissions() {
+            Setting::Mode
+        } else {
+            item
+        };
         if item == Setting::Worktree {
             setup.pick(Setting::Worktree, "");
             return;

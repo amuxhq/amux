@@ -304,3 +304,70 @@ fn a_new_agents_image_is_refused_before_the_agent_is_made() {
         "{effects:?}"
     );
 }
+
+/// An ACP agent says how much it may do only through its modes, so what
+/// asks for its permission picks its mode: Ctrl+S p in its chat opens its
+/// modes, and the one picked goes to the agent as its mode.
+#[test]
+fn an_acp_agents_permission_key_picks_its_mode() {
+    let (state, at) = fixtures::frame_where(Kind::Acp, "agy-prompt", |state| {
+        state.phase() == ui_state::PhaseView::Idle
+            && ui_view::settings(state).changeable.mode == ui_view::Changeable::Pick
+    });
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    view.key(
+        &state,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        theme(),
+    );
+    view.key(&state, key(KeyCode::Char('p')), theme());
+    let (buffer, _) = draw(&mut view, &state, at, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("╭─ Mode"), "{screen}");
+    let plan = screen
+        .lines()
+        .find_map(|line| {
+            let at = line.find(". plan")?;
+            line[..at].chars().next_back().filter(char::is_ascii_digit)
+        })
+        .unwrap_or_else(|| panic!("no plan to pick: {screen}"));
+    let effects = view.key(&state, key(KeyCode::Char(plan)), theme());
+    let [ChatEffect::Answer(input)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    let Some(wire::KindInput::Acp(wire::AcpInput {
+        of: Some(wire::acp_input::Of::Mode(mode)),
+    })) = input.decode_body()
+    else {
+        panic!("not an ACP mode: {input:?}");
+    };
+    assert_eq!(mode.value, "plan");
+}
+
+/// New Agent for an ACP agent: Ctrl+S p opens the agent's modes, which
+/// are what it has in place of permissions.
+#[test]
+fn a_new_acp_agents_permission_key_picks_its_mode() {
+    use crate::setup::Item;
+    let mut fleet = home_fleet();
+    let mut studio = host(b"a", "studio", Reads::Online);
+    if let wire::inventory_event::Of::Host(entry) = &mut studio {
+        entry
+            .providers
+            .push(offered("opencode", "OpenCode", Kind::Acp));
+    }
+    inventory(&mut fleet, studio);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let setup = home.open_setup().unwrap();
+    setup.pick(Item::Kind, "opencode");
+    setup.offer(b"a", "opencode", &[3; 32], &acp_offer());
+    home.key(
+        &fleet,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    );
+    home.key(&fleet, key(KeyCode::Char('p')));
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("╭─ Mode"), "{screen}");
+    assert!(screen.contains("plan"), "{screen}");
+}

@@ -12,7 +12,8 @@ use super::layout::Anchor;
 use super::review::ReviewAction;
 use super::{
     ASK_ARMS_MS, ChatEffect, ChatView, Hint, Selection, StopAsk, commands, composer, has_draft,
-    keys, next_control, pane, refused_command_words, unchangeable_words, withdraw_effect,
+    keys, modes_stand_for_permissions, next_control, pane, refused_command_words,
+    unchangeable_words, withdraw_effect,
 };
 use crate::text;
 use crate::theme::Theme;
@@ -567,6 +568,9 @@ impl ChatView {
             let (setting, item, title) = match key.code {
                 KeyCode::Char('m') => (&view.changeable.model, Item::Model, "Model"),
                 KeyCode::Char('e') => (&view.changeable.effort, Item::Effort, "Effort"),
+                KeyCode::Char('p') if modes_stand_for_permissions(&view) => {
+                    (&view.changeable.mode, Item::Mode, "Mode")
+                }
                 KeyCode::Char('p') => (&view.changeable.permission, Item::Permission, "Permission"),
                 // Esc takes the settings key back; any other key was never
                 // meant for it and goes on as typed.
@@ -583,6 +587,7 @@ impl ChatView {
             let choices = match item {
                 Item::Model => crate::setup::model_choices(&view),
                 Item::Effort => crate::setup::effort_choices(&view),
+                Item::Mode => crate::setup::mode_choices(&view),
                 _ => crate::setup::permission_choices(&view),
             };
             self.picker = Some(Picker::new(item, title, choices, false));
@@ -616,6 +621,7 @@ impl ChatView {
                 let change = match item {
                     Item::Effort => ui_view::SettingChange::Effort(value),
                     Item::Permission => ui_view::SettingChange::Permission(value),
+                    Item::Mode => ui_view::SettingChange::Mode(value),
                     _ => ui_view::SettingChange::Model(value),
                 };
                 match ui_view::setting_input(state.kind(), &change) {

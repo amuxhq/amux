@@ -246,7 +246,7 @@ private fun HostsListContent(
                     onButtonClick = { onAction(HostsAction.Subscribe) },
                     modifier = Modifier
                         .padding(horizontal = Space.margin)
-                        .testTag(TestTags.HOSTS_SUBSCRIBE),
+                        .testTag(TestTags.HOSTS_SUBSCRIBE_CARD),
                 )
             }
         }

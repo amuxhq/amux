@@ -30,8 +30,11 @@ object TestTags {
     const val HOME_EMPTY_NO_AGENTS: String = "home.empty.no-agents"
     const val HOME_EMPTY_NEW_AGENT: String = "home.empty.new-agent"
     const val HOME_SETTLED_EMPTY: String = "settled.empty"
+    const val HOME_CALLOUT_SUBSCRIBE_CARD: String = "home.callout.subscribe.card"
     const val HOME_CALLOUT_SUBSCRIBE: String = "home.subscribe"
+    const val HOME_CALLOUT_SIGN_IN_CARD: String = "home.callout.sign-in.card"
     const val HOME_CALLOUT_SIGN_IN: String = "home.sign-in"
+    const val HOME_CALLOUT_NOTIFICATIONS_CARD: String = "home.callout.notifications.card"
     const val HOME_CALLOUT_NOTIFICATIONS: String = "home.notifications"
 
     // Row actions sheet & dialogs
@@ -60,7 +63,10 @@ object TestTags {
     const val HOSTS_LIST: String = "hosts.list"
     const val HOSTS_SUBTITLE: String = "hosts.subtitle"
     const val HOSTS_EMPTY: String = "hosts.empty"
+    const val HOSTS_SUBSCRIBE_CARD: String = "hosts.subscribe.card"
     const val HOSTS_SUBSCRIBE: String = "hosts.subscribe"
+    const val HOST_REVOKE_BUTTON: String = "host.revoke"
+    const val HOST_REVOKE_CONFIRM: String = "host.revoke.confirm"
 
     // Pairing sheet
     const val PAIRING_SHEET: String = "pairing.sheet"

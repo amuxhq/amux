@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -95,8 +96,10 @@ fun Shell(
     val fleetState by stores.fleet.state.collectAsState()
     val hostsState by stores.hosts.state.collectAsState()
     val pairingState by stores.pairing.state.collectAsState()
+    val profileReady by stores.profileReady.collectAsState()
 
     var homeSearchExpanded by remember { mutableStateOf(false) }
+    var startedLinkKey by remember(stores) { mutableStateOf<String?>(null) }
 
     val signedIn = accountsState.accounts.any { it.signedIn }
 
@@ -124,12 +127,17 @@ fun Shell(
         router.presentPairing(PairingModal.Code(candidateId))
     }
 
-    // When a link pairing modal opens and the account is ready (or direct addresses exist),
-    // begin authenticating the invitation immediately.
+    // When a link pairing modal opens and the account is ready (or direct/discovered
+    // addresses exist), begin authenticating the invitation once a live profile is attached.
     val activePairingModal = routerState.pairing
-    LaunchedEffect(activePairingModal, signedIn) {
+    val linkNeedsAccount = remember(activePairingModal, hostsState.discovered) {
+        activePairingModal is PairingModal.Link &&
+            StateMappers.invitationNeedsAccount(activePairingModal.invitation, hostsState.discovered)
+    }
+    LaunchedEffect(activePairingModal, signedIn, stores, profileReady, linkNeedsAccount) {
         when (activePairingModal) {
             is PairingModal.Code -> {
+                startedLinkKey = null
                 val hostView = stores.hosts.snapshot.known(activePairingModal.host)
                 if (stores.pairing.snapshot.machine?.hostId != activePairingModal.host.bytes) {
                     stores.pairing.open(machine = hostView)
@@ -137,14 +145,19 @@ fun Shell(
             }
             is PairingModal.Link -> {
                 val invitation = activePairingModal.invitation
-                if (!invitation.needsAnAccount || signedIn) {
-                    stores.pairLink(
-                        link = invitation.link,
-                        relayOnly = invitation.needsAnAccount,
-                    )
+                if (startedLinkKey != invitation.link && (!linkNeedsAccount || signedIn)) {
+                    if (stores.pairLink(
+                            link = invitation.link,
+                            relayOnly = linkNeedsAccount,
+                        )
+                    ) {
+                        startedLinkKey = invitation.link
+                    }
                 }
             }
-            null -> Unit
+            null -> {
+                startedLinkKey = null
+            }
         }
     }
 
@@ -160,6 +173,8 @@ fun Shell(
         if (current is PairingModal.Code) {
             stores.hosts.declineWindow(current.host)
         }
+        startedLinkKey = null
+        stores.cancelPairing()
         router.dismissPairing()
     }
 
@@ -314,7 +329,8 @@ fun Shell(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
             ) {
                 when (val top = routerState.topRoute) {
                     null -> {
@@ -463,6 +479,7 @@ fun Shell(
             signedIn = signedIn,
             signingIn = signingIn,
             nowMs = stores.pairing.nowMs,
+            discovered = hostsState.discovered,
         )
         PairingModalSheet(
             state = sheetState,

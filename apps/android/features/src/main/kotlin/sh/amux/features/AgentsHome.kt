@@ -298,7 +298,7 @@ fun AgentsHome(
                 }
             },
             floatingActionButton = {
-                if (state.offersNewAgent) {
+                if (state.offersNewAgent && (state.rows.isNotEmpty() || state.filtering)) {
                     val newAgentLabel = stringResource(R.string.home_new_agent)
                     ExtendedFloatingActionButton(
                         onClick = { onAction(HomeAction.NewAgent) },
@@ -1288,7 +1288,7 @@ private fun rememberHomeCallouts(state: AgentsHomeState): List<HomeCallout> {
             detail = stringResource(R.string.callout_away_detail),
             icon = Icons.Outlined.PersonOff,
             buttonLabel = stringResource(R.string.callout_subscribe),
-            cardTestTag = TestTags.HOME_CALLOUT_SUBSCRIBE,
+            cardTestTag = TestTags.HOME_CALLOUT_SUBSCRIBE_CARD,
             actionTestTag = TestTags.HOME_CALLOUT_SUBSCRIBE,
             action = HomeAction.Subscribe,
         )
@@ -1300,7 +1300,7 @@ private fun rememberHomeCallouts(state: AgentsHomeState): List<HomeCallout> {
             icon = Icons.Outlined.PersonOff,
             working = state.signingIn,
             buttonLabel = if (state.signingIn) null else stringResource(R.string.callout_sign_in),
-            cardTestTag = TestTags.HOME_CALLOUT_SIGN_IN,
+            cardTestTag = TestTags.HOME_CALLOUT_SIGN_IN_CARD,
             actionTestTag = TestTags.HOME_CALLOUT_SIGN_IN,
             action = HomeAction.SignIn,
         )
@@ -1312,7 +1312,7 @@ private fun rememberHomeCallouts(state: AgentsHomeState): List<HomeCallout> {
             detail = stringResource(R.string.callout_notifications_detail),
             icon = Icons.Outlined.NotificationsNone,
             buttonLabel = stringResource(R.string.callout_notifications_turn_on),
-            cardTestTag = TestTags.HOME_CALLOUT_NOTIFICATIONS,
+            cardTestTag = TestTags.HOME_CALLOUT_NOTIFICATIONS_CARD,
             actionTestTag = TestTags.HOME_CALLOUT_NOTIFICATIONS,
             action = HomeAction.TurnOnNotifications,
             dismiss = HomeAction.DismissNotifications,
@@ -1555,13 +1555,7 @@ fun AccountSwitcherContent(
             ) {
                 AmuxAccountAvatar(
                     account = account,
-                    onClick = {
-                        if (account.signedIn) {
-                            onSelectAccount(account.id)
-                        } else {
-                            onSignInAgain(account.id)
-                        }
-                    },
+                    onClick = null,
                 )
                 Column(
                     modifier = Modifier.weight(1f),

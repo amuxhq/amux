@@ -327,17 +327,22 @@ fun AmuxEmptyCard(
 @Composable
 fun AmuxAccountAvatar(
     account: AccountUi?,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
     val description = stringResource(R.string.accounts_switch_label)
-    Box(
-        modifier = modifier
+    val interactiveModifier = if (onClick != null) {
+        Modifier
             .thumbTarget()
             .clip(CircleShape)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = description },
+            .semantics { contentDescription = description }
+    } else {
+        Modifier
+    }
+    Box(
+        modifier = modifier.then(interactiveModifier),
         contentAlignment = Alignment.Center,
     ) {
         if (account != null) {

@@ -4,6 +4,7 @@ import sh.amux.core.runtime.AccountRegistryState
 import sh.amux.core.runtime.FleetState
 import sh.amux.core.runtime.HostsState
 import sh.amux.core.runtime.HostsStore
+import sh.amux.core.runtime.PairingInvitation
 import sh.amux.core.runtime.PairingState
 import sh.amux.core.runtime.PairingStore
 import sh.amux.features.AccountUi
@@ -13,6 +14,7 @@ import sh.amux.features.HostsTabState
 import sh.amux.features.PairingPhaseUi
 import sh.amux.features.PairingSheetState
 import sh.amux.features.label
+import sh.amux.values.HostView
 
 /**
  * Pure mappers from `core:runtime` store snapshots to `features` immutable UI states.
@@ -85,16 +87,33 @@ object StateMappers {
         )
     }
 
+    /**
+     * An addressless QR invitation (e.g. from an IPv6-only LAN) can still dial
+     * directly without an account once local discovery has found the host.
+     */
+    fun invitationNeedsAccount(
+        invitation: PairingInvitation,
+        discovered: List<HostView>,
+    ): Boolean {
+        if (!invitation.needsAnAccount) return false
+        return discovered.none { candidate ->
+            candidate.hostId == invitation.host.bytes && candidate.addrs.isNotEmpty()
+        }
+    }
+
     fun toPairingSheetState(
         pairing: PairingState,
         modal: PairingModal,
         signedIn: Boolean,
         signingIn: Boolean,
         nowMs: Long,
+        discovered: List<HostView> = emptyList(),
     ): PairingSheetState {
         val viaLink = modal is PairingModal.Link
         val phase: PairingPhaseUi = when {
-            modal is PairingModal.Link && modal.invitation.needsAnAccount && !signedIn -> {
+            modal is PairingModal.Link &&
+                invitationNeedsAccount(modal.invitation, discovered) &&
+                !signedIn -> {
                 PairingPhaseUi.NeedsAccount(signingIn = signingIn)
             }
             else -> when (val raw = pairing.phase) {

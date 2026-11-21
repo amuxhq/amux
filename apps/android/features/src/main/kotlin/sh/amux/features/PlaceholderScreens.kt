@@ -7,14 +7,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -146,6 +152,9 @@ fun HostPlaceholder(
     onRevoke: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val colors = AmuxTheme.colors
+    var confirmingRevoke by remember { mutableStateOf(false) }
+
     DetailScaffold(
         title = hostName,
         subtitle = reachLabel,
@@ -166,7 +175,53 @@ fun HostPlaceholder(
             label = stringResource(R.string.placeholder_host_revoke),
             kind = ActionButtonKind.Destructive,
             fillWidth = true,
-            onClick = onRevoke,
+            onClick = { confirmingRevoke = true },
+            modifier = Modifier.testTag(TestTags.HOST_REVOKE_BUTTON),
+        )
+    }
+
+    if (confirmingRevoke) {
+        AlertDialog(
+            onDismissRequest = { confirmingRevoke = false },
+            containerColor = colors.ground,
+            titleContentColor = colors.ink,
+            textContentColor = colors.inkMuted,
+            title = {
+                Text(
+                    text = stringResource(R.string.placeholder_host_revoke_title, hostName),
+                    style = AmuxTheme.typography.identifier,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.placeholder_host_revoke_detail, hostName),
+                    style = AmuxTheme.typography.detail,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmingRevoke = false
+                        onRevoke()
+                    },
+                    modifier = Modifier.testTag(TestTags.HOST_REVOKE_CONFIRM),
+                ) {
+                    Text(
+                        text = stringResource(R.string.placeholder_host_revoke),
+                        color = colors.accent,
+                        style = AmuxTheme.typography.bodyEmphasis,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingRevoke = false }) {
+                    Text(
+                        text = stringResource(R.string.action_cancel),
+                        color = colors.inkMuted,
+                        style = AmuxTheme.typography.bodyEmphasis,
+                    )
+                }
+            },
         )
     }
 }

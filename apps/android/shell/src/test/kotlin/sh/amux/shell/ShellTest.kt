@@ -119,4 +119,113 @@ class ShellTest {
         assertNull(router.snapshot.pairing)
         assertTrue(laptopId in stores.hosts.snapshot.declinedWindows)
     }
+
+    @Test
+    fun addresslessQrInvitationUsesDiscoveredLanHostWithoutAccount() {
+        val hostId = HostId(UUID.fromString("55555555-5555-5555-5555-555555555555"))
+        val invitation = sh.amux.core.runtime.PairingInvitation(
+            host = hostId,
+            addrs = emptyList(),
+            link = "https://amux.sh/p#placeholder",
+        )
+        val modal = PairingModal.Link(invitation)
+        val pairing = sh.amux.core.runtime.PairingState()
+
+        // Without discovery, an addressless QR invitation requires signing in.
+        val beforeDiscovery = StateMappers.toPairingSheetState(
+            pairing = pairing,
+            modal = modal,
+            signedIn = false,
+            signingIn = false,
+            nowMs = 0L,
+            discovered = emptyList(),
+        )
+        assertTrue(beforeDiscovery.phase is sh.amux.features.PairingPhaseUi.NeedsAccount)
+
+        // Once local discovery finds that host (e.g. IPv6-only LAN), no account is needed.
+        val discoveredHost = HostView(
+            hostId = hostId.bytes,
+            name = "ipv6-desk",
+            local = false,
+            trusted = false,
+            candidate = true,
+            reach = Reach.Online(RouteKind.Direct),
+            addrs = listOf("[2001:db8::1]:4433"),
+            relayOnly = false,
+            pairingOpen = true,
+            current = true,
+            providers = emptyList(),
+            platform = Platform.Linux,
+        )
+        val afterDiscovery = StateMappers.toPairingSheetState(
+            pairing = pairing,
+            modal = modal,
+            signedIn = false,
+            signingIn = false,
+            nowMs = 0L,
+            discovered = listOf(discoveredHost),
+        )
+        assertTrue(afterDiscovery.phase is sh.amux.features.PairingPhaseUi.Checking)
+    }
+
+    @Test
+    fun closingConfirmingPairingSheetAbandonsPendingPair() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val abandoned = mutableListOf<sh.amux.values.PendingPair>()
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            abandonPairOp = { pending ->
+                abandoned += pending
+                Result.success(Unit)
+            },
+        )
+        stores.fleet.show(FleetView(sections = emptyList(), needYou = 0, working = 0), hosts = emptyList())
+
+        val hostId = HostId(UUID.fromString("66666666-6666-6666-6666-666666666666"))
+        val desk = HostView(
+            hostId = hostId.bytes,
+            name = "desk",
+            local = false,
+            trusted = false,
+            candidate = true,
+            reach = Reach.Online(RouteKind.Direct),
+            addrs = listOf("192.168.1.9:4433"),
+            relayOnly = false,
+            pairingOpen = true,
+            current = true,
+            providers = emptyList(),
+            platform = Platform.Macos,
+        )
+        val pending = sh.amux.values.PendingPair(
+            token = listOf(1, 2, 3, 4),
+            hostId = hostId.bytes,
+            name = "desk",
+            fingerprint = "abcd 1234",
+            expiresAtMs = 999_999L,
+            via = RouteKind.Direct,
+        )
+        stores.pairing.open(machine = desk)
+        val attempt = stores.pairing.checking()
+        stores.pairing.reached(Result.success(pending), attempt = attempt)
+        router.presentPairing(PairingModal.Code(hostId))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(TestTags.PAIRING_CONFIRM).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.PAIRING_CLOSE).performClick()
+        composeRule.waitForIdle()
+
+        assertNull(router.snapshot.pairing)
+        assertEquals(listOf(pending), abandoned)
+    }
 }

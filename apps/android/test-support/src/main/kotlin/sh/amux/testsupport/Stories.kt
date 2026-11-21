@@ -1976,7 +1976,6 @@ object Stories {
         shareUsage = true,
         autoReports = false,
         deviceName = "Pixel 9",
-        canRenameDevice = false,
         deviceFingerprint = SAMPLE_PHONE_FINGERPRINT,
         fingerprintCopied = false,
         appVersion = "0.11.0",

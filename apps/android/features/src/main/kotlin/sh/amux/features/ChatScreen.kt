@@ -2149,91 +2149,21 @@ private fun ChatRenameDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    val colors = AmuxTheme.colors
-    var draft by remember(currentName) { mutableStateOf(currentName) }
-    val trimmed = draft.trim()
-    val problem = remember(trimmed) { validateName(trimmed) }
-
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor = colors.ground,
-        titleContentColor = colors.ink,
-        textContentColor = colors.inkMuted,
-        modifier = Modifier.testTag(ChatScreenTags.RENAME_DIALOG),
-        title = {
-            Text(
-                text = stringResource(R.string.chat_rename_title, currentName),
-                style = AmuxTheme.typography.identifier,
-            )
-        },
-        text = {
-            val inputShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
-            val photographed = LocalAmuxPhotographed.current
-            Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
-                Box(
-                    modifier = Modifier
-                        .width(260.dp)
-                        .clip(inputShape)
-                        .background(colors.raised)
-                        .border(AmuxTheme.metrics.hairline, colors.hairline, inputShape)
-                        .padding(horizontal = Space.m, vertical = Space.m),
-                ) {
-                    if (draft.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.chat_rename_placeholder),
-                            style = AmuxTheme.typography.mono,
-                            color = colors.inkFaint,
-                        )
-                    }
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        singleLine = true,
-                        textStyle = AmuxTheme.typography.mono.copy(color = colors.ink),
-                        cursorBrush = SolidColor(if (photographed) Color.Unspecified else colors.ink),
-                        modifier = Modifier
-                            .width(236.dp)
-                            .testTag(ChatScreenTags.RENAME_INPUT),
-                    )
-                }
-                if (problem != null && trimmed.isNotEmpty()) {
-                    Text(
-                        text = ChatWords.nameProblem(problem),
-                        style = AmuxTheme.typography.detail,
-                        color = colors.accent,
-                        modifier = Modifier.testTag(ChatScreenTags.RENAME_PROBLEM),
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { if (problem == null) onConfirm(trimmed) },
-                enabled = problem == null,
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ChatScreenTags.RENAME_CONFIRM),
-            ) {
-                Text(
-                    text = stringResource(R.string.chat_menu_rename),
-                    style = AmuxTheme.typography.bodyEmphasis,
-                    color = if (problem == null) colors.ink else colors.inkFaint,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.thumbTarget(),
-            ) {
-                Text(
-                    text = stringResource(R.string.action_cancel),
-                    style = AmuxTheme.typography.body,
-                    color = colors.inkMuted,
-                )
-            }
-        },
-    )
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        ChatRenameDialogContent(
+            currentName = currentName,
+            initialDraft = currentName,
+            validateName = validateName,
+            onDismiss = onDismiss,
+            onConfirm = onConfirm,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Space.xl),
+        )
+    }
 }
 
 @Composable
@@ -2313,7 +2243,6 @@ private fun ChatDeleteDialog(
     onDismiss: () -> Unit,
     onConfirm: (discardingChanges: Boolean) -> Unit,
 ) {
-    val colors = AmuxTheme.colors
     var warning by remember(workspaceGoes) { mutableStateOf(DeleteWords.asking(workspaceGoes)) }
 
     LaunchedEffect(workspaceGoes) {
@@ -2323,52 +2252,21 @@ private fun ChatDeleteDialog(
         }
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor = colors.ground,
-        titleContentColor = colors.ink,
-        textContentColor = colors.inkMuted,
-        modifier = Modifier.testTag(ChatScreenTags.DELETE_DIALOG),
-        title = {
-            Text(
-                text = stringResource(R.string.chat_delete_title, agentName),
-                style = AmuxTheme.typography.identifier,
-            )
-        },
-        text = {
-            Text(
-                text = DeleteWords.message(descendants = descendants, warning = warning),
-                style = AmuxTheme.typography.detail,
-                color = colors.inkMuted,
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(DeleteWords.discards(warning)) },
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(ChatScreenTags.DELETE_CONFIRM),
-            ) {
-                Text(
-                    text = stringResource(R.string.home_action_delete),
-                    style = AmuxTheme.typography.bodyEmphasis,
-                    color = colors.removed,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.thumbTarget(),
-            ) {
-                Text(
-                    text = stringResource(R.string.action_cancel),
-                    style = AmuxTheme.typography.body,
-                    color = colors.inkMuted,
-                )
-            }
-        },
-    )
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        ChatDeleteDialogContent(
+            agentName = agentName,
+            descendants = descendants,
+            warning = warning,
+            onDismiss = onDismiss,
+            onConfirm = onConfirm,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Space.xl),
+        )
+    }
 }
 
 /**

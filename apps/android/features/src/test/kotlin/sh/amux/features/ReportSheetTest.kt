@@ -69,6 +69,9 @@ class ReportSheetTest {
         composeRule.onNodeWithTag(ReportTags.FRAME).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.FRAME_FALLBACK).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.DUMP_STATUS).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Includes this phone’s diagnostic dump. Diagnostic dumps never include your conversations.",
+        ).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.SEND).assertIsEnabled()
 
         composeRule.onNodeWithTag(ReportTags.NOTE).performTextInput("Scroll jumped to top")
@@ -84,6 +87,7 @@ class ReportSheetTest {
             AmuxTheme(appearance = Appearance.Dark, photographed = true) {
                 ReportOverlayContent(
                     state = ReportUiState(
+                        imageBytes = byteArrayOf(1, 2, 3),
                         signedIn = false,
                         diagnosticDumpAttached = false,
                     ),
@@ -94,19 +98,22 @@ class ReportSheetTest {
 
         composeRule.onNodeWithTag(ReportTags.SIGNED_OUT).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.SEND).assertIsNotEnabled()
-        composeRule.onNodeWithText("Includes this screenshot. No diagnostic dump is attached.").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Includes this screenshot (with any hidden areas blacked out). No diagnostic dump is attached.",
+        ).assertIsDisplayed()
     }
 
     @Test
-    fun markListSupportsEditingMarkNotesAndRemovingMarks() {
+    fun markListSupportsEditingNotesTogglingRedactionAndRemovingMarks() {
         val actions = mutableListOf<ReportAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 ReportOverlayContent(
                     state = ReportUiState(
+                        imageBytes = byteArrayOf(1, 2, 3),
                         marks = listOf(
-                            ReportMarkUi(left = 0.1f, top = 0.2f, right = 0.6f, bottom = 0.4f, note = ""),
-                            ReportMarkUi(left = 0.2f, top = 0.5f, right = 0.8f, bottom = 0.7f, note = "Clipped"),
+                            ReportMarkUi(left = 0.1f, top = 0.2f, right = 0.6f, bottom = 0.4f, note = "", redact = false),
+                            ReportMarkUi(left = 0.2f, top = 0.5f, right = 0.8f, bottom = 0.7f, note = "Clipped", redact = true),
                         ),
                     ),
                     onAction = { actions += it },
@@ -114,9 +121,15 @@ class ReportSheetTest {
             }
         }
 
+        composeRule.onNodeWithText(
+            "Includes this screenshot (with any hidden areas blacked out) and this phone’s diagnostic dump. Diagnostic dumps never include your conversations.",
+        ).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.markRow(0)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.markNote(0)).performScrollTo().performTextInput("Wrong badge")
         assertEquals(ReportAction.UpdateMarkNote(0, "Wrong badge"), actions.last())
+
+        composeRule.onNodeWithTag(ReportTags.markRedact(0)).performScrollTo().performClick()
+        assertEquals(ReportAction.ToggleMarkRedact(0), actions.last())
 
         composeRule.onNodeWithTag(ReportTags.markRow(1)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.markRemove(1)).performScrollTo().performClick()
@@ -124,7 +137,7 @@ class ReportSheetTest {
     }
 
     @Test
-    fun sendingShowsStatusWithoutSpinnerAndFailedOffersRetry() {
+    fun sendingShowsStatusWithoutSpinner() {
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 ReportOverlayContent(

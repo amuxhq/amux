@@ -585,7 +585,6 @@ object StateMappers {
             autoReports = autoReports,
             diagnosticsExport = diagnosticsExport,
             deviceName = deviceName,
-            canRenameDevice = false,
             deviceFingerprint = hosts.roster?.identity?.fingerprint.orEmpty(),
             fingerprintCopied = fingerprintCopied,
             appVersion = appVersion,
@@ -758,7 +757,14 @@ object StateMappers {
             val top = (mark.y / height).toFloat().coerceIn(0f, 1f)
             val right = ((mark.x + mark.width) / width).toFloat().coerceIn(left, 1f)
             val bottom = ((mark.y + mark.height) / height).toFloat().coerceIn(top, 1f)
-            ReportMarkUi(left = left, top = top, right = right, bottom = bottom, note = mark.note)
+            ReportMarkUi(
+                left = left,
+                top = top,
+                right = right,
+                bottom = bottom,
+                note = mark.note,
+                redact = mark.redact,
+            )
         }
         val delivery = when (val sending = report.sending) {
             ReportSending.Ready -> ReportDeliveryUi.Ready
@@ -787,6 +793,7 @@ object StateMappers {
             width = mark.width * width,
             height = mark.height * height,
             note = mark.note,
+            redact = mark.redact,
         )
     }
 }

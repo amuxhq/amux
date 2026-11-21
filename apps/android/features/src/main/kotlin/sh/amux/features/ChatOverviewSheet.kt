@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.RadioButtonChecked
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.StopCircle
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -51,6 +50,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import sh.amux.design.AmuxChrome
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
@@ -209,56 +210,22 @@ fun ChatOverviewSheetContent(
     val confirmStop = pendingStop
     if (confirmStop != null) {
         val (job, key) = confirmStop
-        AlertDialog(
+        Dialog(
             onDismissRequest = { pendingStop = null },
-            containerColor = colors.raised,
-            titleContentColor = colors.ink,
-            textContentColor = colors.inkMuted,
-            title = {
-                Text(
-                    text = ChatWords.stopJob(job),
-                    style = AmuxTheme.typography.bodyEmphasis,
-                )
-            },
-            text = {
-                Text(
-                    text = ChatWords.STOP_JOB_LEAVES,
-                    style = AmuxTheme.typography.detail,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingStop = null
-                        onAction(ChatOverviewAction.StopJob(key))
-                    },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.OVERVIEW_STOP_CONFIRM),
-                ) {
-                    Text(
-                        text = stringResource(R.string.overview_stop),
-                        style = AmuxTheme.typography.bodyEmphasis,
-                        color = colors.removed,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { pendingStop = null },
-                    modifier = Modifier
-                        .thumbTarget()
-                        .testTag(AskReviewTags.OVERVIEW_STOP_CANCEL),
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_cancel),
-                        style = AmuxTheme.typography.body,
-                        color = colors.inkMuted,
-                    )
-                }
-            },
-            modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_DIALOG),
-        )
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            ChatOverviewStopDialogContent(
+                job = job,
+                onConfirm = {
+                    pendingStop = null
+                    onAction(ChatOverviewAction.StopJob(key))
+                },
+                onDismiss = { pendingStop = null },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Space.xl),
+            )
+        }
     }
 }
 

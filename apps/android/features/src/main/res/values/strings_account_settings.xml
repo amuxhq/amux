@@ -58,7 +58,6 @@
 
     <!-- Settings: This phone -->
     <string name="settings_device_name_label">Name</string>
-    <string name="settings_device_rename">Rename</string>
     <string name="settings_device_fingerprint_label">Fingerprint</string>
     <string name="settings_device_fingerprint_tap">Tap to copy</string>
     <string name="settings_device_fingerprint_copied">Copied</string>
@@ -72,7 +71,6 @@
     <string name="paywall_period_yearly">Yearly</string>
     <string name="paywall_period_monthly_spelled">a month</string>
     <string name="paywall_period_yearly_spelled">a year</string>
-    <string name="paywall_subscribe">Subscribe</string>
     <string name="paywall_subscribe_price">Subscribe · %1$s %2$s</string>
     <string name="paywall_continue">Continue</string>
     <string name="paywall_restore">Restore Purchases</string>
@@ -80,7 +78,6 @@
     <string name="paywall_manage_play">Manage in Google Play</string>
     <string name="paywall_terms">Cancel any time. A subscription bought on amux.sh carries over.</string>
     <string name="paywall_privacy_policy">Privacy Policy</string>
-    <string name="paywall_privacy_url">https://amux.sh/privacy-policy/</string>
     <string name="paywall_waiting_store">Waiting for Google Play…</string>
     <string name="paywall_waiting_approval">Waiting for approval</string>
     <string name="paywall_waiting_approval_detail">Your subscription starts when Google Play approves your purchase.</string>

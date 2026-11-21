@@ -131,6 +131,7 @@ data class PaywallScreenState(
     val chosen: PaywallPlanPeriod = PaywallPlanPeriod.Yearly,
     val phase: PaywallPhaseUi = PaywallPhaseUi.Ready,
     val manageUrl: String = "https://amux.sh/account",
+    val privacyUrl: String = "https://amux.sh/privacy",
     val accountEmail: String? = null,
 ) {
     val selectedPlan: PaywallPlanUi?
@@ -274,7 +275,10 @@ fun PaywallScreen(
                                     largeText = largeText,
                                     onChoose = { onAction(PaywallAction.ChoosePlan(it)) },
                                 )
-                                PaywallTerms(onAction = onAction)
+                                PaywallTerms(
+                                    privacyUrl = state.privacyUrl,
+                                    onAction = onAction,
+                                )
                             }
                         }
                     }
@@ -611,9 +615,11 @@ private fun PlanCard(
 }
 
 @Composable
-private fun PaywallTerms(onAction: (PaywallAction) -> Unit) {
+private fun PaywallTerms(
+    privacyUrl: String,
+    onAction: (PaywallAction) -> Unit,
+) {
     val colors = AmuxTheme.colors
-    val privacyUrl = stringResource(R.string.paywall_privacy_url)
     Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
         Text(
             text = stringResource(R.string.paywall_terms),

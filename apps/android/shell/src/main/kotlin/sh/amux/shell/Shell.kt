@@ -707,7 +707,6 @@ fun Shell(
                                                 CloudEndpoint.Production.supportUrl,
                                             )
                                         }
-                                        SettingsAction.RenameDevice -> Unit
                                         is SettingsAction.CopyFingerprint -> {
                                             ShellPlatform.copyToClipboard(context, action.fingerprint)
                                             settingsFingerprintCopied = true
@@ -807,6 +806,9 @@ fun Shell(
                             }
                             is ReportAction.UpdateMarkNote -> {
                                 report.noteOnMark(action.index, action.note)
+                            }
+                            is ReportAction.ToggleMarkRedact -> {
+                                report.toggleMarkRedacted(action.index)
                             }
                             is ReportAction.RemoveMark -> {
                                 report.unmark(action.index)

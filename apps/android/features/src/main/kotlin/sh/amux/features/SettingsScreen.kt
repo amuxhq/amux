@@ -97,7 +97,6 @@ object SettingsTags {
     const val CONTACT_SUPPORT: String = "settings.diagnostics.support"
 
     const val DEVICE_NAME_ROW: String = "settings.phone.name"
-    const val DEVICE_RENAME_BUTTON: String = "settings.phone.rename"
     const val DEVICE_FINGERPRINT_ROW: String = "settings.phone.fingerprint"
     const val APP_VERSION_ROW: String = "settings.phone.version"
 
@@ -175,7 +174,6 @@ data class SettingsScreenState(
     val autoReports: Boolean = false,
     val diagnosticsExport: DiagnosticsExportState = DiagnosticsExportState.Idle,
     val deviceName: String = "",
-    val canRenameDevice: Boolean = false,
     val deviceFingerprint: String = "",
     val fingerprintCopied: Boolean = false,
     val appVersion: String = "",
@@ -207,7 +205,6 @@ sealed interface SettingsAction {
     data object ReportProblem : SettingsAction
     data object ExportDiagnostics : SettingsAction
     data object ContactSupport : SettingsAction
-    data object RenameDevice : SettingsAction
     data class CopyFingerprint(val fingerprint: String) : SettingsAction
 }
 
@@ -1023,16 +1020,10 @@ private fun ThisPhoneSection(
         AmuxSectionHeader(title = stringResource(R.string.settings_section_this_phone))
         AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
             if (state.deviceName.isNotEmpty()) {
-                val renameModifier = if (state.canRenameDevice) {
-                    Modifier.clickable(role = Role.Button) { onAction(SettingsAction.RenameDevice) }
-                } else {
-                    Modifier
-                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .thumbTarget()
-                        .then(renameModifier)
                         .padding(horizontal = Space.l, vertical = Space.m)
                         .testTag(SettingsTags.DEVICE_NAME_ROW),
                     verticalArrangement = Arrangement.spacedBy(Space.xs),
@@ -1042,14 +1033,6 @@ private fun ThisPhoneSection(
                         value = state.deviceName,
                         largeText = largeText,
                     )
-                    if (state.canRenameDevice) {
-                        Text(
-                            text = stringResource(R.string.settings_device_rename),
-                            style = AmuxTheme.typography.caption,
-                            color = colors.accent,
-                            modifier = Modifier.testTag(SettingsTags.DEVICE_RENAME_BUTTON),
-                        )
-                    }
                 }
             }
 

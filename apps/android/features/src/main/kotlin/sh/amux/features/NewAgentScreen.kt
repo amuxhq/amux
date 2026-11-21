@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
@@ -889,14 +890,14 @@ private fun NewAgentFieldRow(
                 color = if (enabled) colors.ink else colors.inkMuted,
                 maxLines = 1,
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = value,
                 style = valueStyle,
                 color = valueColor,
+                textAlign = TextAlign.End,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f),
             )
             if (showChevron) {
                 Icon(

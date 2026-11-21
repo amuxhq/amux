@@ -194,7 +194,6 @@ class SettingsScreenTest {
                         autoReports = false,
                         diagnosticsExport = DiagnosticsExportState.Failed("Disk full"),
                         deviceName = "Pixel 9",
-                        canRenameDevice = true,
                         deviceFingerprint = "0123456789abcdef0123456789abcdef",
                         appVersion = "0.9.1 (42)",
                     ),
@@ -219,8 +218,8 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag(SettingsTags.EXPORT_DIAGNOSTICS).performClick()
         assertEquals(SettingsAction.ExportDiagnostics, actions.last())
 
-        composeRule.onNodeWithTag(SettingsTags.DEVICE_NAME_ROW).performScrollTo().performClick()
-        assertEquals(SettingsAction.RenameDevice, actions.last())
+        composeRule.onNodeWithTag(SettingsTags.DEVICE_NAME_ROW).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Pixel 9").assertIsDisplayed()
 
         composeRule.onNodeWithTag(SettingsTags.DEVICE_FINGERPRINT_ROW).performScrollTo().performClick()
         assertEquals(

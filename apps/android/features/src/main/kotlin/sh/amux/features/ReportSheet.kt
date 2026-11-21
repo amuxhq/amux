@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -114,12 +115,13 @@ object ReportTags {
 
     fun markRow(index: Int): String = "report.mark.$index"
     fun markNote(index: Int): String = "report.mark.$index.note"
+    fun markRedact(index: Int): String = "report.mark.$index.redact"
     fun markRemove(index: Int): String = "report.mark.$index.remove"
 }
 
 /**
  * One normalized `[0..1]` rectangle drawn on the captured screenshot with an
- * optional short note.
+ * optional short note and redaction toggle.
  */
 @Immutable
 data class ReportMarkUi(
@@ -128,6 +130,7 @@ data class ReportMarkUi(
     val right: Float,
     val bottom: Float,
     val note: String = "",
+    val redact: Boolean = false,
 ) {
     val width: Float get() = (right - left).coerceAtLeast(0f)
     val height: Float get() = (bottom - top).coerceAtLeast(0f)
@@ -142,12 +145,14 @@ data class ReportMarkUi(
             x2: Float,
             y2: Float,
             note: String = "",
+            redact: Boolean = false,
         ): ReportMarkUi = ReportMarkUi(
             left = minOf(x1, x2).coerceIn(0f, 1f),
             top = minOf(y1, y2).coerceIn(0f, 1f),
             right = maxOf(x1, x2).coerceIn(0f, 1f),
             bottom = maxOf(y1, y2).coerceIn(0f, 1f),
             note = note,
+            redact = redact,
         )
     }
 }
@@ -209,6 +214,7 @@ sealed interface ReportAction {
     data class SetNote(val note: String) : ReportAction
     data class AddMark(val mark: ReportMarkUi) : ReportAction
     data class UpdateMarkNote(val index: Int, val note: String) : ReportAction
+    data class ToggleMarkRedact(val index: Int) : ReportAction
     data class RemoveMark(val index: Int) : ReportAction
     data object Send : ReportAction
     data class CopyReference(val referenceId: String) : ReportAction
@@ -333,7 +339,8 @@ fun ReportOverlayContent(
     val isSent = state.delivery is ReportDeliveryUi.Sent
     val isSending = state.delivery is ReportDeliveryUi.Sending
     val editable = !state.locked && !isSending && !isSent
-    var selectedMarkIndex by remember(state.marks.size) { mutableStateOf<Int?>(null) }
+    var selectedMarkIndex by remember { mutableStateOf<Int?>(null) }
+    val activeSelectedMark = selectedMarkIndex?.takeIf { it in state.marks.indices }
 
     val closeLabel = stringResource(
         if (isSent) R.string.action_close else R.string.action_cancel,
@@ -425,7 +432,7 @@ fun ReportOverlayContent(
                                 imageBytes = state.imageBytes,
                                 aspectRatio = state.frameAspectRatio.coerceIn(0.3f, 2.5f),
                                 marks = state.marks,
-                                selectedIndex = selectedMarkIndex,
+                                selectedIndex = activeSelectedMark,
                                 editable = editable,
                                 onAddMark = { mark ->
                                     selectedMarkIndex = state.marks.size
@@ -449,15 +456,22 @@ fun ReportOverlayContent(
                         if (state.marks.isNotEmpty()) {
                             ReportMarksList(
                                 marks = state.marks,
-                                selectedIndex = selectedMarkIndex,
+                                selectedIndex = activeSelectedMark,
                                 editable = editable,
                                 onSelectMark = { selectedMarkIndex = it },
                                 onUpdateNote = { index, note ->
                                     onAction(ReportAction.UpdateMarkNote(index, note))
                                 },
+                                onToggleRedact = { index ->
+                                    onAction(ReportAction.ToggleMarkRedact(index))
+                                },
                                 onRemoveMark = { index ->
-                                    if (selectedMarkIndex == index) {
-                                        selectedMarkIndex = null
+                                    val currentSelected = selectedMarkIndex
+                                    selectedMarkIndex = when {
+                                        currentSelected == null -> null
+                                        currentSelected == index -> null
+                                        currentSelected > index -> currentSelected - 1
+                                        else -> currentSelected
                                     }
                                     onAction(ReportAction.RemoveMark(index))
                                 },
@@ -619,19 +633,33 @@ private fun ReportFrameCanvas(
                 val top = mark.top * size.height
                 val width = (mark.width * size.width).coerceAtLeast(1f)
                 val height = (mark.height * size.height).coerceAtLeast(1f)
-                drawRoundRect(
-                    color = colors.accent.copy(alpha = if (isSelected) 0.16f else 0.08f),
-                    topLeft = Offset(left, top),
-                    size = Size(width, height),
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                )
-                drawRoundRect(
-                    color = colors.accent,
-                    topLeft = Offset(left, top),
-                    size = Size(width, height),
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                    style = Stroke(width = if (isSelected) selectedStrokePx else strokePx),
-                )
+                if (mark.redact) {
+                    drawRect(
+                        color = Color.Black,
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                    )
+                    drawRect(
+                        color = if (isSelected) colors.accent else colors.hairline,
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                        style = Stroke(width = if (isSelected) selectedStrokePx else strokePx),
+                    )
+                } else {
+                    drawRoundRect(
+                        color = colors.accent.copy(alpha = if (isSelected) 0.16f else 0.08f),
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                        cornerRadius = CornerRadius(radiusPx, radiusPx),
+                    )
+                    drawRoundRect(
+                        color = colors.accent,
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                        cornerRadius = CornerRadius(radiusPx, radiusPx),
+                        style = Stroke(width = if (isSelected) selectedStrokePx else strokePx),
+                    )
+                }
             }
 
             val start = dragStart
@@ -668,13 +696,13 @@ private fun ReportFrameCanvas(
                     .padding(Space.xxs)
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(colors.accent),
+                    .background(if (mark.redact) colors.ink else colors.accent),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = stringResource(R.string.report_mark_number, index + 1),
                     style = typography.monoSmall,
-                    color = colors.onAccent,
+                    color = if (mark.redact) colors.ground else colors.onAccent,
                     maxLines = 1,
                 )
             }
@@ -689,6 +717,7 @@ private fun ReportMarksList(
     editable: Boolean,
     onSelectMark: (Int) -> Unit,
     onUpdateNote: (Int, String) -> Unit,
+    onToggleRedact: (Int) -> Unit,
     onRemoveMark: (Int) -> Unit,
 ) {
     val colors = AmuxTheme.colors
@@ -703,6 +732,10 @@ private fun ReportMarksList(
                 val isSelected = index == selectedIndex
                 val rowLabel = stringResource(R.string.report_mark_label, index + 1)
                 val removeLabel = stringResource(R.string.report_mark_remove, index + 1)
+                val redactSpoken = stringResource(
+                    if (mark.redact) R.string.report_mark_show_spoken else R.string.report_mark_hide_spoken,
+                    index + 1,
+                )
                 val placeholder = stringResource(R.string.report_mark_note_placeholder)
 
                 Row(
@@ -722,13 +755,13 @@ private fun ReportMarksList(
                         modifier = Modifier
                             .size(22.dp)
                             .clip(CircleShape)
-                            .background(colors.accent),
+                            .background(if (mark.redact) colors.ink else colors.accent),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = stringResource(R.string.report_mark_number, index + 1),
                             style = typography.monoSmall,
-                            color = colors.onAccent,
+                            color = if (mark.redact) colors.ground else colors.onAccent,
                             maxLines = 1,
                         )
                     }
@@ -757,6 +790,24 @@ private fun ReportMarksList(
                                 .fillMaxWidth()
                                 .semantics { contentDescription = placeholder }
                                 .testTag(ReportTags.markNote(index)),
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { onToggleRedact(index) },
+                        enabled = editable,
+                        modifier = Modifier
+                            .thumbTarget()
+                            .semantics { contentDescription = redactSpoken }
+                            .testTag(ReportTags.markRedact(index)),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                if (mark.redact) R.string.report_mark_hidden else R.string.report_mark_hide,
+                            ),
+                            style = typography.caption,
+                            color = if (mark.redact) colors.ink else colors.inkMuted,
+                            maxLines = 1,
                         )
                     }
 
@@ -891,14 +942,15 @@ private fun ReportComposerDock(
                         tint = colors.inkFaint,
                         modifier = Modifier.size(16.dp),
                     )
+                    val hasScreenshot = state.imageBytes?.isNotEmpty() == true
+                    val disclosureRes = when {
+                        hasScreenshot && state.diagnosticDumpAttached -> R.string.report_contents_both
+                        !hasScreenshot && state.diagnosticDumpAttached -> R.string.report_contents_dump_only
+                        hasScreenshot && !state.diagnosticDumpAttached -> R.string.report_contents_screenshot_only
+                        else -> R.string.report_contents_none
+                    }
                     Text(
-                        text = stringResource(
-                            if (state.diagnosticDumpAttached) {
-                                R.string.report_dump_attached
-                            } else {
-                                R.string.report_dump_absent
-                            },
-                        ),
+                        text = stringResource(disclosureRes),
                         style = typography.caption,
                         color = colors.inkFaint,
                     )

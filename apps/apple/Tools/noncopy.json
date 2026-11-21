@@ -914,6 +914,10 @@
       {"literal": "\"fails\"", "context": "case \"fails\": .fails(reason)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ComponentCatalog.swift": [
+      {"literal": "\"claude\"", "context": "ProviderSignIn(provider: \"claude\", name: \"Claude\", signedIn: signedIn),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"codex\"", "context": "ProviderSignIn(provider: \"codex\", name: \"Codex\", signedIn: true),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"claude\"", "context": "ProviderSignIn(provider: \"claude\", name: \"Claude\", signedIn: true), ProviderSignIn(provider: \"codex\", name: \"Codex\", signedIn: false),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"codex\"", "context": "ProviderSignIn(provider: \"claude\", name: \"Claude\", signedIn: true), ProviderSignIn(provider: \"codex\", name: \"Codex\", signedIn: false),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Studio cannot be reached\"", "context": "deleting(\"delete-worktree-unknown\") { .failure(RuntimeFailure(\"Studio cannot be reached\")) },", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"notifications\"", "context": "sheet(\"notifications\") { StoryApp(settingsOpen: true, notifications: .on).settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"Change `../plan1/README.md` instead.\"", "context": "label: \"Edit the other\", description: \"Change `../plan1/README.md` instead.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1176,6 +1180,8 @@
       {"literal": "\"0.8.0\"", "context": "version: String? = \"0.8.0\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
+      {"literal": "\"claude\"", "context": "providers: [ProviderSignIn(provider: \"claude\", name: \"Claude\", signedIn: true), ProviderSignIn(provider: \"codex\", name: \"Codex\", signedIn: true)],", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"codex\"", "context": "providers: [ProviderSignIn(provider: \"claude\", name: \"Claude\", signedIn: true), ProviderSignIn(provider: \"codex\", name: \"Codex\", signedIn: true)],", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"notifications-offer\"", "context": "fleet(\"notifications-offer\", offerNotifications: true) { StoryFleet.busy(nearby: false) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"no-agents\"", "context": "fleet(\"no-agents\") { StoryFleet.noAgents() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"first-run\"", "context": "fleet(\"first-run\") { StoryFleet.firstRun() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

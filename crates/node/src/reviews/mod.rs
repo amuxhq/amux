@@ -644,24 +644,30 @@ pub(super) async fn listed(
     // A file left out of the snapshot for its size is listed as large: its
     // change is not in the snapshot to be counted or shown.
     let listed: BTreeSet<String> = files.iter().map(|file| file.path.clone()).collect();
-    for path in &taken.omitted {
-        if !listed.contains(path) {
-            let at_base = compare::read(root, store, from, path)
-                .await
-                .is_ok_and(|bytes| bytes.is_some());
-            files.push(git_facts::ChangedFile {
-                path: path.clone(),
-                old_path: None,
-                status: match at_base {
-                    true => git_facts::Status::Changed,
-                    false => git_facts::Status::Created,
-                },
-                added: 0,
-                removed: 0,
-                binary: false,
-                flags: git_facts::Flags::default(),
-            });
-        }
+    let unlisted: Vec<&str> = taken
+        .omitted
+        .iter()
+        .map(String::as_str)
+        .filter(|path| !listed.contains(*path))
+        .collect();
+    // Whether each was there at the base, from the base's tree: the file is
+    // large by definition, and its bytes are not needed to know it existed.
+    let at_base = compare::files_at(root, store, from, &unlisted)
+        .await
+        .unwrap_or_default();
+    for path in unlisted {
+        files.push(git_facts::ChangedFile {
+            path: path.to_owned(),
+            old_path: None,
+            status: match at_base.contains(path) {
+                true => git_facts::Status::Changed,
+                false => git_facts::Status::Created,
+            },
+            added: 0,
+            removed: 0,
+            binary: false,
+            flags: git_facts::Flags::default(),
+        });
     }
     for file in &mut files {
         if taken.omitted.contains(&file.path) {

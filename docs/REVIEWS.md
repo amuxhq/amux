@@ -254,6 +254,11 @@ whose hunks all go stays as the rename alone. The summary's
 hunks, and is empty before the first round and when the last round's
 snapshot can no longer be read.
 
+**A file the snapshot left out** for its size is listed as large, changed
+when the base's tree holds a file at its path and made otherwise: the tree
+says so, and the file's bytes, however many, are never read for it
+(`compare::files_at`).
+
 **Each file's language** is named by the rule every client uses
 ([highlighting](HIGHLIGHTING.md)): its path, else its `#!` line, read from
 the snapshot. A summary is made on every open, edit and list, so the `#!`

@@ -225,7 +225,10 @@ pub async fn hunks(
 }
 
 /// The bytes of `path` at `commit`; None when the commit has no file there
-/// (a folder or a submodule included).
+/// (a folder or a submodule included). The file is found in the commit's
+/// tree by its path given as an argument, then read by its object id: a
+/// path in a `cat-file --batch` request would end at a line break it holds,
+/// and the rest be read as a request of its own, for another file's bytes.
 pub async fn read(
     cwd: &Path,
     store: &ObjectStore,
@@ -233,29 +236,40 @@ pub async fn read(
     path: &str,
 ) -> Result<Option<Vec<u8>>, CompareError> {
     let root = top(cwd).await?;
-    let names = [format!("{commit}^{{tree}}"), format!("{commit}:{path}")];
-    let mut read = batch(&root, store, &names).await?.into_iter();
-    let (tree, file) = (read.next().flatten(), read.next().flatten());
-    if tree.is_none() {
-        return Err(CompareError::Missing(commit.to_owned()));
+    let entries = entries(&root, store, commit, &[path]).await?;
+    // A submodule's commit is another repository's, and a folder no file.
+    let Some(entry) = entries
+        .into_iter()
+        .find(|entry| entry.path == path && entry.kind == "blob")
+    else {
+        return Ok(None);
+    };
+    match batch(&root, store, &[entry.id]).await?.pop().flatten() {
+        Some((_, bytes)) => Ok(Some(bytes)),
+        None => Err(CompareError::Missing(commit.to_owned())),
     }
-    match file {
-        Some((kind, bytes)) => Ok((kind == "blob").then_some(bytes)),
-        // No file there, a submodule (its commit is another repository's),
-        // or a file whose object is gone: the tree says which.
-        None => {
-            let listed = store
-                .reading(&root, &ls_tree(commit, path))
-                .output()
-                .await
-                .map_err(GitError::Spawn)?;
-            let submodule = listed.stdout.starts_with(b"160000 ");
-            match listed.status.success() && (listed.stdout.is_empty() || submodule) {
-                true => Ok(None),
-                false => Err(CompareError::Missing(commit.to_owned())),
-            }
-        }
+}
+
+/// Which of `paths` `commit` holds a file at (a link included; a folder or
+/// a submodule not), answered from the commit's trees alone: no file's
+/// bytes are read, however large.
+pub async fn files_at(
+    cwd: &Path,
+    store: &ObjectStore,
+    commit: &str,
+    paths: &[&str],
+) -> Result<HashSet<String>, CompareError> {
+    if paths.is_empty() {
+        return Ok(HashSet::new());
     }
+    let root = top(cwd).await?;
+    let asked: HashSet<&str> = paths.iter().copied().collect();
+    Ok(entries(&root, store, commit, paths)
+        .await?
+        .into_iter()
+        .filter(|entry| entry.kind == "blob" && asked.contains(entry.path.as_str()))
+        .map(|entry| entry.path)
+        .collect())
 }
 
 /// The first `bytes` bytes of each file `paths` at `commit`, in order, read
@@ -963,39 +977,62 @@ async fn present(
     commit: &str,
     paths: &[&str],
 ) -> Result<HashSet<String>, CompareError> {
-    let mut held = HashSet::new();
+    Ok(entries(root, store, commit, paths)
+        .await?
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect())
+}
+
+/// One entry of a commit's tree, as `ls-tree` lists it.
+struct Entry {
+    /// `blob` for a file or link, `tree` for a folder, `commit` for a
+    /// submodule.
+    kind: String,
+    id: String,
+    path: String,
+}
+
+/// The entries of `commit`'s tree that `paths` name, each path given to
+/// `ls-tree` as an argument, never on a line of its own, and asked
+/// [`PATHSPEC_BYTES`] of paths at a time.
+async fn entries(
+    root: &Path,
+    store: &ObjectStore,
+    commit: &str,
+    paths: &[&str],
+) -> Result<Vec<Entry>, CompareError> {
+    let mut found = Vec::new();
     for run in runs(paths, |path| vec![*path]) {
         let mut args = vec![
             "--literal-pathspecs",
             "ls-tree",
             "-z",
             "--full-tree",
-            "--name-only",
             commit,
             "--",
         ];
         args.extend(run.into_iter().copied());
         let listed = read_git(root, store, &[commit], &args).await?;
-        held.extend(
-            listed
-                .split(|byte| *byte == 0)
-                .filter(|path| !path.is_empty())
-                .map(|path| String::from_utf8_lossy(path).into_owned()),
-        );
+        // `mode type id TAB path`.
+        for entry in listed.split(|byte| *byte == 0) {
+            let Some(tab) = entry.iter().position(|byte| *byte == b'\t') else {
+                continue;
+            };
+            let info = String::from_utf8_lossy(&entry[..tab]);
+            let mut info = info.split(' ');
+            let (Some(_mode), Some(kind), Some(id)) = (info.next(), info.next(), info.next())
+            else {
+                continue;
+            };
+            found.push(Entry {
+                kind: kind.to_owned(),
+                id: id.to_owned(),
+                path: String::from_utf8_lossy(&entry[tab + 1..]).into_owned(),
+            });
+        }
     }
-    Ok(held)
-}
-
-fn ls_tree<'a>(commit: &'a str, path: &'a str) -> [&'a str; 7] {
-    [
-        "--literal-pathspecs",
-        "ls-tree",
-        "-z",
-        "--full-tree",
-        commit,
-        "--",
-        path,
-    ]
+    Ok(found)
 }
 
 /// The objects `names` name, whole, each with its type; None for one git

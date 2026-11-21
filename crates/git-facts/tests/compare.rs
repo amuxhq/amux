@@ -890,6 +890,123 @@ async fn a_submodule_reads_as_no_file() {
     );
 }
 
+/// Which files a commit holds is answered from its tree: a file whose
+/// object is gone is still held, since nothing reads its bytes, while a
+/// folder, a submodule and a path the commit lacks are not files.
+#[tokio::test]
+async fn which_files_a_commit_holds_reads_no_file() {
+    let repo = repository(&[("a.txt", "one\n"), ("large.bin", "large\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    std::fs::create_dir_all(dir.join("folder")).unwrap();
+    std::fs::write(dir.join("folder/inner.txt"), "inner\n").unwrap();
+    let elsewhere = "0123456789abcdef0123456789abcdef01234567";
+    git(
+        dir,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{elsewhere},lib"),
+        ],
+    );
+    let head = commit_all(dir, "more");
+    let id = git(dir, &["rev-parse", "HEAD:large.bin"]);
+    std::fs::remove_file(dir.join(".git/objects").join(&id[..2]).join(&id[2..])).unwrap();
+    missing(compare::read(dir, &store, &head, "large.bin").await, &head);
+
+    let held = compare::files_at(
+        dir,
+        &store,
+        &head,
+        &[
+            "a.txt",
+            "large.bin",
+            "folder",
+            "folder/inner.txt",
+            "lib",
+            "nowhere.txt",
+        ],
+    )
+    .await
+    .unwrap();
+    let mut held: Vec<&str> = held.iter().map(String::as_str).collect();
+    held.sort();
+    assert_eq!(held, ["a.txt", "folder/inner.txt", "large.bin"]);
+    let unknown = "0123456789abcdef0123456789abcdef01234567";
+    missing(
+        compare::files_at(dir, &store, unknown, &["a.txt"]).await,
+        unknown,
+    );
+}
+
+/// Git with `args` in `cwd`, `input` on its standard input.
+fn git_fed(cwd: &Path, args: &[&str], input: &[u8]) -> String {
+    use std::io::Write as _;
+    let mut child = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "git {args:?}");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+/// A path holding a line break is read as the one path it is: asked after
+/// in a batch of names, its part before the break would be read as a
+/// request of its own, here for another file the commit holds.
+#[tokio::test]
+async fn a_path_holding_a_line_break_reads_its_own_file() {
+    let repo = repository(&[("a.txt", "one\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    // Made in git alone, since not every platform allows such a name on
+    // disk.
+    let other = git_fed(dir, &["hash-object", "-w", "--stdin"], b"other\n");
+    let mine = git_fed(dir, &["hash-object", "-w", "--stdin"], b"mine\n");
+    let mut listing = Vec::new();
+    for (id, path) in [(&other, "other.txt"), (&mine, "other.txt\nx")] {
+        listing.extend_from_slice(format!("100644 blob {id}\t{path}").as_bytes());
+        listing.push(0);
+    }
+    let tree = git_fed(dir, &["mktree", "-z"], &listing);
+    let commit = git(dir, &["commit-tree", &tree, "-m", "odd names"]);
+
+    assert_eq!(
+        compare::read(dir, &store, &commit, "other.txt\nx")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some(b"mine\n".as_slice())
+    );
+    assert_eq!(
+        compare::read(dir, &store, &commit, "other.txt")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some(b"other\n".as_slice())
+    );
+    assert_eq!(
+        compare::read(dir, &store, &commit, "nowhere\nother.txt")
+            .await
+            .unwrap(),
+        None
+    );
+    let held = compare::files_at(
+        dir,
+        &store,
+        &commit,
+        &["other.txt\nx", "nowhere\nother.txt"],
+    )
+    .await
+    .unwrap();
+    assert_eq!(held.into_iter().collect::<Vec<_>>(), ["other.txt\nx"]);
+}
+
 #[tokio::test]
 async fn binary_and_created_files_have_their_sides_named() {
     let repo = repository(&[("a.txt", "one\n")]);

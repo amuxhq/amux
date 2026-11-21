@@ -709,6 +709,44 @@ async fn binary_and_large_files_come_back_with_no_lines() {
     host.stop().await;
 }
 
+/// A file the snapshot left out for its size is listed as changed when the
+/// base held it, which the base's tree says without the file being read:
+/// here its object is gone from the repository altogether, and it is still
+/// listed as changed rather than made.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_large_file_is_listed_from_the_bases_tree_alone() {
+    let install = Install::new();
+    let large = "y".repeat(99) + "\n";
+    repository(&install.work, &[("asset.dat", &large.repeat(21_000))]);
+    let work = install.work.clone();
+    let id = git(&work, &["rev-parse", "HEAD:asset.dat"]);
+    std::fs::remove_file(work.join(".git/objects").join(&id[..2]).join(&id[2..])).unwrap();
+    write(&work, &[("asset.dat", &large.repeat(22_000))]);
+    write(&work, &[("loose.dat", &large.repeat(21_000))]);
+    let agent = agent_in(&install, &work);
+    let host = Host::start(install).await;
+    let summary = host.open(&agent).await;
+    let listed: Vec<(&str, wire::FileStatus, bool)> = summary
+        .files
+        .iter()
+        .map(|file| {
+            (
+                file.path.as_str(),
+                file.status(),
+                file.flags.contains(&(wire::FileFlag::Large as i32)),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("asset.dat", wire::FileStatus::Changed, true),
+            ("loose.dat", wire::FileStatus::Created, true),
+        ]
+    );
+    host.stop().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_put_comment_is_stored_with_three_lines_above_and_its_scope() {
     let install = Install::new();

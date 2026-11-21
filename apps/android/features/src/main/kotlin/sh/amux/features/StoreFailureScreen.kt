@@ -48,7 +48,7 @@ fun StoreFailureScreen(
             Icon(
                 imageVector = Icons.Outlined.Storage,
                 contentDescription = null,
-                tint = colors.accent,
+                tint = colors.inkMuted,
                 modifier = Modifier.size(32.dp),
             )
             Spacer(modifier = Modifier.height(Space.l))

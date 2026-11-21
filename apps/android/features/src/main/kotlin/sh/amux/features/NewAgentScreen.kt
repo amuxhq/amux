@@ -107,6 +107,7 @@ object NewAgentTags {
     const val START_BUTTON: String = "new-agent.start"
 
     fun hostOption(name: String): String = "new-agent.host.$name"
+    /** A provider's choice in the Agent list. */
     fun providerChip(provider: Provider): String = "new-agent.provider.${provider.name.lowercase()}"
     fun recentChip(name: String): String = "new-agent.recent.$name"
     fun browseDirectory(name: String): String = "new-agent.repository.$name"
@@ -203,6 +204,7 @@ sealed interface NewAgentAction {
 
 private enum class ActiveNewAgentPicker {
     Host,
+    Provider,
     Model,
     Effort,
     Permission,
@@ -363,20 +365,28 @@ fun NewAgentScreen(
                     }
                 }
 
-                // Agent: provider segmented chips + model/effort/permission/mode + worktree
+                // Agent: which agent, then what it offers here, then the worktree.
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(Space.s),
                 ) {
                     AmuxSectionHeader(title = stringResource(R.string.new_agent_section_agent))
-                    ProviderChipBar(
-                        providers = state.availableProviders,
-                        selected = state.provider,
-                        onSelect = { onAction(NewAgentAction.SelectProvider(it)) },
-                    )
-
                     AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
-                        var hasPrecedingRow = false
+                        // A row that opens a list rather than a chip for each:
+                        // more agents than two are coming, and the list says
+                        // which one is not signed in on the computer.
+                        NewAgentFieldRow(
+                            label = stringResource(R.string.new_agent_provider_label),
+                            value = providerTitle,
+                            monoValue = false,
+                            isLargeText = isLargeText,
+                            showChevron = true,
+                            enabled = true,
+                            onClick = { activePicker = ActiveNewAgentPicker.Provider },
+                            modifier = Modifier.testTag(NewAgentTags.PROVIDER_ROW),
+                        )
+                        var hasPrecedingRow = true
+                        AmuxInsetHairline()
                         val settings = state.settings
                         if (state.offer == NewAgentOfferUi.Offered && settings != null) {
                             val unnamed = stringResource(R.string.new_agent_unnamed_value)
@@ -568,6 +578,34 @@ fun NewAgentScreen(
                         onDismiss = { activePicker = null },
                     )
                 }
+                ActiveNewAgentPicker.Provider -> {
+                    val notSignedIn = stringResource(R.string.new_agent_provider_not_signed_in, hostName)
+                    ChoicePickerSheetContent(
+                        title = stringResource(R.string.new_agent_provider_label),
+                        options = state.availableProviders.filter { it != Provider.Unspecified }.map { provider ->
+                            val signedIn = state.selectedHost?.providers?.firstOrNull { it.provider == provider }?.signedIn
+                            PickerOptionUi(
+                                value = provider.name,
+                                title = providerLabel(provider),
+                                detail = if (signedIn == false) notSignedIn else "",
+                                current = provider == state.provider,
+                                warn = false,
+                                enabled = true,
+                            )
+                        },
+                        onSelect = { value ->
+                            activePicker = null
+                            Provider.entries.firstOrNull { it.name == value }?.let {
+                                onAction(NewAgentAction.SelectProvider(it))
+                            }
+                        },
+                        onDismiss = { activePicker = null },
+                        tagOf = { value ->
+                            Provider.entries.firstOrNull { it.name == value }
+                                ?.let(NewAgentTags::providerChip) ?: NewAgentTags.pickerOption(value)
+                        },
+                    )
+                }
                 ActiveNewAgentPicker.Model -> {
                     val models = state.settings?.models.orEmpty()
                     ChoicePickerSheetContent(
@@ -701,41 +739,6 @@ private fun NewAgentStartBar(
                 enabled = ready,
                 onClick = onStart,
                 modifier = Modifier.testTag(NewAgentTags.START_BUTTON),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ProviderChipBar(
-    providers: List<Provider>,
-    selected: Provider,
-    onSelect: (Provider) -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val chipColors = amuxFilterChipColors()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = Space.margin)
-            .testTag(NewAgentTags.PROVIDER_ROW),
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-    ) {
-        for (item in providers.filter { it != Provider.Unspecified }) {
-            val isSelected = item == selected
-            FilterChip(
-                selected = isSelected,
-                onClick = { onSelect(item) },
-                label = {
-                    Text(
-                        text = providerLabel(item),
-                        style = AmuxTheme.typography.bodyEmphasis,
-                    )
-                },
-                colors = chipColors,
-                border = amuxFilterChipBorder(isSelected),
-                modifier = Modifier.testTag(NewAgentTags.providerChip(item)),
             )
         }
     }
@@ -1258,6 +1261,7 @@ private fun ChoicePickerSheetContent(
     options: List<PickerOptionUi>,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
+    tagOf: (String) -> String = NewAgentTags::pickerOption,
 ) {
     val colors = AmuxTheme.colors
     Column(
@@ -1285,7 +1289,7 @@ private fun ChoicePickerSheetContent(
                         warn = option.warn,
                         enabled = option.enabled,
                         onClick = { if (option.enabled) onSelect(option.value) },
-                        modifier = Modifier.testTag(NewAgentTags.pickerOption(option.value)),
+                        modifier = Modifier.testTag(tagOf(option.value)),
                     )
                 }
             }

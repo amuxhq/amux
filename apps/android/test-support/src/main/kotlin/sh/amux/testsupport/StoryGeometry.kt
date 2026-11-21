@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.TextLayoutResult
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -68,6 +69,8 @@ object StoryGeometry {
         val drawnTop: Float? = null,
         val drawnBottom: Float? = null,
         val texts: Int = if (kind == Kind.Text) 1 else 0,
+        /** A text's first baseline, in dp from the screen's top; null for anything else. */
+        val firstBaseline: Float? = null,
     ) {
         val height: Float get() = bottom - top
         val centreY: Float get() = (top + bottom) / 2f
@@ -122,6 +125,11 @@ object StoryGeometry {
                     drawnTop = drawn?.first?.div(density),
                     drawnBottom = drawn?.second?.div(density),
                     texts = ownTexts,
+                    firstBaseline = if (kind == Kind.Text) {
+                        firstBaselineOf(node)?.let { (bounds.top + it) / density }
+                    } else {
+                        null
+                    },
                 )
             }
             return ownTexts
@@ -145,6 +153,13 @@ object StoryGeometry {
             else -> null
         }
     }
+
+    /** The first baseline of a text's laid-out lines, in px from its top. */
+    private fun firstBaselineOf(node: SemanticsNode): Float? = runCatching {
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
+        layouts.firstOrNull()?.firstBaseline
+    }.getOrNull()
 
     private fun labelOf(node: SemanticsNode): String {
         val config = node.config
@@ -207,8 +222,15 @@ object StoryGeometry {
         .filter { it !== of && it.right <= of.left + SAME_COLUMN_DP && sameRow(of, it) }
         .maxByOrNull { it.right }
 
+    /**
+     * Texts of different sizes set on one baseline, as a name and its facts
+     * are, have centres that differ and are aligned all the same, so they
+     * are not flagged.
+     */
     private fun rowCentres(leaves: List<Element>): List<Flag> = leaves.mapNotNull { a ->
         val b = nextOnRow(a, leaves) ?: return@mapNotNull null
+        val baselines = a.firstBaseline?.let { first -> b.firstBaseline?.let { abs(first - it) } }
+        if (baselines != null && baselines <= ROW_CENTRE_TOLERANCE_DP) return@mapNotNull null
         val off = abs(a.centreY - b.centreY)
         if (off <= ROW_CENTRE_TOLERANCE_DP) return@mapNotNull null
         Flag(Rule.RowCentre, listOf(a.id, b.id), off, "\"${a.label}\" and \"${b.label}\" centres ${dp(off)} apart")
@@ -329,6 +351,7 @@ object StoryGeometry {
                         put("bottom", e.bottom)
                         e.drawnTop?.let { put("drawnTop", it) }
                         e.drawnBottom?.let { put("drawnBottom", it) }
+                        e.firstBaseline?.let { put("firstBaseline", it) }
                     },
                 )
             }

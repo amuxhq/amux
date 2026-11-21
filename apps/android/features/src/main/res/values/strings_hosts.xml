@@ -14,13 +14,8 @@
     <string name="host_page_meaning_away">It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro.</string>
     <string name="host_page_meaning_unreachable">Its agents report their state as unknown. It is on this network and will not answer, which a network that blocks amux would explain.</string>
     <string name="host_page_meaning_offline">Its agents report their state as unknown until it is back.</string>
-    <string name="host_page_section_status">Status</string>
-    <string name="host_page_section_providers">Providers</string>
     <string name="host_page_section_addresses">Addresses</string>
     <string name="host_page_section_fingerprint">Fingerprint</string>
-    <string name="host_page_fact_reach">Reach</string>
-    <string name="host_page_fact_last_seen">Last seen</string>
-    <string name="host_page_fact_last_seen_ago">%1$s ago</string>
     <string name="host_page_fact_platform">Platform</string>
     <string name="host_page_fact_version">Version</string>
     <string name="host_page_fact_last_try">Last try</string>
@@ -32,12 +27,14 @@
     <string name="host_page_copy_fingerprint_spoken">Copy fingerprint</string>
     <string name="host_page_subscribe">Subscribe</string>
     <string name="host_page_subscribe_spoken">Subscribe to reach %1$s</string>
-    <string name="host_page_offer_sign_in">Sign In on %1$s</string>
+    <string name="host_page_offer_sign_in">Offer Your Account</string>
+    <string name="host_page_offer_sign_in_spoken">Offer your account to %1$s</string>
     <string name="host_page_offering_sign_in">Offering sign-in…</string>
     <string name="host_page_pair_again">Pair Again</string>
     <string name="host_page_pair_again_spoken">Pair Again with %1$s</string>
-    <string name="host_page_revoke">Revoke</string>
-    <string name="host_page_revoke_spoken">Revoke %1$s</string>
-    <string name="host_page_revoke_title">Revoke %1$s?</string>
-    <string name="host_page_revoke_detail">This phone stops reaching it, and only pairing again brings it back.</string>
+    <string name="host_page_revoke">Unpair This Computer</string>
+    <string name="host_page_revoke_spoken">Unpair %1$s</string>
+    <string name="host_page_revoke_title">Unpair %1$s?</string>
+    <string name="host_page_revoke_detail">This phone stops reaching it and its agents leave this phone’s list. Only pairing again brings it back.</string>
+    <string name="host_page_revoke_confirm">Unpair</string>
 </resources>

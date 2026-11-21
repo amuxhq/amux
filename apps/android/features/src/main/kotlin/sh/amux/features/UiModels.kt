@@ -112,6 +112,7 @@ data class AgentsHomeState(
     val offerNotifications: Boolean = false,
     val signingIn: Boolean = false,
     val scope: HomeScope = HomeScope.Fleet,
+    val networkSight: NetworkSight = NetworkSight.Looking,
 ) {
     val signedIn: Boolean
         get() = accounts.any { it.signedIn }
@@ -127,6 +128,20 @@ data class AgentsHomeState(
 
     val offersNewAgent: Boolean
         get() = scope == HomeScope.Fleet && machines.isNotEmpty()
+}
+
+/**
+ * Whether this phone can look for computers on its network, for a screen
+ * that would otherwise say it is looking for ever.
+ */
+enum class NetworkSight {
+    Looking,
+
+    /** No Wi-Fi or Ethernet: there is no network near the phone to look on. */
+    NoLocalNetwork,
+
+    /** The system refused to look. */
+    BrowseFailed,
 }
 
 /** Actions emitted by [AgentsHome] without touching navigation or networking. */
@@ -151,6 +166,8 @@ sealed interface HomeAction {
     data object OpenSettings : HomeAction
     data class Pair(val hostId: List<Int>) : HomeAction
     data object SendInstallLink : HomeAction
+    data object OpenWifiSettings : HomeAction
+    data object LookAgain : HomeAction
     data object TurnOnNotifications : HomeAction
     data object DismissNotifications : HomeAction
     data object OpenHosts : HomeAction

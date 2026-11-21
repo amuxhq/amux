@@ -27,6 +27,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
+import sh.amux.words.workingDirectory
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -156,6 +168,29 @@ fun AgentsHome(
     var renamingRow by remember { mutableStateOf<FleetRow?>(null) }
     var confirming by remember { mutableStateOf<RowConfirmation?>(null) }
 
+    fun runRowAction(row: FleetRow, action: RowMenuAction) {
+        when (action) {
+            RowMenuAction.Pin -> onAction(HomeAction.Pin(row.id))
+            RowMenuAction.Unpin, RowMenuAction.Unsettle -> onAction(HomeAction.Unfile(row.id))
+            RowMenuAction.Rename -> renamingRow = row
+            RowMenuAction.Settle -> {
+                val cuts = ChatWords.closeCuts(
+                    name = row.name,
+                    attention = row.card.attention,
+                    jobs = row.card.backgroundJobs,
+                    subAgents = row.card.descendants,
+                )
+                if (cuts != null) {
+                    confirming = RowConfirmation.Settle(row, cuts)
+                } else {
+                    onAction(HomeAction.Settle(row.id))
+                }
+            }
+            RowMenuAction.CancelSettle -> onAction(HomeAction.CancelSettle(row.id))
+            RowMenuAction.Delete -> confirming = RowConfirmation.Delete(row)
+        }
+    }
+
     val showSearchControl = state.scope == HomeScope.Fleet &&
         (state.rows.isNotEmpty() || state.filtering)
     val searchVisible = showSearchControl && (searchExpanded || state.filtering)
@@ -207,30 +242,28 @@ fun AgentsHome(
                                 needYouCount = state.needYou,
                                 machines = state.machines,
                                 onFilterChange = { onAction(HomeAction.Filter(it)) },
+                                onClose = {
+                                    if (state.filtering) {
+                                        onAction(HomeAction.Filter(FleetFilter(words = "", only = null)))
+                                    }
+                                    onSearchExpandedChange(false)
+                                },
                             )
                         }
                     } else {
                         null
                     },
                 ) {
-                    if (showSearchControl) {
-                        val searchDesc = stringResource(R.string.home_search_button)
+                    // While the search is open its field carries the way
+                    // out, so the bar offers no second cross beside it.
+                    if (showSearchControl && !searchVisible) {
                         IconButton(
-                            onClick = {
-                                if (searchVisible) {
-                                    if (state.filtering) {
-                                        onAction(HomeAction.Filter(FleetFilter(words = "", only = null)))
-                                    }
-                                    onSearchExpandedChange(false)
-                                } else {
-                                    onSearchExpandedChange(true)
-                                }
-                            },
+                            onClick = { onSearchExpandedChange(true) },
                             modifier = Modifier.testTag(TestTags.HOME_SEARCH_TOGGLE),
                         ) {
                             Icon(
-                                imageVector = if (searchVisible) Icons.Outlined.Close else Icons.Outlined.Search,
-                                contentDescription = searchDesc,
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = stringResource(R.string.home_search_button),
                                 tint = colors.inkMuted,
                             )
                         }
@@ -266,9 +299,20 @@ fun AgentsHome(
                                 style = AmuxTheme.typography.bodyEmphasis,
                             )
                         },
+                        // Said once, whether the label is showing or the
+                        // button has folded to its plus.
+                        // The tag goes first: semantics after the clear
+                        // would be cleared with the rest.
                         modifier = Modifier
-                            .semantics { contentDescription = newAgentLabel }
-                            .testTag(TestTags.HOME_FAB_NEW_AGENT),
+                            .testTag(TestTags.HOME_FAB_NEW_AGENT)
+                            .clearAndSetSemantics {
+                                contentDescription = newAgentLabel
+                                role = Role.Button
+                                onClick {
+                                    onAction(HomeAction.NewAgent)
+                                    true
+                                }
+                            },
                     )
                 }
             },
@@ -282,6 +326,7 @@ fun AgentsHome(
                         contentPadding = innerPadding,
                         onOpenRow = { onAction(HomeAction.Open(it.id)) },
                         onOpenRowMenu = { actionRow = it },
+                        onRowMenuAction = ::runRowAction,
                         onToggleFamily = { onAction(HomeAction.ToggleFamily(it.id)) },
                         onAction = onAction,
                     )
@@ -294,6 +339,7 @@ fun AgentsHome(
                         contentPadding = innerPadding,
                         onOpenRow = { onAction(HomeAction.Open(it.id)) },
                         onOpenRowMenu = { actionRow = it },
+                        onRowMenuAction = ::runRowAction,
                         onToggleFamily = { onAction(HomeAction.ToggleFamily(it.id)) },
                         onAction = onAction,
                     )
@@ -321,49 +367,16 @@ fun AgentsHome(
         }
     }
 
-    // Long-press / overflow action sheet for an agent row.
+    // Long-press action sheet for an agent row; TalkBack offers the same
+    // actions on the row itself.
     val currentActionRow = actionRow
     if (currentActionRow != null) {
         AgentRowActionSheet(
             row = currentActionRow,
             onDismiss = { actionRow = null },
-            onPin = {
+            onAction = { action ->
                 actionRow = null
-                onAction(HomeAction.Pin(currentActionRow.id))
-            },
-            onUnpin = {
-                actionRow = null
-                onAction(HomeAction.Unfile(currentActionRow.id))
-            },
-            onRename = {
-                actionRow = null
-                renamingRow = currentActionRow
-            },
-            onSettle = {
-                actionRow = null
-                val cuts = ChatWords.closeCuts(
-                    name = currentActionRow.name,
-                    attention = currentActionRow.card.attention,
-                    jobs = currentActionRow.card.backgroundJobs,
-                    subAgents = currentActionRow.card.descendants,
-                )
-                if (cuts != null) {
-                    confirming = RowConfirmation.Settle(currentActionRow, cuts)
-                } else {
-                    onAction(HomeAction.Settle(currentActionRow.id))
-                }
-            },
-            onUnsettle = {
-                actionRow = null
-                onAction(HomeAction.Unfile(currentActionRow.id))
-            },
-            onCancelSettle = {
-                actionRow = null
-                onAction(HomeAction.CancelSettle(currentActionRow.id))
-            },
-            onDelete = {
-                actionRow = null
-                confirming = RowConfirmation.Delete(currentActionRow)
+                runRowAction(currentActionRow, action)
             },
         )
     }
@@ -423,6 +436,7 @@ private fun FleetSearchBar(
     needYouCount: Int,
     machines: List<HostView>,
     onFilterChange: (FleetFilter) -> Unit,
+    onClose: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
     Column(
@@ -435,12 +449,19 @@ private fun FleetSearchBar(
             value = filter.words,
             onValueChange = { onFilterChange(filter.copy(words = it)) },
             placeholder = stringResource(R.string.home_search_placeholder),
+            // Material's search bar: the leading arrow closes the search and
+            // forgets it, and the trailing cross only empties the words.
             leadingIcon = {
-                Icon(
-                    imageVector = Icons.Outlined.Search,
-                    contentDescription = null,
-                    tint = colors.inkMuted,
-                )
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.testTag(TestTags.HOME_SEARCH_CLOSE),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = stringResource(R.string.home_search_close),
+                        tint = colors.inkMuted,
+                    )
+                }
             },
             trailingIcon = if (filter.words.isNotEmpty()) {
                 {
@@ -561,6 +582,7 @@ private fun FleetListContent(
     contentPadding: PaddingValues,
     onOpenRow: (FleetRow) -> Unit,
     onOpenRowMenu: (FleetRow) -> Unit,
+    onRowMenuAction: (FleetRow, RowMenuAction) -> Unit,
     onToggleFamily: (FleetRow) -> Unit,
     onAction: (HomeAction) -> Unit,
 ) {
@@ -662,85 +684,82 @@ private fun FleetListContent(
                         now = nowInstant,
                         showDivider = index < closedRows.lastIndex,
                         rowTag = TestTags.settledRow(row.name),
-                        menuTag = TestTags.settledRowMenu(row.name),
                         onOpen = { onOpenRow(row) },
                         onOpenMenu = { onOpenRowMenu(row) },
+                        onMenuAction = { action -> onRowMenuAction(row, action) },
                         onToggleFamily = { onToggleFamily(row) },
                     )
                 }
             }
         } else {
-            val visibleSections = state.liveSections
-            for (section in visibleSections) {
-                val showHeader = section.kind == SectionKind.NeedsYou ||
-                    section.kind == SectionKind.Pinned ||
-                    (visibleSections.size > 1 && section.kind == SectionKind.Live)
-                if (showHeader) {
-                    item(key = "section-header-${section.kind.name}") {
-                        AmuxSectionHeader(
-                            title = sectionTitle(section.kind),
-                            modifier = Modifier.padding(top = Space.s),
-                        )
-                    }
+            // At the head of the list, as a chat app keeps its archived
+            // chats: within reach whatever the length of the list under it,
+            // and never under the agents that are wanted.
+            val closedSection = state.closedSection
+            if (!state.filtering && closedSection != null && closedSection.families > 0) {
+                item(key = "settled-head-row") {
+                    SettledHeadRow(
+                        count = closedSection.families,
+                        onClick = { onAction(HomeAction.ShowSettled) },
+                    )
+                }
+            }
+
+            // One list, pinned first, then the agents that need you, then the
+            // rest: each row already says which it is, so headings would only
+            // repeat it and split the list into groups.
+            val liveRows = state.liveSections.flatMap { it.rows }
+            itemsIndexed(
+                items = liveRows,
+                key = { _, row -> "live-${row.card.agent.host}-${row.card.agent.agent}" },
+            ) { index, row ->
+                AgentListRow(
+                    row = row,
+                    namesHosts = namesHosts,
+                    now = nowInstant,
+                    showDivider = index < liveRows.lastIndex,
+                    onOpen = { onOpenRow(row) },
+                    onOpenMenu = { onOpenRowMenu(row) },
+                    onMenuAction = { action -> onRowMenuAction(row, action) },
+                    onToggleFamily = { onToggleFamily(row) },
+                )
+            }
+
+            if (state.filtering && closedSection != null && closedSection.families > 0) {
+                // Found by the search, under the rest, as a chat app finds
+                // archived chats.
+                item(key = "section-header-closed-search") {
+                    Text(
+                        text = stringResource(R.string.home_section_settled),
+                        style = AmuxTheme.typography.sectionTitle,
+                        color = colors.inkMuted,
+                        modifier = Modifier
+                            .padding(
+                                start = Space.margin + AgentMarkColumn,
+                                top = Space.l,
+                                bottom = Space.xs,
+                            )
+                            .semantics { heading() },
+                    )
                 }
                 itemsIndexed(
-                    items = section.rows,
-                    key = { _, row -> "${section.kind.name}-${row.card.agent.host}-${row.card.agent.agent}" },
+                    items = closedSection.rows,
+                    key = { _, row -> "search-closed-${row.card.agent.host}-${row.card.agent.agent}" },
                 ) { index, row ->
                     AgentListRow(
                         row = row,
                         namesHosts = namesHosts,
                         now = nowInstant,
-                        showDivider = index < section.rows.lastIndex,
+                        showDivider = index < closedSection.rows.lastIndex,
                         onOpen = { onOpenRow(row) },
                         onOpenMenu = { onOpenRowMenu(row) },
+                        onMenuAction = { action -> onRowMenuAction(row, action) },
                         onToggleFamily = { onToggleFamily(row) },
                     )
                 }
             }
-
-            val closedSection = state.closedSection
-            if (closedSection != null && closedSection.families > 0) {
-                if (state.filtering) {
-                    item(key = "section-header-closed-search") {
-                        AmuxSectionHeader(
-                            title = stringResource(R.string.home_section_settled),
-                            modifier = Modifier.padding(top = Space.m),
-                        )
-                    }
-                    itemsIndexed(
-                        items = closedSection.rows,
-                        key = { _, row -> "search-closed-${row.card.agent.host}-${row.card.agent.agent}" },
-                    ) { index, row ->
-                        AgentListRow(
-                            row = row,
-                            namesHosts = namesHosts,
-                            now = nowInstant,
-                            showDivider = index < closedSection.rows.lastIndex,
-                            onOpen = { onOpenRow(row) },
-                            onOpenMenu = { onOpenRowMenu(row) },
-                            onToggleFamily = { onToggleFamily(row) },
-                        )
-                    }
-                } else {
-                    item(key = "settled-footer-row") {
-                        SettledFooterRow(
-                            count = closedSection.families,
-                            onClick = { onAction(HomeAction.ShowSettled) },
-                        )
-                    }
-                }
-            }
         }
     }
-}
-
-@Composable
-private fun sectionTitle(kind: SectionKind): String = when (kind) {
-    SectionKind.Pinned -> stringResource(R.string.home_section_pinned)
-    SectionKind.NeedsYou -> stringResource(R.string.home_section_needs_you)
-    SectionKind.Live -> stringResource(R.string.home_section_live)
-    SectionKind.Closed -> stringResource(R.string.home_section_settled)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -752,16 +771,16 @@ private fun AgentListRow(
     showDivider: Boolean,
     onOpen: () -> Unit,
     onOpenMenu: () -> Unit,
+    onMenuAction: (RowMenuAction) -> Unit,
     onToggleFamily: () -> Unit,
     rowTag: String = TestTags.homeRow(row.name),
-    menuTag: String = TestTags.homeRowMenu(row.name),
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
+    val density = LocalDensity.current
     val rowState = remember(row) { RowState.of(row) }
-    val fontScale = LocalDensity.current.fontScale
-    val isLargeText = fontScale >= 1.3f
-    val indent = (row.depth * 24).dp
+    val isLargeText = density.fontScale >= 1.3f
+    val indent = AgentMarkColumn * row.depth
     val hasFamilyToggle = row.depth == 0 && row.children > 0
 
     val secondLine: FleetWords.Line? = if (row.card.closeHeld) {
@@ -779,10 +798,11 @@ private fun AgentListRow(
     }
 
     val hostLabel = if (namesHosts) PlaceNames.host(row.hostName) else null
+    val age = row.age(at = now)
     val facts = listOfNotNull(
         row.card.repository?.name?.takeIf { it.isNotEmpty() },
         hostLabel,
-        row.age(at = now),
+        age,
     ).joinToString(" · ")
 
     val stopped = rowState is RowState.Exited || rowState is RowState.Settled
@@ -790,18 +810,44 @@ private fun AgentListRow(
         secondLine?.let { styledSecondLine(row = row, text = it.text, monoSpan = typography.mono.toSpanStyle()) }
     }
 
-    val rowClickableModifier = if (row.readable) {
-        Modifier.combinedClickable(
-            onClick = onOpen,
-            onLongClick = onOpenMenu,
-            role = Role.Button,
-        )
-    } else {
-        Modifier.combinedClickable(
-            onClick = {},
-            onLongClick = onOpenMenu,
-        )
+    // What the row says to somebody who cannot see it, in the order it says
+    // it: who, what, where, how long, and what it needs.
+    val spokenPinned = stringResource(R.string.home_row_spoken_pinned)
+    val spokenMember = stringResource(R.string.home_row_spoken_member_needs_you)
+    val spokenAgo = stringResource(R.string.home_row_spoken_ago, age)
+    val spoken = remember(row, rowState, secondLine, spokenAgo) {
+        buildList {
+            add(row.name)
+            if (row.pinned) add(spokenPinned)
+            rowState.spoken?.let(::add)
+            secondLine?.text?.let(::add)
+            if (row.speaksForAMember) add(spokenMember)
+            add(listOf(PlaceNames.host(row.hostName), row.workingDirectory).filter { it.isNotEmpty() }.joinToString(", "))
+            add(spokenAgo)
+        }.joinToString(", ")
     }
+    val menuActions = remember(row) { rowMenuActions(row) }
+    val menuLabels = menuActions.map { rowMenuLabel(it) }
+    val customActions = menuActions.zip(menuLabels) { action, label ->
+        CustomAccessibilityAction(label) {
+            onMenuAction(action)
+            true
+        }
+    }
+    val moreLabel = stringResource(R.string.action_more)
+
+    // An agent of a kind this build has no chat for is listed and not
+    // offered to open; it still answers to a long press.
+    val rowClickableModifier = Modifier.combinedClickable(
+        onClick = if (row.readable) onOpen else ({}),
+        onLongClick = onOpenMenu,
+        onLongClickLabel = moreLabel,
+        role = if (row.readable) Role.Button else null,
+    )
+
+    // The mark sits centred on the name's lowercase letters rather than on
+    // the row, so a two-line row keeps it beside the name, as iOS does.
+    val markOnBaseline = with(density) { MarkAboveBaseline.roundToPx() }
 
     Column(
         modifier = Modifier
@@ -812,59 +858,44 @@ private fun AgentListRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(rowClickableModifier)
+                .semantics {
+                    contentDescription = spoken
+                    this.customActions = customActions
+                }
                 .heightIn(min = AgentRowMinHeight)
                 .padding(
                     start = Space.margin + indent,
                     end = Space.margin,
                     top = Space.m,
-                    bottom = Space.m,
+                    // The family toggle's 48 dp target spills past its line;
+                    // the row keeps room for it, so a press there never
+                    // lands on the row below.
+                    bottom = if (hasFamilyToggle) Space.m + FamilyToggleSpill else Space.m,
                 ),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
             Box(
                 modifier = Modifier
-                    .width(20.dp)
-                    .padding(top = 2.dp),
+                    .width(AgentMarkColumn)
+                    .alignBy { it.measuredHeight / 2 + markOnBaseline },
                 contentAlignment = Alignment.CenterStart,
             ) {
                 AmuxStateMark(state = rowState, size = 10.dp)
             }
 
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .alignByBaseline(),
                 verticalArrangement = Arrangement.spacedBy(Space.xxs),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
-                ) {
-                    Text(
-                        text = row.name,
-                        style = typography.identifier,
-                        color = if (stopped) colors.inkMuted else colors.ink,
-                        maxLines = if (isLargeText) 2 else 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = true),
-                    )
-                    if (!isLargeText) {
-                        Text(
-                            text = facts,
-                            style = typography.caption,
-                            color = colors.inkFaint,
-                            maxLines = 1,
-                        )
-                    }
-                    if (row.pinned) {
-                        val pinnedDesc = stringResource(R.string.home_row_pinned)
-                        Icon(
-                            imageVector = Icons.Filled.PushPin,
-                            contentDescription = pinnedDesc,
-                            tint = colors.inkFaint,
-                            modifier = Modifier.size(12.dp),
-                        )
-                    }
-                }
+                NameLine(
+                    name = row.name,
+                    facts = if (isLargeText) null else facts,
+                    pinned = row.pinned,
+                    nameColor = if (stopped) colors.inkMuted else colors.ink,
+                    largeText = isLargeText,
+                )
 
                 if (isLargeText && facts.isNotEmpty()) {
                     Text(
@@ -876,89 +907,158 @@ private fun AgentListRow(
                     )
                 }
 
-                if (previewAnnotated != null && secondLine != null) {
-                    val secondColor = when (secondLine.ink) {
-                        FleetWords.Ink.Ask -> colors.ink
-                        FleetWords.Ink.Quiet -> colors.inkMuted
-                        FleetWords.Ink.Warning -> colors.accent
-                        FleetWords.Ink.Error -> colors.removed
-                    }
-                    Text(
-                        text = previewAnnotated,
-                        style = typography.detail,
-                        color = secondColor,
-                        maxLines = if (rowState.needsYou || isLargeText) 2 else 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            if (hasFamilyToggle) {
-                val toggleDesc = if (row.expanded) {
-                    stringResource(R.string.home_family_hide, row.children, row.name)
-                } else {
-                    stringResource(R.string.home_family_show, row.children, row.name)
-                }
-                // The toggle's 48 dp target reaches left over the row's text
-                // rather than right, so it ends where the More button's
-                // target begins and a tap between them has one owner.
-                Box(
-                    modifier = Modifier
-                        .padding(start = Space.s)
-                        .widthIn(min = ThumbTarget.MinSize)
-                        .heightIn(min = ThumbTarget.MinSize)
-                        .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                        .clickable(role = Role.Button, onClick = onToggleFamily)
-                        .semantics { contentDescription = toggleDesc }
-                        .testTag(TestTags.homeFamily(row.name)),
-                    contentAlignment = Alignment.CenterEnd,
-                ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    if (row.speaksForAMember) {
-                        AmuxAttentionDot(size = 7.dp)
-                    }
-                    Text(
-                        text = row.children.toString(),
-                        style = typography.caption,
-                        color = colors.inkMuted,
-                    )
-                    Icon(
-                        imageVector = if (row.expanded) {
-                            Icons.Outlined.KeyboardArrowUp
+                if ((previewAnnotated != null && secondLine != null) || hasFamilyToggle) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s),
+                    ) {
+                        if (previewAnnotated != null && secondLine != null) {
+                            val secondColor = when (secondLine.ink) {
+                                FleetWords.Ink.Ask -> colors.ink
+                                FleetWords.Ink.Quiet -> colors.inkMuted
+                                FleetWords.Ink.Warning -> colors.accent
+                                FleetWords.Ink.Error -> colors.removed
+                            }
+                            Text(
+                                text = previewAnnotated,
+                                style = typography.detail,
+                                color = secondColor,
+                                maxLines = if (rowState.needsYou || isLargeText) 2 else 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
                         } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = null,
-                        tint = colors.inkFaint,
-                        modifier = Modifier.size(IconSize.Inline),
-                    )
-                }
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                        if (hasFamilyToggle) {
+                            FamilyToggle(row = row, onToggle = onToggleFamily)
+                        }
+                    }
                 }
             }
-
-            val moreDesc = stringResource(R.string.action_more_options)
-            // Room for the More button's target to spill into, so it meets
-            // the family toggle's target instead of covering it.
-            Spacer(modifier = Modifier.width(AmuxEdgeSpill))
-            AmuxEdgeIconButton(
-                icon = Icons.Outlined.MoreVert,
-                contentDescription = moreDesc,
-                onClick = onOpenMenu,
-                size = IconSize.Control,
-                ink = GlyphInk.MoreVert,
-                tint = colors.inkFaint,
-                modifier = Modifier.testTag(menuTag),
-            )
         }
 
         if (showDivider) {
-            AmuxInsetHairline(leadingInset = Space.margin + 20.dp + indent)
+            AmuxInsetHairline(leadingInset = Space.margin + AgentMarkColumn + indent)
         }
     }
 }
+
+/**
+ * The name over the row's facts and pin, on one baseline. The name keeps its
+ * room and the facts give way to it, ending in "…", as iOS lays the line out.
+ */
+@Composable
+private fun NameLine(
+    name: String,
+    facts: String?,
+    pinned: Boolean,
+    nameColor: Color,
+    largeText: Boolean,
+) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        Text(
+            text = name,
+            style = typography.identifier,
+            color = nameColor,
+            maxLines = if (largeText) 2 else 1,
+            overflow = TextOverflow.Ellipsis,
+            // Unweighted, so it is measured first and keeps its room.
+            modifier = Modifier.alignByBaseline(),
+        )
+        if (facts.isNullOrEmpty()) {
+            Spacer(modifier = Modifier.weight(1f))
+        } else {
+            Text(
+                text = facts,
+                style = typography.caption,
+                color = colors.inkFaint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .alignByBaseline()
+                    .weight(1f, fill = true),
+            )
+        }
+        if (pinned) {
+            Icon(
+                imageVector = Icons.Filled.PushPin,
+                contentDescription = null,
+                tint = colors.inkFaint,
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .size(12.dp),
+            )
+        }
+    }
+}
+
+/**
+ * How many agents a head started, and the control that lists them, under the
+ * row's age. Its target grows to 48 dp around the count and chevron without
+ * pushing the row's lines apart.
+ */
+private val FamilyToggleSpill = 4.dp
+
+@Composable
+private fun FamilyToggle(row: FleetRow, onToggle: () -> Unit) {
+    val colors = AmuxTheme.colors
+    val toggleDesc = if (row.expanded) {
+        stringResource(R.string.home_family_hide, row.children, row.name)
+    } else {
+        stringResource(R.string.home_family_show, row.children, row.name)
+    }
+    val foldState = stringResource(if (row.expanded) R.string.fold_state_open else R.string.fold_state_folded)
+    Box(
+        modifier = Modifier
+            .spillTarget()
+            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
+            .clickable(role = Role.Button, onClick = onToggle)
+            .semantics {
+                contentDescription = toggleDesc
+                stateDescription = foldState
+            }
+            .testTag(TestTags.homeFamily(row.name)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            if (row.speaksForAMember) {
+                AmuxAttentionDot(size = 7.dp)
+            }
+            Text(
+                text = row.children.toString(),
+                style = AmuxTheme.typography.caption,
+                color = colors.inkMuted,
+            )
+            Icon(
+                imageVector = if (row.expanded) {
+                    Icons.Outlined.KeyboardArrowUp
+                } else {
+                    Icons.Outlined.KeyboardArrowDown
+                },
+                contentDescription = null,
+                tint = colors.inkFaint,
+                modifier = Modifier.size(IconSize.Inline),
+            )
+        }
+    }
+}
+
+/** The state mark's column, and the step a subagent is indented by. */
+private val AgentMarkColumn = 20.dp
+
+/** How far above the name's baseline the mark's centre sits: on its lowercase letters. */
+private val MarkAboveBaseline = 5.dp
 
 /** iOS's agent row minimum: a one-line row is no shorter than a two-line one. */
 private val AgentRowMinHeight = 64.dp
@@ -1007,33 +1107,40 @@ private fun styledSecondLine(
     }
 }
 
+/**
+ * The settled agents, behind one row at the head of the list: drawn as a
+ * row, so it reads as a place to go, on the agents' columns, with the rule
+ * under it inset to their names.
+ */
 @Composable
-private fun SettledFooterRow(
+private fun SettledHeadRow(
     count: Int,
     onClick: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
+    val title = stringResource(R.string.home_settled_row, count)
     Column(modifier = Modifier.fillMaxWidth()) {
-        AmuxHairline(
-            modifier = Modifier.padding(top = Space.s),
-            color = colors.hairline.copy(alpha = 0.65f),
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
                 .clickable(role = Role.Button, onClick = onClick)
+                .semantics(mergeDescendants = true) { contentDescription = title }
                 .padding(horizontal = Space.margin, vertical = Space.m)
                 .testTag(TestTags.HOME_SETTLED_ROW),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.m),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Archive,
-                contentDescription = null,
-                tint = colors.inkMuted,
-                modifier = Modifier.size(IconSize.Control),
-            )
+            Box(modifier = Modifier.width(AgentMarkColumn), contentAlignment = Alignment.CenterStart) {
+                Icon(
+                    imageVector = Icons.Outlined.Inventory2,
+                    contentDescription = null,
+                    tint = colors.inkMuted,
+                    modifier = Modifier
+                        .offset(x = -SettledGlyphInset)
+                        .size(IconSize.Control),
+                )
+            }
+            // A way to somewhere, not an agent: quieter than the names.
             Text(
                 text = stringResource(R.string.home_section_settled),
                 style = AmuxTheme.typography.body,
@@ -1046,8 +1153,12 @@ private fun SettledFooterRow(
                 color = colors.inkMuted,
             )
         }
+        AmuxInsetHairline(leadingInset = Space.margin + AgentMarkColumn)
     }
 }
+
+/** Moves the archive glyph back so its centre is on the state marks' centre. */
+private val SettledGlyphInset = 4.dp
 
 @Composable
 private fun rememberHomeCallouts(state: AgentsHomeState): List<HomeCallout> {
@@ -1058,7 +1169,7 @@ private fun rememberHomeCallouts(state: AgentsHomeState): List<HomeCallout> {
             id = "pair.${host.name}",
             title = offer.title,
             detail = offer.detail,
-            icon = Icons.Outlined.Add,
+            icon = pairOfferIcon(offer),
             buttonLabel = offer.buttonLabel,
             cardTestTag = TestTags.homeFound(host.name),
             actionTestTag = if (offer.subscribe) TestTags.homeSubscribe(host.name) else TestTags.homePair(host.name),
@@ -1136,20 +1247,42 @@ internal fun HomeCalloutView(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** What can be done to an agent from the list, in the order the sheet offers it. */
+internal enum class RowMenuAction { Pin, Unpin, Rename, Settle, Unsettle, CancelSettle, Delete }
+
+/** The actions [row] offers: the long-press sheet's rows and TalkBack's actions on the row. */
+internal fun rowMenuActions(row: FleetRow): List<RowMenuAction> = buildList {
+    if (row.pinnable) add(if (row.pinned) RowMenuAction.Unpin else RowMenuAction.Pin)
+    add(RowMenuAction.Rename)
+    when {
+        row.closed -> {
+            add(RowMenuAction.Unsettle)
+            if (row.deletable) add(RowMenuAction.Delete)
+        }
+        row.card.closeHeld -> add(RowMenuAction.CancelSettle)
+        else -> add(RowMenuAction.Settle)
+    }
+}
+
+@Composable
+private fun rowMenuLabel(action: RowMenuAction): String = stringResource(
+    when (action) {
+        RowMenuAction.Pin -> R.string.home_action_pin
+        RowMenuAction.Unpin -> R.string.home_action_unpin
+        RowMenuAction.Rename -> R.string.home_action_rename
+        RowMenuAction.Settle -> R.string.home_action_settle
+        RowMenuAction.Unsettle -> R.string.home_action_unsettle
+        RowMenuAction.CancelSettle -> R.string.home_action_cancel_settle
+        RowMenuAction.Delete -> R.string.home_action_delete_agent
+    },
+)
+
 @Composable
 private fun AgentRowActionSheet(
     row: FleetRow,
     onDismiss: () -> Unit,
-    onPin: () -> Unit,
-    onUnpin: () -> Unit,
-    onRename: () -> Unit,
-    onSettle: () -> Unit,
-    onUnsettle: () -> Unit,
-    onCancelSettle: () -> Unit,
-    onDelete: () -> Unit,
+    onAction: (RowMenuAction) -> Unit,
 ) {
-    val colors = AmuxTheme.colors
     AmuxSheet(
         onDismissRequest = onDismiss,
     ) {
@@ -1160,65 +1293,32 @@ private fun AgentRowActionSheet(
                 .testTag(TestTags.HOME_ROW_ACTIONS_SHEET),
         ) {
             AmuxSheetHeader(title = row.name)
-            if (row.pinnable) {
-                if (row.pinned) {
-                    AmuxActionRow(
-                        icon = Icons.Outlined.PushPin,
-                        label = stringResource(R.string.home_action_unpin),
-                        onClick = onUnpin,
-                        modifier = Modifier.testTag(TestTags.HOME_ACTION_UNPIN),
-                    )
-                } else {
-                    AmuxActionRow(
-                        icon = Icons.Outlined.PushPin,
-                        label = stringResource(R.string.home_action_pin),
-                        onClick = onPin,
-                        modifier = Modifier.testTag(TestTags.HOME_ACTION_PIN),
-                    )
-                }
-            }
-            AmuxActionRow(
-                icon = Icons.Outlined.Edit,
-                label = stringResource(R.string.home_action_rename),
-                onClick = onRename,
-                modifier = Modifier.testTag(TestTags.HOME_ACTION_RENAME),
-            )
-            when {
-                row.closed -> {
-                    AmuxActionRow(
-                        icon = Icons.Outlined.Unarchive,
-                        label = stringResource(R.string.home_action_unsettle),
-                        onClick = onUnsettle,
-                        modifier = Modifier.testTag(TestTags.HOME_ACTION_UNSETTLE),
-                    )
-                    if (row.deletable) {
-                        AmuxActionRow(
-                            icon = Icons.Outlined.DeleteOutline,
-                            label = stringResource(R.string.home_action_delete_agent),
-                            onClick = onDelete,
-                            destructive = true,
-                            modifier = Modifier.testTag(TestTags.HOME_ACTION_DELETE),
-                        )
-                    }
-                }
-                row.card.closeHeld -> {
-                    AmuxActionRow(
-                        icon = Icons.AutoMirrored.Outlined.Undo,
-                        label = stringResource(R.string.home_action_cancel_settle),
-                        onClick = onCancelSettle,
-                        modifier = Modifier.testTag(TestTags.HOME_ACTION_CANCEL_SETTLE),
-                    )
-                }
-                else -> {
-                    AmuxActionRow(
-                        icon = Icons.Outlined.CheckCircle,
-                        label = stringResource(R.string.home_action_settle),
-                        onClick = onSettle,
-                        modifier = Modifier.testTag(TestTags.HOME_ACTION_SETTLE),
-                    )
-                }
+            for (action in rowMenuActions(row)) {
+                AmuxActionRow(
+                    icon = when (action) {
+                        RowMenuAction.Pin, RowMenuAction.Unpin -> Icons.Outlined.PushPin
+                        RowMenuAction.Rename -> Icons.Outlined.Edit
+                        RowMenuAction.Settle -> Icons.Outlined.CheckCircle
+                        RowMenuAction.Unsettle -> Icons.Outlined.Unarchive
+                        RowMenuAction.CancelSettle -> Icons.AutoMirrored.Outlined.Undo
+                        RowMenuAction.Delete -> Icons.Outlined.DeleteOutline
+                    },
+                    label = rowMenuLabel(action),
+                    onClick = { onAction(action) },
+                    destructive = action == RowMenuAction.Delete,
+                    modifier = Modifier.testTag(
+                        when (action) {
+                            RowMenuAction.Pin -> TestTags.HOME_ACTION_PIN
+                            RowMenuAction.Unpin -> TestTags.HOME_ACTION_UNPIN
+                            RowMenuAction.Rename -> TestTags.HOME_ACTION_RENAME
+                            RowMenuAction.Settle -> TestTags.HOME_ACTION_SETTLE
+                            RowMenuAction.Unsettle -> TestTags.HOME_ACTION_UNSETTLE
+                            RowMenuAction.CancelSettle -> TestTags.HOME_ACTION_CANCEL_SETTLE
+                            RowMenuAction.Delete -> TestTags.HOME_ACTION_DELETE
+                        },
+                    ),
+                )
             }
         }
     }
 }
-

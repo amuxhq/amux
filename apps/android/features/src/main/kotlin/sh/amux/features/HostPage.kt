@@ -176,6 +176,23 @@ fun HostPage(
                         )
                     }
 
+                    // The way back for a computer that unpaired this phone,
+                    // and so the first thing offered; a healthy computer has
+                    // nothing to pair again.
+                    if (host.reach == Reach.Offline(Offline.Revoked)) {
+                        val pairAgainSpoken = stringResource(R.string.host_page_pair_again_spoken, host.name)
+                        AmuxActionButton(
+                            label = stringResource(R.string.host_page_pair_again),
+                            kind = ActionButtonKind.Primary,
+                            fillWidth = true,
+                            onClick = { onAction(HostPageAction.PairAgain(host.hostId)) },
+                            modifier = Modifier
+                                .padding(horizontal = Space.margin)
+                                .semantics { contentDescription = pairAgainSpoken }
+                                .testTag(HostPageTags.PAIR_AGAIN),
+                        )
+                    }
+
                     if (host.reachGroup() == HostReachGroup.Away && state.accountPro != true) {
                         val subscribeSpoken = stringResource(R.string.host_page_subscribe_spoken, host.name)
                         AmuxActionButton(
@@ -190,212 +207,155 @@ fun HostPage(
                         )
                     }
 
-                    // Status & reach section
-                    Column(
+                    // Everything known about it, in one surface: what it is,
+                    // what it runs, where it is, and the key to compare.
+                    AmuxRowCard(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .padding(horizontal = Space.margin)
                             .testTag(HostPageTags.STATUS_SECTION),
                     ) {
-                        AmuxSectionHeader(title = stringResource(R.string.host_page_section_status))
-                        AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
+                        var first = true
+                        @Composable
+                        fun rule() {
+                            if (!first) AmuxInsetHairline(leadingInset = Space.l)
+                            first = false
+                        }
+                        val platform = host.platform?.label
+                        if (platform != null) {
+                            rule()
                             HostFactRow(
-                                label = stringResource(R.string.host_page_fact_reach),
-                                value = reachLine.orEmpty(),
+                                label = stringResource(R.string.host_page_fact_platform),
+                                value = platform,
                                 monoValue = false,
                                 isLargeText = isLargeText,
-                                modifier = Modifier.testTag(HostPageTags.FACT_REACH),
+                                modifier = Modifier.testTag(HostPageTags.FACT_PLATFORM),
                             )
-                            val goneAt = state.wentOfflineAtMs
-                            val nowMs = if (!host.isOnline && goneAt != null) clock.nowMs() else 0L
-                            if (!host.isOnline && goneAt != null && nowMs >= goneAt) {
-                                AmuxInsetHairline()
-                                val elapsed = Elapsed.spelled((nowMs - goneAt) / 1_000.0)
-                                HostFactRow(
-                                    label = stringResource(R.string.host_page_fact_last_seen),
-                                    value = stringResource(R.string.host_page_fact_last_seen_ago, elapsed),
-                                    monoValue = false,
-                                    isLargeText = isLargeText,
-                                    modifier = Modifier.testTag(HostPageTags.FACT_LAST_SEEN),
-                                )
-                            }
-                            val platform = host.platform?.label
-                            if (platform != null) {
-                                AmuxInsetHairline()
-                                HostFactRow(
-                                    label = stringResource(R.string.host_page_fact_platform),
-                                    value = platform,
-                                    monoValue = false,
-                                    isLargeText = isLargeText,
-                                    modifier = Modifier.testTag(HostPageTags.FACT_PLATFORM),
-                                )
-                            }
-                            val version = host.version
-                            if (!version.isNullOrEmpty()) {
-                                AmuxInsetHairline()
-                                HostFactRow(
-                                    label = stringResource(R.string.host_page_fact_version),
-                                    value = version,
-                                    monoValue = true,
-                                    isLargeText = isLargeText,
-                                    modifier = Modifier.testTag(HostPageTags.FACT_VERSION),
-                                )
-                            }
-                            if (!host.isOnline &&
-                                host.reach != Reach.Offline(Offline.Revoked) &&
-                                !host.lastDialError.isNullOrEmpty()
-                            ) {
-                                AmuxInsetHairline()
-                                HostFactRow(
-                                    label = stringResource(R.string.host_page_fact_last_try),
-                                    value = stringResource(R.string.host_page_fact_could_not_connect),
-                                    monoValue = false,
-                                    isLargeText = isLargeText,
-                                    modifier = Modifier.testTag(HostPageTags.FACT_LAST_TRY),
-                                )
-                            }
                         }
-                    }
-
-                    // Providers section
-                    val knownProviders = host.providers.filter { it.provider != Provider.Unspecified }
-                    if (knownProviders.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(HostPageTags.PROVIDERS_SECTION),
-                        ) {
-                            AmuxSectionHeader(
-                                title = stringResource(R.string.host_page_section_providers),
-                                trailing = knownProviders.size.toString(),
+                        val version = host.version
+                        if (!version.isNullOrEmpty()) {
+                            rule()
+                            HostFactRow(
+                                label = stringResource(R.string.host_page_fact_version),
+                                value = version,
+                                monoValue = true,
+                                isLargeText = isLargeText,
+                                modifier = Modifier.testTag(HostPageTags.FACT_VERSION),
                             )
-                            AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
-                                knownProviders.forEachIndexed { index, signIn ->
-                                    if (index > 0) AmuxInsetHairline()
-                                    val name = if (signIn.provider == Provider.Codex) {
-                                        stringResource(R.string.new_agent_provider_codex)
+                        }
+                        for (signIn in host.providers.filter { it.provider != Provider.Unspecified }) {
+                            rule()
+                            val name = if (signIn.provider == Provider.Codex) {
+                                stringResource(R.string.new_agent_provider_codex)
+                            } else {
+                                stringResource(R.string.new_agent_provider_claude)
+                            }
+                            HostFactRow(
+                                label = name,
+                                value = stringResource(
+                                    if (signIn.signedIn) {
+                                        R.string.host_page_provider_signed_in
                                     } else {
-                                        stringResource(R.string.new_agent_provider_claude)
-                                    }
-                                    val status = stringResource(
-                                        if (signIn.signedIn) {
-                                            R.string.host_page_provider_signed_in
-                                        } else {
-                                            R.string.host_page_provider_not_signed_in
-                                        },
-                                    )
-                                    HostFactRow(
-                                        label = name,
-                                        value = status,
-                                        monoValue = false,
-                                        isLargeText = isLargeText,
-                                        modifier = Modifier.testTag(HostPageTags.providerRow(name)),
-                                    )
-                                }
-                            }
+                                        R.string.host_page_provider_not_signed_in
+                                    },
+                                ),
+                                monoValue = false,
+                                isLargeText = isLargeText,
+                                modifier = Modifier.testTag(HostPageTags.providerRow(name)),
+                            )
                         }
-                    }
-
-                    // Addresses section with tap-to-copy
-                    if (host.addrs.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(HostPageTags.ADDRESSES_SECTION),
+                        if (!host.isOnline &&
+                            host.reach != Reach.Offline(Offline.Revoked) &&
+                            !host.lastDialError.isNullOrEmpty()
                         ) {
-                            AmuxSectionHeader(title = stringResource(R.string.host_page_section_addresses))
-                            AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
-                                host.addrs.forEachIndexed { index, addr ->
-                                    if (index > 0) AmuxInsetHairline()
-                                    val key = "addr:$index:$addr"
-                                    val copied = copiedKey == key
-                                    val spoken = stringResource(R.string.host_page_copy_address_spoken, addr)
-                                    CopyableMonoRow(
-                                        value = addr,
-                                        copied = copied,
-                                        spokenDescription = spoken,
-                                        onClick = {
-                                            copiedKey = key
-                                            onAction(HostPageAction.CopyAddress(addr))
-                                        },
-                                        modifier = Modifier.testTag(HostPageTags.addressRow(index)),
-                                    )
-                                }
-                            }
+                            rule()
+                            HostFactRow(
+                                label = stringResource(R.string.host_page_fact_last_try),
+                                value = stringResource(R.string.host_page_fact_could_not_connect),
+                                monoValue = false,
+                                isLargeText = isLargeText,
+                                modifier = Modifier.testTag(HostPageTags.FACT_LAST_TRY),
+                            )
                         }
-                    }
-
-                    // Fingerprint / Identity key section with tap-to-copy
-                    val fingerprint = state.fingerprint?.takeIf { it.isNotBlank() }
-                    if (fingerprint != null) {
-                        val grouped = FingerprintFormat.grouped(fingerprint)
-                        val key = "fingerprint"
-                        val copied = copiedKey == key
-                        val spoken = stringResource(R.string.host_page_copy_fingerprint_spoken)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(HostPageTags.FINGERPRINT_SECTION),
-                        ) {
-                            AmuxSectionHeader(title = stringResource(R.string.host_page_section_fingerprint))
-                            AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
+                        if (host.addrs.isNotEmpty()) {
+                            rule()
+                            StackedLabel(
+                                text = stringResource(R.string.host_page_section_addresses),
+                                modifier = Modifier.testTag(HostPageTags.ADDRESSES_SECTION),
+                            )
+                            host.addrs.forEachIndexed { index, addr ->
+                                val key = "addr:$index:$addr"
                                 CopyableMonoRow(
-                                    value = grouped,
-                                    copied = copied,
-                                    spokenDescription = spoken,
+                                    value = addr,
+                                    copied = copiedKey == key,
+                                    spokenDescription = stringResource(R.string.host_page_copy_address_spoken, addr),
                                     onClick = {
                                         copiedKey = key
-                                        onAction(HostPageAction.CopyFingerprint(fingerprint))
+                                        onAction(HostPageAction.CopyAddress(addr))
                                     },
-                                    modifier = Modifier.testTag(HostPageTags.FINGERPRINT_ROW),
+                                    modifier = Modifier.testTag(HostPageTags.addressRow(index)),
                                 )
                             }
                         }
-                    }
-
-                    // Actions section: optional sign-in offer, Pair Again, Revoke
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Space.margin),
-                        verticalArrangement = Arrangement.spacedBy(Space.m),
-                    ) {
-                        if (state.canOfferSignIn) {
-                            val offerLabel = if (state.offeringSignIn) {
-                                stringResource(R.string.host_page_offering_sign_in)
-                            } else {
-                                stringResource(R.string.host_page_offer_sign_in, host.name)
-                            }
-                            AmuxActionButton(
-                                label = offerLabel,
-                                kind = ActionButtonKind.Outline,
-                                fillWidth = true,
-                                enabled = !state.offeringSignIn,
-                                onClick = { onAction(HostPageAction.OfferSignIn(host.hostId)) },
-                                modifier = Modifier.testTag(HostPageTags.OFFER_SIGN_IN),
+                        val fingerprint = state.fingerprint?.takeIf { it.isNotBlank() }
+                        if (fingerprint != null) {
+                            rule()
+                            StackedLabel(
+                                text = stringResource(R.string.host_page_section_fingerprint),
+                                modifier = Modifier.testTag(HostPageTags.FINGERPRINT_SECTION),
+                            )
+                            CopyableMonoRow(
+                                value = FingerprintFormat.grouped(fingerprint),
+                                copied = copiedKey == "fingerprint",
+                                spokenDescription = stringResource(R.string.host_page_copy_fingerprint_spoken),
+                                onClick = {
+                                    copiedKey = "fingerprint"
+                                    onAction(HostPageAction.CopyFingerprint(fingerprint))
+                                },
+                                modifier = Modifier.testTag(HostPageTags.FINGERPRINT_ROW),
                             )
                         }
+                    }
 
-                        val pairAgainSpoken = stringResource(R.string.host_page_pair_again_spoken, host.name)
+                    if (state.canOfferSignIn) {
+                        val offerLabel = if (state.offeringSignIn) {
+                            stringResource(R.string.host_page_offering_sign_in)
+                        } else {
+                            stringResource(R.string.host_page_offer_sign_in)
+                        }
+                        val offerSpoken = stringResource(R.string.host_page_offer_sign_in_spoken, host.name)
                         AmuxActionButton(
-                            label = stringResource(R.string.host_page_pair_again),
+                            label = offerLabel,
                             kind = ActionButtonKind.Outline,
                             fillWidth = true,
-                            onClick = { onAction(HostPageAction.PairAgain(host.hostId)) },
+                            enabled = !state.offeringSignIn,
+                            onClick = { onAction(HostPageAction.OfferSignIn(host.hostId)) },
                             modifier = Modifier
-                                .semantics { contentDescription = pairAgainSpoken }
-                                .testTag(HostPageTags.PAIR_AGAIN),
+                                .padding(horizontal = Space.margin)
+                                .semantics { if (!state.offeringSignIn) contentDescription = offerSpoken }
+                                .testTag(HostPageTags.OFFER_SIGN_IN),
                         )
+                    }
 
+                    // Last on the page, its words in the colour kept for what
+                    // cannot be undone, and no slab of colour around them.
+                    AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
                         val revokeSpoken = stringResource(R.string.host_page_revoke_spoken, host.name)
-                        AmuxActionButton(
-                            label = stringResource(R.string.host_page_revoke),
-                            kind = ActionButtonKind.Destructive,
-                            fillWidth = true,
-                            onClick = { confirmingRevoke = true },
+                        Row(
                             modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = ThumbTarget.MinSize)
+                                .clickable(role = Role.Button) { confirmingRevoke = true }
                                 .semantics { contentDescription = revokeSpoken }
+                                .padding(horizontal = Space.l, vertical = Space.m)
                                 .testTag(HostPageTags.REVOKE),
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.host_page_revoke),
+                                style = AmuxTheme.typography.body,
+                                color = colors.removed,
+                            )
+                        }
                     }
                 }
             }
@@ -431,7 +391,7 @@ fun HostPage(
                     modifier = Modifier.testTag(HostPageTags.REVOKE_CONFIRM),
                 ) {
                     Text(
-                        text = stringResource(R.string.host_page_revoke),
+                        text = stringResource(R.string.host_page_revoke_confirm),
                         style = AmuxTheme.typography.bodyEmphasis,
                         color = colors.removed,
                     )
@@ -506,6 +466,19 @@ private fun HostFactRow(
     }
 }
 
+/** A label over values stacked under it, as the addresses and the fingerprint are. */
+@Composable
+private fun StackedLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = AmuxTheme.typography.body,
+        color = AmuxTheme.colors.ink,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = Space.l, end = Space.l, top = Space.m),
+    )
+}
+
 @Composable
 private fun CopyableMonoRow(
     value: String,
@@ -522,7 +495,7 @@ private fun CopyableMonoRow(
             .fillMaxWidth()
             .heightIn(min = ThumbTarget.MinSize)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = Space.l, vertical = Space.m)
+            .padding(horizontal = Space.l, vertical = Space.s)
             .semantics { contentDescription = effectiveDescription },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
@@ -530,7 +503,7 @@ private fun CopyableMonoRow(
         Text(
             text = value,
             style = AmuxTheme.typography.monoSmall,
-            color = colors.ink,
+            color = colors.inkMuted,
             modifier = Modifier.weight(1f),
         )
         if (copied) {

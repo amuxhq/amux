@@ -32,6 +32,7 @@ import sh.amux.core.runtime.BillingStoreFront
 import sh.amux.core.runtime.CloudService
 import sh.amux.core.runtime.DeletionStore
 import sh.amux.core.runtime.DiscoverySource
+import sh.amux.core.runtime.LocalNetworkSight
 import sh.amux.core.runtime.EntitlementWatch
 import sh.amux.core.runtime.FcmPushRegistrar
 import sh.amux.core.runtime.HostId
@@ -194,6 +195,12 @@ class Composition(
 
     val diagnosticsExport: StateFlow<DiagnosticsExportState>
         get() = actions.diagnosticsExport
+
+    /** Whether this phone can look for computers on its network. */
+    val localNetwork: StateFlow<LocalNetworkSight>
+        get() = runtime.discovery?.sight ?: alwaysLooking
+
+    private val alwaysLooking = MutableStateFlow(LocalNetworkSight.Looking).asStateFlow()
 
     private val _lastAuthCallback = MutableStateFlow<String?>(null)
     val lastAuthCallback: StateFlow<String?> = _lastAuthCallback.asStateFlow()

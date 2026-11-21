@@ -1937,7 +1937,9 @@ fn manage_agent(journey: &mut AndroidJourney) -> Proved {
     journey.tap("tab.agents")?;
     journey.wait_for(&["home.fab.new-agent"])?;
     journey.tap("home.fab.new-agent")?;
-    journey.wait_for(&["new-agent", "new-agent.provider.claude"])?;
+    journey.wait_for(&["new-agent", "new-agent.provider"])?;
+    journey.tap("new-agent.provider")?;
+    journey.wait_for(&["new-agent.provider.claude"])?;
     journey.tap("new-agent.provider.claude")?;
     journey.wait(
         |drawn| drawn.enabled("new-agent.start"),

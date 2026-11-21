@@ -10,6 +10,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowNetwork
+import android.content.Context
+import android.net.ConnectivityManager
 import sh.amux.values.Found
 
 @RunWith(RobolectricTestRunner::class)
@@ -86,5 +90,59 @@ class LocalDiscoveryTest {
             delivered.all { it.isEmpty() },
         )
         assertEquals(emptyList<Found>(), delivered.lastOrNull() ?: emptyList<Found>())
+    }
+
+    private val connectivity: ConnectivityManager
+        get() = RuntimeEnvironment.getApplication()
+            .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    /** A discovery on a phone that starts with no network at all. */
+    private fun discovery(): AndroidLocalDiscovery {
+        shadowOf(connectivity).clearAllNetworks()
+        return AndroidLocalDiscovery(context = RuntimeEnvironment.getApplication(), handOver = {})
+    }
+
+    private fun localWatch(): ConnectivityManager.NetworkCallback =
+        shadowOf(connectivity).networkCallbacks.single()
+
+    @Test
+    fun aLossToldBeforeTheFirstReadingStaysLost() {
+        val discovery = discovery()
+        discovery.start()
+        val wifi = ShadowNetwork.newInstance(41)
+
+        // The callback reports the network gone before the reading taken as
+        // the watch started lands, and that reading still lists it.
+        localWatch().onLost(wifi)
+        discovery.takeReading(listOf(wifi.networkHandle))
+
+        assertEquals(LocalNetworkSight.NoLocalNetwork, discovery.sight.value)
+        discovery.stop()
+    }
+
+    @Test
+    fun aNetworkComingBackDoesNotLiftARefusedBrowse() {
+        val discovery = discovery()
+        discovery.start()
+        discovery.browseRefused()
+
+        localWatch().onAvailable(ShadowNetwork.newInstance(42))
+
+        assertEquals(LocalNetworkSight.BrowseFailed, discovery.sight.value)
+        discovery.stop()
+    }
+
+    @Test
+    fun aCallbackDeliveredAfterStopChangesNothing() {
+        val discovery = discovery()
+        discovery.start()
+        val watch = localWatch()
+        discovery.takeReading(listOf(ShadowNetwork.newInstance(43).networkHandle))
+        val before = discovery.sight.value
+        discovery.stop()
+
+        watch.onLost(ShadowNetwork.newInstance(43))
+
+        assertEquals(before, discovery.sight.value)
     }
 }

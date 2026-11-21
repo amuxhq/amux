@@ -1,5 +1,11 @@
 package sh.amux.shell
 
+import android.provider.Settings
+
+import android.net.Uri
+
+import android.content.Intent
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -419,6 +425,18 @@ internal fun ChatRoute(
                         speech = DictationState.Permission.Allowed,
                         microphone = DictationState.Permission.Allowed,
                         available = false,
+                    )
+                }
+            },
+            onOpenDictationSettings = {
+                // This app's own page in Android's settings, where its
+                // microphone permission is turned back on.
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", context.packageName, null),
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     )
                 }
             },

@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.longClick
+
+import androidx.compose.ui.test.performTouchInput
+
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -99,12 +103,20 @@ class ReviewPageTest {
             }
         }
 
+        // Every file in one scroll.
+        composeRule.onNodeWithText("return valid;").assertIsDisplayed()
+        composeRule.onNodeWithText("Added Android docs.").assertIsDisplayed()
+
+        // A heading folds its file shut and opens it again.
+        composeRule.onNodeWithTag(AskReviewTags.reviewFileChip(0)).performClick()
+        composeRule.onNodeWithText("return valid;").assertDoesNotExist()
+        composeRule.onNodeWithTag(AskReviewTags.reviewFileChip(0)).performClick()
         composeRule.onNodeWithText("return valid;").assertIsDisplayed()
 
-        // Switch file chip
-        composeRule.onNodeWithTag(AskReviewTags.reviewFileChip(1)).performClick()
+        // The Files menu jumps to a file.
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_FILES).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.reviewFileMenuItem(1)).performClick()
         assertEquals(ReviewPageAction.SelectFile(1), actions.last())
-        composeRule.onNodeWithText("Added Android docs.").assertIsDisplayed()
     }
 
     @Test
@@ -175,7 +187,7 @@ class ReviewPageTest {
         assertEquals(ReviewPageAction.EditComment(0, "Handle expired and revoked tokens"), emitted.last())
         composeRule.onNodeWithText("Handle expired and revoked tokens").assertIsDisplayed()
 
-        // Tap Send Review
+        // Attach the review
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_SEND).performClick()
         assertEquals(ReviewPageAction.SendReview, emitted.last())
 
@@ -185,8 +197,8 @@ class ReviewPageTest {
         assertEquals(ReviewPageAction.DeleteComment(0), emitted.last())
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_SEND).assertDoesNotExist()
 
-        // Add file-level comment
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_FILE_COMMENT).performClick()
+        // Add file-level comment with a long press on the file's heading
+        composeRule.onNodeWithTag(AskReviewTags.reviewFileChip(0)).performTouchInput { longClick() }
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_INPUT).performSemanticsAction(SemanticsActions.SetText) {
             it(AnnotatedString("Looks solid overall"))
         }

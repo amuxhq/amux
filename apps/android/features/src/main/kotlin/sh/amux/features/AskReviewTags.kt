@@ -100,7 +100,7 @@ object AskReviewTags {
     const val REVIEW_ERROR: String = "review.error"
     const val REVIEW_RETRY: String = "review.retry"
     const val REVIEW_EMPTY: String = "review.empty"
-    const val REVIEW_FILE_COMMENT: String = "review.file.comment"
+    const val REVIEW_FILES: String = "review.files"
     const val REVIEW_COMMENT_SHEET: String = "review.comment.sheet"
     const val REVIEW_COMMENT_INPUT: String = "review.note"
     const val REVIEW_COMMENT_SAVE: String = "review.save"
@@ -108,7 +108,9 @@ object AskReviewTags {
     const val REVIEW_COMMENT_DELETE: String = "review.delete"
     const val REVIEW_COMMENT_CANCEL: String = "review.cancel"
 
+    /** A file's heading in the one scroll of every file. */
     fun reviewFileChip(index: Int): String = "review.file.$index"
+    fun reviewFileMenuItem(index: Int): String = "review.files.$index"
     fun reviewLine(fileIndex: Int, hunkIndex: Int, lineIndex: Int): String =
         "review.line.$fileIndex.$hunkIndex.$lineIndex"
     fun reviewCommentThread(index: Int): String = "review.comment.thread.$index"

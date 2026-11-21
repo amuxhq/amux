@@ -115,6 +115,7 @@
     <string name="chat_composer_interrupt">Interrupt</string>
     <string name="chat_composer_dictate">Dictate</string>
     <string name="chat_composer_stop_dictation">Stop Dictation</string>
+    <string name="chat_composer_dictation_settings">Open Settings</string>
     <string name="chat_composer_send_now">Send Now</string>
     <string name="chat_composer_withdraw">Withdraw</string>
     <string name="chat_composer_resend">Resend</string>
@@ -125,15 +126,4 @@
     <string name="chat_composer_native_stop">Stop</string>
     <string name="chat_composer_native_stopping">Stopping…</string>
     <string name="chat_composer_refused_prefix">Not sent · %1$s</string>
-    <string name="chat_composer_refusal_host_unreachable">its host is away</string>
-    <string name="chat_composer_refusal_exited">the agent ended</string>
-    <string name="chat_composer_refusal_exiting">the agent is stopping</string>
-    <string name="chat_composer_refusal_draining">the agent is shutting down</string>
-    <string name="chat_composer_refusal_closed_ask">that ask is already closed</string>
-    <string name="chat_composer_refusal_not_queued">it is no longer queued</string>
-    <string name="chat_composer_refusal_unsupported">this agent can’t take that input</string>
-    <string name="chat_composer_refusal_elsewhere">the terminal switched to another conversation</string>
-    <string name="chat_composer_refusal_too_long">the message is too long</string>
-    <string name="chat_composer_refusal_closed">this agent is settled</string>
-    <string name="chat_composer_refusal_generic">the agent refused it</string>
 </resources>

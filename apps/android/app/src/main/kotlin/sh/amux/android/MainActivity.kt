@@ -17,6 +17,8 @@ import androidx.compose.runtime.getValue
 import sh.amux.design.AmuxTheme
 import sh.amux.design.AppearanceMode
 import sh.amux.features.SettingsNotificationStatus
+import sh.amux.features.NetworkSight
+import sh.amux.core.runtime.LocalNetworkSight
 import sh.amux.features.StoreFailureScreen
 import sh.amux.shell.Shell
 
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
             val notificationStatus by appComposition.notificationStatus.collectAsState()
             val notificationsDismissed by appComposition.notificationsDismissed.collectAsState()
             val diagnosticsExport by appComposition.diagnosticsExport.collectAsState()
+            val localNetwork by appComposition.localNetwork.collectAsState()
 
             val systemDark = isSystemInDarkTheme()
             val isDark = when (appearanceMode) {
@@ -95,6 +98,11 @@ class MainActivity : ComponentActivity() {
                                 !notificationsDismissed &&
                                 notificationStatus != SettingsNotificationStatus.Enabled,
                             signingIn = signInState.working,
+                            networkSight = when (localNetwork) {
+                                LocalNetworkSight.Looking -> NetworkSight.Looking
+                                LocalNetworkSight.NoLocalNetwork -> NetworkSight.NoLocalNetwork
+                                LocalNetworkSight.BrowseFailed -> NetworkSight.BrowseFailed
+                            },
                             onAction = { action ->
                                 appComposition.handleShellAction(
                                     action = action,

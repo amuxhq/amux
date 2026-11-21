@@ -141,6 +141,7 @@ import sh.amux.values.RouteKind
 import sh.amux.values.SentPrompt
 import sh.amux.values.SignInView
 import sh.amux.values.Underway
+import sh.amux.words.ChatNotices
 import sh.amux.words.ChatWords
 import sh.amux.words.EMPTY_GROUP_STATE
 import sh.amux.words.nativeRunner
@@ -183,6 +184,7 @@ data class ComposerAttachmentUi(
  */
 object ChatComposerTags {
     const val ROOT: String = "chat.composer"
+    const val DICTATION_SETTINGS: String = "chat.dictationSettings"
     const val ACTIVITY: String = "chat.activity"
     const val EXITED_HEAD: String = "chat.exited"
     const val SWITCHED_AWAY: String = "chat.switchedAway"
@@ -262,6 +264,7 @@ data class ChatComposerState(
     val dictationEnabled: Boolean = false,
     val dictationActive: Boolean = false,
     val dictationSentence: String? = null,
+    val dictationDenied: Boolean = false,
 ) {
     val hasDraft: Boolean
         get() = draft.trim().isNotEmpty() || attachments.isNotEmpty()
@@ -300,6 +303,7 @@ data class ChatComposerCallbacks(
      */
     val onDockOpenChange: ((Boolean) -> Unit)? = null,
     val onToggleDictation: () -> Unit = {},
+    val onOpenDictationSettings: () -> Unit = {},
 )
 
 private const val MAX_SLASH_POPUP_ITEMS = 5
@@ -899,28 +903,10 @@ private val DockRowHeight = 52.dp
 /** The column the dock's leading glyphs sit in. */
 private val DockGlyph = 18.dp
 
+/** "Not sent · why", in the words every refusal in the chat uses. */
 @Composable
-private fun refusalMessage(refusal: Refusal): String {
-    val detail = refusal.detail?.trim()
-    val why = if (!detail.isNullOrEmpty()) {
-        detail
-    } else {
-        when (refusal.reason) {
-            RefusalReason.HostUnreachable -> stringResource(R.string.chat_composer_refusal_host_unreachable)
-            RefusalReason.Exited -> stringResource(R.string.chat_composer_refusal_exited)
-            RefusalReason.Exiting -> stringResource(R.string.chat_composer_refusal_exiting)
-            RefusalReason.Draining -> stringResource(R.string.chat_composer_refusal_draining)
-            RefusalReason.ClosedAsk -> stringResource(R.string.chat_composer_refusal_closed_ask)
-            RefusalReason.NotQueued -> stringResource(R.string.chat_composer_refusal_not_queued)
-            RefusalReason.Unsupported -> stringResource(R.string.chat_composer_refusal_unsupported)
-            RefusalReason.ConversationElsewhere -> stringResource(R.string.chat_composer_refusal_elsewhere)
-            RefusalReason.TooLong -> stringResource(R.string.chat_composer_refusal_too_long)
-            RefusalReason.AgentClosed -> stringResource(R.string.chat_composer_refusal_closed)
-            RefusalReason.Unspecified -> stringResource(R.string.chat_composer_refusal_generic)
-        }
-    }
-    return stringResource(R.string.chat_composer_refused_prefix, why)
-}
+private fun refusalMessage(refusal: Refusal): String =
+    stringResource(R.string.chat_composer_refused_prefix, ChatNotices.refusal(refusal))
 
 @Composable
 private fun SlashMatchesPopup(
@@ -1052,11 +1038,34 @@ private fun StandardComposerCard(
             }
 
             if (!state.dictationSentence.isNullOrEmpty()) {
-                Text(
-                    text = state.dictationSentence,
-                    style = typography.caption,
-                    color = colors.inkMuted,
-                )
+                // The message field's touch area grows up from its text, so
+                // the Settings button keeps clear of it and grows up instead.
+                Column(
+                    modifier = Modifier.padding(bottom = if (state.dictationDenied) Space.l else 0.dp),
+                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
+                ) {
+                    Text(
+                        text = state.dictationSentence,
+                        style = typography.caption,
+                        color = colors.inkMuted,
+                    )
+                    // Refused once, Android stops asking; only its settings
+                    // can allow the microphone again.
+                    if (state.dictationDenied) {
+                        Box(
+                            modifier = Modifier
+                                .spillTarget(spill = Alignment.Bottom)
+                                .clickable(role = Role.Button, onClick = callbacks.onOpenDictationSettings)
+                                .testTag(ChatComposerTags.DICTATION_SETTINGS),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_composer_dictation_settings),
+                                style = typography.caption,
+                                color = colors.accent,
+                            )
+                        }
+                    }
+                }
             }
 
             if (state.attachments.isNotEmpty() || state.uploadingCount > 0) {

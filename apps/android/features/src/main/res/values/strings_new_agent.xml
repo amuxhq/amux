@@ -19,6 +19,8 @@
     <string name="new_agent_directory_choose">Choose</string>
     <string name="new_agent_directory_unavailable">%1$s could not list its repositories. Choose where its agents work, or type a path.</string>
     <string name="new_agent_recent_spoken">Start in %1$s</string>
+    <string name="new_agent_provider_label">Agent</string>
+    <string name="new_agent_provider_not_signed_in">Not signed in on %1$s</string>
     <string name="new_agent_provider_claude">Claude</string>
     <string name="new_agent_provider_codex">Codex</string>
     <string name="new_agent_provider_signed_out">%1$s is not signed in on %2$s. Its agents can’t work there until it is.</string>

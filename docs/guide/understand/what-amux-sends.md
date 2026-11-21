@@ -25,8 +25,8 @@ off:
   `amux status` says whether it's on.
 - **On the iPhone:** turn off **Share Usage** in **Settings**. The app's App
   Store privacy label lists what it collects.
-- **On Android:** turn off **Share Usage Counts** under **Privacy &
-  Diagnostics** in **Settings**.
+- **On Android:** turn off **Share Usage** under **This Phone** in
+  **Settings**.
 - **With `DO_NOT_TRACK`:** amux started with `DO_NOT_TRACK` set to anything
   but empty or `0` sends nothing, whatever the setting says. It has to be set
   where amux starts, though. amux started at login, or by a service manager,
@@ -36,8 +36,7 @@ off:
 Debug builds and test runs never send usage counts. The published `amux`
 binary and Release builds of the phone apps—including a locally built
 Android Release APK or iPhone Release build without `debug-tools`—follow
-your **Send usage counts** / **Share Usage** / **Share Usage Counts**
-setting and `DO_NOT_TRACK`.
+your **Send usage counts** / **Share Usage** setting and `DO_NOT_TRACK`.
 
 ## Where it goes
 
@@ -143,8 +142,7 @@ when you send one yourself, from the terminal app, iPhone or Android, or
 automatically when amux catches one of its own bugs, if you turned on
 automatic reports. Automatic reports are off unless you turn them on: setting
 up asks, and you can change it later with **Send reports automatically** in
-Settings, **Send Automatic Reports** on iPhone, **Automatic Reports** on
-Android, or `amux config set auto_reports true`.
+Settings, **Send Automatic Reports** on iPhone and Android, or `amux config set auto_reports true`.
 
 A report you send yourself includes the screen you froze to report it, as
 you saw it, with your marks and your note. On both iPhone and Android, taking a

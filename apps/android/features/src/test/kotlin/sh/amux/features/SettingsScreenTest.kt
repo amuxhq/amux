@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.assertTextEquals
+
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
@@ -31,7 +33,7 @@ class SettingsScreenTest {
         id = "sub-1",
         name = "Ada Lovelace",
         email = "ada@example.com",
-        line = "2 hosts",
+        line = "2 computers",
         signedIn = true,
         selected = true,
         entitlementBadge = SettingsEntitlementBadge.Pro,
@@ -49,8 +51,18 @@ class SettingsScreenTest {
         entitlementBadge = SettingsEntitlementBadge.Free,
     )
 
+    private val waitingAccount = SettingsAccountItem(
+        id = "sub-3",
+        name = "Linus",
+        email = "linus@example.com",
+        line = "2 computers",
+        signedIn = true,
+        selected = false,
+        attention = 2,
+    )
+
     @Test
-    fun signedOutShowsCloudRelayExplanationAndEmitsSignIn() {
+    fun signedOutShowsOneSignInRowWithItsCaptionAndEmitsSignIn() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -74,13 +86,13 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun signedInListsAccountsBadgesExpiredSignInAgainAndAccountActions() {
+    fun signedInListsAccountsWaitingCountsExpiredSignInAgainAndAccountActions() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 SettingsScreen(
                     state = SettingsScreenState(
-                        accounts = listOf(proAccount, expiredAccount),
+                        accounts = listOf(proAccount, expiredAccount, waitingAccount),
                         deviceName = "Pixel 9",
                         appVersion = "0.9.0",
                     ),
@@ -90,8 +102,11 @@ class SettingsScreenTest {
         }
 
         composeRule.onNodeWithTag(SettingsTags.accountRow("ada@example.com")).assertIsDisplayed()
-        composeRule.onNodeWithTag(SettingsTags.accountBadge("ada@example.com"), useUnmergedTree = true)
+        // An account not on screen says how many of its agents need you.
+        composeRule.onNodeWithTag(SettingsTags.accountWaiting("linus@example.com"), useUnmergedTree = true)
             .assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTags.accountWaiting("ada@example.com"), useUnmergedTree = true)
+            .assertDoesNotExist()
 
         composeRule.onNodeWithTag(SettingsTags.accountSignInAgain("grace@example.com"))
             .performScrollTo()
@@ -145,7 +160,7 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun notificationsRowShowsHonestComingSoonStatusWithoutActionButtonWhenPushNotEnabled() {
+    fun notificationsRowIsHiddenWhileThisBuildDeliversNoPush() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -159,17 +174,13 @@ class SettingsScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_CARD).performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Coming soon").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText(
-            "Background push notifications are not yet enabled in this version of amux.",
-        ).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_CARD).assertDoesNotExist()
         composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).assertDoesNotExist()
         assertTrue(actions.isEmpty())
     }
 
     @Test
-    fun notificationsRowHandlesNotAskedAndConfiguredStatesWhenPushEnabled() {
+    fun notificationsRowAsksTheFirstTime() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -183,13 +194,15 @@ class SettingsScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_CARD).performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Enable Notifications").performScrollTo().performClick()
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_STATUS, useUnmergedTree = true)
+            .performScrollTo()
+            .assertTextEquals("Off")
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).performScrollTo().performClick()
         assertEquals(SettingsAction.EnableNotifications, actions.last())
     }
 
     @Test
-    fun notificationsRowOpensSystemSettingsWhenEnabledOrOffAndPushEnabled() {
+    fun notificationsRowOpensSystemSettingsOnceAsked() {
         val actions = mutableListOf<SettingsAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -203,7 +216,9 @@ class SettingsScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Enabled").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_STATUS, useUnmergedTree = true)
+            .performScrollTo()
+            .assertTextEquals("On")
         composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).performScrollTo().performClick()
         assertEquals(SettingsAction.OpenNotificationSettings, actions.last())
     }
@@ -287,6 +302,7 @@ class SettingsScreenTest {
                             accounts = listOf(proAccount),
                             appearance = SettingsAppearance.Light,
                             notificationStatus = SettingsNotificationStatus.Off,
+                            pushDeliveryComingSoon = false,
                             deviceName = "Pixel 9 Pro",
                             deviceFingerprint = "0123456789abcdef",
                             appVersion = "0.9.0",
@@ -300,7 +316,7 @@ class SettingsScreenTest {
         composeRule.onNodeWithTag(SettingsTags.APPEARANCE_DARK).performScrollTo().performClick()
         assertEquals(SettingsAction.SetAppearance(SettingsAppearance.Dark), actions.last())
 
-        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_STATUS).performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).assertDoesNotExist()
+        composeRule.onNodeWithTag(SettingsTags.NOTIFICATIONS_ACTION).performScrollTo().performClick()
+        assertEquals(SettingsAction.OpenNotificationSettings, actions.last())
     }
 }

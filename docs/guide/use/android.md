@@ -39,8 +39,9 @@ or the relay.
 
 ## Agents
 
-The **Agents** tab lists your agents: **Pinned** first, then **Needs you**,
-then **Live**. **Settled** holds the agents you're done with. Each agent goes by
+The **Agents** tab lists your agents in one list: pinned agents first, then
+the ones that need you, then the rest. **Settled**, at the top of the list,
+holds the agents you're done with. Each agent goes by
 the name you gave it or, if you left the Name field empty, the title Claude or
 Codex gives the conversation. The line under it says what the agent is doing or
 what it's waiting for. Tap the search icon in the top bar to search by name,
@@ -49,14 +50,15 @@ or a computer name) to narrow the list.
 
 Hold an agent row to **Pin** or **Unpin** it, **Rename** it, **Settle** it (it
 stops if it's running, and asks first if that would cut work short),
-**Un-settle** it, or **Delete Agent**. Sending a message to a settled agent
-starts it again.
+**Un-settle** it, or **Delete Agent**. With TalkBack, the same choices are in
+the row's actions. Sending a message to a settled agent starts it again.
 
 Tap **New Agent** at the bottom right to start an agent. Pick the computer and
 the folder (your repositories come first, then folders your agents used lately,
 then ones you used with Claude Code or Codex, or type a path). Tap the pin
 beside a folder to keep it among that computer's repositories, or tap it again
-to remove it. Then pick the agent, its model, effort and permission. Turn on
+to remove it. Then tap **Agent** to pick Claude or Codex, and pick its model,
+effort and permission. Turn on
 **New worktree** to give the agent a worktree of its own, made from the folder's
 repository, so it can work without touching your checkout. The computer says
 which agents are signed in there, and the app tells you before you start one
@@ -105,9 +107,12 @@ can always reply in your own words instead.
 
 ## Reviewing changes
 
-Open an agent's changes from its chat to read every file it touched. Select a
-line, or a range of lines, and comment on it with **Add to Review**. Your
-comments go back into the composer as one review, ready to send to the agent.
+Open an agent's changes from its chat to read every file it touched, one after
+another in a single scroll. Tap a file's name to fold it away or open it again,
+or use the list button at the top right to jump to a file. Tap a line and
+comment on it with **Add to Review**, or hold a file's name to comment on the
+whole file. **Attach Review** puts your comments into the composer as one
+review, ready to send to the agent.
 The count on the chat covers the agent's whole folder; if the folder changed
 since the agent last finished a turn, opening its changes brings the count up
 to date.
@@ -126,38 +131,47 @@ reaches each one:
 - **Offline**: nothing reaches the computer right now. Its agents stay in your
   list as they last were, and catch up when it's back.
 
-Computers found on your network that you haven't paired yet appear under
-**Found** above the list. Tap a computer to see its details, including its
-addresses and the fingerprint of its key. **Unpair This Computer** stops your
-phone reaching it until you pair again.
+Computers found on your network that you haven't paired yet appear above the
+list. Tap a computer to see its details, including its addresses and the
+fingerprint of its key. **Unpair This Computer** stops your phone reaching it
+until you pair again. If a computer unpairs your phone, its page offers
+**Pair Again**.
+
+If your phone isn't on Wi-Fi, or Android doesn't let amux look on the network,
+the first screen says so instead of looking forever, with a way to open Wi-Fi
+settings or try again.
 
 ## Accounts and subscriptions
 
 Tap your account picture at the top right of the **Agents** list to switch
 accounts, add another account, or open **Settings**. Sign-in opens `amux.sh` in
 your browser; the app never asks for your password directly. Each account keeps
-its own paired computers and agents. **Remove from This Phone** takes an account
-off your phone and leaves it on `amux.sh`; adding it back means pairing its
-computers again. **Delete Account** permanently deletes your `amux.sh` account
-after you confirm your email address.
+its own paired computers and agents. **Remove from This Phone** signs your phone out of an account and forgets the
+computers it paired for it; the account, its subscription and your agents on
+your computers stay as they are, and adding it back means pairing its computers
+again. **Delete Account** permanently deletes your `amux.sh` account after you
+confirm your email address. Deleting an account doesn't stop a subscription
+from renewing: cancel it where you bought it first.
 
-**Subscriptions:** in-app Google Play subscriptions are not enabled yet in this
-release. Subscribe or manage your Pro plan on
-[amux.sh](https://amux.sh/docs/account/plans-and-billing/), and your plan
-carries over to your Android phone automatically.
+**Subscriptions:** Google Play doesn't sell Pro yet. Subscribe or manage your
+Pro plan on [amux.sh](https://amux.sh/docs/account/plans-and-billing/), and
+your plan carries over to your Android phone automatically.
 
 ## Notifications
 
-Notifications are not yet delivered on Android in this release and are planned
-for a future update.
+When your phone can receive notifications from amux, **Settings** shows
+**Notifications** under **This Phone**, **On** or **Off** as Android has it.
+Tap it to allow notifications the first time, or to open Android's
+notification settings for amux after that.
 
 ## Settings, problem reports and diagnostics
 
-**Settings** holds your accounts, **Appearance** (**Light**, **Dark** or
-**System**), **Notifications**, **Privacy & Diagnostics** (**Share Usage
-Counts**, **Automatic Reports**, **Report a Problem**, **Export Diagnostics**
-and **Contact Support**), and **This Phone** (your phone's name, key
-fingerprint and app version). See
+**Settings** holds your accounts (another signed-in account shows how many of
+its agents need you, once your phone has heard from it), the selected account's plan and sign-out, **This Phone** (**Appearance**:
+**Light**, **Dark** or **System**; **Share Usage**; **Send Automatic Reports**;
+**Notifications**; and your phone's name, key fingerprint and app version), and
+**Help** (**Contact Support**, **Report a Problem** and **Export
+Diagnostics**). See
 [What amux sends](../understand/what-amux-sends.md).
 
 If something looks wrong, take a screenshot while using amux. A banner offers
@@ -169,7 +183,8 @@ screenshot), or open **Report a Problem** from **Settings**:
   or details. Hidden boxes are burned solidly black into the image before it
   leaves your phone.
 - **Add a note and send:** write a short note on the report or on any box and
-  tap **Send Report**. Reports go to your `amux.sh` account, so you need to be
+  tap **Send Report**. The page then shows the report's reference, with a
+  button to copy it, to quote if you write to us about it. Reports go to your `amux.sh` account, so you need to be
   signed in to send one.
 - **Export Diagnostics:** saves and shares this phone's diagnostic bundle
   directly using Android's share sheet if you prefer to inspect or send it

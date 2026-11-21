@@ -182,7 +182,8 @@ class NewAgentScreenTest {
         composeRule.onNodeWithTag(NewAgentTags.hostOption("studio")).performClick()
         assertEquals(NewAgentAction.SelectHost(studio.hostId), actions.last())
 
-        // Switch provider chip.
+        // Switch provider from the Agent list.
+        composeRule.onNodeWithTag(NewAgentTags.PROVIDER_ROW).performScrollTo().performClick()
         composeRule.onNodeWithTag(NewAgentTags.providerChip(Provider.Claude)).performClick()
         assertEquals(NewAgentAction.SelectProvider(Provider.Claude), actions.last())
 

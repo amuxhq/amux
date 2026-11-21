@@ -3,6 +3,7 @@ package sh.amux.android
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.content.SharedPreferences
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -183,6 +184,8 @@ class ShellActionHandler(
             }
             ShellAction.RetryPaywall -> scope.launch { retryPaywall() }
             ShellAction.SendInstallLink -> sendInstallLink(activityContext)
+            ShellAction.OpenWifiSettings -> openWifiSettings(activityContext)
+            ShellAction.LookOnNetworkAgain -> runtime.lookOnNetworkAgain()
             ShellAction.TurnOnNotifications -> {
                 if (_notificationStatus.value == SettingsNotificationStatus.NotAsked) {
                     prefs.edit().putBoolean(PREF_NOTIFICATIONS_ASKED, true).apply()
@@ -321,6 +324,16 @@ class ShellActionHandler(
                 paywall.load(billing)
             }
         }
+    }
+
+    // --- Local network ----------------------------------------------------
+
+    /** The system's Wi-Fi panel, over the app, where a network is joined. */
+    private fun openWifiSettings(activityContext: Context) {
+        val panel = Intent(Settings.Panel.ACTION_WIFI).apply {
+            if (activityContext !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { activityContext.startActivity(panel) }
     }
 
     // --- Sharing and diagnostics -------------------------------------------

@@ -145,8 +145,11 @@ fun SignInOfferSheet(
     onAction: (SignInOfferAction) -> Unit,
 ) {
     val colors = AmuxTheme.colors
+    // Signing a phone or a computer into an account is answered with Accept
+    // or Decline, never by a stray swipe.
     AmuxSheet(
         onDismissRequest = { if (!state.working) onAction(SignInOfferAction.Decline) },
+        dismissible = false,
     ) {
         SignInOfferSheetContent(
             state = state,
@@ -653,10 +656,6 @@ fun DeleteAccountSheetContent(
                     kept = false,
                     text = stringResource(R.string.account_sheet_delete_lost),
                 )
-                ConsequenceRow(
-                    kept = false,
-                    text = stringResource(R.string.account_sheet_delete_permanent),
-                )
                 if (!state.billingWarning.isNullOrBlank()) {
                     ConsequenceRow(
                         kept = false,
@@ -697,7 +696,7 @@ fun DeleteAccountSheetContent(
 
                     Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
                         AmuxActionButton(
-                            label = stringResource(R.string.account_sheet_delete_billing_portal),
+                            label = stringResource(R.string.account_sheet_delete_billing_portal, phase.providerPlace),
                             kind = ActionButtonKind.Primary,
                             fillWidth = true,
                             onClick = { onAction(DeleteAccountAction.OpenBillingPortal(phase.manageUrl)) },
@@ -756,7 +755,7 @@ fun DeleteAccountSheetContent(
 
                     Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
                         Text(
-                            text = stringResource(R.string.account_sheet_delete_email_label, state.email),
+                            text = stringResource(R.string.account_sheet_delete_email_label),
                             style = AmuxTheme.typography.caption,
                             color = colors.inkMuted,
                         )

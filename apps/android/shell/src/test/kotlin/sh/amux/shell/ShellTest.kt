@@ -7,6 +7,8 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -73,6 +75,7 @@ import sh.amux.features.PaywallTags
 import sh.amux.features.ReportTags
 import sh.amux.features.SettingsTags
 import sh.amux.features.TestTags
+import sh.amux.values.Offline
 import sh.amux.values.AccountBinding
 import sh.amux.values.AccountView
 import sh.amux.values.ActOutcome
@@ -920,7 +923,7 @@ class ShellTest {
         composeRule.waitForIdle()
         assertEquals(2, openAttempts)
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
-        composeRule.onNodeWithText("src/lib.rs").assertIsDisplayed()
+        composeRule.onNodeWithText("lib.rs").assertIsDisplayed()
     }
 
     @Test
@@ -1009,7 +1012,9 @@ class ShellTest {
 
     @Test
     fun hostPageShowsRosterFingerprintPairsAgainAndRevokes() {
-        val (hostId, desk) = sampleDeskHost("dddddddd-dddd-dddd-dddd-dddddddddddd")
+        val (hostId, paired) = sampleDeskHost("dddddddd-dddd-dddd-dddd-dddddddddddd")
+        // Unpaired from its side: the page then offers to pair again.
+        val desk = paired.copy(reach = Reach.Offline(Offline.Revoked))
         val router = Router()
         val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val stores = StoreBundle(account = AccountId("signed-out"), scope = shellScope)
@@ -1102,7 +1107,7 @@ class ShellTest {
         composeRule.onNodeWithTag(TestTags.SCREEN_SETTLED).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.settledRow("old-migration")).assertIsDisplayed()
 
-        composeRule.onNodeWithTag(TestTags.settledRowMenu("old-migration")).performClick()
+        composeRule.onNodeWithTag(TestTags.settledRow("old-migration")).performTouchInput { longClick() }
         composeRule.onNodeWithTag(TestTags.HOME_ACTION_UNSETTLE).performClick()
         composeRule.waitForIdle()
         assertEquals(listOf(AgentAct.Unfile to settledKey), acts)
@@ -1344,11 +1349,12 @@ class ShellTest {
         val ui = AccountMappers.toDeleteAccountSheetState(
             deletion = deletion.snapshot,
             registry = accounts.snapshot,
-            formatBillingWarning = { date -> "Renews on $date" },
+            formatRenewing = { date, place -> "Renews on $date through $place" },
         )
         assertNotNull(ui)
         assertTrue("expected non-null billing warning", !ui!!.billingWarning.isNullOrBlank())
         assertTrue(ui.billingWarning!!.startsWith("Renews on "))
+        assertTrue(ui.billingWarning!!.endsWith("through amux.sh"))
     }
 
     @Test

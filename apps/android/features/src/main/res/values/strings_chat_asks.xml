@@ -56,17 +56,6 @@
     <string name="ask_question_reply_send">Send Reply</string>
 
     <!-- Refusal reasons -->
-    <string name="ask_refusal_exited">it had exited</string>
-    <string name="ask_refusal_exiting">it was exiting</string>
-    <string name="ask_refusal_agent_closed">it is settled</string>
-    <string name="ask_refusal_draining">its host is shutting down</string>
-    <string name="ask_refusal_host_unreachable">its host is away</string>
-    <string name="ask_refusal_unsupported">this agent can’t take it</string>
-    <string name="ask_refusal_closed_ask">the ask had already closed</string>
-    <string name="ask_refusal_not_queued">it was no longer queued</string>
-    <string name="ask_refusal_conversation_elsewhere">Claude’s own view switched to another conversation</string>
-    <string name="ask_refusal_too_long">it is longer than the agent takes</string>
-    <string name="ask_refusal_unspecified">it was refused</string>
 
     <!-- Chat overview sheet & strip -->
     <string name="overview_label_host">Host</string>
@@ -109,8 +98,7 @@
     <string name="chat_settings_mode_by_typing">To change mode, type %1$s in the composer.</string>
 
     <!-- Diff review page -->
-    <string name="review_title">Changes</string>
-    <string name="review_send_count">Send Review (%1$d)</string>
+    <string name="review_title">Review</string>
     <string name="review_add_to_review">Add to Review</string>
     <string name="review_save_comment">Save</string>
     <string name="review_delete_comment">Delete</string>
@@ -119,12 +107,12 @@
     <string name="review_comment_on_old_line">Comment on removed line %1$d</string>
     <string name="review_comment_on_file">Comment on file</string>
     <string name="review_comment_placeholder">Write a comment</string>
-    <string name="review_file_comment_button">Comment</string>
+    <string name="review_files">Files</string>
     <string name="review_binary_file">Binary file</string>
     <string name="review_empty_title">No changes</string>
     <string name="review_empty_detail">There are no changes to review right now.</string>
     <string name="review_loading_title">Loading changes…</string>
-    <string name="review_loading_detail">Reading the diff from the host.</string>
+    <string name="review_loading_detail">Reading the diff from the computer.</string>
     <string name="review_error_title">Could not load changes</string>
     <string name="review_diff_added">+%1$d</string>
     <string name="review_diff_removed">−%1$d</string>

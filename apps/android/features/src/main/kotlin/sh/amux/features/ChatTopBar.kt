@@ -144,7 +144,7 @@ internal fun ChatTopBar(
 ) {
     val colors = AmuxTheme.colors
     val backLabel = stringResource(R.string.action_back)
-    val moreLabel = stringResource(R.string.action_more_options)
+    val moreLabel = stringResource(R.string.action_more)
     val openOverviewDesc = stringResource(R.string.chat_header_open_overview)
     val titleSpoken = stringResource(R.string.chat_title_spoken, subject.name, placeLine, openOverviewDesc)
     var menuExpanded by remember { mutableStateOf(false) }

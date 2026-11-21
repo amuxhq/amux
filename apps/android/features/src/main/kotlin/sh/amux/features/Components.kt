@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import androidx.compose.material3.ModalBottomSheetProperties
+
+import androidx.compose.material3.SheetValue
+
 import sh.amux.design.Appearance
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.geometry.CornerRadius
@@ -693,13 +697,25 @@ fun AmuxSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     contentWindowInsets: @Composable () -> WindowInsets = { BottomSheetDefaults.windowInsets },
+    // False for a sheet that asks a question only its buttons answer: a
+    // swipe, a tap outside or Back would otherwise answer it by accident.
+    dismissible: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { dismissible || it != SheetValue.Hidden },
+    )
     ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
+        // Material still reports Back as a dismissal when the sheet refuses
+        // to hide, so an undismissible sheet ignores it here as well.
+        onDismissRequest = { if (dismissible) onDismissRequest() },
         sheetState = sheetState,
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = dismissible,
+            shouldDismissOnClickOutside = dismissible,
+        ),
         modifier = modifier,
         containerColor = colors.raised,
         contentColor = colors.ink,

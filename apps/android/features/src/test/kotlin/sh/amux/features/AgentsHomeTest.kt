@@ -2,6 +2,8 @@ package sh.amux.features
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
@@ -195,7 +197,7 @@ class AgentsHomeTest {
     }
 
     @Test
-    fun rowMenuDispatchesPinAndRename() {
+    fun rowLongPressAndTalkBackActionsDispatchPinAndRename() {
         val (state, askRow, _) = sampleBusyState()
         val actions = mutableListOf<HomeAction>()
         composeRule.setContent {
@@ -207,13 +209,16 @@ class AgentsHomeTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.homeRowMenu("release-notes")).performClick()
+        composeRule.onNodeWithTag(TestTags.homeRow("release-notes")).performTouchInput { longClick() }
         composeRule.onNodeWithTag(TestTags.HOME_ROW_ACTIONS_SHEET).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.HOME_ACTION_PIN).performClick()
         assertEquals(HomeAction.Pin(askRow.card.agent), actions.last())
 
-        composeRule.onNodeWithTag(TestTags.homeRowMenu("release-notes")).performClick()
-        composeRule.onNodeWithTag(TestTags.HOME_ACTION_RENAME).performClick()
+        // TalkBack reaches the same actions on the row, with no sheet.
+        val rename = composeRule.onNode(hasContentDescription("release-notes", substring = true) and hasClickAction())
+            .fetchSemanticsNode().config[SemanticsActions.CustomActions]
+            .single { it.label == "Rename" }
+        composeRule.runOnUiThread { rename.action() }
         composeRule.onNodeWithTag(TestTags.HOME_RENAME_INPUT).performSemanticsAction(SemanticsActions.SetText) {
             it(AnnotatedString("release-notes-v2"))
         }

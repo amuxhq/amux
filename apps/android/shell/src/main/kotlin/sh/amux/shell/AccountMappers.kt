@@ -71,9 +71,13 @@ object AccountMappers {
     fun toDeleteAccountSheetState(
         deletion: DeletionState,
         registry: AccountRegistryState,
-        formatBillingWarning: (String) -> String = { date ->
-            "Your subscription renews on $date. Cancel renewal before deleting this account."
+        formatRenewing: (date: String, place: String) -> String = { date, place ->
+            "Deleting this account leaves your subscription renewing on $date through $place."
         },
+        formatNotRefunded: (place: String) -> String = { place ->
+            "Your subscription through $place is not refunded."
+        },
+        lapsedNotRefunded: String = "Nothing already paid for is refunded.",
     ): DeleteAccountSheetState? {
         val id = deletion.account ?: return null
         val phase: DeleteAccountPhaseUi = when (val raw = deletion.phase) {
@@ -87,8 +91,17 @@ object AccountMappers {
             DeletionStore.Phase.Deleted -> return null
         }
         val entry = registry.accounts.firstOrNull { it.id == id }
-        val billingWarning = (entry?.entitlement as? Entitlement.Active)?.renewsAtMs?.let { ms ->
-            formatBillingWarning(SettingsMappers.formatLocalizedDate(ms))
+        // What deleting does to what has been paid for. In no case does
+        // deleting the account stop a renewal: that happens where the
+        // subscription was bought, so the sheet never promises otherwise.
+        val billingWarning = when (val entitlement = entry?.entitlement) {
+            is Entitlement.Active -> entitlement.grant.purchase?.let { source ->
+                entitlement.renewsAtMs?.let { ms ->
+                    formatRenewing(SettingsMappers.formatLocalizedDate(ms), source.place)
+                } ?: formatNotRefunded(source.place)
+            }
+            is Entitlement.Lapsed -> entitlement.grant.purchase?.let { lapsedNotRefunded }
+            Entitlement.None, null -> null
         }
         return DeleteAccountSheetState(
             accountId = id.value,

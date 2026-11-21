@@ -26,6 +26,7 @@ import java.io.ByteArrayOutputStream
 import sh.amux.design.AmuxScrim
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
+import sh.amux.features.NetworkSight
 import sh.amux.features.AgentsHome
 import sh.amux.features.AgentsHomeState
 import sh.amux.features.AskReviewTags
@@ -155,8 +156,7 @@ object Stories {
      * that Android does not draw yet, along with why.
      */
     val IOS_ONLY_STORIES: Map<String, String> = mapOf(
-        "fleet.first-run-refused" to "Android has no state yet for a phone that cannot look on its network.",
-        "hosts.network-refused" to "Android has no state yet for a phone that cannot look on its network.",
+        "hosts.network-refused" to "Android asks no permission to look on the network; a phone that cannot look says so on the first run (fleet.first-run-refused).",
     )
 
     private val F = CatalogFixtures
@@ -242,6 +242,17 @@ object Stories {
             description = "Nothing paired and nothing found yet: looking on this network with two setup steps.",
         ) {
             AgentsHome(state = StoryFleet.firstRun(found = emptyList()), onAction = {})
+        },
+        Story(
+            id = "fleet.first-run-refused",
+            area = "Fleet",
+            title = "First run (can't see this network)",
+            description = "Nothing paired on a phone with no Wi-Fi: it says it cannot look, and how to put that right.",
+        ) {
+            AgentsHome(
+                state = StoryFleet.firstRun(found = emptyList()).copy(networkSight = NetworkSight.NoLocalNetwork),
+                onAction = {},
+            )
         },
         Story(
             id = "fleet.first-run-signed-out",
@@ -1470,16 +1481,15 @@ object Stories {
                 id = "ada",
                 name = "Ada",
                 email = "ada@example.com",
-                line = "3 hosts",
+                line = "3 computers",
                 signedIn = true,
                 selected = true,
-                entitlementBadge = SettingsEntitlementBadge.Pro,
-                entitlementSummary = "Pro plan",
+                entitlementBadge = SettingsEntitlementBadge.Free,
             ),
         ),
         appearance = SettingsAppearance.System,
-        notificationStatus = SettingsNotificationStatus.Enabled,
-        pushDeliveryComingSoon = true,
+        notificationStatus = SettingsNotificationStatus.Off,
+        pushDeliveryComingSoon = false,
         shareUsage = true,
         autoReports = false,
         deviceName = "Pixel 9",

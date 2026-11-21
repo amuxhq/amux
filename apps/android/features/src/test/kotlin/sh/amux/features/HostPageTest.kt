@@ -115,9 +115,8 @@ class HostPageTest {
         composeRule.onNodeWithTag(HostPageTags.OFFER_SIGN_IN).performScrollTo().performClick()
         assertEquals(HostPageAction.OfferSignIn(sampleHost.hostId), actions.last())
 
-        // Pair Again
-        composeRule.onNodeWithTag(HostPageTags.PAIR_AGAIN).performScrollTo().performClick()
-        assertEquals(HostPageAction.PairAgain(sampleHost.hostId), actions.last())
+        // A computer that still has this phone paired offers nothing to pair again.
+        composeRule.onNodeWithTag(HostPageTags.PAIR_AGAIN).assertDoesNotExist()
 
         // Revoke opens confirmation dialog; cancel does not emit Revoke; confirm emits Revoke.
         composeRule.onNodeWithTag(HostPageTags.REVOKE).performScrollTo().performClick()
@@ -171,8 +170,23 @@ class HostPageTest {
             }
         }
 
-        composeRule.onNodeWithTag(HostPageTags.FACT_LAST_SEEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(HostPageTags.REACH).assertIsDisplayed()
+        composeRule.onNodeWithText("Offline for", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag(HostPageTags.FACT_LAST_TRY).assertIsDisplayed()
         composeRule.onNodeWithText("Could not connect").assertIsDisplayed()
+    }
+
+    @Test
+    fun offersPairAgainFirstOnlyOnceTheComputerUnpairedThisPhone() {
+        val revoked = host(reach = Reach.Offline(Offline.Revoked), addrs = emptyList(), providers = emptyList())
+        val actions = mutableListOf<HostPageAction>()
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                HostPage(state = HostPageState(host = revoked), onAction = { actions += it })
+            }
+        }
+
+        composeRule.onNodeWithTag(HostPageTags.PAIR_AGAIN).assertIsDisplayed().performClick()
+        assertEquals(HostPageAction.PairAgain(revoked.hostId), actions.single())
     }
 }

@@ -15,6 +15,7 @@ import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.StoreBundle
+import sh.amux.features.NetworkSight
 import sh.amux.features.AgentsHome
 import sh.amux.features.HomeAction
 import sh.amux.features.HomeScope
@@ -38,13 +39,14 @@ internal fun AgentsRoute(
     offerNotifications: Boolean,
     signingIn: Boolean,
     backEnabled: Boolean,
+    networkSight: NetworkSight = NetworkSight.Looking,
     onAction: (ShellAction) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val fleet by stores.fleet.state.collectAsState()
     val hosts by stores.hosts.state.collectAsState()
     val registry by accounts.state.collectAsState()
-    val state = remember(fleet, hosts, registry, offerNotifications, signingIn, scope) {
+    val state = remember(fleet, hosts, registry, offerNotifications, signingIn, scope, networkSight) {
         AgentsMappers.toAgentsHomeState(
             fleet = fleet,
             hosts = hosts,
@@ -52,6 +54,7 @@ internal fun AgentsRoute(
             offerNotifications = offerNotifications,
             signingIn = signingIn,
             scope = scope,
+            networkSight = networkSight,
         )
     }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
@@ -143,6 +146,8 @@ private fun homeActions(
             HostId.fromBytes(action.hostId)?.let { id -> presentPairing(stores, router, id) }
         }
         HomeAction.SendInstallLink -> onAction(ShellAction.SendInstallLink)
+        HomeAction.OpenWifiSettings -> onAction(ShellAction.OpenWifiSettings)
+        HomeAction.LookAgain -> onAction(ShellAction.LookOnNetworkAgain)
         HomeAction.TurnOnNotifications -> onAction(ShellAction.TurnOnNotifications)
         HomeAction.DismissNotifications -> onAction(ShellAction.DismissNotifications)
         HomeAction.OpenHosts -> router.selectTab(Tab.Hosts)

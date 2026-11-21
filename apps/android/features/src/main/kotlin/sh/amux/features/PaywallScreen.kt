@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import androidx.compose.foundation.layout.Box
+
+import sh.amux.design.spillTarget
+
 import sh.amux.design.ThumbTarget
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.BorderStroke
@@ -583,16 +587,30 @@ private fun PaywallTerms(
             style = AmuxTheme.typography.caption,
             color = colors.inkFaint,
         )
-        TextButton(
+        // A link on the text column, not inset by a button's padding. Only
+        // the privacy policy: amux has no terms of its own to link, and
+        // Google Play's are Google's agreement with the person, not amux's.
+        LegalLink(
+            label = stringResource(R.string.paywall_privacy_policy),
             onClick = { onAction(PaywallAction.OpenLegalUrl(privacyUrl)) },
             modifier = Modifier.testTag(PaywallTags.PRIVACY_LINK),
-        ) {
-            Text(
-                text = stringResource(R.string.paywall_privacy_policy),
-                style = AmuxTheme.typography.detail,
-                color = colors.accent,
-            )
-        }
+        )
+    }
+}
+
+@Composable
+private fun LegalLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .spillTarget()
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = AmuxTheme.typography.detail,
+            color = AmuxTheme.colors.accent,
+        )
     }
 }
 

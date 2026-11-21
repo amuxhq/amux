@@ -1,6 +1,8 @@
 package sh.amux.features
 
 import androidx.compose.ui.test.assertIsDisplayed
+import org.junit.Assert.assertNotNull
+import org.robolectric.shadows.ShadowDialog
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -23,6 +25,31 @@ import sh.amux.design.Appearance
 class AccountSheetsTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun backLeavesTheSignInOfferOpen() {
+        val actions = mutableListOf<SignInOfferAction>()
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                SignInOfferSheet(
+                    state = SignInOfferSheetState(
+                        prompt = SignInOfferPromptUi.Offered(hostName = "studio", email = "ada@example.com"),
+                    ),
+                    onAction = { actions += it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_SHEET).assertIsDisplayed()
+
+        // The sheet is a dialog window of its own; Back goes to it.
+        val sheet = ShadowDialog.getLatestDialog()
+        assertNotNull(sheet)
+        composeRule.runOnUiThread { sheet.onBackPressed() }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_SHEET).assertIsDisplayed()
+        assertEquals(emptyList<SignInOfferAction>(), actions)
+    }
 
     @Test
     fun signInOfferReceivedShowsAcceptDeclineAndFailureNotice() {

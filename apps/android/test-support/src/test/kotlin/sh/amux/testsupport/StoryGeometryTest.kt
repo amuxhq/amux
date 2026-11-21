@@ -25,6 +25,21 @@ class StoryGeometryTest {
     }
 
     @Test
+    fun textsSharingAFirstBaselineAreAlignedWhateverTheirCentres() {
+        // A name and its smaller facts on one baseline: centres 1.5 dp apart,
+        // baselines together. Off the baseline by 2 dp, the pair is flagged.
+        val name = Element(1, Kind.Text, "name", 36f, 100f, 200f, 122f, firstBaseline = 117f)
+        val facts = Element(2, Kind.Text, "desk · 1h", 300f, 103.6f, 396f, 121.4f, firstBaseline = 117f)
+        val offBaseline = facts.copy(firstBaseline = 119f)
+
+        assertTrue(rulesOf(listOf(name, facts)).none { it.first == Rule.RowCentre })
+        assertEquals(
+            listOf(Rule.RowCentre to listOf(1, 2)),
+            rulesOf(listOf(name, offBaseline)).filter { it.first == Rule.RowCentre },
+        )
+    }
+
+    @Test
     fun anEdgeJustOffASharedColumnIsFlaggedAndOneFarOffIsNot() {
         // Three rows start at 16 dp; one starts 4 dp in, one a whole indent in.
         val column = listOf(

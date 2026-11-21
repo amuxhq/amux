@@ -6,6 +6,7 @@ import sh.amux.core.runtime.HostsState
 import sh.amux.features.AccountUi
 import sh.amux.features.AgentsHomeState
 import sh.amux.features.HomeScope
+import sh.amux.features.NetworkSight
 import sh.amux.words.name
 
 /** Pure mappers from the fleet, hosts and accounts to the Agents screen's state. */
@@ -29,6 +30,7 @@ object AgentsMappers {
         offerNotifications: Boolean = false,
         signingIn: Boolean = false,
         scope: HomeScope = HomeScope.Fleet,
+        networkSight: NetworkSight = NetworkSight.Looking,
     ): AgentsHomeState {
         val accountUis = toAccountsUi(registry)
         val selectedUi = accountUis.firstOrNull { it.selected }
@@ -52,6 +54,7 @@ object AgentsMappers {
             offerNotifications = offerNotifications,
             signingIn = signingIn,
             scope = scope,
+            networkSight = networkSight,
         )
     }
 

@@ -1,5 +1,7 @@
 package sh.amux.shell
 
+import sh.amux.core.runtime.DictationState
+
 import sh.amux.core.runtime.ChatAsk
 import sh.amux.core.runtime.ChatModel
 import sh.amux.core.runtime.ChatPaging
@@ -173,6 +175,7 @@ object ChatMappers {
             dictationEnabled = dictationEnabled,
             dictationActive = chat.dictation.active,
             dictationSentence = chat.dictation.sentence,
+            dictationDenied = chat.dictation.phase == DictationState.Phase.Denied,
         )
     }
 

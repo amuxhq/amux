@@ -1,5 +1,7 @@
 package sh.amux.features
 
+
+
 import sh.amux.values.TaskMark
 import sh.amux.values.TaskLine
 import sh.amux.values.TasksView
@@ -67,6 +69,29 @@ import sh.amux.values.Waiting
 class ChatComposerTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun deniedDictationOffersTheWayToSettings() {
+        var opened = 0
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatComposer(
+                    state = ChatComposerState(
+                        composer = ComposerView(mode = Composer.Send, switchedAway = false),
+                        dictationEnabled = true,
+                        dictationSentence = "Dictation needs microphone and speech access. You can allow them in Settings.",
+                        dictationDenied = true,
+                    ),
+                    callbacks = ChatComposerCallbacks(onOpenDictationSettings = { opened++ }),
+                )
+            }
+        }
+
+        // A real press, not only the accessibility action: the message
+        // field's touch area must not cover the button.
+        composeRule.onNodeWithTag(ChatComposerTags.DICTATION_SETTINGS).performClick()
+        assertEquals(1, opened)
+    }
 
     @Test
     fun sendDisabledWhenEmptyAndEnabledWithDraft() {

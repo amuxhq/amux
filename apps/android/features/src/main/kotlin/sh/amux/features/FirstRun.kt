@@ -18,7 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddCircleOutline
-import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.LaptopMac
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -101,6 +102,13 @@ internal fun rememberPairOffer(host: HostView, accountPro: Boolean?): PairOfferP
     }
 }
 
+/**
+ * A laptop while the computer only waits to be opened, and a plus once it can
+ * be paired with a press, so a card that cannot be pressed never shows a plus.
+ */
+internal fun pairOfferIcon(offer: PairOfferPresentation): ImageVector =
+    if (offer.waiting) Icons.Outlined.LaptopMac else Icons.Outlined.AddCircleOutline
+
 @Composable
 internal fun PairOfferCard(
     host: HostView,
@@ -115,7 +123,7 @@ internal fun PairOfferCard(
     AmuxEmptyCard(
         title = offer.title,
         detail = offer.detail,
-        icon = if (offer.waiting) Icons.Outlined.Computer else Icons.Outlined.AddCircleOutline,
+        icon = pairOfferIcon(offer),
         buttonLabel = offer.buttonLabel,
         buttonTestTag = actionTestTag,
         onButtonClick = if (offer.waiting) null else {
@@ -128,9 +136,10 @@ internal fun PairOfferCard(
 /**
  * First-run Agents screen when no computer has been paired yet.
  *
- * Android does not require an iOS-style local network permission interstitial,
- * so discovery starts immediately and either shows nearby computers to pair
- * with one tap or guides the user through two clear steps on their computer.
+ * Android asks no permission to look on the network, so discovery starts at
+ * once and either shows nearby computers to pair with one tap or guides the
+ * person through two steps on their computer; a phone that cannot look (no
+ * Wi-Fi, or a browse the system refused) says so in place of looking.
  */
 @Composable
 internal fun FirstRunContent(
@@ -191,17 +200,21 @@ internal fun FirstRunContent(
             }
         } else {
             item(key = "first-run-looking") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.m),
-                ) {
-                    AmuxStateMark(state = RowState.Working, size = 10.dp)
-                    Text(
-                        text = stringResource(R.string.first_run_looking),
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkMuted,
-                        modifier = Modifier.testTag(TestTags.HOME_EMPTY_LOOKING),
-                    )
+                if (state.networkSight == NetworkSight.Looking) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.m),
+                    ) {
+                        AmuxStateMark(state = RowState.Working, size = 10.dp)
+                        Text(
+                            text = stringResource(R.string.first_run_looking),
+                            style = AmuxTheme.typography.detail,
+                            color = colors.inkMuted,
+                            modifier = Modifier.testTag(TestTags.HOME_EMPTY_LOOKING),
+                        )
+                    }
+                } else {
+                    NetworkUnseen(sight = state.networkSight, onAction = onAction)
                 }
             }
 
@@ -279,6 +292,45 @@ internal fun FirstRunContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * In place of "Looking on this network…" when the phone cannot look: what
+ * stops it, and the one thing that puts it right.
+ */
+@Composable
+private fun NetworkUnseen(sight: NetworkSight, onAction: (HomeAction) -> Unit) {
+    val colors = AmuxTheme.colors
+    val noNetwork = sight == NetworkSight.NoLocalNetwork
+    Column(
+        modifier = Modifier.testTag(TestTags.HOME_NETWORK_UNSEEN),
+        verticalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        Text(
+            text = stringResource(
+                if (noNetwork) R.string.network_unseen_no_wifi_title else R.string.network_unseen_title,
+            ),
+            style = AmuxTheme.typography.bodyEmphasis,
+            color = colors.ink,
+        )
+        Text(
+            text = stringResource(
+                if (noNetwork) R.string.network_unseen_no_wifi else R.string.network_unseen_refused,
+            ),
+            style = AmuxTheme.typography.detail,
+            color = colors.inkMuted,
+        )
+        AmuxActionButton(
+            label = stringResource(
+                if (noNetwork) R.string.network_unseen_open_wifi else R.string.network_unseen_try_again,
+            ),
+            kind = ActionButtonKind.Outline,
+            onClick = { onAction(if (noNetwork) HomeAction.OpenWifiSettings else HomeAction.LookAgain) },
+            modifier = Modifier
+                .padding(top = Space.xs)
+                .testTag(TestTags.HOME_NETWORK_UNSEEN_ACTION),
+        )
     }
 }
 

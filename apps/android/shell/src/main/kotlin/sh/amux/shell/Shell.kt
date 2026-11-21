@@ -50,6 +50,7 @@ import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.design.AppearanceMode
 import sh.amux.design.Space
+import sh.amux.features.NetworkSight
 import sh.amux.features.DiagnosticsExportState
 import sh.amux.features.HomeScope
 import sh.amux.features.ReportOfferBanner
@@ -84,6 +85,8 @@ sealed interface ShellAction {
     data object RestorePurchases : ShellAction
     data object RetryPaywall : ShellAction
     data object SendInstallLink : ShellAction
+    data object OpenWifiSettings : ShellAction
+    data object LookOnNetworkAgain : ShellAction
     data object TurnOnNotifications : ShellAction
     data object OpenNotificationSettings : ShellAction
     data object DismissNotifications : ShellAction
@@ -116,6 +119,7 @@ fun Shell(
     deviceName: String,
     offerNotifications: Boolean = false,
     signingIn: Boolean = false,
+    networkSight: NetworkSight = NetworkSight.Looking,
     onAction: (ShellAction) -> Unit = {},
     modifier: Modifier = Modifier,
     appearanceMode: AppearanceMode = AppearanceMode.System,
@@ -209,6 +213,7 @@ fun Shell(
                                     router = router,
                                     offerNotifications = offerNotifications,
                                     signingIn = effectiveSigningIn,
+                                    networkSight = networkSight,
                                     backEnabled = !overlayOpen,
                                     onAction = onAction,
                                 )

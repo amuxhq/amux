@@ -135,9 +135,13 @@ internal fun AccountOverlays(
         AccountMappers.toDeleteAccountSheetState(
             deletion = it,
             registry = registry,
-            formatBillingWarning = { date ->
-                context.getString(R.string.shell_delete_billing_warning, date)
+            formatRenewing = { date, place ->
+                context.getString(R.string.shell_delete_billing_renewing, date, place)
             },
+            formatNotRefunded = { place ->
+                context.getString(R.string.shell_delete_billing_not_refunded, place)
+            },
+            lapsedNotRefunded = context.getString(R.string.shell_delete_billing_lapsed),
         )
     }
     if (deleteAccountState != null) {

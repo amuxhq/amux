@@ -1,5 +1,9 @@
 package sh.amux.features
 
+import sh.amux.design.spillTarget
+
+import androidx.compose.ui.platform.LocalConfiguration
+
 import sh.amux.design.backdrop
 import sh.amux.design.ThumbTarget
 import sh.amux.design.IconSize
@@ -38,6 +42,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -376,7 +381,6 @@ fun ReportOverlayContent(
                     ReportSentContent(
                         referenceId = delivery.referenceId,
                         onCopyReference = { onAction(ReportAction.CopyReference(delivery.referenceId)) },
-                        onDone = { onAction(ReportAction.Dismiss) },
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -424,9 +428,12 @@ fun ReportOverlayContent(
                                 onSelectMark = { index ->
                                     selectedMarkIndex = index
                                 },
+                                // Big enough to draw a box on with a thumb:
+                                // most of the screen, leaving the hint and
+                                // the first mark in view under it.
                                 modifier = Modifier
                                     .padding(horizontal = Space.xl)
-                                    .heightIn(max = 320.dp),
+                                    .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.6f),
                             )
                         }
 
@@ -1003,24 +1010,12 @@ private fun ReportComposerDock(
                         modifier = Modifier.size(IconSize.Inline),
                     )
                     val disclosureRes = when {
-                        state.screenshotPending && state.dumpReady ->
-                            R.string.report_contents_preparing_screenshot_dump_ready
-                        state.screenshotPending && state.dumpPending ->
-                            R.string.report_contents_preparing_screenshot_and_dump
-                        state.screenshotPending ->
-                            R.string.report_contents_preparing_screenshot
-                        state.screenshotPresent && state.dumpReady ->
+                        state.screenshotPending -> R.string.report_frame_preparing
+                        state.screenshotPresent && (state.dumpReady || state.dumpPending) ->
                             R.string.report_contents_both
-                        state.screenshotPresent && state.dumpPending ->
-                            R.string.report_contents_screenshot_dump_pending
-                        state.screenshotPresent ->
-                            R.string.report_contents_screenshot_only
-                        state.dumpReady ->
-                            R.string.report_contents_dump_only
-                        state.dumpPending ->
-                            R.string.report_contents_dump_pending
-                        else ->
-                            R.string.report_contents_none
+                        state.screenshotPresent -> R.string.report_contents_screenshot_only
+                        state.dumpReady || state.dumpPending -> R.string.report_contents_dump_only
+                        else -> R.string.report_contents_none
                     }
                     Text(
                         text = stringResource(disclosureRes),
@@ -1066,100 +1061,78 @@ private fun ReportComposerDock(
     }
 }
 
+/**
+ * It arrived. The page says so, gives the reference somebody quotes when they
+ * ask about it with one way to copy it, and leaves closing to the top bar.
+ */
 @Composable
 private fun ReportSentContent(
     referenceId: String,
     onCopyReference: () -> Unit,
-    onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
     var copied by remember(referenceId) { mutableStateOf(false) }
+    val copyLabel = stringResource(if (copied) R.string.report_copied else R.string.report_copy_reference)
 
     Column(
         modifier = modifier
-            .padding(horizontal = Space.margin, vertical = Space.xl)
+            .padding(horizontal = Space.margin, vertical = Space.l)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag(ReportTags.SENT),
-        verticalArrangement = Arrangement.spacedBy(Space.l),
+        verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                tint = colors.added,
-                modifier = Modifier.size(28.dp),
-            )
-            Text(
-                text = stringResource(R.string.report_sent_title),
-                style = typography.screenTitle,
-                color = colors.ink,
-            )
-            Text(
-                text = stringResource(R.string.report_sent_detail, referenceId),
-                style = typography.body,
-                color = colors.inkMuted,
-            )
-        }
-
-        AmuxPanel(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.report_sent_title),
+            style = typography.screenTitle,
+            color = colors.ink,
+        )
+        Text(
+            text = stringResource(R.string.report_sent_detail),
+            style = typography.body,
+            color = colors.inkMuted,
+        )
+        // The reference and the press that copies it are separate, so the
+        // reference stays text of its own to read or select.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ThumbTarget.MinSize),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            SelectionContainer(modifier = Modifier.weight(1f, fill = false)) {
+                Text(
+                    text = referenceId,
+                    style = typography.mono,
+                    color = colors.ink,
+                    modifier = Modifier.testTag(ReportTags.RECEIPT_ID),
+                )
+            }
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = Space.m, end = Space.xs, top = Space.s, bottom = Space.s),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                ) {
-                    Text(
-                        text = stringResource(R.string.report_reference_label),
-                        style = typography.caption,
-                        color = colors.inkMuted,
-                    )
-                    SelectionContainer {
-                        Text(
-                            text = referenceId,
-                            style = typography.mono,
-                            color = colors.ink,
-                            modifier = Modifier.testTag(ReportTags.RECEIPT_ID),
-                        )
-                    }
-                }
-                TextButton(
-                    onClick = {
+                    .spillTarget()
+                    .clickable(role = Role.Button) {
                         copied = true
                         onCopyReference()
-                    },
-                    modifier = Modifier.testTag(ReportTags.COPY_RECEIPT),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = null,
-                        tint = colors.ink,
-                        modifier = Modifier.size(IconSize.Inline),
-                    )
-                    Spacer(modifier = Modifier.size(Space.xs))
-                    Text(
-                        text = stringResource(
-                            if (copied) R.string.report_copied else R.string.report_copy_reference,
-                        ),
-                        style = typography.bodyEmphasis,
-                        color = colors.ink,
-                    )
-                }
+                    }
+                    .testTag(ReportTags.COPY_RECEIPT),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+            ) {
+                Icon(
+                    imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+                    contentDescription = null,
+                    tint = colors.accent,
+                    modifier = Modifier.size(IconSize.Inline),
+                )
+                Text(
+                    text = copyLabel,
+                    style = typography.detail,
+                    color = colors.accent,
+                )
             }
         }
-
-        AmuxActionButton(
-            label = stringResource(R.string.report_done),
-            kind = ActionButtonKind.Primary,
-            fillWidth = true,
-            onClick = onDone,
-            modifier = Modifier.testTag(ReportTags.DONE),
-        )
     }
 }

@@ -6,6 +6,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +34,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -103,9 +109,13 @@ fun PairingSheetContent(
             closeModifier = Modifier.testTag(TestTags.PAIRING_CLOSE),
         )
 
+        // Scrolls, so at the largest text or in landscape the buttons that
+        // decide the pairing stay reachable under the steps above them.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .animateContentSize()
                 .padding(horizontal = Space.margin, vertical = Space.l),
         ) {
             when (val phase = state.phase) {
@@ -146,10 +156,12 @@ fun PairingSheetContent(
                     onAbandon = { onAction(PairingAction.Abandon(phase.pending)) },
                 )
                 is PairingPhaseUi.Trusted -> TrustedContent(name = phase.name)
-                PairingPhaseUi.NeedsSubscription -> NeedsSubscriptionContent(
-                    hostName = state.machine?.name,
-                    onSubscribe = { onAction(PairingAction.Subscribe) },
-                    onCancel = { onAction(PairingAction.Cancel) },
+                PairingPhaseUi.NeedsSubscription -> PinEntryContent(
+                    state = state,
+                    checking = false,
+                    refusedMessage = null,
+                    onAction = onAction,
+                    subscribe = true,
                 )
                 is PairingPhaseUi.NeedsAccount -> NeedsAccountContent(
                     signingIn = phase.signingIn,
@@ -163,6 +175,9 @@ fun PairingSheetContent(
 
 @Composable
 private fun pairingHeaderTitle(state: PairingSheetState): String {
+    // An invitation for a computer this phone cannot see names nothing it
+    // could pair yet.
+    if (state.phase is PairingPhaseUi.NeedsAccount) return stringResource(R.string.pairing_title_generic)
     val hostName = when (val phase = state.phase) {
         is PairingPhaseUi.Confirming -> phase.pending.name
         is PairingPhaseUi.Trusted -> phase.name
@@ -181,7 +196,14 @@ private fun pairingHeaderSubtitle(state: PairingSheetState): String? {
     if (phase is PairingPhaseUi.Confirming) {
         return routeTitle(phase.pending.via)
     }
+    // "On this network" only for a computer that is: one only the relay
+    // reaches, or one the code reached across the relay, is over the
+    // internet, and an invitation this phone cannot take up has no route.
+    if (phase is PairingPhaseUi.NeedsAccount) return null
     val machine = state.machine ?: return null
+    if (machine.relayOnly || phase == PairingPhaseUi.NeedsSubscription) {
+        return stringResource(R.string.pairing_route_relay)
+    }
     if (machine.candidate && machine.reach != Reach.Online(RouteKind.Relay)) {
         return stringResource(R.string.pairing_route_direct)
     }
@@ -205,6 +227,7 @@ private fun PinEntryContent(
     checking: Boolean,
     refusedMessage: String?,
     onAction: (PairingAction) -> Unit,
+    subscribe: Boolean = false,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
@@ -229,19 +252,20 @@ private fun PinEntryContent(
             append(stringResource(R.string.pairing_instruction_open, machine.name))
         }
     } else {
-        val prefix = stringResource(R.string.pairing_instruction_command_prefix)
+        // One sentence with the command in it, so translation keeps its
+        // spaces; the command is then set in the code face where it falls.
         val cmd = stringResource(R.string.pairing_instruction_command_literal)
-        val suffix = if (machine != null) {
-            stringResource(R.string.pairing_instruction_command_host, machine.name)
+        val sentence = if (machine != null) {
+            stringResource(R.string.pairing_instruction_command_host, cmd, machine.name)
         } else {
-            stringResource(R.string.pairing_instruction_command_generic)
+            stringResource(R.string.pairing_instruction_command_generic, cmd)
         }
+        val at = sentence.indexOf(cmd)
         buildAnnotatedString {
-            append(prefix)
-            withStyle(typography.monoSmall.toSpanStyle().copy(color = colors.ink)) {
-                append(cmd)
+            append(sentence)
+            if (at >= 0) {
+                addStyle(typography.monoSmall.toSpanStyle().copy(color = colors.ink), at, at + cmd.length)
             }
-            append(suffix)
         }
     }
 
@@ -261,26 +285,61 @@ private fun PinEntryContent(
             color = colors.inkMuted,
         )
 
-        Spacer(modifier = Modifier.height(Space.m))
+        Spacer(modifier = Modifier.height(Space.xs))
 
-        // Six digit boxes backed by a real number-pad BasicTextField that
-        // accepts pasting "418 207" and automatically submits on the 6th digit.
+        if (subscribe) {
+            // The code was right and the route is missing: no number typed
+            // here can change that, so the offer stands in the boxes' place.
+            SubscribeCallToAction(
+                hostName = machine?.name,
+                onSubscribe = { onAction(PairingAction.Subscribe) },
+                onCancel = { onAction(PairingAction.Cancel) },
+            )
+        } else {
+            CodeEntry(state = state, checking = checking, refusedMessage = refusedMessage, focusRequester = focusRequester, onAction = onAction)
+        }
+    }
+}
+
+@Composable
+private fun CodeEntry(
+    state: PairingSheetState,
+    checking: Boolean,
+    refusedMessage: String?,
+    focusRequester: FocusRequester,
+    onAction: (PairingAction) -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    val machine = state.machine
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Space.l),
+    ) {
+
+        // Six digit boxes over a field drawn clear: it takes the code, typed
+        // or pasted as "418 207", and submits on the sixth digit; a tap
+        // anywhere on the boxes lands on it and brings the keypad back.
         val codeLabel = stringResource(R.string.pairing_code_label)
+        val spokenDigits = state.digits.toCharArray().joinToString(" ").ifEmpty {
+            stringResource(R.string.pairing_code_empty)
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = ThumbTarget.MinSize)
-                .clickable(onClickLabel = codeLabel) { runCatching { focusRequester.requestFocus() } }
-                .semantics { contentDescription = codeLabel },
+                .heightIn(min = ThumbTarget.MinSize),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clearAndSetSemantics {},
                 horizontalArrangement = Arrangement.spacedBy(Space.s),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 for (index in 0 until 6) {
                     if (index == 3) {
-                        Spacer(modifier = Modifier.width(Space.s))
+                        // The two threes read as groups, as a code is read out.
+                        Spacer(modifier = Modifier.width(Space.l))
                     }
                     DigitBox(
                         digit = state.digits.getOrNull(index)?.toString().orEmpty(),
@@ -307,18 +366,27 @@ private fun PinEntryContent(
                 },
                 enabled = state.takingDigits,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                cursorBrush = SolidColor(Color.Unspecified),
+                // The PIN pad: digits only, no punctuation keys. Nothing
+                // hides the digits, which stay visible in the boxes.
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done,
+                    autoCorrectEnabled = false,
+                ),
+                // Clear text and caret: the boxes draw the code, and nothing
+                // depends on a near-invisible alpha staying invisible.
+                textStyle = TextStyle(color = Color.Transparent),
+                cursorBrush = SolidColor(Color.Transparent),
                 modifier = Modifier
                     .matchParentSize()
-                    .alpha(0.01f)
                     .focusRequester(focusRequester)
-                    .semantics { contentDescription = codeLabel }
+                    .semantics {
+                        contentDescription = codeLabel
+                        stateDescription = spokenDigits
+                    }
                     .testTag(TestTags.PAIRING_DIGITS),
             )
         }
-
-        Spacer(modifier = Modifier.height(Space.xs))
 
         when {
             checking -> {
@@ -450,32 +518,31 @@ private fun ConfirmPairingContent(
             color = colors.inkMuted,
         )
 
-        AmuxPanel(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Space.m),
-                verticalArrangement = Arrangement.spacedBy(Space.xs),
-            ) {
+        // The key, whole, for anybody who wants to check it against the
+        // computer's; quiet, since most people pair without reading it.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = Space.s, bottom = Space.xs)
+                .semantics(mergeDescendants = true) {}
+                .testTag(TestTags.PAIRING_FINGERPRINT),
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            Text(
+                text = stringResource(R.string.pairing_fingerprint_label),
+                style = typography.detail,
+                color = colors.inkMuted,
+            )
+            SelectionContainer {
                 Text(
-                    text = stringResource(R.string.pairing_fingerprint_label),
-                    style = typography.detail,
-                    color = colors.inkMuted,
+                    text = groupedFingerprint,
+                    style = typography.monoSmall,
+                    color = colors.inkFaint,
                 )
-                SelectionContainer {
-                    Text(
-                        text = groupedFingerprint,
-                        style = typography.monoSmall,
-                        color = colors.ink,
-                        modifier = Modifier.testTag(TestTags.PAIRING_FINGERPRINT),
-                    )
-                }
             }
         }
 
-        Spacer(modifier = Modifier.height(Space.xs))
-
-        Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.m)) {
             AmuxActionButton(
                 label = stringResource(R.string.pairing_button_pair),
                 kind = ActionButtonKind.Primary,
@@ -584,8 +651,12 @@ private fun RefusedInvitationContent(
     }
 }
 
+/**
+ * Why a code that was right cannot pair yet, and the offer that would: the
+ * relay sees the computer, and only a subscription opens the tunnel to it.
+ */
 @Composable
-private fun NeedsSubscriptionContent(
+private fun SubscribeCallToAction(
     hostName: String?,
     onSubscribe: () -> Unit,
     onCancel: () -> Unit,
@@ -595,10 +666,10 @@ private fun NeedsSubscriptionContent(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
             Text(
                 text = stringResource(R.string.pairing_subscribe_title),
-                style = AmuxTheme.typography.screenTitle,
+                style = AmuxTheme.typography.bodyEmphasis,
                 color = colors.ink,
             )
             Text(
@@ -607,26 +678,24 @@ private fun NeedsSubscriptionContent(
                 } else {
                     stringResource(R.string.pairing_subscribe_detail_generic)
                 },
-                style = AmuxTheme.typography.body,
+                style = AmuxTheme.typography.caption,
                 color = colors.inkMuted,
             )
         }
-        Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
-            AmuxActionButton(
-                label = stringResource(R.string.callout_subscribe),
-                kind = ActionButtonKind.Primary,
-                fillWidth = true,
-                onClick = onSubscribe,
-                modifier = Modifier.testTag(TestTags.PAIRING_SUBSCRIBE),
-            )
-            AmuxActionButton(
-                label = stringResource(R.string.pairing_button_not_now),
-                kind = ActionButtonKind.Outline,
-                fillWidth = true,
-                onClick = onCancel,
-                modifier = Modifier.testTag(TestTags.PAIRING_CANCEL),
-            )
-        }
+        AmuxActionButton(
+            label = stringResource(R.string.callout_subscribe),
+            kind = ActionButtonKind.Primary,
+            fillWidth = true,
+            onClick = onSubscribe,
+            modifier = Modifier.testTag(TestTags.PAIRING_SUBSCRIBE),
+        )
+        AmuxActionButton(
+            label = stringResource(R.string.pairing_button_not_now),
+            kind = ActionButtonKind.Outline,
+            fillWidth = true,
+            onClick = onCancel,
+            modifier = Modifier.testTag(TestTags.PAIRING_CANCEL),
+        )
     }
 }
 
@@ -653,7 +722,7 @@ private fun NeedsAccountContent(
                 color = colors.inkMuted,
             )
         }
-        Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.m)) {
             if (signingIn) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

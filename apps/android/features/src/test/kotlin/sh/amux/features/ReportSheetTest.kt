@@ -1,5 +1,11 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.assertTextEquals
+
+import androidx.compose.ui.test.assertCountEquals
+
+import androidx.compose.ui.test.onAllNodesWithText
+
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.runtime.getValue
@@ -84,7 +90,7 @@ class ReportSheetTest {
         composeRule.onNodeWithTag(ReportTags.FRAME_FALLBACK).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.DUMP_STATUS).assertIsDisplayed()
         composeRule.onNodeWithText(
-            "Includes this phone’s diagnostic dump. Diagnostic dumps never include your conversations.",
+            "Includes amux’s own logs, never your conversations.",
         ).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.SEND).assertIsEnabled()
 
@@ -113,7 +119,7 @@ class ReportSheetTest {
         composeRule.onNodeWithTag(ReportTags.SIGNED_OUT).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.SEND).assertIsNotEnabled()
         composeRule.onNodeWithText(
-            "Includes this screenshot (with any hidden areas blacked out). No diagnostic dump is attached.",
+            "Includes this screen, never your conversations.",
         ).assertIsDisplayed()
     }
 
@@ -136,7 +142,7 @@ class ReportSheetTest {
         }
 
         composeRule.onNodeWithText(
-            "Includes this screenshot (with any hidden areas blacked out) and this phone’s diagnostic dump. Diagnostic dumps never include your conversations.",
+            "Includes this screen and amux’s own logs, never your conversations.",
         ).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.markRow(0)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.markNote(0)).performScrollTo().performTextInput("Wrong badge")
@@ -188,7 +194,7 @@ class ReportSheetTest {
     }
 
     @Test
-    fun sentReceiptDisplaysReferenceCopyActionAndDone() {
+    fun sentReceiptDisplaysReferenceWithOneCopyActionAndClose() {
         val actions = mutableListOf<ReportAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -202,13 +208,13 @@ class ReportSheetTest {
         }
 
         composeRule.onNodeWithTag(ReportTags.SENT).assertIsDisplayed()
-        composeRule.onNodeWithTag(ReportTags.RECEIPT_ID).assertTextContains("rep_01J9XK2M")
+        composeRule.onNodeWithTag(ReportTags.RECEIPT_ID).assertTextEquals("rep_01J9XK2M")
 
         composeRule.onNodeWithTag(ReportTags.COPY_RECEIPT).performClick()
         assertEquals(ReportAction.CopyReference("rep_01J9XK2M"), actions.last())
         composeRule.onNodeWithText("Copied").assertIsDisplayed()
 
-        composeRule.onNodeWithTag(ReportTags.DONE).performClick()
+        composeRule.onNodeWithTag(ReportTags.CLOSE).performClick()
         assertEquals(ReportAction.Dismiss, actions.last())
     }
 
@@ -242,7 +248,9 @@ class ReportSheetTest {
 
         composeRule.onNodeWithTag(ReportTags.FRAME_PREPARING).assertIsDisplayed()
         composeRule.onNodeWithTag(ReportTags.FRAME_FALLBACK).assertDoesNotExist()
-        composeRule.onNodeWithText("Preparing screenshot and diagnostic dump…").assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportTags.DUMP_STATUS).assertIsDisplayed()
+        // Said once on the frame and once in what the report holds.
+        composeRule.onAllNodesWithText("Preparing screenshot…").assertCountEquals(2)
         composeRule.onNodeWithTag(ReportTags.SEND).assertIsNotEnabled()
     }
 

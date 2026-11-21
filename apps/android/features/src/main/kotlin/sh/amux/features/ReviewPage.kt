@@ -1,5 +1,33 @@
 package sh.amux.features
 
+import androidx.compose.material3.IconButton
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+
+import androidx.compose.ui.semantics.stateDescription
+
+import androidx.compose.ui.semantics.customActions
+
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+
+import kotlinx.coroutines.launch
+
+import androidx.compose.runtime.rememberCoroutineScope
+
+import androidx.compose.material3.DropdownMenuItem
+
+import androidx.compose.material3.DropdownMenu
+
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+
+import androidx.compose.material.icons.automirrored.outlined.List
+
+import androidx.compose.foundation.shape.CircleShape
+
+import androidx.compose.foundation.combinedClickable
+
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.runtime.derivedStateOf
@@ -135,7 +163,7 @@ private sealed interface CommentDraftTarget {
  * is open, as on iPhone: comments are written against one frozen diff, and a
  * different comparison is a different review, opened from the chat.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReviewPage(
     state: ReviewPageState,
@@ -144,11 +172,12 @@ fun ReviewPage(
 ) {
     val colors = AmuxTheme.colors
     val files = state.doc?.files.orEmpty()
-    var activeFileIndex by remember(state.selectedFileIndex, files.size) {
-        mutableIntStateOf(
-            if (files.isEmpty()) 0 else state.selectedFileIndex.coerceIn(0, files.lastIndex),
-        )
-    }
+    // Files folded shut, by index. Every file starts open: the page is one
+    // scroll through the whole change, and a fold is how a long file is
+    // stepped over.
+    var folded by remember(state.doc?.head, state.doc?.base) { mutableStateOf(emptySet<Int>()) }
+    var filesMenuOpen by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var commentTarget by remember { mutableStateOf<CommentDraftTarget?>(null) }
 
     // A comment is bound to the diff it was written on; a reloaded diff drops it.
@@ -166,6 +195,30 @@ fun ReviewPage(
     }
     val fileLabels = remember(files) { shortFileLabels(files.map { it.path }) }
     val diffList = rememberLazyListState()
+    // Where each file's heading sits in the one list, so a file can be
+    // jumped to: its heading, its file comments, then its lines.
+    val headingIndex = remember(files, state.comments, folded) {
+        var at = 0
+        files.mapIndexed { index, file ->
+            val here = at
+            at += 1 + state.comments.count { it.path == file.path && it.line == 0 && it.oldLine == 0 }
+            if (index !in folded) {
+                at += if (file.binary) 1 else file.hunks.sumOf { (if (it.skips) 1 else 0) + it.lines.size }
+            }
+            here
+        }
+    }
+    fun goTo(fileIndex: Int) {
+        val target = headingIndex.getOrNull(fileIndex) ?: return
+        folded = folded - fileIndex
+        scope.launch { diffList.scrollToItem(target) }
+    }
+    // Opened on a file from the chat's overview: start at it.
+    LaunchedEffect(state.selectedFileIndex, files.size) {
+        if (state.selectedFileIndex in 1..files.lastIndex) {
+            headingIndex.getOrNull(state.selectedFileIndex)?.let { diffList.scrollToItem(it) }
+        }
+    }
 
     Scaffold(
         modifier = modifier
@@ -201,15 +254,77 @@ fun ReviewPage(
                     null
                 },
             ) {
-                if (commentCount > 0) {
-                    TextButton(
-                        onClick = { onAction(ReviewPageAction.SendReview) },
-                        modifier = Modifier.testTag(AskReviewTags.REVIEW_SEND),
+                if (files.size > 1) {
+                    Box {
+                        IconButton(
+                            onClick = { filesMenuOpen = true },
+                            modifier = Modifier.testTag(AskReviewTags.REVIEW_FILES),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.List,
+                                contentDescription = stringResource(R.string.review_files),
+                                tint = colors.ink,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = filesMenuOpen,
+                            onDismissRequest = { filesMenuOpen = false },
+                            containerColor = colors.raised,
+                        ) {
+                            files.forEachIndexed { index, file ->
+                                val comments = commentsByFile[file.path] ?: 0
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(text = fileLabels[index], style = AmuxTheme.typography.mono, color = colors.ink)
+                                            Text(
+                                                text = fileSummary(file, comments, stringResource(R.string.review_binary_file)),
+                                                style = AmuxTheme.typography.caption,
+                                                color = colors.inkMuted,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        filesMenuOpen = false
+                                        goTo(index)
+                                        onAction(ReviewPageAction.SelectFile(index))
+                                    },
+                                    modifier = Modifier.testTag(AskReviewTags.reviewFileMenuItem(index)),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        // The comments go back to the chat as one attachment, sent with the
+        // next message: the page attaches, it does not send. A bar under the
+        // list rather than a button over it, so no comment hides beneath it.
+        bottomBar = {
+            if (commentCount > 0 && commentTarget == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.ground)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(horizontal = Space.margin, vertical = Space.s),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .clip(CircleShape)
+                            .background(colors.ink)
+                            .clickable(role = Role.Button) { onAction(ReviewPageAction.SendReview) }
+                            .testTag(AskReviewTags.REVIEW_SEND),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = stringResource(R.string.review_send_count, commentCount),
+                            text = ChatWords.attachReview(commentCount),
                             style = AmuxTheme.typography.bodyEmphasis,
-                            color = colors.accent,
+                            color = colors.ground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -298,128 +413,99 @@ fun ReviewPage(
                             }
                         }
                     }
-                    // Horizontal scrollable file strip
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Space.xs),
-                        contentPadding = PaddingValues(horizontal = Space.margin),
-                        horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    ) {
-                        itemsIndexed(files, key = { _, file -> file.path }) { index, file ->
-                            val isSelected = index == activeFileIndex
-                            val fileCommentCount = commentsByFile[file.path] ?: 0
-                            ReviewFileStripChip(
-                                label = fileLabels[index],
-                                added = file.added,
-                                removed = file.removed,
-                                commentCount = fileCommentCount,
-                                isSelected = isSelected,
-                                onClick = {
-                                    activeFileIndex = index
-                                    onAction(ReviewPageAction.SelectFile(index))
-                                },
-                                modifier = Modifier.testTag(AskReviewTags.reviewFileChip(index)),
-                            )
-                        }
-                    }
-
-                    AmuxHairline()
-
-                    val currentFile = files[activeFileIndex]
-                    val indexedComments = state.comments.mapIndexedNotNull { idx, comment ->
-                        if (comment.path == currentFile.path) idx to comment else null
-                    }
-                    val fileLevelComments = indexedComments.filter { (_, c) -> c.line == 0 && c.oldLine == 0 }
-
                     LazyColumn(
                         state = diffList,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        contentPadding = PaddingValues(bottom = 96.dp),
+                        contentPadding = PaddingValues(bottom = Space.xl),
                     ) {
-                        item(key = "header:${currentFile.path}") {
-                            ReviewFileHeader(
-                                file = currentFile,
-                                enabled = true,
-                                onCommentOnFile = {
-                                    commentTarget = CommentDraftTarget.New(
-                                        path = currentFile.path,
-                                        line = 0,
-                                        oldLine = 0,
-                                    )
-                                },
-                            )
-                            AmuxHairline()
-                        }
-
-                        itemsIndexed(
-                            items = fileLevelComments,
-                            key = { _, (idx, _) -> "file-comment:$idx" },
-                        ) { _, (commentIndex, comment) ->
-                            ReviewCommentThreadRow(
-                                text = comment.text,
-                                onClick = {
-                                    commentTarget = CommentDraftTarget.Editing(commentIndex, comment.text)
-                                },
-                                modifier = Modifier.testTag(AskReviewTags.reviewCommentThread(commentIndex)),
-                            )
-                        }
-
-                        if (currentFile.binary) {
-                            item(key = "binary:${currentFile.path}") {
-                                Text(
-                                    text = stringResource(R.string.review_binary_file),
-                                    style = AmuxTheme.typography.detail,
-                                    color = colors.inkFaint,
-                                    modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.m),
+                        files.forEachIndexed { fileIndex, file ->
+                            val indexedComments = state.comments.mapIndexedNotNull { idx, comment ->
+                                if (comment.path == file.path) idx to comment else null
+                            }
+                            val fileLevelComments = indexedComments.filter { (_, c) -> c.line == 0 && c.oldLine == 0 }
+                            val isFolded = fileIndex in folded
+                            stickyHeader(key = "header:${file.path}") {
+                                ReviewFileHeader(
+                                    file = file,
+                                    label = fileLabels[fileIndex],
+                                    comments = indexedComments.size,
+                                    folded = isFolded,
+                                    onToggle = { folded = if (isFolded) folded - fileIndex else folded + fileIndex },
+                                    onCommentOnFile = {
+                                        commentTarget = CommentDraftTarget.New(path = file.path, line = 0, oldLine = 0)
+                                    },
+                                    modifier = Modifier.testTag(AskReviewTags.reviewFileChip(fileIndex)),
                                 )
                             }
-                        } else {
-                            currentFile.hunks.forEachIndexed { hunkIndex, hunk ->
-                                if (hunk.skips) {
-                                    item(key = "hunk:$activeFileIndex:$hunkIndex") {
-                                        ReviewHunkBreakRow(scope = hunk.scope)
-                                    }
-                                }
-                                itemsIndexed(
-                                    items = hunk.lines,
-                                    key = { lineIndex, _ -> "line:$activeFileIndex:$hunkIndex:$lineIndex" },
-                                ) { lineIndex, diffLine ->
-                                    val lineComments = indexedComments.filter { (_, c) ->
-                                        matchesDiffLine(c, diffLine)
-                                    }
-                                    ReviewDiffLineRow(
-                                        line = diffLine,
-                                        hasComments = lineComments.isNotEmpty(),
-                                        onClick = {
-                                            val targetLine = when (diffLine.kind) {
-                                                LineKind.Removed -> 0
-                                                LineKind.Added, LineKind.Context -> diffLine.newLine ?: 0
-                                            }
-                                            val targetOldLine = when (diffLine.kind) {
-                                                LineKind.Removed -> diffLine.oldLine ?: 0
-                                                LineKind.Added, LineKind.Context -> 0
-                                            }
-                                            commentTarget = CommentDraftTarget.New(
-                                                path = currentFile.path,
-                                                line = targetLine,
-                                                oldLine = targetOldLine,
-                                            )
-                                        },
-                                        modifier = Modifier.testTag(
-                                            AskReviewTags.reviewLine(activeFileIndex, hunkIndex, lineIndex),
-                                        ),
+                            itemsIndexed(
+                                items = fileLevelComments,
+                                key = { _, (idx, _) -> "file-comment:$idx" },
+                            ) { _, (commentIndex, comment) ->
+                                ReviewCommentThreadRow(
+                                    text = comment.text,
+                                    onClick = {
+                                        commentTarget = CommentDraftTarget.Editing(commentIndex, comment.text)
+                                    },
+                                    modifier = Modifier.testTag(AskReviewTags.reviewCommentThread(commentIndex)),
+                                )
+                            }
+                            if (isFolded) return@forEachIndexed
+                            if (file.binary) {
+                                item(key = "binary:${file.path}") {
+                                    Text(
+                                        text = stringResource(R.string.review_binary_file),
+                                        style = AmuxTheme.typography.detail,
+                                        color = colors.inkFaint,
+                                        modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.m),
                                     )
-                                    lineComments.forEach { (commentIndex, comment) ->
-                                        ReviewCommentThreadRow(
-                                            text = comment.text,
+                                }
+                            } else {
+                                file.hunks.forEachIndexed { hunkIndex, hunk ->
+                                    if (hunk.skips) {
+                                        item(key = "hunk:$fileIndex:$hunkIndex") {
+                                            ReviewHunkBreakRow(scope = hunk.scope)
+                                        }
+                                    }
+                                    itemsIndexed(
+                                        items = hunk.lines,
+                                        key = { lineIndex, _ -> "line:$fileIndex:$hunkIndex:$lineIndex" },
+                                    ) { lineIndex, diffLine ->
+                                        val lineComments = indexedComments.filter { (_, c) ->
+                                            matchesDiffLine(c, diffLine)
+                                        }
+                                        ReviewDiffLineRow(
+                                            line = diffLine,
+                                            hasComments = lineComments.isNotEmpty(),
                                             onClick = {
-                                                commentTarget = CommentDraftTarget.Editing(commentIndex, comment.text)
+                                                val targetLine = when (diffLine.kind) {
+                                                    LineKind.Removed -> 0
+                                                    LineKind.Added, LineKind.Context -> diffLine.newLine ?: 0
+                                                }
+                                                val targetOldLine = when (diffLine.kind) {
+                                                    LineKind.Removed -> diffLine.oldLine ?: 0
+                                                    LineKind.Added, LineKind.Context -> 0
+                                                }
+                                                commentTarget = CommentDraftTarget.New(
+                                                    path = file.path,
+                                                    line = targetLine,
+                                                    oldLine = targetOldLine,
+                                                )
                                             },
-                                            modifier = Modifier.testTag(AskReviewTags.reviewCommentThread(commentIndex)),
+                                            modifier = Modifier.testTag(
+                                                AskReviewTags.reviewLine(fileIndex, hunkIndex, lineIndex),
+                                            ),
                                         )
+                                        lineComments.forEach { (commentIndex, comment) ->
+                                            ReviewCommentThreadRow(
+                                                text = comment.text,
+                                                onClick = {
+                                                    commentTarget = CommentDraftTarget.Editing(commentIndex, comment.text)
+                                                },
+                                                modifier = Modifier.testTag(AskReviewTags.reviewCommentThread(commentIndex)),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -500,104 +586,103 @@ private fun shortFileLabels(paths: List<String>): List<String> {
     }
 }
 
-@Composable
-private fun ReviewFileStripChip(
-    label: String,
-    added: Int,
-    removed: Int,
-    commentCount: Int,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = AmuxTheme.colors
-    Surface(
-        modifier = modifier
-            .thumbTarget()
-            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-            .clickable(role = Role.Tab, onClick = onClick)
-            .semantics { selected = isSelected },
-        shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-        color = if (isSelected) colors.raised else colors.sunken,
-        border = BorderStroke(
-            width = if (isSelected) 1.5.dp else AmuxTheme.metrics.hairline,
-            color = if (isSelected) colors.ink else colors.hairline,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Space.m, vertical = Space.s),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.s),
-        ) {
-            Text(
-                text = label,
-                style = if (isSelected) AmuxTheme.typography.bodyEmphasis else AmuxTheme.typography.monoSmall,
-                color = colors.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            DiffDeltaCounts(added = added, removed = removed)
-            if (commentCount > 0) {
-                AmuxStatusChip(
-                    text = commentCount.toString(),
-                    accent = true,
-                )
-            }
-        }
-    }
-}
+/** "+3 −4 · 1 comment", leaving out what is nothing. */
+private fun fileSummary(file: ReviewFile, comments: Int, binaryLabel: String): String = buildList {
+    val delta = listOfNotNull(
+        file.added.takeIf { it > 0 }?.let { "+$it" },
+        file.removed.takeIf { it > 0 }?.let { "\u2212$it" },
+    ).joinToString(" ")
+    if (delta.isNotEmpty()) add(delta)
+    if (file.binary) add(binaryLabel)
+    if (comments > 0) add(ChatWords.comments(comments))
+}.joinToString(" · ")
 
+/**
+ * A file's heading, pinned while its file is read: the fold, its name, how
+ * many comments it has and what it changed. A press folds or opens it; a
+ * long press, or TalkBack's action, writes a comment on the whole file.
+ */
 @Composable
 private fun ReviewFileHeader(
     file: ReviewFile,
-    enabled: Boolean,
+    label: String,
+    comments: Int,
+    folded: Boolean,
+    onToggle: () -> Unit,
     onCommentOnFile: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
-    val pathDisplay = if (!file.oldPath.isNullOrEmpty() && file.oldPath != file.path) {
-        "${file.oldPath} \u2192 ${file.path}"
-    } else {
-        file.path
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.raised)
-            .padding(horizontal = Space.margin, vertical = Space.s),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(Space.xxs),
-        ) {
-            Text(
-                text = pathDisplay,
-                style = AmuxTheme.typography.mono,
-                color = colors.ink,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            DiffDeltaCounts(added = file.added, removed = file.removed)
-        }
-        TextButton(
-            enabled = enabled,
-            onClick = onCommentOnFile,
-            modifier = Modifier.testTag(AskReviewTags.REVIEW_FILE_COMMENT),
+    val commentOnFile = stringResource(R.string.review_comment_on_file)
+    val state = stringResource(if (folded) R.string.fold_state_folded else R.string.fold_state_open)
+    Column(modifier = modifier.background(colors.ground)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ThumbTarget.MinSize)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = onToggle,
+                    onLongClick = onCommentOnFile,
+                    onLongClickLabel = commentOnFile,
+                )
+                .semantics {
+                    contentDescription = file.path
+                    stateDescription = state
+                    customActions = listOf(
+                        CustomAccessibilityAction(commentOnFile) {
+                            onCommentOnFile()
+                            true
+                        },
+                    )
+                }
+                .padding(horizontal = Space.margin, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s),
         ) {
             Icon(
-                imageVector = Icons.Outlined.ModeComment,
+                imageVector = if (folded) Icons.AutoMirrored.Outlined.KeyboardArrowRight else Icons.Outlined.KeyboardArrowDown,
                 contentDescription = null,
-                tint = colors.inkMuted,
+                tint = colors.inkFaint,
                 modifier = Modifier.size(IconSize.Inline),
             )
-            Spacer(modifier = Modifier.width(Space.xs))
-            Text(
-                text = stringResource(R.string.review_file_comment_button),
-                style = AmuxTheme.typography.caption,
-                color = colors.ink,
-            )
+            // The name and its comments take the room; what the file
+            // changed keeps the trailing edge.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
+                Text(
+                    text = label,
+                    style = AmuxTheme.typography.mono,
+                    color = colors.ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (comments > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.xxs),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ModeComment,
+                            contentDescription = null,
+                            tint = colors.accent,
+                            modifier = Modifier.size(IconSize.Inline),
+                        )
+                        Text(
+                            text = comments.toString(),
+                            style = AmuxTheme.typography.caption,
+                            color = colors.accent,
+                        )
+                    }
+                }
+            }
+            DiffDeltaCounts(added = file.added, removed = file.removed)
         }
+        AmuxHairline()
     }
 }
 

@@ -132,7 +132,7 @@ holds your messages, your code, or your file and folder names
 - **On Android**, take a screenshot and a banner offers to open **Report a
   Problem** (you can drag boxes to mark what's wrong or tap **Hide** to black
   out sensitive areas before sending), or use **Report a Problem** under
-  **Privacy & Diagnostics** in Settings.
+  **Help** in Settings.
 - **From the shell**, run `amux dump --reason "what looks wrong" --send`.
 
 Reports go to your amux account, so you need to be signed in to send one. A copy

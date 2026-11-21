@@ -76,6 +76,7 @@ import sh.amux.values.FormValue
 import sh.amux.values.QuestionResponse
 import sh.amux.values.Refusal
 import sh.amux.values.RefusalReason
+import sh.amux.words.ChatNotices
 import sh.amux.words.ChatWords
 
 
@@ -281,7 +282,7 @@ private fun AskCardHeader(
         }
         if (card.stopsTurn) {
             Box {
-                val moreLabel = stringResource(R.string.action_more_options)
+                val moreLabel = stringResource(R.string.action_more)
                 // A 28 dp hairline circle on the card's trailing edge, its
                 // 48 dp target spilling into the card's padding.
                 AmuxEdgeTarget(
@@ -404,24 +405,8 @@ private fun AskStateBanner(
     }
 }
 
-@Composable
-private fun refusalMessage(refusal: Refusal): String {
-    val detail = refusal.detail?.trim()
-    if (!detail.isNullOrEmpty()) return detail
-    return when (refusal.reason) {
-        RefusalReason.Exited -> stringResource(R.string.ask_refusal_exited)
-        RefusalReason.Exiting -> stringResource(R.string.ask_refusal_exiting)
-        RefusalReason.AgentClosed -> stringResource(R.string.ask_refusal_agent_closed)
-        RefusalReason.Draining -> stringResource(R.string.ask_refusal_draining)
-        RefusalReason.HostUnreachable -> stringResource(R.string.ask_refusal_host_unreachable)
-        RefusalReason.Unsupported -> stringResource(R.string.ask_refusal_unsupported)
-        RefusalReason.ClosedAsk -> stringResource(R.string.ask_refusal_closed_ask)
-        RefusalReason.NotQueued -> stringResource(R.string.ask_refusal_not_queued)
-        RefusalReason.ConversationElsewhere -> stringResource(R.string.ask_refusal_conversation_elsewhere)
-        RefusalReason.TooLong -> stringResource(R.string.ask_refusal_too_long)
-        RefusalReason.Unspecified -> stringResource(R.string.ask_refusal_unspecified)
-    }
-}
+/** Why it did not go, in the words every refusal in the chat uses. */
+private fun refusalMessage(refusal: Refusal): String = ChatNotices.refusal(refusal)
 
 private fun askBodyIcon(body: AskBody): ImageVector = when (body) {
     is AskBody.Command, is AskBody.Edit, is AskBody.Tool -> Icons.Filled.FrontHand

@@ -232,6 +232,8 @@ data class ChatScreenState(
     val dictationEnabled: Boolean = false,
     val dictationActive: Boolean = false,
     val dictationSentence: String? = null,
+    /** Dictation was refused access; the sentence comes with the way to Settings. */
+    val dictationDenied: Boolean = false,
     /** Whether the dock's task row starts open, as a story pictures it. */
     val dockOpen: Boolean = false,
 ) {
@@ -300,6 +302,7 @@ data class ChatScreenCallbacks(
     val onSwitchBack: () -> Unit = {},
     val onStopJob: (String) -> Unit = {},
     val onToggleDictation: () -> Unit = {},
+    val onOpenDictationSettings: () -> Unit = {},
     val onAskAction: (AskAction) -> Unit = {},
     val onQuestionDraftChange: (askKey: String, QuestionDraft) -> Unit = { _, _ -> },
     val onFormValuesChange: (askKey: String, List<FormValue>) -> Unit = { _, _ -> },

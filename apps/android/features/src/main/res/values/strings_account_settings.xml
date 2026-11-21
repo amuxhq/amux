@@ -4,14 +4,11 @@
     <string name="settings_title">Settings</string>
     <string name="settings_section_accounts">Accounts</string>
     <string name="settings_section_account_actions">Selected Account</string>
-    <string name="settings_section_appearance">Appearance</string>
-    <string name="settings_section_notifications">Notifications</string>
-    <string name="settings_section_privacy_diagnostics">Privacy &amp; Diagnostics</string>
     <string name="settings_section_this_phone">This Phone</string>
+    <string name="settings_section_help">Help</string>
 
     <!-- Settings: Accounts -->
-    <string name="settings_signed_out_title">Sign in to reach your computers anywhere</string>
-    <string name="settings_signed_out_detail">An account connects this phone to your paired computers over the cloud relay. Computers on this network work without one.</string>
+    <string name="settings_signed_out_detail">An account lets this phone reach your computers from anywhere, and a subscription bought on amux.sh carries over.</string>
     <string name="settings_sign_in">Sign In</string>
     <string name="settings_sign_in_again">Sign In Again</string>
     <string name="settings_signing_in">Signing in…</string>
@@ -19,36 +16,29 @@
     <string name="settings_account_active">Active</string>
     <string name="settings_account_signed_out">Signed out</string>
     <string name="settings_account_expired">Session expired</string>
-    <string name="settings_badge_pro">Pro</string>
-    <string name="settings_badge_trial">Trial</string>
-    <string name="settings_badge_included">Included</string>
-    <string name="settings_badge_free">Free</string>
-    <string name="settings_manage_subscription">Manage Subscription</string>
-    <string name="settings_upgrade">Upgrade</string>
+    <string name="settings_pro">Pro</string>
+    <string name="settings_pro_subscribed">Subscribed</string>
+    <string name="settings_pro_not_subscribed">Not subscribed</string>
+    <string name="settings_account_waiting_spoken">%1$d need you</string>
     <string name="settings_sign_out">Sign Out</string>
     <string name="settings_remove_from_phone">Remove from This Phone</string>
     <string name="settings_delete_account">Delete Account</string>
 
     <!-- Settings: Appearance -->
-    <string name="settings_appearance_label">Theme</string>
+    <string name="settings_appearance_label">Appearance</string>
     <string name="settings_appearance_light">Light</string>
     <string name="settings_appearance_dark">Dark</string>
     <string name="settings_appearance_system">System</string>
 
     <!-- Settings: Notifications -->
     <string name="settings_notifications_label">Notifications</string>
-    <string name="settings_notifications_coming_soon">Coming soon</string>
-    <string name="settings_notifications_enabled">Enabled</string>
+    <string name="settings_notifications_on">On</string>
     <string name="settings_notifications_off">Off</string>
-    <string name="settings_notifications_not_asked">Not enabled</string>
-    <string name="settings_notifications_push_coming_soon">Background push notifications are not yet enabled in this version of amux.</string>
-    <string name="settings_notifications_enable_button">Enable Notifications</string>
-    <string name="settings_notifications_settings_button">Notification Settings</string>
 
     <!-- Settings: Privacy & Diagnostics -->
-    <string name="settings_share_usage_title">Share Usage Counts</string>
-    <string name="settings_share_usage_detail">Counts and choices, never what you type, your code, or file names.</string>
-    <string name="settings_auto_reports_title">Automatic Reports</string>
+    <string name="settings_share_usage_title">Share Usage</string>
+    <string name="settings_share_usage_detail">Counts and choices, never what you type</string>
+    <string name="settings_auto_reports_title">Send Automatic Reports</string>
     <string name="settings_auto_reports_detail">When amux catches its own bug. Never your chats, code, or file names.</string>
     <string name="settings_report_problem">Report a Problem</string>
     <string name="settings_export_diagnostics">Export Diagnostics</string>
@@ -62,6 +52,7 @@
     <string name="settings_device_fingerprint_label">Fingerprint</string>
     <string name="settings_device_fingerprint_tap">Tap to copy</string>
     <string name="settings_device_fingerprint_copied">Copied</string>
+    <string name="settings_device_fingerprint_copy">Copy</string>
     <string name="settings_app_version_label">Version</string>
 
     <!-- Paywall screen -->
@@ -89,8 +80,8 @@
     <string name="paywall_switching_on_title">Your subscription is still switching on</string>
     <string name="paywall_switching_on_detail">amux.sh has your purchase and is still turning your subscription on. Tap Retry in a moment to check again.</string>
     <string name="paywall_failed_title">That did not go through</string>
-    <string name="paywall_unavailable_title">In-app subscriptions are not enabled yet</string>
-    <string name="paywall_unavailable_detail">Google Play subscriptions are not enabled in this build yet. Subscribe or manage your plan on amux.sh, and it carries over to this phone automatically.</string>
+    <string name="paywall_unavailable_title">Subscribe on amux.sh</string>
+    <string name="paywall_unavailable_detail">Google Play doesn’t sell Pro yet. Subscribe on amux.sh, and Pro carries over to this phone.</string>
     <string name="paywall_entitled_badge_pro">Pro</string>
     <string name="paywall_entitled_badge_trial">Trial</string>
     <string name="paywall_entitled_play_title">Subscribed in Google Play</string>
@@ -128,21 +119,20 @@
     <string name="account_sheet_failed_dismiss">Dismiss</string>
 
     <string name="account_sheet_remove_title">Remove %1$s from this phone?</string>
-    <string name="account_sheet_remove_detail">Your amux.sh account, its subscription, and your paired local computers stay as they are. This phone signs out of this account.</string>
+    <string name="account_sheet_remove_detail">Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account.</string>
     <string name="account_sheet_remove_confirm">Remove</string>
 
     <string name="account_sheet_delete_bar_title">Delete Account</string>
     <string name="account_sheet_delete_title">Delete this account?</string>
     <string name="account_sheet_delete_kept">Your agents and files stay on your computers.</string>
-    <string name="account_sheet_delete_lost">This phone can no longer reach them through this account.</string>
-    <string name="account_sheet_delete_permanent">This permanently deletes your amux.sh account and cannot be undone.</string>
-    <string name="account_sheet_delete_email_label">Type %1$s to confirm</string>
+    <string name="account_sheet_delete_lost">This phone can no longer reach them.</string>
+    <string name="account_sheet_delete_email_label">Type your email to confirm</string>
     <string name="account_sheet_delete_email_description">Confirm account email</string>
     <string name="account_sheet_delete_confirm">Delete Account</string>
     <string name="account_sheet_delete_deleting">Deleting account…</string>
     <string name="account_sheet_delete_blocked_title">Cancel renewal first</string>
-    <string name="account_sheet_delete_blocked_detail">Cancel your active subscription through %1$s, then tap Try Again to delete this account.</string>
-    <string name="account_sheet_delete_billing_portal">Open Billing Portal</string>
+    <string name="account_sheet_delete_blocked_detail">Cancel renewal through %1$s, then tap Try Again to delete this account.</string>
+    <string name="account_sheet_delete_billing_portal">Cancel Renewal in %1$s</string>
     <string name="account_sheet_delete_try_again">Try Again</string>
     <string name="account_sheet_delete_not_now">Not Now</string>
     <string name="account_sheet_delete_failed_title">Nothing was deleted</string>

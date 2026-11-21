@@ -23,8 +23,9 @@ object ChatNotices {
 
     fun notSent(refused: Refusal): String = "Not sent: ${refusal(refused)}"
 
+    /** Why something was refused: the agent's own words when it gave some, else the reason's. */
     fun refusal(refused: Refusal): String {
-        refused.detail?.let { return it }
+        refused.detail?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         return when (refused.reason) {
             RefusalReason.Exited -> "it had exited"
             RefusalReason.Exiting -> "it was exiting"

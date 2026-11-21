@@ -92,6 +92,7 @@ object SettingsMappers {
                 entitlementBadge = badge,
                 entitlementSummary = summary,
                 signingIn = signIn.working && returningId == entry.id,
+                attention = entry.attention,
             )
         }
         return SettingsScreenState(

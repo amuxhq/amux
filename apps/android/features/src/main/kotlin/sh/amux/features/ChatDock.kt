@@ -160,6 +160,7 @@ internal fun ChatBottomDock(
                 dictationEnabled = state.dictationEnabled,
                 dictationActive = state.dictationActive,
                 dictationSentence = state.dictationSentence,
+                dictationDenied = state.dictationDenied,
             ),
             callbacks = ChatComposerCallbacks(
                 onDraftChange = callbacks.onDraftChange,
@@ -181,6 +182,7 @@ internal fun ChatBottomDock(
                 onOpenAgent = callbacks.onOpenAgent,
                 onDockOpenChange = { dockOpen = it },
                 onToggleDictation = callbacks.onToggleDictation,
+                onOpenDictationSettings = callbacks.onOpenDictationSettings,
             ),
             clock = clock,
         )

@@ -9,7 +9,7 @@
     <string name="report_frame_unavailable">The screen could not be photographed.</string>
     <string name="report_frame_preparing">Preparing screenshot…</string>
     <string name="report_frame_marked_count">%1$d marked</string>
-    <string name="report_guidance_marks">Drag a box to mark or hide an area. Tap a box to add a note, hide it, or remove it.</string>
+    <string name="report_guidance_marks">Drag a box around anything wrong. Each box takes a note. Tap a box to note or hide it.</string>
     <string name="report_mark_number">%1$d</string>
     <string name="report_mark_label">Box %1$d</string>
     <string name="report_mark_note_placeholder">What is wrong here?</string>
@@ -19,23 +19,16 @@
     <string name="report_mark_show_spoken">Show area in box %1$d</string>
     <string name="report_mark_remove">Remove box %1$d</string>
     <string name="report_note_placeholder">What went wrong?</string>
-    <string name="report_contents_preparing_screenshot">Preparing screenshot…</string>
-    <string name="report_contents_preparing_screenshot_and_dump">Preparing screenshot and diagnostic dump…</string>
-    <string name="report_contents_preparing_screenshot_dump_ready">Preparing screenshot… Includes this phone’s diagnostic dump. Diagnostic dumps never include your conversations.</string>
-    <string name="report_contents_both">Includes this screenshot (with any hidden areas blacked out) and this phone’s diagnostic dump. Diagnostic dumps never include your conversations.</string>
-    <string name="report_contents_dump_only">Includes this phone’s diagnostic dump. Diagnostic dumps never include your conversations.</string>
-    <string name="report_contents_screenshot_only">Includes this screenshot (with any hidden areas blacked out). No diagnostic dump is attached.</string>
-    <string name="report_contents_screenshot_dump_pending">Includes this screenshot (with any hidden areas blacked out). Preparing this phone’s diagnostic dump…</string>
-    <string name="report_contents_dump_pending">Preparing this phone’s diagnostic dump…</string>
-    <string name="report_contents_none">No screenshot or diagnostic dump is attached.</string>
+    <string name="report_contents_both">Includes this screen and amux’s own logs, never your conversations.</string>
+    <string name="report_contents_dump_only">Includes amux’s own logs, never your conversations.</string>
+    <string name="report_contents_screenshot_only">Includes this screen, never your conversations.</string>
+    <string name="report_contents_none">Includes only what you write here.</string>
     <string name="report_send">Send Report</string>
     <string name="report_sending">Sending…</string>
     <string name="report_retry">Retry</string>
     <string name="report_not_sent">Not sent: %1$s</string>
     <string name="report_sent_title">Report sent</string>
-    <string name="report_sent_detail">Quote %1$s if you write to us about it.</string>
-    <string name="report_reference_label">Reference</string>
+    <string name="report_sent_detail">Quote this reference if you write to us about it.</string>
     <string name="report_copy_reference">Copy Reference</string>
     <string name="report_copied">Copied</string>
-    <string name="report_done">Done</string>
 </resources>

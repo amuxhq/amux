@@ -477,6 +477,11 @@ class RuntimeCoordinator(
         feed(activeRuntime, Lifecycle.NetworkChanged)
     }
 
+    /** Looks for computers on this network again, after the system refused a browse. */
+    fun lookOnNetworkAgain() {
+        if (_state.value.active) discovery?.lookAgain()
+    }
+
     /** Hands discovered LAN peers to every profile and replays them to future profiles. */
     fun discovered(hosts: List<Found>) {
         found = hosts

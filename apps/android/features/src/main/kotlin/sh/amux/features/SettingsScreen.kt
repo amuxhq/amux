@@ -1,5 +1,14 @@
 package sh.amux.features
 
+import sh.amux.design.spillTarget
+
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import sh.amux.design.AmuxShapes
+import androidx.compose.foundation.layout.width
+
 import androidx.compose.ui.text.font.FontWeight
 import sh.amux.design.ThumbTarget
 import androidx.compose.foundation.layout.heightIn
@@ -99,7 +108,7 @@ object SettingsTags {
 
     fun accountRow(email: String): String = "settings.account.row.$email"
     fun accountSignInAgain(email: String): String = "settings.account.sign-in-again.$email"
-    fun accountBadge(email: String): String = "settings.account.badge.$email"
+    fun accountWaiting(email: String): String = "settings.account.waiting.$email"
 }
 
 /** User-selectable appearance option displayed in [SettingsScreen]. */
@@ -146,6 +155,8 @@ data class SettingsAccountItem(
     val entitlementBadge: SettingsEntitlementBadge = SettingsEntitlementBadge.Free,
     val entitlementSummary: String? = null,
     val signingIn: Boolean = false,
+    /** How many of its agents need you, where something reported it; null where nothing has. */
+    val attention: Int? = null,
 ) {
     val initials: String
         get() = AccountInitials.from(name = name, email = email)
@@ -206,8 +217,9 @@ sealed interface SettingsAction {
 }
 
 /**
- * Full-screen Settings route covering accounts, appearance, notifications,
- * privacy & diagnostics, and this phone's identity.
+ * Full-screen Settings, in four groups: the accounts on this phone, the
+ * selected account's own actions under them, what belongs to this phone, and
+ * help.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -243,39 +255,15 @@ fun SettingsScreen(
                     .windowInsetsPadding(WindowInsets.navigationBars)
                     .padding(bottom = Space.xxl)
                     .testTag(SettingsTags.SCROLL),
-                verticalArrangement = Arrangement.spacedBy(Space.m),
+                verticalArrangement = Arrangement.spacedBy(Space.l),
             ) {
-                Spacer(modifier = Modifier.height(Space.xs))
-
-                AccountsSection(
-                    state = state,
-                    largeText = largeText,
-                    onAction = onAction,
-                )
-
-                AppearanceSection(
-                    selected = state.appearance,
-                    largeText = largeText,
-                    onSelect = { onAction(SettingsAction.SetAppearance(it)) },
-                )
-
-                NotificationsSection(
-                    status = state.notificationStatus,
-                    pushDeliveryComingSoon = state.pushDeliveryComingSoon,
-                    largeText = largeText,
-                    onAction = onAction,
-                )
-
-                PrivacyAndDiagnosticsSection(
-                    state = state,
-                    onAction = onAction,
-                )
-
-                ThisPhoneSection(
-                    state = state,
-                    largeText = largeText,
-                    onAction = onAction,
-                )
+                Spacer(modifier = Modifier.height(Space.xxs))
+                AccountsSection(state = state, largeText = largeText, onAction = onAction)
+                state.selectedAccount?.let { active ->
+                    AccountActionsSection(active = active, largeText = largeText, onAction = onAction)
+                }
+                ThisPhoneSection(state = state, largeText = largeText, onAction = onAction)
+                HelpSection(state = state, onAction = onAction)
             }
         }
     }
@@ -290,50 +278,6 @@ private fun AccountsSection(
     val colors = AmuxTheme.colors
     Column(modifier = Modifier.fillMaxWidth()) {
         AmuxSectionHeader(title = stringResource(R.string.settings_section_accounts))
-        if (!state.hasAccounts) {
-            AmuxPanel(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.margin)
-                    .testTag(SettingsTags.SIGNED_OUT_CARD),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Space.l),
-                    verticalArrangement = Arrangement.spacedBy(Space.m),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                        Text(
-                            text = stringResource(R.string.settings_signed_out_title),
-                            style = AmuxTheme.typography.bodyEmphasis,
-                            color = colors.ink,
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_signed_out_detail),
-                            style = AmuxTheme.typography.detail,
-                            color = colors.inkMuted,
-                        )
-                    }
-                    if (state.addingAccount) {
-                        WorkingInlineRow(
-                            label = stringResource(R.string.settings_signing_in),
-                            modifier = Modifier.testTag(SettingsTags.SIGN_IN_BUTTON),
-                        )
-                    } else {
-                        AmuxActionButton(
-                            label = stringResource(R.string.settings_sign_in),
-                            kind = ActionButtonKind.Accent,
-                            fillWidth = true,
-                            onClick = { onAction(SettingsAction.SignIn) },
-                            modifier = Modifier.testTag(SettingsTags.SIGN_IN_BUTTON),
-                        )
-                    }
-                }
-            }
-            return
-        }
-
         AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
             state.accounts.forEachIndexed { index, account ->
                 if (index > 0) {
@@ -344,64 +288,65 @@ private fun AccountsSection(
                     largeText = largeText,
                     onSelect = { onAction(SettingsAction.SelectAccount(account.id)) },
                     onSignInAgain = { onAction(SettingsAction.SignInAgain(account.id)) },
+                    onRemove = { onAction(SettingsAction.RemoveAccount(account.id)) },
                 )
             }
-            AmuxInsetHairline(leadingInset = Space.l)
-            if (state.addingAccount) {
-                WorkingInlineRow(
+            if (state.hasAccounts) {
+                AmuxInsetHairline(leadingInset = Space.l)
+            }
+            when {
+                state.addingAccount -> WorkingInlineRow(
                     label = stringResource(R.string.settings_signing_in),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Space.l, vertical = Space.m)
-                        .testTag(SettingsTags.ADD_ACCOUNT),
+                        .testTag(if (state.hasAccounts) SettingsTags.ADD_ACCOUNT else SettingsTags.SIGN_IN_BUTTON),
                 )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = ThumbTarget.MinSize)
-                        .clickable(role = Role.Button) { onAction(SettingsAction.AddAccount) }
-                        .padding(horizontal = Space.l, vertical = Space.m)
-                        .testTag(SettingsTags.ADD_ACCOUNT),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.m),
-                ) {
-                    // On the account rows' columns: the cross centred where
-                    // their monograms are, the words where their names start.
-                    Box(modifier = Modifier.size(AccountMonogramSize), contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Outlined.Add,
-                            contentDescription = null,
-                            tint = colors.accent,
-                            modifier = Modifier.size(IconSize.Row),
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.settings_add_account),
-                        style = AmuxTheme.typography.body,
-                        color = colors.accent,
-                    )
-                }
+                // A phone with nobody signed in is not a broken phone: it
+                // pairs and runs agents on this network. So the way in is one
+                // quiet row, and the caption under it says what an account adds.
+                !state.hasAccounts -> AccentIconRow(
+                    icon = Icons.Outlined.AccountCircle,
+                    label = stringResource(R.string.settings_sign_in),
+                    onClick = { onAction(SettingsAction.SignIn) },
+                    modifier = Modifier.testTag(SettingsTags.SIGN_IN_BUTTON),
+                )
+                else -> AccentIconRow(
+                    icon = Icons.Outlined.Add,
+                    label = stringResource(R.string.settings_add_account),
+                    onClick = { onAction(SettingsAction.AddAccount) },
+                    modifier = Modifier.testTag(SettingsTags.ADD_ACCOUNT),
+                )
             }
         }
+        if (!state.hasAccounts) {
+            SectionCaption(
+                text = stringResource(R.string.settings_signed_out_detail),
+                modifier = Modifier.testTag(SettingsTags.SIGNED_OUT_CARD),
+            )
+        }
+    }
+}
 
-        val active = state.selectedAccount ?: return
-        Spacer(modifier = Modifier.height(Space.m))
+/** The selected account's own actions, under the list of accounts they continue. */
+@Composable
+private fun AccountActionsSection(
+    active: SettingsAccountItem,
+    largeText: Boolean,
+    onAction: (SettingsAction) -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    Column(modifier = Modifier.fillMaxWidth()) {
         AmuxSectionHeader(
             title = active.name.ifBlank { stringResource(R.string.settings_section_account_actions) },
         )
         AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
-            val subscriptionTitle = stringResource(
-                if (active.hasProAccess) {
-                    R.string.settings_manage_subscription
-                } else {
-                    R.string.settings_upgrade
-                },
-            )
-            val subscriptionValue = active.entitlementSummary ?: badgeLabel(active.entitlementBadge)
+            // Headed by what it buys, with whether this account has it.
             SettingsNavigationRow(
-                label = subscriptionTitle,
-                value = subscriptionValue,
+                label = stringResource(R.string.settings_pro),
+                value = stringResource(
+                    if (active.hasProAccess) R.string.settings_pro_subscribed else R.string.settings_pro_not_subscribed,
+                ),
                 largeText = largeText,
                 onClick = { onAction(SettingsAction.ManageSubscription(active.id)) },
                 modifier = Modifier.testTag(SettingsTags.MANAGE_SUBSCRIPTION),
@@ -410,7 +355,7 @@ private fun AccountsSection(
                 AmuxInsetHairline(leadingInset = Space.l)
                 SettingsActionRow(
                     label = stringResource(R.string.settings_sign_out),
-                    color = colors.ink,
+                    color = colors.accent,
                     onClick = { onAction(SettingsAction.SignOut(active.id)) },
                     modifier = Modifier.testTag(SettingsTags.SIGN_OUT),
                 )
@@ -418,11 +363,12 @@ private fun AccountsSection(
             AmuxInsetHairline(leadingInset = Space.l)
             SettingsActionRow(
                 label = stringResource(R.string.settings_remove_from_phone),
-                color = colors.ink,
+                color = colors.accent,
                 onClick = { onAction(SettingsAction.RemoveAccount(active.id)) },
                 modifier = Modifier.testTag(SettingsTags.REMOVE_ACCOUNT),
             )
             AmuxInsetHairline(leadingInset = Space.l)
+            // The one destructive thing on the page, in the colour kept for it.
             SettingsActionRow(
                 label = stringResource(R.string.settings_delete_account),
                 color = colors.removed,
@@ -439,9 +385,9 @@ private fun SettingsAccountRow(
     largeText: Boolean,
     onSelect: () -> Unit,
     onSignInAgain: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val badgeText = badgeLabel(account.entitlementBadge)
     val subtitle = when {
         account.expired -> stringResource(R.string.settings_account_expired)
         !account.signedIn -> stringResource(R.string.settings_account_signed_out)
@@ -452,110 +398,166 @@ private fun SettingsAccountRow(
             if (account.needsSignInAgain) onSignInAgain() else onSelect()
         }
     }
+    val name = account.name.ifBlank { account.email }
+    val waiting = account.attention?.takeIf { it > 0 && !account.selected && !account.needsSignInAgain }
+    val spokenState = when {
+        account.signingIn -> stringResource(R.string.settings_signing_in)
+        account.selected -> stringResource(R.string.settings_account_active)
+        account.needsSignInAgain -> stringResource(R.string.settings_account_signed_out)
+        else -> null
+    }
+    val spokenWaiting = waiting?.let { stringResource(R.string.settings_account_waiting_spoken, it) }
+    val removeLabel = stringResource(R.string.settings_remove_from_phone)
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = ThumbTarget.MinSize)
             .clickable(enabled = !account.signingIn, role = Role.Button, onClick = rowClick)
-            .semantics { selected = account.selected }
+            .semantics(mergeDescendants = true) {
+                selected = account.selected
+                contentDescription = listOfNotNull(name, subtitle, spokenWaiting).joinToString(", ")
+                spokenState?.let { stateDescription = it }
+                // An account signed out of is the one most likely to be
+                // taken off the phone; its own section is only ever the
+                // selected account's.
+                customActions = listOf(
+                    CustomAccessibilityAction(removeLabel) {
+                        onRemove()
+                        true
+                    },
+                )
+            }
             .padding(horizontal = Space.l, vertical = Space.m)
             .testTag(SettingsTags.accountRow(account.email)),
-        verticalArrangement = Arrangement.spacedBy(Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.m),
+        AccountMonogram(
+            initials = account.initials,
+            selected = account.selected,
+            signedIn = account.signedIn && !account.expired,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(Space.xxs),
         ) {
-            AccountMonogram(
-                initials = account.initials,
-                selected = account.selected,
-                signedIn = account.signedIn && !account.expired,
+            Text(
+                text = name,
+                style = AmuxTheme.typography.body,
+                color = if (account.needsSignInAgain) colors.inkMuted else colors.ink,
+                maxLines = if (largeText) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(Space.xxs),
+            Text(
+                text = subtitle,
+                style = AmuxTheme.typography.caption,
+                color = if (account.expired) colors.accent else colors.inkFaint,
+                maxLines = if (largeText) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        when {
+            account.signingIn -> WorkingInlineRow(label = stringResource(R.string.settings_signing_in))
+            // Its own button, so it keeps its name inside the row's merged
+            // semantics and can be reached by it. A signed-out account offers
+            // it even while selected: signing back in is what it needs.
+            account.needsSignInAgain -> Box(
+                modifier = Modifier
+                    .spillTarget()
+                    .clickable(role = Role.Button, onClick = onSignInAgain)
+                    .testTag(SettingsTags.accountSignInAgain(account.email)),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = account.name.ifBlank { account.email },
-                    style = AmuxTheme.typography.bodyEmphasis,
-                    color = if (account.needsSignInAgain) colors.inkMuted else colors.ink,
-                    maxLines = if (largeText) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = subtitle,
+                    text = stringResource(R.string.settings_sign_in),
                     style = AmuxTheme.typography.caption,
-                    color = if (account.expired) colors.accent else colors.inkMuted,
-                    maxLines = if (largeText) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
+                    color = colors.accent,
+                    maxLines = 1,
                 )
             }
-            if (!largeText) {
-                AccountTrailing(
-                    account = account,
-                    badgeText = badgeText,
-                    onSignInAgain = onSignInAgain,
-                )
-            }
-        }
-        if (largeText) {
-            AccountTrailing(
-                account = account,
-                badgeText = badgeText,
-                onSignInAgain = onSignInAgain,
+            account.selected -> AmuxCheckMark()
+            waiting != null -> AttentionCount(
+                count = waiting,
+                modifier = Modifier.testTag(SettingsTags.accountWaiting(account.email)),
             )
         }
     }
 }
 
+/**
+ * How many agents need you on an account not on screen: drawn only from a
+ * count something reported, so an account this phone has not reached says
+ * nothing here.
+ */
 @Composable
-private fun AccountTrailing(
-    account: SettingsAccountItem,
-    badgeText: String,
-    onSignInAgain: () -> Unit,
+private fun AttentionCount(count: Int, modifier: Modifier = Modifier) {
+    val colors = AmuxTheme.colors
+    Box(
+        modifier = modifier
+            .clip(AmuxShapes.Pill)
+            .background(colors.accentFill)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = count.toString(),
+            style = AmuxTheme.typography.monoSmall,
+            color = colors.onAccent,
+            maxLines = 1,
+        )
+    }
+}
+
+/** An accent row that starts something: a glyph on the monograms' column and its words. */
+@Composable
+private fun AccentIconRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
     Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ThumbTarget.MinSize)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = Space.l, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        AmuxStatusChip(
-            text = badgeText,
-            accent = false,
-            modifier = Modifier.testTag(SettingsTags.accountBadge(account.email)),
-        )
-        when {
-            account.signingIn -> {
-                WorkingInlineRow(label = stringResource(R.string.settings_signing_in))
-            }
-            account.needsSignInAgain -> {
-                Surface(
-                    onClick = onSignInAgain,
-                    shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                    color = colors.sunken,
-                    border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
-                    modifier = Modifier.testTag(SettingsTags.accountSignInAgain(account.email)),
-                ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = Space.m, vertical = Space.s),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.settings_sign_in_again),
-                            style = AmuxTheme.typography.caption,
-                            color = colors.accent,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-            account.selected -> {
-                AmuxCheckMark(contentDescription = stringResource(R.string.settings_account_active))
-            }
+        // On the account rows' columns: the glyph centred where their
+        // monograms are, the words where their names start.
+        Box(modifier = Modifier.size(AccountMonogramSize), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(IconSize.Row),
+            )
         }
+        Text(
+            text = label,
+            style = AmuxTheme.typography.body,
+            color = colors.accent,
+        )
     }
+}
+
+/** A caption under a group, on the group's text column. */
+@Composable
+private fun SectionCaption(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = AmuxTheme.typography.caption,
+        color = AmuxTheme.colors.inkFaint,
+        modifier = modifier.padding(
+            start = Space.margin + Space.l,
+            end = Space.margin + Space.l,
+            top = Space.s,
+        ),
+    )
 }
 
 private val AccountMonogramSize = 34.dp
@@ -571,6 +573,9 @@ private fun AccountMonogram(
     // on the Agents screen does.
     val fill = if (selected && signedIn) colors.accentFill else colors.sunken
     val foreground = if (selected && signedIn) colors.onAccent else colors.inkMuted
+    // The letters are sized from the disc, not the font scale, so they stay
+    // inside it at the largest text; the name beside it carries the words.
+    val letters = with(LocalDensity.current) { (AccountMonogramSize * 0.36f).toSp() }
     Box(
         modifier = Modifier
             .size(AccountMonogramSize)
@@ -585,219 +590,37 @@ private fun AccountMonogram(
     ) {
         Text(
             text = initials,
-            style = AmuxTheme.typography.badge,
+            style = AmuxTheme.typography.badge.copy(fontSize = letters, lineHeight = letters),
             color = foreground,
             maxLines = 1,
         )
     }
 }
 
+/**
+ * What belongs to this phone rather than to an account: how it looks, what it
+ * sends, its notifications, and what the computers it pairs with know it by.
+ */
 @Composable
-private fun badgeLabel(badge: SettingsEntitlementBadge): String = when (badge) {
-    SettingsEntitlementBadge.Pro -> stringResource(R.string.settings_badge_pro)
-    SettingsEntitlementBadge.Trial -> stringResource(R.string.settings_badge_trial)
-    SettingsEntitlementBadge.Included -> stringResource(R.string.settings_badge_included)
-    SettingsEntitlementBadge.Free -> stringResource(R.string.settings_badge_free)
-}
-
-@Composable
-private fun AppearanceSection(
-    selected: SettingsAppearance,
-    largeText: Boolean,
-    onSelect: (SettingsAppearance) -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    Column(modifier = Modifier.fillMaxWidth()) {
-        AmuxSectionHeader(title = stringResource(R.string.settings_section_appearance))
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin)
-                .testTag(SettingsTags.APPEARANCE_GROUP),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Space.l),
-                verticalArrangement = Arrangement.spacedBy(Space.m),
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_appearance_label),
-                    style = AmuxTheme.typography.body,
-                    color = colors.ink,
-                )
-                val options = listOf(
-                    Triple(
-                        SettingsAppearance.Light,
-                        stringResource(R.string.settings_appearance_light),
-                        SettingsTags.APPEARANCE_LIGHT,
-                    ),
-                    Triple(
-                        SettingsAppearance.Dark,
-                        stringResource(R.string.settings_appearance_dark),
-                        SettingsTags.APPEARANCE_DARK,
-                    ),
-                    Triple(
-                        SettingsAppearance.System,
-                        stringResource(R.string.settings_appearance_system),
-                        SettingsTags.APPEARANCE_SYSTEM,
-                    ),
-                )
-                if (largeText) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                            .background(colors.segmentTrack)
-                            .border(
-                                AmuxTheme.metrics.hairline,
-                                colors.hairline,
-                                RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                            )
-                            .padding(Space.xs),
-                        verticalArrangement = Arrangement.spacedBy(Space.xs),
-                    ) {
-                        options.forEach { (option, label, tag) ->
-                            AppearanceSegmentButton(
-                                label = label,
-                                chosen = selected == option,
-                                onClick = { onSelect(option) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag(tag),
-                            )
-                        }
-                    }
-                } else {
-                    AmuxSegmentedChoice(
-                        options = options.map { it.first },
-                        selected = selected,
-                        label = { option -> options.first { it.first == option }.second },
-                        onSelect = onSelect,
-                        tag = { option -> options.first { it.first == option }.third },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppearanceSegmentButton(
-    label: String,
-    chosen: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = AmuxTheme.colors
-    val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius - 2.dp)
-    // Stacked when the text is too large for three segments in a row; drawn
-    // as the segmented row draws its segments.
-    Box(
-        modifier = modifier
-            .heightIn(min = ThumbTarget.MinSize)
-            .amuxSegmentThumb(chosen, shape)
-            .clip(shape)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .semantics { selected = chosen }
-            .padding(horizontal = Space.m, vertical = Space.s),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = AmuxTheme.typography.body.copy(
-                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
-            ),
-            color = if (chosen) colors.ink else colors.inkMuted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun NotificationsSection(
-    status: SettingsNotificationStatus,
-    pushDeliveryComingSoon: Boolean,
-    largeText: Boolean,
-    onAction: (SettingsAction) -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val statusText = if (pushDeliveryComingSoon) {
-        stringResource(R.string.settings_notifications_coming_soon)
-    } else {
-        when (status) {
-            SettingsNotificationStatus.Enabled -> stringResource(R.string.settings_notifications_enabled)
-            SettingsNotificationStatus.Off -> stringResource(R.string.settings_notifications_off)
-            SettingsNotificationStatus.NotAsked -> stringResource(R.string.settings_notifications_not_asked)
-        }
-    }
-    val actionLabel = when (status) {
-        SettingsNotificationStatus.NotAsked -> stringResource(R.string.settings_notifications_enable_button)
-        SettingsNotificationStatus.Enabled,
-        SettingsNotificationStatus.Off,
-        -> stringResource(R.string.settings_notifications_settings_button)
-    }
-    val actionEvent = when (status) {
-        SettingsNotificationStatus.NotAsked -> SettingsAction.EnableNotifications
-        SettingsNotificationStatus.Enabled,
-        SettingsNotificationStatus.Off,
-        -> SettingsAction.OpenNotificationSettings
-    }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        AmuxSectionHeader(title = stringResource(R.string.settings_section_notifications))
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin)
-                .testTag(SettingsTags.NOTIFICATIONS_CARD),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Space.l),
-                verticalArrangement = Arrangement.spacedBy(Space.m),
-            ) {
-                AdaptiveLabelValue(
-                    label = stringResource(R.string.settings_notifications_label),
-                    value = statusText,
-                    largeText = largeText,
-                    valueTag = SettingsTags.NOTIFICATIONS_STATUS,
-                )
-                if (pushDeliveryComingSoon) {
-                    Text(
-                        text = stringResource(R.string.settings_notifications_push_coming_soon),
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkMuted,
-                    )
-                } else {
-                    AmuxActionButton(
-                        label = actionLabel,
-                        kind = if (status == SettingsNotificationStatus.NotAsked) {
-                            ActionButtonKind.Primary
-                        } else {
-                            ActionButtonKind.Outline
-                        },
-                        fillWidth = true,
-                        onClick = { onAction(actionEvent) },
-                        modifier = Modifier.testTag(SettingsTags.NOTIFICATIONS_ACTION),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PrivacyAndDiagnosticsSection(
+private fun ThisPhoneSection(
     state: SettingsScreenState,
+    largeText: Boolean,
     onAction: (SettingsAction) -> Unit,
 ) {
     val colors = AmuxTheme.colors
+    val groupedFingerprint = remember(state.deviceFingerprint) {
+        FingerprintFormat.grouped(state.deviceFingerprint)
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        AmuxSectionHeader(title = stringResource(R.string.settings_section_privacy_diagnostics))
+        AmuxSectionHeader(title = stringResource(R.string.settings_section_this_phone))
         AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
+            AppearanceRow(
+                selected = state.appearance,
+                largeText = largeText,
+                onSelect = { onAction(SettingsAction.SetAppearance(it)) },
+            )
+            AmuxInsetHairline(leadingInset = Space.l)
             SettingsToggleRow(
                 title = stringResource(R.string.settings_share_usage_title),
                 detail = stringResource(R.string.settings_share_usage_detail),
@@ -815,7 +638,227 @@ private fun PrivacyAndDiagnosticsSection(
                 rowTag = SettingsTags.AUTO_REPORTS_ROW,
                 switchTag = SettingsTags.AUTO_REPORTS_SWITCH,
             )
-            AmuxInsetHairline(leadingInset = Space.l)
+            if (!state.pushDeliveryComingSoon) {
+                AmuxInsetHairline(leadingInset = Space.l)
+                NotificationsRow(status = state.notificationStatus, largeText = largeText, onAction = onAction)
+            }
+            if (state.deviceName.isNotEmpty()) {
+                AmuxInsetHairline(leadingInset = Space.l)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = ThumbTarget.MinSize)
+                        .semantics(mergeDescendants = true) {}
+                        .padding(horizontal = Space.l, vertical = Space.m)
+                        .testTag(SettingsTags.DEVICE_NAME_ROW),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    AdaptiveLabelValue(
+                        label = stringResource(R.string.settings_device_name_label),
+                        value = state.deviceName,
+                        largeText = largeText,
+                    )
+                }
+            }
+            if (groupedFingerprint.isNotEmpty()) {
+                AmuxInsetHairline(leadingInset = Space.l)
+                FingerprintRow(
+                    grouped = groupedFingerprint,
+                    copied = state.fingerprintCopied,
+                    onCopy = { onAction(SettingsAction.CopyFingerprint(state.deviceFingerprint)) },
+                )
+            }
+            if (state.appVersion.isNotEmpty()) {
+                AmuxInsetHairline(leadingInset = Space.l)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) {}
+                        .padding(horizontal = Space.l, vertical = Space.m)
+                        .testTag(SettingsTags.APP_VERSION_ROW),
+                ) {
+                    AdaptiveLabelValue(
+                        label = stringResource(R.string.settings_app_version_label),
+                        value = state.appVersion,
+                        largeText = largeText,
+                        monoValue = true,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Appearance is the value, not a page holding it: the label and a compact
+ * choice of three on one row, the choice under the label when the text is
+ * too large for both.
+ */
+@Composable
+private fun AppearanceRow(
+    selected: SettingsAppearance,
+    largeText: Boolean,
+    onSelect: (SettingsAppearance) -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    val options = listOf(
+        Triple(SettingsAppearance.Light, stringResource(R.string.settings_appearance_light), SettingsTags.APPEARANCE_LIGHT),
+        Triple(SettingsAppearance.Dark, stringResource(R.string.settings_appearance_dark), SettingsTags.APPEARANCE_DARK),
+        Triple(SettingsAppearance.System, stringResource(R.string.settings_appearance_system), SettingsTags.APPEARANCE_SYSTEM),
+    )
+    val label = @Composable {
+        Text(
+            text = stringResource(R.string.settings_appearance_label),
+            style = AmuxTheme.typography.body,
+            color = colors.ink,
+        )
+    }
+    val choice = @Composable { modifier: Modifier ->
+        AmuxSegmentedChoice(
+            options = options.map { it.first },
+            selected = selected,
+            label = { option -> options.first { it.first == option }.second },
+            onSelect = onSelect,
+            tag = { option -> options.first { it.first == option }.third },
+            modifier = modifier,
+        )
+    }
+    if (largeText) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Space.l, vertical = Space.s)
+                .testTag(SettingsTags.APPEARANCE_GROUP),
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            label()
+            choice(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Space.l, vertical = Space.xs)
+                .testTag(SettingsTags.APPEARANCE_GROUP),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            label()
+            Spacer(modifier = Modifier.weight(1f))
+            choice(Modifier.width(AppearanceChoiceWidth))
+        }
+    }
+}
+
+/** Wide enough for "System" and its neighbours at the default text size. */
+private val AppearanceChoiceWidth = 240.dp
+
+/**
+ * What Android says about notifications, and a press that goes where it can
+ * be changed: the system's question the first time, its settings after, the
+ * only place they are turned off or on again once asked.
+ */
+@Composable
+private fun NotificationsRow(
+    status: SettingsNotificationStatus,
+    largeText: Boolean,
+    onAction: (SettingsAction) -> Unit,
+) {
+    val value = stringResource(
+        if (status == SettingsNotificationStatus.Enabled) R.string.settings_notifications_on else R.string.settings_notifications_off,
+    )
+    Box(modifier = Modifier.testTag(SettingsTags.NOTIFICATIONS_CARD)) {
+        SettingsNavigationRow(
+            label = stringResource(R.string.settings_notifications_label),
+            value = value,
+            largeText = largeText,
+            valueTag = SettingsTags.NOTIFICATIONS_STATUS,
+            onClick = {
+                onAction(
+                    if (status == SettingsNotificationStatus.NotAsked) {
+                        SettingsAction.EnableNotifications
+                    } else {
+                        SettingsAction.OpenNotificationSettings
+                    },
+                )
+            },
+            modifier = Modifier.testTag(SettingsTags.NOTIFICATIONS_ACTION),
+        )
+    }
+}
+
+@Composable
+private fun FingerprintRow(
+    grouped: String,
+    copied: Boolean,
+    onCopy: () -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ThumbTarget.MinSize)
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.settings_device_fingerprint_copy), onClick = onCopy)
+            .padding(horizontal = Space.l, vertical = Space.m)
+            .testTag(SettingsTags.DEVICE_FINGERPRINT_ROW),
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_device_fingerprint_label),
+                style = AmuxTheme.typography.body,
+                color = colors.ink,
+                modifier = Modifier.weight(1f),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+            ) {
+                Icon(
+                    imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+                    contentDescription = null,
+                    tint = colors.inkMuted,
+                    modifier = Modifier.size(IconSize.Inline),
+                )
+                Text(
+                    text = stringResource(
+                        if (copied) R.string.settings_device_fingerprint_copied else R.string.settings_device_fingerprint_tap,
+                    ),
+                    style = AmuxTheme.typography.caption,
+                    color = colors.inkMuted,
+                )
+            }
+        }
+        Text(
+            text = grouped,
+            style = AmuxTheme.typography.monoSmall,
+            color = colors.inkMuted,
+        )
+    }
+}
+
+/** Something wrong is one intent with three ways out: ask, report, or export. */
+@Composable
+private fun HelpSection(
+    state: SettingsScreenState,
+    onAction: (SettingsAction) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        AmuxSectionHeader(title = stringResource(R.string.settings_section_help))
+        AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
+            if (state.showContactSupport) {
+                SettingsIconRow(
+                    label = stringResource(R.string.settings_contact_support),
+                    icon = Icons.Outlined.Email,
+                    onClick = { onAction(SettingsAction.ContactSupport) },
+                    modifier = Modifier.testTag(SettingsTags.CONTACT_SUPPORT),
+                )
+                AmuxInsetHairline(leadingInset = Space.l)
+            }
             SettingsIconRow(
                 label = stringResource(R.string.settings_report_problem),
                 icon = Icons.Outlined.BugReport,
@@ -827,26 +870,8 @@ private fun PrivacyAndDiagnosticsSection(
                 exportState = state.diagnosticsExport,
                 onExport = { onAction(SettingsAction.ExportDiagnostics) },
             )
-            if (state.showContactSupport) {
-                AmuxInsetHairline(leadingInset = Space.l)
-                SettingsIconRow(
-                    label = stringResource(R.string.settings_contact_support),
-                    icon = Icons.Outlined.Email,
-                    onClick = { onAction(SettingsAction.ContactSupport) },
-                    modifier = Modifier.testTag(SettingsTags.CONTACT_SUPPORT),
-                )
-            }
         }
-        Text(
-            text = stringResource(R.string.settings_diagnostics_caption),
-            style = AmuxTheme.typography.caption,
-            color = colors.inkFaint,
-            modifier = Modifier.padding(
-                start = Space.margin + Space.xs,
-                end = Space.margin + Space.xs,
-                top = Space.s,
-            ),
-        )
+        SectionCaption(text = stringResource(R.string.settings_diagnostics_caption))
     }
 }
 
@@ -956,120 +981,6 @@ private fun ExportDiagnosticsRow(
 }
 
 @Composable
-private fun ThisPhoneSection(
-    state: SettingsScreenState,
-    largeText: Boolean,
-    onAction: (SettingsAction) -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val groupedFingerprint = remember(state.deviceFingerprint) {
-        FingerprintFormat.grouped(state.deviceFingerprint)
-    }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        AmuxSectionHeader(title = stringResource(R.string.settings_section_this_phone))
-        AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
-            if (state.deviceName.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = ThumbTarget.MinSize)
-                        .padding(horizontal = Space.l, vertical = Space.m)
-                        .testTag(SettingsTags.DEVICE_NAME_ROW),
-                    verticalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    AdaptiveLabelValue(
-                        label = stringResource(R.string.settings_device_name_label),
-                        value = state.deviceName,
-                        largeText = largeText,
-                    )
-                }
-            }
-
-            if (groupedFingerprint.isNotEmpty()) {
-                if (state.deviceName.isNotEmpty()) {
-                    AmuxInsetHairline(leadingInset = Space.l)
-                }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = ThumbTarget.MinSize)
-                        .clickable(role = Role.Button) {
-                            onAction(SettingsAction.CopyFingerprint(state.deviceFingerprint))
-                        }
-                        .padding(horizontal = Space.l, vertical = Space.m)
-                        .testTag(SettingsTags.DEVICE_FINGERPRINT_ROW),
-                    verticalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.settings_device_fingerprint_label),
-                            style = AmuxTheme.typography.body,
-                            color = colors.ink,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                        ) {
-                            Icon(
-                                imageVector = if (state.fingerprintCopied) {
-                                    Icons.Outlined.Check
-                                } else {
-                                    Icons.Outlined.ContentCopy
-                                },
-                                contentDescription = null,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(IconSize.Inline),
-                            )
-                            Text(
-                                text = stringResource(
-                                    if (state.fingerprintCopied) {
-                                        R.string.settings_device_fingerprint_copied
-                                    } else {
-                                        R.string.settings_device_fingerprint_tap
-                                    },
-                                ),
-                                style = AmuxTheme.typography.caption,
-                                color = colors.inkMuted,
-                            )
-                        }
-                    }
-                    Text(
-                        text = groupedFingerprint,
-                        style = AmuxTheme.typography.monoSmall,
-                        color = colors.inkMuted,
-                    )
-                }
-            }
-
-            if (state.appVersion.isNotEmpty()) {
-                if (state.deviceName.isNotEmpty() || groupedFingerprint.isNotEmpty()) {
-                    AmuxInsetHairline(leadingInset = Space.l)
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Space.l, vertical = Space.m)
-                        .testTag(SettingsTags.APP_VERSION_ROW),
-                ) {
-                    AdaptiveLabelValue(
-                        label = stringResource(R.string.settings_app_version_label),
-                        value = state.appVersion,
-                        largeText = largeText,
-                        monoValue = true,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun AdaptiveLabelValue(
     label: String,
     value: String,
@@ -1129,8 +1040,8 @@ private fun SettingsNavigationRow(
     largeText: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    valueTag: String? = null,
 ) {
-    val colors = AmuxTheme.colors
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -1145,6 +1056,7 @@ private fun SettingsNavigationRow(
                 label = label,
                 value = value,
                 largeText = largeText,
+                valueTag = valueTag,
             )
         }
         AmuxDisclosureChevron()

@@ -256,7 +256,8 @@ agent says each one is:
   the rest), as for the other kinds.
 - **A notice** is `Notice { reason, severity, title, text }`: what the agent says about its session (`Agent`), or
   why a turn stopped short (`Refusal`, `MaxTokens`, `MaxTurnRequests`), as a note, a warning or an error. An error
-  notice marks the row failed. Errors are `Error`, compaction is `Compaction`, and an item this build cannot read
+  notice marks the row failed. A turn stopped short carries only its typed reason, which each client words,
+  and a turn that stopped at a limit reads as finished rather than failed, since its notice says which limit. Errors are `Error`, compaction is `Compaction`, and an item this build cannot read
   is `Unrecognized`.
 - **A permission ask** offers exactly the options the agent sent, in its order: allow once is `AllowOnce`, reject
   once is `Deny` with a note, and the rest are `Offered`. Its body is a `Command`, an `Edit` from the call's diffs,

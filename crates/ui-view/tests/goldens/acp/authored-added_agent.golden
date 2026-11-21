@@ -52,15 +52,15 @@
      7 prompt:7031 Prompt { text: [Text("Write the summary.")], steered: false }
      8 notice:3 Notice { reason: Agent, severity: Warning, title: "Slow", text: "The model is slow today." }
      9 compaction:k1 Compaction { tokens_before: None, tokens_after: None, automatic: false, idle: false }
-    10 notice:4 Notice { reason: Refusal, severity: Warning, title: "", text: "The model refused to go on." }
+    10 notice:4 Notice { reason: Refusal, severity: Warning, title: "", text: "" }
     11 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
     12 prompt:7033 Prompt { text: [Text("Try once more.")], steered: false }
     13 error:5 Error { error_kind: "-32603", message: "model overloaded", attempts: 0, gave_up: true } attention
     14 turn:3 TurnEnd { duration_ms: Some(0), failed: true }
     15 prompt:7034 Prompt { text: [Text("Last try.")], steered: false }
     16 tool:c2 FileChange { files: [FileRow { path: "/work/notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: Some(1) }], state: Succeeded } run[tool:c2..tool:c2 x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
-    17 notice:6 Notice { reason: MaxTokens, severity: Warning, title: "", text: "The turn reached the model's token limit." }
-    18 turn:4 TurnEnd { duration_ms: Some(0), failed: true }
+    17 notice:6 Notice { reason: MaxTokens, severity: Warning, title: "", text: "" }
+    18 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
     19 ask:ask-2 Ask(Link { server: "my-own-agent", message: "Sign in to the docs server.", url: "https://example.com/sign-in", resolution: Answered })
     20 boundary:2 Hidden collapsed
 == overview Overview { tasks: Some(TasksView { done: 0, total: 2, current: "Run the tests", entries: [TaskLine { subject: "Run the tests", mark: Current }, TaskLine { subject: "Report", mark: Todo }] }), jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

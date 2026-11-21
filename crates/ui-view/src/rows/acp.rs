@@ -4,7 +4,7 @@
 //! carries, and an agent's own words stand where it gives no more.
 
 use serde_json::Value;
-use ui_state::{Held, SessionState};
+use ui_state::{Held, ItemBody, SessionState};
 use wire::{AcpToolKind, acp_item};
 
 use super::{
@@ -37,7 +37,18 @@ pub(super) fn kind_of(
         Acp::Message(m) => plain(prose(held, m.complete, false)),
         Acp::Thought(t) => plain(thinking(state, held, t.complete)),
         Acp::Tool(tool) => tool_row(state, held, tool),
-        Acp::Turn(turn) => plain(turn_row(state, held, turn)),
+        Acp::Turn(turn) => {
+            let mut row = turn_row(state, held, turn);
+            // A turn the agent ended at a limit did not fail: it stopped
+            // there, and the notice before it says which limit.
+            if let RowKind::TurnEnd { failed, .. } = &mut row
+                && *failed
+                && stopped_at_limit(state, held)
+            {
+                *failed = false;
+            }
+            plain(row)
+        }
         // An ACP agent says its compaction as an item of its own.
         Acp::Compaction(c) => plain(compaction(c)),
         Acp::Notice(notice) => notice_row(held, notice),
@@ -57,6 +68,31 @@ pub(super) fn kind_of(
         Acp::Boundary(b) => plain(boundary(b, false)),
         Acp::Unrecognized(u) => plain(unrecognized(u)),
     }
+}
+
+/// Whether the turn ending at `end` stopped at the model's token limit or
+/// the agent's limit on model requests: a notice saying so sits between it
+/// and the turn's start.
+fn stopped_at_limit(state: &SessionState, end: &Held) -> bool {
+    use wire::AcpNoticeKind as Notice;
+    for held in state
+        .transcript()
+        .range(0..=end.item.order.saturating_sub(1))
+        .rev()
+    {
+        match &held.body {
+            ItemBody::Acp(acp_item::Kind::Notice(notice))
+                if matches!(notice.kind(), Notice::MaxTokens | Notice::MaxTurnRequests) =>
+            {
+                return true;
+            }
+            ItemBody::Acp(
+                acp_item::Kind::Turn(_) | acp_item::Kind::Prompt(_) | acp_item::Kind::Steer(_),
+            ) => return false,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// A notice: the agent's own, or why its turn stopped short. One the agent
@@ -84,7 +120,14 @@ fn notice_row(held: &Held, notice: &wire::AcpNotice) -> (RowKind, Option<Decisio
             reason,
             severity,
             title: notice.title.clone(),
-            text: held.item.text.clone(),
+            // Why a turn stopped short is a typed reason, which each client
+            // words in its own copy; the words the record carries for it
+            // are amux's, not the agent's, so they are not handed over.
+            text: if reason == NoticeReason::Agent {
+                held.item.text.clone()
+            } else {
+                String::new()
+            },
         },
         None,
         severity == NoticeSeverity::Error,

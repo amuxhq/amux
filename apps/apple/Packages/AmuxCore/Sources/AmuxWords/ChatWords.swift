@@ -77,7 +77,8 @@ public enum ChatWords {
     public static func run(_ run: Run, counts: RunCounts?) -> String {
         let plus = run.openBelow ? "+" : ""
         let counts = counts ?? RunCounts(
-            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0)
+            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0,
+            denied: 0)
         // "1+ files": a count that is a floor may be more than one.
         func part(_ count: UInt32, _ verb: String, _ one: String, _ many: String) -> String? {
             guard count > 0 else { return nil }
@@ -95,6 +96,7 @@ public enum ChatWords {
             part(counts.fetches, "fetched", "page", "pages"),
             part(counts.other, "used", "tool", "tools"),
             part(counts.subagents, "started", "subagent", "subagents"),
+            part(counts.denied, "denied", "step", "steps"),
         ].compactMap { $0 }
         let words = parts.isEmpty
             ? part(run.steps, "took", "step", "steps") ?? ""
@@ -433,16 +435,30 @@ public enum ChatWords {
         }
     }
 
-    /// What a row names when the activity line points at it.
-    public static func subject(of row: Row) -> String? {
+    /// What the activity line names: the agent's own words, or a command,
+    /// path or tool, which are drawn as code.
+    public struct Subject: Equatable, Sendable {
+        public let text: String
+        public let code: Bool
+
+        public init(_ text: String, code: Bool) {
+            self.text = text
+            self.code = code
+        }
+    }
+
+    /// What a row names when the activity line points at it. A command the
+    /// agent described is named by its description, which is prose, as its
+    /// row leads with it; one it did not is named by the command itself.
+    public static func subject(of row: Row) -> Subject? {
         switch row.kind {
         case .command(let command, let description, _, _, _, _, _, _, _):
-            described(description) ?? firstLine(command)
-        case .explore(_, let subject, _, _): subject
-        case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
-        case .child(_, let name, _, _, _, _): name.isEmpty ? nil : name
-        case .fileChange(let files, _): files.first?.path
-        case .subagent(let description, _, _, _, _): firstLine(description)
+            described(description).map { Subject($0, code: false) } ?? Subject(firstLine(command), code: true)
+        case .explore(_, let subject, _, _): Subject(subject, code: true)
+        case .toolCall(let server, let tool, _, _, _): Subject(server.isEmpty ? tool : "\(server) · \(tool)", code: true)
+        case .child(_, let name, _, _, _, _): name.isEmpty ? nil : Subject(name, code: false)
+        case .fileChange(let files, _): files.first.map { Subject($0.path, code: true) }
+        case .subagent(let description, _, _, _, _): Subject(firstLine(description), code: false)
         default: nil
         }
     }

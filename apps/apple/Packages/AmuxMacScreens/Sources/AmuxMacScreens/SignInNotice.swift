@@ -17,7 +17,7 @@ struct SignInNotice: View {
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 Text(ChatWords.needsSignIn(signIn.providerName)).font(.ui(.body, weight: .medium))
-                Text(ChatWords.signInDetail(signIn, host: host))
+                Text(ChatWords.withCode(ChatWords.signInDetail(signIn, host: host)))
                     .font(.ui(.meta)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

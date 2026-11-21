@@ -421,7 +421,7 @@ public struct NewAgentPage: View {
             if let agent, agent.signedIn == false {
                 // In the agent's own words for what to do, on the host
                 // where it keeps its credential.
-                Text("\(agent.name) isn’t signed in on \(hostName). \(ChatWords.signInStepsThere(agent.signInHint))")
+                Text(ChatWords.withCode("\(agent.name) isn’t signed in on \(hostName). \(ChatWords.signInStepsThere(agent.signInHint))"))
             }
             if let agent, surface.machine != nil, surface.offer == .unavailable {
                 Text("Couldn’t get \(agent.name)’s options from \(hostName). It’ll start with the defaults there.")

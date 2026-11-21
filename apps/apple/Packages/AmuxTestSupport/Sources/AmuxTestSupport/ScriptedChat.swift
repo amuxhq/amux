@@ -410,10 +410,15 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     /// What steps did, as the shared fold counts them.
     private static func counted(_ steps: ArraySlice<Row>) -> RunCounts {
         var counts = RunCounts(
-            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0)
+            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0,
+            denied: 0)
         var edited = Set<String>()
         var read = Set<String>()
         for step in steps {
+            if denied(step.kind) {
+                counts.denied += 1
+                continue
+            }
             switch step.kind {
             case .command, .background: counts.commands += 1
             case .fileChange(let files, _):
@@ -429,6 +434,18 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             }
         }
         return counts
+    }
+
+    /// A step refused before it ran, which the shared fold counts as denied
+    /// and not as what it would have done.
+    private static func denied(_ kind: RowKind) -> Bool {
+        switch kind {
+        case .toolCall(_, _, _, let state, _), .child(_, _, _, _, let state, _),
+            .subagent(_, _, let state, _, _), .fileChange(_, let state),
+            .command(_, _, let state, _, _, _, _, _, _), .explore(_, _, let state, _):
+            state == .denied
+        default: false
+        }
     }
 
     public func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {

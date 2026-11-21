@@ -38,9 +38,7 @@ public enum NewAgentAction: Equatable, Sendable {
 /// unstated on the one control where it matters.
 public struct NewAgent: View {
     @Environment(\.design) private var design
-    /// How tall the Start bar floating at the foot is, so the last rows can
-    /// always scroll clear of it, at any text size.
-    @State private var footHeight: CGFloat = 110
+    @FocusState private var naming: Bool
     private let model: NewAgentStore
     private let hosts: HostsStore
     private let actions: @MainActor (NewAgentAction) -> Void
@@ -57,20 +55,31 @@ public struct NewAgent: View {
     public var body: some View {
         ZStack(alignment: .bottom) {
             Ground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    place
-                    agent
-                    naming
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        place
+                        agent
+                        name.id(Self.nameRow)
+                    }
+                    .padding(.horizontal, design.metrics.gutter)
+                    .padding(.top, 8)
+                    .padding(.bottom, 20)
                 }
-                .padding(.horizontal, design.metrics.gutter)
-                .padding(.top, 8)
-                // Clear of the bar at the foot, which floats over this.
-                .padding(.bottom, footHeight + 20)
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
+                // The bar at the foot floats over the list as an inset of
+                // the scroll view rather than over it, so what scrolls into
+                // view comes to rest above the bar, not under it.
+                .safeAreaInset(edge: .bottom, spacing: 0) { foot }
+                // The system brings only the text field's own line above
+                // the keyboard; the whole row, the last on the page, comes
+                // up with it, so its card is not cut by the bar.
+                .onChange(of: naming) { _, focused in
+                    guard focused else { return }
+                    withAnimation { scroll.scrollTo(Self.nameRow, anchor: .bottom) }
+                }
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            foot
         }
         .navigationTitle("New Agent")
         .toolbarTitleDisplayMode(.inline)
@@ -397,13 +406,15 @@ public struct NewAgent: View {
 
     // MARK: - What it is called
 
+    private static let nameRow = "new-agent.name-row"
+
     /// The name, standing in the field as the suggestion until it is changed.
     ///
     /// Filled rather than left as a placeholder: the suggestion is what will
     /// be sent if nothing is typed, and a grey hint would suggest the field
     /// was empty. The machine still has the last word, and a name it refuses
     /// comes back as its own sentence under the host.
-    private var naming: some View {
+    private var name: some View {
         Surface {
             HStack(spacing: 10) {
                 Text("Name")
@@ -420,6 +431,7 @@ public struct NewAgent: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.done)
+                    .focused($naming)
                     .identified("new-agent.name", label: "Name", value: model.name)
             }
             .padding(.horizontal, 14)
@@ -457,7 +469,6 @@ public struct NewAgent: View {
                 "new-agent.start", label: "Start on \(machineName)",
                 value: model.starting ? "starting" : "ready", enabled: model.ready)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footHeight = $0 }
     }
 }
 

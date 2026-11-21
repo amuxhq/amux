@@ -6937,8 +6937,12 @@ public struct RunCounts: Codable, Hashable, Sendable {
     public var subagents: UInt32
     /// Tool-server calls, images and the rest.
     public var other: UInt32
+    /// Steps refused before they ran, by the person or the agent's own
+    /// rules: counted here and not as what they would have done, so a run
+    /// whose one command was denied does not read as having run it.
+    public var denied: UInt32
 
-    public init(commands: UInt32, edits: UInt32, reads: UInt32, searches: UInt32, lists: UInt32, fetches: UInt32, subagents: UInt32, other: UInt32) {
+    public init(commands: UInt32, edits: UInt32, reads: UInt32, searches: UInt32, lists: UInt32, fetches: UInt32, subagents: UInt32, other: UInt32, denied: UInt32) {
         self.commands = commands
         self.edits = edits
         self.reads = reads
@@ -6947,6 +6951,7 @@ public struct RunCounts: Codable, Hashable, Sendable {
         self.fetches = fetches
         self.subagents = subagents
         self.other = other
+        self.denied = denied
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -6958,6 +6963,7 @@ public struct RunCounts: Codable, Hashable, Sendable {
         case fetches
         case subagents
         case other
+        case denied
     }
 }
 

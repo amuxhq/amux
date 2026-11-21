@@ -868,7 +868,7 @@ public struct ChatStanding: View {
             reach: subject.reach, connecting: subject.connecting, working: working, limit: limit)
     }
 
-    private var activitySubject: String? {
+    private var activitySubject: ChatWords.Subject? {
         guard case .running(let key)? = model.frame?.composer.activity?.kind else { return nil }
         return model.cell(for: key).row.flatMap(ChatWords.subject(of:))
     }

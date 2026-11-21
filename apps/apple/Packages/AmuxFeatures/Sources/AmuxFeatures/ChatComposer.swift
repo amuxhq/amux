@@ -26,7 +26,7 @@ struct ComposerBox: View {
     @Bindable var model: ChatModel
     let placeholder: String
     let activity: Activity?
-    let activitySubject: String?
+    let activitySubject: ChatWords.Subject?
     /// Where the exited agent ran, for its head.
     let host: String
     /// Whether the person settled the agent, which its head says.
@@ -348,7 +348,7 @@ struct NativeComposer: View {
     let model: ChatModel
     let stop: JobStop
     let activity: Activity?
-    let activitySubject: String?
+    let activitySubject: ChatWords.Subject?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -507,7 +507,7 @@ struct ActivityLine: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     let activity: Activity
-    let subject: String?
+    let subject: ChatWords.Subject?
     /// How the chat's live subagents stand, which the words say while one
     /// of them waits on the person.
     var subagents: GroupState = .empty
@@ -536,7 +536,7 @@ struct ActivityLine: View {
 
     /// The line as one sentence, without its clock.
     private var spoken: String {
-        ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject, subagents: subagents)
+        ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject?.text, subagents: subagents)
     }
 
     private func elapsed(at date: Date) -> Int64 {
@@ -546,16 +546,16 @@ struct ActivityLine: View {
 
     private func words(elapsed: Int64) -> some View {
         let parts = ChatWords.activityParts(
-            activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs, subagents: subagents)
+            activity.kind, elapsedMs: elapsed, subject: subject?.text, sinceMs: activity.sinceMs, subagents: subagents)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(parts.words)
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .lineLimit(1)
                 .layoutPriority(2)
-            if let subject = parts.subject {
-                Text(verbatim: subject)
-                    .designFont(.monoSmall, design)
+            if let named = parts.subject {
+                Text(verbatim: named)
+                    .designFont(subject?.code == false ? .detail : .monoSmall, design)
                     .foregroundStyle(design.inkMuted.color)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -572,7 +572,7 @@ struct ActivityLine: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             ChatWords.activity(
-                activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs,
+                activity.kind, elapsedMs: elapsed, subject: subject?.text, sinceMs: activity.sinceMs,
                 subagents: subagents))
     }
 
@@ -1095,7 +1095,7 @@ struct FootCard: View {
                     .designFont(.bodyEmphasis, design)
                     .foregroundStyle(design.ink.color)
                 if !detail.isEmpty {
-                    Text(detail)
+                    Text(ChatWords.withCode(detail))
                         .designFont(.detail, design)
                         .foregroundStyle(design.inkMuted.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1105,6 +1105,6 @@ struct FootCard: View {
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.foot.\(kind)", label: title, value: detail)
+        .identified("chat.foot.\(kind)", label: title, value: ChatWords.withoutCodeMarks(detail))
     }
 }

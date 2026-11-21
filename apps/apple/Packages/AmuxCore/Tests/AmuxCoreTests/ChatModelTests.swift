@@ -645,7 +645,7 @@ final class ChatModelTests: XCTestCase {
     func testAPageIsTheUsualSizeExceptAtACollapsedRunThatContinuesBelow() async {
         let run = Run(
             first: "q", last: "r", steps: 300, live: false, openBelow: true, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 300, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 300, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         let source = FakeChat(rows: [row("r", 5, run: run), row("s", 6)], frame: frame(hasOlder: true))
         let model = ChatModel(source: source)
@@ -655,7 +655,7 @@ final class ChatModelTests: XCTestCase {
 
         let huge = Run(
             first: "q", last: "r", steps: 5_000, live: false, openBelow: true, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 5_000, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 5_000, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         source.ordered[0] = row("r", 5, run: huge)
         source.pending = ChatChanges(keys: ["r"], reloaded: false, session: false)
@@ -1136,7 +1136,7 @@ final class ChatModelTests: XCTestCase {
     func testOpeningARunAsksTheRuntimeAndItsRowsComeWithTheNextDelta() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run), row("c", 3)], frame: frame())
         let model = ChatModel(source: source)
@@ -1156,7 +1156,7 @@ final class ChatModelTests: XCTestCase {
     func testARowInsideARunOpensItsOwnDetailNotTheRun() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0, denied: 0), hidden: nil,
             recent: nil)
         let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run)], frame: frame())
         let model = ChatModel(source: source)

@@ -320,11 +320,18 @@ final class AppModel {
 
     // MARK: - Opening an agent elsewhere
 
-    /// Whether the agent has a terminal interface of its own to attach to:
-    /// a provider subagent has no interface of its own, and an agent whose
-    /// program runs only behind amux's chat has none.
+    /// Whether the agent has a terminal interface of its own to attach to
+    /// here: a provider subagent has no interface of its own, an agent whose
+    /// program runs only behind amux's chat has none, and one on another
+    /// computer has its interface only there, where `amux attach` refuses
+    /// to open it from this Mac.
     func attachable(_ agent: AgentKey) -> Bool {
-        row(agent).map { !$0.native && $0.card.attachable } ?? false
+        runsHere(agent) && (row(agent).map { !$0.native && $0.card.attachable } ?? false)
+    }
+
+    /// The agent runs on this Mac.
+    func runsHere(_ agent: AgentKey) -> Bool {
+        stores?.hosts.local.map { $0.hostId == agent.host } ?? false
     }
 
     /// The agent's own interface in Terminal: a script that runs

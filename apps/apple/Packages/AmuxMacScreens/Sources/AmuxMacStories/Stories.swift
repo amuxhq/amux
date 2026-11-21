@@ -445,7 +445,7 @@ public enum Stories {
                    open: false, counts: nil, hidden: nil, recent: 1), collapsed: true, turn: .work),
         r("r5", .explore(verb: .search, subject: "sleep(", state: .succeeded, result: ""),
           run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, liveShown: false, unresolvedFailure: false,
-                   open: false, counts: RunCounts(commands: 1, edits: 0, reads: 1, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+                   open: false, counts: RunCounts(commands: 1, edits: 0, reads: 1, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
                    recent: 0), turn: .work),
         r("r6", .prose(text: text("""
             Found it. The test cuts the link **before the relay has acknowledged the hello**, so on a slow \
@@ -483,7 +483,7 @@ public enum Stories {
           run: liveRun(
               recent: 0, shown: true,
               hidden: RunCounts(
-                  commands: 0, edits: 0, reads: 2, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0))),
+                  commands: 0, edits: 0, reads: 2, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0))),
     ]
 
     /// A step of the run under way in `workingRows`: its newest step shows,

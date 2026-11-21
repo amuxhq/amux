@@ -107,6 +107,10 @@ public struct MainActions {
     public var dismissProblem: @MainActor () -> Void
     /// The agent's own interface in Terminal.
     public var openTerminal: @MainActor (AgentKey) -> Void
+    /// Whether the agent runs on this Mac: `amux attach` opens an agent's
+    /// own interface only on the machine it runs on, so Terminal is offered
+    /// for no agent elsewhere.
+    public var runsHere: @MainActor (AgentKey) -> Bool
 
     public init(
         openProfile: @escaping @MainActor (String) -> Void = { _ in },
@@ -120,7 +124,8 @@ public struct MainActions {
         act: @escaping @MainActor (AgentAct, AgentKey) -> Void = { _, _ in },
         deleteWarning: @escaping DeleteWarningAsk = { _ in .failure(DeleteUnasked()) },
         dismissProblem: @escaping @MainActor () -> Void = {},
-        openTerminal: @escaping @MainActor (AgentKey) -> Void = { _ in }
+        openTerminal: @escaping @MainActor (AgentKey) -> Void = { _ in },
+        runsHere: @escaping @MainActor (AgentKey) -> Bool = { _ in true }
     ) {
         self.openProfile = openProfile
         self.signIn = signIn
@@ -134,6 +139,7 @@ public struct MainActions {
         self.deleteWarning = deleteWarning
         self.dismissProblem = dismissProblem
         self.openTerminal = openTerminal
+        self.runsHere = runsHere
     }
 }
 
@@ -291,7 +297,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     /// The tools that can open in the tool column, for its +.
     private var toolsMenu: ToolsMenu {
         var terminal: (@MainActor () -> Void)?
-        if let agent = ownAgent, content.row(agent)?.card.attachable == true {
+        if let agent = ownAgent, content.row(agent)?.card.attachable == true, actions.runsHere(agent) {
             let open = actions.openTerminal
             terminal = { open(agent) }
         }
@@ -599,8 +605,8 @@ struct AgentMenu: View {
     var body: some View {
         let agent = row.card.agent
         // Only an agent with a terminal interface of its own has one to
-        // attach to.
-        if !row.native, row.card.attachable {
+        // attach to, and only on the machine it runs on.
+        if !row.native, row.card.attachable, actions.runsHere(agent) {
             Button("Open in Terminal") { actions.openTerminal(agent) }
             Divider()
         }

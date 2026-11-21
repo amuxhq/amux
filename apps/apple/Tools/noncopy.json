@@ -542,6 +542,7 @@
       {"literal": "\"hosts.localNetwork\"", "context": "LocalNetworkPrimer(identifier: \"hosts.localNetwork\") {", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift": [
+      {"literal": "\"new-agent.name-row\"", "context": "private static let nameRow = \"new-agent.name-row\"", "reason": "Stable element identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent\"", "context": ".identified(\"new-agent\", value: model.directory)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.no-hosts\"", "context": ".identified(\"new-agent.no-hosts\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.directory\"", "context": "\"new-agent.directory\", label: \"Directory\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -644,6 +645,10 @@
       {"literal": "\"paywall.manage\"", "context": ".identified(\"paywall.manage\", label: \"Manage Subscription\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"paywall.buy\"", "context": ".identified(\"paywall.buy\", label: title, value: state, enabled: false)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"paywall.buy\"", "context": ".identified(\"paywall.buy\", label: title, value: state)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxCore/Sources/AmuxWords/SignInWords.swift": [
+      {"literal": "\"`\"", "context": "let parts = text.components(separatedBy: \"`\")", "reason": "Markdown's inline-code mark, split on and kept where a span is unclosed; not a displayed label.", "count": 1},
+      {"literal": "\"`\"", "context": "out += AttributedString(\"`\" + part)", "reason": "Markdown's inline-code mark, split on and kept where a span is unclosed; not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxWords/PlaceNames.swift": [
       {"literal": "\".local\"", "context": "let suffix = \".local\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -1389,7 +1394,7 @@
       {"literal": "\"lock\"", "context": "Image(systemName: \"lock\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"chat.permissions\"", "context": ".identified(\"chat.permissions\", label: ChatWords.permissionsItem(settings))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.slash.\\(command.name)\"", "context": ".identified(\"chat.slash.\\(command.name)\", label: ChatWords.command(command))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.foot.\\(kind)\"", "context": ".identified(\"chat.foot.\\(kind)\", label: title, value: detail)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.foot.\\(kind)\"", "context": ".identified(\"chat.foot.\\(kind)\", label: title, value: ChatWords.withoutCodeMarks(detail))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\($0.done)/\\($0.total) \\(title)\"", "context": "let label = tasks.map { \"\\($0.done)/\\($0.total) \\(title)\" } ?? title", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.queued.\\(index)\"", "context": "let id = \"chat.queued.\\(index)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.underway.\\(index)\"", "context": "let id = \"chat.underway.\\(index)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

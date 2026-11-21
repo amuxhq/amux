@@ -35,14 +35,43 @@ final class ChatWordsTests: XCTestCase {
     func testARunSaysWhatItDidAndThatItContinuesBelow() {
         let run = Run(
             first: "a", last: "b", steps: 6, live: false, openBelow: false, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         XCTAssertEqual(ChatWords.run(run, counts: run.counts), "Read 4 files, searched 2 times")
         let open = Run(
             first: "a", last: "b", steps: 41, live: false, openBelow: true, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1, denied: 0), hidden: nil,
             recent: nil)
         XCTAssertEqual(ChatWords.run(open, counts: open.counts), "Read 40+ files, used 1+ tools")
+    }
+
+    func testTheActivityLineNamesADescribedCommandInProseAndABareOneAsCode() {
+        let command = { (description: String) in
+            self.row(.command(
+                command: "sleep 90\nmore", description: description, state: .running, outputHead: [],
+                moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil))
+        }
+        XCTAssertEqual(
+            ChatWords.subject(of: command("Sleep for 90 seconds")), ChatWords.Subject("Sleep for 90 seconds", code: false))
+        XCTAssertEqual(ChatWords.subject(of: command("")), ChatWords.Subject("sleep 90", code: true))
+        XCTAssertEqual(
+            ChatWords.subject(of: row(.explore(verb: .read, subject: "src/lib.rs", state: .running, result: ""))),
+            ChatWords.Subject("src/lib.rs", code: true))
+    }
+
+    func testARefusedStepFoldsAsDeniedNotAsWhatItWouldHaveDone() {
+        let counts = { (commands: UInt32, denied: UInt32) in
+            RunCounts(
+                commands: commands, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0,
+                other: 0, denied: denied)
+        }
+        let run = { (steps: UInt32) in
+            Run(
+                first: "a", last: "b", steps: steps, live: false, openBelow: false, liveShown: false,
+                unresolvedFailure: false, open: false, counts: nil, hidden: nil, recent: nil)
+        }
+        XCTAssertEqual(ChatWords.run(run(1), counts: counts(0, 1)), "Denied 1 step")
+        XCTAssertEqual(ChatWords.run(run(3), counts: counts(1, 2)), "Ran 1 command, denied 2 steps")
     }
 
     func testADescribedCommandReadsAsTheAgentsWordsOverTheCommand() {
@@ -305,6 +334,21 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(
             ChatWords.signInDetail(signedOut, host: "desk"),
             "Signed out\nRun codex login on desk.\nSigned in elsewhere? Send a message to try again.")
+    }
+
+    /// OpenCode and the fake agent name their sign-in command between
+    /// backticks; it is drawn as code, never with the backticks showing.
+    func testAnAgentsBacktickedCommandIsDrawnAsCode() {
+        let drawn = ChatWords.withCode("Run `opencode auth login` in the terminal on desk.")
+        XCTAssertEqual(String(drawn.characters), "Run opencode auth login in the terminal on desk.")
+        let code = drawn.runs.filter { $0.inlinePresentationIntent == .code }
+            .map { String(drawn[$0.range].characters) }
+        XCTAssertEqual(code, ["opencode auth login"])
+        XCTAssertEqual(ChatWords.withoutCodeMarks("Run `a` then `b`."), "Run a then b.")
+        // Words with no span are as written, and a span never closed keeps
+        // its backtick.
+        XCTAssertEqual(ChatWords.withoutCodeMarks("Run codex login."), "Run codex login.")
+        XCTAssertEqual(ChatWords.withoutCodeMarks("a `b` c `d"), "a b c `d")
     }
 
     func testAQueuedPromptSaysWhetherItWasSteered() {

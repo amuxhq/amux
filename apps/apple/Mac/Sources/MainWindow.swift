@@ -139,7 +139,8 @@ struct AppWindow: View {
                 return await stores.deleteWarning(agent).mapError { $0 }
             },
             dismissProblem: { model.dismissProblem() },
-            openTerminal: { model.openTerminal($0) })
+            openTerminal: { model.openTerminal($0) },
+            runsHere: { model.runsHere($0) })
     }
 }
 

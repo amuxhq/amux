@@ -77,6 +77,9 @@ final class AcpAgentWalk: XCTestCase {
         try await until("the fleet lists Sleepy") { model.row(sleepy) != nil }
         try await keep(stage, "mac-acp-chat-signed-out")
         XCTAssertFalse(model.attachable(sleepy), "it has no terminal of its own")
+        // Terminal opens an agent's own interface only where it runs.
+        XCTAssertTrue(model.runsHere(sleepy))
+        XCTAssertFalse(model.runsHere(AgentKey(host: [0xEE], agent: sleepy.agent)), "another computer's")
 
         // New Agent lists every agent this Mac offers, by the names its
         // config gives them, Sleepy signed out there: asking what it offers

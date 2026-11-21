@@ -779,6 +779,10 @@ async fn run_established(
         first_packet_to_catch_up_ms: None,
     };
     logged.write(ctx.local_host.id());
+    // Hand the link to the path driver only after `Up` is written, so a
+    // fast punch never writes `PathChanged` ahead of `Up` in the link log.
+    ctx.links
+        .path_up(&link, peer_host.id, link_role, Some(&carrier));
     ctx.report_frame(link, peer_frame);
     if let Some(auth) = &ctx.connector_auth {
         ctx.report(auth.credential(link));
@@ -800,6 +804,7 @@ async fn run_established(
     let mut shutdown_rx = ctx.shutdown_rx.clone();
     let mut close_reason = wire::LinkCloseReason::Unspecified;
     let mut close_status = None;
+    let mut peer_revoked_us = false;
     let observing = ctx.observes.is_some();
     let mut observe = tokio::time::interval(OBSERVE_EVERY);
     observe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -831,6 +836,9 @@ async fn run_established(
                 match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
                     ControlAction::Continue => {}
                     ControlAction::Close(reason, status) => {
+                        if reason == wire::LinkCloseReason::UserRevoked {
+                            peer_revoked_us = true;
+                        }
                         close_reason = reason;
                         close_status = status;
                         break;
@@ -880,6 +888,9 @@ async fn run_established(
                     if let Some((reason, status)) =
                         last_word(&ctx, link, &mut source).await
                     {
+                        if reason == wire::LinkCloseReason::UserRevoked {
+                            peer_revoked_us = true;
+                        }
                         close_reason = reason;
                         close_status = status;
                     }
@@ -952,6 +963,9 @@ async fn run_established(
                 if let Some((reason, status)) =
                     last_word(&ctx, link, &mut source).await
                 {
+                    if reason == wire::LinkCloseReason::UserRevoked {
+                        peer_revoked_us = true;
+                    }
                     close_reason = reason;
                     close_status = status;
                 }
@@ -965,15 +979,21 @@ async fn run_established(
     // first, or the control stream simply ended with it. This side has not
     // closed the carrier yet, so any reason it gives is the peer's.
     if carrier.close_reason() == Some(wire::LinkCloseReason::UserRevoked) {
-        peer_revoked(&ctx, link, peer_host.id).await;
+        peer_revoked_us = true;
     }
     // Drain control messages already queued before closing, most importantly
     // the protocol close emitted for an invalid inbound frame.
     while let Ok(message) = out_rx.try_recv() {
         let _ = write_message(&mut sink, &message).await;
     }
+    // Evict this link from the registry and close its carrier *before*
+    // reporting `PeerRevoked` to the core, so a caller woken by the core's
+    // revoked mark never finds a lingering carrier on the dying link.
     registered.leave(close_reason).await;
     carrier.close(close_reason);
+    if peer_revoked_us {
+        peer_revoked(&ctx, link, peer_host.id).await;
+    }
     LinkEvent {
         event: LinkTransition::Down,
         first_packet_to_catch_up_ms: None,
@@ -1103,9 +1123,6 @@ async fn handle_control_body(
         wire::message::Body::LinkClose(close) => {
             let reason = wire::LinkCloseReason::try_from(close.reason)
                 .unwrap_or(wire::LinkCloseReason::Unspecified);
-            if reason == wire::LinkCloseReason::UserRevoked {
-                peer_revoked(ctx, link, link.peer()).await;
-            }
             ControlAction::Close(reason, link_close_status(&close))
         }
         // The relay saw another link of this account present a paid plan:

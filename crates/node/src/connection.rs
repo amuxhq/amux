@@ -93,13 +93,21 @@ impl ConnectionManager {
         peer: HostId,
         class: ChannelClass,
     ) -> Result<Channel, ChannelError> {
-        let route = self
-            .routes_to(peer)
-            .await
-            .first()
-            .copied()
-            .ok_or(ChannelError::NoRoute { host_id: peer })?;
-        let opened = self.open_route(peer, route, class).await;
+        let Some(route) = self.routes_to(peer).await.first().copied() else {
+            return Err(if self.revoked_by(peer).await {
+                ChannelError::Revoked
+            } else {
+                ChannelError::NoRoute { host_id: peer }
+            });
+        };
+        let opened = match self.open_route(peer, route, class).await {
+            Err(ChannelError::LinkUnavailable { .. } | ChannelError::NoRoute { .. })
+                if self.revoked_by(peer).await =>
+            {
+                Err(ChannelError::Revoked)
+            }
+            result => result,
+        };
         if let Err(ChannelError::Refused(wire::ForwardRefusal::PaymentRequired)) = &opened {
             self.analytics.record_at_most_every(
                 crate::telemetry::RELAY_REFUSED_EVERY,
@@ -107,6 +115,13 @@ impl ConnectionManager {
             );
         }
         opened
+    }
+
+    async fn revoked_by(&self, peer: HostId) -> bool {
+        let host = core_host(peer);
+        self.look(move |core| core.revoked_by(host))
+            .await
+            .unwrap_or(false)
     }
 
     /// Opens a channel to `peer` on `route`. A channel failing on its link,

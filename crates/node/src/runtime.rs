@@ -2253,6 +2253,7 @@ pub(crate) fn kill_group(pid: u32) -> bool {
 pub(crate) fn kill_group(pid: u32) -> bool {
     std::process::Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()

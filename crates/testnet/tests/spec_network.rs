@@ -682,14 +682,19 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
         "the laptop to dial the claimed address and meet the wrong key",
         || async {
             let error = edge(&net, "laptop").last_dial_error(desk).await;
-            error
-                .clone()
-                .filter(|error| {
-                    error.contains(&impostor_addr.to_string())
-                        && error.contains("QUIC handshake failed")
-                        && error.contains("invalid peer certificate")
-                })
-                .ok_or_else(|| format!("last dial error: {error:?}"))
+            if let Some(refused) = error.clone().filter(|error| {
+                error.contains(&impostor_addr.to_string())
+                    && error.contains("QUIC handshake failed")
+                    && error.contains("invalid peer certificate")
+            }) {
+                return Ok(refused);
+            }
+            // A transient timeout under load puts reach's redial behind the
+            // policy clock; step it so the next dial attempt runs.
+            if error.is_some() {
+                net.advance(Duration::from_secs(1)).unwrap();
+            }
+            Err(format!("last dial error: {error:?}"))
         },
     )
     .await
@@ -3399,8 +3404,23 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
         .await
         .unwrap();
         let phone = edge(&net, "phone");
-        // Long enough for the phone's dial to have left it a ticket.
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let phone_info = net.host("phone").unwrap();
+        let desk_tickets = node::profile_dir(&phone_info.data_dir, phone_info.profile)
+            .join(node::CLIENT_TICKETS_DIR)
+            .join(desk.to_string());
+        until(
+            &format!("{shape}: the phone's dial left a resumption ticket"),
+            || {
+                let count = tickets_beneath(&desk_tickets);
+                async move {
+                    (count > 0)
+                        .then_some(())
+                        .ok_or_else(|| "no ticket saved yet".to_owned())
+                }
+            },
+        )
+        .await
+        .unwrap();
         phone.suspend().await;
         tokio::time::sleep(Duration::from_millis(
             daemon_core::reach::ATTEMPT_DEADLINE_MS + 2_000,
@@ -3410,23 +3430,6 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
             net.link_log("phone").unwrap().len(),
             net.link_log("desk").unwrap().len(),
         );
-        phone.resume().await;
-        until(&format!("{shape}: the phone linked again"), || async {
-            match (
-                phone.via(desk).await,
-                edge(&net, "desk").via(phone_id).await,
-            ) {
-                (LiveRoute::Offline, _) | (_, LiveRoute::Offline) => Err("offline"),
-                _ => Ok(()),
-            }
-        })
-        .await
-        .unwrap();
-        peer_inventory_hosts(&phone, desk)
-            .await
-            .expect("the phone's calls reach the desk");
-        // Long enough for a crossed dial from the desk to have come up.
-        tokio::time::sleep(Duration::from_secs(1)).await;
         let ups = |host: &str, peer, mark| {
             net.link_log(host)
                 .unwrap()
@@ -3438,6 +3441,23 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
                 .copied()
                 .collect::<Vec<_>>()
         };
+        phone.resume().await;
+        until(&format!("{shape}: the phone linked again"), || async {
+            let phone_up = !ups("phone", desk, marks.0).is_empty();
+            let desk_up = !ups("desk", phone_id, marks.1).is_empty();
+            if phone_up && desk_up {
+                Ok(())
+            } else {
+                Err(format!("phone_up={phone_up} desk_up={desk_up}"))
+            }
+        })
+        .await
+        .unwrap();
+        peer_inventory_hosts(&phone, desk)
+            .await
+            .expect("the phone's calls reach the desk");
+        // Long enough for a crossed dial from the desk to have come up.
+        tokio::time::sleep(Duration::from_secs(1)).await;
         let (phone_ups, desk_ups) = (ups("phone", desk, marks.0), ups("desk", phone_id, marks.1));
         println!("{shape}: the phone saw {phone_ups:?}, the desk {desk_ups:?}");
         assert_eq!(phone_ups.len(), 1, "{shape}: one link, not two crossed");
@@ -3448,6 +3468,24 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
         );
         net.shutdown().await.unwrap();
     }
+}
+
+/// How many `.ticket` files exist anywhere beneath `dir`.
+fn tickets_beneath(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                tickets_beneath(&path)
+            } else {
+                usize::from(path.extension().is_some_and(|ext| ext == "ticket"))
+            }
+        })
+        .sum()
 }
 
 /// A phone about to be suspended says goodbye on every link, closes them

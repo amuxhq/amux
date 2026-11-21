@@ -1,5 +1,7 @@
 package sh.amux.android
 
+import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -7,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -20,18 +23,39 @@ class MainActivity : ComponentActivity() {
     private val composition: Composition
         get() = (application as AmuxApplication).composition
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ ->
+        composition.onNotificationPermissionResult(this)
+    }
+
+    internal val reportFreezer: ReportFreezer by lazy {
+        ReportFreezer(
+            activity = this,
+            compositionProvider = { composition },
+        )
+    }
+
+    internal val screenCaptureCallback = Activity.ScreenCaptureCallback {
+        composition.report.offer(reportFreezer)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         DebugHooks.onActivityCreated(this, composition)
         val appComposition = composition
-        handleIncomingIntent(intent)
+        if (savedInstanceState == null) {
+            handleIncomingIntent(intent)
+        }
 
         setContent {
             val appearanceMode by appComposition.appearanceMode.collectAsState()
             val coordinatorState by appComposition.runtime.state.collectAsState()
             val activeStores by appComposition.runtime.storesFlow.collectAsState()
             val signInState by appComposition.signIn.state.collectAsState()
+            val notificationStatus by appComposition.notificationStatus.collectAsState()
+            val diagnosticsExport by appComposition.diagnosticsExport.collectAsState()
 
             val systemDark = isSystemInDarkTheme()
             val isDark = when (appearanceMode) {
@@ -67,13 +91,56 @@ class MainActivity : ComponentActivity() {
                             deviceName = appComposition.deviceName,
                             signingIn = signInState.working,
                             onAction = { action ->
-                                appComposition.handleShellAction(action, this@MainActivity)
+                                appComposition.handleShellAction(
+                                    action = action,
+                                    activityContext = this@MainActivity,
+                                    requestNotificationPermission = {
+                                        notificationPermissionLauncher.launch(
+                                            Manifest.permission.POST_NOTIFICATIONS,
+                                        )
+                                    },
+                                    reportFreezer = reportFreezer,
+                                )
                             },
+                            appearanceMode = appearanceMode,
+                            notificationStatus = notificationStatus,
+                            shareUsage = coordinatorState.shareUsage,
+                            autoReports = coordinatorState.autoReports,
+                            appVersion = appComposition.appVersion,
+                            diagnosticsExport = diagnosticsExport,
+                            signIn = appComposition.signIn,
+                            paywall = appComposition.paywall,
+                            paywallStoreUnavailable = appComposition.paywallStoreUnavailable,
+                            removal = appComposition.removal,
+                            deletion = appComposition.deletion,
+                            report = appComposition.report,
+                            dictation = appComposition.dictation,
                         )
                     }
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        composition.attachActivity(this)
+        runCatching {
+            registerScreenCaptureCallback(mainExecutor, screenCaptureCallback)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        composition.onActivityResumed(this)
+    }
+
+    override fun onStop() {
+        runCatching {
+            unregisterScreenCaptureCallback(screenCaptureCallback)
+        }
+        composition.detachActivity(this)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -89,7 +156,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        val data = intent?.dataString ?: return
-        composition.handleDeepLink(data)
+        val uri = intent?.data ?: return
+        composition.handleIncomingUri(uri)
     }
 }

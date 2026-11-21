@@ -291,7 +291,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
     /// The tools that can open in the tool column, for its +.
     private var toolsMenu: ToolsMenu {
         var terminal: (@MainActor () -> Void)?
-        if let agent = ownAgent {
+        if let agent = ownAgent, content.row(agent)?.card.attachable == true {
             let open = actions.openTerminal
             terminal = { open(agent) }
         }
@@ -394,7 +394,7 @@ public struct MainScreen<Detail: View, Inspector: View>: View {
                     agentPath(row, repository: false, host: false, branch: false, truncating: true)
                 }
                 Spacer(minLength: 8)
-                if ownAgent != nil, let opened = content.opened {
+                if ownAgent != nil, let opened = content.opened, opened.actions.opens {
                     OpenMenu(actions: opened.actions)
                 }
             }
@@ -598,7 +598,9 @@ struct AgentMenu: View {
 
     var body: some View {
         let agent = row.card.agent
-        if !row.native {
+        // Only an agent with a terminal interface of its own has one to
+        // attach to.
+        if !row.native, row.card.attachable {
             Button("Open in Terminal") { actions.openTerminal(agent) }
             Divider()
         }

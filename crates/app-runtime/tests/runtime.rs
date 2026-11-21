@@ -819,7 +819,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
                     && host
                         .providers
                         .iter()
-                        .any(|offer| offer.provider == "claude" && offer.signed_in)
+                        .any(|offer| offer.provider == "claude" && offer.signed_in == Some(true))
             });
             if signed_in {
                 return;
@@ -842,7 +842,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
     let created = runtime
         .create_agent(&NewAgent {
             host_id: desk,
-            kind: wire::Kind::ClaudeSdk,
+            provider: "claude".into(),
             cwd: folder.display().to_string(),
             name: "fresh".into(),
             model: None,
@@ -870,6 +870,117 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
         folder,
         "it works in a worktree of its own"
     );
+    net.shutdown().await.unwrap();
+}
+
+/// An agent program the host offers beyond Claude and Codex, here the fake
+/// ACP agent every test host is configured with: the host's entry lists it
+/// by the name its config gives, with what its agents can do; a new agent
+/// of it starts as an ACP agent by its id alone, on its own defaults; and
+/// its chat names it as the host does.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_the_host_offers_by_id_starts_and_is_named_as_the_host_names_it() {
+    let script = provider_fakes::script::Script {
+        steps: vec![text("hello from the fake agent"), Step::TurnEnd],
+        acp: provider_fakes::script::AcpAgent {
+            name: testnet::FAKE_ACP_AGENT.into(),
+            resume: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let net = Net::start(Topology::new().host_decl(testnet::HostDecl {
+        name: "desk".into(),
+        script: Some(script),
+        ..testnet::HostDecl::default()
+    }))
+    .await
+    .unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let desk = net.host("desk").unwrap().host_id.as_bytes().to_vec();
+    let offered = tokio::time::timeout(PATIENCE, async {
+        loop {
+            let listed = runtime
+                .hosts()
+                .into_iter()
+                .filter(|host| host.host_id == desk)
+                .flat_map(|host| host.providers)
+                .find(|offer| offer.provider == testnet::FAKE_ACP_AGENT);
+            if let Some(listed) = listed {
+                return listed;
+            }
+            host.next(Wake::Fleet).await;
+            runtime.fleet_delta();
+        }
+    })
+    .await
+    .expect("the desk lists the fake agent");
+    assert_eq!(offered.name, "Fake ACP Agent");
+    assert!(offered.capabilities.resumable, "{offered:?}");
+    assert!(!offered.capabilities.attachable, "{offered:?}");
+    let ids: Vec<_> = runtime
+        .hosts()
+        .into_iter()
+        .filter(|host| host.host_id == desk)
+        .flat_map(|host| host.providers)
+        .map(|offer| offer.provider)
+        .collect();
+    assert_eq!(ids, ["claude", "codex", testnet::FAKE_ACP_AGENT]);
+
+    let created = runtime
+        .create_agent(&NewAgent {
+            host_id: desk.clone(),
+            provider: testnet::FAKE_ACP_AGENT.into(),
+            cwd: net.host("desk").unwrap().work.display().to_string(),
+            name: "helper".into(),
+            model: None,
+            effort: None,
+            permission: None,
+            mode: None,
+            new_worktree: false,
+        })
+        .await
+        .expect("the desk starts the fake agent");
+    let card = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Some(card) = runtime.fleet_card(&created) {
+                return card;
+            }
+            host.next(Wake::Fleet).await;
+            runtime.fleet_delta();
+        }
+    })
+    .await
+    .expect("the new agent reaches the fleet");
+    assert_eq!(card.kind, wire::Kind::Acp);
+    let chat = opened(&runtime, &created, 50).await;
+    until(&mut host, &chat, "the agent named and ready", |chat| {
+        let frame = chat.frame();
+        frame.caught_up && matches!(frame.phase, PhaseView::Idle)
+    })
+    .await;
+    let frame = chat.frame();
+    assert_eq!(frame.provider.provider, testnet::FAKE_ACP_AGENT);
+    assert_eq!(frame.provider.name, "Fake ACP Agent");
+    assert!(frame.capabilities.resumable, "{:?}", frame.capabilities);
+    assert!(!frame.capabilities.attachable, "{:?}", frame.capabilities);
+
+    // A program the host does not offer is refused before anything is
+    // asked of the host.
+    let refused = runtime
+        .create_agent(&NewAgent {
+            host_id: desk,
+            provider: "nobody".into(),
+            cwd: "/".into(),
+            name: String::new(),
+            model: None,
+            effort: None,
+            permission: None,
+            mode: None,
+            new_worktree: false,
+        })
+        .await;
+    assert!(refused.is_err(), "{refused:?}");
     net.shutdown().await.unwrap();
 }
 

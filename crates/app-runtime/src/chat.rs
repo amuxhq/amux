@@ -19,7 +19,7 @@ use crate::coalesce::{Coalescer, WakeFn};
 use crate::delta::Sent;
 use crate::values::{
     ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
-    SendOutcome,
+    ProviderLabel, SendOutcome,
 };
 
 /// An open chat. The host hears what moved as [`ChatDelta`]s: the window's
@@ -672,7 +672,8 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
     ChatFrame {
         agent: ui_state::agent_key(agent),
         name: ui_state::shown_name(agent).to_owned(),
-        kind: state.kind(),
+        provider: provider_label(state),
+        capabilities: state.capabilities().into(),
         phase: state.phase(),
         composer: ui_view::composer(state, now_ms),
         controls: ui_view::controls(state),
@@ -689,6 +690,15 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
         ask_input: ui_view::ask_card(state)
             .and_then(|card| state.answering(&card.key).map(|sent| sent.id.clone())),
         ended,
+    }
+}
+
+/// The agent's program as its host names it; by its id while the host has
+/// not said, which is what the host would name it by.
+fn provider_label(state: &SessionState) -> ProviderLabel {
+    ProviderLabel {
+        provider: state.agent().provider_id().to_owned(),
+        name: state.provider_name(),
     }
 }
 

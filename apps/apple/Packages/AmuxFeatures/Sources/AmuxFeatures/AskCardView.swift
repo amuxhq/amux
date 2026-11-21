@@ -572,6 +572,7 @@ private struct AskBodyView: View {
     private func isDeny(_ choice: Choice) -> Bool {
         switch choice.outcome {
         case .deny, .denyAndStop, .decline, .sendBack: true
+        case .offered(_, let refuses): refuses
         default: false
         }
     }

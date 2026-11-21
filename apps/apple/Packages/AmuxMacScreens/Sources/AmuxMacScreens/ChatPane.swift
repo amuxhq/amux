@@ -298,9 +298,15 @@ private struct Footer: View {
                 }
                 if let stop = chat.frame?.composer.mode.nativeStop {
                     NativeBar(chat: chat, stop: stop)
+                } else if chat.frame?.composer.mode == .ended {
+                    // Its program cannot reopen the conversation: there is
+                    // nowhere to type, only what says so.
+                    Text(ChatWords.endedForGood).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
                 } else {
                     if let signIn = chat.frame?.signIn {
-                        SignInNotice(signIn: signIn, kind: chat.frame?.kind, host: host)
+                        SignInNotice(signIn: signIn, host: host)
                     }
                     if let frame = chat.frame, !frame.queue.isEmpty {
                         QueueList(chat: chat, queue: frame.queue)
@@ -330,7 +336,7 @@ private struct NativeBar: View {
             HStack(spacing: 10) {
                 Icon("bot", size: 15).foregroundStyle(Palette.textSecondary)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(ChatWords.nativeRunner(chat.frame?.kind)).foregroundStyle(.primary)
+                    Text(ChatWords.nativeRunner(chat.frame?.provider.name)).foregroundStyle(.primary)
                     Text(ended ?? ChatWords.nativeTakesNoMessages).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                 }
                 Spacer(minLength: 12)

@@ -359,9 +359,32 @@ first, then the folders its agents worked in lately that are not among them,
 then where Claude Code and Codex ran there, all read from the host's entry in
 the inventory, and prefills where an agent worked last. Typing searches them
 all. A pin beside each folder keeps it among the host's repositories or lets it
-go; the host's entry then says so. A new Claude agent runs the kind the
-host's settings resolve to (`HostView.claude_kind`), the terminal one or the
-SDK one, so the phone starts what amux on that host would.
+go; the host's entry then says so.
+
+The agents offered are the ones the host's entry lists (`HostView.providers`):
+Claude and Codex, each built-in agent that speaks ACP whose program the host
+found, and any a person added under `[agents.<id>]` in its config, each named
+as the host names it. The one most recently at work leads, where the host
+offers it. A signed-out agent says so, with its own words for what to do
+there (its descriptor's sign-in hint). The pickers under it are built from
+what the host says that agent offers (`new_agent_settings` over the host's
+catalogue): an agent that has listed no models yet, as an ACP agent before
+its first conversation on the host, gets no model picker and starts on its
+own defaults, and an agent whose modes name no normal one starts in its own
+mode unless one is picked. The request names the agent by its id
+(`NewAgent.provider`); the runtime reads the kind it starts as from the
+host's descriptor, so the phone starts what amux on that host would, the
+terminal Claude or the headless one included.
+
+Words and controls never follow an agent's kind. A chat names its program
+from `ChatFrame.provider` (the host's name for it), its sign-in notice says
+how to sign in in the program's own words, and it offers what
+`ChatFrame.capabilities` says it can do: photos and files to attach (one it
+does not take is refused in words before anything is stored), while
+send-now and resume come from the agent's capabilities as the shared views
+give them. An agent whose program cannot reopen its conversation has no field
+once it ends, only a line saying so. A fleet row names its program from its
+card.
 
 ## Foreground, background and pushes
 

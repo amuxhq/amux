@@ -9,7 +9,6 @@ import SwiftUI
 /// next good answer takes the notice away.
 struct SignInNotice: View {
     let signIn: SignInView
-    let kind: Kind?
     let host: String
 
     var body: some View {
@@ -17,8 +16,8 @@ struct SignInNotice: View {
             Icon("circle-alert", size: 15).foregroundStyle(Palette.caution)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
-                Text(ChatWords.needsSignIn(kind)).font(.ui(.body, weight: .medium))
-                Text(ChatWords.signInDetail(signIn, kind: kind, host: host))
+                Text(ChatWords.needsSignIn(signIn.providerName)).font(.ui(.body, weight: .medium))
+                Text(ChatWords.signInDetail(signIn, host: host))
                     .font(.ui(.meta)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

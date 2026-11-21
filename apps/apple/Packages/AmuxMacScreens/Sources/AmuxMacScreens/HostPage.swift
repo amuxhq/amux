@@ -43,12 +43,13 @@ public struct HostPage: View {
                         Text(meaning).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                let providers = host.providers.filter { !$0.provider.isEmpty }
+                // Only an agent the host has asked says whether it is signed in.
+                let providers = host.providers.filter { !$0.provider.isEmpty && $0.signedIn != nil }
                 if !providers.isEmpty {
                     group("Coding tools") {
-                        ForEach(providers, id: \.provider) { signIn in
-                            fact(signIn.name, signIn.signedIn ? "Signed in" : "Not signed in",
-                                 quiet: !signIn.signedIn)
+                        ForEach(providers, id: \.provider) { offered in
+                            let signedIn = offered.signedIn == true
+                            fact(offered.name, signedIn ? "Signed in" : "Not signed in", quiet: !signedIn)
                         }
                     }
                 }

@@ -351,7 +351,7 @@ struct NativeComposer: View {
                     .foregroundStyle(design.inkMuted.color)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ChatWords.nativeRunner(model.frame?.kind))
+                    Text(ChatWords.nativeRunner(model.frame?.provider.name))
                         .designFont(.bodyEmphasis, design)
                         .foregroundStyle(design.ink.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -363,7 +363,7 @@ struct NativeComposer: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 .identified(
-                    "chat.native", label: ChatWords.nativeRunner(model.frame?.kind),
+                    "chat.native", label: ChatWords.nativeRunner(model.frame?.provider.name),
                     value: ended ?? ChatWords.nativeTakesNoMessages)
                 control
             }
@@ -930,19 +930,29 @@ struct ChatDock: View {
     }
 }
 
-/// What the plus offers: a photo or a file to attach, and the permission
-/// mode, each one tap from the composer.
+/// What the plus offers: a photo or a file to attach, where the agent
+/// takes one, and the permission mode, each one tap from the composer.
 struct PlusCard: View {
     @Environment(\.design) private var design
     let settings: SettingsView?
+    /// What the agent's prompts may carry; nil before the chat has said.
+    var capabilities: Capabilities?
     let attach: (AttachChoice) -> Void
     let openSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                tile(String(localized: "Photo"), glyph: "photo", id: "chat.attach.photo") { attach(.photo) }
-                tile(String(localized: "File"), glyph: "doc", id: "chat.attach.file") { attach(.file) }
+            let photos = capabilities?.images ?? true
+            let files = capabilities?.files ?? true
+            if photos || files {
+                HStack(spacing: 10) {
+                    if photos {
+                        tile(String(localized: "Photo"), glyph: "photo", id: "chat.attach.photo") { attach(.photo) }
+                    }
+                    if files {
+                        tile(String(localized: "File"), glyph: "doc", id: "chat.attach.file") { attach(.file) }
+                    }
+                }
             }
             if let settings, !settings.permissions.isEmpty || settings.changeable.permission == .cycle {
                 permissions(settings)

@@ -814,7 +814,7 @@ public final class ChatModel {
                 setFollowing(true)
                 toNewest += 1
             case .refused(let command, let offered, let hint)?:
-                notice = Self.refused(command: command, offered: offered, hint: hint, kind: frame?.kind)
+                notice = Self.refused(command: command, offered: offered, hint: hint, agent: frame?.provider.name)
             case .unknown(let command, let value, let offered)?:
                 notice = Self.unknown(command, value: value, offered: offered)
             case nil:
@@ -825,9 +825,9 @@ public final class ChatModel {
 
     /// "Codex does not run /status here. It runs /compact, /clear." or, for a
     /// skill, "Codex takes a skill as a mention: type $lint."
-    static func refused(command: String, offered: [String], hint: String? = nil, kind: Kind?) -> String {
+    static func refused(command: String, offered: [String], hint: String? = nil, agent named: String?) -> String {
         let name = command.hasPrefix("/") ? command : "/" + command
-        let agent = kind == .codex ? "Codex" : String(localized: "This agent")
+        let agent = named.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "This agent")
         if let hint { return String(localized: "\(agent) takes a skill as a mention: type \(hint).") }
         let runs = offered.map { $0.hasPrefix("/") || $0.hasPrefix("$") ? $0 : "/" + $0 }
         guard !runs.isEmpty else { return String(localized: "\(agent) does not run \(name) here.") }
@@ -1017,12 +1017,30 @@ public final class ChatModel {
         return false
     }
 
+    /// Whether the agent takes a picture, or another file, in a prompt, as
+    /// its capabilities say. One it does not take is refused here, in words
+    /// naming the file and what the agent takes no more of, before anything
+    /// is stored: the agent would refuse the whole prompt.
+    private func takes(name: String, image: Bool) -> Bool {
+        guard let frame else { return true }
+        let agent = frame.provider.name
+        if image, !frame.capabilities.images {
+            notice = String(localized: "\(name) is not attached: \(agent) can’t take images.")
+            return false
+        }
+        if !image, !frame.capabilities.files {
+            notice = String(localized: "\(name) is not attached: \(agent) can’t take files.")
+            return false
+        }
+        return true
+    }
+
     /// Stores a photo or file and adds it to the draft once it is stored. One
     /// that cannot be stored is named in the notice with the reason, so it
     /// never leaves the draft without a word.
     @discardableResult
     public func attach(_ data: Data, name: String, mime: String, image: Bool) -> Task<Void, Never>? {
-        guard admits(name: name, size: data.count) else { return nil }
+        guard takes(name: name, image: image), admits(name: name, size: data.count) else { return nil }
         uploading += 1
         notice = nil
         return Task {

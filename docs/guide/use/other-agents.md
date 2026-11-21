@@ -22,8 +22,12 @@ amux finds its program on the `PATH` it starts agents with. amux never
 installs an agent for you. Sign in to each agent its own way before you start
 one, for example with `opencode auth login`.
 
-For now you start these agents from the command line. The apps can't start
-them yet. Give the agent's id to `amux new`:
+New Agent, in the terminal and in the Mac and iPhone apps, lists every agent
+the chosen computer offers, by name, your own among them. An agent that isn't
+signed in there says so, with what to do. Until you've had a conversation with
+an agent on that computer, amux doesn't know its models yet: it starts on its
+own model and settings. From the command line, give the agent's id to
+`amux new`:
 
 ```sh
 amux new opencode --prompt "Find where we parse the config and explain it"

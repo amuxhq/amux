@@ -32,7 +32,7 @@ pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
 use ui_state::AgentKey;
 use ui_view::{FamilyHeader, FleetCard, FleetView, Repository};
-use values::{AgentAct, Directories, Directory, Draft, NewAgent, ProviderSignIn};
+use values::{AgentAct, Directories, Directory, Draft, HostProvider, NewAgent};
 pub use values::{FleetDelta, HostView};
 use wire::{CreateAgentRequest, DeleteAgentRequest, DumpRequest, Filing, Kind, RenameAgentRequest};
 
@@ -230,24 +230,8 @@ impl AppRuntime {
                     .candidate()
                     .is_some_and(|candidate| candidate.pairing_open),
                 signed_in: host.account_signed_in(),
-                claude_kind: host
-                    .provider(wire::agents::CLAUDE)
-                    .map(wire::ProviderOnHost::kind)
-                    .filter(|kind| *kind != wire::Kind::Unspecified),
                 current: host.current(),
-                // Only a provider the host has asked says whether it is
-                // signed in.
-                providers: host
-                    .providers
-                    .iter()
-                    .filter_map(|offer| {
-                        Some(ProviderSignIn {
-                            provider: offer.provider_id.clone(),
-                            name: offer.name().to_owned(),
-                            signed_in: offer.signed_in()?,
-                        })
-                    })
-                    .collect(),
+                providers: host.providers.iter().map(HostProvider::from).collect(),
             })
             .collect();
         hosts.sort_by(|a, b| (!a.local, &a.name).cmp(&(!b.local, &b.name)));
@@ -288,27 +272,35 @@ impl AppRuntime {
         (delta.view.is_some() || delta.hosts.is_some()).then_some(delta)
     }
 
-    /// Starts an agent on a host and returns it as the fleet names it.
+    /// Starts an agent on a host and returns it as the fleet names it: an
+    /// agent of the program the person picked, of the kind the host's entry
+    /// says that program starts as there, so an agent started here is the
+    /// same as one started at the host. A pick the kind takes no value of at
+    /// start is left out; what is not picked is the host's remembered pick,
+    /// else the program's own default.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
-        use wire::create_agent_request::Agent;
-        let claude = || wire::ClaudeCreateConfig {
+        let kind = self
+            .fleet
+            .state()
+            .host(&agent.host_id)
+            .and_then(|host| host.provider(&agent.provider))
+            .map_or(Kind::Unspecified, wire::ProviderOnHost::kind);
+        let chosen = ui_view::NewAgentChoices {
             model: agent.model.clone(),
             effort: agent.effort.clone(),
             permission: agent.permission.clone(),
-            ..Default::default()
+            mode: agent.mode.clone(),
         };
-        let config = match agent.kind {
-            Kind::Codex => Some(Agent::Codex(wire::CodexCreateConfig {
-                model: agent.model.clone(),
-                effort: agent.effort.clone(),
-                permission: agent.permission.clone(),
-                mode: agent.mode.clone(),
-            })),
-            Kind::ClaudeSdk => Some(Agent::ClaudeSdk(claude())),
-            Kind::ClaudePty => Some(Agent::ClaudePty(claude())),
-            // An ACP agent is created by naming its program, which this
-            // app does not offer to pick yet.
-            Kind::Acp | Kind::Unspecified => None,
+        // None: the host lists no such program, or names no kind for it.
+        let Some(config) = ui_view::create_config(kind, &agent.provider, &chosen) else {
+            return Err(RpcError::Refused(wire::Error {
+                code: wire::ErrorCode::FailedPrecondition as i32,
+                message: format!(
+                    "the computer has not said it runs {}; try again once it is reachable",
+                    agent.provider
+                ),
+                details: Vec::new(),
+            }));
         };
         let created = self
             .client
@@ -317,7 +309,7 @@ impl AppRuntime {
                 host: Some(wire::HostRef::id(agent.host_id.clone())),
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
-                agent: config,
+                agent: Some(config),
                 new_workspace: agent.new_worktree,
                 // A value is present here only because the person picked it.
                 remember_model: agent.model.is_some(),

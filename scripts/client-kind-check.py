@@ -104,11 +104,6 @@ ALLOWED: list[Allowed] = [
     Allowed("crates/ui-view/src/ask.rs", "question_answer", KIND, DECODE),
     Allowed("crates/ui-view/src/ask.rs", "reply_answer", KIND, DECODE),
     Allowed("crates/ui-view/src/settings.rs", "setting_input", KIND, DECODE),
-    Allowed("crates/app-runtime/src/lib.rs", "create_agent", KIND,
-            "builds the create request's arm for the kind the person picked"),
-    # Reading a host's Claude entry, which is Claude's to describe.
-    Allowed("crates/app-runtime/src/lib.rs", "hosts", ID,
-            "which kind a host runs Claude as is read from Claude's own descriptor"),
     # A recorded report keeps amux's own ids and hides a person's.
     Allowed("crates/ui-state/src/session/record.rs", "kept_provider", ID,
             "a recorded report keeps amux's own provider ids and hides an id a person chose"),

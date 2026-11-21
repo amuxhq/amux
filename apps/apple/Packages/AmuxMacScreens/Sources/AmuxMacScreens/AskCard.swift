@@ -261,6 +261,7 @@ struct AskCardView: View {
     static func refuses(_ choice: Choice) -> Bool {
         switch choice.outcome {
         case .deny, .denyAndStop, .decline: return true
+        case .offered(_, let refuses): return refuses
         default: return false
         }
     }

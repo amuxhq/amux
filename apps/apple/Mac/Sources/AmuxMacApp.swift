@@ -95,7 +95,7 @@ private struct AppCommands: Commands {
                 .keyboardShortcut("s", modifiers: [.control, .command])
             Button(model.changesShown ? "Hide Tools" : "Show Tools") { model.place.changes.toggle() }
                 .keyboardShortcut("i", modifiers: [.option, .command])
-                .disabled(!ready || model.place.agent.flatMap { model.row($0) }.map { $0.native } ?? true)
+                .disabled(!ready || !(model.place.agent.map(model.attachable) ?? false))
             Divider()
             Button("Agents") { model.place.surface = .agents }
                 .keyboardShortcut("1")
@@ -114,7 +114,7 @@ private struct AppCommands: Commands {
         CommandMenu("Agent") {
             Button("Open in Terminal") { if let agent = model.place.agent { model.openTerminal(agent) } }
                 .keyboardShortcut("t", modifiers: [.shift, .command])
-                .disabled(!ready || model.place.agent.flatMap { model.row($0) }.map { $0.native } ?? true)
+                .disabled(!ready || !(model.place.agent.map(model.attachable) ?? false))
         }
     }
 

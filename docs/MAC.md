@@ -243,7 +243,13 @@ a button is centred. The providers' marks are the only drawings, in
 `AmuxMacScreens/Icons` with their licences in `NOTICE`: Claude's, in its
 terracotta where the provider is being chosen or named (the picker and
 the model chip) and in the text's colour elsewhere, and OpenAI's for
-Codex.
+Codex. A mark is found by the provider's id (`provider-<id>.svg`), and an
+agent with none is named in its mark's place. The built-in agents that
+speak ACP have no mark here: none of Antigravity's, OpenCode's or Grok's
+owners grants one to a client like this (`NOTICE` says why), and an agent a
+person added gets its name, never a mark made up for it. "Open in Terminal"
+is offered only for an agent with a terminal interface of its own, as its
+card or its chat's capabilities say.
 
 The window is one `Place`: the surface, the agent or host open, whether the
 sidebar shows the settled agents, whether the tool window is open, and the

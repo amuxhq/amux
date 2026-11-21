@@ -161,7 +161,12 @@ final class ScratchDaemon {
         return dir.resolvingSymlinksInPath()
     }
 
-    init() throws {
+    /// The fake ACP agent the checkout builds, which a test configures as
+    /// the agents a person adds.
+    static var fakeAcp: URL { repository.appending(path: "target/debug/fake-acp") }
+
+    /// A daemon whose config ends with `extra`.
+    init(extra: String = "") throws {
         dir = try Self.directory()
         home = dir.appending(path: "home")
         config = dir.appending(path: "config.toml")
@@ -174,7 +179,7 @@ final class ScratchDaemon {
             keep_awake = false
             telemetry = false
 
-            """
+            """ + extra
         try settings.write(to: config, atomically: true, encoding: .utf8)
         XCTAssertEqual(repositories.count, 2)
         let started = Self.run(Self.amux, ["server", "start"], environment: environment)
@@ -255,7 +260,7 @@ final class ScratchDaemon {
 /// test keeps it, as the app's window holds its content: the view's screens
 /// appear and disappear only as what it shows changes, never per drawing.
 @MainActor
-private final class Stage {
+final class Stage {
     let window: NSWindow
     let host: NSView
 
@@ -265,7 +270,7 @@ private final class Stage {
                 .frame(width: size.width, height: size.height)
                 .background(Color(nsColor: .windowBackgroundColor)))
         host.frame = CGRect(origin: .zero, size: size)
-        window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window = OffDisplayWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         host.layoutSubtreeIfNeeded()
@@ -276,4 +281,11 @@ private final class Stage {
         window.contentView = nil
         window.close()
     }
+}
+
+/// A window AppKit leaves where it is put: a titled window is otherwise
+/// pulled back onto a display when it is ordered in, and a test's window,
+/// photographed past the edge of every display, must never appear on one.
+final class OffDisplayWindow: NSWindow {
+    override func constrainFrameRect(_ frame: NSRect, to screen: NSScreen?) -> NSRect { frame }
 }

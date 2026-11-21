@@ -295,12 +295,28 @@ struct ChatRow: View {
                 glyph: "shield-check", rail: rail, verb: ChatWords.autoReview(status, statusWord),
                 meta: risk.isEmpty ? "" : "\(risk) risk", detail: expanded && !rationale.isEmpty ? rationale : nil,
                 prose: true, opens: !rationale.isEmpty, open: expanded, toggle: toggle)
+        case .notice(let reason, let severity, let title, let text):
+            // The agent's own words, in plain ink: a notice names no
+            // command or path for the code face a step's subject takes.
+            let said = ChatWords.notice(reason, title: title, text: text)
+            GridLine(
+                glyph: Self.noticeGlyph(severity), failed: severity == .error, rail: rail, verb: said.subject,
+                detail: said.rest.isEmpty ? nil : said.rest, prose: true, detailLines: expanded ? nil : 3,
+                opens: !said.rest.isEmpty, open: expanded, toggle: toggle)
         case .unrecognized(let what, let summary):
             GridLine(
                 glyph: "file-question", rail: rail, verb: "Can’t show", subject: what,
                 note: summary.isEmpty ? nil : ChatWords.firstLine(summary))
         case .hidden:
             EmptyView()
+        }
+    }
+
+    private static func noticeGlyph(_ severity: NoticeSeverity) -> String {
+        switch severity {
+        case .error: "triangle-alert"
+        case .warning: "circle-alert"
+        case .info: "info"
         }
     }
 

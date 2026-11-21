@@ -348,6 +348,32 @@ public enum ChatWords {
             .first ?? "")
     }
 
+    /// What an agent's notice says: its own title, else its words' first
+    /// line, else what cut the turn short; and what is left of its words.
+    public static func notice(
+        _ reason: NoticeReason, title: String, text: String
+    ) -> (subject: String, rest: String) {
+        if !title.isEmpty {
+            return (title, text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let said = switch reason {
+            case .agent: ""
+            case .refusal: String(localized: "The model refused to go on")
+            case .maxTokens: String(localized: "The turn reached the model’s token limit")
+            case .maxTurnRequests: String(localized: "The turn reached its limit on model requests")
+            }
+            return (said, "")
+        }
+        let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        let rest = parts.count > 1 ? String(parts[1]) : ""
+        return (String(parts[0]), rest.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Where an agent that cannot be resumed has its composer: its program
+    /// cannot reopen the conversation, so nothing more goes to it.
+    public static let endedForGood = String(localized: "Ended · this agent can’t be resumed")
+
     public static func text(of segments: [Segment]) -> String {
         segments.map { segment in
             switch segment {
@@ -470,8 +496,9 @@ public enum ChatWords {
             default:
                 return String(localized: "\(host) is out of reach · your draft is kept")
             }
-        // A provider subagent's chat draws no field to say anything in.
-        case .native?:
+        // A provider subagent's chat, and an agent that cannot be resumed,
+        // draw no field to say anything in.
+        case .native?, .ended?:
             return ""
         }
     }
@@ -797,6 +824,10 @@ public enum ChatWords {
     /// A mode by the name the view gives it.
     public static func mode(_ choice: ModeChoice) -> String { choice.displayName }
 
+    /// A new agent's mode when none is picked and its modes name no normal
+    /// one: it starts in the one its own settings name.
+    public static let agentsOwnMode = String(localized: "Agent’s default")
+
     /// How the model and effort change where only the agent's own commands
     /// change them, typed in the composer; nil where a pick does.
     public static func byTyping(_ changeable: Changeability) -> String? {
@@ -817,9 +848,11 @@ public enum ChatWords {
         String(localized: "Terminal Claude changes permission only by cycling through its permissions.")
     }
 
-    /// The permissions card's heading, by the agent's kind.
-    public static func permissionsHeading(_ kind: Kind?) -> String {
-        kind == .codex ? String(localized: "CODEX PERMISSIONS") : String(localized: "CLAUDE PERMISSIONS")
+    /// The permissions card's heading, by the agent's program as its host
+    /// names it.
+    public static func permissionsHeading(_ provider: String?) -> String {
+        guard let provider, !provider.isEmpty else { return String(localized: "PERMISSIONS") }
+        return String(localized: "\(provider.uppercased()) PERMISSIONS")
     }
 
     /// A command as VoiceOver speaks it: its name, then where it comes from.
@@ -839,19 +872,36 @@ public enum ChatWords {
     }
 
     /// Who must be signed in again, for the card that stands in the
-    /// composer's place.
-    public static func needsSignIn(_ kind: Kind?) -> String {
-        kind == .codex
-            ? String(localized: "Codex needs you to sign in")
-            : String(localized: "Claude needs you to sign in")
+    /// composer's place: the agent's program, as its host names it.
+    public static func needsSignIn(_ provider: String) -> String {
+        String(localized: "\(provider) needs you to sign in")
     }
 
     /// Where and how to sign in again: on the agent's own host, since that
-    /// is where the provider keeps its credential.
-    public static func signInSteps(_ kind: Kind?, host: String) -> String {
-        kind == .codex
-            ? String(localized: "Run codex login on \(host).")
-            : String(localized: "Run claude and sign in with /login on \(host).")
+    /// is where the program keeps its credential, in the program's own
+    /// words for what to do ("Run codex login."), which the host gives as
+    /// plain text and which are shown as given.
+    public static func signInSteps(_ hint: String, host: String) -> String {
+        let steps = signInHint(hint)
+        guard !steps.isEmpty else { return String(localized: "Sign it in on \(host).") }
+        return String(localized: "\(steps) on \(host).")
+    }
+
+    /// The same steps after a sentence that has already named the host, so
+    /// the host isn't said twice.
+    public static func signInStepsThere(_ hint: String) -> String {
+        let steps = signInHint(hint)
+        guard !steps.isEmpty else { return String(localized: "Sign it in there.") }
+        return String(localized: "\(steps) there.")
+    }
+
+    /// The program's own words for signing in, as a sentence's start with
+    /// no stop, where the computer goes without saying; empty when it gave
+    /// none.
+    public static func signInHint(_ hint: String) -> String {
+        var steps = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        while steps.hasSuffix(".") { steps.removeLast() }
+        return steps
     }
 
     public static func signIn(_ view: SignInView) -> String {
@@ -930,6 +980,8 @@ public enum ChatWords {
         case .openLink: String(localized: "I’m done")
         case .grantForTurn: String(localized: "Grant")
         case .grantForSession: String(localized: "Grant")
+        // The agent's own words for what it keeps deciding itself.
+        case .offered(let name, _): name
         }
         return choice.takesNote ? label + "…" : label
     }

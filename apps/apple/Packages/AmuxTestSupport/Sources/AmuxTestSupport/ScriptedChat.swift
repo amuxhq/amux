@@ -74,14 +74,43 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public static let agent = AgentKey(
         host: Array(repeating: 1, count: 16), agent: Array(repeating: 2, count: 16))
 
+    /// A fixture's agent program, as a host would name it, and what an
+    /// agent of that kind can do: Claude for either Claude kind, Codex, and
+    /// for an ACP agent OpenCode.
+    public static func provider(of kind: Kind) -> (ProviderLabel, Capabilities) {
+        switch kind {
+        case .codex:
+            (ProviderLabel(provider: "codex", name: "Codex"),
+             Capabilities(
+                stopsJob: true, switchesBack: false, attachable: true, resumable: true, sendsNow: true,
+                images: true, files: true, passesUnknownCommands: false))
+        case .acp:
+            (ProviderLabel(provider: "opencode", name: "OpenCode"),
+             Capabilities(
+                stopsJob: false, switchesBack: false, attachable: false, resumable: true, sendsNow: false,
+                images: true, files: true, passesUnknownCommands: true))
+        case .claudePty:
+            (ProviderLabel(provider: "claude", name: "Claude"),
+             Capabilities(
+                stopsJob: false, switchesBack: true, attachable: true, resumable: true, sendsNow: true,
+                images: true, files: true, passesUnknownCommands: true))
+        case .claudeSdk, .unspecified:
+            (ProviderLabel(provider: "claude", name: "Claude"),
+             Capabilities(
+                stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true,
+                images: true, files: true, passesUnknownCommands: true))
+        }
+    }
+
     public static func frame(
         name: String = "refactor-auth", kind: Kind = .claudeSdk, phase: PhaseView = .idle,
         mode: Composer = .send, activity: Activity? = nil, caughtUp: Bool = true,
         hasOlder: Bool = false, queue: [QueuedRow] = [], underway: [SentPrompt] = [],
         refused: [RefusedPrompt] = [], switchedAway: Bool = false
     ) -> ChatFrame {
-        ChatFrame(
-            agent: agent, name: name, kind: kind, phase: phase,
+        let (provider, capabilities) = provider(of: kind)
+        return ChatFrame(
+            agent: agent, name: name, provider: provider, capabilities: capabilities, phase: phase,
             composer: ComposerView(mode: mode, switchedAway: switchedAway, activity: activity), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live,
             caughtUp: caughtUp, hasOlder: hasOlder, arrivalsHeld: false, queue: queue,
             underway: underway, refused: refused, askInput: nil, context: nil,

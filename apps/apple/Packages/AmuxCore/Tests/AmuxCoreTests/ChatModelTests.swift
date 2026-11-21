@@ -350,10 +350,14 @@ private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? =
 
 private func frame(
     mode: Composer = .send, caughtUp: Bool = true, hasOlder: Bool = false,
-    phase: PhaseView = .idle, kind: Kind = .claudeSdk
+    phase: PhaseView = .idle, images: Bool = true, files: Bool = true
 ) -> ChatFrame {
     ChatFrame(
-        agent: AgentKey(host: [1], agent: [2]), name: "a", kind: kind, phase: phase,
+        agent: AgentKey(host: [1], agent: [2]), name: "a",
+        provider: ProviderLabel(provider: "claude", name: "Claude"),
+        capabilities: Capabilities(
+            stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: images,
+            files: files, passesUnknownCommands: true), phase: phase,
         composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
         signIn: nil)
@@ -888,7 +892,7 @@ final class ChatModelTests: XCTestCase {
     }
 
     func testACodexSkillIsOfferedAfterADollarAnywhereAndPickedAsItsMention() {
-        let source = FakeChat(rows: [], frame: frame(kind: .codex))
+        let source = FakeChat(rows: [], frame: frame())
         source.offered = offering(["compact"], skills: ["autopilot", "documents:documents"])
         let model = ChatModel(source: source)
         model.draft = "/auto"
@@ -909,7 +913,7 @@ final class ChatModelTests: XCTestCase {
     }
 
     func testAnAgentOfferingNoCommandsListsNothing() {
-        let source = FakeChat(rows: [], frame: frame(kind: .claudePty))
+        let source = FakeChat(rows: [], frame: frame())
         source.offered = offering([])
         let model = ChatModel(source: source)
         model.draft = "/model"
@@ -1006,6 +1010,20 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(
             (model.notice ?? "").contains("64 MB") && (model.notice ?? "").contains("huge.bin"),
             "the refusal names the file and the 64 MB limit: \(String(reflecting: model.notice))")
+    }
+
+    func testAnAttachmentTheAgentDoesNotTakeIsRefusedBeforeUploadNamingIt() async {
+        // An agent that takes no images, or no files, would refuse the whole
+        // prompt: what it does not take is refused before anything is
+        // stored, in words naming the file and the agent.
+        let source = FakeChat(rows: [], frame: frame(images: false, files: false))
+        let model = ChatModel(source: source)
+        await model.attach(Data(count: 16), name: "shot.png", mime: "image/png", image: true)?.value
+        XCTAssertEqual(model.notice, "shot.png is not attached: Claude can’t take images.")
+        await model.attach(Data(count: 16), name: "notes.txt", mime: "text/plain", image: false)?.value
+        XCTAssertEqual(model.notice, "notes.txt is not attached: Claude can’t take files.")
+        XCTAssertEqual(source.stored, [], "a refused attachment was handed over for upload")
+        XCTAssertTrue(model.attachments.isEmpty)
     }
 
     func testAnEmptyChatSaysItIsLoadingOnlyAfterAMoment() async throws {
@@ -1136,7 +1154,7 @@ final class ChatModelTests: XCTestCase {
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = AskCard(
             kind: .codex, key: "ask:1", itemKey: "", position: 1, count: 1, body: .question([]),
-            choices: [], questionNote: true, questionSkip: true, questionReply: true,
+            choices: [], questionNote: true, questionSkip: true, questionReply: true, replyInstead: false,
             stopsTurn: true, defaultToNo: false, state: .open)
         let model = ChatModel(source: source)
         let answers = [
@@ -1154,7 +1172,7 @@ final class ChatModelTests: XCTestCase {
         func card(_ key: String) -> AskCard {
             AskCard(
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1, body: .question([]),
-                choices: [], questionNote: true, questionSkip: true, questionReply: true,
+                choices: [], questionNote: true, questionSkip: true, questionReply: true, replyInstead: false,
                 stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
@@ -1187,7 +1205,7 @@ final class ChatModelTests: XCTestCase {
             AskCard(
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1,
                 body: .form(server: "linear", message: "File an issue", fields: []),
-                choices: [], questionNote: false, questionSkip: false, questionReply: false,
+                choices: [], questionNote: false, questionSkip: false, questionReply: false, replyInstead: false,
                 stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())

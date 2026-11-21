@@ -22,6 +22,7 @@
 		6D381452797C6A9B327E8878 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2425F3FA9610E168BEAA90CC /* Assets.xcassets */; };
 		722BC67CC5A42CD8884FC896 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2425F3FA9610E168BEAA90CC /* Assets.xcassets */; };
 		748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C00CABFF413D47B11818BC /* SetupWalk.swift */; };
+		749926F3C5B30F55CF8CF4AA /* AcpAgentWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3412553AC569B0CC5209FF3 /* AcpAgentWalk.swift */; };
 		882195E368B9D757F25FE602 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
 		8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010C7AFBB1A5638DA828D47A /* Setup.swift */; };
 		9086C8CAD17CB7FE5E2200DC /* StoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */; };
@@ -57,6 +58,7 @@
 		91F9435B6CDA9708F5B833F5 /* AmuxMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AmuxMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9F7900FD21808546122BEDB3 /* Viewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Viewer.swift; sourceTree = "<group>"; };
 		AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmuxMacApp.swift; sourceTree = "<group>"; };
+		B3412553AC569B0CC5209FF3 /* AcpAgentWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AcpAgentWalk.swift; sourceTree = "<group>"; };
 		C2B49A41F366B23EA3C5BE8A /* AmuxMacScreens */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxMacScreens; path = ../Packages/AmuxMacScreens; sourceTree = SOURCE_ROOT; };
 		C6361E231B9F50C6C65E2E69 /* Storybook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storybook.swift; sourceTree = "<group>"; };
 		CFA88938A05A26C081E71780 /* SubagentChanges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubagentChanges.swift; sourceTree = "<group>"; };
@@ -118,6 +120,7 @@
 		213596547266C20AD51CA789 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				B3412553AC569B0CC5209FF3 /* AcpAgentWalk.swift */,
 				D7C00CABFF413D47B11818BC /* SetupWalk.swift */,
 				823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */,
 				CFA88938A05A26C081E71780 /* SubagentChanges.swift */,
@@ -306,6 +309,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				749926F3C5B30F55CF8CF4AA /* AcpAgentWalk.swift in Sources */,
 				C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */,
 				B01344530777C58DF863E29D /* MacChat.swift in Sources */,
 				4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */,

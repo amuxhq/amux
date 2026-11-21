@@ -269,28 +269,41 @@ final class ChatWordsTests: XCTestCase {
             "5-hour limit reached")
     }
 
-    func testSigningInIsAskedForOnTheAgentsHost() {
-        XCTAssertEqual(ChatWords.needsSignIn(.claudeSdk), "Claude needs you to sign in")
-        XCTAssertEqual(ChatWords.signInSteps(.claudeSdk, host: "desk"), "Run claude and sign in with /login on desk.")
-        XCTAssertEqual(ChatWords.needsSignIn(.codex), "Codex needs you to sign in")
-        XCTAssertEqual(ChatWords.signInSteps(.codex, host: "desk"), "Run codex login on desk.")
+    func testSigningInIsAskedForOnTheAgentsHostInItsOwnWords() {
+        XCTAssertEqual(ChatWords.needsSignIn("Claude"), "Claude needs you to sign in")
+        XCTAssertEqual(
+            ChatWords.signInSteps("Run claude and sign in with /login.", host: "desk"),
+            "Run claude and sign in with /login on desk.")
+        XCTAssertEqual(ChatWords.needsSignIn("Codex"), "Codex needs you to sign in")
+        XCTAssertEqual(ChatWords.signInSteps("Run codex login.", host: "desk"), "Run codex login on desk.")
+        // An ACP agent's own words, shown as the host gives them.
+        XCTAssertEqual(
+            ChatWords.signInSteps("Run opencode auth login in the terminal", host: "desk"),
+            "Run opencode auth login in the terminal on desk.")
+        XCTAssertEqual(ChatWords.signInSteps("", host: "desk"), "Sign it in on desk.")
+        // After a sentence that already named the host.
+        XCTAssertEqual(ChatWords.signInStepsThere("Run codex login."), "Run codex login there.")
+        XCTAssertEqual(ChatWords.signInStepsThere(""), "Sign it in there.")
     }
 
     /// The notice stands above a composer that still sends, so it ends
     /// saying that sending is how to try again.
     func testTheSignInNoticeEndsSayingSendingTriesAgain() {
-        let failed = SignInView(state: .failed, account: "ada@example.com", message: "OAuth token has expired.")
+        let failed = SignInView(
+            state: .failed, account: "ada@example.com", message: "OAuth token has expired.",
+            providerName: "Claude", hint: "Run claude and sign in with /login.")
         XCTAssertEqual(
-            ChatWords.signInDetail(failed, kind: .claudeSdk, host: "desk"),
+            ChatWords.signInDetail(failed, host: "desk"),
             """
             Sign-in failed · ada@example.com
             OAuth token has expired.
             Run claude and sign in with /login on desk.
             Signed in elsewhere? Send a message to try again.
             """)
-        let signedOut = SignInView(state: .signedOut, account: "", message: "")
+        let signedOut = SignInView(
+            state: .signedOut, account: "", message: "", providerName: "Codex", hint: "Run codex login.")
         XCTAssertEqual(
-            ChatWords.signInDetail(signedOut, kind: .codex, host: "desk"),
+            ChatWords.signInDetail(signedOut, host: "desk"),
             "Signed out\nRun codex login on desk.\nSigned in elsewhere? Send a message to try again.")
     }
 
@@ -452,7 +465,7 @@ final class ChatWordsTests: XCTestCase {
                 body: .edit(
                     path: "/work/notes.txt", files: 1, added: 1, removed: 0, lines: [], reason: "",
                     created: created, line: 1),
-                choices: [], questionNote: false, questionSkip: false, questionReply: false,
+                choices: [], questionNote: false, questionSkip: false, questionReply: false, replyInstead: false,
                 stopsTurn: false, defaultToNo: false, state: .open)
         }
         XCTAssertEqual(ChatWords.headline(card(false)), "Wants to edit a file")
@@ -496,9 +509,9 @@ final class ChatWordsTests: XCTestCase {
     /// A subagent's composer names its provider and has no placeholder to
     /// show, since there is no field.
     func testASubagentsComposerNamesWhoRunsIt() {
-        XCTAssertEqual(ChatWords.nativeRunner(.claudeSdk), "Claude runs this subagent")
-        XCTAssertEqual(ChatWords.nativeRunner(.claudePty), "Claude runs this subagent")
-        XCTAssertEqual(ChatWords.nativeRunner(.codex), "Codex runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner("Claude"), "Claude runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner("Codex"), "Codex runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner(nil), "Its provider runs this subagent")
         XCTAssertEqual(
             ChatWords.placeholder(.native(stop: .unavailable), host: "desk", reach: .online(.direct), working: true), "")
     }

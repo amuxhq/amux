@@ -731,13 +731,13 @@ public struct ChatStanding: View {
             case .settings?:
                 if let settings = model.settings {
                     SettingsCard(
-                        view: settings, kind: model.frame?.kind, change: { model.change($0) },
+                        view: settings, provider: model.frame?.provider, change: { model.change($0) },
                         close: { showing = nil })
                 } else {
                     composerStack
                 }
             case .plus?:
-                PlusCard(settings: model.settings, attach: { choice in
+                PlusCard(settings: model.settings, capabilities: model.frame?.capabilities, attach: { choice in
                     showing = nil
                     focused = false
                     actions(.attach(choice))
@@ -811,11 +811,12 @@ public struct ChatStanding: View {
         // A sign-in problem stands above a composer that still sends:
         // sending is how someone who signed in elsewhere tries again. A
         // provider subagent takes no messages, so it has no notice.
-        if let signIn = model.frame?.signIn, model.frame?.composer.mode.nativeStop == nil {
-            let kind = model.frame?.kind
+        if let signIn = model.frame?.signIn, model.frame?.composer.mode.nativeStop == nil,
+            model.frame?.composer.mode != .ended
+        {
             FootCard(
-                kind: "sign-in", title: ChatWords.needsSignIn(kind),
-                detail: ChatWords.signInDetail(signIn, kind: kind, host: subject.host))
+                kind: "sign-in", title: ChatWords.needsSignIn(signIn.providerName),
+                detail: ChatWords.signInDetail(signIn, host: subject.host))
         }
         if showing != .plus {
             ChatDock(
@@ -831,6 +832,16 @@ public struct ChatStanding: View {
             NativeComposer(
                 model: model, stop: stop, activity: model.frame?.composer.activity,
                 activitySubject: activitySubject)
+        } else if model.frame?.composer.mode == .ended {
+            // Its program cannot reopen the conversation: there is nowhere
+            // to type, only what says so.
+            Text(ChatWords.endedForGood)
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .identified("chat.ended", label: ChatWords.endedForGood)
         } else {
             ComposerBox(
                 model: model, placeholder: placeholder, activity: model.frame?.composer.activity,

@@ -710,7 +710,7 @@ public struct AgentsHome: View {
         let second = row.card.closeHeld
             ? (text: String(localized: "Settle held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
             : FleetWords.secondLine(
-                row.secondLine, kind: row.card.kind, now: model.orderedAt,
+                row.secondLine, provider: row.card.providerName, now: model.orderedAt,
                 backgroundJobs: row.card.backgroundJobs)
         let content = AgentRowView(
             row: row, state: state, host: namesHosts ? PlaceNames.host(row.hostName) : nil,
@@ -777,7 +777,7 @@ public struct AgentsHome: View {
         if row.pinned { parts.append(String(localized: "pinned")) }
         if let said = state.spoken { parts.append(said) }
         if let second = FleetWords.secondLine(
-            row.secondLine, kind: row.card.kind, now: model.orderedAt,
+            row.secondLine, provider: row.card.providerName, now: model.orderedAt,
             backgroundJobs: row.card.backgroundJobs
         ) {
             parts.append(second.text)

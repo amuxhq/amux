@@ -38,7 +38,11 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func rows(for keys: [String]) -> [Row] { [] }
     private func frame() -> ChatFrame {
         ChatFrame(
-            agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
+            agent: agent, name: "a",
+            provider: ProviderLabel(provider: "claude", name: "Claude"),
+            capabilities: Capabilities(
+                stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: true,
+                files: true, passesUnknownCommands: true), phase: .needsYou,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
             hasOlder: false, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
             signIn: nil)

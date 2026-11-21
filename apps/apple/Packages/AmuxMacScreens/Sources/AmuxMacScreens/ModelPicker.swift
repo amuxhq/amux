@@ -11,11 +11,14 @@ import SwiftUI
 struct ModelPicker: View {
     /// A provider the agent could be, for a new agent; none once it runs.
     struct ProviderItem: Identifiable {
-        /// The provider's id ("claude", "codex").
+        /// The provider's id, as its host lists it.
         let provider: String
         let name: String
-        let glyph: String
-        /// Why it can't be picked now: "Not signed in on build-box".
+        /// Its mark, where the app carries one; else the name stands alone.
+        let glyph: String?
+        /// What stands in its way there: "Not signed in on build-box". It
+        /// can still be picked, as on the phone: the page then says how to
+        /// sign in, and a person who signed in elsewhere tries by sending.
         var note: String?
         var id: String { provider }
     }
@@ -27,6 +30,9 @@ struct ModelPicker: View {
     let chooseModel: (String) -> Void
     let chooseEffort: (String) -> Void
     let chooseMode: (String) -> Void
+    /// Leaves a new agent's mode unpicked, so it starts in the one its own
+    /// settings name; offered where its modes name no normal one.
+    var chooseOwnMode: (() -> Void)?
 
     @State private var query = ""
 
@@ -66,15 +72,25 @@ struct ModelPicker: View {
         VStack(alignment: .leading, spacing: 2) {
             ColumnHead("Agent")
             ForEach(providers) { item in
-                PickerRow(selected: item.provider == provider, enabled: item.note == nil) {
+                PickerRow(selected: item.provider == provider, enabled: true) {
                     chooseProvider(item.provider)
                 } content: {
-                    HStack(spacing: 8) {
-                        Icon(item.glyph, size: 14, brand: true)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        // An agent with no mark keeps the mark's room, so
+                        // every name starts on one line.
+                        Group {
+                            if let glyph = item.glyph {
+                                Icon(glyph, size: 14, brand: true)
+                            } else {
+                                Color.clear.frame(width: 14, height: 14)
+                            }
+                        }
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
                         VStack(alignment: .leading, spacing: 1) {
                             Text(item.name)
                             if let note = item.note {
                                 Text(note).font(.ui(.caption)).foregroundStyle(Palette.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
@@ -101,6 +117,12 @@ struct ModelPicker: View {
             }
             if settings == nil {
                 Text("Loading models…")
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(8)
+            } else if models.isEmpty {
+                // Nothing listed yet, as for an agent that names its models
+                // only once a conversation has started: it starts on its own.
+                Text("Starts on its own model")
                     .foregroundStyle(Palette.textSecondary)
                     .padding(8)
             }
@@ -147,6 +169,11 @@ struct ModelPicker: View {
             }
             if !modes.isEmpty {
                 ColumnHead("Mode").padding(.top, efforts.isEmpty ? 0 : 6)
+                if let chooseOwnMode, !modes.contains(where: \.normal) {
+                    PickerRow(selected: !modes.contains(where: \.current), enabled: true, pick: chooseOwnMode) {
+                        Text(ChatWords.agentsOwnMode)
+                    }
+                }
                 ForEach(modes, id: \.value) { choice in
                     PickerRow(selected: choice.current, enabled: settings?.changeable.mode == .pick) {
                         chooseMode(choice.value)

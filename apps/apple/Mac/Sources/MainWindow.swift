@@ -75,9 +75,12 @@ struct AppWindow: View {
         let model = model
         var actions = AgentActions(
             openChanges: { model.place.changes = true }, openAgent: { model.openChat($0) },
-            openTerminal: { model.openTerminal(agent) }, editor: AppModel.editor?.name ?? "Editor",
+            editor: AppModel.editor?.name ?? "Editor",
             editorIcon: AppModel.editor.map { NSWorkspace.shared.icon(forFile: $0.url.path) },
             terminalIcon: AppModel.appIcon("com.apple.Terminal"), finderIcon: AppModel.appIcon("com.apple.finder"))
+        if model.attachable(agent) {
+            actions.openTerminal = { model.openTerminal(agent) }
+        }
         if let folder = model.local(agent) {
             actions.reveal = { model.reveal(folder) }
             actions.openEditor = { model.openInEditor(folder) }

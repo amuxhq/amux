@@ -2,7 +2,6 @@ package sh.amux.features
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,11 +39,14 @@ import kotlin.coroutines.coroutineContext
  * answers are kept by what they answer, so a block scrolled back into view
  * draws coloured at once without crossing the bridge again.
  *
- * Each kept answer is its own snapshot state, read request by request: a
- * block drawn plain is drawn again the moment any view showing the same code
- * settles it, and settling one block leaves every view showing other code
- * alone. Asking is never done while a screen is composed: answers are fetched
- * from an effect, off the main thread.
+ * A view draws the kept answer for what it shows, else the answer its own
+ * asking handed it last, which it holds while what it shows moves on: a block
+ * still streaming keeps its colours on the lines that read the same rather
+ * than drawing plain until the new text is answered. Reading what is kept
+ * is not observed; a view learns of a new answer from its own asking, which
+ * looks in what is kept before every crossing. Asking is never done while a
+ * screen is composed: answers are fetched from an effect, off the main
+ * thread.
  */
 @Stable
 class CodeHighlighting(private val answer: ((Request) -> HighlightedCode?)?) {
@@ -70,21 +72,24 @@ class CodeHighlighting(private val answer: ((Request) -> HighlightedCode?)?) {
     val colours: Boolean get() = answer != null
 
     /**
-     * Settled answers by request, each a state of its own. Started again
-     * when full: what is on screen is asked for again within a frame, and
-     * nothing here is worth an eviction order. A view drawing a dropped
+     * Settled answers by request, touched only on the main thread. Started
+     * again when full: what is on screen is asked for again within a frame,
+     * and nothing here is worth an eviction order. A view drawing a dropped
      * answer keeps the colours its own asking handed it.
+     *
+     * A block still streaming is never kept: its text is gone by the next
+     * delta, so its answers would only push out the ones worth keeping.
      */
-    private var kept = HashMap<Request, MutableState<HighlightedCode?>>()
+    private val kept = HashMap<Request, HighlightedCode>()
 
-    private fun slot(request: Request): MutableState<HighlightedCode?> =
-        kept.getOrPut(request) {
-            if (kept.size >= LIMIT) kept = HashMap()
-            mutableStateOf(null)
-        }
+    private fun keep(request: Request, code: HighlightedCode) {
+        if (request is Request.Block && request.streaming) return
+        if (kept.size >= LIMIT && request !in kept) kept.clear()
+        kept[request] = code
+    }
 
-    /** The settled answer kept for [request], read as that request's state. */
-    fun kept(request: Request): HighlightedCode? = if (answer == null) null else slot(request).value
+    /** The settled answer kept for [request], without asking. */
+    fun kept(request: Request): HighlightedCode? = kept[request]
 
     /**
      * Asks for [request]'s colours away from the main thread and hands each
@@ -98,7 +103,7 @@ class CodeHighlighting(private val answer: ((Request) -> HighlightedCode?)?) {
         while (coroutineContext.isActive) {
             // Asked before every crossing: another view showing the same
             // code may have settled it while this one waited.
-            slot(request).value?.let {
+            kept[request]?.let {
                 draw(it)
                 return
             }
@@ -107,7 +112,7 @@ class CodeHighlighting(private val answer: ((Request) -> HighlightedCode?)?) {
                 draw(null)
                 return
             }
-            if (code.settled) slot(request).value = code
+            if (code.settled) keep(request, code)
             draw(code)
             if (code.settled) return
             delay(AGAIN_MS)
@@ -136,12 +141,17 @@ val LocalCodeHighlighting = staticCompositionLocalOf { CodeHighlighting.Plain }
 /**
  * The colours for [request], kept or as its own asking handed them last;
  * null while there are none, when the code is drawn plain.
+ *
+ * The last answer outlives the request it answered, so a block that moves on
+ * (a delta of a streaming message, a patch edited) draws on with it until the
+ * new text is answered. It may be for earlier text: the caller draws it
+ * through [runsFor], which colours only the lines that still read the same.
  */
 @Composable
 internal fun rememberHighlighted(request: Request): HighlightedCode? {
     val highlighting = LocalCodeHighlighting.current
     if (!highlighting.colours) return null
-    var own by remember(request) { mutableStateOf<HighlightedCode?>(null) }
+    var own by remember(highlighting) { mutableStateOf<HighlightedCode?>(null) }
     LaunchedEffect(highlighting, request) { highlighting.follow(request) { own = it } }
     return highlighting.kept(request) ?: own
 }

@@ -21,6 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import java.io.ByteArrayOutputStream
 import sh.amux.design.AmuxScrim
@@ -1113,8 +1115,8 @@ object Stories {
             SheetStoryFrame(background = { ReviewStoryScreen(page, selectTwoLines = true) }) {
                 ReviewCommentSheetContent(
                     title = ChatWords.commentOn(3),
-                    initial = "",
-                    key = "comment",
+                    note = TextFieldValue(),
+                    onNoteChange = {},
                     editing = false,
                     onDismiss = {},
                     onAct = {},
@@ -1128,8 +1130,8 @@ object Stories {
             SheetStoryFrame(background = { ReviewStoryScreen(page) }) {
                 ReviewCommentSheetContent(
                     title = comment?.let { ChatWords.reviewCommentState(it.state) }.orEmpty(),
-                    initial = comment?.text.orEmpty(),
-                    key = "editing",
+                    note = comment?.text.orEmpty().let { TextFieldValue(it, selection = TextRange(it.length)) },
+                    onNoteChange = {},
                     editing = true,
                     onDismiss = {},
                     onAct = {},

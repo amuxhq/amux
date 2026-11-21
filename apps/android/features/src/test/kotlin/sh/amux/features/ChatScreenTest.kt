@@ -56,6 +56,7 @@ import sh.amux.values.RouteKind
 import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Segment
+import sh.amux.values.SentReviewRef
 import sh.amux.values.SettingsView
 import sh.amux.values.TaskLine
 import sh.amux.values.TaskMark
@@ -708,5 +709,50 @@ class ChatScreenTest {
         composeRule.onNodeWithTag(AskReviewTags.chatSettingsCommand("compact")).performClick()
         composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_DIALOG).assertIsDisplayed()
         assertTrue(draftChanges.isEmpty())
+    }
+
+    /**
+     * A round raised from its chip is the screen's once raised: the model
+     * lets it go, the sheet stays, and a chat left and come back to (a tab,
+     * a link) does not raise it again.
+     */
+    @Test
+    fun aRaisedRoundGoesWithTheScreen() {
+        val sent = SentReviewRef(reviewId = listOf(1), round = 1, inputId = listOf(7))
+        var state by mutableStateOf(
+            ChatScreenState(
+                subject = ChatSubject(name = "refactor-auth", host = "desk", directory = "/Users/ada/source/amux"),
+                frame = baseFrame(),
+                round = OpenedRound(sent = sent, text = "Name it."),
+            ),
+        )
+        var raised = 0
+        var shown by mutableStateOf(true)
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                if (shown) {
+                    ChatScreen(
+                        state = state,
+                        rowSource = StaticChatRowSource(emptyList()),
+                        callbacks = ChatScreenCallbacks(
+                            onRoundRaised = {
+                                raised += 1
+                                state = state.copy(round = null)
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(1, raised)
+        composeRule.onNodeWithTag(ReviewTags.ROUND).assertIsDisplayed()
+
+        shown = false
+        composeRule.waitForIdle()
+        shown = true
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ReviewTags.ROUND).assertDoesNotExist()
+        assertEquals("nothing raised it again", 1, raised)
     }
 }

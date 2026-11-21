@@ -1807,6 +1807,38 @@ class ChatModelTest {
         assertEquals("the next send reads the drafts afresh", 2, source.sentWithReview.size)
     }
 
+    /**
+     * A queued prompt that carried the review, refused once its host tried
+     * it, marked nothing sent: its words come back, the chip is back, and the
+     * next send carries the drafts rather than dropping them.
+     */
+    @Test
+    fun aReviewPromptRefusedAfterItQueuedBringsTheChipBack() = runTest {
+        val chip = ReviewChip(comments = 2, moved = false)
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame(phase = PhaseView.Working, reviewChip = chip))
+        source.withReview = Result.success(SendOutcome(inputId = listOf(7), state = InputState.Queued))
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        model.type("Look at these.")
+        model.send()!!.join()
+        assertNull("held back while the prompt waits", model.reviewChip)
+
+        source.drafts[listOf(7)] = draftOf("Look at these.")
+        source.current = source.current.copy(
+            refused = listOf(
+                RefusedPrompt(inputId = listOf(7), reason = Refusal(reason = RefusalReason.HostUnreachable, detail = null)),
+            ),
+        )
+        source.deliver(model)
+        assertEquals("Look at these.", model.draft)
+        assertEquals("Not sent: its host is away", model.snapshot.notice)
+        assertEquals("the drafts are the chip's again", chip, model.reviewChip)
+
+        source.withReview = null
+        model.send()!!.join()
+        assertEquals("the next send carries the drafts", 2, source.sentWithReview.size)
+        assertTrue(source.sent.isEmpty())
+    }
+
     @Test
     fun aSendWithTheReviewThatFailsKeepsTheWordsAndTheChip() = runTest {
         val chip = ReviewChip(comments = 1, moved = false)
@@ -1908,7 +1940,7 @@ class ChatModelTest {
         model.open(SentRound(sent = sent, text = "Name it."))
         assertEquals(SentRound(sent = sent, text = "Name it."), model.snapshot.roundOpened)
         assertNull("a host that keeps no rounds answers none", model.reviewRound(sent))
-        model.closeRound()
+        model.roundRaised()
         assertNull(model.snapshot.roundOpened)
     }
 }

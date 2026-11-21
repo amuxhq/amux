@@ -360,7 +360,7 @@ internal fun ChatRoute(
             onOpenReview = { router.push(Route.Review(agent)) },
             onDiscardReviewDrafts = { model.discardReviewDrafts() },
             onOpenRound = { sent, text -> model.open(SentRound(sent = sent, text = text)) },
-            onCloseRound = { model.closeRound() },
+            onRoundRaised = { model.roundRaised() },
             readRound = { sent -> model.reviewRound(sent) },
             onOpenAttachment = { blob -> model.openAttachment(blob) },
             onOpenAttachmentExternally = { file -> ShellPlatform.openOrShareFile(context, file) },

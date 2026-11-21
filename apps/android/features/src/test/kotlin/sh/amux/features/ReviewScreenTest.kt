@@ -6,6 +6,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -178,11 +185,134 @@ class ReviewScreenTest {
         composeRule.onNodeWithTag(ReviewTags.GAP_UP).performClick()
         assertEquals(ReviewAction.MoreContext(ask), actions.last())
 
-        // Held, the file's head offers a comment on the whole file.
+    }
+
+    /** Held, a file's head offers a comment on the whole file, written once the head is what is selected. */
+    @Test
+    fun aHeldFileHeadOffersACommentOnTheWholeFile() {
+        val actions = mutableListOf<ReviewAction>()
+        var state by mutableStateOf(ReviewScreenState(page = page(), selected = 2..3, anchor = anchor))
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewScreen(
+                    state = state,
+                    onAction = { action ->
+                        actions += action
+                        if (action is ReviewAction.Select) {
+                            state = state.copy(selected = action.row..action.row, anchor = anchor.copy(start = 0, end = 0))
+                        }
+                    },
+                )
+            }
+        }
         composeRule.onNodeWithTag(ReviewTags.FILE).performTouchInput { longClick() }
         composeRule.onNodeWithTag(ReviewTags.FILE_COMMENT).performClick()
-        assertEquals(ReviewAction.Select(0), actions.last())
+        composeRule.waitForIdle()
+        assertEquals(listOf<ReviewAction>(ReviewAction.Select(0)), actions)
         composeRule.onNodeWithTag(ReviewTags.SHEET).assertIsDisplayed()
+        composeRule.onNode(hasText("Comment on the File") and hasAnyAncestor(hasTestTag(ReviewTags.SHEET))).assertIsDisplayed()
+    }
+
+    /** The words in the sheet stay while the page's rows move under it. */
+    @Test
+    fun theSheetKeepsItsWordsAsThePageMoves() {
+        val actions = mutableListOf<ReviewAction>()
+        var state by mutableStateOf(ReviewScreenState(page = page(), selected = 2..3, anchor = anchor))
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewScreen(state = state, onAction = { actions += it })
+            }
+        }
+        composeRule.onNodeWithTag(ReviewTags.COMMENT_ON).performClick()
+        composeRule.onNodeWithTag(ReviewTags.NOTE).performTextInput("Name it.")
+
+        // A snapshot lands with a row above the selection: its rows move down one.
+        val moved = page().let { it.copy(rows = listOf(it.rows[0], line(9, LineKind.Context)) + it.rows.drop(1)) }
+        state = state.copy(page = moved, selected = 3..4)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ReviewTags.NOTE).assertTextContains("Name it.")
+        composeRule.onNodeWithTag(ReviewTags.ADD).performClick()
+        assertEquals(ReviewAction.Comment("Name it."), actions.last())
+        assertTrue("nothing was selected again", actions.none { it is ReviewAction.Select })
+    }
+
+    /**
+     * The activity made again (a turn of the phone) starts the runtime's
+     * selection afresh: the saved sheet selects its lines again, with its
+     * words, once the page holds them, and closes on a page that does not.
+     */
+    @Test
+    fun theSheetComesBackOverItsLinesAfterTheActivityIsMadeAgain() {
+        val actions = mutableListOf<ReviewAction>()
+        var state by mutableStateOf(ReviewScreenState(page = page(), selected = 2..3, anchor = anchor))
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewScreen(state = state, onAction = { actions += it })
+            }
+        }
+        composeRule.onNodeWithTag(ReviewTags.COMMENT_ON).performClick()
+        composeRule.onNodeWithTag(ReviewTags.NOTE).performTextInput("Name it.")
+
+        // Made again, the runtime's session holds no selection and no page yet.
+        state = ReviewScreenState(page = page(header = null).copy(rows = emptyList()))
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithTag(ReviewTags.SHEET).assertDoesNotExist()
+        actions.clear()
+
+        // The page arrives: the sheet's lines are selected again, and it shows.
+        state = ReviewScreenState(page = page())
+        composeRule.waitForIdle()
+        assertEquals(listOf(ReviewAction.Select(2), ReviewAction.Extend(3)), actions)
+        state = state.copy(selected = 2..3, anchor = anchor)
+        composeRule.waitForIdle()
+        composeRule.onNode(hasText("Comment on 2 lines") and hasAnyAncestor(hasTestTag(ReviewTags.SHEET))).assertIsDisplayed()
+        composeRule.onNodeWithTag(ReviewTags.NOTE).assertTextContains("Name it.")
+        composeRule.onNodeWithTag(ReviewTags.ADD).performClick()
+        assertEquals(ReviewAction.Comment("Name it."), actions.last())
+    }
+
+    @Test
+    fun theSheetClosesWhenItsLinesAreGoneAfterTheActivityIsMadeAgain() {
+        val actions = mutableListOf<ReviewAction>()
+        var state by mutableStateOf(ReviewScreenState(page = page(), selected = 2..3, anchor = anchor))
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewScreen(state = state, onAction = { actions += it })
+            }
+        }
+        composeRule.onNodeWithTag(ReviewTags.COMMENT_ON).performClick()
+        composeRule.onNodeWithTag(ReviewTags.NOTE).performTextInput("Name it.")
+
+        // The page that arrives no longer holds the lines.
+        val without = page().let { it.copy(rows = it.rows.filter { row -> row.of !is ReviewRowOf.Line }) }
+        state = ReviewScreenState(page = without)
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.waitForIdle()
+        assertTrue(actions.none { it is ReviewAction.Select })
+
+        // Selecting again later does not bring back a sheet that adds nothing.
+        state = ReviewScreenState(page = page(), selected = 2..3, anchor = anchor)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ReviewTags.SHEET).assertDoesNotExist()
+    }
+
+    /**
+     * A file's head pinned at the top is drawn over the lines scrolled under
+     * it: a hold on it opens its menu and selects none of them.
+     */
+    @Test
+    fun aHoldOnAPinnedHeadSelectsNoLineBeneathIt() {
+        val actions = mutableListOf<ReviewAction>()
+        val long = page().let { it.copy(rows = listOf(it.rows[0]) + (1..80).map { number -> line(number) }) }
+        show(ReviewScreenState(page = long), actions)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(30)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ReviewTags.FILE).performTouchInput { longClick() }
+        composeRule.waitForIdle()
+        assertTrue("selected $actions", actions.none { it is ReviewAction.Select })
+        composeRule.onNodeWithTag(ReviewTags.FILE_COMMENT).assertIsDisplayed()
     }
 
     /** Diff lines are drawn at text height and the rest at full targets; a line is read as one element. */

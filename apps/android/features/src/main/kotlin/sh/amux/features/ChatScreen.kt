@@ -295,7 +295,8 @@ data class ChatScreenCallbacks(
     val onDiscardReviewDrafts: () -> Unit = {},
     /** Raises the round a sent review closed, from its chip in the chat. */
     val onOpenRound: (sent: SentReviewRef, text: String) -> Unit = { _, _ -> },
-    val onCloseRound: () -> Unit = {},
+    /** The round [ChatScreenState.round] names is raised: the sheet is the screen's from here. */
+    val onRoundRaised: () -> Unit = {},
     /** Reads a sent review's round from the agent's computer; null once it holds none of it. */
     val readRound: suspend (SentReviewRef) -> ReviewPage? = { null },
     val onOpenAttachment: (BlobRef) -> Unit = {},
@@ -772,13 +773,22 @@ private fun ChatScreenContent(
     }
 
     // Modal sheets & dialogs owned by ChatScreen
-    state.round?.let { round ->
+    // A raised round is held here, not by the chat's model, so it goes with
+    // the screen: a chat left by a tab or a link and come back to does not
+    // raise it again.
+    var raisedRound by remember { mutableStateOf<OpenedRound?>(null) }
+    LaunchedEffect(state.round) {
+        val round = state.round ?: return@LaunchedEffect
+        raisedRound = round
+        callbacks.onRoundRaised()
+    }
+    (state.round ?: raisedRound)?.let { round ->
         ReviewRoundSheet(
             sent = round.sent,
             text = round.text,
             read = { callbacks.readRound(round.sent) },
             onOpenReview = callbacks.onOpenReview,
-            onClose = callbacks.onCloseRound,
+            onClose = { raisedRound = null },
         )
     }
 

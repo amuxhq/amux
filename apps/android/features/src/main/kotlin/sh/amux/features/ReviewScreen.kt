@@ -185,6 +185,15 @@ fun ReviewScreen(
 
     var writing by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ReviewCommentRow?>(null) }
+    // The words in the sheet, held apart from the selection: the page's rows
+    // move under the sheet as snapshots land, and the words stay.
+    var note by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    // The ends of the selection being written about, by row key. The
+    // selection itself is the runtime's, which starts afresh when the
+    // activity is made again (a turn of the phone); the sheet, saved, comes
+    // back over the same lines once the page does.
+    var writingFrom by rememberSaveable { mutableStateOf<String?>(null) }
+    var writingTo by rememberSaveable { mutableStateOf<String?>(null) }
     var asking by remember { mutableStateOf<Asking?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -200,6 +209,41 @@ fun ReviewScreen(
 
     BackHandler(enabled = state.selected != null && !writing && editing == null) {
         onAction(ReviewAction.ClearSelection)
+    }
+
+    fun write(on: IntRange) {
+        writingFrom = page.rows.getOrNull(on.first)?.key
+        writingTo = page.rows.getOrNull(on.last)?.key
+        note = TextFieldValue()
+        writing = true
+    }
+
+    fun closeSheet() {
+        writing = false
+        editing = null
+        writingFrom = null
+        writingTo = null
+        note = TextFieldValue()
+    }
+
+    // The sheet writes on its rows only while they are what is selected. They
+    // are not when the comment is on a whole file, started from its head, or
+    // when the sheet came back without the runtime's selection: its rows are
+    // selected once the page holds them, and a page that no longer does
+    // closes the sheet rather than leave it adding nothing.
+    val selectedFrom = state.selected?.let { page.rows.getOrNull(it.first)?.key }
+    val selectedTo = state.selected?.let { page.rows.getOrNull(it.last)?.key }
+    val writingOnSelection = writing && selectedFrom != null && selectedFrom == writingFrom && selectedTo == writingTo
+    LaunchedEffect(writing, writingFrom, writingTo, selectedFrom, selectedTo, page.rows, header == null) {
+        if (!writing || writingOnSelection || header == null) return@LaunchedEffect
+        val from = writingFrom?.let { key -> page.rows.indexOfFirst { it.key == key } }?.takeIf { it >= 0 }
+        val to = writingTo?.let { key -> page.rows.indexOfFirst { it.key == key } }?.takeIf { it >= 0 }
+        if (from == null || to == null) {
+            closeSheet()
+            return@LaunchedEffect
+        }
+        currentAction(ReviewAction.Select(from))
+        if (to != from) currentAction(ReviewAction.Extend(to))
     }
 
     fun goTo(key: String) {
@@ -257,11 +301,11 @@ fun ReviewScreen(
                                 listState = listState,
                                 contentPadding = PaddingValues(bottom = Space.l),
                                 onAction = onAction,
-                                onCommentOnFile = { index ->
-                                    onAction(ReviewAction.Select(index))
-                                    writing = true
+                                onCommentOnFile = { index -> write(index..index) },
+                                onEdit = { comment ->
+                                    note = TextFieldValue(comment.text, selection = TextRange(comment.text.length))
+                                    editing = comment
                                 },
-                                onEdit = { comment -> editing = comment },
                             )
                         }
                     }
@@ -270,7 +314,7 @@ fun ReviewScreen(
                     state = state,
                     selectionWords = state.selected?.let { commentWords(state, it) },
                     onAction = onAction,
-                    onWrite = { writing = true },
+                    onWrite = { state.selected?.let(::write) },
                 )
             }
         }
@@ -278,8 +322,8 @@ fun ReviewScreen(
 
     // The lines being written about stay in sight above the sheet.
     val writingAbout = editing?.let { "c/" + hex(it.id) }
-        ?: state.selected?.let { page.rows.getOrNull(it.last)?.key }.takeIf { writing }
-    LaunchedEffect(writing, editing?.id) {
+        ?: writingTo.takeIf { writing }
+    LaunchedEffect(writing, editing?.id, writingTo) {
         val key = writingAbout ?: return@LaunchedEffect
         val index = entries.indexOf(key) ?: return@LaunchedEffect
         listState.scrollToItem(index)
@@ -290,32 +334,32 @@ fun ReviewScreen(
     if (edited != null) {
         ReviewCommentSheet(
             title = ChatWords.reviewCommentState(edited.state),
-            initial = edited.text,
-            key = edited.id,
+            note = note,
+            onNoteChange = { note = it },
             editing = true,
-            onDismiss = { editing = null },
+            onDismiss = ::closeSheet,
             onAct = { text ->
                 currentAction(ReviewAction.Reword(edited.id, text))
-                editing = null
+                closeSheet()
             },
             onDelete = {
                 currentAction(ReviewAction.Delete(edited.id))
-                editing = null
+                closeSheet()
             },
         )
-    } else if (writing) {
+    } else if (writingOnSelection) {
         ReviewCommentSheet(
-            title = state.selected?.let { commentWords(state, it) }.orEmpty(),
-            initial = "",
-            key = state.selected,
+            title = commentWords(state, state.selected),
+            note = note,
+            onNoteChange = { note = it },
             editing = false,
-            onDismiss = { writing = false },
+            onDismiss = ::closeSheet,
             onAct = { text ->
                 // Written only while the selection still holds lines: the
                 // page may have moved under the sheet.
                 if (text.isNotBlank() && currentState.canComment) {
                     currentAction(ReviewAction.Comment(text))
-                    writing = false
+                    closeSheet()
                 }
             },
         )
@@ -958,6 +1002,11 @@ internal fun fileOf(row: Int, rows: List<ReviewRow>): IntRange {
  * The line under a height in the list. Within a file, a finger past the
  * file's first or last drawn line holds at it, and one over a comment or a
  * hunk's band holds where it was.
+ *
+ * A file's head pinned at the top is drawn over the lines scrolled beneath
+ * it, which are out of reach: a hold on the head is the head's own, and
+ * starts no selection; a finger drawing a selection up over it holds at the
+ * first line showing under it.
  */
 private fun lineAt(
     y: Float,
@@ -966,7 +1015,16 @@ private fun lineAt(
     rows: List<ReviewRow>,
     within: IntRange?,
 ): Int? {
-    val lines = listState.layoutInfo.visibleItemsInfo.mapNotNull { item ->
+    val visible = listState.layoutInfo.visibleItemsInfo
+    val head = visible.firstOrNull { item ->
+        entries.all.getOrNull(item.index) is ReviewEntries.Entry.Head &&
+            y >= item.offset && y < item.offset + item.size
+    }
+    if (head != null) {
+        if (within == null) return null
+        return lineAt((head.offset + head.size).toFloat(), listState, entries, rows, within)
+    }
+    val lines = visible.mapNotNull { item ->
         val entry = entries.all.getOrNull(item.index) as? ReviewEntries.Entry.Body ?: return@mapNotNull null
         if (rows.getOrNull(entry.row)?.of !is ReviewRowOf.Line) return@mapNotNull null
         Triple(entry.row, item.offset.toFloat(), (item.offset + item.size).toFloat())
@@ -1119,8 +1177,8 @@ private fun SelectionBar(
 @Composable
 private fun ReviewCommentSheet(
     title: String,
-    initial: String,
-    key: Any?,
+    note: TextFieldValue,
+    onNoteChange: (TextFieldValue) -> Unit,
     editing: Boolean,
     onDismiss: () -> Unit,
     onAct: (String) -> Unit,
@@ -1129,8 +1187,8 @@ private fun ReviewCommentSheet(
     AmuxSheet(onDismissRequest = onDismiss) {
         ReviewCommentSheetContent(
             title = title,
-            initial = initial,
-            key = key,
+            note = note,
+            onNoteChange = onNoteChange,
             editing = editing,
             onDismiss = onDismiss,
             onAct = onAct,
@@ -1147,8 +1205,8 @@ private fun ReviewCommentSheet(
 @Composable
 fun ReviewCommentSheetContent(
     title: String,
-    initial: String,
-    key: Any?,
+    note: TextFieldValue,
+    onNoteChange: (TextFieldValue) -> Unit,
     editing: Boolean,
     onDismiss: () -> Unit,
     onAct: (String) -> Unit,
@@ -1156,10 +1214,6 @@ fun ReviewCommentSheetContent(
     focusOnOpen: Boolean = true,
 ) {
     val colors = AmuxTheme.colors
-    // Held with its caret, which starts after the words being edited.
-    var note by rememberSaveable(key, stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(initial, selection = TextRange(initial.length)))
-    }
     val focus = remember { FocusRequester() }
     val blank = note.text.isBlank()
     val label = stringResource(R.string.review_comment_field)
@@ -1177,7 +1231,7 @@ fun ReviewCommentSheetContent(
         )
         AmuxField(
             value = note,
-            onValueChange = { note = it },
+            onValueChange = onNoteChange,
             placeholder = label,
             singleLine = false,
             minLines = 2,

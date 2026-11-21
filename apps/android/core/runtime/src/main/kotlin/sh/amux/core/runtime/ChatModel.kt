@@ -1462,13 +1462,21 @@ class ChatModel(
         reviewPage = null
     }
 
-    /** Raises the round a review sent into the chat closed, from its chip. */
+    /**
+     * Raises the round a review sent into the chat closed, from its chip.
+     * The chat's screen takes it from here and calls [roundRaised].
+     */
     fun open(round: SentRound) {
         roundOpened = round
         publish()
     }
 
-    fun closeRound() {
+    /**
+     * The screen raised the round: from here the sheet is the screen's, and
+     * goes with it, so a chat left by a tab or a link and come back to does
+     * not raise it again.
+     */
+    fun roundRaised() {
         if (roundOpened == null) return
         roundOpened = null
         publish()
@@ -1799,6 +1807,9 @@ class ChatModel(
 
     private fun takeBack(refused: RefusedPrompt) {
         source.draftOf(refused.inputId)?.let { restore(it) }
+        // A refused prompt marked nothing sent: the chip is back, and the
+        // next send carries the drafts.
+        sentChip = null
         notice = ChatNotices.notSent(refused.reason)
         source.discard(refused.inputId)
     }

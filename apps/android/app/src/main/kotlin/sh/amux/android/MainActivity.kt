@@ -18,8 +18,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        DebugHooks.onActivityCreated(this, composition)
         val appComposition = composition
-        DebugHooks.onActivityCreated(this, appComposition)
         handleIncomingIntent(intent)
 
         setContent {
@@ -28,24 +28,26 @@ class MainActivity : ComponentActivity() {
             val activeStores by appComposition.runtime.storesFlow.collectAsState()
             val signInState by appComposition.signIn.state.collectAsState()
 
-            AmuxTheme(appearanceMode = appearanceMode) {
-                val storeFailure = coordinatorState.storeFailure
-                if (storeFailure != null) {
-                    StoreFailureScreen(
-                        message = storeFailure,
-                        onRelaunch = { appComposition.relaunch() },
-                    )
-                } else {
-                    Shell(
-                        router = appComposition.router,
-                        accounts = appComposition.accounts,
-                        stores = activeStores,
-                        deviceName = appComposition.deviceName,
-                        signingIn = signInState.working,
-                        onAction = { action ->
-                            appComposition.handleShellAction(action, this@MainActivity)
-                        },
-                    )
+            DebugHooks.ContentWrapper {
+                AmuxTheme(appearanceMode = appearanceMode) {
+                    val storeFailure = coordinatorState.storeFailure
+                    if (storeFailure != null) {
+                        StoreFailureScreen(
+                            message = storeFailure,
+                            onRelaunch = { appComposition.relaunch() },
+                        )
+                    } else {
+                        Shell(
+                            router = appComposition.router,
+                            accounts = appComposition.accounts,
+                            stores = activeStores,
+                            deviceName = appComposition.deviceName,
+                            signingIn = signInState.working,
+                            onAction = { action ->
+                                appComposition.handleShellAction(action, this@MainActivity)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -54,7 +56,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        DebugHooks.onNewIntent(this, intent)
         handleIncomingIntent(intent)
+    }
+
+    override fun onDestroy() {
+        DebugHooks.onActivityDestroyed(this)
+        super.onDestroy()
     }
 
     private fun handleIncomingIntent(intent: Intent?) {

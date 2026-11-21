@@ -732,6 +732,26 @@ async fn run_established(
         links: Some(ctx.links.clone()),
         link,
     };
+    // An unpair publishes the trust store without the host, then closes
+    // the links the registry holds for it. A link whose handshake passed
+    // the host's key before the unpair, and registers after the closing,
+    // is not among them, and would carry on with a host this one no
+    // longer trusts. Read after registering, the store still holds the
+    // host only while the closing is yet to come, which then finds this
+    // link; so the link is closed by the one or the other, saying
+    // USER_REVOKED either way. A resumed link's key is the core's to take,
+    // below.
+    if link_role == LinkRole::Peer
+        && admission == LinkAdmission::PinnedKey
+        && ctx.resumed.is_none()
+        && let Some(core) = ctx.links.core()
+        && !core.trusts(peer_host.id)
+    {
+        let _ = write_message(&mut sink, &link_close(wire::LinkCloseReason::UserRevoked)).await;
+        registered.leave(wire::LinkCloseReason::UserRevoked).await;
+        carrier.close(wire::LinkCloseReason::UserRevoked);
+        return Ok(());
+    }
     // The core hears of the link once it is registered, so a route it
     // lists finds the link's carrier, and of the hosts its peer reaches as
     // the peer said them. Nothing picks a link to open a channel on but

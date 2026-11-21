@@ -63,6 +63,16 @@ impl CoreLinks {
         runtime.driver().resumed(up).await
     }
 
+    /// Whether `peer` is paired, as the core last published its trust for
+    /// the handshakes to read; a profile gone, or one with no edge, says
+    /// nothing against it.
+    pub(crate) fn trusts(&self, peer: HostId) -> bool {
+        self.0
+            .upgrade()
+            .and_then(|runtime| runtime.edge())
+            .is_none_or(|edge| edge.is_trusted(peer))
+    }
+
     /// Whether the core pins `key` for `peer`; a profile gone pins nothing.
     pub(crate) async fn pins(&self, peer: HostId, key: Vec<u8>) -> bool {
         self.look(move |daemon| daemon.trust().pubkey_for_host(peer) == Some(key.as_slice()))

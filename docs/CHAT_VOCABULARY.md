@@ -13,8 +13,9 @@ protocol). [INTERPRETERS.md](INTERPRETERS.md) covers how each one's native event
 
 A fourth kind, `acp`, runs any agent that speaks the Agent Client Protocol (Antigravity, OpenCode, Grok, or one a
 person adds). Its interpreter's availability for every row is the `acp` column of
-[`vocabulary.toml`](../crates/interpret/tests/vocabulary.toml), held by the same coverage test; the clients do not
-draw its bodies yet, so the tables below leave it out until they do.
+[`vocabulary.toml`](../crates/interpret/tests/vocabulary.toml), held by the same coverage test. Its items are drawn
+with the same rows and asks as the other kinds; [ACP agents](#acp-agents) says how each maps, and the tables
+below keep to the three kinds they compare.
 
 The pictures on this page are the terminal client's own renderings of each component, drawn from authored view
 values at 100 columns. The phone draws the same facts in its own idiom; neither is a pixel spec for the other.
@@ -152,14 +153,16 @@ of ask has one anatomy, the [`AskCard`](../crates/ui-view/src/ask.rs):
 - **Choices say outcomes.** Each `Choice` is a `ChoiceOutcome` ("Always allow cargo test in this project", never
   rule syntax), with the answer it sends. The likely choice comes first and is marked `primary`. A choice appears
   only when this agent offers it. `takes_note` marks the choices whose note goes back to the agent (a Claude
-  denial, a plan sent back).
+  denial, a plan sent back, an ACP agent's refusal or decline).
+- **Words instead.** Where the card says `reply_instead` (every ACP ask), the person may send their own words
+  instead of an answer; a refusal's or a decline's note goes as those words.
 - **There is always a way out.** Stop is always in the menu. It is the interrupt: it cancels the turn, which
   dismisses the open ask, and the agent stays live and idle. It never ends the process; stopping or deleting the
   agent does that.
 - **Sending, then a row.** After an answer, `CardState` goes `Sending` and the card shrinks to one line until the
   agent confirms; the decision then lands in the chat. A rejection brings the card back as `Rejected(refusal)`:
   the wire's typed `Refusal` reason, which each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
-  `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume.
+  `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume where the agent can be resumed.
 
 An answer names its ask by key, so any open ask can be answered from any client, not only the head one. Before
 CaughtUp a card is drawn only if the inventory entry says the agent needs you, so an ask already answered on
@@ -190,6 +193,7 @@ carry no numbers and no line.
 | `AllowNetwork { hosts }` | Codex: a network rule naming the hosts |
 | `Deny { stops }` | every kind |
 | `DenyAndStop` | every kind, beside a denial that lets the agent carry on |
+| `Offered { name, refuses }` | ACP: an option amux has no outcome of its own for (always allow, always reject, or one the agent names otherwise), worded with the agent's `name`; `refuses` when the agent marks it a rejection |
 
 ![A command permission from Claude in the composer's box: the command and why, yes, always allow the command in this project, don't ask again this session, and no, which takes a note; the first of three open asks.](figures/vocabulary/ask_command.light.png)
 
@@ -231,11 +235,42 @@ says "plan"; the body is the rest. While the first line is still arriving there 
 never shows half-written as prose. The view splits the plan once, for the card and for the row it becomes, and
 both clients draw the title and body they are handed.
 
-![A plan's decision in the composer's box, the plan itself in the feed above: start building, start and switch to the permission the agent offers, or keep planning with a note.](figures/vocabulary/ask_plan.light.png)
+![A plan's decision in the composer's box, the plan itself in the feed above: implement the plan, implement it and switch to the permission the agent offers, or keep planning with a note.](figures/vocabulary/ask_plan.light.png)
 
 ![A form from a tool server, a step per field in the server's order, the first a required text field, with decline as the way out.](figures/vocabulary/ask_form.light.png)
 
 ![The escape from an ask this client cannot answer: the reason, which sends the person to Claude's own terminal, and opening that terminal; ctrl+x interrupts the turn.](figures/vocabulary/ask_unanswerable.light.png)
+
+## ACP agents
+
+An ACP agent reports far less shape than Claude or Codex, so its items map onto the shared rows by what the
+agent says each one is:
+
+- **Messages and thinking** are `Prose` and `Thinking`; your prompt is `Prompt`, with withdraw on a queued one
+  and send-now only where the agent's capabilities say `sends_now`.
+- **A tool call** goes by its kind: a read, search or fetch is `Explore` (a search names its title, a read or
+  fetch the first place the call names, else its title; a title that only repeats the tool's name, as agents
+  title a call just begun, is left off); an execute is `Command`, its command read from the call's input, else its
+  title; an edit, delete or move is `FileChange` from the call's diffs, else the places it names; anything else is
+  `ToolCall` under its title. amux's own tools, which agents name in several ways, are amux's rows (`Child` and
+  the rest), as for the other kinds.
+- **A notice** is `Notice { reason, severity, title, text }`: what the agent says about its session (`Agent`), or
+  why a turn stopped short (`Refusal`, `MaxTokens`, `MaxTurnRequests`), as a note, a warning or an error. An error
+  notice marks the row failed. Errors are `Error`, compaction is `Compaction`, and an item this build cannot read
+  is `Unrecognized`.
+- **A permission ask** offers exactly the options the agent sent, in its order: allow once is `AllowOnce`, reject
+  once is `Deny` with a note, and the rest are `Offered`. Its body is a `Command`, an `Edit` from the call's diffs,
+  or a `Tool` with the call's title and input.
+- **A form or a link the agent asks itself** is `Form` or `Link` named for the agent, with `Submit` or `OpenLink`
+  and a `Decline` that takes words instead.
+- **Session facts.** Usage has no windows or credits; settings are picks of the agent's models, efforts and modes.
+  A new agent starts on the agent's own mode unless the person picks one: the agent marks none of its modes
+  normal, so none is chosen for it.
+- **An exited ACP agent** that offered no way to reopen a session has no Resume: its composer is `Ended`.
+- **Attachments** go only where the agent takes them: an image to an agent that takes images, a file to one that
+  takes files. A client refuses one it would not take before storing it.
+
+![What an ACP agent says about its own session: a note, a warning, a turn that reached the model's token limit, and an error with what to do.](figures/vocabulary/row_notice.light.png)
 
 ## In the chat afterwards
 

@@ -13,6 +13,8 @@ use wire::{
     ToolCall, ToolState, TurnOutcome, tool_input,
 };
 
+pub(crate) mod acp;
+
 use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
 use crate::review::LineKind;
 use crate::run::Run;
@@ -236,12 +238,44 @@ pub enum RowKind {
         rationale: String,
         subject: Key,
     },
+    /// Something the agent, or the end of its turn, says to the person
+    /// that is not the conversation: the agent's own notice, under its own
+    /// title when it gives one, or why its turn stopped short.
+    Notice {
+        reason: NoticeReason,
+        severity: NoticeSeverity,
+        title: String,
+        text: String,
+    },
     Unrecognized {
         what: String,
         summary: String,
     },
     /// An item that belongs to the overview or the activity line, never a row.
     Hidden,
+}
+
+/// What a notice is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum NoticeReason {
+    /// The agent's own words.
+    Agent,
+    /// The model refused to go on; the turn is over.
+    Refusal,
+    /// The turn reached the model's limit on tokens.
+    MaxTokens,
+    /// The turn reached the agent's limit on model requests in one turn.
+    MaxTurnRequests,
+}
+
+/// How much a notice matters, as its agent marks it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum NoticeSeverity {
+    Info,
+    Warning,
+    Error,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -619,6 +653,7 @@ pub(crate) fn subject_of(held: &Held) -> String {
             Some(wire::work::Of::WebSearch(search)) => web_step(search).1,
             _ => String::new(),
         },
+        ItemBody::Acp(wire::acp_item::Kind::Tool(tool)) => acp::subject(tool),
         _ => String::new(),
     }
 }
@@ -769,7 +804,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }),
             Claude::Turn(turn) => plain(turn_row(state, held, turn)),
             Claude::Status(_) => plain(RowKind::Hidden),
-            Claude::Boundary(b) => plain(boundary(b, Provider::Claude)),
+            Claude::Boundary(b) => plain(boundary(b, false)),
             Claude::AgentMessage(m) => plain(agent_message(held, m)),
             Claude::ApiError(e) => error(e),
             Claude::Slash(s) => plain(slash(held, s)),
@@ -808,7 +843,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }
             Codex::Work(work) => codex_work(state, held, work),
             Codex::Turn(turn) => plain(turn_row(state, held, turn)),
-            Codex::Boundary(b) => plain(boundary(b, Provider::Codex)),
+            Codex::Boundary(b) => plain(boundary(b, true)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
             // Codex telling a client it will stop supporting something the
             // client sends: words for amux's developers, which the agent
@@ -828,6 +863,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }),
             Codex::Ask(ask) => plain(ask_row(ask)),
         },
+        ItemBody::Acp(kind) => acp::kind_of(state, held, kind),
         ItemBody::Undecodable => plain(RowKind::Unrecognized {
             what: match wire::Kind::try_from(item.kind) {
                 Ok(kind) => kind
@@ -1050,6 +1086,7 @@ fn turn_row(state: &SessionState, held: &Held, turn: &wire::Turn) -> RowKind {
 /// Whether the turn ending at `end` held a question the person replied to
 /// in their own words instead of answering.
 fn replied_instead(state: &SessionState, end: &Held) -> bool {
+    use wire::acp_item::Kind as Acp;
     use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     for held in state
@@ -1058,7 +1095,9 @@ fn replied_instead(state: &SessionState, end: &Held) -> bool {
         .rev()
     {
         match &held.body {
-            ItemBody::Claude(Claude::Ask(ask)) | ItemBody::Codex(Codex::Ask(ask))
+            ItemBody::Claude(Claude::Ask(ask))
+            | ItemBody::Codex(Codex::Ask(ask))
+            | ItemBody::Acp(Acp::Ask(ask))
                 if ask
                     .closed
                     .as_ref()
@@ -1067,7 +1106,8 @@ fn replied_instead(state: &SessionState, end: &Held) -> bool {
                 return true;
             }
             ItemBody::Claude(Claude::Turn(_) | Claude::Prompt(_) | Claude::Steer(_))
-            | ItemBody::Codex(Codex::Turn(_) | Codex::Prompt(_) | Codex::Steer(_)) => {
+            | ItemBody::Codex(Codex::Turn(_) | Codex::Prompt(_) | Codex::Steer(_))
+            | ItemBody::Acp(Acp::Turn(_) | Acp::Prompt(_) | Acp::Steer(_)) => {
                 return false;
             }
             _ => {}
@@ -1099,28 +1139,21 @@ fn error(e: &wire::ApiError) -> (RowKind, Option<Decision>, bool) {
     )
 }
 
-/// Which provider wrote a boundary, for the one boundary they report
-/// differently.
-#[derive(Clone, Copy, PartialEq)]
-enum Provider {
-    Claude,
-    Codex,
-}
-
 /// A boundary is drawn only where the chat above it no longer holds: a clear,
 /// after which the agent remembers none of it, and a lost daemon. A start, a
 /// resume, a restart, a fork or an exit carries on the same conversation, and
 /// a rule across it for each said nothing the person acts on; how an exited
 /// agent ended is the composer's to say. Claude writes its compaction as a
 /// row of its own beside the boundary, with the counts; Codex writes only the
-/// boundary, so its compaction is drawn as that row without counts.
-fn boundary(b: &wire::Boundary, provider: Provider) -> RowKind {
+/// boundary, so its compaction is drawn as that row without counts: for it
+/// `compaction_unsaid` holds.
+fn boundary(b: &wire::Boundary, compaction_unsaid: bool) -> RowKind {
     match b.kind() {
         BoundaryKind::Cleared | BoundaryKind::DaemonLost => RowKind::Boundary {
             kind: b.kind(),
             cause: ui_state::exit_words(b.cause, b.cause_detail.as_deref()),
         },
-        BoundaryKind::Compacted if provider == Provider::Codex => RowKind::Compaction {
+        BoundaryKind::Compacted if compaction_unsaid => RowKind::Compaction {
             tokens_before: None,
             tokens_after: None,
             automatic: false,
@@ -1269,14 +1302,20 @@ fn claude_tool(
             }
             _ => Value::Null,
         };
-        amux_call(&tool.server, &tool.name, &input, &tool.outcome_text, view).unwrap_or_else(|| {
-            RowKind::ToolCall {
-                server: tool.server.clone(),
-                tool: tool.name.clone(),
-                fact: named.to_owned(),
-                state: view,
-                result: tool.outcome_text.clone(),
-            }
+        amux_call(
+            state,
+            &tool.server,
+            &tool.name,
+            &input,
+            &tool.outcome_text,
+            view,
+        )
+        .unwrap_or_else(|| RowKind::ToolCall {
+            server: tool.server.clone(),
+            tool: tool.name.clone(),
+            fact: named.to_owned(),
+            state: view,
+            result: tool.outcome_text.clone(),
         })
     } else if let Some(verb) = explore_verb(tool.class) {
         RowKind::Explore {
@@ -1384,6 +1423,7 @@ fn field(value: &Value, name: &str) -> String {
 /// a tool call: a subagent started or stopped. Listing the fleet or the hosts
 /// is the agent looking around, and hidden. None for any other call.
 fn amux_call(
+    session: &SessionState,
     server: &str,
     tool: &str,
     input: &Value,
@@ -1415,16 +1455,18 @@ fn amux_call(
     } else {
         name
     };
-    let kind = match field(input, "kind").as_str() {
-        "claude" => crate::fleet::kind_name(wire::Kind::ClaudeSdk),
-        "codex" => crate::fleet::kind_name(wire::Kind::Codex),
-        _ => "",
-    };
+    // The agent it starts, by its provider's name as the caller's host
+    // gives it, else as the call names it; empty when it names none.
+    let kind = field(input, "kind");
+    let kind = session
+        .host()
+        .and_then(|host| host.provider(&kind))
+        .map_or(kind.clone(), |offered| offered.name().to_owned());
     Some(RowKind::Child {
         action,
         name,
         host: field(input, "host"),
-        kind: kind.to_owned(),
+        kind,
         state,
         result: if state == CallPhase::Failed {
             result.to_owned()
@@ -1537,15 +1579,15 @@ fn codex_work(
                 } else {
                     call.error.clone()
                 };
-                amux_call(&call.server, &call.tool, &input, &result, view).unwrap_or_else(|| {
-                    RowKind::ToolCall {
+                amux_call(state, &call.server, &call.tool, &input, &result, view).unwrap_or_else(
+                    || RowKind::ToolCall {
                         server: call.server.clone(),
                         tool: call.tool.clone(),
                         fact: call.subject.clone(),
                         state: view,
                         result,
-                    }
-                })
+                    },
+                )
             }
             Some(Of::WebSearch(search)) => {
                 let (verb, subject) = web_step(search);
@@ -1737,6 +1779,12 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
                 }
                 _ => return None,
             }
+        }
+        ItemBody::Acp(wire::acp_item::Kind::Tool(tool)) => {
+            if !succeeded(tool.state) {
+                return None;
+            }
+            patch_lines(acp::patch(tool)?)
         }
         _ => return None,
     };

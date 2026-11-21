@@ -347,20 +347,33 @@ fn now_ms() -> i64 {
 /// reads the agent's directory on this machine, headless Claude has no
 /// terminal at all, and a stopped agent's terminal is gone until it is
 /// resumed. Its chat is the way in either way.
-pub(crate) fn terminal_refusal(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
-    terminal_elsewhere(agent, config)
-        .or_else(|| (agent.lifecycle() == wire::Lifecycle::Exited).then_some("it is stopped"))
+pub(crate) fn terminal_refusal(
+    fleet: &ui_state::FleetState,
+    agent: &Agent,
+    config: &TuiConfig,
+) -> Option<String> {
+    terminal_elsewhere(fleet, agent, config).or_else(|| {
+        (agent.lifecycle() == wire::Lifecycle::Exited).then(|| "it is stopped".to_owned())
+    })
 }
 
 /// Why `agent` has no terminal on this machine at all, running or not.
-fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
+fn terminal_elsewhere(
+    fleet: &ui_state::FleetState,
+    agent: &Agent,
+    config: &TuiConfig,
+) -> Option<String> {
+    let host = fleet.host(&agent.host_id);
     if agent.native.is_some() {
         // Its parent's provider runs it inside the parent's own process.
-        Some("a subagent has no terminal of its own")
+        Some("a subagent has no terminal of its own".to_owned())
     } else if agent.host_id != config.local_host {
-        Some("its terminal is on another computer")
-    } else if agent.kind() == wire::Kind::ClaudeSdk {
-        Some("headless Claude has no terminal")
+        Some("its terminal is on another computer".to_owned())
+    } else if !ui_state::offered_capabilities(host, agent).attachable {
+        Some(format!(
+            "{} has no terminal here",
+            ui_state::provider_name(host, agent)
+        ))
     } else {
         None
     }
@@ -435,7 +448,7 @@ async fn start_with_files(
         text: text.to_owned(),
         attachments: attachments.clone(),
     };
-    let Some(input) = inputs::prompt(setup.kind(), text, attachments) else {
+    let Some(input) = inputs::prompt(setup.host_kind, text, attachments) else {
         let why = "your first message could not be sent; it is in the composer".to_owned();
         return Ok((agent, Some((why, kept))));
     };
@@ -722,10 +735,11 @@ impl App {
                             self.fleet.close(&open.agent);
                             self.keep_draft(open);
                         }
-                        let terminal =
-                            self.fleet.state().agent(&agent).is_some_and(|entry| {
-                                terminal_elsewhere(entry, &self.config).is_none()
-                            });
+                        let fleet = self.fleet.state();
+                        let terminal = fleet.agent(&agent).is_some_and(|entry| {
+                            terminal_elsewhere(&fleet, entry, &self.config).is_none()
+                        });
+                        drop(fleet);
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
                         if let Some(kept) = kept {
                             view.editor.set(&kept.text, kept.attachments);
@@ -870,7 +884,8 @@ impl App {
                 if attach {
                     // Straight into its own terminal; where it has none
                     // here, its chat opens and says why.
-                    let Some(why) = terminal_refusal(&agent, &self.config) else {
+                    let why = terminal_refusal(&self.fleet.state(), &agent, &self.config);
+                    let Some(why) = why else {
                         return Flow::Attach(agent);
                     };
                     self.notice(format!("{why}; its chat opens instead"), Tone::Warn);
@@ -1182,7 +1197,7 @@ impl App {
                     self.fleet.state().agent(&chat.agent),
                     &self.config.local_host,
                 )
-                .sibling(state.kind(), self.config.chat_in);
+                .sibling(state.agent().provider_id(), self.config.chat_in);
                 drop(state);
                 self.close_chat();
                 self.home.new_agent(setup);
@@ -1633,7 +1648,7 @@ impl App {
                         .map(|error| AppEvent::Notice(error.to_string(), Tone::Warn))
                 });
             }
-            ChatEffect::Paste => match chat.view.paste(read_clipboard()) {
+            ChatEffect::Paste => match chat.view.paste(&session.state(), read_clipboard()) {
                 Ok(Some(effect)) => return self.chat_effect(effect),
                 Ok(None) => {}
                 Err(error) => self.notice(error, Tone::Warn),
@@ -1734,7 +1749,8 @@ impl App {
     /// Enter opens its chat (in the chat, Enter sends the draft).
     fn raw_attach(&mut self, agent: &AgentKey) -> Option<Flow> {
         let entry = self.fleet.state().agent(agent).cloned()?;
-        match terminal_refusal(&entry, &self.config) {
+        let refusal = terminal_refusal(&self.fleet.state(), &entry, &self.config);
+        match refusal {
             None => Some(Flow::Attach(Box::new(entry))),
             Some(why) if self.chat.is_some() => {
                 self.notice(why, Tone::Warn);
@@ -1872,7 +1888,8 @@ impl App {
             return;
         };
         let host = setup.host.clone();
-        let chosen = setup.agent.provider();
+        setup.settle(&fleet);
+        let chosen = setup.agent.clone();
         let mut asks = Vec::new();
         let listed = fleet
             .host(&host)
@@ -2129,7 +2146,7 @@ fn sibling_setup(
     let view = ui_view::settings(state);
     crate::setup::Setup {
         name: None,
-        agent: crate::setup::Agent::Claude,
+        agent: String::new(),
         chat_in: settings::ChatInSetting::Amux,
         model: view
             .models
@@ -2157,7 +2174,8 @@ fn sibling_setup(
         local_host: local_host.to_vec(),
         worktree: false,
         copied: (None, None),
-        host_claude_kind: wire::Kind::Unspecified,
+        host_kind: wire::Kind::Unspecified,
+        attachable: false,
         folders: None,
     }
 }

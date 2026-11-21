@@ -124,15 +124,18 @@ enum Request {
         #[serde(rename = "localHost")]
         local_host: String,
     },
-    /// A `CreateAgentRequest` for a Claude agent on this host in `cwd`,
-    /// of the kind the host publishes, with no first prompt: the review's
-    /// screenshots are stored with it once it exists, then sent to it.
+    /// A `CreateAgentRequest` for an agent of `provider` on this host in
+    /// `cwd`, of the kind the host starts it as, with no first prompt: the
+    /// review's screenshots are stored with it once it exists, then sent to
+    /// it. Without a provider, the first the host offers.
     CreateAgent {
         fleet: u32,
         #[serde(rename = "localHost")]
         local_host: String,
         agent: String,
         cwd: String,
+        #[serde(default)]
+        provider: Option<String>,
     },
     /// The words of the element a model reads for a page review, so the
     /// extension can show exactly what is sent.
@@ -299,8 +302,10 @@ fn answer(request: Request) -> Result<Value, String> {
                 }))
                 .map(|of| wire::Attachment { of: Some(of) })
                 .collect();
-            let input = prompt(kind, unhex(&input_id)?, text, attachments)
+            let act = ui_view::Act::Prompt(wire::PromptInput { text, attachments });
+            let of = ui_view::act_input(kind, act)
                 .ok_or("an agent of a kind this build does not know")?;
+            let input = wire::Input::new(unhex(&input_id)?, of);
             encoded(&wire::SendInputRequest {
                 agent_id: key.agent,
                 input: Some(input),
@@ -338,23 +343,28 @@ fn answer(request: Request) -> Result<Value, String> {
             local_host,
             agent,
             cwd,
+            provider,
         } => {
             let local_host = unhex(&local_host)?;
-            let kind = with_fleet(fleet, |state| {
-                state
-                    .host(&local_host)
-                    .and_then(|host| host.provider(wire::agents::CLAUDE))
-                    .map(wire::ProviderOnHost::kind)
-            })?
-            .unwrap_or(wire::Kind::ClaudePty);
-            let config = wire::ClaudeCreateConfig::default();
+            let offered = with_fleet(fleet, |state| {
+                let host = state.host(&local_host)?;
+                let offered = match &provider {
+                    Some(provider) => host.provider(provider),
+                    None => host.providers.first(),
+                }?;
+                Some((offered.provider_id.clone(), offered.kind()))
+            })?;
+            let (provider, kind) = offered.ok_or_else(|| match &provider {
+                Some(provider) => format!("this computer does not offer {provider}"),
+                None => "this computer offers no agent yet".to_owned(),
+            })?;
+            let config =
+                ui_view::create_config(kind, &provider, &ui_view::NewAgentChoices::default())
+                    .ok_or("an agent of a kind this build does not know")?;
             encoded(&wire::CreateAgentRequest {
                 agent_id: unhex(&agent)?,
                 cwd,
-                agent: Some(match kind {
-                    wire::Kind::ClaudeSdk => wire::create_agent_request::Agent::ClaudeSdk(config),
-                    _ => wire::create_agent_request::Agent::ClaudePty(config),
-                }),
+                agent: Some(config),
                 ..Default::default()
             })
         }
@@ -365,32 +375,6 @@ fn answer(request: Request) -> Result<Value, String> {
             None,
         )),
     })
-}
-
-/// A prompt in the kind's own arm.
-fn prompt(
-    kind: wire::Kind,
-    input_id: Vec<u8>,
-    text: String,
-    attachments: Vec<wire::Attachment>,
-) -> Option<wire::Input> {
-    let prompt = wire::PromptInput { text, attachments };
-    let of = match kind {
-        wire::Kind::ClaudePty => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Prompt(prompt)),
-        }),
-        wire::Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(prompt)),
-        }),
-        wire::Kind::Codex => wire::KindInput::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(prompt)),
-        }),
-        wire::Kind::Acp => wire::KindInput::Acp(wire::AcpInput {
-            of: Some(wire::acp_input::Of::Prompt(prompt)),
-        }),
-        wire::Kind::Unspecified => return None,
-    };
-    Some(wire::Input::new(input_id, of))
 }
 
 fn with_fleet<T>(fleet: u32, f: impl FnOnce(&mut FleetState) -> T) -> Result<T, String> {

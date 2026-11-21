@@ -1,0 +1,73 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 5 agent_message {"envelope":"m1","from":"reviewer","text":"Please check the tests."}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 9 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"kind":"execute","sessionUpdate":"tool_call","status":"pending","title":"Run cargo test","toolCallId":"c1"}}}}
+  composer Send activity=Some(Running { key: "tool:c1" }) queue=[] underway=[] refused=[]
+## 10 fact {"channel":"rpc","json":{"id":7,"jsonrpc":"2.0","method":"session/request_permission","params":{"options":[{"kind":"allow_once","name":"Allow","optionId":"yes"},{"kind":"reject_once","name":"Reject","optionId":"no"}],"sessionId":"s1","toolCall":{"toolCallId":"c1"}}}}
+  ask ask-1 -> "tool:c1" 1/1 Open
+    choices AllowOnce*, Deny+note
+    body Command { command: "Run cargo test", cwd: "", reason: "", description: "" }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 11 input {"answer":{"answer":{"option":"maybe"},"ask":"ask-1"},"id":"i2"}
+  ask ask-1 -> "tool:c1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
+    choices AllowOnce*, Deny+note
+    body Command { command: "Run cargo test", cwd: "", reason: "", description: "" }
+## 12 input {"id":"i3","interrupt":{}}
+  ask none
+  composer Send activity=Some(Running { key: "tool:c1" }) queue=[] underway=[] refused=[]
+## 13 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":" Stopping.","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 14 fact {"channel":"rpc","json":{"id":"amux-prompt-6d31","jsonrpc":"2.0","result":{"stopReason":"cancelled"}}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 15 input {"id":"p1","prompt":{"text":"Write the summary."}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 16 input {"id":"p2","prompt":{"text":"And then stop."}}
+  composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("And then stop.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: false }] underway=[] refused=[]
+## 18 input {"id":"i5","withdraw":{"target":"p2"}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 21 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"refusal"}}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 22 input {"id":"p3","prompt":{"text":"Try once more."}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 23 fact {"channel":"rpc","json":{"error":{"code":-32603,"message":"model overloaded"},"id":"amux-prompt-7033","jsonrpc":"2.0"}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 24 input {"id":"p4","prompt":{"text":"Last try."}}
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 26 fact {"channel":"rpc","json":{"id":"amux-prompt-7034","jsonrpc":"2.0","result":{"stopReason":"max_tokens","usage":{"inputTokens":6,"outputTokens":4,"totalTokens":10}}}}
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 30 fact {"channel":"rpc","json":{"id":9,"jsonrpc":"2.0","method":"elicitation/create","params":{"elicitationId":"e1","message":"Sign in to the docs server.","mode":"url","sessionId":"s1","url":"https://example.com/sign-in"}}}
+  ask ask-2 -> "ask:ask-2" 1/1 Open
+    choices OpenLink*, Decline+note
+    body Link { server: "my-own-agent", message: "Sign in to the docs server.", url: "https://example.com/sign-in", local_page: false }
+## 31 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"ask-2"},"id":"i6"}
+  ask none
+== chat
+     1 boundary:1 Hidden collapsed
+     2 agent-message:6d31 AgentMessage { from: "reviewer", kind: Message, text: [Text("Please check the tests.")], to: "", sent: Unspecified, rejection: "" }
+     3 message:1 Prose { text: [Text("Checking.")], streaming: false, working_note: false }
+     4 tool:c1 Command { command: "Run cargo test", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[tool:c1..tool:c1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: Non…
+     5 message:2 Prose { text: [Text(" Stopping.")], streaming: false, working_note: false }
+     6 turn:1 Stopped
+     7 prompt:7031 Prompt { text: [Text("Write the summary.")], steered: false }
+     8 notice:3 Notice { reason: Agent, severity: Warning, title: "Slow", text: "The model is slow today." }
+     9 compaction:k1 Compaction { tokens_before: None, tokens_after: None, automatic: false, idle: false }
+    10 notice:4 Notice { reason: Refusal, severity: Warning, title: "", text: "The model refused to go on." }
+    11 turn:2 TurnEnd { duration_ms: Some(0), failed: false }
+    12 prompt:7033 Prompt { text: [Text("Try once more.")], steered: false }
+    13 error:5 Error { error_kind: "-32603", message: "model overloaded", attempts: 0, gave_up: true } attention
+    14 turn:3 TurnEnd { duration_ms: Some(0), failed: true }
+    15 prompt:7034 Prompt { text: [Text("Last try.")], steered: false }
+    16 tool:c2 FileChange { files: [FileRow { path: "/work/notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: Some(1) }], state: Succeeded } run[tool:c2..tool:c2 x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+    17 notice:6 Notice { reason: MaxTokens, severity: Warning, title: "", text: "The turn reached the model's token limit." }
+    18 turn:4 TurnEnd { duration_ms: Some(0), failed: true }
+    19 ask:ask-2 Ask(Link { server: "my-own-agent", message: "Sign in to the docs server.", url: "https://example.com/sign-in", resolution: Answered })
+    20 boundary:2 Hidden collapsed
+== overview Overview { tasks: Some(TasksView { done: 0, total: 2, current: "Run the tests", entries: [TaskLine { subject: "Run the tests", mark: Current }, TaskLine { subject: "Report", mark: Todo }] }), jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 1200, window_tokens: Some(200000), percent: Some(0), near_full: false }) sign-in None
+== settings
+  mode  "ask" "Ask"
+  mode* "code" "Code"
+  changes: model NotOffered · effort NotOffered · permission NotOffered · mode Pick
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=None effort=None permission=None mode=Some("code")

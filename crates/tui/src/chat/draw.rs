@@ -275,7 +275,7 @@ impl ChatView {
         if let Some(sign_in) = &sign_in
             && !matches!(state.composer(), Composer::Native { .. })
         {
-            bottom.extend(sign_in_notice(state.kind(), &host, sign_in, width, theme));
+            bottom.extend(sign_in_notice(&host, sign_in, width, theme));
             bottom.push(Line::default());
         }
         let entries = self.queue_entries(state, &host);
@@ -481,7 +481,13 @@ impl ChatView {
                 });
             }
             _ if let Composer::Native { stop } = state.composer() => {
-                bottom.extend(native_box(state.kind(), &stop, &summary, width, theme));
+                bottom.extend(native_box(
+                    &state.provider_name(),
+                    &stop,
+                    &summary,
+                    width,
+                    theme,
+                ));
                 hint = native_hint(&stop, self.leader);
             }
             _ => {

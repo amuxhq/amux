@@ -31,15 +31,26 @@ fn fleet_with_one_agent(kind: wire::Kind) -> u32 {
             name: "desk".into(),
             ..Default::default()
         }),
-        providers: vec![wire::ProviderOnHost {
-            provider_id: "claude".into(),
-            descriptor: Some(wire::ProviderDescriptor {
-                name: "Claude".into(),
-                kind: wire::Kind::ClaudeSdk as i32,
+        providers: vec![
+            wire::ProviderOnHost {
+                provider_id: "claude".into(),
+                descriptor: Some(wire::ProviderDescriptor {
+                    name: "Claude".into(),
+                    kind: wire::Kind::ClaudeSdk as i32,
+                    ..Default::default()
+                }),
                 ..Default::default()
-            }),
-            ..Default::default()
-        }],
+            },
+            wire::ProviderOnHost {
+                provider_id: "opencode".into(),
+                descriptor: Some(wire::ProviderDescriptor {
+                    name: "OpenCode".into(),
+                    kind: wire::Kind::Acp as i32,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        ],
         standing: Some(wire::host_entry::Standing::Trusted(Default::default())),
         ..Default::default()
     };
@@ -158,6 +169,78 @@ fn a_new_agent_is_the_kind_its_host_publishes() {
     ));
     assert_eq!(request.cwd, "~/site");
     assert!(request.initial_prompt.is_none());
+}
+
+/// A new agent of the provider the request names starts as that agent,
+/// in the kind its host starts it as; one the host does not offer is
+/// refused in words, never started as Claude.
+#[test]
+fn a_new_agent_is_the_provider_the_request_names() {
+    let fleet = fleet_with_one_agent(wire::Kind::Codex);
+    let body = call(json!({
+        "op": "createAgent",
+        "fleet": fleet,
+        "localHost": hex(&HOST),
+        "agent": hex(&AGENT),
+        "cwd": "~/site",
+        "provider": "opencode",
+    }));
+    let request = wire::CreateAgentRequest::decode(
+        STANDARD.decode(body.as_str().unwrap()).unwrap().as_slice(),
+    )
+    .unwrap();
+    assert_eq!(
+        request.agent,
+        Some(wire::create_agent_request::Agent::Acp(
+            wire::AcpCreateConfig {
+                agent: "opencode".into(),
+                ..Default::default()
+            }
+        ))
+    );
+    let refused: Value = serde_json::from_str(&handle(
+        &json!({
+            "op": "createAgent",
+            "fleet": fleet,
+            "localHost": hex(&HOST),
+            "agent": hex(&AGENT),
+            "cwd": "~/site",
+            "provider": "grok",
+        })
+        .to_string(),
+    ))
+    .unwrap();
+    assert!(
+        refused.to_string().contains("does not offer grok"),
+        "{refused}"
+    );
+}
+
+/// A prompt to an ACP agent goes in its own arm.
+#[test]
+fn a_prompt_to_an_acp_agent_goes_in_its_arm() {
+    let fleet = fleet_with_one_agent(wire::Kind::Acp);
+    let body = call(json!({
+        "op": "sendPrompt",
+        "fleet": fleet,
+        "host": hex(&HOST),
+        "agent": hex(&AGENT),
+        "inputId": "0102",
+        "text": "look",
+        "pages": [],
+        "texts": [],
+    }));
+    let request =
+        wire::SendInputRequest::decode(STANDARD.decode(body.as_str().unwrap()).unwrap().as_slice())
+            .unwrap();
+    let input = request.input.unwrap();
+    assert_eq!(input.input_id, [1, 2]);
+    assert!(matches!(
+        input.decode_body(),
+        Some(wire::KindInput::Acp(wire::AcpInput {
+            of: Some(wire::acp_input::Of::Prompt(_))
+        }))
+    ));
 }
 
 #[test]

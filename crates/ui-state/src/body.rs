@@ -18,6 +18,8 @@ pub enum ItemBody {
     /// Either Claude kind's item.
     Claude(wire::claude_item::Kind),
     Codex(wire::codex_item::Kind),
+    /// Any ACP agent's item: one envelope serves them all.
+    Acp(wire::acp_item::Kind),
     Undecodable,
 }
 
@@ -32,9 +34,11 @@ impl ItemBody {
                 .ok()
                 .and_then(|item| item.kind)
                 .map(ItemBody::Codex),
-            // This build's views do not draw an ACP agent's items yet: each
-            // reads as one they cannot draw, never as another kind's.
-            Kind::Acp | Kind::Unspecified => None,
+            Kind::Acp => wire::AcpItem::decode(body)
+                .ok()
+                .and_then(|item| item.kind)
+                .map(ItemBody::Acp),
+            Kind::Unspecified => None,
         };
         decoded.unwrap_or(ItemBody::Undecodable)
     }
@@ -92,8 +96,38 @@ impl ItemBody {
                 Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
                 Codex::Ask(_) | Codex::Plan(_) => ItemClass::Ask,
             },
+            ItemBody::Acp(kind) => acp_class(kind),
             ItemBody::Undecodable => ItemClass::Other,
         }
+    }
+}
+
+fn acp_class(kind: &wire::acp_item::Kind) -> ItemClass {
+    use wire::acp_item::Kind as Acp;
+    match kind {
+        Acp::Prompt(_) => ItemClass::Prompt,
+        Acp::Steer(_) => ItemClass::Steer,
+        Acp::Message(text) => ItemClass::Prose {
+            complete: text.complete,
+        },
+        Acp::Thought(thinking) => ItemClass::Thinking {
+            complete: thinking.complete,
+        },
+        // ACP has no subagents of its own, and amux's spawn is drawn by
+        // the child it names on its own row.
+        Acp::Tool(tool) => ItemClass::Tool(ToolFacts {
+            in_flight: in_flight(tool.state),
+            subagent: false,
+            child: false,
+            opens: false,
+            hidden: false,
+        }),
+        Acp::Turn(_) => ItemClass::Turn,
+        Acp::Error(error) => api_error(error),
+        Acp::Boundary(_) => ItemClass::Boundary,
+        Acp::AgentMessage(_) => ItemClass::AgentMessage,
+        Acp::Ask(_) => ItemClass::Ask,
+        Acp::Compaction(_) | Acp::Notice(_) | Acp::Unrecognized(_) => ItemClass::Other,
     }
 }
 
@@ -118,7 +152,37 @@ pub fn item_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
             kind: Some(codex_structure(kind)),
         }
         .encode_to_vec(),
+        ItemBody::Acp(kind) => wire::AcpItem {
+            kind: Some(acp_structure(kind)),
+        }
+        .encode_to_vec(),
         ItemBody::Undecodable => Vec::new(),
+    }
+}
+
+fn acp_structure(kind: wire::acp_item::Kind) -> wire::acp_item::Kind {
+    use wire::acp_item::Kind as Acp;
+    match kind {
+        Acp::Message(text) => Acp::Message(wire::Text {
+            complete: text.complete,
+        }),
+        Acp::Thought(thinking) => Acp::Thought(wire::Thinking {
+            complete: thinking.complete,
+        }),
+        Acp::Tool(tool) => Acp::Tool(wire::AcpTool {
+            state: tool.state,
+            ..Default::default()
+        }),
+        Acp::Error(error) => Acp::Error(api_error_structure(error)),
+        Acp::Prompt(_) => Acp::Prompt(Default::default()),
+        Acp::Turn(_) => Acp::Turn(Default::default()),
+        Acp::Steer(_) => Acp::Steer(Default::default()),
+        Acp::Compaction(_) => Acp::Compaction(Default::default()),
+        Acp::Notice(_) => Acp::Notice(Default::default()),
+        Acp::AgentMessage(_) => Acp::AgentMessage(Default::default()),
+        Acp::Ask(_) => Acp::Ask(Default::default()),
+        Acp::Boundary(_) => Acp::Boundary(Default::default()),
+        Acp::Unrecognized(_) => Acp::Unrecognized(Default::default()),
     }
 }
 
@@ -427,6 +491,9 @@ fn api_error(error: &wire::ApiError) -> ItemClass {
 pub enum OpenAsk {
     Claude(Ask),
     Codex(CodexAsk),
+    /// Any ACP agent's: a permission with the options it offered, a form or
+    /// a link.
+    Acp(wire::AcpAsk),
 }
 
 impl OpenAsk {
@@ -434,6 +501,7 @@ impl OpenAsk {
         match self {
             OpenAsk::Claude(ask) => &ask.key,
             OpenAsk::Codex(ask) => &ask.key,
+            OpenAsk::Acp(ask) => &ask.key,
         }
     }
 
@@ -443,6 +511,7 @@ impl OpenAsk {
         match self {
             OpenAsk::Claude(ask) => &ask.item_key,
             OpenAsk::Codex(ask) => &ask.item_key,
+            OpenAsk::Acp(ask) => &ask.item_key,
         }
     }
 }
@@ -516,6 +585,9 @@ pub enum Usage {
     Unknown,
     Claude(wire::ClaudeUsage),
     Codex(wire::CodexUsage),
+    /// What an ACP agent says its session has used: tokens and cost, never
+    /// a limit.
+    Acp(wire::AcpUsage),
 }
 
 impl Usage {
@@ -525,6 +597,7 @@ impl Usage {
             Usage::Unknown => UsageState::Unspecified,
             Usage::Claude(usage) => usage.state(),
             Usage::Codex(usage) => usage.state(),
+            Usage::Acp(_) => UsageState::Unspecified,
         }
     }
 }
@@ -586,12 +659,12 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.sign_in = snapshot.sign_in.unwrap_or_default();
             state.background = snapshot.background_jobs.unwrap_or_default();
         }
-        // What every kind shares; this build's views do not yet draw an
-        // ACP agent's asks or usage, which read as none known.
         Kind::Acp => {
             let Ok(snapshot) = wire::AcpSnapshot::decode(body) else {
                 return state;
             };
+            state.asks = snapshot.asks.into_iter().map(OpenAsk::Acp).collect();
+            state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Acp);
             state.tasks = snapshot.plan.unwrap_or_default();
             state.context = snapshot.context.unwrap_or_default();
             state.model = snapshot.model;

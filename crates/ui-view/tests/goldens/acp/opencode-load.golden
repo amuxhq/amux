@@ -1,0 +1,69 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 9 recorded 8: input p1-2
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 15 recorded 14: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 27 recorded 9: input p2-1
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 32 recorded 14: fact Rpc "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 prompt:70312d32 Prompt { text: [Text("Remember the word kiwi. Reply with exactly the word: ok")], steered: false }
+     3 message:1 Prose { text: [Text("ok")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(1980), failed: false }
+     5 boundary:2 Hidden collapsed
+     6 boundary:3 Hidden collapsed
+     7 prompt:70322d31 Prompt { text: [Text("Which word did I ask you to remember? Reply with that word only.")], steered: false }
+     8 message:2 Prose { text: [Text("kiwi")], streaming: false, working_note: false }
+     9 turn:2 TurnEnd { duration_ms: Some(1630), failed: false }
+    10 boundary:4 Hidden collapsed
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 12923, window_tokens: Some(200000), percent: Some(6), near_full: false }) sign-in None
+== settings
+  model  opencode/beam-free "OpenCode/Beam Free" efforts=[low,high,max,default]
+  model  opencode/big-pickle "OpenCode/Big Pickle" efforts=[low,high,max,default]
+  model* opencode/deepseek-v4.1-flash-free "OpenCode/DeepSeek V4.1 Flash Free" efforts=[low,high,max,default]
+  model  opencode/flint-40b-free "OpenCode/Flint 40B Free" efforts=[low,high,max,default]
+  model  opencode/hy4-flash-free "OpenCode/Hy4 flash Free" efforts=[low,high,max,default]
+  model  opencode/iceman-free "OpenCode/Iceman Free" efforts=[low,high,max,default]
+  model  opencode/longcat-2.5-free "OpenCode/LongCat 2.5 Free" efforts=[low,high,max,default]
+  model  opencode/mimo-v2.6-flash-free "OpenCode/MiMo-V2.6-Flash Free" efforts=[low,high,max,default]
+  model  opencode/nemotron-3.5-lightning-free "OpenCode/Nemotron 3.5 Lightning Free" efforts=[low,high,max,default]
+  model  opencode/nemotron-3.5-super-vl-free "OpenCode/Nemotron 3.5 Super VL Free" efforts=[low,high,max,default]
+  model  opencode/tidepool-alpha-free "OpenCode/Tidepool Alpha Free" efforts=[low,high,max,default]
+  effort* low
+  effort  high
+  effort  max
+  effort  default
+  mode* "build" "build"
+  mode  "plan" "plan"
+  changes: model Pick · effort Pick · permission NotOffered · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
+  command /amux-reports source="" hint="" "Look at bug reports people and amux's own checks have sent to the account service. Use when asked to look at recent or new reports, what has been reported, or to investigate a sent report by id."
+  command /autopilot source="" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /built-in-browser source="" hint="" "Read this skill before the first step that uses the built-in browser, the browser pane inside the Claude desktop app (also called the in-app browser, the browser pane, Claude's browser, or \"your own browser\"), whose tools are named mcp__Claude_Browser__* when the session runs in the desktop app and mcp__remote-devices__Claude_Browser__* when a cloud session is linked to the person's computer; b…
+  command /chrome-browser source="" hint="" "Read this skill before the first step that uses Claude in Chrome, the browser extension whose tools are named mcp__claude-in-chrome__* (also called Chrome, the browser extension, or the external browser) and which acts in the person's real Chrome with their own sign-ins; before those tools are turned on there may be a single enable__mcp__claude-in-chrome tool instead. It covers loading the tools …
+  command /computer-use source="" hint="" "Read this skill before the first step of any request to do something in an app on the person's own computer (Notes, Finder, System Settings, any desktop app), to look at their screen, or for \"computer use\". Computer use (desktop control) lets Claude take screenshots of the person's desktop and control it with clicks, typing and scrolling through the Claude desktop app; its tools are named mcp__…
+  command /customize-opencode source="" hint="" "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
+  command /deep-research source="" hint="" "Use this skill when the user's prompt requires (1) researching a topic across multiple sources, comparing options or alternatives, analyzing trends or history, understanding markets or industries, or reviewing literature or studies and (2) synthesizing that research into a comprehensive, narrative report. If you're planning to search the web or internal knowledge bases, consider using this skill.…
+  command /delegate source="" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /docs source="" hint="" "docs (editable docs people share and comment on; the default for any document, named as a doc or not: a document, report, proposal, resume, cover letter, letter, contract, policy, form, template, worksheet, essay, handbook, guide, how-to, cheat sheet, SOP or other writing to keep, share, collaborate on, send, submit, print or sign; a doc exports to Word, PDF, Markdown or Google Docs, so needing a…
+  command /docx source="" hint="" "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx) or Word templates (.dotx). Triggers include: any mention of Microsoft Word Documents, such as 'Word doc', 'word document', '.docx', '.dotx', 'microsoft doc'. Also use when extracting or reorganizing content from .docx or .dotx files, inserting or replacing images in documents, find-and-replace in Wo…
+  command /frontend-design source="" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /google-workspace source="" hint="" "Read this before the first Google Drive, Docs, Sheets or Slides connector call whenever the task creates or changes a Google file. Use this skill whenever the user wants to create or change a Google Doc, Sheet or Slides file in their Google Drive. Triggers include: a request that names Google Docs, Sheets, Slides or Drive and asks to make, edit, format, copy or rename a file; a docs.google.com li…
+  command /handoff source="" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /import-memory source="" hint="" "Import a memory export from another AI assistant into Claude's memory — conversationally, additively, and with the content treated as data."
+  command /init source="" hint="" "guided AGENTS.md setup"
+  command /intake source="" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /morning source="" hint="" "Render the user's morning brief as a styled HTML artifact, or set it up as a recurring weekday task. Use only when the user explicitly asks to run, see, or set up their morning brief, or if they invoke /morning by name. A question about their day, schedule, or calendar is not by itself a request for the brief; answer it directly instead."
+  command /pdf source="" hint="" "Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file o…
+  command /pptx source="" hint="" "Use this skill any time a .pptx or .potx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations as PowerPoint (.pptx) files; reading, parsing, or extracting text from any .pptx or .potx file (even if the extracted content will be used elsewhere, like in an email, summary, or creating a different type of slide deck); editing, mod…
+  command /review source="" hint="" "review changes [commit|branch|pr], defaults to uncommitted"
+  command /skill-creator source="" hint="" "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy."
+  command /xlsx source="" hint="" "Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .xltx, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new spreadsheet from scratch or from other data sources; or convert between tabular file formats. Trigger …
+  controls: model=Some("OpenCode/DeepSeek V4.1 Flash Free") effort=Some("low") permission=None mode=Some("build")

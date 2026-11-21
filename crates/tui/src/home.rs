@@ -25,7 +25,7 @@ use ui_view::{
     ActivityLine, ExitCause, FleetRow, FleetSection, FleetView, Offline, Reach, SecondLine,
     SectionKind, SessionLine,
 };
-use wire::{Attachment, Kind, Lifecycle, Said, Wants, attachment};
+use wire::{Attachment, Lifecycle, Said, Wants, attachment};
 
 use crate::chat::composer::editor_lines;
 use crate::clipboard::{Clip, ClipboardContent};
@@ -295,8 +295,7 @@ enum Item {
 /// Short of room, the folder gives way first, cut from the left down to
 /// its last name, then the host, then the agent; the name and the age
 /// beside them always stay.
-fn where_it_runs(kind: Kind, cwd: &str, elsewhere: Option<&str>, room: usize) -> String {
-    let who = ui_view::kind_name(kind);
+fn where_it_runs(who: &str, cwd: &str, elsewhere: Option<&str>, room: usize) -> String {
     let folder = text::tilde(cwd.trim_end_matches('/'));
     let folder = if folder.is_empty() {
         cwd.to_owned()
@@ -781,6 +780,20 @@ impl Home {
     }
 
     pub fn key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
+        // The new agent's setup names a provider its host offers before a
+        // key acts on it and as soon as a key opens it, so what the host
+        // offers next is taken for that provider.
+        if let Some(setup) = self.open_setup() {
+            setup.settle(fleet);
+        }
+        let effects = self.handle_key(fleet, key);
+        if let Some(setup) = self.open_setup() {
+            setup.settle(fleet);
+        }
+        effects
+    }
+
+    fn handle_key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
         if self.draft.open {
             return self.draft_key(fleet, key);
         }
@@ -1292,7 +1305,9 @@ impl Home {
         let mut section_folded = false;
         // Where the new agent's composer box starts, for its flyover.
         let mut box_top = None;
-        self.open_setup();
+        if let Some(setup) = self.open_setup() {
+            setup.settle(fleet);
+        }
         // An agent used in its own terminal starts from a modal over home;
         // one chatted with in amux, from its own composer.
         let modal = self.draft.open
@@ -2485,15 +2500,6 @@ fn mark(row: &FleetRow, quiet: bool, theme: Theme) -> (&'static str, Style) {
     }
 }
 
-/// The provider a sign-in belongs to.
-fn provider_word(kind: Kind) -> &'static str {
-    match kind {
-        Kind::ClaudeSdk | Kind::ClaudePty => "Claude",
-        Kind::Codex => "Codex",
-        Kind::Acp | Kind::Unspecified => "the provider",
-    }
-}
-
 /// What an ask asks, in a line: the command, the file, the question.
 fn ask_words(wants: &Wants, more: u32) -> String {
     let words = match wants {
@@ -2533,10 +2539,10 @@ fn ask_words(wants: &Wants, more: u32) -> String {
 }
 
 /// What stops an agent, or what it asks, as its row says it.
-fn said_words(said: &Said, kind: Kind, now_ms: i64) -> String {
+fn said_words(said: &Said, provider: &str, now_ms: i64) -> String {
     match said {
         Said::Ask { wants, more, .. } => ask_words(wants, *more),
-        Said::SignedOut => format!("signed out of {}", provider_word(kind)),
+        Said::SignedOut => format!("signed out of {provider}"),
         Said::UsageLimit { resets_at_ms } => {
             let mut words = "usage limit reached".to_owned();
             if let Some(at) = resets_at_ms.filter(|at| *at > now_ms) {
@@ -2613,10 +2619,14 @@ fn second_words(
     }
     Some(match line {
         // What it asks is the most important line on home.
-        SecondLine::Said(said @ Said::Ask { .. }) => {
-            (said_words(said, row.card.kind, now_ms), theme.text())
-        }
-        SecondLine::Said(said) => (said_words(said, row.card.kind, now_ms), theme.warning()),
+        SecondLine::Said(said @ Said::Ask { .. }) => (
+            said_words(said, &row.card.provider_name, now_ms),
+            theme.text(),
+        ),
+        SecondLine::Said(said) => (
+            said_words(said, &row.card.provider_name, now_ms),
+            theme.warning(),
+        ),
         SecondLine::Step(step) => (step_words(step, theme), theme.muted()),
         SecondLine::LastSaid(said) => (said.clone(), theme.muted()),
         // The Settled heading already says what a settled agent is.
@@ -2737,14 +2747,15 @@ fn agent_lines(
         pad_to(&mut first, used);
         let meta = if card.native {
             // It has no folder: it works in its parent's.
-            let who = if card.kind == Kind::Codex {
-                "Codex"
-            } else {
-                "Claude"
-            };
+            let who = &card.provider_name;
             text::ellipsize(&format!("{who} subagent"), right_at - used - 1)
         } else {
-            where_it_runs(card.kind, &card.cwd, elsewhere, right_at - used - 1)
+            where_it_runs(
+                &card.provider_name,
+                &card.cwd,
+                elsewhere,
+                right_at - used - 1,
+            )
         };
         first.spans.push(Span::styled(meta, theme.faint()));
     }

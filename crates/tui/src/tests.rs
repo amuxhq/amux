@@ -21,6 +21,7 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod acp;
 mod commands;
 mod narrow;
 mod onboarding;
@@ -1007,7 +1008,7 @@ fn a_pasted_file_is_an_image_by_its_bytes() {
     let mut pasted = |name: &str, bytes: &[u8]| {
         let path = dir.path().join(name);
         std::fs::write(&path, bytes).unwrap();
-        match view.paste(ClipboardContent::Path(path)).unwrap() {
+        match view.paste(&state, ClipboardContent::Path(path)).unwrap() {
             Some(ChatEffect::Attach { mime, .. }) => mime,
             other => panic!("{other:?}"),
         }
@@ -1028,7 +1029,7 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
     std::fs::write(&path, b"\x89PNG\r\n\x1a\n").unwrap();
-    let effect = view.paste(ClipboardContent::Path(path)).unwrap();
+    let effect = view.paste(&state, ClipboardContent::Path(path)).unwrap();
     assert_eq!(
         effect,
         Some(ChatEffect::Attach {
@@ -1346,19 +1347,21 @@ enum Reads {
     Candidate,
 }
 
+pub(crate) use crate::sessions::{offered, offered_providers};
+
 fn host(id: &[u8], name: &str, reads: Reads) -> wire::inventory_event::Of {
     use wire::trusted::Reach;
+    let trusted = |reach| wire::HostEntry {
+        providers: offered_providers(),
+        ..wire::HostEntry::trusted_host(id, name, reach)
+    };
     wire::inventory_event::Of::Host(match reads {
         Reads::Candidate => {
             wire::HostEntry::candidate_host(id, name, vec!["192.168.1.9:4000".into()])
         }
-        Reads::Online => {
-            wire::HostEntry::trusted_host(id, name, Reach::Online(wire::RouteKind::Direct as i32))
-        }
-        Reads::Away => wire::HostEntry::trusted_host(id, name, Reach::Away(wire::Empty {})),
-        Reads::Offline => {
-            wire::HostEntry::trusted_host(id, name, Reach::Offline(wire::Offline::default()))
-        }
+        Reads::Online => trusted(Reach::Online(wire::RouteKind::Direct as i32)),
+        Reads::Away => trusted(Reach::Away(wire::Empty {})),
+        Reads::Offline => trusted(Reach::Offline(wire::Offline::default())),
     })
 }
 
@@ -1511,7 +1514,8 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         kind: kind as i32,
         ..Default::default()
     };
-    let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(agent, &config);
+    let fleet = home_fleet();
+    let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(&fleet, agent, &config);
     assert_eq!(refusal(&agent(b"a", Kind::ClaudePty)), None);
     assert_eq!(refusal(&agent(b"a", Kind::Codex)), None);
     assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("no terminal")));
@@ -1521,7 +1525,7 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     for kind in [Kind::ClaudePty, Kind::Codex, Kind::ClaudeSdk] {
         assert_eq!(
             refusal(&agent(b"b", kind)),
-            Some("its terminal is on another computer"),
+            Some("its terminal is on another computer".to_owned()),
         );
     }
 }
@@ -2295,6 +2299,7 @@ fn a_paste_into_a_secret_answer_shows_as_bullets() {
         question_note: true,
         question_skip: true,
         question_reply: true,
+        reply_instead: false,
         stops_turn: true,
         default_to_no: false,
         state: CardState::Open,
@@ -2792,7 +2797,7 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    assert_eq!(setup.kind(), Kind::ClaudePty);
+    assert_eq!(setup.host_kind, Kind::ClaudePty);
     assert!(matches!(
         setup.request(b"id".to_vec(), None).agent,
         Some(wire::create_agent_request::Agent::ClaudePty(_))
@@ -2826,7 +2831,7 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     }
     let effects = home.key(&fleet, KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::Start { setup, text, open: false, .. }] if text == "fix it" && setup.kind() == Kind::ClaudeSdk),
+        matches!(effects.as_slice(), [FleetEffect::Start { setup, text, open: false, .. }] if text == "fix it" && setup.host_kind == Kind::ClaudeSdk),
         "{effects:?}"
     );
     // While it starts, keys do not edit the draft.
@@ -2883,7 +2888,7 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
     });
     home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup().unwrap();
-    setup.pick(crate::setup::Item::Kind, "1");
+    setup.pick(crate::setup::Item::Kind, "codex");
     setup.offer(b"a", "codex", &[2; 32], &codex_offer());
     setup.pick(crate::setup::Item::Permission, "read-only");
     let edge_of = |home: &mut crate::home::Home| {
@@ -3042,7 +3047,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.open_setup().unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "codex");
     // Before the host says, a model can only be named.
     assert!(home.open_setup().unwrap().takes_typed(Item::Model));
     assert!(choice_words(&mut home, &fleet, Item::Effort).is_empty());
@@ -3112,7 +3117,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
     assert!(request.remember_model && !request.remember_effort);
     // Another agent is another provider's catalogue, asked afresh.
-    home.open_setup().unwrap().pick(Item::Kind, "0");
+    home.open_setup().unwrap().pick(Item::Kind, "claude");
     assert!(home.open_setup().unwrap().offered.is_none());
 }
 
@@ -3124,7 +3129,7 @@ fn a_siblings_copied_settings_are_not_remembered() {
     let mut setup = Setup::defaults(settings::ChatInSetting::Amux, "~/work", b"a");
     setup.model = Some("opus".into());
     setup.effort = Some("high".into());
-    let mut setup = setup.sibling(Kind::ClaudeSdk, settings::ChatInSetting::Amux);
+    let mut setup = setup.sibling("claude", settings::ChatInSetting::Amux);
     let request = setup.request(b"id".to_vec(), None);
     assert!(!request.remember_model && !request.remember_effort);
     setup.pick(Item::Effort, "low");
@@ -3156,7 +3161,8 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     assert!(screen.contains("shift+tab permission"), "{screen}");
 }
 
-/// A provider its host says is signed out is named so where it is chosen.
+/// A provider its host says is signed out is named so where it is chosen,
+/// with its host's words for signing in.
 #[test]
 fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     use crate::setup::Item;
@@ -3164,17 +3170,13 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     let mut studio = host(b"a", "studio", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers = vec![
+            offered("claude", "Claude", Kind::ClaudeSdk),
             wire::ProviderOnHost {
-                provider_id: "claude".to_owned(),
-                catalogue: Some(vec![1; 32]),
-                signed_in: true,
-                ..Default::default()
-            },
-            wire::ProviderOnHost {
-                provider_id: "codex".to_owned(),
-                catalogue: Some(vec![2; 32]),
                 signed_in: false,
-                ..Default::default()
+                ..crate::sessions::hinted(
+                    offered("codex", "Codex", Kind::Codex),
+                    "Run codex login.",
+                )
             },
         ];
     }
@@ -3184,9 +3186,9 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     home_screen(&mut home, &fleet, theme());
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Kind),
-        ["Claude ✓", "Codex · not signed in"]
+        ["Claude ✓", "Codex · not signed in · Run codex login."]
     );
-    home.open_setup().unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "codex");
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("Codex (not signed in) · …"), "{screen}");
 
@@ -4178,6 +4180,7 @@ fn two_questions() -> ui_view::AskCard {
         question_note: true,
         question_skip: true,
         question_reply: true,
+        reply_instead: false,
         stops_turn: true,
         default_to_no: false,
         state: CardState::Open,

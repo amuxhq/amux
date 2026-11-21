@@ -110,8 +110,8 @@ stopped, or the person settled) is not listed or counted under its family: it is
 parent can start it again.
 
 Each row is the agent's mark (`○` idle, starting, exited or on a host that is away; `●` working; `●` in the
-attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is
-(`Claude`, `Claude (terminal)` or `Codex`), its folder from `~` and its host when that is not this machine, and at
+attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is,
+by the name its host gives it (`Claude`, `Codex`, `OpenCode`), its folder from `~` and its host when that is not this machine, and at
 the right how long it has been in its state. Short of room, the folder is cut from the left down to its last name,
 then the host goes, then the agent. The second line says what the agent's state calls for: what it asks (`wants to
 run cargo test -p auth`), the step it is running, what it last said, or why it cannot go on (`signed out of
@@ -144,15 +144,18 @@ chats with their agents, the installation's `ui.chat_in`:
   `+ Name │ Claude · Opus (high) · ask │ ~/source/amux │ laptop`, that is the name (named automatically
   unless given one), the agent with its model, effort and permission (and Codex's mode when it is not the default),
   the folder and the host. `ctrl+s` then a letter opens one in a small panel rising from its place on the edge: `n`
-  name, `m` model, `e` effort, `p` permission, `d` folder, `h` host, `a` agent (Claude or Codex); clicking an item
+  name, `m` model, `e` effort, `p` permission, `d` folder, `h` host, `a` agent (every agent the host offers, by name: Claude, Codex and the ACP agents set up there); clicking an item
   does the same. The models, efforts, permissions and modes are what the chosen host says that agent offers there,
   asked of the host before any agent runs on it; until it answers a model can be typed by name. Another model starts
-  at its own default effort, and a permission it does not take gives way to the normal one. A provider the host
-  says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists the
-  host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
-  or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
-- **In each agent's own interface** (`native`): a small window over home with the name, the agent (Claude or
-  Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,
+  at its own default effort, and a permission it does not take gives way to the normal one. An agent the host
+  says is signed out reads `Codex (not signed in)` on the edge, and in the agent panel with its host's words for
+  signing in (`not signed in · Run codex login.`). Long lists filter as you type; the folder's panel lists the
+  host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's or an ACP agent's mode,
+  or Claude's permissions that still ask, as in a chat; an ACP agent starts on its own mode until one is picked.
+  Each agent is created as the kind its host runs it as: Claude headless or in its terminal as the host says, Codex
+  on its app server, an ACP agent over ACP.
+- **In each agent's own interface** (`native`): a small window over home with the name, the agent (every agent
+  the host offers, marked `not signed in` where the host says so; one with no terminal of its own opens in its chat), the folder and the host, and no prompt or model,
   which the agent's own terminal sets. Enter moves from row to row and starts the agent from the last; ←/→ change
   a choice. Started on this machine, the terminal is
   handed straight to the new agent (see [raw attach](#raw-attach)); started on another machine its chat opens
@@ -260,7 +263,8 @@ parent's.
 
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
-its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
+its first prompt (an empty Enter just resumes). An exited ACP agent that cannot reopen its session has no text box:
+its edge reads `Ended · this agent cannot be resumed`. A prompt to an idle agent shows at once in the feed, and one to a
 busy agent at once in the queue. While the chat is not current (the host away, the chat catching up, this
 machine's daemon reconnecting) Enter sends nothing: the words stay in the composer, whose top edge says why, and
 nothing sends them later; once the chat is current, Enter sends them. A refused Enter, and a refusal that puts
@@ -333,7 +337,7 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   (`No`). Where the agent takes a reason with a refusal, Claude's, Tab on `No` adds a note that goes back with it;
   Codex's refusal carries no reason, so its `No` offers no note. A long diff or command is cut,
   with `[Full Diff]` or `[Show All]` (or `f`) opening the whole of it inside the box.
-- **A plan** (`● Plan ready`): `Yes, start building`, `Yes, and switch to <permission>` where the agent
+- **A plan** (`● Plan ready`): `Yes, implement this plan`, `Yes, and switch to <permission>` where the agent
   offers it (Claude's moves to auto mode where Claude offers it, to accept edits otherwise; Codex offers no switch), and `No, keep planning`, which takes a note.
 - **Questions**: one at a time; several get a row of tabs (`‹ Layout   Entry   Review ›`), answered ones ticked,
   and end on a review that lists each answer and sends them all. Options read `label · recommended ·
@@ -344,19 +348,23 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   neither.
 - **A tool server's form** (`● linear needs details`): its message, then each field as a step in the server's
   order (a choice, Yes / No, boxes, or a typed value), starting from the server's defaults with Yes / No on No,
-  required ones marked, and a review with Submit; `Decline` is the way out. A value the form cannot take says
+  required ones marked, and a review with Submit; `Decline` is the way out. An ACP agent's own form reads
+  `● OpenCode needs details`, and Tab on its `Decline` opens words to send instead. A value the form cannot take says
   why beside it (`needs a whole number`, `needs at least 1`), and the review names the first field that keeps the
   form back.
 - **A tool server's link** (`● grafana sent a link`): the server's own message and the address, `1. Open the
-  link` (the box stays), `2. Done`, and `Decline`. The provider says nothing of what a link is for, so the
+  link` (the box stays), `2. Done`, and `Decline` (Tab there, for an ACP agent, opens words to send instead). The provider says nothing of what a link is for, so the
   record after it (`Opened grafana's link`) carries the message's first line. A link to `localhost` adds that
   the page is on the agent's machine, to open in a browser there.
 - **Wider access** (Codex): what it wants and why, `Allow for this turn`, `Allow for this session`, `No`.
+- **An ACP agent's permission**: the command, edit or tool, then exactly the choices the agent sent, in its
+  order: `Yes`, any it names itself (`Always allow`), and `No`, where Tab adds what to do instead.
 - **What this client cannot answer** (an ask from an agent this build cannot read): the reason, and `Open Claude's
   terminal` where that terminal can be attached here.
 
 When the agent's account needs signing in again, a notice above the composer says so with the provider's message,
-where to do it (`Run claude and sign in with /login on desk`) and `Signed in elsewhere? Send a message to try
+where to do it in its host's words (`Run claude and sign in with /login on desk`; an agent's backticked
+commands drawn as code) and `Signed in elsewhere? Send a message to try
 again.` It is not an ask and takes nothing over: nothing here can sign in, so the composer keeps sending, a send
 is the retry, and the provider's next good answer clears the notice ([INTERPRETERS.md](INTERPRETERS.md) says
 when a running provider sees a credential signed in elsewhere).

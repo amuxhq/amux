@@ -427,8 +427,9 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
-            // A provider subagent takes no messages at all.
-            Composer::Native { .. } => vec![],
+            // A provider subagent takes no messages at all, and an agent
+            // that ended for good takes none again: the draft stays.
+            Composer::Native { .. } | Composer::Ended => vec![],
             // Not current, nothing goes: the draft stays in the composer,
             // whose top edge says why, until it can.
             Composer::Waiting(_) => {

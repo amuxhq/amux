@@ -47,6 +47,12 @@ pub struct SignInView {
     pub state: SignInState,
     pub account: String,
     pub message: String,
+    /// Who needs signing in to: the provider's name, as its host gives it.
+    pub provider_name: String,
+    /// What a person does to sign in, in the provider's words as its host
+    /// gives them ("Run `opencode auth login` in the terminal"); empty when
+    /// nothing is known. Code is marked with backticks.
+    pub hint: String,
 }
 
 /// The agent's account, only when it needs signing in: a notice above the
@@ -60,6 +66,13 @@ pub fn sign_in(state: &SessionState) -> Option<SignInView> {
             state: agent.sign_in.state(),
             account: agent.sign_in.account.clone(),
             message: agent.sign_in.message.clone(),
+            provider_name: state.provider_name(),
+            hint: state
+                .host()
+                .and_then(|host| host.provider(state.agent().provider_id()))
+                .and_then(|offered| offered.descriptor.as_ref())
+                .map(|descriptor| descriptor.sign_in_hint.clone())
+                .unwrap_or_default(),
         }),
         SignInState::Unspecified | SignInState::SignedIn => None,
     }
@@ -109,6 +122,7 @@ pub struct QueuedRow {
 
 pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
     let live = state.can_send();
+    let sends_now = state.capabilities().sends_now;
     state
         .queue()
         .into_iter()
@@ -130,7 +144,9 @@ pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
                 from_agent,
                 steered: row.steered,
                 can_withdraw: live && !row.steered,
-                can_send_now: live && !row.steered,
+                // Only an agent known to take a prompt into its running
+                // turn is offered it; the rest send it when the turn ends.
+                can_send_now: live && !row.steered && sends_now,
             }
         })
         .collect()
@@ -246,7 +262,45 @@ pub fn refused_prompts(state: &SessionState) -> Vec<RefusedPrompt> {
 /// agent's (terminal Claude resumed another in its own screen): the agent
 /// takes no prompt until it is back, and a switch back takes it back.
 pub fn switched_away(state: &SessionState) -> bool {
-    !matches!(state.composer(), Composer::Resume) && state.agent_state().switched_away
+    !matches!(state.composer(), Composer::Resume | Composer::Ended)
+        && state.agent_state().switched_away
+}
+
+/// What an agent does not take in a prompt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum Untaken {
+    Images,
+    /// Files and the comparisons a review attaches, which go as files.
+    Files,
+}
+
+/// What the agent would not take of a file with this mime type, attached to
+/// a prompt: an image where it takes no images, any other file where it
+/// takes no files. None when it takes it. A client asks before storing the
+/// file, so a person learns at once rather than when the prompt is refused.
+pub fn untaken_file(state: &SessionState, mime: &str) -> Option<Untaken> {
+    let can = state.capabilities();
+    if mime.starts_with("image/") {
+        (!can.images).then_some(Untaken::Images)
+    } else {
+        (!can.files).then_some(Untaken::Files)
+    }
+}
+
+/// The first of a prompt's attachments the agent would not take. Words
+/// pasted as an attachment and a web page's comments go as text, which
+/// every agent takes.
+pub fn untaken(state: &SessionState, attachments: &[wire::Attachment]) -> Option<Untaken> {
+    use wire::attachment::Of;
+    let can = state.capabilities();
+    attachments
+        .iter()
+        .find_map(|attachment| match &attachment.of {
+            Some(Of::Image(_)) if !can.images => Some(Untaken::Images),
+            Some(Of::File(_) | Of::Review(_)) if !can.files => Some(Untaken::Files),
+            _ => None,
+        })
 }
 
 /// Text pasted into a draft at least this many lines long joins it as one

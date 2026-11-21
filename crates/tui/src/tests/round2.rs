@@ -916,7 +916,7 @@ fn a_prompt_sent_while_its_file_attaches_waits_for_the_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("big2.bin");
     std::fs::write(&path, b"bytes").unwrap();
-    let effect = view.paste(ClipboardContent::Path(path)).unwrap();
+    let effect = view.paste(&state, ClipboardContent::Path(path)).unwrap();
     assert!(
         matches!(effect, Some(ChatEffect::Attach { .. })),
         "the file is attaching: {effect:?}"
@@ -1300,7 +1300,7 @@ fn a_file_over_the_attachment_limit_is_refused_naming_the_limit() {
         .unwrap();
     drop(file);
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    let result = view.paste(ClipboardContent::Path(path));
+    let result = view.paste(&chat(replies(1, 3)), ClipboardContent::Path(path));
     let words = match &result {
         Err(words) | Ok(Some(ChatEffect::Notice(words))) => words.clone(),
         _ => String::new(),
@@ -1366,9 +1366,9 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
             lifecycle: wire::Lifecycle::Exited as i32,
             ..Default::default()
         };
-        let refusal = crate::app::terminal_refusal(&stopped, &config);
+        let refusal = crate::app::terminal_refusal(&ui_state::FleetState::new(), &stopped, &config);
         assert!(
-            refusal.is_some_and(|why| why.contains("stopped")),
+            refusal.as_ref().is_some_and(|why| why.contains("stopped")),
             "attaching to the stopped {kind:?} agent is not refused as stopped: {refusal:?}"
         );
     }

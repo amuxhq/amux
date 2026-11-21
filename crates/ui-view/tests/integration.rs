@@ -3,6 +3,7 @@
 
 mod support;
 
+mod acp;
 mod answers;
 mod goldens;
 mod runs;

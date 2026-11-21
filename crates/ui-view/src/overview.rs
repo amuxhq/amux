@@ -285,7 +285,7 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
             windows: usage_windows(&agent.usage),
             credits: match &agent.usage {
                 Usage::Codex(usage) => usage.credits.clone(),
-                Usage::Claude(_) | Usage::Unknown => None,
+                Usage::Claude(_) | Usage::Acp(_) | Usage::Unknown => None,
             },
         }),
         UsageState::Unspecified | UsageState::Ok => None,
@@ -357,7 +357,8 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
         }
     };
     match usage {
-        Usage::Unknown => Vec::new(),
+        // An ACP agent says what its session used, never a limit's window.
+        Usage::Unknown | Usage::Acp(_) => Vec::new(),
         Usage::Claude(usage) => usage
             .windows
             .iter()

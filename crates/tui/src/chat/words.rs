@@ -21,12 +21,7 @@ pub(super) fn refused_command_words(
     offered: &[String],
     hint: Option<&str>,
 ) -> String {
-    let agent = match state.kind() {
-        wire::Kind::Codex => "Codex",
-        wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => "Claude",
-        // Which ACP agent it is, the session does not say here.
-        wire::Kind::Acp | wire::Kind::Unspecified => "This agent",
-    };
+    let agent = state.provider_name();
     if let Some(hint) = hint {
         return format!("{agent} takes a skill as a mention: type {hint}");
     }
@@ -171,19 +166,11 @@ pub(super) fn ends_with_exit(state: &SessionState) -> bool {
     })
 }
 
-/// Who runs a provider subagent, by its kind.
-pub(super) fn provider_name(kind: wire::Kind) -> &'static str {
-    match kind {
-        wire::Kind::Codex => "Codex",
-        _ => "Claude",
-    }
-}
-
 /// A provider subagent's composer: no field, since it takes no messages,
 /// only who runs it, and how its stop stands once one went (stopping, or
 /// the provider's refusal).
 pub(super) fn native_box(
-    kind: wire::Kind,
+    who: &str,
     stop: &JobStop,
     controls: &ui_view::ControlsSummary,
     width: usize,
@@ -191,10 +178,7 @@ pub(super) fn native_box(
 ) -> Vec<Line<'static>> {
     const MARGIN: usize = 2;
     let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
-    let said = format!(
-        "{} runs this subagent · it takes no messages",
-        provider_name(kind)
-    );
+    let said = format!("{who} runs this subagent · it takes no messages");
     let mut body = vec![Line::from(Span::styled(
         text::ellipsize(&said, inner),
         theme.muted(),
@@ -229,7 +213,7 @@ pub(super) fn native_hint(stop: &JobStop, leader: char) -> Hint {
 /// `model`, as the component catalogue draws it.
 #[cfg(feature = "fixtures")]
 pub(crate) fn native_composer_lines(
-    kind: wire::Kind,
+    who: &str,
     stop: &JobStop,
     model: &str,
     width: usize,
@@ -239,7 +223,7 @@ pub(crate) fn native_composer_lines(
         model: Some(model.to_owned()),
         ..Default::default()
     };
-    let mut lines = native_box(kind, stop, &edge, width, theme);
+    let mut lines = native_box(who, stop, &edge, width, theme);
     lines.push(Line::default());
     lines.push(hint_line(&native_hint(stop, 'a'), width, theme).0);
     lines
@@ -249,14 +233,13 @@ pub(crate) fn native_composer_lines(
 /// draws it.
 #[cfg(feature = "fixtures")]
 pub(crate) fn sign_in_composer_lines(
-    kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
     name: &str,
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
-    let mut lines = sign_in_notice(kind, host, sign_in, width, theme);
+    let mut lines = sign_in_notice(host, sign_in, width, theme);
     lines.push(Line::default());
     lines.extend(composer_lines(
         &Editor::default(),
@@ -275,7 +258,6 @@ pub(crate) fn sign_in_composer_lines(
 /// again. Nothing here can sign in for you, so there are no choices; the
 /// provider's next good answer takes the notice away.
 pub(super) fn sign_in_notice(
-    kind: wire::Kind,
     host: &str,
     sign_in: &ui_view::SignInView,
     width: usize,
@@ -284,22 +266,8 @@ pub(super) fn sign_in_notice(
     // The notice's words line up with the composer's text below it.
     const INDENT: usize = 4;
     let inner = width.saturating_sub(INDENT + 2).max(1);
-    let (who, steps): (&str, Vec<(&str, bool)>) = match kind {
-        wire::Kind::Codex => (
-            "Codex",
-            vec![("Run ", false), ("codex login", true), (" on ", false)],
-        ),
-        _ => (
-            "Claude",
-            vec![
-                ("Run ", false),
-                ("claude", true),
-                (" and sign in with ", false),
-                ("/login", true),
-                (" on ", false),
-            ],
-        ),
-    };
+    let who = &sign_in.provider_name;
+    let steps = sign_in_steps(who, &sign_in.hint);
     let indented = || Line::from(" ".repeat(INDENT));
     let mut lines = Vec::new();
     let mut head = Line::from(vec![
@@ -345,7 +313,7 @@ pub(super) fn sign_in_notice(
             width,
         );
     }
-    push(&mut how, format!("{host}."), theme.text(), width);
+    push(&mut how, format!(" on {host}."), theme.text(), width);
     lines.push(how);
     let mut retry = indented();
     push(
@@ -356,6 +324,22 @@ pub(super) fn sign_in_notice(
     );
     lines.push(retry);
     lines
+}
+
+/// How to sign in, in the provider's words as its host gives them, said on
+/// the agent's host: its closing stop gives way to where. What the words
+/// mark as code (`opencode auth login`) is drawn as code. Without any,
+/// amux can only say to sign in.
+fn sign_in_steps(who: &str, hint: &str) -> Vec<(String, bool)> {
+    let hint = hint.trim().trim_end_matches('.');
+    if hint.is_empty() {
+        return vec![(format!("Sign in to {who}"), false)];
+    }
+    hint.split('`')
+        .enumerate()
+        .filter(|(_, part)| !part.is_empty())
+        .map(|(at, part)| (part.to_owned(), at % 2 == 1))
+        .collect()
 }
 
 /// Why a host is away when its daemon lists it so: the relay alone sees
@@ -379,9 +363,16 @@ pub(super) fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Op
         Composer::Waiting(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
         Composer::Waiting(Waiting::CatchingUp) => "catching up".to_owned(),
         // Its box says who runs it, in place of a field.
-        Composer::Native { .. } | Composer::Send | Composer::Resume => return None,
+        Composer::Native { .. } | Composer::Send | Composer::Resume | Composer::Ended => {
+            return None;
+        }
     })
 }
+
+/// The composer's top edge once an agent that cannot be resumed has
+/// exited: its program cannot reopen the conversation, so Enter sends
+/// nothing.
+pub(super) const ENDED_WORDS: &str = "Ended · this agent cannot be resumed";
 
 /// The composer's top edge while terminal Claude's own view is on another
 /// conversation: prompts are refused until it is back on this one.
@@ -409,8 +400,10 @@ pub(super) fn edge_title(
     }
     waiting_words(composer, host, reach)
         .map(|words| (words, theme.faint()))
-        .or_else(|| {
-            (*composer == Composer::Resume).then(|| ("Enter resumes".to_owned(), theme.muted()))
+        .or_else(|| match composer {
+            Composer::Resume => Some(("Enter resumes".to_owned(), theme.muted())),
+            Composer::Ended => Some((ENDED_WORDS.to_owned(), theme.muted())),
+            _ => None,
         })
         .or_else(|| limit.map(|words| (words, theme.warning())))
 }
@@ -569,7 +562,7 @@ pub(super) fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, lea
             pairs.extend(shift_tab);
         }
         Composer::Resume => pairs.push(("enter", "resume")),
-        Composer::Native { .. } => {}
+        Composer::Native { .. } | Composer::Ended => {}
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
             return waits("can't send until this computer signs in");
         }

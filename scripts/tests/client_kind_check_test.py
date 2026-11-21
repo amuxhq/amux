@@ -84,7 +84,7 @@ class ClientKindCheckTest(unittest.TestCase):
         self.assertIn("in planted", out)
 
     def test_an_entry_covers_only_its_own_function(self):
-        # kind_name is listed; a new function beside it is not.
+        # Nothing in the fleet view is listed, so a kind named there fails.
         self.plant(FLEET, "let _ = Kind::Codex;")
         code, out = self.check()
         self.assertEqual(code, 1, out)
@@ -101,15 +101,15 @@ class ClientKindCheckTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
 
     def test_an_entry_that_matches_nothing_fails(self):
-        source = self.root / "crates/ui-view/src/rows.rs"
+        source = self.root / "crates/ui-state/src/session/record.rs"
         source.write_text(
-            source.read_text()
-            .replace('"claude" =>', '"claude-code" =>')
-            .replace('"codex" =>', '"codex-cli" =>')
+            source.read_text().replace(
+                "[wire::agents::CLAUDE, wire::agents::CODEX]", "OWN_PROVIDERS"
+            )
         )
         code, out = self.check()
         self.assertEqual(code, 1, out)
-        self.assertIn("stale entry: crates/ui-view/src/rows.rs amux_call", out)
+        self.assertIn("stale entry: crates/ui-state/src/session/record.rs kept_provider", out)
 
 
 if __name__ == "__main__":

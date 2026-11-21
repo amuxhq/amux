@@ -26,7 +26,7 @@
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ● Plan ready                                                                                           │
   │                                                                                                        │
-  │ › 1. Yes, start building                                                                               │
+  │ › 1. Yes, implement this plan                                                                          │
   │   2. Yes, and switch to accept edits                                                                   │
   │   3. No, keep planning  esc · tab to add a note                                                        │
   ╰─────────────────────────────────────────────────────────────────────────────── Fake 1 (medium) · plan ─╯

@@ -843,9 +843,12 @@ impl Session {
         self.inner.send(input).await
     }
 
-    /// A prompt in this agent's kind.
+    /// A prompt in this agent's kind. One carrying an attachment the agent
+    /// does not take (an image to an agent that takes none) is refused at
+    /// once, never sent.
     pub async fn send_prompt(&self, text: &str, attachments: Vec<wire::Attachment>) -> Sent {
-        match inputs::prompt(self.kind(), text, attachments) {
+        let taken = ui_view::untaken(&self.inner.model().state, &attachments).is_none();
+        match inputs::prompt(self.kind(), text, attachments).filter(|_| taken) {
             Some(input) => self.send(input).await,
             None => Sent {
                 id: Vec::new(),
@@ -925,7 +928,8 @@ impl Session {
     /// Steers a queued prompt into the running turn; the entry reads
     /// steered until its reflection lands.
     pub async fn send_now(&self, queued: &[u8]) -> Result<(), InputError> {
-        self.act(inputs::send_now(self.kind(), queued)).await
+        self.act(inputs::send_now(self.kind(), &self.capabilities(), queued))
+            .await
     }
 
     /// Answers an open ask with the input `ui_view::answer_input` made
@@ -940,13 +944,15 @@ impl Session {
 
     /// Stops one background job by its key; the agent keeps running.
     pub async fn stop_job(&self, key: &str) -> Result<(), InputError> {
-        self.act(inputs::stop_job(self.kind(), key)).await
+        self.act(inputs::stop_job(self.kind(), &self.capabilities(), key))
+            .await
     }
 
     /// Takes the agent's own view back to its conversation after it
     /// switched to another (terminal Claude).
     pub async fn switch_back(&self) -> Result<(), InputError> {
-        self.act(inputs::switch_back(self.kind())).await
+        self.act(inputs::switch_back(self.kind(), &self.capabilities()))
+            .await
     }
 
     /// Forgets an input that was not confirmed.
@@ -985,6 +991,10 @@ impl Session {
 
     fn kind(&self) -> wire::Kind {
         self.inner.model().state.kind()
+    }
+
+    fn capabilities(&self) -> wire::AgentCapabilities {
+        self.inner.model().state.capabilities()
     }
 
     /// An attachment's bytes, if fetched. A missing one starts its fetch,

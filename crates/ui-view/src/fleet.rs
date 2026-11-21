@@ -26,6 +26,13 @@ pub struct FleetCard {
     /// The name it is addressed and renamed by.
     pub handle: String,
     pub kind: Kind,
+    /// Its provider's id: "claude", "codex", or an ACP agent's.
+    pub provider: String,
+    /// What people call its provider: the name its host gives it, else its
+    /// id ("Claude", "OpenCode", the name a person gave their own agent).
+    pub provider_name: String,
+    /// Its provider has a terminal of its own the agent can be opened in.
+    pub attachable: bool,
     pub attention: Attention,
     /// How it ended, once it has.
     pub exit_cause: Option<ExitCause>,
@@ -279,6 +286,7 @@ fn step_subject(state: &SessionState, activity: &Activity) -> Option<String> {
 /// The first line of the newest message the agent wrote to the person, as
 /// the words the chat draws it with: its markdown read, not shown.
 fn last_said(state: &SessionState) -> Option<String> {
+    use wire::acp_item::Kind as Acp;
     use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     state
@@ -288,7 +296,9 @@ fn last_said(state: &SessionState) -> Option<String> {
         .filter(|held| {
             matches!(
                 held.body,
-                ItemBody::Claude(Claude::Message(_)) | ItemBody::Codex(Codex::Message(_))
+                ItemBody::Claude(Claude::Message(_))
+                    | ItemBody::Codex(Codex::Message(_))
+                    | ItemBody::Acp(Acp::Message(_))
             )
         })
         .find_map(|held| preview::said_line(&held.item.text, &held.item.attachments))
@@ -382,6 +392,9 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         name: without_direction_controls(ui_state::shown_name(agent)),
         handle: without_direction_controls(&agent.name),
         kind: agent.kind(),
+        provider: agent.provider_id().to_owned(),
+        provider_name: ui_state::provider_name(fleet.host(&agent.host_id), agent),
+        attachable: ui_state::offered_capabilities(fleet.host(&agent.host_id), agent).attachable,
         attention,
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
         branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
@@ -470,25 +483,11 @@ pub fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
         Some(agent.cwd.as_str()),
         host,
         cause.as_deref(),
-        Some(kind_name(agent.kind())),
+        Some(ui_state::provider_name(fleet.host(&agent.host_id), agent).as_str()),
     ]
     .into_iter()
     .flatten()
     .any(|field| field.to_lowercase().contains(needle))
-}
-
-/// The agent as a row names it: Claude chatted with here, Claude in its
-/// own terminal, or Codex.
-pub fn kind_name(kind: Kind) -> &'static str {
-    match kind {
-        Kind::ClaudeSdk => "Claude",
-        Kind::ClaudePty => "Claude (terminal)",
-        Kind::Codex => "Codex",
-        // Which ACP agent it is is its provider id, which rows do not carry
-        // yet.
-        Kind::Acp => "ACP agent",
-        Kind::Unspecified => "",
-    }
 }
 
 /// Home: every family whose head the person pinned or closed in that

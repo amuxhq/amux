@@ -38,6 +38,12 @@ pub struct AskCard {
     /// The person may reply in their own words instead of answering the
     /// questions. Not for the provider's own dialogs, outside any turn.
     pub question_reply: bool,
+    /// The person may reply in their own words instead of answering
+    /// whatever the ask is (an ACP agent's): the turn is cancelled, which
+    /// closes the ask, and the words go as the next prompt. The card's
+    /// refusal takes them as its note, and [`reply_answer`] sends them on
+    /// their own.
+    pub reply_instead: bool,
     /// Stopping interrupts a running turn. Codex proposes a plan as its
     /// turn ends, so with its plan open there is no turn to stop.
     pub stops_turn: bool,
@@ -203,6 +209,14 @@ pub enum ChoiceOutcome {
         mode_name: String,
     },
     SendBack,
+    /// An option the agent offered in its own words, for what it decides
+    /// itself: an ACP agent's "always" options, which it keeps as long as
+    /// it chooses, and an option of a kind this build does not know.
+    /// `refuses` says it turns the call down.
+    Offered {
+        name: String,
+        refuses: bool,
+    },
     Submit,
     Decline,
     OpenLink,
@@ -231,6 +245,9 @@ pub enum Scope {
 pub enum Answer {
     Claude(ClaudeAnswer),
     Codex(CodexAnswer),
+    /// Any ACP agent's. One with nothing in it (a question answer, which no
+    /// ACP ask takes) sends nothing.
+    Acp(wire::AcpAnswer),
 }
 
 /// The head ask, or None when nothing is open or, before CaughtUp, when the
@@ -241,6 +258,7 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
     let (mut body, choices) = match head {
         OpenAsk::Claude(ask) => claude(state, ask, &state.agent_state().permissions),
         OpenAsk::Codex(ask) => codex(state, ask),
+        OpenAsk::Acp(ask) => acp(state, ask),
     };
     if let AskBody::Edit { path, .. } = &mut body {
         *path = within(&state.agent().cwd, path);
@@ -266,6 +284,7 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         question_note: !provider_dialog(head),
         question_skip: !provider_dialog(head),
         question_reply: !provider_dialog(head),
+        reply_instead: matches!(head, OpenAsk::Acp(_)),
         stops_turn: !matches!(
             head,
             OpenAsk::Codex(wire::CodexAsk {
@@ -524,6 +543,17 @@ fn pretty(value: &Value) -> String {
     } else {
         serde_json::to_string_pretty(value).unwrap_or_default()
     }
+}
+
+/// An ACP agent's own form or link names no tool server: the agent asks
+/// it, so it is named as the agent.
+fn asked_by_agent(state: &SessionState, mut body: AskBody) -> AskBody {
+    if let AskBody::Form { server, .. } | AskBody::Link { server, .. } = &mut body
+        && server.is_empty()
+    {
+        *server = state.provider_name();
+    }
+    body
 }
 
 fn form_body(form: &wire::FormAsk) -> AskBody {
@@ -892,6 +922,193 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
     (body, choices)
 }
 
+/// An ACP agent's ask: a permission with exactly the options it offered, in
+/// its order, or a form or link. Its refusal (the one-time one of a
+/// permission, a form's or link's decline) takes the person's words, which
+/// go instead of answering (see [`with_note`]).
+fn acp(state: &SessionState, ask: &wire::AcpAsk) -> (AskBody, Vec<Choice>) {
+    use wire::acp_ask::Body;
+    let answer = |of: wire::acp_answer::Of| {
+        Answer::Acp(wire::AcpAnswer {
+            of: Some(of),
+            ..Default::default()
+        })
+    };
+    let (body, mut choices) = match &ask.body {
+        Some(Body::Permission(permission)) => {
+            use wire::AcpPermissionKind as Kind;
+            let choices = permission
+                .options
+                .iter()
+                .map(|option| {
+                    let kind = Kind::try_from(option.kind).unwrap_or(Kind::Unspecified);
+                    let outcome = match kind {
+                        Kind::AllowOnce => ChoiceOutcome::AllowOnce,
+                        Kind::RejectOnce => ChoiceOutcome::Deny,
+                        Kind::AllowAlways | Kind::Unspecified => ChoiceOutcome::Offered {
+                            name: option.name.clone(),
+                            refuses: false,
+                        },
+                        Kind::RejectAlways => ChoiceOutcome::Offered {
+                            name: option.name.clone(),
+                            refuses: true,
+                        },
+                    };
+                    Choice {
+                        takes_note: kind == Kind::RejectOnce,
+                        ..choice(
+                            outcome,
+                            answer(wire::acp_answer::Of::Option(option.option_id.clone())),
+                        )
+                    }
+                })
+                .collect();
+            (
+                acp_permission_body(state, &ask.item_key, permission),
+                choices,
+            )
+        }
+        Some(Body::Form(form)) => {
+            let action = |action: wire::FormAction| {
+                answer(wire::acp_answer::Of::Form(wire::FormAnswer {
+                    action: action as i32,
+                    content_json: vec![],
+                }))
+            };
+            (
+                asked_by_agent(state, form_body(form)),
+                vec![
+                    choice(ChoiceOutcome::Submit, action(wire::FormAction::Accept)),
+                    Choice {
+                        takes_note: true,
+                        ..choice(ChoiceOutcome::Decline, action(wire::FormAction::Decline))
+                    },
+                ],
+            )
+        }
+        Some(Body::Link(link)) => {
+            let action = |action: wire::FormAction| {
+                answer(wire::acp_answer::Of::Link(wire::LinkAnswer {
+                    action: action as i32,
+                }))
+            };
+            (
+                asked_by_agent(state, link_body(link)),
+                vec![
+                    choice(ChoiceOutcome::OpenLink, action(wire::FormAction::Accept)),
+                    Choice {
+                        takes_note: true,
+                        ..choice(ChoiceOutcome::Decline, action(wire::FormAction::Decline))
+                    },
+                ],
+            )
+        }
+        None => (
+            AskBody::Unanswerable {
+                reason: String::new(),
+            },
+            vec![],
+        ),
+    };
+    // The likely choice is the first that lets the call run, else the first.
+    let primary = choices
+        .iter()
+        .position(|choice| allows(&choice.outcome))
+        .or((!choices.is_empty()).then_some(0));
+    if let Some(primary) = primary {
+        choices[primary].primary = true;
+    }
+    (body, choices)
+}
+
+/// Whether a choice lets the call run.
+fn allows(outcome: &ChoiceOutcome) -> bool {
+    match outcome {
+        ChoiceOutcome::Offered { refuses, .. } => !refuses,
+        ChoiceOutcome::Deny | ChoiceOutcome::DenyAndStop | ChoiceOutcome::Decline => false,
+        _ => true,
+    }
+}
+
+/// What an ACP agent's permission would let run, from the call's own row:
+/// a command it runs, the changes it makes, else the call by its title
+/// with what it was given.
+fn acp_permission_body(
+    state: &SessionState,
+    item_key: &str,
+    permission: &wire::AcpPermission,
+) -> AskBody {
+    use crate::rows::acp::{command_of, diff_lines};
+    let tool = match state.transcript().get(item_key).map(|held| &held.body) {
+        Some(ui_state::ItemBody::Acp(wire::acp_item::Kind::Tool(tool))) => tool.clone(),
+        _ => wire::AcpTool {
+            title: permission.title.clone(),
+            kind: permission.kind,
+            ..Default::default()
+        },
+    };
+    let title = if permission.title.is_empty() {
+        tool.title.clone()
+    } else {
+        permission.title.clone()
+    };
+    let input: Value = serde_json::from_slice(&tool.input_json).unwrap_or(Value::Null);
+    match wire::AcpToolKind::try_from(permission.kind).unwrap_or_default() {
+        wire::AcpToolKind::Execute => {
+            let (command, description) = command_of(&tool, &input);
+            AskBody::Command {
+                command,
+                cwd: String::new(),
+                reason: String::new(),
+                description,
+            }
+        }
+        wire::AcpToolKind::Edit | wire::AcpToolKind::Delete | wire::AcpToolKind::Move
+            if !tool.diffs.is_empty() =>
+        {
+            let cwd = &state.agent().cwd;
+            let several = tool.diffs.len() > 1;
+            let lines: Vec<EditLine> = tool
+                .diffs
+                .iter()
+                .flat_map(|diff| {
+                    let lines = diff_lines(diff.old_text.as_deref(), &diff.new_text);
+                    let header = several.then(|| {
+                        let (added, removed) = counts(&lines);
+                        EditLine::File(crate::rows::FileRow {
+                            path: within(cwd, &diff.path),
+                            change: match diff.old_text {
+                                None => crate::rows::FileChangeView::Created { lines: added },
+                                Some(_) => crate::rows::FileChangeView::Edited,
+                            },
+                            added,
+                            removed,
+                            line: first_change(&lines),
+                        })
+                    });
+                    header.into_iter().chain(lines)
+                })
+                .collect();
+            let (added, removed) = counts(&lines);
+            AskBody::Edit {
+                path: tool.diffs[0].path.clone(),
+                files: tool.diffs.len() as u32,
+                added,
+                removed,
+                line: first_change(&lines),
+                lines,
+                reason: String::new(),
+                created: Some(tool.diffs.len() == 1 && tool.diffs[0].old_text.is_none()),
+            }
+        }
+        _ => AskBody::Tool {
+            server: String::new(),
+            tool: title,
+            arguments: pretty(&input),
+        },
+    }
+}
+
 /// One question's answer as the person gave it: the options picked, the
 /// words typed as "Something else", and a note. A multi-select carries
 /// picks and typed words together; nothing picked and nothing typed skips
@@ -937,15 +1154,17 @@ pub fn question_answer(card: &AskCard, given: &[QuestionResponse]) -> Answer {
             of: Some(wire::codex_answer::Of::Question(answers)),
             ..Default::default()
         }),
-        _ => Answer::Claude(ClaudeAnswer {
+        // No ACP ask is a question: such an answer sends nothing.
+        wire::Kind::Acp | wire::Kind::Unspecified => Answer::Acp(wire::AcpAnswer::default()),
+        wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => Answer::Claude(ClaudeAnswer {
             of: Some(claude_answer::Of::Question(answers)),
             ..Default::default()
         }),
     }
 }
 
-/// The person's own words instead of answering a question ask, with what
-/// they had answered so far: one response per question, a skip where
+/// The person's own words instead of answering a question ask, or any ask
+/// of an ACP agent, with what they had answered so far: one response per question, a skip where
 /// nothing was.
 pub fn reply_answer(card: &AskCard, text: &str, so_far: &[QuestionResponse]) -> Answer {
     let reply = wire::ReplyInstead {
@@ -957,7 +1176,13 @@ pub fn reply_answer(card: &AskCard, text: &str, so_far: &[QuestionResponse]) -> 
             of: Some(wire::codex_answer::Of::Reply(reply)),
             ..Default::default()
         }),
-        _ => Answer::Claude(ClaudeAnswer {
+        // An ACP agent takes a reply instead of any of its asks.
+        wire::Kind::Acp => Answer::Acp(wire::AcpAnswer {
+            of: Some(wire::acp_answer::Of::Reply(reply)),
+            ..Default::default()
+        }),
+        wire::Kind::Unspecified => Answer::Acp(wire::AcpAnswer::default()),
+        wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => Answer::Claude(ClaudeAnswer {
             of: Some(claude_answer::Of::Reply(reply)),
             ..Default::default()
         }),
@@ -970,7 +1195,7 @@ pub fn reply_answer(card: &AskCard, text: &str, so_far: &[QuestionResponse]) -> 
 /// session gives it a fresh one when it sends it. None when the kind does
 /// not take this answer.
 pub fn answer_input(card: &AskCard, answer: &Answer, note: &str) -> Option<wire::Input> {
-    use wire::{KindInput, claude_pty_input, claude_sdk_input, codex_input};
+    use wire::{KindInput, acp_input, claude_pty_input, claude_sdk_input, codex_input};
     let input = match (card.kind, with_note(answer, note)) {
         (wire::Kind::ClaudePty, Answer::Claude(answer)) => {
             KindInput::ClaudePty(wire::ClaudePtyInput {
@@ -994,6 +1219,14 @@ pub fn answer_input(card: &AskCard, answer: &Answer, note: &str) -> Option<wire:
                 ..answer
             })),
         }),
+        (wire::Kind::Acp, Answer::Acp(answer)) if answer.of.is_some() => {
+            KindInput::Acp(wire::AcpInput {
+                of: Some(acp_input::Of::Answer(wire::AcpAnswer {
+                    ask_key: card.key.clone(),
+                    ..answer
+                })),
+            })
+        }
         _ => return None,
     };
     Some(wire::Input::new(Vec::new(), input))
@@ -1019,6 +1252,14 @@ fn with_note(answer: &Answer, note: &str) -> Answer {
             of: Some(wire::codex_answer::Of::Plan(plan)),
             ..
         }) if plan.choice() == wire::PlanChoice::KeepPlanning => plan.note = Some(note.to_owned()),
+        // ACP has no note on an answer: words given with a refusal go
+        // instead of it, cancelling the turn, as the next prompt.
+        Answer::Acp(wire::AcpAnswer { of: Some(of), .. }) => {
+            *of = wire::acp_answer::Of::Reply(wire::ReplyInstead {
+                text: note.to_owned(),
+                answers_so_far: Vec::new(),
+            })
+        }
         _ => {}
     }
     answer

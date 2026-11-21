@@ -313,18 +313,16 @@ impl SessionState {
     /// that is this one's kind: a headless Claude started before the host
     /// switched to Claude's own terminal cannot switch back.
     pub fn capabilities(&self) -> wire::AgentCapabilities {
-        let kind = self.kind();
         self.snapshot
             .as_ref()
             .and_then(|snapshot| snapshot.capabilities)
-            .or_else(|| {
-                let offered = self.host.as_ref()?.provider(self.agent.provider_id())?;
-                (offered.kind() == kind)
-                    .then_some(offered.capabilities)
-                    .flatten()
-            })
-            .or_else(|| wire::AgentCapabilities::of_kind(kind))
-            .unwrap_or_default()
+            .unwrap_or_else(|| crate::offered_capabilities(self.host.as_ref(), &self.agent))
+    }
+
+    /// What people call the agent's provider: its host's name for it, else
+    /// its id.
+    pub fn provider_name(&self) -> String {
+        crate::provider_name(self.host.as_ref(), &self.agent)
     }
 
     /// The newest snapshot, decoded, with what the agent offers when its
@@ -468,8 +466,10 @@ impl SessionState {
             Composer::Native {
                 stop: self.native_stop(),
             }
-        } else if self.exited() {
+        } else if self.exited() && self.capabilities().resumable {
             Composer::Resume
+        } else if self.exited() {
+            Composer::Ended
         } else if self.caught_up {
             Composer::Send
         } else if self.connection == Connection::Reconnecting {

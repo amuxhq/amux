@@ -68,15 +68,17 @@ letter to change one:
 
 | Key | Changes |
 |---|---|
-| `a` | Claude or Codex |
+| `a` | The agent: Claude, Codex, or another agent set up on that computer, such as OpenCode |
 | `m`, `e`, `p` | The model, the reasoning effort, and the permission |
 | `d` | The folder. Your repositories come first, then folders your agents used lately, or type a path. |
 | `h` | The computer, to start the agent on another of your computers |
 | `w` | A new worktree of the folder's repository, so the agent works without touching your checkout |
-| `n` | The name, which is optional. Leave it and the agent goes by the title Claude or Codex gives the conversation. |
+| `n` | The name, which is optional. Leave it and the agent goes by the title the agent gives the conversation. |
 
 The models and permissions on offer are whatever that agent offers on the computer
-you picked. If Claude or Codex isn't signed in there, the picker says so.
+you picked. If an agent isn't signed in there, the picker says so, with what to
+do about it. Another agent starts in its own mode unless you pick one with
+Shift+Tab. See [other agents](other-agents.md) to add one.
 
 A new agent starts on the model, effort and permission Claude or Codex is
 already set to on that computer, so amux and Claude's own terminal app agree until
@@ -105,13 +107,14 @@ its folder and computer, how much of its context it has used, and
 
 - **Enter** sends your message. While the agent is working, it waits in a
   queue just above the box and goes in when the current turn ends. Press ↑ in
-  an empty box to send a queued message straight away, or take it back.
+  an empty box to send a queued message straight away, where the agent can
+  take one mid-turn, or take it back.
 - **Ctrl+X** interrupts the turn. The agent stays ready for your next message.
 - **Shift+Tab** steps through the agent's modes or permissions, such as
   Claude's plan mode or accept edits. When a permission lets the agent act
   without asking you first, the box gets a heavy yellow border.
 - **Ctrl+V** attaches an image or file from the clipboard, in a new agent's
-  first message too. A long paste becomes a single chip rather than filling
+  first message too. An agent that can't take images or files says so at once. A long paste becomes a single chip rather than filling
   the box.
 - **Ctrl+O** opens the overview beside the chat: the agent's tasks, its
   background jobs, the files it changed, and how close it is to its usage
@@ -202,14 +205,16 @@ When an agent needs you, its question takes over the message box. Choices are
 numbered and worded as what will happen, such as `1. Yes`,
 `2. Yes, and always allow cargo test in this project` and `3. No`. Press a
 number, or move to a choice and press Enter. Where the agent takes a reason
-with a refusal, Tab on `No` adds a note.
+with a refusal, Tab on `No` adds a note. Agents other than Claude and Codex
+offer their own choices, such as `Always allow`, and take a note on `No` or on
+`Decline` as what to do instead.
 
 For half a second after a question appears, your keys still go to what you
 were typing, so a key you'd already started pressing can't answer something
 you haven't read. In a subagent's chat, which has nothing to type in, those
 keys do nothing.
 
-A plan offers to start building, to start building and switch to a mode that
+A plan offers to implement it, to implement it and switch to a mode that
 asks less, or to keep planning with a note. Questions with several parts come
 one at a time and end on a review of your answers.
 

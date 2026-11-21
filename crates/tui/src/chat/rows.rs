@@ -4,7 +4,10 @@
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ui_view::{AttachmentView, CallPhase, ExploreVerb, LineKind, PatchHead, Row, RowKind, Segment};
+use ui_view::{
+    AttachmentView, CallPhase, ExploreVerb, LineKind, NoticeReason, NoticeSeverity, PatchHead, Row,
+    RowKind, Segment,
+};
 use wire::{BoundaryKind, EnvelopeKind, SendState};
 
 use super::selection::Join;
@@ -480,6 +483,52 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             if !error_kind.is_empty() && !message.is_empty() {
                 lines.extend(detail(
                     message,
+                    width,
+                    theme.muted(),
+                    if open { OPEN_LINES } else { 3 },
+                    theme,
+                ));
+            }
+            lines
+        }
+        RowKind::Notice {
+            reason,
+            severity,
+            title,
+            text,
+        } => {
+            let glyph = match severity {
+                NoticeSeverity::Error => ("✗", theme.error()),
+                NoticeSeverity::Warning => ("!", theme.warning()),
+                NoticeSeverity::Info => ("·", theme.muted()),
+            };
+            // The agent's title, else its words' first line, else what cut
+            // the turn short; what is left of its words follows.
+            let said = match reason {
+                NoticeReason::Agent => "",
+                NoticeReason::Refusal => "The model refused to go on",
+                NoticeReason::MaxTokens => "The turn reached the model's token limit",
+                NoticeReason::MaxTurnRequests => "The turn reached its limit on model requests",
+            };
+            let (subject, rest) = if !title.is_empty() {
+                (title.clone(), text.as_str())
+            } else if text.trim().is_empty() {
+                (said.to_owned(), "")
+            } else {
+                let first = first_line(text).to_owned();
+                let rest = text.split_once('\n').map_or("", |(_, rest)| rest);
+                (first, rest)
+            };
+            // The agent's own words, in plain ink: a notice names no
+            // command or path for the code ink a step's subject takes.
+            let mut first = Line::from(Span::raw("  "));
+            push(&mut first, glyph.0, glyph.1, width);
+            push(&mut first, " ", theme.text(), width);
+            push(&mut first, subject, theme.text(), width);
+            let mut lines = vec![first];
+            if !rest.trim().is_empty() {
+                lines.extend(detail(
+                    rest.trim(),
                     width,
                     theme.muted(),
                     if open { OPEN_LINES } else { 3 },

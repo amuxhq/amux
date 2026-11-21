@@ -934,9 +934,21 @@ impl ChatView {
     }
 
     /// What Ctrl+V found: text follows the paste rules, an image or a file
-    /// is stored and attached.
-    pub fn paste(&mut self, content: ClipboardContent) -> Result<Option<ChatEffect>, String> {
+    /// is stored and attached, unless the agent cannot take it, which is
+    /// said at once rather than when the prompt is refused.
+    pub fn paste(
+        &mut self,
+        state: &SessionState,
+        content: ClipboardContent,
+    ) -> Result<Option<ChatEffect>, String> {
         match crate::clipboard::clip(content)? {
+            Clip::File { mime, .. } if let Some(untaken) = ui_view::untaken_file(state, &mime) => {
+                let what = match untaken {
+                    ui_view::Untaken::Images => "images",
+                    ui_view::Untaken::Files => "files",
+                };
+                Err(format!("{} can't take {what}", state.provider_name()))
+            }
             Clip::File { name, mime, bytes } => {
                 self.attaching.push(name.clone());
                 Ok(Some(ChatEffect::Attach { name, mime, bytes }))

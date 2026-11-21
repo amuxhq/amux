@@ -1,0 +1,91 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 59 recorded 58: input p1-3
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 97 recorded 96: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 prompt:70312d33 Prompt { text: [Text("Reply with exactly the word: pong")], steered: false }
+     3 message:1 Prose { text: [Text("pong")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(2124), failed: false }
+     5 boundary:2 Hidden collapsed
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model  grok-4.7 "Grok 4.7" efforts=[xhigh,high,medium,low]
+  model* grok-4.7-build-fast "Grok 4.7 Fast" efforts=[xhigh,high,medium,low]
+  model  grok-4.6 "Grok 4.6" efforts=[xhigh,high,medium,low]
+  model  grok-4.5 "Grok 4.5" efforts=[xhigh,high,medium,low]
+  effort  xhigh
+  effort  high
+  effort  medium
+  effort* low
+  changes: model Pick · effort Pick · permission NotOffered · mode NotOffered
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
+  command /compact source="" hint="" "Compress conversation history to save context window"
+  command /always-approve source="" hint="on|off" "Toggle always-approve mode (skip all permission prompts)"
+  command /context source="" hint="" "Show context window usage and session stats"
+  command /hooks-trust source="" hint="" "Trust this project for hook execution"
+  command /hooks-list source="" hint="" "Show hooks loaded in this session"
+  command /hooks-add source="" hint="path to hook file or directory" "Add a custom hook file or directory"
+  command /hooks-remove source="" hint="path to hook file or directory" "Remove a custom hook file or directory path"
+  command /hooks-untrust source="" hint="" "Remove trust for the current project"
+  command /plugins source="" hint="list | reload | trust <path> | add <path> | remove <path>" "Manage plugins (list, reload, trust, add, remove)"
+  command /reload-plugins source="" hint="" "Reload plugins from disk (alias for /plugins reload)"
+  command /session-info source="" hint="" "Show session details (model, turns, context usage)"
+  command /feedback source="" hint="feedback text" "Send feedback about the current session"
+  command /deep-research source="" hint="<query>" "Research with bounded parallel agents, cross-check evidence, and write a cited report"
+  command /workflow source="" hint="<name> [--agent-budget N] [--effort LEVEL] [args] | runs | pause|resume|stop|save [name]" "Launch a saved workflow, list runs, or manage a run (pause, resume, stop, save)"
+  command /goal source="" hint="<objective> [--budget <tokens>] | status | pause | resume | clear" "Set, manage, or check an autonomous goal"
+  command /loop source="" hint="[interval] <prompt>" "Run a prompt on a recurring interval"
+  command /amux-reports source="" hint="" "Look at bug reports people and amux's own checks have sent to the account service. Use when asked to look at recent or new reports, what has been reported, or to investigate a sent report by id."
+  command /autopilot source="" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
+  command /delegate source="" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally."
+  command /frontend-design source="" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
+  command /gardening source="" hint="" "Review and improve an operator's Linear backlog with them. Use when the operator asks to garden, clean up, shape, deduplicate, or reassess tracked work. Do not invoke merely because Linear is available or ordinary work reveals a possible follow-up."
+  command /handoff source="" hint="" "Independently verify and present finished work when an ordinary diff and focused checks are not enough to judge it, including third-party branches or pull requests. Use compact proof for easily judged behavior and a decision page for consequential or difficult work. Do not invoke at project start or impose a page on ordinary small changes."
+  command /intake source="" hint="" "Align and confirm a durable acceptance contract for consequential work that must cross contexts. Use after the operator commits to work when several requirements, boundaries, or success demonstrations remain unsettled. Skip for exploration, one or two locally resolvable questions, and already-confirmed requirements."
+  command /built-in-browser source="" hint="" "Read this skill before the first step that uses the built-in browser, the browser pane inside the Claude desktop app (also called the in-app browser, the browser pane, Claude's browser, or \"your own browser\"), whose tools are named mcp__Claude_Browser__* when the session runs in the desktop app and mcp__remote-devices__Claude_Browser__* when a cloud session is linked to the person's computer; b…
+  command /chrome-browser source="" hint="" "Read this skill before the first step that uses Claude in Chrome, the browser extension whose tools are named mcp__claude-in-chrome__* (also called Chrome, the browser extension, or the external browser) and which acts in the person's real Chrome with their own sign-ins; before those tools are turned on there may be a single enable__mcp__claude-in-chrome tool instead. It covers loading the tools …
+  command /computer-use source="" hint="" "Read this skill before the first step of any request to do something in an app on the person's own computer (Notes, Finder, System Settings, any desktop app), to look at their screen, or for \"computer use\". Computer use (desktop control) lets Claude take screenshots of the person's desktop and control it with clicks, typing and scrolling through the Claude desktop app; its tools are named mcp__…
+  command /user:deep-research source="" hint="" "Use this skill when the user's prompt requires (1) researching a topic across multiple sources, comparing options or alternatives, analyzing trends or history, understanding markets or industries, or reviewing literature or studies and (2) synthesizing that research into a comprehensive, narrative report. If you're planning to search the web or internal knowledge bases, consider using this skill.…
+  command /user:docs source="" hint="" "docs (editable docs people share and comment on; the default for any document, named as a doc or not: a document, report, proposal, resume, cover letter, letter, contract, policy, form, template, worksheet, essay, handbook, guide, how-to, cheat sheet, SOP or other writing to keep, share, collaborate on, send, submit, print or sign; a doc exports to Word, PDF, Markdown or Google Docs, so needing a…
+  command /google-workspace source="" hint="" "Read this before the first Google Drive, Docs, Sheets or Slides connector call whenever the task creates or changes a Google file. Use this skill whenever the user wants to create or change a Google Doc, Sheet or Slides file in their Google Drive. Triggers include: a request that names Google Docs, Sheets, Slides or Drive and asks to make, edit, format, copy or rename a file; a docs.google.com li…
+  command /import-memory source="" hint="" "Import a memory export from another AI assistant into Claude's memory — conversationally, additively, and with the content treated as data."
+  command /morning source="" hint="" "Render the user's morning brief as a styled HTML artifact, or set it up as a recurring weekday task. Use only when the user explicitly asks to run, see, or set up their morning brief, or if they invoke /morning by name. A question about their day, schedule, or calendar is not by itself a request for the brief; answer it directly instead."
+  command /build-with-ai source="" hint="<what you're building>" "Build AI apps on SpaceXAI (XAI_API_KEY + api.x.ai)"
+  command /code-review source="" hint="" "Run an extremely strict maintainability review for abstraction quality, giant files, and spaghetti-condition growth. Use for a deep code quality audit or an especially harsh maintainability review."
+  command /create-skill source="" hint="" "Create a new Grok skill"
+  command /create-workflow source="" hint="" "Author a new multi-agent workflow"
+  command /design source="" hint="<description of what to design> [--publish]" "Run the full design-doc-writer and design-doc-reviewer loop until consensus. Produces a polished design document with a PR plan."
+  command /execute-plan source="" hint="<design-doc-path> [--effort N] [--concurrency N] [--dry-run] [--resume <PLAN_ID>] [--instructions \"...\"] [--no-graphite] [--auto-pr]" "Execute a PR Plan DAG from a design document. Parses the plan, topologically sorts it, implements PRs in parallel using worktree-isolated subagents, runs mandatory orchestrator-level review, and assembles either a Graphite PR stack or a plain-git branch stack depending on tool availability."
+  command /game-assets source="" hint="" "Engine-ready game art, 2D sprites to 3D models"
+  command /bundled:imagine source="" hint="" "Prompting and workflow guidance for Imagine image and video tools"
+  command /implement source="" hint="[--effort N] <description of what to implement>" "Run the full implement-review-fix loop using implementer and reviewer personas. Supports effort-based multi-reviewer scaling (2–7 reviewers) with automatic specialization selection. Includes memory-based feedback loop that learns from past review patterns. Loops until all reviewers find 0 issues of any severity."
+  command /learn source="" hint="[--mode step|auto|report] [--days N | --since-last | --limit N] [--per-trace] [--include-headless] [--cwd PATH] [--focus TEXT] [--resume]" "Learn from your own Grok Build sessions and tune your setup: add skills for things you keep typing, fix stale skill instructions, and retire skills, plugins, or MCP servers you never use. Use on \"/learn\", \"learn from my traces\", \"what skills do I never use\". Not for summarizing sessions into notes or memory."
+  command /long-running-background-tasks source="" hint="" "Required reading before you start, watch, or wait on anything that keeps running after you launch it — background jobs, watchers, scheduled loops, CI, pull requests, training runs, dev servers, long builds. Read it before you launch such work and before you report on its state. Saying where a running job stands counts as working on it. Use when: about to launch, supervise, inspect, diagnose, or r…
+  command /pr-babysit source="" hint="add [--ship] <number> | remove <number> | list | check | ship [on|off] [number...]" "Monitor PRs, fix CI failures, address review comments (human and bot/automated), resolve merge conflicts, and restack stacks. Supports independent PRs, Graphite stacks, and GitHub stacked PRs (gh-stack). Optional ship lands a ready PR bottom-up when every job has passed and no comments remain open."
+  command /resume-claude source="" hint="[words describing the session | session id]" "Continue from a recent Claude Code session"
+  command /resume-codex source="" hint="[words describing the session | session id]" "Continue from a recent Codex session"
+  command /resume-cursor source="" hint="[words describing the session | session id]" "Continue from a recent Cursor session"
+  command /review source="" hint="[--main | --local | --branch <name> | --pr <number-or-url> | --stack <number-or-url> | <auto-detect>] [--approve | --submit]" "Run a reviewer subagent against your whole branch vs main, your uncommitted working state, a named branch, a single GitHub PR, or an entire Graphite/stacked-PR stack (one reviewer subagent per PR). A bare /review defaults to reviewing your uncommitted working state when the tree is dirty, or your whole branch vs main when the tree is clean. Main, local, and branch modes write a review file plus a…
+  command /skill-design-principles source="" hint="" "Concise, high-signal principles for writing and editing skills well. Use whenever authoring or editing a skill."
+  command /statusline source="" hint="" "Configure the Grok Build status line."
+  command /threejs-frame-conventions source="" hint="" "One frame for Three.js controls, camera, and facing"
+  command /connect-recommend source="" hint="" "Use this skill when the user asks about Stripe Connect configuration, charge patterns, Dashboard access, or how to get started with Connect, is building a marketplace, platform, multi-vendor store, gig platform, or subscription platform, needs to pay out sellers, vendors, or providers, mentions split payments, revenue sharing, multi-party payments, or similar payment distribution concepts, provid…
+  command /connect-required-verification-information source="" hint="" "Use this skill when the user asks what information a Stripe Connect connected account must provide for verification, onboarding, KYC, or account requirements; when they need to compare requirements between connected-account setups; or when they ask which verification fields, documents, or business details are required for a particular platform country, account country, business type, dashboard, s…
+  command /metronome source="" hint="" "Guides Metronome usage-based billing integration decisions — event ingestion (single and batch, idempotency, billable metrics), contract design (rate cards, overrides, dimensional pricing, products), invoicing lifecycle (grace periods, finalization, Stripe sync), credit and commit management (prepaid, postpaid, thresholds, auto-recharge), and Stripe integration (arrears invoicing, tax providers, …
+  command /stripe-apps source="" hint="" "Build, modify, or review Stripe Apps and extensions using the relevant documentation and reference guides. Use for custom Stripe Dashboard UI, stripe-app.yaml, @stripe/ui-extension-sdk, @stripe/extensibility-sdk, script extensions, extension interfaces, custom workflow actions, and apps that authenticate to Stripe or react to events. Also use when deciding whether a Stripe extension can support t…
+  command /stripe-best-practices source="" hint="" "Guides Stripe integration decisions across development and test environment planning (separate sandboxes vs the shared test mode sandbox), API selection (Checkout Sessions vs PaymentIntents), Connect platform setup (Accounts v2, controller properties), billing/subscriptions, tax and registrations (Stripe Tax, automatic_tax, product tax codes), Treasury financial accounts, integration options (Che…
+  command /stripe-directory source="" hint="" "Identifies external providers, merchants, nonprofits, platforms, APIs, and software services, and resolves the documented way to engage them — to pay, donate, subscribe, book, provision, or integrate with them. MUST be used BEFORE web search, model memory, or any other directory/vendor-lookup skill for ANY request that requires selecting, finding, or engaging an external provider or organization …
+  command /stripe-docs source="" hint="" "Read and search Stripe documentation from the terminal"
+  command /stripe-pay source="" hint="" "Send funds to Stripe businesses"
+  command /stripe-projects source="" hint="" "Use when the user wants to provision infrastructure or third-party services using Stripe Projects. Triggers: \"I need a database\", \"set up auth\", \"add caching\", \"give me a Postgres\", \"provision Redis\", \"I need hosting\", \"add a vector DB\", \"get me an API key for X\", \"get credentials for X\", \"sign up for a service\", \"set up monitoring\", \"show me the catalog\", \"what can I pro…
+  command /upgrade-stripe source="" hint="" "Guide for upgrading Stripe API versions, webhook endpoints, server-side SDKs, Stripe.js, and mobile SDKs"
+  command /explain-error source="" hint="" "Explain Stripe error codes and provide solutions with code examples"
+  command /test-cards source="" hint="" "Display Stripe test card numbers for various testing scenarios"
+  command /learn-traces source="" hint="[--agent-budget N] [--effort LEVEL] [args]" "Workflow: Map-reduce a collected set of Grok Build sessions into a curated list of harness changes: new or edited skills, plugin enables, deletes"
+  controls: model=Some("Grok 4.7 Fast") effort=Some("low") permission=None mode=None

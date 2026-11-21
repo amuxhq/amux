@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="report_title">Report a Problem</string>
+    <string name="report_offer_title">Screenshot captured</string>
+    <string name="report_offer_detail">Report a problem</string>
+    <string name="report_offer_open">Open</string>
+    <string name="report_offer_dismiss">Dismiss</string>
+    <string name="report_signed_out">Sign in to send reports. They go to your amux account.</string>
+    <string name="report_frame_unavailable">The screen could not be photographed.</string>
+    <string name="report_frame_marked_count">%1$d marked</string>
+    <string name="report_guidance_marks">Drag a box around anything wrong. Tap a box to add a note or remove it.</string>
+    <string name="report_mark_number">%1$d</string>
+    <string name="report_mark_label">Box %1$d</string>
+    <string name="report_mark_note_placeholder">What is wrong here?</string>
+    <string name="report_mark_remove">Remove box %1$d</string>
+    <string name="report_note_placeholder">What went wrong?</string>
+    <string name="report_dump_attached">Includes this screenshot and this phone’s diagnostic dump, never your conversations.</string>
+    <string name="report_dump_absent">Includes this screenshot. No diagnostic dump is attached.</string>
+    <string name="report_send">Send Report</string>
+    <string name="report_sending">Sending…</string>
+    <string name="report_retry">Retry</string>
+    <string name="report_not_sent">Not sent: %1$s</string>
+    <string name="report_sent_title">Report sent</string>
+    <string name="report_sent_detail">Quote %1$s if you write to us about it.</string>
+    <string name="report_reference_label">Reference</string>
+    <string name="report_copy_reference">Copy Reference</string>
+    <string name="report_copied">Copied</string>
+    <string name="report_done">Done</string>
+</resources>

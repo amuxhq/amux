@@ -472,7 +472,7 @@ async fn more_context_reads_the_snapshot_not_the_tree_edited_since() {
     let ask = ReviewFileRequest {
         path: "notes.rs".to_owned(),
         context: vec![ReviewLineRange { start: 18, end: 21 }],
-        context_commit: summary.snapshot.clone(),
+        context_side: ReviewSide::Snapshot as i32,
     };
     let files = host
         .files(&agent, &summary, ReviewView::All, vec![ask])
@@ -503,7 +503,7 @@ async fn more_context_reads_the_snapshot_not_the_tree_edited_since() {
     let ask = ReviewFileRequest {
         path: "notes.rs".to_owned(),
         context: vec![ReviewLineRange { start: 3, end: 3 }],
-        context_commit: summary.base_commit.clone(),
+        context_side: ReviewSide::Compared as i32,
     };
     let files = host
         .files(&agent, &summary, ReviewView::All, vec![ask])
@@ -516,6 +516,23 @@ async fn more_context_reads_the_snapshot_not_the_tree_edited_since() {
         ),
         (3, "line 3")
     );
+
+    // Context names a side of the checked comparison, never a commit: one
+    // naming none is refused before anything is read.
+    let ask = ReviewFileRequest {
+        path: "notes.rs".to_owned(),
+        context: vec![ReviewLineRange { start: 3, end: 3 }],
+        context_side: ReviewSide::Unspecified as i32,
+    };
+    let refused = host
+        .client()
+        .get_files(ReviewGetFilesRequest {
+            files: vec![ask],
+            ..request(&agent, &summary, ReviewView::All)
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument, "{refused:?}");
     host.stop().await;
 }
 
@@ -908,7 +925,7 @@ async fn more_context_reads_at_most_two_thousand_lines_a_file() {
     let ask = ReviewFileRequest {
         path: "long.txt".to_owned(),
         context,
-        context_commit: summary.snapshot.clone(),
+        context_side: ReviewSide::Snapshot as i32,
     };
     let files = host
         .files(&agent, &summary, ReviewView::All, vec![ask])

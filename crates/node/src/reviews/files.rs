@@ -106,6 +106,17 @@ pub(crate) async fn get_files(
         .into_iter()
         .take(MOST_FILES)
         .collect();
+    // More context is read from a side of the comparison, never from a
+    // commit the request names apart from it.
+    if asked
+        .iter()
+        .any(|file| !file.context.is_empty() && file.context_side() == ReviewSide::Unspecified)
+    {
+        return Err(refused(
+            ErrorCode::InvalidArgument,
+            "more context names the side of the comparison it is read from",
+        ));
+    }
     let repo = Repo::of(runtime, &row)?;
     let review = review_of(runtime, &row).await?;
     let view = request.view();
@@ -176,16 +187,18 @@ pub(crate) async fn get_files(
             continue;
         }
         let at = diffed.get(file.path.as_str()).copied();
-        let commit = file.context_commit.as_str();
-        let (blob, path) = if commit == snapshot {
-            (at.and_then(|file| file.new_blob.clone()), file.path.clone())
-        } else if commit == from {
-            (
+        // The side's commit, both checked above, and the file's path there.
+        let (commit, blob, path) = match file.context_side() {
+            ReviewSide::Compared => (
+                from.as_str(),
                 at.and_then(|file| file.old_blob.clone()),
                 at.map_or(file.path.as_str(), old_path).to_owned(),
-            )
-        } else {
-            (None, file.path.clone())
+            ),
+            _ => (
+                snapshot.as_str(),
+                at.and_then(|file| file.new_blob.clone()),
+                file.path.clone(),
+            ),
         };
         let blob = match blob {
             Some(blob) => Some(blob),
@@ -194,7 +207,7 @@ pub(crate) async fn get_files(
         if let Some(blob) = &blob {
             wanted.push((blob.clone(), path.clone()));
         }
-        context_blobs.insert(file.path.as_str(), (blob, path));
+        context_blobs.insert(file.path.as_str(), (commit, blob, path));
     }
     let bodies = bodies(&repo, wanted).await?;
 
@@ -208,9 +221,9 @@ pub(crate) async fn get_files(
             if let Some(hunks) = diffed.get(file.path.as_str()) {
                 fill(&mut diff, &from, hunks, &bodies);
             }
-            if let Some((blob, path)) = context_blobs.get(file.path.as_str()) {
+            if let Some((commit, blob, path)) = context_blobs.get(file.path.as_str()) {
                 let body = blob.as_ref().and_then(|blob| bodies.get(blob, path));
-                diff.context = context(&repo, file, path, &snapshot, body).await?;
+                diff.context = context(&repo, file, commit, path, body).await?;
             }
         }
         // The field's tag and length, besides the file itself. The first
@@ -802,14 +815,15 @@ fn runs_of(body: Option<&Body>, number: u32, text: &str) -> Vec<ReviewRun> {
     }
 }
 
-/// The context lines `file` asks for, read from its context commit, with
-/// the runs of `body`, that file highlighted whole. A line of the snapshot
-/// is numbered as a new line, one of any other commit as an old line.
+/// The context lines `file` asks for, read from `commit`, the comparison's
+/// side it names, where the file is `path`, with the runs of `body`, that
+/// file highlighted whole. A line of the snapshot is numbered as a new
+/// line, one of the commit compared against as an old line.
 async fn context(
     repo: &Repo,
     file: &ReviewFileRequest,
+    commit: &str,
     path: &str,
-    snapshot: &str,
     body: Option<Arc<Body>>,
 ) -> Result<Vec<ReviewLine>, Status> {
     if matches!(body.as_deref(), Some(Body::Unshown)) {
@@ -819,12 +833,11 @@ async fn context(
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
-    let commit = file.context_commit.as_str();
     let read = compare::lines(&repo.cwd, &repo.store, commit, path, &ranges)
         .await
         .map_err(super::compare_refused)?
         .unwrap_or_default();
-    let on_snapshot = commit == snapshot;
+    let on_snapshot = file.context_side() != ReviewSide::Compared;
     Ok(read
         .into_iter()
         .map(|line| ReviewLine {

@@ -597,7 +597,7 @@ mod tests {
                             kind: ReviewLineKind::Context as i32,
                             old_line: line,
                             new_line: line,
-                            text: format!("read from {} at {line}", asked.context_commit),
+                            text: format!("read from {:?} at {line}", asked.context_side()),
                             ..ReviewLine::default()
                         })
                         .collect();
@@ -992,8 +992,8 @@ mod tests {
         assert!(page.page().banners.is_empty());
     }
 
-    /// More context from a gap is read from the commit the ask names, and
-    /// drawn once it arrives.
+    /// More context from a gap is read from the side of the comparison the
+    /// ask's commit is, and drawn once it arrives.
     #[tokio::test]
     async fn more_context_is_read_from_the_commit_its_ask_names() {
         let fake = reviewed();
@@ -1012,7 +1012,11 @@ mod tests {
             .expect("a gap above the hunk loads lines upward");
         assert_eq!(page.context(ask.clone()).await, ReviewOutcome::Done);
         let asked = fake.host().gets.last().cloned().unwrap();
-        assert_eq!(asked.files[0].context_commit, ask.commit);
+        let side = match ask.commit.as_str() {
+            SNAPSHOT => wire::experimental::ReviewSide::Snapshot,
+            _ => wire::experimental::ReviewSide::Compared,
+        };
+        assert_eq!(asked.files[0].context_side(), side, "the side its commit is");
         let read = page.page();
         assert!(
             read.rows.iter().any(|row| matches!(

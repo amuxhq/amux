@@ -278,13 +278,17 @@ impl ::prost::Name for ReviewGetFilesRequest {
 pub struct ReviewFileRequest {
     #[prost(string, tag = "1")]
     pub path: ::prost::alloc::string::String,
-    /// More lines to read, from context_commit.
+    /// More lines to read, from the side `context_side` names.
     #[prost(message, repeated, tag = "2")]
     pub context: ::prost::alloc::vec::Vec<ReviewLineRange>,
-    /// The commit the context is read from: the snapshot, or a hunk's
-    /// old_commit for lines on its removed side.
-    #[prost(string, tag = "3")]
-    pub context_commit: ::prost::alloc::string::String,
+    /// Which of the comparison's two commits the context is read from: the
+    /// snapshot, or for lines on a hunk's removed side the commit it is
+    /// compared against (`from`), where a renamed file has its old path. The
+    /// request names a side, never a commit, so context is read only from
+    /// the comparison the host checked. Unspecified with context asked for,
+    /// INVALID_ARGUMENT.
+    #[prost(enumeration = "ReviewSide", tag = "4")]
+    pub context_side: i32,
 }
 impl ::prost::Name for ReviewFileRequest {
     const NAME: &'static str = "ReviewFileRequest";

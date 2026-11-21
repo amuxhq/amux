@@ -292,7 +292,11 @@ async fn with_the_host_gone_a_loaded_review_still_reads_and_an_edit_says_so() {
     });
     let (request, reply) = calls.review_files().await;
     assert_eq!(request.from, "b".repeat(40));
-    assert_eq!(request.files[0].context_commit, "s1");
+    assert_eq!(
+        request.files[0].context_side(),
+        wire::experimental::ReviewSide::Snapshot,
+        "the snapshot's side, named as a side"
+    );
     assert_eq!(request.files[0].context, [lines]);
     let mut answer = file("src/file00.rs");
     answer.context = vec![ReviewLine {
@@ -308,6 +312,14 @@ async fn with_the_host_gone_a_loaded_review_still_reads_and_an_edit_says_so() {
         }))
         .ok();
     assert_eq!(context.await.unwrap().unwrap().len(), 1);
+    // A commit that is neither side of the comparison is never asked for.
+    let elsewhere = loaded
+        .context(&all_of("s1"), "elsewhere", "src/file00.rs", lines)
+        .await;
+    assert!(
+        matches!(&elsewhere, Err(ReviewError::Rpc(RpcError::Refused(error))) if error.code() == ErrorCode::InvalidArgument),
+        "{elsewhere:?}"
+    );
 
     // The page is opened again with the host asleep.
     let page = review(&client, &cache);

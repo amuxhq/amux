@@ -267,9 +267,13 @@ definitions the change touches) and any **more context** asked for
   definition says which of the two commits its lines are numbered in
   (`ReviewSide`), so "more context up to the definition" reads the right
   lines.
-- More context is read from the commit asked for (the snapshot, or a hunk's
-  compared commit for lines on its removed side), at most 2,000 lines per
-  file in one answer.
+- More context is read from the side of the comparison asked for
+  (`context_side`: the snapshot, or for lines on a hunk's removed side the
+  commit it is compared against, where a renamed file has its old path), at
+  most 2,000 lines per file in one answer. A request names a side, never a
+  commit, so nothing is read from outside the comparison the host checked;
+  one asking for context without a side is `INVALID_ARGUMENT` before any git
+  call.
 - One answer holds at most 64 files and 8 MiB encoded, the first file
   always; the rest are left out for the client to ask for again. A client
   asks 16 at a time, those on screen first.

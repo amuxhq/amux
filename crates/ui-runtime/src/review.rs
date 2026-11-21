@@ -22,7 +22,7 @@ use tokio::sync::watch;
 use wire::ErrorCode;
 use wire::experimental::{
     REVIEW_ROW, ReviewAnchor, ReviewComparedLines, ReviewEdit, ReviewFileDiff, ReviewFileRequest,
-    ReviewGetFilesRequest, ReviewLine, ReviewLineRange, ReviewPlacement, ReviewRound,
+    ReviewGetFilesRequest, ReviewLine, ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSide,
     ReviewSummary, ReviewView, ReviewerComment, review_placement,
 };
 
@@ -588,10 +588,22 @@ impl Review {
         if let Some(held) = self.context_held(commit, path, lines) {
             return Ok(held);
         }
+        // The host reads context only from a side of the comparison it
+        // checked, so the commit is named as one of them.
+        let side = if commit == comparison.snapshot {
+            ReviewSide::Snapshot
+        } else if commit == comparison.from {
+            ReviewSide::Compared
+        } else {
+            return Err(ReviewError::Rpc(RpcError::Refused(wire::Error::new(
+                ErrorCode::InvalidArgument,
+                "more context is read from the snapshot or the commit it is compared against",
+            ))));
+        };
         let request = ReviewFileRequest {
             path: path.to_owned(),
             context: vec![lines],
-            context_commit: commit.to_owned(),
+            context_side: side as i32,
         };
         let answer = self
             .reviews

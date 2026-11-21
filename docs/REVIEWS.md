@@ -230,7 +230,11 @@ arrived from the base differs from the last round but is no part of the
 change, so it goes. A hunk stays when one of its changes sits on the lines
 of a change the agent's work holds now, or of one it held at the last round,
 so the agent undoing its own change (a line put back, a file made and then
-deleted) shows though all changes no longer lists it. The summary's
+deleted) shows though all changes no longer lists it. A file the agent only
+renamed changed no line, so no hunk of it is the agent's: an edit the base
+brought to it later goes. A file with nothing to compare since the round (a
+binary file, a rename alone) stays whole, and one renamed since the round
+whose hunks all go stays as the rename alone. The summary's
 `since_last` lists exactly those files, from the same comparison as their
 hunks, and is empty before the first round and when the last round's
 snapshot can no longer be read.

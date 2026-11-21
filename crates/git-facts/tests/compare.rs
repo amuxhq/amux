@@ -595,6 +595,54 @@ async fn since_the_last_review_keeps_no_upstream_edit_to_a_file_the_agent_only_r
         })
         .collect();
     assert_eq!(listed, [("d.txt", Some("b.txt"), 0)]);
+
+    // Renamed since the round while the base edited it: the rename is the
+    // agent's and stays, the base's edit carried into it goes.
+    git(dir, &["commit", "-q", "-am", "the agent renames b.txt"]);
+    git(dir, &["switch", "-q", "main"]);
+    std::fs::write(dir.join("b.txt"), replaced(&text, 10, "base ten")).unwrap();
+    commit_all(dir, "the base edits b.txt");
+    git(dir, &["switch", "-q", "work"]);
+    git(dir, &["merge", "-q", "--no-edit", "main"]);
+    assert!(
+        std::fs::read_to_string(dir.join("d.txt"))
+            .unwrap()
+            .contains("base ten"),
+        "the merge carried the base's edit into the renamed file"
+    );
+    let later = snapshot(dir, store.dir());
+    let base = compare::base_for_review(dir, None, None, None)
+        .await
+        .unwrap()
+        .commit
+        .unwrap();
+    let since = compare::since_last(
+        dir,
+        &store,
+        Shown {
+            base: &round_base,
+            snapshot: &round,
+        },
+        Shown {
+            base: &base,
+            snapshot: &later,
+        },
+        None,
+        3,
+    )
+    .await
+    .unwrap();
+    let listed: Vec<(&str, Option<&str>, usize)> = since
+        .iter()
+        .map(|file| {
+            (
+                file.path.as_str(),
+                file.old_path.as_deref(),
+                file.hunks.len(),
+            )
+        })
+        .collect();
+    assert_eq!(listed, [("d.txt", Some("b.txt"), 0)]);
 }
 
 /// Thousands of long paths, more bytes of them than a command line holds

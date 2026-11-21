@@ -550,7 +550,8 @@ pub struct Shown<'a> {
 /// lists it; one whose hunks all go goes with them, and one either lists
 /// with nothing to compare since the round (a binary file, a rename alone)
 /// stays whole. A file the agent only renamed changed no line, so no hunk
-/// of it since the round is the agent's.
+/// of it since the round is the agent's; one renamed since the round whose
+/// hunks all go stays as the rename alone.
 pub async fn since_last(
     cwd: &Path,
     store: &ObjectStore,
@@ -638,7 +639,9 @@ fn limited(
                 change_spans(hunk, Side::New).any(|span| overlaps(now, span))
                     || change_spans(hunk, Side::Old).any(|span| overlaps(held, span))
             });
-            (!file.hunks.is_empty()).then_some(file)
+            // A file renamed since the round stays, as the rename alone,
+            // when every line that changed in it came from elsewhere.
+            (!file.hunks.is_empty() || file.old_path.is_some()).then_some(file)
         })
         .collect()
 }

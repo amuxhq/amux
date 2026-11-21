@@ -20,7 +20,7 @@
     <string name="ask_plan_as_work_starts">As the work starts</string>
     <string name="ask_plan_approve">Approve</string>
     <string name="ask_plan_switches">Switches to %1$s</string>
-    <string name="ask_link_local_page">This page is on the agent’s computer. Open the link in a browser there.</string>
+    <string name="ask_link_local_page">This page is on the agent’s device. Open the link in a browser there.</string>
     <string name="ask_link_open">Open Link</string>
     <string name="ask_access_write_to">Write to</string>
     <string name="ask_access_read">Read</string>
@@ -58,7 +58,7 @@
     <!-- Refusal reasons -->
 
     <!-- Chat overview sheet & strip -->
-    <string name="overview_label_host">Host</string>
+    <string name="overview_label_host">Device</string>
     <string name="overview_label_directory">Directory</string>
     <string name="overview_label_branch">Branch</string>
     <string name="overview_label_address">Address</string>
@@ -112,7 +112,7 @@
     <string name="review_empty_title">No changes</string>
     <string name="review_empty_detail">There are no changes to review right now.</string>
     <string name="review_loading_title">Loading changes…</string>
-    <string name="review_loading_detail">Reading the diff from the computer.</string>
+    <string name="review_loading_detail">Reading the diff from the device.</string>
     <string name="review_error_title">Could not load changes</string>
     <string name="review_diff_added">+%1$d</string>
     <string name="review_diff_removed">−%1$d</string>

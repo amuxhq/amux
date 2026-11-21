@@ -1091,7 +1091,7 @@ class ChatModelTest {
 
         assertEquals("retry me", model.draft)
         assertEquals(listOf(DraftAttachment.Image(photo)), model.attachments)
-        assertEquals("Not sent: its host is away", model.snapshot.notice)
+        assertEquals("Not sent: its device is away", model.snapshot.notice)
         assertEquals(listOf(listOf(8)), source.discarded)
         assertTrue(model.currentFrame!!.refused.isEmpty())
 

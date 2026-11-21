@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.assertContentDescriptionContains
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -32,10 +33,11 @@ class HostsTabTest {
         trusted: Boolean = true,
         candidate: Boolean = false,
         pairingOpen: Boolean = false,
+        sameNetwork: Boolean = false,
     ): HostView = HostView(
         hostId = List(16) { index },
         link = 0L,
-        sameNetwork = false,
+        sameNetwork = sameNetwork,
         name = name,
         local = false,
         trusted = trusted,
@@ -57,7 +59,7 @@ class HostsTabTest {
             }
         }
         composeRule.onNodeWithTag(TestTags.HOSTS_EMPTY).assertIsDisplayed()
-        composeRule.onNodeWithText("No computers yet").assertIsDisplayed()
+        composeRule.onNodeWithText("No devices yet").assertIsDisplayed()
     }
 
     @Test
@@ -94,5 +96,33 @@ class HostsTabTest {
 
         composeRule.onNodeWithTag(TestTags.hostsRow("desk")).performClick()
         assertEquals(HostsAction.Open(desk.hostId), actions.last())
+    }
+
+    /**
+     * A paired device reached directly on the network both are on reads
+     * Local, on its row and to somebody who cannot see it; one reached
+     * directly across networks still reads Direct, and one through the
+     * relay Relayed.
+     */
+    @Test
+    fun pairedDeviceOnThisNetworkReadsLocal() {
+        val desk = host(1, "desk", Reach.Online(RouteKind.Direct), sameNetwork = true)
+        val studio = host(2, "studio", Reach.Online(RouteKind.Direct))
+        val build = host(3, "build", Reach.Online(RouteKind.Relay))
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                HostsTab(state = HostsTabState(hosts = listOf(desk, studio, build)), onAction = {})
+            }
+        }
+
+        composeRule.onNodeWithText("macOS · Local").assertIsDisplayed()
+        composeRule.onNodeWithText("macOS · Direct").assertIsDisplayed()
+        composeRule.onNodeWithText("macOS · Relayed").assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsRow("desk"))
+            .assertContentDescriptionContains("desk, macOS, connected, local")
+        composeRule.onNodeWithTag(TestTags.hostsRow("studio"))
+            .assertContentDescriptionContains("studio, macOS, connected, direct")
+        composeRule.onNodeWithTag(TestTags.hostsRow("build"))
+            .assertContentDescriptionContains("build, macOS, connected, relayed")
     }
 }

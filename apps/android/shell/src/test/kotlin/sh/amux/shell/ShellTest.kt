@@ -181,7 +181,7 @@ class ShellTest {
         composeRule.onNodeWithTag(TestTags.TAB_AGENTS).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.TAB_HOSTS).assertIsDisplayed()
 
-        // Switch to Computers tab
+        // Switch to Devices tab
         composeRule.onNodeWithTag(TestTags.TAB_HOSTS).performClick()
         composeRule.onNodeWithTag(TestTags.HOSTS_SCREEN).assertIsDisplayed()
 

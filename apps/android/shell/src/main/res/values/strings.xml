@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="shell_tab_agents">Agents</string>
-    <string name="shell_tab_computers">Computers</string>
+    <string name="shell_tab_computers">Devices</string>
     <string name="shell_install_link_subject">Install amux</string>
     <string name="shell_install_link_chooser">Send Link</string>
     <string name="shell_paywall_renews">Renews %1$s</string>

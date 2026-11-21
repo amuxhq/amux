@@ -160,9 +160,9 @@ class AgentsHomeTest {
             machines = listOf(desk, studio),
             orderedAtMs = nowMs,
             accounts = listOf(
-                AccountUi("a1", "Ada", "ada@example.com", "2 hosts", signedIn = true, selected = true),
+                AccountUi("a1", "Ada", "ada@example.com", "2 devices", signedIn = true, selected = true),
             ),
-            selectedAccount = AccountUi("a1", "Ada", "ada@example.com", "2 hosts", signedIn = true, selected = true),
+            selectedAccount = AccountUi("a1", "Ada", "ada@example.com", "2 devices", signedIn = true, selected = true),
         )
         return Triple(state, askRow, workingRow)
     }

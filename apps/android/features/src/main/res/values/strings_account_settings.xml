@@ -8,7 +8,7 @@
     <string name="settings_section_help">Help</string>
 
     <!-- Settings: Accounts -->
-    <string name="settings_signed_out_detail">An account lets this phone reach your computers from anywhere, and a subscription bought on amux.sh carries over.</string>
+    <string name="settings_signed_out_detail">With an account, this phone can reach your devices through the relay, and a subscription bought on amux.sh carries over.</string>
     <string name="settings_sign_in">Sign In</string>
     <string name="settings_sign_in_again">Sign In Again</string>
     <string name="settings_signing_in">Signing in…</string>
@@ -58,7 +58,7 @@
     <!-- Paywall screen -->
     <string name="paywall_title">amux Pro</string>
     <string name="paywall_headline">Reach your agents anywhere</string>
-    <string name="paywall_explanation">Pro reaches your computers from anywhere. Computers on this network work without it.</string>
+    <string name="paywall_explanation">Pro relays connections when your phone and device aren’t on the same network. Devices on the same network connect without it.</string>
     <string name="paywall_period_monthly">Monthly</string>
     <string name="paywall_period_yearly">Yearly</string>
     <string name="paywall_period_monthly_spelled">a month</string>
@@ -99,15 +99,15 @@
     <!-- Account sheets & dialogs -->
     <string name="account_sheet_sign_in_title">Sign In</string>
     <string name="account_sheet_offer_received_title">Sign in as %1$s?</string>
-    <string name="account_sheet_offer_received_detail">%1$s offers its account, so this phone reaches it from anywhere.</string>
+    <string name="account_sheet_offer_received_detail">%1$s offers its account, so this phone can reach it through the relay.</string>
     <string name="account_sheet_offer_sending_title">Sign in %1$s as %2$s too?</string>
-    <string name="account_sheet_offer_sending_detail">Then this phone reaches %1$s from anywhere.</string>
+    <string name="account_sheet_offer_sending_detail">Then this phone can reach %1$s through the relay.</string>
     <string name="account_sheet_offer_accept">Accept</string>
     <string name="account_sheet_offer_decline">Decline</string>
     <string name="account_sheet_offer_send">Offer</string>
     <string name="account_sheet_offer_not_now">Not Now</string>
     <string name="account_sheet_offer_unreachable_host">%1$s is offline. Open amux on %1$s, then try again.</string>
-    <string name="account_sheet_offer_unreachable_generic">That computer is offline. Open amux on it, then try again.</string>
+    <string name="account_sheet_offer_unreachable_generic">That device is offline. Open amux on it, then try again.</string>
     <string name="account_sheet_offer_refused">Signing in didn’t work. Sign in from Settings instead.</string>
 
     <string name="account_sheet_mismatch_title">Signed in as another account</string>
@@ -119,12 +119,12 @@
     <string name="account_sheet_failed_dismiss">Dismiss</string>
 
     <string name="account_sheet_remove_title">Remove %1$s from this phone?</string>
-    <string name="account_sheet_remove_detail">Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account.</string>
+    <string name="account_sheet_remove_detail">Your amux.sh account, its subscription, and your agents and files on your devices stay as they are. This phone signs out and forgets the devices it paired for this account.</string>
     <string name="account_sheet_remove_confirm">Remove</string>
 
     <string name="account_sheet_delete_bar_title">Delete Account</string>
     <string name="account_sheet_delete_title">Delete this account?</string>
-    <string name="account_sheet_delete_kept">Your agents and files stay on your computers.</string>
+    <string name="account_sheet_delete_kept">Your agents and files stay on your devices.</string>
     <string name="account_sheet_delete_lost">This phone can no longer reach them.</string>
     <string name="account_sheet_delete_email_label">Type your email to confirm</string>
     <string name="account_sheet_delete_email_description">Confirm account email</string>

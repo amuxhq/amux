@@ -1,6 +1,7 @@
 package sh.amux.features
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -37,10 +38,11 @@ class HostPageTest {
             ProviderSignIn(Provider.Codex, signedIn = false),
         ),
         lastDialError: String? = null,
+        sameNetwork: Boolean = false,
     ): HostView = HostView(
         hostId = List(16) { 7 },
         link = 0L,
-        sameNetwork = false,
+        sameNetwork = sameNetwork,
         name = "desk",
         local = false,
         trusted = true,
@@ -94,6 +96,7 @@ class HostPageTest {
 
         composeRule.onNodeWithText("desk").assertIsDisplayed()
         composeRule.onNodeWithTag(HostPageTags.REACH).assertIsDisplayed()
+            .assertTextEquals("Connected · Direct")
         composeRule.onNodeWithText("macOS").assertIsDisplayed()
         composeRule.onNodeWithText("0.9.4").assertIsDisplayed()
 
@@ -117,7 +120,7 @@ class HostPageTest {
         composeRule.onNodeWithTag(HostPageTags.OFFER_SIGN_IN).performScrollTo().performClick()
         assertEquals(HostPageAction.OfferSignIn(sampleHost.hostId), actions.last())
 
-        // A computer that still has this phone paired offers nothing to pair again.
+        // A device that still has this phone paired offers nothing to pair again.
         composeRule.onNodeWithTag(HostPageTags.PAIR_AGAIN).assertDoesNotExist()
 
         // Revoke opens confirmation dialog; cancel does not emit Revoke; confirm emits Revoke.
@@ -179,7 +182,7 @@ class HostPageTest {
     }
 
     @Test
-    fun offersPairAgainFirstOnlyOnceTheComputerUnpairedThisPhone() {
+    fun offersPairAgainFirstOnlyOnceTheDeviceUnpairedThisPhone() {
         val revoked = host(reach = Reach.Offline(Offline.Revoked), addrs = emptyList(), providers = emptyList())
         val actions = mutableListOf<HostPageAction>()
         composeRule.setContent {
@@ -190,5 +193,17 @@ class HostPageTest {
 
         composeRule.onNodeWithTag(HostPageTags.PAIR_AGAIN).assertIsDisplayed().performClick()
         assertEquals(HostPageAction.PairAgain(revoked.hostId), actions.single())
+    }
+
+    /** A paired device reached directly on the network both are on reads Local. */
+    @Test
+    fun pairedDeviceOnThisNetworkReadsConnectedLocal() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                HostPage(state = HostPageState(host = host(sameNetwork = true)), onAction = {})
+            }
+        }
+
+        composeRule.onNodeWithTag(HostPageTags.REACH).assertTextEquals("Connected · Local")
     }
 }

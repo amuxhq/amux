@@ -102,7 +102,7 @@ class DoorTest {
                     elements = listOf(
                         VisibleElement(
                             identifier = "hosts.row.desk",
-                            label = "desk, macOS · On this network",
+                            label = "desk, macOS · Local",
                             value = null,
                             frame = VisibleFrame(x = 16.0, y = 120.0, width = 380.0, height = 56.0),
                             enabled = true,

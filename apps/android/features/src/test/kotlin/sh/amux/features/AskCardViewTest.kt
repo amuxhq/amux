@@ -628,7 +628,7 @@ class AskCardViewTest {
         }
 
         composeRule.onNodeWithTag(AskReviewTags.ASK_REJECTED).assertIsDisplayed()
-        composeRule.onNodeWithText("Not sent · its host is away").assertIsDisplayed()
+        composeRule.onNodeWithText("Not sent · its device is away").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
         assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
     }
@@ -716,7 +716,7 @@ class AskCardViewTest {
         )
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(AskReviewTags.ASK_LINK_OPEN).assertDoesNotExist()
-        composeRule.onNodeWithText("This page is on the agent’s computer. Open the link in a browser there.")
+        composeRule.onNodeWithText("This page is on the agent’s device. Open the link in a browser there.")
             .assertIsDisplayed()
     }
 

@@ -1319,10 +1319,10 @@ private fun hostPickerSubtitle(host: HostView, connecting: Boolean): String = wh
     )
     HostReachGroup.OnThisNetwork, HostReachGroup.ThroughTheRelay -> {
         val route = stringResource(
-            if (host.reachGroup() == HostReachGroup.OnThisNetwork) {
-                R.string.new_agent_host_on_network
-            } else {
-                R.string.new_agent_host_over_internet
+            when {
+                host.reachGroup() != HostReachGroup.OnThisNetwork -> R.string.new_agent_host_relayed
+                host.sameNetwork -> R.string.new_agent_host_local
+                else -> R.string.new_agent_host_direct
             },
         )
         listOfNotNull(host.platform?.label, route).joinToString(" · ")

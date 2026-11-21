@@ -54,6 +54,7 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.LocalAmuxPhotographed
 import sh.amux.design.Space
 import sh.amux.design.thumbTarget
+import sh.amux.values.HostView
 import sh.amux.values.PendingPair
 import sh.amux.values.Reach
 import sh.amux.values.RouteKind
@@ -150,6 +151,7 @@ fun PairingSheetContent(
                 }
                 is PairingPhaseUi.Confirming -> ConfirmPairingContent(
                     pending = phase.pending,
+                    route = confirmingRoute(phase.pending, state.machine),
                     platformName = phase.platformName ?: state.machine?.platform?.label,
                     nowMs = state.nowMs,
                     onConfirm = { onAction(PairingAction.Confirm(phase.pending)) },
@@ -175,7 +177,7 @@ fun PairingSheetContent(
 
 @Composable
 private fun pairingHeaderTitle(state: PairingSheetState): String {
-    // An invitation for a computer this phone cannot see names nothing it
+    // An invitation for a device this phone cannot see names nothing it
     // could pair yet.
     if (state.phase is PairingPhaseUi.NeedsAccount) return stringResource(R.string.pairing_title_generic)
     val hostName = when (val phase = state.phase) {
@@ -191,33 +193,74 @@ private fun pairingHeaderTitle(state: PairingSheetState): String {
 }
 
 @Composable
-private fun pairingHeaderSubtitle(state: PairingSheetState): String? {
+private fun pairingHeaderSubtitle(state: PairingSheetState): String? =
+    pairingRoute(state)?.let { routeTitle(it) }
+
+@Composable
+private fun routeTitle(route: PairingRoute): String = when (route) {
+    PairingRoute.Local -> stringResource(R.string.pairing_route_local)
+    PairingRoute.Direct -> stringResource(R.string.pairing_route_direct)
+    PairingRoute.Relayed -> stringResource(R.string.pairing_route_relay)
+    PairingRoute.Ssh -> stringResource(R.string.pairing_route_ssh)
+}
+
+/** How this phone would reach the machine it is pairing with. */
+internal enum class PairingRoute { Local, Direct, Relayed, Ssh }
+
+/**
+ * A candidate discovery found on this network, the only one that is Local:
+ * not one only the relay reaches, nor one a paired device announced, which
+ * has no address here.
+ */
+internal fun HostView.foundHere(): Boolean =
+    candidate && !relayOnly && reach != Reach.Online(RouteKind.Relay) && addrs.isNotEmpty()
+
+/**
+ * The route under the machine's name in the sheet's header. Said because it
+ * is the difference between a code that works with no account at all and
+ * one carried across the relay: two machines of one name on two routes are
+ * otherwise one name.
+ */
+internal fun pairingRoute(state: PairingSheetState): PairingRoute? {
     val phase = state.phase
-    if (phase is PairingPhaseUi.Confirming) {
-        return routeTitle(phase.pending.via)
-    }
-    // "On this network" only for a computer that is: one only the relay
-    // reaches, or one the code reached across the relay, is over the
-    // internet, and an invitation this phone cannot take up has no route.
+    if (phase is PairingPhaseUi.Confirming) return confirmingRoute(phase.pending, state.machine)
+    // An invitation this phone cannot take up has no route.
     if (phase is PairingPhaseUi.NeedsAccount) return null
     val machine = state.machine ?: return null
-    if (machine.relayOnly || phase == PairingPhaseUi.NeedsSubscription) {
-        return stringResource(R.string.pairing_route_relay)
-    }
-    if (machine.candidate && machine.reach != Reach.Online(RouteKind.Relay)) {
-        return stringResource(R.string.pairing_route_direct)
+    // One only the relay reaches, or one the code reached across the relay.
+    if (machine.relayOnly || phase == PairingPhaseUi.NeedsSubscription) return PairingRoute.Relayed
+    if (machine.candidate) {
+        if (machine.foundHere()) return PairingRoute.Local
+        // One a paired device announced goes through that device, which is
+        // neither. Any other has no address here, so only the relay reaches
+        // it, which is also why a signed-out phone needs an account.
+        return if (machine.through == null) PairingRoute.Relayed else null
     }
     return when (val reach = machine.reach) {
-        is Reach.Online -> routeTitle(reach.value)
+        is Reach.Online -> when (reach.value) {
+            RouteKind.Direct -> if (machine.sameNetwork) PairingRoute.Local else PairingRoute.Direct
+            RouteKind.Relay -> PairingRoute.Relayed
+            RouteKind.Ssh -> PairingRoute.Ssh
+            RouteKind.Unspecified -> null
+        }
         Reach.Away, is Reach.Offline -> null
     }
 }
 
-@Composable
-private fun routeTitle(route: RouteKind): String? = when (route) {
-    RouteKind.Direct -> stringResource(R.string.pairing_route_direct)
-    RouteKind.Relay -> stringResource(R.string.pairing_route_relay)
-    RouteKind.Ssh -> stringResource(R.string.pairing_route_ssh)
+/**
+ * How the code just entered reached the machine. A direct dial to the
+ * machine discovery found here stays Local, as the header said before the
+ * code was entered.
+ */
+internal fun confirmingRoute(pending: PendingPair, machine: HostView?): PairingRoute? = when (pending.via) {
+    RouteKind.Direct ->
+        if (machine != null && machine.hostId == pending.hostId && machine.foundHere()) {
+            PairingRoute.Local
+        } else {
+            PairingRoute.Direct
+        }
+    RouteKind.Relay -> PairingRoute.Relayed
+    RouteKind.Ssh -> PairingRoute.Ssh
     RouteKind.Unspecified -> null
 }
 
@@ -468,6 +511,7 @@ private fun DigitBox(
 @Composable
 private fun ConfirmPairingContent(
     pending: PendingPair,
+    route: PairingRoute?,
     platformName: String?,
     nowMs: Long,
     onConfirm: () -> Unit,
@@ -475,11 +519,13 @@ private fun ConfirmPairingContent(
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
-    val routePart = when (pending.via) {
-        RouteKind.Direct -> stringResource(R.string.pairing_confirm_route_direct)
-        RouteKind.Relay -> stringResource(R.string.pairing_confirm_route_relay)
-        RouteKind.Ssh -> stringResource(R.string.pairing_confirm_route_ssh)
-        RouteKind.Unspecified -> null
+    // The same word as the header above it.
+    val routePart = when (route) {
+        PairingRoute.Local -> stringResource(R.string.pairing_confirm_route_local)
+        PairingRoute.Direct -> stringResource(R.string.pairing_confirm_route_direct)
+        PairingRoute.Relayed -> stringResource(R.string.pairing_confirm_route_relay)
+        PairingRoute.Ssh -> stringResource(R.string.pairing_confirm_route_ssh)
+        null -> null
     }
     val about = listOfNotNull(platformName, routePart).joinToString(" · ")
     val leftSeconds = (pending.expiresAtMs - nowMs) / 1_000.0
@@ -519,7 +565,7 @@ private fun ConfirmPairingContent(
         )
 
         // The key, whole, for anybody who wants to check it against the
-        // computer's; quiet, since most people pair without reading it.
+        // device's; quiet, since most people pair without reading it.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -653,7 +699,7 @@ private fun RefusedInvitationContent(
 
 /**
  * Why a code that was right cannot pair yet, and the offer that would: the
- * relay sees the computer, and only a subscription opens the tunnel to it.
+ * relay sees the device, and only Pro relays the connection to it.
  */
 @Composable
 private fun SubscribeCallToAction(

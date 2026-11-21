@@ -88,7 +88,7 @@ object FleetWords {
                 is ExitCause.Failed -> Line("Stopped · ${cause.value}", Ink.Error)
                 ExitCause.Finished, ExitCause.Ended -> null
             }
-            SecondLine.HostRevoked -> Line("Unpaired by its computer · pair again to reach it", Ink.Warning)
+            SecondLine.HostRevoked -> Line("Unpaired by its device · pair again to reach it", Ink.Warning)
             SecondLine.Blank -> null
         }
     }
@@ -127,8 +127,8 @@ object FleetWords {
 
     /** Why the relay cannot reach this account's computers, when the person can fix it. */
     fun relayTrouble(relay: RelayLink): String? = when (relay) {
-        RelayLink.SignInAgain -> "Sign in again to reach your computers from anywhere"
-        RelayLink.VersionMismatch -> "Update amux to reach your computers from anywhere"
+        RelayLink.SignInAgain -> "Sign in again for relayed connections"
+        RelayLink.VersionMismatch -> "Update amux for relayed connections"
         RelayLink.Off,
         RelayLink.Connecting,
         RelayLink.Retrying,

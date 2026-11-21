@@ -186,12 +186,12 @@ class FleetStoreTest {
 
         bundle.fleet.relay(RelayLink.SignInAgain)
         assertEquals(
-            "Sign in again to reach your computers from anywhere",
+            "Sign in again for relayed connections",
             bundle.fleet.snapshot.relayTrouble,
         )
         bundle.fleet.relay(RelayLink.VersionMismatch)
         assertEquals(
-            "Update amux to reach your computers from anywhere",
+            "Update amux for relayed connections",
             bundle.fleet.snapshot.relayTrouble,
         )
         bundle.fleet.relay(RelayLink.Connected)

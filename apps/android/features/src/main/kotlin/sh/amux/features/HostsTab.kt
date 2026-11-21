@@ -51,8 +51,8 @@ import sh.amux.values.Reach
 import sh.amux.words.Elapsed
 
 /**
- * Computers tab: offers to pair the computers found, then every paired
- * computer in one list, the reachable ones first.
+ * Devices tab: offers to pair the devices found, then every paired
+ * device in one list, the reachable ones first.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -257,7 +257,7 @@ private fun HostsListContent(
     }
 }
 
-/** Where a computer row's name starts inside its card: past its glyph. */
+/** Where a device row's name starts inside its card: past its glyph. */
 private val HostTextInset = 48.dp
 
 @Composable
@@ -317,7 +317,7 @@ private fun hostGlyph(platform: Platform?): ImageVector = when (platform) {
 }
 
 /**
- * What a computer row says to somebody who cannot see it: its name, what it
+ * What a device row says to somebody who cannot see it: its name, what it
  * is, how it is reached, and, when it is not, what that means for its agents.
  */
 @Composable
@@ -325,7 +325,9 @@ private fun hostSpoken(host: HostView, state: HostsTabState, clock: ElapsedClock
     val parts = mutableListOf(host.name)
     host.platform?.label?.let { parts.add(it) }
     when (host.reachGroup()) {
-        HostReachGroup.OnThisNetwork -> parts.add(stringResource(R.string.hosts_spoken_direct))
+        HostReachGroup.OnThisNetwork -> parts.add(
+            stringResource(if (host.sameNetwork) R.string.hosts_spoken_local else R.string.hosts_spoken_direct),
+        )
         HostReachGroup.ThroughTheRelay -> parts.add(stringResource(R.string.hosts_spoken_relay))
         HostReachGroup.Away -> {
             parts.add(stringResource(R.string.hosts_spoken_away))
@@ -361,7 +363,11 @@ private fun hostStatusLine(host: HostView, state: HostsTabState, clock: ElapsedC
     val parts = mutableListOf<String>()
     host.platform?.label?.let { parts.add(it) }
     val status = when (host.reachGroup()) {
-        HostReachGroup.OnThisNetwork -> stringResource(R.string.hosts_status_direct)
+        // A direct path on the network both are on reads Local; a direct
+        // one across networks, as over Tailscale, reads Direct.
+        HostReachGroup.OnThisNetwork -> stringResource(
+            if (host.sameNetwork) R.string.hosts_status_local else R.string.hosts_status_direct,
+        )
         HostReachGroup.ThroughTheRelay -> stringResource(R.string.hosts_status_relay)
         HostReachGroup.Away -> stringResource(R.string.hosts_status_away)
         HostReachGroup.Offline -> when {

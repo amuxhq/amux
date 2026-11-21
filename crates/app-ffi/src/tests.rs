@@ -1700,6 +1700,12 @@ fn the_composers_rules_come_from_the_shared_view() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "colours through tree-sitter's grammars, which are C code Miri cannot run; \
+              the pointers the highlight calls take and return are checked by \
+              highlight_calls_take_and_return_their_strings"
+)]
 fn code_is_coloured_by_the_shared_view() {
     // Grammars build in the background on first use; built here, every
     // answer is settled and coloured.
@@ -1717,14 +1723,6 @@ fn code_is_coloured_by_the_shared_view() {
     assert_eq!(
         block["lines"][1][0],
         json!({"text": "// done", "kind": "Comment"})
-    );
-    // No language is plain, and settled: nothing will colour it.
-    // SAFETY: the string lives for the call; a null info is allowed.
-    let plain = take(unsafe { amux_highlight_block(code.as_ptr(), std::ptr::null(), true) });
-    assert_eq!(plain["settled"], json!(true));
-    assert_eq!(
-        plain["lines"][0],
-        json!([{"text": "fn main() {}", "kind": "Plain"}])
     );
 
     let path = c("src/pair.py");
@@ -1756,6 +1754,22 @@ fn code_is_coloured_by_the_shared_view() {
     // The string the first hunk leaves open does not reach the second,
     // which is elsewhere in the file.
     assert!(has(3, json!({"text": "2", "kind": "Number"})), "{patch}");
+}
+
+/// The highlight calls' strings in and out, on paths that need no grammar,
+/// so the pointer checks still cover them.
+#[test]
+fn highlight_calls_take_and_return_their_strings() {
+    let code = c("fn main() {}\n// done\n");
+    // No language is plain, and settled: nothing will colour it.
+    // SAFETY: the string lives for the call; a null info is allowed.
+    let plain = take(unsafe { amux_highlight_block(code.as_ptr(), std::ptr::null(), true) });
+    assert_eq!(plain["settled"], json!(true));
+    assert_eq!(
+        plain["lines"][0],
+        json!([{"text": "fn main() {}", "kind": "Plain"}])
+    );
+    let path = c("src/pair.py");
     let broken = c("{");
     // SAFETY: the strings live for the call.
     assert!(unsafe { amux_highlight_patch(path.as_ptr(), broken.as_ptr()) }.is_null());

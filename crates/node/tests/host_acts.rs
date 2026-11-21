@@ -564,6 +564,21 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
     host.stop().await;
 }
 
+/// `recorded`, an agent's folder as the host gave it, is `folder`, in the
+/// form people and programs take: compared once both resolve, since a
+/// test's temporary folder resolves elsewhere (`/var` to `/private/var`
+/// on macOS) and Windows resolves a drive path to its verbatim `\\?\`
+/// form, which the host never hands out.
+#[track_caller]
+fn assert_folder(recorded: &str, folder: &Path, what: &str) {
+    assert!(!recorded.starts_with(r"\\?\"), "{what}: {recorded}");
+    assert_eq!(
+        Path::new(recorded).canonicalize().unwrap(),
+        folder.canonicalize().unwrap(),
+        "{what}"
+    );
+}
+
 /// A new agent's parent is whoever called: the calling agent, named by its
 /// own host, or none for a person. One of this host's agents that names
 /// no folder starts its child where it works itself; an agent of another
@@ -575,7 +590,6 @@ async fn a_new_agents_parent_is_its_caller() {
     let work = host.install.work.clone();
     let elsewhere = host.install.path("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();
-    let elsewhere = elsewhere.canonicalize().unwrap();
 
     for who in EVERYONE {
         let tag = format!("{who:?}").to_lowercase();
@@ -592,7 +606,7 @@ async fn a_new_agents_parent_is_its_caller() {
             .calling_agent(who)
             .map(|(host, agent)| (host.as_bytes().to_vec(), agent.as_bytes().to_vec()));
         assert_eq!(parent, calling, "{who:?}");
-        assert_eq!(Path::new(&made.cwd), elsewhere, "{who:?}");
+        assert_folder(&made.cwd, &elsewhere, &format!("{who:?}"));
 
         // A person's empty folder is this host's home, as typed, which a
         // test leaves alone.
@@ -606,11 +620,7 @@ async fn a_new_agents_parent_is_its_caller() {
         let made = host.agents(who).create_agent(unnamed).await;
         if who == Who::AgentHere {
             let made = made.unwrap().into_inner().agent.unwrap();
-            assert_eq!(
-                Path::new(&made.cwd),
-                work.canonicalize().unwrap(),
-                "where its parent works"
-            );
+            assert_folder(&made.cwd, &work, "where its parent works");
         } else {
             let refused = made.unwrap_err();
             assert_eq!(refused.code(), Code::InvalidArgument);

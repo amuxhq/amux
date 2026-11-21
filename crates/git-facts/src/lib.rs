@@ -1526,6 +1526,10 @@ async fn run(
 ///   The options that pick hunks and their order go on each diff read
 ///   ([`DIFF_OPTIONS`]).
 /// - No advice on adding an embedded repository, which a snapshot does.
+/// - Paths longer than Windows' old 260-character limit are read and
+///   written. Git for Windows refuses them otherwise ("Filename too
+///   long"), so one deep file would fail every snapshot and every read of
+///   the working tree; git elsewhere has no such limit and ignores the key.
 /// - None of the person's hooks runs: [`no_hooks`] goes with this on
 ///   every call.
 const CONFIG: &[&str] = &[
@@ -1559,6 +1563,8 @@ const CONFIG: &[&str] = &[
     "color.diff=false",
     "-c",
     "advice.addEmbeddedRepo=false",
+    "-c",
+    "core.longpaths=true",
 ];
 
 /// Options on every diff whose output is read, over what the person's

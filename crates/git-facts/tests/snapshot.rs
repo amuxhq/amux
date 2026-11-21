@@ -10,6 +10,11 @@ use git_facts::GitError;
 use git_facts::objects::ObjectStore;
 use git_facts::snapshot::{self, Limits, Snapshot};
 
+/// Git as the tests set repositories up: with an identity of its own, and
+/// with LFS's filters emptied, so a git-lfs the machine has installed and
+/// registered (as CI runners do) never runs for a fixture. Its filter
+/// writes into `.git/lfs` the moment git hashes a tracked file, which a
+/// fixture's commit does, and that would be blamed on the snapshot.
 fn git(cwd: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args([
@@ -23,6 +28,16 @@ fn git(cwd: &Path, args: &[&str]) -> String {
             "commit.gpgsign=false",
             "-c",
             "protocol.file.allow=always",
+        ])
+        .args([
+            "-c",
+            "filter.lfs.process=",
+            "-c",
+            "filter.lfs.clean=",
+            "-c",
+            "filter.lfs.smudge=",
+            "-c",
+            "filter.lfs.required=false",
         ])
         .args(args)
         .current_dir(cwd)
@@ -1123,12 +1138,26 @@ async fn mid_merge_the_snapshot_holds_the_markers() {
     git(root, &["switch", "-q", "main"]);
     write(root, "base.txt", "main\n");
     git(root, &["commit", "-q", "-am", "main"]);
+    // With an identity of its own: git refuses to start a merge without
+    // one, before any conflict, on a machine where none is configured and
+    // none can be guessed from the host's name.
     let merged = Command::new("git")
-        .args(["merge", "side"])
+        .args([
+            "-c",
+            "user.name=amux",
+            "-c",
+            "user.email=amux@example.invalid",
+            "merge",
+            "side",
+        ])
         .current_dir(root)
         .output()
         .unwrap();
-    assert!(!merged.status.success());
+    assert!(
+        root.join(".git/MERGE_HEAD").exists(),
+        "the merge stops at its conflict: {}",
+        String::from_utf8_lossy(&merged.stderr)
+    );
 
     let store = store();
     let snapshot = take(root, &store.store).await;
@@ -1191,6 +1220,29 @@ async fn mid_rebase_the_snapshot_says_a_merge_is_under_way() {
         .await
         .unwrap();
     assert!(String::from_utf8(text).unwrap().contains("<<<<<<<"));
+}
+
+/// A file whose full path is past Windows' old 260-character limit is
+/// taken like any other: Git for Windows refuses such a path unless told
+/// otherwise, which would fail every snapshot of the tree.
+#[tokio::test]
+async fn a_file_past_windows_path_limit_is_taken() {
+    let repo = repository();
+    let root = repo.path();
+    let path = format!(
+        "{}end/{}.txt",
+        "nested-folder-".repeat(8),
+        "a-long-file-name".repeat(8)
+    );
+    assert!(root.join(&path).as_os_str().len() > 260);
+    write(root, &path, "deep\n");
+
+    let store = store();
+    let snapshot = take(root, &store.store).await;
+    assert_eq!(
+        read(root, &store.store, &snapshot.commit, &path).await,
+        Some(b"deep\n".to_vec())
+    );
 }
 
 /// A link is stored as a link, its target as written, whether or not

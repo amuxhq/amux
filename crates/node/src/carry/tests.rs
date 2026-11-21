@@ -19,7 +19,7 @@ use tonic::transport::{Endpoint, Server};
 
 use super::*;
 use crate::api::{Entrance, Entry, Surface};
-use crate::link::link_log::{CarriedCall, CarriedOutcome};
+use crate::link::link_log::CarriedOutcome;
 
 /// A message is its bytes: the probe needs no schema.
 #[derive(Clone, Copy, Default)]
@@ -216,7 +216,12 @@ impl Far {
                 .serve_with_incoming(incoming),
         );
         Self {
-            id: HostId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_3b1c_5e6a_7d80),
+            // Each far host its own id, so a test reading the process's log
+            // finds only its own calls.
+            id: HostId::from_u128(
+                0x0192_f0c8_7a51_7c3e_9d2f_3b1c_5e6a_0000
+                    + u128::from(NEXT_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
+            ),
             connections,
             pumps: Arc::default(),
             slow: None,
@@ -314,6 +319,9 @@ impl Reach for Stuck {
         "desk".to_owned()
     }
 }
+
+/// The next far host's number.
+static NEXT_FAR: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
 
 const OWN: HostId = HostId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_aaaa_aaaa_aaaa);
 
@@ -682,44 +690,11 @@ async fn a_call_arriving_on_a_link_for_a_third_host_is_answered_here() {
     assert!(answer.starts_with("answered-by=near "), "{answer}");
 }
 
-/// What this thread logs, for a test on a current-thread runtime.
-fn logged() -> (Arc<Mutex<Vec<u8>>>, tracing::subscriber::DefaultGuard) {
-    #[derive(Clone)]
-    struct Into(Arc<Mutex<Vec<u8>>>);
-    impl std::io::Write for Into {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let log = Arc::new(Mutex::new(Vec::new()));
-    let writer = Into(log.clone());
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(move || writer.clone())
-        .finish();
-    (log, tracing::subscriber::set_default(subscriber))
-}
-
-fn carried_lines(log: &Mutex<Vec<u8>>) -> Vec<CarriedCall> {
-    String::from_utf8_lossy(&log.lock().unwrap())
-        .lines()
-        .filter_map(CarriedCall::parse)
-        .map(|(host, call)| {
-            assert_eq!(host, OWN);
-            call
-        })
-        .collect()
-}
-
 /// Every carried call leaves one line when it ends, a call its caller let
 /// go of before any answer began included.
 #[tokio::test]
 async fn every_carried_call_leaves_one_line_when_it_ends() {
-    let (log, _logging) = logged();
+    let log = crate::link_log::captured::log();
     let far = Far::new();
     let entrance = near(reaching(&far));
     let desk = wire::authority(&far.id);
@@ -736,7 +711,11 @@ async fn every_carried_call_leaves_one_line_when_it_ends() {
             .await
             .is_err()
     );
-    let lines = carried_lines(&log);
+    let lines: Vec<_> = log
+        .carried(OWN)
+        .into_iter()
+        .filter(|call| call.peer == far.id)
+        .collect();
     let ended: Vec<_> = lines
         .iter()
         .map(|call| (call.method.as_str(), call.outcome, call.code))
@@ -752,5 +731,4 @@ async fn every_carried_call_leaves_one_line_when_it_ends() {
             ),
         ]
     );
-    assert!(lines.iter().all(|call| call.peer == far.id));
 }

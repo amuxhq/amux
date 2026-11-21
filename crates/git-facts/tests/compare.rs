@@ -23,6 +23,9 @@ fn git_with(cwd: &Path, env: &[(&str, &Path)], args: &[&str]) -> String {
             "user.email=amux@example.invalid",
         ])
         .args(["-c", "commit.gpgsign=false"])
+        // Git for Windows refuses a path past 260 characters without it,
+        // and the long-path test's fixture adds thousands of them.
+        .args(["-c", "core.longpaths=true"])
         .args(args)
         .envs(env.iter().copied())
         .current_dir(cwd)

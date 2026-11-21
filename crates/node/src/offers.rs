@@ -239,12 +239,7 @@ impl Offers {
                 catalogue: held.map(|held| held.offer.blob.hash.clone()),
                 signed_in: held.is_some_and(|held| held.offer.signed_in),
                 descriptor: Some(ProviderDescriptor {
-                    name: if provider == CLAUDE {
-                        "Claude"
-                    } else {
-                        "Codex"
-                    }
-                    .to_owned(),
+                    name: wire::agents::name_or_id(provider).to_owned(),
                     kind: kind as i32,
                     sign_in_hint: own_sign_in_hint(provider).to_owned(),
                     version: held

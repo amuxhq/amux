@@ -243,6 +243,142 @@ impl<'de> Deserialize<'de> for Names {
     }
 }
 
+/// A form schema with each single choice written as titled constants
+/// (`"oneOf": [{"const": "1", "title": "Tea"}, ...]`, as MCP elicitation
+/// and Antigravity's question tool write one) also given as an `enum` of
+/// its titles, so every client offers the titles to choose from; read
+/// otherwise, such a field takes typed text and nothing tells the person
+/// what the agent will accept. [`constants_for_titles`] turns a title
+/// chosen back into the constant the agent asked for. The rest is kept as
+/// written, the properties in their order.
+pub(crate) fn titled_choices(schema: &[u8]) -> Vec<u8> {
+    fn rewritten(schema: &[u8]) -> Option<Vec<u8>> {
+        let mut top: Ordered = serde_json::from_slice(schema).ok()?;
+        let at = top.0.iter().position(|(key, _)| key == "properties")?;
+        let mut properties: Ordered = serde_json::from_str(top.0[at].1.get()).ok()?;
+        let mut changed = false;
+        for (_, property) in &mut properties.0 {
+            let Ok(Value::Object(mut fields)) = serde_json::from_str::<Value>(property.get())
+            else {
+                continue;
+            };
+            if fields.contains_key("enum") {
+                continue;
+            }
+            let Some(titles) = fields.get("oneOf").and_then(titled) else {
+                continue;
+            };
+            fields.insert("enum".to_owned(), Value::from(titles));
+            *property = serde_json::value::to_raw_value(&fields).ok()?;
+            changed = true;
+        }
+        if !changed {
+            return None;
+        }
+        top.0[at].1 = serde_json::value::to_raw_value(&properties).ok()?;
+        serde_json::to_vec(&top).ok()
+    }
+    rewritten(schema).unwrap_or_else(|| schema.to_vec())
+}
+
+/// A form's answer with each title [`titled_choices`] offered in place of
+/// its constant, as the agent's schema asked for it; anything else as sent.
+pub(crate) fn constants_for_titles(content_json: &[u8], schema: &[u8]) -> Vec<u8> {
+    let (Ok(Value::Object(mut content)), Ok(Value::Object(top))) = (
+        serde_json::from_slice::<Value>(content_json),
+        serde_json::from_slice::<Value>(schema),
+    ) else {
+        return content_json.to_vec();
+    };
+    let properties = top.get("properties").and_then(Value::as_object);
+    let mut changed = false;
+    for (name, value) in &mut content {
+        let Some(options) = properties
+            .and_then(|properties| properties.get(name))
+            .and_then(|property| property.get("oneOf"))
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        let Some(chosen) = value.as_str() else {
+            continue;
+        };
+        let constant = options
+            .iter()
+            .find(|option| option_title(option) == Some(chosen))
+            .and_then(|option| option.get("const"))
+            .cloned();
+        if let Some(constant) = constant {
+            *value = constant;
+            changed = true;
+        }
+    }
+    if changed {
+        serde_json::to_vec(&Value::Object(content)).unwrap_or_else(|_| content_json.to_vec())
+    } else {
+        content_json.to_vec()
+    }
+}
+
+/// The titles of a `oneOf` that is a list of constants, a constant
+/// standing for its own title where it has none; None when it is anything
+/// else.
+fn titled(options: &Value) -> Option<Vec<String>> {
+    let options = options.as_array().filter(|options| !options.is_empty())?;
+    options
+        .iter()
+        .map(|option| option_title(option).map(str::to_owned))
+        .collect()
+}
+
+fn option_title(option: &Value) -> Option<&str> {
+    let constant = option.get("const")?.as_str()?;
+    Some(
+        option
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or(constant),
+    )
+}
+
+/// An object's members in the order they were written, each kept as
+/// written.
+struct Ordered(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+impl<'de> Deserialize<'de> for Ordered {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Ordered;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Ordered, A::Error> {
+                let mut members = Vec::new();
+                while let Some(member) = map.next_entry()? {
+                    members.push(member);
+                }
+                Ok(Ordered(members))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
+}
+
+impl serde::Serialize for Ordered {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in &self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
 /// A link opened, declined or cancelled.
 pub(crate) fn link_answered(action: i32) -> AskClosed {
     outcome(
@@ -363,5 +499,43 @@ mod tests {
         assert_eq!(closed.outcome, AskOutcome::Answered as i32);
         assert_eq!(closed.fields, ["title", "assignee", "extra"]);
         assert!(!format!("{closed:?}").contains("Fix it"));
+    }
+
+    /// Antigravity's question, as its question tool sends it
+    /// (`agy-question`).
+    const QUESTION: &[u8] = br#"{"type":"object","properties":{"q1":{"type":"string","title":"Do you prefer tea or coffee?","oneOf":[{"const":"1","title":"Tea"},{"const":"2","title":"Coffee"}]},"q1_other":{"type":"string","title":"Other"}}}"#;
+
+    #[test]
+    fn titled_constants_are_offered_by_their_titles_and_answered_by_their_constants() {
+        let offered = titled_choices(QUESTION);
+        let schema: Value = serde_json::from_slice(&offered).unwrap();
+        assert_eq!(
+            schema["properties"]["q1"]["enum"],
+            serde_json::json!(["Tea", "Coffee"])
+        );
+        // Everything else as the agent wrote it, its fields in its order.
+        assert_eq!(
+            schema["properties"]["q1"]["oneOf"],
+            serde_json::from_slice::<Value>(QUESTION).unwrap()["properties"]["q1"]["oneOf"]
+        );
+        let text = String::from_utf8(offered.clone()).unwrap();
+        assert!(text.find("\"q1\"").unwrap() < text.find("\"q1_other\"").unwrap());
+        let sent = constants_for_titles(br#"{"q1":"Coffee","q1_other":"Tea"}"#, &offered);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&sent).unwrap(),
+            serde_json::json!({"q1": "2", "q1_other": "Tea"})
+        );
+        // A value that is no title goes as it was typed.
+        let typed = constants_for_titles(br#"{"q1":"Juice"}"#, &offered);
+        assert_eq!(typed, br#"{"q1":"Juice"}"#);
+    }
+
+    #[test]
+    fn a_schema_without_titled_constants_is_kept_as_written() {
+        let plain = br#"{"type":"object","properties":{"b":{"type":"string"},"a":{"type":"string","enum":["x","y"],"oneOf":[{"const":"x"}]}}}"#;
+        assert_eq!(titled_choices(plain), plain);
+        assert_eq!(titled_choices(b"not json"), b"not json");
+        let mixed = br#"{"properties":{"a":{"oneOf":[{"const":"x"},{"type":"string"}]}}}"#;
+        assert_eq!(titled_choices(mixed), mixed);
     }
 }

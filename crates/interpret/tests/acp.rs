@@ -1136,3 +1136,55 @@ fn the_hosts_copy_comes_from_initialize_alone() {
         "Run `opencode auth login` in the terminal"
     );
 }
+
+/// Antigravity's question tool writes its choices as titled constants
+/// (`agy-question`): the ask offers them by title, and the title chosen
+/// reaches the agent as the constant it asked for, not as typed text it
+/// would take for no answer.
+#[test]
+fn a_forms_titled_choices_are_offered_by_title_and_sent_as_constants() {
+    let mut state = opened("antigravity", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "ask me"));
+    Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": "3", "method": "elicitation/create",
+            "params": {"sessionId": "s1", "toolCallId": "c1", "mode": "form",
+                "message": "The agent has a question.",
+                "requestedSchema": {"type": "object", "properties": {
+                    "q1": {"type": "string", "title": "Tea or coffee?",
+                        "oneOf": [{"const": "1", "title": "Tea"}, {"const": "2", "title": "Coffee"}]},
+                    "q1_other": {"type": "string", "title": "Other"}}}}}),
+        ),
+    );
+    let asked = &state.shared().asks().open_asks()[0];
+    let Some(wire::acp_ask::Body::Form(form)) = &asked.body else {
+        panic!("not a form: {asked:?}");
+    };
+    let schema: serde_json::Value = serde_json::from_slice(&form.schema_json).unwrap();
+    assert_eq!(
+        schema["properties"]["q1"]["enum"],
+        serde_json::json!(["Tea", "Coffee"])
+    );
+    let key = asked.key.clone();
+    let answered = Acp::step(
+        &mut state,
+        Event::Input(wire::Input::new(
+            b"f".to_vec(),
+            wire::AcpInput {
+                of: Some(wire::acp_input::Of::Answer(wire::AcpAnswer {
+                    ask_key: key,
+                    of: Some(wire::acp_answer::Of::Form(wire::FormAnswer {
+                        action: wire::FormAction::Accept as i32,
+                        content_json: br#"{"q1":"Coffee"}"#.to_vec(),
+                    })),
+                })),
+            },
+        )),
+    );
+    assert_eq!(
+        writes(&answered.effects),
+        vec![serde_json::json!({"jsonrpc": "2.0", "id": "3",
+            "result": {"action": "accept", "content": {"q1": "2"}}})]
+    );
+}

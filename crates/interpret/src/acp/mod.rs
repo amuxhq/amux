@@ -1492,7 +1492,7 @@ impl State {
                 self.shared.accept(emit, id, false);
             }
             (Some(acp_ask::Body::Form(form)), acp_answer::Of::Form(sent)) => {
-                let Some(response) = form_response(&sent) else {
+                let Some(response) = form_response(&sent, &form.schema_json) else {
                     return self.shared.reject(emit, id, Refusal::Unsupported);
                 };
                 if self.shared.answer(emit, id, &key).is_none() {
@@ -1606,15 +1606,14 @@ fn text_body(kind: Streamed, complete: bool) -> Vec<u8> {
 }
 
 /// The answer to a form: what it holds when accepted, read as ACP's
-/// values. None when the action is none or the content is not a form's.
-fn form_response(sent: &wire::FormAnswer) -> Option<CreateElicitationResponse> {
+/// values, each choice the constant the agent's schema asked for. None when
+/// the action is none or the content is not a form's.
+fn form_response(sent: &wire::FormAnswer, schema: &[u8]) -> Option<CreateElicitationResponse> {
     let content = if sent.content_json.is_empty() {
         None
     } else {
-        Some(
-            serde_json::from_slice::<BTreeMap<String, ElicitationValue>>(&sent.content_json)
-                .ok()?,
-        )
+        let content = ask_item::constants_for_titles(&sent.content_json, schema);
+        Some(serde_json::from_slice::<BTreeMap<String, ElicitationValue>>(&content).ok()?)
     };
     action_response(sent.action, content)
 }

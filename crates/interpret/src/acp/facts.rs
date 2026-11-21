@@ -543,6 +543,7 @@ impl State {
             AgentRequest::ElicitationCreate(CreateElicitationRequest::Form(form)) => {
                 let schema_json =
                     crate::shared::json_as_written(payload, &["params", "requestedSchema"])
+                        .map(|schema| crate::ask_item::titled_choices(&schema))
                         .unwrap_or_default();
                 self.work_ask(
                     emit,

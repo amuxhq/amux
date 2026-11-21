@@ -52,12 +52,14 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -66,17 +68,20 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -103,6 +108,7 @@ object ReportTags {
     const val SENDING: String = "report.sending"
     const val SIGNED_OUT: String = "report.signed-out"
     const val FRAME: String = "report.frame"
+    const val FRAME_PREPARING: String = "report.frame.preparing"
     const val FRAME_FALLBACK: String = "report.frame.fallback"
     const val NOTE: String = "report.note"
     const val DUMP_STATUS: String = "report.dump-status"
@@ -174,7 +180,10 @@ data class ReportUiState(
     val note: String = "",
     val marks: List<ReportMarkUi> = emptyList(),
     val signedIn: Boolean = true,
-    val diagnosticDumpAttached: Boolean = true,
+    val screenshotPending: Boolean = false,
+    val screenshotPresent: Boolean = !screenshotPending && imageBytes?.isNotEmpty() == true,
+    val dumpPending: Boolean = false,
+    val dumpReady: Boolean = true,
     val locked: Boolean = false,
     val delivery: ReportDeliveryUi = ReportDeliveryUi.Ready,
 ) {
@@ -186,7 +195,10 @@ data class ReportUiState(
             note == other.note &&
             marks == other.marks &&
             signedIn == other.signedIn &&
-            diagnosticDumpAttached == other.diagnosticDumpAttached &&
+            screenshotPending == other.screenshotPending &&
+            screenshotPresent == other.screenshotPresent &&
+            dumpPending == other.dumpPending &&
+            dumpReady == other.dumpReady &&
             locked == other.locked &&
             delivery == other.delivery
     }
@@ -197,7 +209,10 @@ data class ReportUiState(
         result = 31 * result + note.hashCode()
         result = 31 * result + marks.hashCode()
         result = 31 * result + signedIn.hashCode()
-        result = 31 * result + diagnosticDumpAttached.hashCode()
+        result = 31 * result + screenshotPending.hashCode()
+        result = 31 * result + screenshotPresent.hashCode()
+        result = 31 * result + dumpPending.hashCode()
+        result = 31 * result + dumpReady.hashCode()
         result = 31 * result + locked.hashCode()
         result = 31 * result + delivery.hashCode()
         return result
@@ -430,6 +445,7 @@ fun ReportOverlayContent(
                         ) {
                             ReportFrameCanvas(
                                 imageBytes = state.imageBytes,
+                                screenshotPending = state.screenshotPending,
                                 aspectRatio = state.frameAspectRatio.coerceIn(0.3f, 2.5f),
                                 marks = state.marks,
                                 selectedIndex = activeSelectedMark,
@@ -502,9 +518,29 @@ internal fun rememberReportImageBitmap(imageBytes: ByteArray?): ImageBitmap? =
             }
     }
 
+internal fun computeFittedImageRect(
+    containerWidth: Float,
+    containerHeight: Float,
+    imageWidth: Float,
+    imageHeight: Float,
+): Rect {
+    val safeContainerW = containerWidth.coerceAtLeast(1f)
+    val safeContainerH = containerHeight.coerceAtLeast(1f)
+    if (imageWidth <= 0f || imageHeight <= 0f) {
+        return Rect(0f, 0f, safeContainerW, safeContainerH)
+    }
+    val scale = minOf(safeContainerW / imageWidth, safeContainerH / imageHeight)
+    val fittedW = (imageWidth * scale).coerceAtLeast(1f)
+    val fittedH = (imageHeight * scale).coerceAtLeast(1f)
+    val left = (safeContainerW - fittedW) / 2f
+    val top = (safeContainerH - fittedH) / 2f
+    return Rect(left, top, left + fittedW, top + fittedH)
+}
+
 @Composable
 private fun ReportFrameCanvas(
     imageBytes: ByteArray?,
+    screenshotPending: Boolean,
     aspectRatio: Float,
     marks: List<ReportMarkUi>,
     selectedIndex: Int?,
@@ -523,6 +559,7 @@ private fun ReportFrameCanvas(
 
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragCurrent by remember { mutableStateOf<Offset?>(null) }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
     BoxWithConstraints(
         modifier = modifier
@@ -533,8 +570,25 @@ private fun ReportFrameCanvas(
             .semantics { stateDescription = markedSummary }
             .testTag(ReportTags.FRAME),
     ) {
-        val frameWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-        val frameHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val frameWidthPx = (canvasSize.width.takeIf { it > 0 } ?: constraints.maxWidth)
+            .toFloat()
+            .coerceAtLeast(1f)
+        val frameHeightPx = (canvasSize.height.takeIf { it > 0 } ?: constraints.maxHeight)
+            .toFloat()
+            .coerceAtLeast(1f)
+        val imageWidthPx = bitmap?.width?.toFloat() ?: 0f
+        val imageHeightPx = bitmap?.height?.toFloat() ?: 0f
+        val fittedRect = computeFittedImageRect(
+            containerWidth = frameWidthPx,
+            containerHeight = frameHeightPx,
+            imageWidth = imageWidthPx,
+            imageHeight = imageHeightPx,
+        )
+
+        val currentMarks by rememberUpdatedState(marks)
+        val currentOnAddMark by rememberUpdatedState(onAddMark)
+        val currentOnSelectMark by rememberUpdatedState(onSelectMark)
+        val currentFittedRect by rememberUpdatedState(fittedRect)
 
         if (bitmap != null) {
             Image(
@@ -543,6 +597,24 @@ private fun ReportFrameCanvas(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
+        } else if (screenshotPending) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(Space.l)
+                    .testTag(ReportTags.FRAME_PREPARING),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                AmuxStateMark(state = RowState.Working, size = 12.dp)
+                Spacer(modifier = Modifier.height(Space.s))
+                Text(
+                    text = stringResource(R.string.report_frame_preparing),
+                    style = typography.detail,
+                    color = colors.inkMuted,
+                    textAlign = TextAlign.Center,
+                )
+            }
         } else {
             Column(
                 modifier = Modifier
@@ -568,25 +640,39 @@ private fun ReportFrameCanvas(
             }
         }
 
-        val gestureModifier = if (editable) {
+        val gestureModifier = if (editable && !screenshotPending) {
             Modifier
-                .pointerInput(marks, frameWidthPx, frameHeightPx) {
+                .pointerInput(Unit) {
                     detectTapGestures { offset ->
-                        val nx = (offset.x / frameWidthPx).coerceIn(0f, 1f)
-                        val ny = (offset.y / frameHeightPx).coerceIn(0f, 1f)
-                        val hit = marks.indexOfLast { it.containsNormalized(nx, ny) }
-                        onSelectMark(if (hit >= 0) hit else null)
+                        val rect = currentFittedRect
+                        if (offset.x !in rect.left..rect.right || offset.y !in rect.top..rect.bottom) {
+                            currentOnSelectMark(null)
+                            return@detectTapGestures
+                        }
+                        val nx = ((offset.x - rect.left) / rect.width).coerceIn(0f, 1f)
+                        val ny = ((offset.y - rect.top) / rect.height).coerceIn(0f, 1f)
+                        val hit = currentMarks.indexOfLast { it.containsNormalized(nx, ny) }
+                        currentOnSelectMark(if (hit >= 0) hit else null)
                     }
                 }
-                .pointerInput(frameWidthPx, frameHeightPx, minDragPx) {
+                .pointerInput(minDragPx) {
                     detectDragGestures(
                         onDragStart = { start ->
-                            dragStart = start
-                            dragCurrent = start
+                            val rect = currentFittedRect
+                            val clamped = Offset(
+                                x = start.x.coerceIn(rect.left, rect.right),
+                                y = start.y.coerceIn(rect.top, rect.bottom),
+                            )
+                            dragStart = clamped
+                            dragCurrent = clamped
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            dragCurrent = change.position
+                            val rect = currentFittedRect
+                            dragCurrent = Offset(
+                                x = change.position.x.coerceIn(rect.left, rect.right),
+                                y = change.position.y.coerceIn(rect.top, rect.bottom),
+                            )
                         },
                         onDragCancel = {
                             dragStart = null
@@ -597,16 +683,21 @@ private fun ReportFrameCanvas(
                             val end = dragCurrent
                             dragStart = null
                             dragCurrent = null
-                            if (start != null && end != null) {
-                                val dx = abs(end.x - start.x)
-                                val dy = abs(end.y - start.y)
+                            val rect = currentFittedRect
+                            if (start != null && end != null && rect.width > 0f && rect.height > 0f) {
+                                val startX = start.x.coerceIn(rect.left, rect.right)
+                                val startY = start.y.coerceIn(rect.top, rect.bottom)
+                                val endX = end.x.coerceIn(rect.left, rect.right)
+                                val endY = end.y.coerceIn(rect.top, rect.bottom)
+                                val dx = abs(endX - startX)
+                                val dy = abs(endY - startY)
                                 if (dx > minDragPx && dy > minDragPx) {
-                                    onAddMark(
+                                    currentOnAddMark(
                                         ReportMarkUi.normalized(
-                                            x1 = start.x / frameWidthPx,
-                                            y1 = start.y / frameHeightPx,
-                                            x2 = end.x / frameWidthPx,
-                                            y2 = end.y / frameHeightPx,
+                                            x1 = (startX - rect.left) / rect.width,
+                                            y1 = (startY - rect.top) / rect.height,
+                                            x2 = (endX - rect.left) / rect.width,
+                                            y2 = (endY - rect.top) / rect.height,
                                         ),
                                     )
                                 }
@@ -621,18 +712,25 @@ private fun ReportFrameCanvas(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .onSizeChanged { canvasSize = it }
                 .then(gestureModifier),
         ) {
             val radiusPx = 6.dp.toPx()
             val strokePx = 2.dp.toPx()
             val selectedStrokePx = 3.dp.toPx()
+            val drawRect = computeFittedImageRect(
+                containerWidth = size.width,
+                containerHeight = size.height,
+                imageWidth = imageWidthPx,
+                imageHeight = imageHeightPx,
+            )
 
             marks.forEachIndexed { index, mark ->
                 val isSelected = index == selectedIndex
-                val left = mark.left * size.width
-                val top = mark.top * size.height
-                val width = (mark.width * size.width).coerceAtLeast(1f)
-                val height = (mark.height * size.height).coerceAtLeast(1f)
+                val left = drawRect.left + mark.left * drawRect.width
+                val top = drawRect.top + mark.top * drawRect.height
+                val width = (mark.width * drawRect.width).coerceAtLeast(1f)
+                val height = (mark.height * drawRect.height).coerceAtLeast(1f)
                 if (mark.redact) {
                     drawRect(
                         color = Color.Black,
@@ -665,10 +763,10 @@ private fun ReportFrameCanvas(
             val start = dragStart
             val current = dragCurrent
             if (start != null && current != null) {
-                val left = minOf(start.x, current.x).coerceIn(0f, size.width)
-                val top = minOf(start.y, current.y).coerceIn(0f, size.height)
-                val right = maxOf(start.x, current.x).coerceIn(0f, size.width)
-                val bottom = maxOf(start.y, current.y).coerceIn(0f, size.height)
+                val left = minOf(start.x, current.x).coerceIn(drawRect.left, drawRect.right)
+                val top = minOf(start.y, current.y).coerceIn(drawRect.top, drawRect.bottom)
+                val right = maxOf(start.x, current.x).coerceIn(drawRect.left, drawRect.right)
+                val bottom = maxOf(start.y, current.y).coerceIn(drawRect.top, drawRect.bottom)
                 val w = (right - left).coerceAtLeast(1f)
                 val h = (bottom - top).coerceAtLeast(1f)
                 drawRoundRect(
@@ -688,8 +786,8 @@ private fun ReportFrameCanvas(
         }
 
         marks.forEachIndexed { index, mark ->
-            val xPx = (mark.left * frameWidthPx).roundToInt()
-            val yPx = (mark.top * frameHeightPx).roundToInt()
+            val xPx = (fittedRect.left + mark.left * fittedRect.width).roundToInt()
+            val yPx = (fittedRect.top + mark.top * fittedRect.height).roundToInt()
             Box(
                 modifier = Modifier
                     .offset { IntOffset(xPx, yPx) }
@@ -746,7 +844,10 @@ private fun ReportMarksList(
                         )
                         .clickable(enabled = editable) { onSelectMark(index) }
                         .padding(start = Space.m, end = Space.xs, top = Space.xs, bottom = Space.xs)
-                        .semantics { contentDescription = rowLabel }
+                        .semantics {
+                            contentDescription = rowLabel
+                            selected = isSelected
+                        }
                         .testTag(ReportTags.markRow(index)),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.s),
@@ -841,6 +942,7 @@ private fun ReportComposerDock(
     val typography = AmuxTheme.typography
     val isSending = state.delivery is ReportDeliveryUi.Sending
     val failed = state.delivery as? ReportDeliveryUi.Failed
+    val canSend = state.signedIn && !state.screenshotPending
     val notePlaceholder = stringResource(R.string.report_note_placeholder)
     val noteShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
 
@@ -884,7 +986,7 @@ private fun ReportComposerDock(
                         )
                         TextButton(
                             onClick = { onAction(ReportAction.Send) },
-                            enabled = state.signedIn && !isSending,
+                            enabled = canSend && !isSending,
                             modifier = Modifier
                                 .thumbTarget()
                                 .testTag(ReportTags.RETRY),
@@ -942,12 +1044,25 @@ private fun ReportComposerDock(
                         tint = colors.inkFaint,
                         modifier = Modifier.size(16.dp),
                     )
-                    val hasScreenshot = state.imageBytes?.isNotEmpty() == true
                     val disclosureRes = when {
-                        hasScreenshot && state.diagnosticDumpAttached -> R.string.report_contents_both
-                        !hasScreenshot && state.diagnosticDumpAttached -> R.string.report_contents_dump_only
-                        hasScreenshot && !state.diagnosticDumpAttached -> R.string.report_contents_screenshot_only
-                        else -> R.string.report_contents_none
+                        state.screenshotPending && state.dumpReady ->
+                            R.string.report_contents_preparing_screenshot_dump_ready
+                        state.screenshotPending && state.dumpPending ->
+                            R.string.report_contents_preparing_screenshot_and_dump
+                        state.screenshotPending ->
+                            R.string.report_contents_preparing_screenshot
+                        state.screenshotPresent && state.dumpReady ->
+                            R.string.report_contents_both
+                        state.screenshotPresent && state.dumpPending ->
+                            R.string.report_contents_screenshot_dump_pending
+                        state.screenshotPresent ->
+                            R.string.report_contents_screenshot_only
+                        state.dumpReady ->
+                            R.string.report_contents_dump_only
+                        state.dumpPending ->
+                            R.string.report_contents_dump_pending
+                        else ->
+                            R.string.report_contents_none
                     }
                     Text(
                         text = stringResource(disclosureRes),
@@ -983,7 +1098,7 @@ private fun ReportComposerDock(
                         ),
                         kind = ActionButtonKind.Primary,
                         fillWidth = true,
-                        enabled = state.signedIn,
+                        enabled = canSend,
                         onClick = { onAction(ReportAction.Send) },
                         modifier = Modifier.testTag(ReportTags.SEND),
                     )

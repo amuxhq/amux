@@ -720,6 +720,48 @@ class NewAgentStoreTest {
     }
 
     @Test
+    fun overlappingPinAndUnpinFailingOutOfOrderReconcilesToConfirmedUnpinnedState() = runTest {
+        val pinGate = CompletableDeferred<Result<Unit>>()
+        val unpinGate = CompletableDeferred<Result<Unit>>()
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
+            catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
+            pinHandler = { _, _, pinned ->
+                if (pinned) pinGate.await() else unpinGate.await()
+            }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        advanceUntilIdle()
+
+        val notes = Directory(path = "/src/notes", name = "notes")
+        assertFalse(store.snapshot.isPinned(notes.path))
+        assertTrue(store.snapshot.history.any { it.path == notes.path })
+
+        // Rapidly pin then unpin while both requests are in flight.
+        store.pinFolder(notes, pinned = true)
+        assertTrue(store.snapshot.isPinned(notes.path))
+        store.pinFolder(notes, pinned = false)
+        assertFalse(store.snapshot.isPinned(notes.path))
+        runCurrent()
+
+        // Unpin fails FIRST, then pin fails SECOND.
+        unpinGate.complete(Result.failure(RuntimeFailure("unpin failed")))
+        runCurrent()
+        assertFalse(
+            "unpin rollback must reconcile against confirmed host state, not failed optimistic pin",
+            store.snapshot.isPinned(notes.path),
+        )
+
+        pinGate.complete(Result.failure(RuntimeFailure("pin failed")))
+        advanceUntilIdle()
+        assertFalse(store.snapshot.isPinned(notes.path))
+        assertTrue(store.snapshot.history.any { it.path == notes.path })
+        assertEquals("unpin failed", store.snapshot.failure)
+        store.close()
+    }
+
+    @Test
     fun closeCancelsInFlightRequestsWithoutWritingUnavailableState() = runTest {
         val dirsGate = CompletableDeferred<Result<Directories>>()
         val catGate = CompletableDeferred<Result<Catalogue>>()

@@ -34,7 +34,9 @@ import sh.amux.core.runtime.PaywallState
 import sh.amux.core.runtime.PaywallStore
 import sh.amux.core.runtime.Plan
 import sh.amux.core.runtime.QuestionDraft as RuntimeQuestionDraft
+import sh.amux.core.runtime.ReportDumpState
 import sh.amux.core.runtime.ReportMark
+import sh.amux.core.runtime.ReportScreenshotState
 import sh.amux.core.runtime.ReportSending
 import sh.amux.core.runtime.ReportState
 import sh.amux.core.runtime.SignInIntent
@@ -785,13 +787,20 @@ object StateMappers {
             is ReportSending.Failed -> ReportDeliveryUi.Failed(sending.reason)
             is ReportSending.Sent -> ReportDeliveryUi.Sent(sending.receipt.id)
         }
+        val screenshotPending = report.screenshotState == ReportScreenshotState.Pending
+        val screenshotPresent = report.screenshotState == ReportScreenshotState.Present && frame.png.isNotEmpty()
+        val dumpPending = report.dumpState == ReportDumpState.Pending
+        val dumpReady = report.dumpState == ReportDumpState.Ready
         return ReportUiState(
             imageBytes = frame.png.takeIf { it.isNotEmpty() },
             frameAspectRatio = aspectRatio,
             note = report.draft.note,
             marks = marks,
             signedIn = signedIn,
-            diagnosticDumpAttached = capture.dump != null,
+            screenshotPending = screenshotPending,
+            screenshotPresent = screenshotPresent,
+            dumpPending = dumpPending,
+            dumpReady = dumpReady,
             locked = report.sealed != null,
             delivery = delivery,
         )

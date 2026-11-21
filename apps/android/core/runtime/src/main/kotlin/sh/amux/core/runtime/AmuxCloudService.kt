@@ -52,7 +52,7 @@ data class CloudEndpoint(
         }
 
     val supportUrl: String get() = "$normalizedBase/support"
-    val privacyUrl: String get() = "$normalizedBase/privacy"
+    val privacyUrl: String get() = "$normalizedBase/privacy-policy/"
     val accountPageUrl: String get() = "$normalizedBase/account"
     val authorizeUrl: String get() = "$normalizedBase/connect/authorize"
     val tokenUrl: String get() = "$normalizedBase/connect/token"

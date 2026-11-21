@@ -21,12 +21,24 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ShellPlatformExportTest {
     @Test
-    fun prepareShareableExportZipsDirectoryAndPrunesStaleZips() {
+    fun prepareShareableExportZipsDirectoryAndPrunesOnlyAgedZips() {
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
-            val exportsDir = File(context.cacheDir, "exports").apply { mkdirs() }
-            val staleZip = File(exportsDir, "old-dump.zip").apply { writeText("stale") }
-            assertTrue(staleZip.exists())
+            val exportsDir = File(context.cacheDir, "exports").apply {
+                deleteRecursively()
+                mkdirs()
+            }
+            val nowMs = 1_700_000_000_000L
+            val agedZip = File(exportsDir, "old-dump.zip").apply {
+                writeText("stale")
+                setLastModified(nowMs - ShellPlatform.EXPORT_RETENTION_MS - 60_000L)
+            }
+            val recentZip = File(exportsDir, "recent-dump.zip").apply {
+                writeText("still-being-read")
+                setLastModified(nowMs - 60_000L)
+            }
+            assertTrue(agedZip.exists())
+            assertTrue(recentZip.exists())
 
             val sourceDir = File(context.cacheDir, "raw-dump-bundle").apply {
                 deleteRecursively()
@@ -38,8 +50,9 @@ class ShellPlatformExportTest {
                 }
             }
 
-            val zipped = ShellPlatform.prepareShareableExport(context, sourceDir)
-            assertFalse("stale export zip should be pruned", staleZip.exists())
+            val zipped = ShellPlatform.prepareShareableExport(context, sourceDir, nowMs = nowMs)
+            assertFalse("export zip older than retention window should be pruned", agedZip.exists())
+            assertTrue("recent export zip within retention window must be preserved", recentZip.exists())
             assertTrue(zipped.isFile)
             assertEquals(exportsDir.canonicalFile, zipped.parentFile!!.canonicalFile)
             assertEquals("raw-dump-bundle.zip", zipped.name)

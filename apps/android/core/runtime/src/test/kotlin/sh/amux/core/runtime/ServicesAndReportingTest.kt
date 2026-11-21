@@ -6,7 +6,10 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -314,6 +317,125 @@ class ServicesAndReportingTest {
         assertEquals(1, redactedMarksSeen.size)
         assertTrue(redactedMarksSeen.single().redact)
         assertTrue(uploads.single().frame.contentEquals(redactedPng))
+    }
+
+    @Test
+    fun reportStoreTracksResolvedScreenshotAndDumpStates() = runTest {
+        val frameDeferred = CompletableDeferred<ByteArray>()
+        val dumpDeferred = CompletableDeferred<Result<File>>()
+        val capture = ReportCapture(
+            frame = FrozenFrame(png = ByteArray(0), widthDp = 400.0, heightDp = 800.0, scale = 2.0),
+            dump = dumpDeferred,
+            framePng = frameDeferred,
+            route = "chat",
+        )
+        val store = ReportStore()
+        assertTrue(store.offer { capture })
+        assertEquals(ReportScreenshotState.Pending, store.state.value.screenshotState)
+        assertEquals(ReportDumpState.Pending, store.state.value.dumpState)
+
+        frameDeferred.complete(byteArrayOf(1, 2, 3))
+        assertEquals(ReportScreenshotState.Present, store.state.value.screenshotState)
+        assertTrue(store.state.value.capture!!.frame.png.contentEquals(byteArrayOf(1, 2, 3)))
+        assertEquals(ReportDumpState.Pending, store.state.value.dumpState)
+
+        dumpDeferred.complete(Result.success(File("/tmp/amux-dump-ready")))
+        assertEquals(ReportDumpState.Ready, store.state.value.dumpState)
+
+        // Failed / empty completions resolve cleanly to Absent.
+        store.dismiss()
+        val emptyFrameDeferred = CompletableDeferred<ByteArray>()
+        val failedDumpDeferred = CompletableDeferred<Result<File>>()
+        assertTrue(
+            store.begin {
+                ReportCapture(
+                    frame = FrozenFrame(png = ByteArray(0), widthDp = 400.0, heightDp = 800.0, scale = 2.0),
+                    dump = failedDumpDeferred,
+                    framePng = emptyFrameDeferred,
+                )
+            },
+        )
+        assertEquals(ReportScreenshotState.Pending, store.state.value.screenshotState)
+        assertEquals(ReportDumpState.Pending, store.state.value.dumpState)
+
+        emptyFrameDeferred.complete(ByteArray(0))
+        failedDumpDeferred.complete(Result.failure(RuntimeFailure("dump failed")))
+        assertEquals(ReportScreenshotState.Absent, store.state.value.screenshotState)
+        assertEquals(ReportDumpState.Absent, store.state.value.dumpState)
+    }
+
+    @Test
+    fun reportStoreClaimsSendBeforeAssemblyAndCancelsStaleUploadOnDismiss() = runTest {
+        val firstDump = CompletableDeferred<Result<File>>()
+        val firstCapture = ReportCapture(
+            frame = FrozenFrame(png = byteArrayOf(1, 2, 3), widthDp = 400.0, heightDp = 800.0, scale = 2.0),
+            dump = firstDump,
+            route = "chat",
+            account = AccountId("ada"),
+        )
+        val store = ReportStore()
+        assertTrue(store.begin { firstCapture })
+
+        val uploads = mutableListOf<ReportUpload>()
+        val submitter = ReportSubmitting { upload ->
+            uploads.add(upload)
+            Result.success(ReportSent(reportPath = "/saved/r1", id = "rep-1", receivedAtMs = 100L, notSent = ""))
+        }
+
+        // Double-tap send while assembly is still awaiting the dump must only submit once.
+        val firstSend = launch {
+            store.send(submitter = submitter, account = AccountId("ada"), build = "0.10.0")
+        }
+        runCurrent()
+        assertEquals(ReportSending.Sending, store.state.value.sending)
+
+        val duplicateSend = launch {
+            store.send(submitter = submitter, account = AccountId("ada"), build = "0.10.0")
+        }
+        runCurrent()
+        assertTrue(duplicateSend.isCompleted)
+
+        firstDump.complete(Result.success(File("/tmp/amux-dump-1")))
+        advanceUntilIdle()
+        assertTrue(firstSend.isCompleted)
+        assertEquals(1, uploads.size)
+        assertTrue(store.state.value.sending is ReportSending.Sent)
+
+        // Dismissing and reopening mid-assembly cancels the stale upload and never overwrites the new draft.
+        store.dismiss()
+        uploads.clear()
+        val staleDump = CompletableDeferred<Result<File>>()
+        val staleCapture = ReportCapture(
+            frame = FrozenFrame(png = byteArrayOf(4, 5, 6), widthDp = 400.0, heightDp = 800.0, scale = 2.0),
+            dump = staleDump,
+            route = "settings",
+            account = AccountId("ada"),
+        )
+        assertTrue(store.begin { staleCapture })
+        val staleSend = launch {
+            store.send(submitter = submitter, account = AccountId("ada"), build = "0.10.0")
+        }
+        runCurrent()
+        assertEquals(ReportSending.Sending, store.state.value.sending)
+
+        store.dismiss()
+        val freshCapture = ReportCapture(
+            frame = FrozenFrame(png = byteArrayOf(7, 8, 9), widthDp = 400.0, heightDp = 800.0, scale = 2.0),
+            dump = CompletableDeferred(Result.success(File("/tmp/amux-dump-fresh"))),
+            route = "agents",
+            account = AccountId("ada"),
+        )
+        assertTrue(store.begin { freshCapture })
+        store.setNote("fresh draft")
+
+        // Completing the dismissed capture's dump must not upload or clobber the reopened draft.
+        staleDump.complete(Result.success(File("/tmp/amux-dump-stale")))
+        advanceUntilIdle()
+        assertTrue(staleSend.isCompleted)
+        assertTrue("dismissed report must not upload after assembly", uploads.isEmpty())
+        assertEquals(ReportSending.Ready, store.state.value.sending)
+        assertEquals("fresh draft", store.state.value.draft.note)
+        assertNull(store.state.value.sealed)
     }
 
     @Test

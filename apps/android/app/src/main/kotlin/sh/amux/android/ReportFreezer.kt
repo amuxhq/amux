@@ -70,10 +70,12 @@ internal class ReportFreezer(
         if (framePngDeferred != null) {
             comp.scope.launch {
                 val png = runCatching { framePngDeferred.await() }.getOrDefault(ByteArray(0))
-                if (png.isNotEmpty()) {
-                    comp.report.updateFramePng(capture, png)
-                }
+                comp.report.updateFramePng(capture, png)
             }
+        }
+        comp.scope.launch {
+            val dumpReady = runCatching { dump.await().isSuccess }.getOrDefault(false)
+            comp.report.updateDumpState(capture, dumpReady)
         }
         return capture
     }

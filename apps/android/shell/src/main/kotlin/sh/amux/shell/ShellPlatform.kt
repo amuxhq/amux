@@ -36,6 +36,7 @@ import sh.amux.words.OpenableLink
 object ShellPlatform {
     internal const val MAX_TRANSCODE_DIMENSION: Int = 4096
     internal const val MAX_TRANSCODE_PIXELS: Long = 16_777_216L
+    internal const val EXPORT_RETENTION_MS: Long = 3_600_000L
 
     private val UNSAFE_VIEW_EXTENSIONS = setOf(
         "apk",
@@ -93,12 +94,16 @@ object ShellPlatform {
 
     /**
      * Prepares a diagnostic dump file or directory for sharing via [FileProvider]
-     * by pruning stale export zips and copying a single file or zipping a dump
+     * by pruning expired export zips and copying a single file or zipping a dump
      * bundle directory into `cacheDir/exports/`.
      */
-    suspend fun prepareShareableExport(context: Context, source: File): File = withContext(Dispatchers.IO) {
+    suspend fun prepareShareableExport(
+        context: Context,
+        source: File,
+        nowMs: Long = System.currentTimeMillis(),
+    ): File = withContext(Dispatchers.IO) {
         val exportsDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        pruneStaleExports(exportsDir)
+        pruneStaleExports(exportsDir, nowMs = nowMs)
         val baseName = source.name.ifBlank { "amux-diagnostics" }
         if (source.isDirectory) {
             val zipName = if (baseName.endsWith(".zip", ignoreCase = true)) baseName else "$baseName.zip"
@@ -127,9 +132,18 @@ object ShellPlatform {
         }
     }
 
-    private fun pruneStaleExports(exportsDir: File) {
+    internal fun pruneStaleExports(
+        exportsDir: File,
+        nowMs: Long = System.currentTimeMillis(),
+        retentionMs: Long = EXPORT_RETENTION_MS,
+    ) {
+        val cutoffMs = nowMs - retentionMs
         exportsDir.listFiles()
-            ?.filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
+            ?.filter { file ->
+                file.isFile &&
+                    file.extension.equals("zip", ignoreCase = true) &&
+                    file.lastModified() < cutoffMs
+            }
             ?.forEach { it.delete() }
     }
 

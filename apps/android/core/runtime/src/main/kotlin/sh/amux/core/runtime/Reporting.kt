@@ -11,6 +11,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -185,6 +186,20 @@ fun interface ReportFreezing {
     fun freeze(): ReportCapture?
 }
 
+/** Resolved availability of the frozen screenshot attached to a report. */
+enum class ReportScreenshotState {
+    Pending,
+    Present,
+    Absent,
+}
+
+/** Resolved availability of the diagnostic dump attached to a report. */
+enum class ReportDumpState {
+    Pending,
+    Ready,
+    Absent,
+}
+
 data class ReportState(
     val capture: ReportCapture? = null,
     val offering: Boolean = false,
@@ -192,100 +207,272 @@ data class ReportState(
     val draft: ReportDraft = ReportDraft(),
     val sending: ReportSending = ReportSending.Ready,
     val sealed: ReportUpload? = null,
+    val screenshotState: ReportScreenshotState = ReportScreenshotState.Absent,
+    val dumpState: ReportDumpState = ReportDumpState.Absent,
 )
 
 /**
  * Holds the single in-progress problem report across screenshot preview
  * transitions and retries.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ReportStore(
     initial: ReportState = ReportState(),
 ) {
-    private val _state = MutableStateFlow(
-        initial.copy(open = initial.open && initial.capture != null),
-    )
-    val state: StateFlow<ReportState> = _state.asStateFlow()
+    private val stateLock = Any()
+
+    private val _state: MutableStateFlow<ReportState>
+    val state: StateFlow<ReportState>
 
     private var captureId: UUID = UUID.randomUUID()
 
+    init {
+        val normalized = if (initial.capture != null) {
+            val resolved = resolveInitialCapture(initial.capture)
+            initial.copy(
+                capture = resolved.capture,
+                open = initial.open,
+                screenshotState = resolved.screenshotState,
+                dumpState = resolved.dumpState,
+            )
+        } else {
+            initial.copy(
+                open = false,
+                screenshotState = ReportScreenshotState.Absent,
+                dumpState = ReportDumpState.Absent,
+            )
+        }
+        _state = MutableStateFlow(normalized)
+        state = _state.asStateFlow()
+        normalized.capture?.let { observeCapture(it, normalized.screenshotState, normalized.dumpState) }
+    }
+
+    private data class ResolvedCapture(
+        val capture: ReportCapture,
+        val screenshotState: ReportScreenshotState,
+        val dumpState: ReportDumpState,
+    )
+
+    private fun resolveInitialCapture(capture: ReportCapture): ResolvedCapture {
+        var resolvedCapture = capture
+        val screenshotState = when {
+            capture.frame.png.isNotEmpty() -> ReportScreenshotState.Present
+            capture.framePng == null -> ReportScreenshotState.Absent
+            capture.framePng.isCompleted -> {
+                val png = if (!capture.framePng.isCancelled && capture.framePng.getCompletionExceptionOrNull() == null) {
+                    runCatching { capture.framePng.getCompleted() }.getOrDefault(ByteArray(0))
+                } else {
+                    ByteArray(0)
+                }
+                if (png.isNotEmpty()) {
+                    resolvedCapture = capture.copy(frame = capture.frame.copy(png = png))
+                    ReportScreenshotState.Present
+                } else {
+                    ReportScreenshotState.Absent
+                }
+            }
+            else -> ReportScreenshotState.Pending
+        }
+        val dumpState = when {
+            capture.dump == null -> ReportDumpState.Absent
+            capture.dump.isCompleted -> {
+                val ok = !capture.dump.isCancelled &&
+                    capture.dump.getCompletionExceptionOrNull() == null &&
+                    runCatching { capture.dump.getCompleted().isSuccess }.getOrDefault(false)
+                if (ok) ReportDumpState.Ready else ReportDumpState.Absent
+            }
+            else -> ReportDumpState.Pending
+        }
+        return ResolvedCapture(
+            capture = resolvedCapture,
+            screenshotState = screenshotState,
+            dumpState = dumpState,
+        )
+    }
+
+    private fun observeCapture(
+        capture: ReportCapture,
+        screenshotState: ReportScreenshotState,
+        dumpState: ReportDumpState,
+    ) {
+        if (screenshotState == ReportScreenshotState.Pending) {
+            val frameDeferred = capture.framePng
+            frameDeferred?.invokeOnCompletion { cause ->
+                val png = if (cause == null && !frameDeferred.isCancelled) {
+                    runCatching { frameDeferred.getCompleted() }.getOrDefault(ByteArray(0))
+                } else {
+                    ByteArray(0)
+                }
+                updateFramePng(capture, png)
+            }
+        }
+        if (dumpState == ReportDumpState.Pending) {
+            val dumpDeferred = capture.dump
+            dumpDeferred?.invokeOnCompletion { cause ->
+                val ready = if (cause == null && !dumpDeferred.isCancelled) {
+                    runCatching { dumpDeferred.getCompleted().isSuccess }.getOrDefault(false)
+                } else {
+                    false
+                }
+                updateDumpState(capture, ready)
+            }
+        }
+    }
+
     fun offer(freezer: ReportFreezing): Boolean {
-        val current = _state.value
+        val current = synchronized(stateLock) { _state.value }
         if (current.open || current.capture != null) return false
         val frozen = freezer.freeze() ?: return false
-        _state.update { it.copy(capture = frozen, offering = true) }
-        return true
+        val resolved = resolveInitialCapture(frozen)
+        val installed = synchronized(stateLock) {
+            val latest = _state.value
+            if (latest.open || latest.capture != null) {
+                false
+            } else {
+                captureId = UUID.randomUUID()
+                _state.value = latest.copy(
+                    capture = resolved.capture,
+                    offering = true,
+                    screenshotState = resolved.screenshotState,
+                    dumpState = resolved.dumpState,
+                )
+                true
+            }
+        }
+        if (installed) {
+            observeCapture(resolved.capture, resolved.screenshotState, resolved.dumpState)
+        }
+        return installed
     }
 
     fun begin(freezer: ReportFreezing): Boolean {
-        if (_state.value.open) return false
+        if (synchronized(stateLock) { _state.value.open }) return false
         val frozen = freezer.freeze() ?: return false
-        _state.update { it.copy(capture = frozen, offering = false, open = true) }
-        return true
+        val resolved = resolveInitialCapture(frozen)
+        val installed = synchronized(stateLock) {
+            val latest = _state.value
+            if (latest.open) {
+                false
+            } else {
+                captureId = UUID.randomUUID()
+                _state.value = ReportState(
+                    capture = resolved.capture,
+                    offering = false,
+                    open = true,
+                    screenshotState = resolved.screenshotState,
+                    dumpState = resolved.dumpState,
+                )
+                true
+            }
+        }
+        if (installed) {
+            observeCapture(resolved.capture, resolved.screenshotState, resolved.dumpState)
+        }
+        return installed
     }
 
     fun accept() {
-        if (_state.value.capture == null) return
-        _state.update { it.copy(offering = false, open = true) }
+        synchronized(stateLock) {
+            val current = _state.value
+            if (current.capture == null) return
+            _state.value = current.copy(offering = false, open = true)
+        }
     }
 
     fun dismiss() {
-        captureId = UUID.randomUUID()
-        _state.value = ReportState()
+        synchronized(stateLock) {
+            captureId = UUID.randomUUID()
+            _state.value = ReportState()
+        }
     }
 
     fun updateFramePng(target: ReportCapture, png: ByteArray) {
-        if (png.isEmpty()) return
-        _state.update { current ->
-            val active = current.capture ?: return@update current
-            if (active !== target && active.framePng !== target.framePng) return@update current
-            if (active.frame.png.isNotEmpty()) return@update current
-            current.copy(
-                capture = active.copy(frame = active.frame.copy(png = png)),
-            )
+        synchronized(stateLock) {
+            val current = _state.value
+            val active = current.capture ?: return
+            if (active !== target && active.framePng !== target.framePng) return
+            if (active.frame.png.isNotEmpty()) {
+                if (current.screenshotState != ReportScreenshotState.Present) {
+                    _state.value = current.copy(screenshotState = ReportScreenshotState.Present)
+                }
+                return
+            }
+            if (png.isNotEmpty()) {
+                _state.value = current.copy(
+                    capture = active.copy(frame = active.frame.copy(png = png)),
+                    screenshotState = ReportScreenshotState.Present,
+                )
+            } else if (current.screenshotState != ReportScreenshotState.Absent) {
+                _state.value = current.copy(screenshotState = ReportScreenshotState.Absent)
+            }
+        }
+    }
+
+    fun updateDumpState(target: ReportCapture, ready: Boolean) {
+        synchronized(stateLock) {
+            val current = _state.value
+            val active = current.capture ?: return
+            if (active !== target && active.dump !== target.dump) return
+            val next = if (ready) ReportDumpState.Ready else ReportDumpState.Absent
+            if (current.dumpState != next) {
+                _state.value = current.copy(dumpState = next)
+            }
         }
     }
 
     fun setNote(note: String) {
-        _state.update { it.copy(draft = it.draft.copy(note = note)) }
+        synchronized(stateLock) {
+            _state.update { it.copy(draft = it.draft.copy(note = note)) }
+        }
     }
 
     fun mark(mark: ReportMark) {
-        _state.update { it.copy(draft = it.draft.copy(marks = it.draft.marks + mark)) }
+        synchronized(stateLock) {
+            _state.update { it.copy(draft = it.draft.copy(marks = it.draft.marks + mark)) }
+        }
     }
 
     fun noteOnMark(index: Int, text: String) {
-        _state.update { current ->
-            if (index !in current.draft.marks.indices) return@update current
-            val updated = current.draft.marks.toMutableList()
-            updated[index] = updated[index].copy(note = text)
-            current.copy(draft = current.draft.copy(marks = updated))
+        synchronized(stateLock) {
+            _state.update { current ->
+                if (index !in current.draft.marks.indices) return@update current
+                val updated = current.draft.marks.toMutableList()
+                updated[index] = updated[index].copy(note = text)
+                current.copy(draft = current.draft.copy(marks = updated))
+            }
         }
     }
 
     fun setMarkRedacted(index: Int, redacted: Boolean) {
-        _state.update { current ->
-            if (index !in current.draft.marks.indices) return@update current
-            val updated = current.draft.marks.toMutableList()
-            updated[index] = updated[index].copy(redact = redacted)
-            current.copy(draft = current.draft.copy(marks = updated))
+        synchronized(stateLock) {
+            _state.update { current ->
+                if (index !in current.draft.marks.indices) return@update current
+                val updated = current.draft.marks.toMutableList()
+                updated[index] = updated[index].copy(redact = redacted)
+                current.copy(draft = current.draft.copy(marks = updated))
+            }
         }
     }
 
     fun toggleMarkRedacted(index: Int) {
-        _state.update { current ->
-            if (index !in current.draft.marks.indices) return@update current
-            val updated = current.draft.marks.toMutableList()
-            updated[index] = updated[index].copy(redact = !updated[index].redact)
-            current.copy(draft = current.draft.copy(marks = updated))
+        synchronized(stateLock) {
+            _state.update { current ->
+                if (index !in current.draft.marks.indices) return@update current
+                val updated = current.draft.marks.toMutableList()
+                updated[index] = updated[index].copy(redact = !updated[index].redact)
+                current.copy(draft = current.draft.copy(marks = updated))
+            }
         }
     }
 
     fun unmark(index: Int) {
-        _state.update { current ->
-            if (index !in current.draft.marks.indices) return@update current
-            val updated = current.draft.marks.toMutableList()
-            updated.removeAt(index)
-            current.copy(draft = current.draft.copy(marks = updated))
+        synchronized(stateLock) {
+            _state.update { current ->
+                if (index !in current.draft.marks.indices) return@update current
+                val updated = current.draft.marks.toMutableList()
+                updated.removeAt(index)
+                current.copy(draft = current.draft.copy(marks = updated))
+            }
         }
     }
 
@@ -297,76 +484,119 @@ class ReportStore(
         nowMs: Long = System.currentTimeMillis(),
         redactor: ReportImageRedactor = BitmapReportImageRedactor,
     ) {
-        val current = _state.value
-        val capture = current.capture ?: return
-        if (current.sending is ReportSending.Sending || current.sending is ReportSending.Sent) {
-            return
-        }
-        if (account == null) {
-            _state.update {
-                it.copy(
+        val claimed: Triple<UUID, ReportState, ReportSubmitting> = synchronized(stateLock) {
+            val current = _state.value
+            val capture = current.capture ?: return
+            if (current.sending is ReportSending.Sending || current.sending is ReportSending.Sent) {
+                return
+            }
+            if (account == null) {
+                _state.value = current.copy(
                     sending = ReportSending.Failed(
                         "Sign in to the account this report is about, then send it again.",
                     ),
                 )
+                return
             }
-            return
-        }
-        if (capture.account != null && capture.account != account) {
-            _state.update {
-                it.copy(
+            if (capture.account != null && capture.account != account) {
+                _state.value = current.copy(
                     sending = ReportSending.Failed(
                         "This report was captured under a different account. Switch back or dismiss it to start a new one.",
                     ),
                 )
+                return
             }
-            return
-        }
-        if (submitter == null) {
-            _state.update {
-                it.copy(
+            if (submitter == null) {
+                _state.value = current.copy(
                     sending = ReportSending.Failed(
                         "amux is not running on this phone yet. Try again in a moment.",
                     ),
                 )
+                return
+            }
+            val token = captureId
+            _state.value = current.copy(sending = ReportSending.Sending)
+            Triple(token, current, submitter)
+        }
+        val (identity, claimedState, activeSubmitter) = claimed
+
+        val upload = try {
+            assembleUpload(
+                snapshot = claimedState,
+                build = build,
+                gitSha = gitSha,
+                nowMs = nowMs,
+                redactor = redactor,
+            )
+        } catch (e: CancellationException) {
+            synchronized(stateLock) {
+                if (captureId == identity && _state.value.sending is ReportSending.Sending) {
+                    _state.value = _state.value.copy(sending = ReportSending.Ready)
+                }
+            }
+            throw e
+        } catch (t: Throwable) {
+            synchronized(stateLock) {
+                if (captureId == identity) {
+                    _state.value = _state.value.copy(sending = ReportSending.Failed(t.failureDescription))
+                }
+            }
+            return
+        } ?: run {
+            synchronized(stateLock) {
+                if (captureId == identity && _state.value.sending is ReportSending.Sending) {
+                    _state.value = _state.value.copy(sending = ReportSending.Ready)
+                }
             }
             return
         }
-        val upload = try {
-            assembled(build = build, gitSha = gitSha, nowMs = nowMs, redactor = redactor)
+
+        val stillActive = synchronized(stateLock) {
+            if (captureId != identity) {
+                false
+            } else {
+                _state.value = _state.value.copy(sealed = upload, sending = ReportSending.Sending)
+                true
+            }
+        }
+        if (!stillActive) return
+
+        val answer = try {
+            activeSubmitter.submitReport(upload)
         } catch (e: CancellationException) {
+            synchronized(stateLock) {
+                if (captureId == identity && _state.value.sending is ReportSending.Sending) {
+                    _state.value = _state.value.copy(sending = ReportSending.Ready)
+                }
+            }
             throw e
         } catch (t: Throwable) {
-            _state.update { it.copy(sending = ReportSending.Failed(t.failureDescription)) }
-            return
-        } ?: return
-        val identity = captureId
-        _state.update { it.copy(sealed = upload, sending = ReportSending.Sending) }
+            Result.failure(t)
+        }
 
-        val answer = submitter.submitReport(upload)
-        if (captureId != identity) return
-        answer.fold(
-            onSuccess = { sent ->
-                val nextSending = if (sent.notSent.isEmpty()) {
-                    ReportSending.Sent(
-                        ReportReceipt(id = sent.id, receivedAtMs = sent.receivedAtMs),
-                    )
-                } else {
-                    ReportSending.Failed(sent.notSent)
-                }
-                _state.update {
-                    it.copy(
-                        sealed = it.sealed?.copy(path = sent.reportPath),
+        synchronized(stateLock) {
+            if (captureId != identity) return
+            answer.fold(
+                onSuccess = { sent ->
+                    val nextSending = if (sent.notSent.isEmpty()) {
+                        ReportSending.Sent(
+                            ReportReceipt(id = sent.id, receivedAtMs = sent.receivedAtMs),
+                        )
+                    } else {
+                        ReportSending.Failed(sent.notSent)
+                    }
+                    _state.value = _state.value.copy(
+                        sealed = _state.value.sealed?.copy(path = sent.reportPath),
                         sending = nextSending,
                     )
-                }
-            },
-            onFailure = { err ->
-                _state.update {
-                    it.copy(sending = ReportSending.Failed(err.failureDescription))
-                }
-            },
-        )
+                },
+                onFailure = { err ->
+                    _state.value = _state.value.copy(
+                        sending = ReportSending.Failed(err.failureDescription),
+                    )
+                },
+            )
+        }
     }
 
     suspend fun assembled(
@@ -374,21 +604,45 @@ class ReportStore(
         gitSha: String = "",
         nowMs: Long = System.currentTimeMillis(),
         redactor: ReportImageRedactor = BitmapReportImageRedactor,
+    ): ReportUpload? = assembleUpload(
+        snapshot = synchronized(stateLock) { _state.value },
+        build = build,
+        gitSha = gitSha,
+        nowMs = nowMs,
+        redactor = redactor,
+    )
+
+    private suspend fun assembleUpload(
+        snapshot: ReportState,
+        build: String,
+        gitSha: String,
+        nowMs: Long,
+        redactor: ReportImageRedactor,
     ): ReportUpload? {
-        val current = _state.value
-        current.sealed?.let { return it }
-        val capture = current.capture ?: return null
+        snapshot.sealed?.let { return it }
+        val capture = snapshot.capture ?: return null
         val rawPng = if (capture.frame.png.isNotEmpty()) {
             capture.frame.png
         } else {
-            capture.framePng?.await() ?: ByteArray(0)
+            val deferred = capture.framePng
+            if (deferred == null) {
+                ByteArray(0)
+            } else {
+                try {
+                    deferred.await()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    ByteArray(0)
+                }
+            }
         }
         val resolvedFrame = if (rawPng !== capture.frame.png) {
             capture.frame.copy(png = rawPng)
         } else {
             capture.frame
         }
-        val redactedMarks = current.draft.marks.filter { it.redact }
+        val redactedMarks = snapshot.draft.marks.filter { it.redact }
         val finalPng = if (redactedMarks.isNotEmpty() && resolvedFrame.png.isNotEmpty()) {
             redactor.redact(resolvedFrame, redactedMarks)
         } else {
@@ -397,7 +651,7 @@ class ReportStore(
         val dump = ReportAssembly.dumped(capture.dump)
         return ReportAssembly.upload(
             capture = capture.copy(frame = resolvedFrame),
-            draft = current.draft,
+            draft = snapshot.draft,
             build = build,
             gitSha = gitSha,
             createdAtMs = nowMs,

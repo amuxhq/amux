@@ -131,7 +131,7 @@ data class PaywallScreenState(
     val chosen: PaywallPlanPeriod = PaywallPlanPeriod.Yearly,
     val phase: PaywallPhaseUi = PaywallPhaseUi.Ready,
     val manageUrl: String = "https://amux.sh/account",
-    val privacyUrl: String = "https://amux.sh/privacy",
+    val privacyUrl: String = "https://amux.sh/privacy-policy/",
     val accountEmail: String? = null,
 ) {
     val selectedPlan: PaywallPlanUi?

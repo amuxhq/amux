@@ -24,6 +24,11 @@ class AmuxCloudTest {
         )
 
         val cloud = AmuxCloudService(transport = { error("no network") })
+        assertEquals("https://amux.sh/privacy-policy/", CloudEndpoint.Production.privacyUrl)
+        assertEquals(
+            "https://staging.amux.sh/privacy-policy/",
+            CloudEndpoint.Production.copy(baseUrl = "https://staging.amux.sh/").privacyUrl,
+        )
         val account = SignedInAccount(AccountId("u1"), "ada+phone@example.com")
         val url = cloud.authorizeUrl(
             verifier = verifier,

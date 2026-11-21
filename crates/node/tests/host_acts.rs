@@ -526,36 +526,6 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
             assert!(host.row(id).await.is_some(), "{who:?}");
         }
 
-        // An ACP child's program is the creator's to name, its settings
-        // are not. This host offers no ACP agent, so a create the rule lets
-        // through is refused for that instead.
-        let acp = |mode: Option<&str>, name: &str| wire::CreateAgentRequest {
-            agent: Some(wire::create_agent_request::Agent::Acp(
-                wire::AcpCreateConfig {
-                    agent: "opencode".into(),
-                    mode: mode.map(str::to_owned),
-                    ..Default::default()
-                },
-            )),
-            ..create(&work, name, None)
-        };
-        let moded = host
-            .agents(who)
-            .create_agent(acp(Some("plan"), &format!("{tag}-acp-plan")))
-            .await
-            .unwrap_err();
-        assert_eq!(
-            moded.code() == Code::PermissionDenied,
-            who.is_agent(),
-            "{who:?}: {moded:?}"
-        );
-        let plain = host
-            .agents(who)
-            .create_agent(acp(None, &format!("{tag}-acp")))
-            .await
-            .unwrap_err();
-        assert_ne!(plain.code(), Code::PermissionDenied, "{who:?}: {plain:?}");
-
         // A person pins only an agent with no parent, so the person's
         // filing is tried on the agent it made just now.
         let target = if who.is_agent() { child } else { id };

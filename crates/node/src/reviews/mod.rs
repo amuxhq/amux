@@ -669,12 +669,12 @@ pub(super) async fn listed(
         }
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
-    let mut wire_files = Vec::with_capacity(files.len());
-    for file in files {
-        let language = language(root, store, snapshot, &file).await;
-        wire_files.push(changed_file(file, language));
-    }
-    Ok(wire_files)
+    let languages = languages(root, store, snapshot, &files).await;
+    Ok(files
+        .into_iter()
+        .zip(languages)
+        .map(|(file, language)| changed_file(file, language))
+        .collect())
 }
 
 /// Every file that changed since the `last` round to `now`, a snapshot
@@ -698,6 +698,9 @@ pub(super) async fn listed_since(
     let flagged: HashMap<&str, &ChangedFile> =
         all.iter().map(|file| (file.path.as_str(), file)).collect();
     let mut listed = Vec::with_capacity(since.len());
+    // Not in all changes, so not flagged: one the agent put back is shown
+    // open, as the undo it is. Its language is read with the others'.
+    let mut unlisted = Vec::new();
     for file in since {
         if omitted.contains(&file.path) {
             continue;
@@ -712,49 +715,116 @@ pub(super) async fn listed_since(
             binary: file.binary,
             flags: git_facts::Flags::default(),
         };
-        let wire_file = match flagged.get(file.path.as_str()) {
-            Some(all) => ChangedFile {
+        match flagged.get(file.path.as_str()) {
+            Some(all) => listed.push(ChangedFile {
                 flags: all.flags.clone(),
                 ..changed_file(changed, all.language.clone())
-            },
-            // Not in all changes, so not flagged: one the agent put back is
-            // shown open, as the undo it is.
-            None => {
-                let language = language(root, store, now.snapshot, &changed).await;
-                changed_file(changed, language)
-            }
-        };
-        listed.push(wire_file);
+            }),
+            None => unlisted.push(changed),
+        }
     }
+    let languages = languages(root, store, now.snapshot, &unlisted).await;
+    listed.extend(
+        unlisted
+            .into_iter()
+            .zip(languages)
+            .map(|(file, language)| changed_file(file, language)),
+    );
     listed.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(listed)
 }
 
-/// The language a file is coloured by, by the one rule every client uses:
-/// its path, then for a script its `#!` line, read from the snapshot.
-async fn language(
+/// The language each of `files` is coloured by, in order, by the one rule
+/// every client uses: its path, then for a script its `#!` line, read from
+/// the snapshot. A summary is made on every open, edit and list, so the
+/// `#!` lines of every file its path does not name are read with one git
+/// process, and what they said is kept by snapshot and path, which name
+/// the same bytes for good: a summary of a snapshot read before runs none.
+async fn languages(
     root: &Path,
     store: &ObjectStore,
     snapshot: &str,
-    file: &git_facts::ChangedFile,
-) -> String {
-    if let Some(language) = Language::from_path(&file.path) {
-        return language.name().to_owned();
+    files: &[git_facts::ChangedFile],
+) -> Vec<String> {
+    let mut named: Vec<Option<String>> = files
+        .iter()
+        .map(|file| {
+            if let Some(language) = Language::from_path(&file.path) {
+                return Some(language.name().to_owned());
+            }
+            let readable =
+                !file.binary && !file.flags.large && file.status != git_facts::Status::Deleted;
+            match readable {
+                true => sniffed(snapshot, &file.path),
+                false => Some(String::new()),
+            }
+        })
+        .collect();
+    let unread: Vec<&str> = files
+        .iter()
+        .zip(&named)
+        .filter(|(_, language)| language.is_none())
+        .map(|(file, _)| file.path.as_str())
+        .collect();
+    if !unread.is_empty() {
+        // A file that cannot be read is drawn plain, as one with no `#!`
+        // line is, and asked about again by the next summary.
+        if let Ok(heads) =
+            compare::heads(root, store, snapshot, &unread, SHEBANG_BYTES).await
+        {
+            let read: HashMap<&str, String> = unread
+                .iter()
+                .zip(heads)
+                .map(|(path, head)| {
+                    let language = head
+                        .and_then(|head| {
+                            Language::from_file(path, &String::from_utf8_lossy(&head))
+                        })
+                        .map_or_else(String::new, |language| language.name().to_owned());
+                    remember_sniffed(snapshot, path, &language);
+                    (*path, language)
+                })
+                .collect();
+            for (file, language) in files.iter().zip(&mut named) {
+                if language.is_none() {
+                    *language = read.get(file.path.as_str()).cloned();
+                }
+            }
+        }
     }
-    let readable = !file.binary && !file.flags.large && file.status != git_facts::Status::Deleted;
-    if !readable {
-        return String::new();
-    }
-    let Ok(Some(bytes)) = compare::read(root, store, snapshot, &file.path).await else {
-        return String::new();
-    };
-    let head = &bytes[..bytes.len().min(SHEBANG_BYTES)];
-    Language::from_file(&file.path, &String::from_utf8_lossy(head))
-        .map_or_else(String::new, |language| language.name().to_owned())
+    named.into_iter().map(Option::unwrap_or_default).collect()
 }
 
 /// How much of a file's start holds the `#!` line it is named by.
 const SHEBANG_BYTES: usize = 256;
+
+/// The most files whose `#!` lines [`languages`] keeps what it read of: a
+/// few large changes' worth, a few hundred kilobytes at most.
+const SNIFFED_FILES: usize = 4096;
+
+/// What [`languages`] read of files their paths name no language for, by
+/// snapshot and path.
+static SNIFFED: LazyLock<Mutex<HashMap<(String, String), String>>> =
+    LazyLock::new(Default::default);
+
+/// The language the `#!` line of `path` at `snapshot` named, when read
+/// before.
+fn sniffed(snapshot: &str, path: &str) -> Option<String> {
+    SNIFFED
+        .lock()
+        .unwrap()
+        .get(&(snapshot.to_owned(), path.to_owned()))
+        .cloned()
+}
+
+fn remember_sniffed(snapshot: &str, path: &str, language: &str) {
+    let mut sniffed = SNIFFED.lock().unwrap();
+    // Past the bound it starts afresh: the next summaries read again.
+    if sniffed.len() >= SNIFFED_FILES {
+        sniffed.clear();
+    }
+    sniffed.insert((snapshot.to_owned(), path.to_owned()), language.to_owned());
+}
 
 fn changed_file(file: git_facts::ChangedFile, language: String) -> ChangedFile {
     let status = match file.status {
@@ -1180,6 +1250,54 @@ mod tests {
         } = carried_out(job).await;
         assert_eq!((told, of.as_str()), (agent, snapshot));
         moved
+    }
+
+    /// A summary is made on every open, edit and list: the `#!` lines of
+    /// the files their paths name no language for are read once for a
+    /// snapshot, all in one batch, and kept, so the next summary of it reads
+    /// none, here with the snapshot store gone from under it.
+    #[tokio::test]
+    async fn languages_by_shebang_are_read_once_per_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let work = root.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        git(&work, &["init", "-q", "-b", "main"]);
+        std::fs::write(work.join("readme.md"), "# hi\n").unwrap();
+        git(&work, &["add", "."]);
+        git(&work, &["commit", "-q", "-m", "first"]);
+        std::fs::write(work.join("tool"), "#!/usr/bin/env python3\nprint(1)\n").unwrap();
+        std::fs::write(work.join("run"), "#!/bin/sh\necho hi\n").unwrap();
+        std::fs::write(work.join("notes"), "just words\n").unwrap();
+        std::fs::write(work.join("lib.rs"), "fn main() {}\n").unwrap();
+        let objects = root.path().join("objects");
+        let store = ObjectStore::at(&objects);
+        let taken = snapshot::take(&work, &store, &Limits::default(), SystemTime::now())
+            .await
+            .unwrap();
+        let changed = |path: &str| git_facts::ChangedFile {
+            path: path.to_owned(),
+            old_path: None,
+            status: git_facts::Status::Created,
+            added: 1,
+            removed: 0,
+            binary: false,
+            flags: git_facts::Flags::default(),
+        };
+        let files: Vec<_> = ["lib.rs", "notes", "run", "tool"]
+            .into_iter()
+            .map(changed)
+            .collect();
+        let expected = ["rust", "", "bash", "python"];
+        assert_eq!(
+            languages(&work, &store, &taken.commit, &files).await,
+            expected
+        );
+        std::fs::remove_dir_all(&objects).unwrap();
+        assert_eq!(
+            languages(&work, &store, &taken.commit, &files).await,
+            expected,
+            "read once: the next summary asks git nothing"
+        );
     }
 
     #[tokio::test]

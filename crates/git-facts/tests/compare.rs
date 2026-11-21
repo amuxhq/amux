@@ -894,3 +894,41 @@ fn every_comparison_can_be_sent_between_threads() {
     sent(compare::since_last(dir, &store, shown, shown, None, 3));
     sent(changes(dir, &Base::Head));
 }
+
+/// The heads of many files of a snapshot come from one read, in the order
+/// asked, cut to the bytes asked for; a folder, a missing path or a name git
+/// cannot be asked for in a batch has none, and a commit that is gone is
+/// missing.
+#[tokio::test]
+async fn heads_read_the_start_of_each_file_asked_for() {
+    let repo = repository(&[("tool", "#!/usr/bin/env python3\nprint(1)\n")]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/run"), "#!/bin/sh\necho hi\n").unwrap();
+    let to = snapshot(dir, store.dir());
+    let heads = compare::heads(
+        dir,
+        &store,
+        &to,
+        &["src/run", "tool", "src", "absent", "two\nlines"],
+        9,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        heads,
+        [
+            Some(b"#!/bin/sh".to_vec()),
+            Some(b"#!/usr/bi".to_vec()),
+            None,
+            None,
+            None
+        ]
+    );
+    let gone = "0".repeat(40);
+    assert!(matches!(
+        compare::heads(dir, &store, &gone, &["tool"], 9).await,
+        Err(CompareError::Missing(_))
+    ));
+}

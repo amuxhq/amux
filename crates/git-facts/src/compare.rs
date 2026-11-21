@@ -258,6 +258,46 @@ pub async fn read(
     }
 }
 
+/// The first `bytes` bytes of each file `paths` at `commit`, in order, read
+/// with one git process for them all; None for a path the commit holds no
+/// file at (a folder or a submodule), or one git cannot be asked for in its
+/// batch (a name holding a line break). What a file's `#!` line is read
+/// from, for every changed file at once.
+pub async fn heads(
+    cwd: &Path,
+    store: &ObjectStore,
+    commit: &str,
+    paths: &[&str],
+    bytes: usize,
+) -> Result<Vec<Option<Vec<u8>>>, CompareError> {
+    let askable: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|path| !path.contains(['\n', '\r']))
+        .collect();
+    if askable.is_empty() {
+        return Ok(vec![None; paths.len()]);
+    }
+    let root = top(cwd).await?;
+    let names: Vec<String> = std::iter::once(format!("{commit}^{{tree}}"))
+        .chain(askable.iter().map(|path| format!("{commit}:{path}")))
+        .collect();
+    let mut read = batch(&root, store, &names).await?.into_iter();
+    if read.next().flatten().is_none() {
+        return Err(CompareError::Missing(commit.to_owned()));
+    }
+    let mut found: HashMap<&str, Vec<u8>> = HashMap::new();
+    for (path, object) in askable.iter().zip(read) {
+        if let Some((kind, mut head)) = object
+            && kind == "blob"
+        {
+            head.truncate(bytes);
+            found.insert(path, head);
+        }
+    }
+    Ok(paths.iter().map(|path| found.remove(path)).collect())
+}
+
 /// The objects `ids`, whole, in order; None for one git cannot find.
 pub async fn blobs(
     cwd: &Path,

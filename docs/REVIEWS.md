@@ -229,6 +229,14 @@ deleted) shows though all changes no longer lists it. The summary's
 hunks, and is empty before the first round and when the last round's
 snapshot can no longer be read.
 
+**Each file's language** is named by the rule every client uses
+([highlighting](HIGHLIGHTING.md)): its path, else its `#!` line, read from
+the snapshot. A summary is made on every open, edit and list, so the `#!`
+lines of all the files their paths name nothing for are read in one
+`cat-file --batch` (`compare::heads`), and what they named is kept by
+snapshot and path, which name the same bytes for good: the next summary of
+that snapshot runs no git for it (`languages` in `reviews/mod.rs`).
+
 **A request names its whole comparison**: the snapshot, the commit it is
 compared from, the view, and for since-last the base each side was shown
 against. The host checks that it handed that comparison out (the snapshot is

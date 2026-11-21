@@ -954,6 +954,95 @@ async fn drop_keeps_named_snapshots_readable() {
     );
 }
 
+/// The object ids every pack in the store holds.
+fn packed(repo: &Path, store: &ObjectStore) -> Vec<String> {
+    let mut ids = Vec::new();
+    for path in packs(store.dir()) {
+        if path.extension().is_none_or(|extension| extension != "idx") {
+            continue;
+        }
+        let output = Command::new("git")
+            .arg("show-index")
+            .current_dir(repo)
+            .stdin(std::fs::File::open(&path).unwrap())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        ids.extend(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .lines()
+                .map(|line| line.split(' ').nth(1).unwrap().to_owned()),
+        );
+    }
+    ids.sort();
+    ids
+}
+
+/// Git writes some objects into a pack rather than loose: `git add` does
+/// for every file over the person's `core.bigFileThreshold`, and the size
+/// cap does not stop a conflicted file. Dropping removes packed objects no
+/// kept snapshot reaches as it does loose ones: a pack nothing kept reaches
+/// goes, and one only partly reached is written again with what is.
+#[tokio::test]
+async fn drop_removes_packed_objects_no_kept_snapshot_reaches() {
+    let repo = repository();
+    let root = repo.path();
+    git(root, &["config", "core.bigFileThreshold", "1k"]);
+    let bulky = |fill: &str| fill.repeat(4096);
+    write(root, "stays.bin", &bulky("s"));
+    write(root, "changes.bin", &bulky("a"));
+    let store = store();
+    let ids = async |commit: &str| {
+        let tree = tree(root, &store.store, commit).await;
+        (tree["stays.bin"].1.clone(), tree["changes.bin"].1.clone())
+    };
+    let first = take(root, &store.store).await.commit;
+    assert!(
+        !packs(store.store.dir()).is_empty(),
+        "git wrote the bulky files loose"
+    );
+    let (stays, a) = ids(&first).await;
+    write(root, "changes.bin", &bulky("b"));
+    let second = take(root, &store.store).await.commit;
+    let (_, b) = ids(&second).await;
+    write(root, "changes.bin", &bulky("c"));
+    let third = take(root, &store.store).await.commit;
+    let (_, c) = ids(&third).await;
+    let mut all = vec![stays.clone(), a.clone(), b.clone(), c.clone()];
+    all.sort();
+    assert_eq!(packed(root, &store.store), all);
+
+    let before = manifest(root);
+    snapshot::drop(root, &store.store, [&third]).await.unwrap();
+    unchanged(&before, root, "dropping packed objects");
+    let mut kept = vec![stays, c];
+    kept.sort();
+    assert_eq!(packed(root, &store.store), kept);
+    for gone in [&a, &b] {
+        assert!(!git_says(
+            root,
+            Some(store.store.dir()),
+            &["cat-file", "-e", gone]
+        ));
+    }
+    assert_eq!(
+        read(root, &store.store, &third, "stays.bin").await.unwrap(),
+        bulky("s").as_bytes()
+    );
+    assert_eq!(
+        read(root, &store.store, &third, "changes.bin")
+            .await
+            .unwrap(),
+        bulky("c").as_bytes()
+    );
+    assert_eq!(
+        snapshot::drop(root, &store.store, [&third]).await.unwrap(),
+        0,
+        "nothing left to drop the second time"
+    );
+}
+
 /// The files under `dir` that are packs or parts of one: what a fetch
 /// leaves behind.
 fn packs(dir: &Path) -> Vec<PathBuf> {

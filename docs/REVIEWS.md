@@ -184,7 +184,12 @@ and each comment goes back to its anchor when the agent takes the send. The
 one before the latest also covers a send in the moment before the queue
 lists it: only a second refresh in that moment could drop its own snapshot,
 though one refresh then could drop an older one its comments are anchored
-on. The others are forgotten in the same write and their objects dropped from the store (`snapshot::drop`), with their indexes. An old
+on. The others are forgotten in the same write and their objects dropped from the store (`snapshot::drop`), with their indexes.
+Packed objects go too: git writes some objects into a pack rather than
+loose (`git add` does for a file over the person's `core.bigFileThreshold`,
+which the size cap does not stop for a conflicted file), so a pack nothing
+kept reaches is removed, and one only partly reached is written again with
+what is before the old one goes. An old
 round still depends on the repository holding the commits beneath it: a
 rebase followed by garbage collection can remove them, and the page then
 shows that round's comments with the code stored with them.
@@ -576,7 +581,7 @@ client keyed by review, path and content; and a review belongs to one agent.
 
 | What | Where | Run |
 | --- | --- | --- |
-| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
+| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable, and what only dropped ones held goes, packed or loose; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
 | `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
 | `GetFiles`: colouring from whole files, scopes and outlines on either side, more context, since-last limits, caps, the object-id cache, snippets | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |
 | A person on a paired host reviewing through the carrier, the copy following the entry, deletion removing rows, folder and copy; agents, tools sockets, copies and hosts without the experiment refused | `spec_reviews` in [`crates/testnet/tests/`](../crates/testnet/tests/) | `just suite many-daemon-protocol-spec` |

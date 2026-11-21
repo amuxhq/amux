@@ -613,6 +613,74 @@ pub async fn drop<S: AsRef<str>>(
         // Emptied folders go too; one still holding an object stays.
         let _ = std::fs::remove_dir(fanout.path());
     }
+    Ok(removed + drop_packed(store, &git, &reachable).await?)
+}
+
+/// What a pack is made of besides its index, every one git may write.
+const PACK_PARTS: &[&str] = &["pack", "rev", "bitmap", "mtimes", "promisor", "keep"];
+
+/// Removes from the packs in `store` every object not in `reachable`,
+/// answering how many went. Git writes some objects into a pack rather
+/// than loose (`git add` does for a file over the person's
+/// `core.bigFileThreshold`, which the size cap does not stop for a
+/// conflicted file, and a git too old to honour `GIT_NO_LAZY_FETCH` fetches
+/// into one), so loose objects alone would leave those for good. A pack
+/// nothing reachable is in goes; one only partly reachable is first written
+/// again with just what is, so a reader never finds a reachable object
+/// missing. Its index goes before the rest, since git finds a pack by it.
+async fn drop_packed(
+    store: &ObjectStore,
+    git: &impl Fn(&[&str]) -> tokio::process::Command,
+    reachable: &HashSet<String>,
+) -> Result<usize, GitError> {
+    let folder = store.dir().join("pack");
+    let entries = match std::fs::read_dir(&folder) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(GitError::Scratch(error)),
+    };
+    let mut indexes = Vec::new();
+    for entry in entries {
+        let path = entry.map_err(GitError::Scratch)?.path();
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if name.starts_with("pack-") && name.ends_with(".idx") {
+            indexes.push(path);
+        }
+    }
+    let mut removed = 0;
+    for index in indexes {
+        let bytes = std::fs::read(&index).map_err(GitError::Scratch)?;
+        let listed = objects::checked("show-index", git(&["show-index"]), Some(bytes)).await?;
+        let held: Vec<String> = text(&listed)
+            .lines()
+            .filter_map(|line| line.split(' ').nth(1))
+            .map(str::to_owned)
+            .collect();
+        let kept: Vec<&String> = held.iter().filter(|id| reachable.contains(*id)).collect();
+        if kept.len() == held.len() {
+            continue;
+        }
+        if !kept.is_empty() {
+            let mut input = String::new();
+            for id in &kept {
+                input.push_str(id);
+                input.push('\n');
+            }
+            let mut pack = git(&["pack-objects", "-q", "--window=0"]);
+            pack.arg(folder.join("pack"));
+            objects::checked("pack-objects", pack, Some(input.into_bytes())).await?;
+        }
+        std::fs::remove_file(&index).map_err(GitError::Scratch)?;
+        for part in PACK_PARTS {
+            match std::fs::remove_file(index.with_extension(part)) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(GitError::Scratch(error));
+                }
+                _ => {}
+            }
+        }
+        removed += held.len() - kept.len();
+    }
     Ok(removed)
 }
 

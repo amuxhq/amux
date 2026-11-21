@@ -71,6 +71,20 @@ class AndroidStorybookTest(unittest.TestCase):
             self.assertIn('data-area="System"', html)
             self.assertIn("1.5x text", html)
 
+    def test_area_tabs_order_chat_asks_review_between_fleet_and_hosts(self):
+        stories = [
+            {"id": "store.failure", "area": "System"},
+            {"id": "review.diff", "area": "Review"},
+            {"id": "hosts.paired", "area": "Hosts"},
+            {"id": "chat.ask-command", "area": "Asks"},
+            {"id": "chat.active", "area": "Chat"},
+            {"id": "fleet.busy", "area": "Fleet"},
+        ]
+        self.assertEqual(
+            storybook.ordered_areas(stories),
+            ["Fleet", "Chat", "Asks", "Review", "Hosts", "System"],
+        )
+
     def test_load_manifest_fails_on_missing_png(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp)

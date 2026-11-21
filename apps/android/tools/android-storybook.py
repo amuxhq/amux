@@ -90,12 +90,21 @@ def load_manifest(out_dir: Path) -> list[dict]:
     return stories
 
 
-def render_html(stories: list[dict]) -> str:
-    areas_seen: list[str] = []
+AREA_ORDER = ("Fleet", "Chat", "Asks", "Review", "Hosts", "Pairing", "System")
+
+
+def ordered_areas(stories: list[dict]) -> list[str]:
+    present = {story.get("area", "Other") for story in stories}
+    ordered = [area for area in AREA_ORDER if area in present]
     for story in stories:
         area = story.get("area", "Other")
-        if area not in areas_seen:
-            areas_seen.append(area)
+        if area not in ordered:
+            ordered.append(area)
+    return ordered
+
+
+def render_html(stories: list[dict]) -> str:
+    areas_seen = ordered_areas(stories)
 
     tab_buttons = ['<button class="tab active" data-area="All">All ({})</button>'.format(len(stories))]
     for area in areas_seen:

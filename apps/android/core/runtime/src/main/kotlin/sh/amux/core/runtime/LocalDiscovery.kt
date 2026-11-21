@@ -178,7 +178,13 @@ class AndroidLocalDiscovery(
         Thread(r, "amux-nsd").apply { isDaemon = true }
     }
     private val tracker = NsdDiscoveryTracker(only = only) { list ->
-        dispatch { handOver(list) }
+        val capturedGen = synchronized(lock) { browseGeneration }
+        dispatch {
+            val stillCurrent = synchronized(lock) { capturedGen == browseGeneration }
+            if (stillCurrent) {
+                handOver(list)
+            }
+        }
     }
 
     private var browsing = false

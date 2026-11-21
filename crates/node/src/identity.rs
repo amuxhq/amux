@@ -672,22 +672,13 @@ fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
     Err(error)
 }
 
-/// Serializes the existence check and rename under an exclusive sibling
-/// lockfile when `renameat2(RENAME_NOREPLACE)` is unavailable on the kernel
-/// or filesystem, so concurrent first-run initializers never overwrite an
-/// already-published `device.key`.
+/// Serializes the existence check and rename under an OS-managed advisory lock
+/// (`flock(LOCK_EX)`) when `renameat2(RENAME_NOREPLACE)` is unavailable on the
+/// kernel or filesystem, so concurrent first-run initializers never overwrite
+/// an already-published `device.key` and a crash cannot leave a stale lock.
 #[cfg(any(target_os = "android", test))]
 fn publish_new_file_locked(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    struct LockGuard(PathBuf);
-
-    impl Drop for LockGuard {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(&self.0);
-        }
-    }
-
-    const MAX_ATTEMPTS: usize = 100;
-    const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
+    use std::os::fd::AsRawFd;
 
     let file_name = path
         .file_name()
@@ -695,44 +686,31 @@ fn publish_new_file_locked(tmp: &Path, path: &Path) -> std::io::Result<()> {
         .unwrap_or("amux-data");
     let lock_path = path.with_file_name(format!(".{file_name}.lock"));
 
-    let _guard = {
-        let mut acquired = None;
-        for attempt in 0..MAX_ATTEMPTS {
-            let mut options = private_write_options();
-            options.create_new(true);
-            match options.open(&lock_path) {
-                Ok(_lock_file) => {
-                    acquired = Some(LockGuard(lock_path.clone()));
-                    break;
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if path.try_exists()? {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::AlreadyExists,
-                            "target file already exists",
-                        ));
-                    }
-                    if attempt + 1 == MAX_ATTEMPTS {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::WouldBlock,
-                            "timed out waiting for device key publish lock",
-                        ));
-                    }
-                    std::thread::sleep(RETRY_DELAY);
-                }
-                Err(err) => return Err(err),
-            }
+    let mut options = private_write_options();
+    options.create(true);
+    let lock_file = options.open(&lock_path)?;
+    loop {
+        // SAFETY: `lock_file` is an open file descriptor owned by this function.
+        let rc = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) };
+        if rc == 0 {
+            break;
         }
-        acquired.expect("loop either returns or acquires lock")
-    };
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::Interrupted {
+            return Err(err);
+        }
+    }
 
-    if path.try_exists()? {
-        return Err(std::io::Error::new(
+    let result = if path.try_exists()? {
+        Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
             "target file already exists",
-        ));
-    }
-    fs::rename(tmp, path)
+        ))
+    } else {
+        fs::rename(tmp, path)
+    };
+    drop(lock_file);
+    result
 }
 
 pub(crate) fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {
@@ -1076,6 +1054,8 @@ mod tests {
     #[test]
     fn locked_publish_fallback_preserves_first_writer_under_contention() {
         let dir = temp_data_dir();
+        // Simulate a stale lockfile left behind by a crashed/force-stopped process.
+        fs::write(dir.path().join(".device.key.lock"), b"").unwrap();
         let target = Arc::new(dir.path().join(DEVICE_KEY_FILE));
         let barrier = Arc::new(Barrier::new(8));
         let handles = (0..8_u8)
@@ -1110,6 +1090,5 @@ mod tests {
             }
         }
         assert_eq!(fs::read(&*target).unwrap(), vec![winners[0]; 32]);
-        assert!(!dir.path().join(".device.key.lock").exists());
     }
 }

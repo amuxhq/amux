@@ -57,6 +57,7 @@ class StoreBundle(
 
     private var listedView: FleetView? = null
     private var listedHosts: List<HostView>? = null
+    private var hostsShown = false
     private val chats = mutableMapOf<Long, Pair<OpenChat, (ChatDelta) -> Unit>>()
 
     init {
@@ -112,6 +113,9 @@ class StoreBundle(
     fun attach(profile: Profile?) {
         this.profile = profile
         _profileReady.value = profile != null
+        if (profile == null) {
+            hostsShown = false
+        }
         if (profile != null) {
             apply(profile.fleetOpening())
         }
@@ -139,8 +143,10 @@ class StoreBundle(
         val view = listedView ?: return
         val hostViews = listedHosts ?: return
 
+        val shouldShowHosts = delta.hosts != null || !hostsShown
         fleet.show(view, hostViews)
-        if (delta.hosts != null) {
+        if (shouldShowHosts) {
+            hostsShown = true
             hosts.show(hostViews)
             if (hosts.snapshot.hosts.isNotEmpty()) {
                 trusts?.invoke()
@@ -148,7 +154,7 @@ class StoreBundle(
         }
         saw?.invoke(fleet.snapshot.machines.count { it.trusted }, fleet.snapshot.needYou)
         _applied.value += 1
-        if (delta.hosts != null && hosts.snapshot.rosterBehind) {
+        if (shouldShowHosts && hosts.snapshot.rosterBehind) {
             scope.launch { refreshRoster() }
         }
     }

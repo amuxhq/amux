@@ -93,6 +93,10 @@ internal object DoorHost {
             return
         }
         val configured = configureFromIntent(activity, currentComposition, intent)
+        if (configured == null) {
+            composition = currentComposition
+            return
+        }
         composition = configured
 
         val doorPort = doorPortFromIntent(intent)
@@ -139,7 +143,7 @@ internal object DoorHost {
         activity: Activity,
         currentComposition: Composition,
         intent: Intent?,
-    ): Composition {
+    ): Composition? {
         val rawConfig = intent?.getStringExtra(DoorArgs.EXTRA_START_CONFIG)
         if (rawConfig.isNullOrBlank()) {
             return currentComposition
@@ -150,15 +154,15 @@ internal object DoorHost {
         val config = try {
             DoorCodec.decodeStartConfig(rawConfig)
         } catch (_: Throwable) {
-            return currentComposition
+            return null
         }
-        val app = activity.application as? AmuxApplication ?: return currentComposition
+        val app = activity.application as? AmuxApplication ?: return null
         val appContext = app.applicationContext
 
         val installDir = try {
             resolveDoorDataDir(appContext.filesDir, config.dataDir)
         } catch (_: IllegalArgumentException) {
-            return currentComposition
+            return null
         }
         val accountsFile = File(installDir.parentFile, "${installDir.name}-accounts.json")
 

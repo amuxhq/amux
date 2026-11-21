@@ -110,8 +110,11 @@ object StateMappers {
         discovered: List<HostView> = emptyList(),
     ): PairingSheetState {
         val viaLink = modal is PairingModal.Link
+        val alreadyConfirmedOrConfirming = pairing.phase is PairingStore.Phase.Confirming ||
+            pairing.phase is PairingStore.Phase.Trusted
         val phase: PairingPhaseUi = when {
             modal is PairingModal.Link &&
+                !alreadyConfirmedOrConfirming &&
                 invitationNeedsAccount(modal.invitation, discovered) &&
                 !signedIn -> {
                 PairingPhaseUi.NeedsAccount(signingIn = signingIn)

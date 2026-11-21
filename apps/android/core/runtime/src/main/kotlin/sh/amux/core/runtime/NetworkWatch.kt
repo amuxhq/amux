@@ -2,6 +2,7 @@ package sh.amux.core.runtime
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import kotlinx.coroutines.CoroutineScope
@@ -36,13 +37,19 @@ class NetworkChangeDebouncer(
     private var generation = 0
     private var baselineNetworkId: Long? = null
     private var baselineTransports: Int? = null
+    private var baselineLinkSignature: String? = null
     private var pendingJob: Job? = null
     private var onChange: (() -> Unit)? = null
 
-    fun start(onChange: () -> Unit) {
+    fun start(initiallyOffline: Boolean = false, onChange: () -> Unit) {
         synchronized(lock) {
             stopLocked()
             this.onChange = onChange
+            if (initiallyOffline) {
+                baselineNetworkId = NO_NETWORK
+                baselineTransports = 0
+                baselineLinkSignature = ""
+            }
         }
     }
 
@@ -60,6 +67,7 @@ class NetworkChangeDebouncer(
                 // First callback after registration seeds the active network.
                 baselineNetworkId = networkId
                 baselineTransports = null
+                baselineLinkSignature = null
                 return
             }
             if (existing == networkId) {
@@ -67,6 +75,7 @@ class NetworkChangeDebouncer(
             }
             baselineNetworkId = networkId
             baselineTransports = null
+            baselineLinkSignature = null
             scheduleLocked()
         }
     }
@@ -78,6 +87,7 @@ class NetworkChangeDebouncer(
             if (existing == null) {
                 baselineNetworkId = networkId
                 baselineTransports = transports
+                baselineLinkSignature = null
                 return
             }
             if (existing == networkId) {
@@ -97,6 +107,36 @@ class NetworkChangeDebouncer(
             }
             baselineNetworkId = networkId
             baselineTransports = transports
+            baselineLinkSignature = null
+            scheduleLocked()
+        }
+    }
+
+    fun onLinkPropertiesChanged(networkId: Long, linkSignature: String) {
+        synchronized(lock) {
+            if (onChange == null) return
+            val existing = baselineNetworkId
+            if (existing == null) {
+                baselineNetworkId = networkId
+                baselineLinkSignature = linkSignature
+                return
+            }
+            if (existing == networkId) {
+                val known = baselineLinkSignature
+                if (known == null) {
+                    baselineLinkSignature = linkSignature
+                    return
+                }
+                if (known == linkSignature) {
+                    return
+                }
+                baselineLinkSignature = linkSignature
+                scheduleLocked()
+                return
+            }
+            baselineNetworkId = networkId
+            baselineTransports = null
+            baselineLinkSignature = linkSignature
             scheduleLocked()
         }
     }
@@ -107,6 +147,7 @@ class NetworkChangeDebouncer(
             if (baselineNetworkId != networkId) return
             baselineNetworkId = NO_NETWORK
             baselineTransports = 0
+            baselineLinkSignature = ""
             scheduleLocked()
         }
     }
@@ -132,6 +173,7 @@ class NetworkChangeDebouncer(
         generation += 1
         baselineNetworkId = null
         baselineTransports = null
+        baselineLinkSignature = null
         onChange = null
         pendingJob?.cancel()
         pendingJob = null
@@ -159,7 +201,7 @@ class AndroidNetworkWatch(
     override fun start(onChange: () -> Unit) {
         val manager = connectivityManager ?: return
         stop()
-        debouncer.start(onChange)
+        debouncer.start(initiallyOffline = manager.activeNetwork == null, onChange = onChange)
         val registered = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 debouncer.onAvailable(network.networkHandle)
@@ -176,6 +218,21 @@ class AndroidNetworkWatch(
                 debouncer.onCapabilitiesChanged(
                     networkId = network.networkHandle,
                     transports = transportMask(networkCapabilities),
+                )
+            }
+
+            override fun onLinkPropertiesChanged(
+                network: Network,
+                linkProperties: LinkProperties,
+            ) {
+                val iface = linkProperties.interfaceName.orEmpty()
+                val addrs = linkProperties.linkAddresses
+                    .mapNotNull { it.address?.hostAddress?.substringBefore('%') }
+                    .sorted()
+                    .joinToString(",")
+                debouncer.onLinkPropertiesChanged(
+                    networkId = network.networkHandle,
+                    linkSignature = "$iface|$addrs",
                 )
             }
         }

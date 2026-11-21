@@ -210,26 +210,42 @@ impl HostSettings {
         path: &str,
         pinned: bool,
     ) -> Result<Option<InstallationConfig>, SettingsError> {
-        let path = PathBuf::from(repository(path, self.home())?);
-        let held = self.current().repositories;
-        let listed = held.contains(&path);
-        if listed == pinned {
-            return Ok(None);
-        }
-        let mut paths: Vec<PathBuf> = held.into_iter().filter(|held| *held != path).collect();
-        if pinned {
-            paths.push(path);
-        }
-        let request = UpdateSettingsRequest {
-            repositories: Some(wire::RepositoryList {
-                paths: paths
+        let home = self.home();
+        let path = PathBuf::from(repository(path, home)?);
+        // Made of the list as the file holds it under the write's lock, not
+        // as last polled: a pin made at the same moment, or a hand edit the
+        // poll has not seen, would otherwise be written over.
+        let mut already = false;
+        let config = self.write(
+            |fresh| {
+                let listed = fresh.repositories.contains(&path);
+                if listed == pinned {
+                    already = true;
+                    return Ok(Vec::new());
+                }
+                let mut paths: Vec<PathBuf> = fresh
+                    .repositories
                     .iter()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .collect(),
-            }),
-            ..UpdateSettingsRequest::default()
-        };
-        self.update(&request).map(Some)
+                    .filter(|held| **held != path)
+                    .cloned()
+                    .collect();
+                if pinned {
+                    paths.push(path.clone());
+                }
+                let request = UpdateSettingsRequest {
+                    repositories: Some(wire::RepositoryList {
+                        paths: paths
+                            .iter()
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .collect(),
+                    }),
+                    ..UpdateSettingsRequest::default()
+                };
+                changes(&request, home, fresh)
+            },
+            |_| Ok(()),
+        )?;
+        Ok((!already).then_some(config))
     }
 
     /// Keeps a person's pick as what later agents of its kind start with.
@@ -301,6 +317,11 @@ impl HostSettings {
             None => held.config.clone(),
         };
         let changes = changes_of(&fresh)?;
+        // Nothing to change writes nothing; a change made beside the daemon
+        // that the file now holds is the poll's to apply.
+        if changes.is_empty() {
+            return Ok(held.config.clone());
+        }
         let (text, edited) = settings::edit::edit(&held.text, &changes)?;
         let config = match &self.file {
             Some(path) => read(&text, path)?,
@@ -579,6 +600,46 @@ mod tests {
             unpinned.repositories,
             "the file says it"
         );
+    }
+
+    /// A pin is made of the list the file holds when it is written, so a
+    /// hand edit the daemon has not polled yet is kept, and so are pins
+    /// made at the same moment.
+    #[test]
+    fn a_pin_keeps_what_the_file_gained_since_it_was_last_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        let folder = |name: &str| {
+            let folder = dir.path().join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            folder.canonicalize().unwrap()
+        };
+        let (edited, app) = (folder("edited"), folder("app"));
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: Some(dir.path().to_owned()),
+        });
+        std::fs::write(&path, format!("repositories = [{:?}]\n", edited)).unwrap();
+        let pinned = settings.pin(app.to_str().unwrap(), true).unwrap().unwrap();
+        assert_eq!(pinned.repositories, [edited.clone(), app.clone()]);
+
+        let many: Vec<PathBuf> = (0..8).map(|n| folder(&format!("many/{n}"))).collect();
+        std::thread::scope(|scope| {
+            for folder in &many {
+                let settings = &settings;
+                scope.spawn(move || settings.pin(folder.to_str().unwrap(), true).unwrap());
+            }
+        });
+        let listed = InstallationConfig::from_file(&path).unwrap().repositories;
+        for folder in [&edited, &app].into_iter().chain(&many) {
+            assert!(
+                listed.contains(folder),
+                "{folder:?} is missing from {listed:?}"
+            );
+        }
     }
 
     #[test]

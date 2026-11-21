@@ -1,0 +1,266 @@
+{
+  "cases": [
+    {
+      "name": "run",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Run": {
+                "command": "deploy --prod\n--force"
+              }
+            },
+            "why": "It ships"
+          }
+        }
+      },
+      "sealed": "IlAm5YC0RJf8NVkomvep6peArqUkZdIQs2cVTJSplw89OmKB/cIRPicXjYUnga5HQQagDKsckOQrnwXwvjNaA8/Me5OcvrbnSWLkfcAGB5NfI4/DJQqsGLS65l+aZtmyQeWeYEtg4l82uxx4YO0Iv0EaK9OLeNjrRtjzYSWtEFHciJE1BuPUF/246B5HTf7OWzG2KCSJQ3P7N9U/awtUP+kA591am/gxQel+TKZ7yYQHUA1JYIaSLqkqpHHSNfTZwKcC1WaMc3H2EQByy5UTQcyKQ9nS+ZMWHh017tPqUppdc2tLIXUQ4/gg2K7QU0YIE8BPb6e/Frpa8L/7YW0uYqSYSmE9cy3FBF0KQgrvvDRwmsilVw=="
+    },
+    {
+      "name": "run and more",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 2,
+            "wants": {
+              "Run": {
+                "command": "deploy --prod"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "RGC+c0SC4gAonLbGy6lG2ZeCpID3zg/H5UFrEF5l9Hn3jSfS1zF5EPtOBSJrj/ZzD8r2qjFh0oKxO7TdsCRojJ//71IbRS/+WfP5qhyX7zoUOC0Sc7BmjsDkhDPaibjsxSBibhz1L0ghuvk6iNZCQduernEyxlL1CLaGDiEzlMoCN7qK7i624AleMrveObH4kcUD3X3GmeO9afkIoUJ6d4KVXZ1O9EiDYHCrTl9UQ8G0hLeod6Flehf8+4/Uu1kk133/jNLOPV82scsL6NDzN3MVJpk14lfHUWnxmYSkUdzAitxQ0mWdva+3X8EqgW204INf6JaHyTqF80eTKvnA4OkG/NU="
+    },
+    {
+      "name": "change one file",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Change": {
+                "created": false,
+                "files": 1,
+                "path": "src/lib.rs"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "iRHQG+8twWAEzC52G6PsdxaH666H3mcTJGGFSvD/vGo9gsrigfEunV9AGgtzl3hCxF61yH+GMSJWSR4M4VEVQQDatQxhZxloF7P82xdW5HlStviDM6IPdFXLPKlDoo+x0vLQQsjGVl0vCQqDjSuNKfRQ/CM/i5DjPwd1KptdyhwW+fGMfTVQideUb8gty5ic1CA58AxLhvaNd8lqJ3b920qUSAzLLh/XlylcsPOTyqQVYMM4C4uS+hBGv4zLL63FF2jTLzAR06MdtQIlookQO6OqaRsMIUFcP8Qf0klCvJAmA9LKFiGOnzpJoW/h9DHCIkcrTBAp89bUARH1PWVTr4Z+/mHDb+UrfW+spa0qMDGZPSm498iCSR4woA=="
+    },
+    {
+      "name": "change many files",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Change": {
+                "created": false,
+                "files": 4,
+                "path": "src/lib.rs"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "cY91ziQC+5A0bqpiFK1x+ow03WFv7k1ZPnW2AB0BLitevaLC7se11T8aw4pMS9jSMTQvHBqYWkQE0P1zEz2qUsM1OWCI7twuy3Yzpg5DmcVSwzdl1by0NAB7WfsAD5UUO3HbisYN5vnAugfjVc0Ht1FxMh2xhTvWdn/j4ySPWHYvNBy5IHFEvjMEIjK/+/KQR0P0aBoxuAV50fjA1l3FEJguNASTZwatx5J74hnsLhuOs8fVhskUWdbiB0jGn5qmgvkaX+dh1gMom1dlFv9cibRjQUAiY9z5/dwpmPtVKy1wUilBXrLNJrCFP9zazAXMdO+9ux9AP8dxuoWJH1RLW/bpFY/mDiUJgHB5fTVyfa48WW5TbG2oIKhYFw=="
+    },
+    {
+      "name": "use a tool",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Use": {
+                "server": "github",
+                "tool": "create_issue"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "7clYstIHsKNQDeFl/DJABSGfvTsxXwlnFnBXNjusIkQauf9EtqRNM4rd8/AaLl+LaJudxys7nb0skj0YOQzu07UM1vU5PsS29mji1EHVrmTk56L5v43q0A9wAUsOD4P0w8u0freIjhB1NnvKeEFC9+QhaE41lQbWJ2mTJesUByddCrDMCApw7aZ8tYiruOBZS+hta/OWkaY75hNhki9PGv/hpCwSh1oTGFYNAo9HJmix+tOT77DRToslujFaBWfP52KP+zlAmaeSRFf8PdoVuzRZ3NBoHy2SKnOwoToKFqzh5ffsxaA8P7WOtrTYh/BIV3w4EiHhCJS4f25BArqzxXxOSbu7lKNDDZOntEhL/WKr6g=="
+    },
+    {
+      "name": "question",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Question": {
+                "text": "Which suite?\nPick one"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "DEPn057nOl5/W9vaPGNdvg14CmRfXeEqtxv8nomF20UrKhxMog/8EUK3P7XI/44lnLKOkL5T8sfoUaMDkg1ySSxfAKNLk0y4nt4TzKlND/IN5Fj8v2IfCf7TtRuJXCz1Sao6GpQZEOcNaQRMTrNXW55GWLcGQMUgF8KROl8yIhhUmoseSBZQtaMrQKcrK/FOqcUPRUfT/43h3sKuMn0uHf5y0jPhgzQUiOZCbhD2UMkndh9gVlG0XX0Q7HpVbGbphmTrIdkZbqygRJGJCeAIw8wDJENgXkIVagZyuvdbJptMLqVgjBdGPr6SNTvbp2ola2vMicNz4jfkNkAG3KVnClDECOaeXY7RMIdY+BMYIA=="
+    },
+    {
+      "name": "plan with a title",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Plan": {
+                "title": "Move the cache"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "TS2y9PivoqnYeKHvk99n2Te/unpWSfITzUVbQt+iEB6bK5ciD057vNBoDPPTovv4YwPbAFdTi+C2vMwVVybHSIHqfNwc4AnAATDpbluuu/IF/x8fxIzuxd0GJf9OKR+sKl7e2sCUqM8uAGEPmVy/UFTwWL7IZ7NMLQDmBhc5oFB5sRtZ9+OXT/tx4guutu38WxVhyqzhNwdDg0PrLvHD/u5SpvGokm0paF2Slgs5piMlRRcew0rOCETZSrHwmdPWWO6wIWtJ/0tmlR4QxiK7/4KAjoKvVJzcRPqnaGAubIJjVzfJiX0iuM5jj9p94k5kLOisco1YGJIP+vJIlqAeJ+Dcu58="
+    },
+    {
+      "name": "plan without one",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 0,
+            "wants": {
+              "Plan": {
+                "title": ""
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "JKr3MCotPEoxvSLrf4P/rHhvMt5UzoyNNpCcTuyDwCJwAzc6RylginsXrMx4i0Z58HJDuBPjIPqTBQToE5cA9K2yPsMlNPA0voerLItfK2ve43S+H0C2WaZ2FjVpcQyII2/Sew8E4tfpA5IqUS5CD0x6+AzobEsmsOKRH7RbHw8TYn1PZlKMSbXyi/E4n8elAneaQT7nY4n3c+U77kOwQpeVs9uzfDlG/3LT3dmsjnP5JEuc/MrzhHOn5rWO2Wb3T9zyFEc0mFgpqEWIZfKqYk5aZqfwwlIUjfCYLY8BuMkicm1ducEIZmKgM/zJd7TEsKHLBi72"
+    },
+    {
+      "name": "the provider's sentence",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Ask": {
+            "key": "ask:7",
+            "more": 1,
+            "wants": {
+              "Other": {
+                "server": "",
+                "text": "Sign in to Linear to go on"
+              }
+            },
+            "why": ""
+          }
+        }
+      },
+      "sealed": "l2ZGY649fnC72N1aoYW6nZd+TyIai4h6dy41OR/02hp+eD87EwIKemKK5WP/91KyNE+aOS2oOFiTxMQhBSjqCrdXf66CRruABVFvhWvP+lnUly+wBne0hkNHKxU6CEtBo815Fim0tLDFgNPnGGB3rCwKt6he0nSBj0NUycR9s2zzQ/mBZFRT0dFHCWa1+mLdI+uc9tGfLmc9l5eLAj+3zNc5zA0TOFg42Fk2Q1X+IeiSLH72n26WxKIZhOnG+w+2cJvoliJ6lHwy+/bIdTdAEwJ2Tj6Z62loaD3nbqr9hHPxs6q/+phpRtH18FmXIpmhsKNx6wdLrSybj4Yj8PksjEC0J5gpOo5FVVN8oJeJUwRrpylLJGUeCLA+akk="
+    },
+    {
+      "name": "signed out",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": "SignedOut"
+      },
+      "sealed": "tK3GTu8vBCcj4buV0z3AWs05KF8CmcLumivlwsIXzwHPv0FgIqIjk/UTuXldA6f0UR0k012tcJDJZLDd0iaTAW/ItxP94oSNl7K7hmrYRcANMMD0//3WFQoweIN8ksXK6GDcznnWHtOCJ53Pu1WxBvmUp/YTVxTY9ouRXidoZ7WiRwQyX5WRPy8TQM6SDyg4yfA+h7zQ+LjX82zMXjQE7yfzvd99ux1mtjgDHX1fr3YeNA8DaEFBOEx6"
+    },
+    {
+      "name": "usage limit with a reset",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "UsageLimit": {
+            "resets_at_ms": 1800000000000
+          }
+        }
+      },
+      "sealed": "ChRLneKmO+KC2EjMfBA5mcDiU9OLLVFDvv5jnRwghGFkpyi3L/NUaVQrF2kmZipbd0yRrBQpkoBnWUgspqe4Y8ZHsPC6TOMCEwUmurL25ELEQJA2nhvfYX+ZFwhcgOu3SJlj3l7oDNO7rfxvod/A0UfiMdGRwMRuEFqo6ojI1Kb/mGyQIxDPRcAwaukRGRXQrroEKRZU2xHCgAXb3fawJPAjRBMydJ2+ln9uU8AhFrS0aXwi4z9//hvIRfs+Dq27wbXhHgXf6uwxn5oYljRCnKRuxnnL0FWbAmVWOw=="
+    },
+    {
+      "name": "usage limit without one",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "UsageLimit": {
+            "resets_at_ms": null
+          }
+        }
+      },
+      "sealed": "SNvjzo6/AOVunaVJGlR3BFDkn1VXR5u6yi0/JwWY+h1E3wONDMM04iR+tx5KIGq9w2zm3FDtgtRH1IE4PH82pIGrry6d8hpMDBLiggUh8hUAaV4lZdf0zxnWrYNmzHcvbGHU4r6+DhiA5qI/zHh++xZnibaUj5ds02sdRjc/O9bv8EHvLZAS8RVXLxr6DgW0QcWcIR+N0ax6sqI8TJOwdceYsMg5VWdftzOe82/D6/7nKscWdx3tGojiGJpp47HleTBEW9It2wM416pElokGt+bpDA=="
+    },
+    {
+      "name": "failed",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Failed": {
+            "message": "Connection refused"
+          }
+        }
+      },
+      "sealed": "eq/7jrb5cGiSQyDnpHg+r7CcaheTr4O3h9K8Aj9Q6x2l3exl/DkFYjxS/Lbz6eoBV819JSwZ/sUTGEkIprmjAVVnWgR2Txhkep6xupjD22to3/rwkPeJML4vKO3d/LH9O6/hBKL8PyAY5yYwh4LJfB6GfDcaMBKnzJ95UTQALAHu6wRTeJW/wttt0qvbGl6NFwZkiYZnEYxzfqiHhqpDIfYJVEC/Wth9Q6TNs39M9QPzuEaqYXEo4VnQHBTM5/efIhhU9wkgN33f2xUzooKj0hwppTkcnsp+1gM="
+    },
+    {
+      "name": "died",
+      "plain": {
+        "agent": "22222222-2222-2222-2222-222222222222",
+        "host": "11111111-1111-1111-1111-111111111111",
+        "name": "refactor-auth",
+        "notice": {
+          "Died": {
+            "detail": "exited with status 1"
+          }
+        }
+      },
+      "sealed": "NjejZW+hXFvSNnr6dWkeMvEiG752jQ4y+90uWt0nZABvrJGAN2jvsGPsF9mQIt0RX5eFV3huWqHA1l0P6GYXgQTfPETK9sgbLtX6S8bmsi7m7gn0XxEBW32ZJM75YZzuUzzsiifEjbdeffQczXQMW/KHkJMlk7I0K/x41zWLeAsdX9su5iEp7MmMWFjQPeolNYweNHOB0nAEkSLlAng9sS+4vU/+qV6EnlVJ7IDNNdZKE1fYIOK4Rn8YwQ8eEpBar439IUwyYDnidGSvSTfBA46N/LKHKhGLvg=="
+    }
+  ],
+  "private_key": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE="
+}

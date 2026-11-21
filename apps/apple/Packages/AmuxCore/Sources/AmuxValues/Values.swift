@@ -8180,14 +8180,16 @@ public enum SendState: String, Codable, Hashable, Sendable, CaseIterable {
     case sent = "Sent"
 }
 
-/// A prompt of this client's on its way to the agent.
+/// A prompt of this client's on its way to the agent. Its words come
+/// parsed, as its row's will once it lands, so it reads the same before and
+/// after.
 public struct SentPrompt: Codable, Hashable, Sendable {
     public var inputId: [UInt8]
-    public var text: [Segment]
+    public var text: [ProsePart]
     public var lands: Lands
     public var underway: Underway
 
-    public init(inputId: [UInt8], text: [Segment], lands: Lands, underway: Underway) {
+    public init(inputId: [UInt8], text: [ProsePart], lands: Lands, underway: Underway) {
         self.inputId = inputId
         self.text = text
         self.lands = lands

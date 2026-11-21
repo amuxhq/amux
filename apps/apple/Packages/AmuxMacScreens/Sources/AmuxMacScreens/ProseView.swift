@@ -3,47 +3,40 @@ import AmuxWords
 import SwiftUI
 
 /// The agent's prose, its markdown drawn as blocks: headings, lists, code
-/// that keeps its whitespace, quotes and tables.
+/// that keeps its whitespace, quotes and tables. The blocks come parsed with
+/// the row.
 struct ProseView: View {
-    let source: String
+    let markdown: Markdown
     let streaming: Bool
     /// A working note: said in passing, quieter than an answer.
     let quiet: Bool
 
     var body: some View {
-        let document = Parsed.document(source)
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(document.blocks.enumerated()), id: \.offset) { _, block in
-                Block(block: block, streaming: streaming)
-            }
-        }
-        .font(.ui(.prose))
-        .lineSpacing(6)
-        .foregroundStyle(quiet ? AnyShapeStyle(Palette.textSecondary) : AnyShapeStyle(Palette.prose))
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Blocks(blocks: markdown.blocks, streaming: streaming)
+            .font(.ui(.prose))
+            .lineSpacing(6)
+            .foregroundStyle(quiet ? AnyShapeStyle(Palette.textSecondary) : AnyShapeStyle(Palette.prose))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// Parsed documents, kept by their source so a row drawn again is not
-/// parsed again.
-@MainActor
-private enum Parsed {
-    private static var kept: [String: MarkdownDocument] = [:]
-    private static var order: [String] = []
+/// Blocks one under another: a document's, a quote's or a list item's.
+private struct Blocks: View {
+    let blocks: [ProseBlock]
+    let streaming: Bool
 
-    static func document(_ source: String) -> MarkdownDocument {
-        if let document = kept[source] { return document }
-        let document = MarkdownDocument.parse(source)
-        kept[source] = document
-        order.append(source)
-        if order.count > 400 { kept.removeValue(forKey: order.removeFirst()) }
-        return document
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                Block(block: block, streaming: streaming)
+            }
+        }
     }
 }
 
 private struct Block: View {
-    let block: MarkdownBlock
+    let block: ProseBlock
     /// Whether the text is still arriving, so a code block it ends inside
     /// is the one still being written.
     let streaming: Bool
@@ -51,51 +44,77 @@ private struct Block: View {
     var body: some View {
         switch block {
         case .heading(let level, let text):
-            Inline.text((text))
+            Inline.text(text)
                 .font(.ui(level <= 1 ? .proseHeading : level == 2 ? .proseSubheading : .prose, weight: .semibold))
                 .foregroundStyle(Palette.text)
                 .padding(.top, 6)
         case .paragraph(let text):
-            Inline.text((text)).fixedSize(horizontal: false, vertical: true)
-        case .list(_, let items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(items) { item in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.marker)
+            Inline.text(text).fixedSize(horizontal: false, vertical: true)
+        case .list(let ordered, let start, _, let items):
+            // One grid, so the marker column is as wide as the widest marker
+            // and every item's words start at one edge: `9.` stands over
+            // `10.`, numbers right-aligned. A nested list sits in its item's
+            // words, so it is indented by the marker column.
+            let markers = ProseText.markers(ordered: ordered, start: start, items: items)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 6, verticalSpacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    GridRow {
+                        Text(markers[index])
                             .foregroundStyle(Palette.textSecondary)
-                            .frame(minWidth: 14, alignment: .trailing)
-                        Inline.text((item.text)).fixedSize(horizontal: false, vertical: true)
+                            .gridColumnAlignment(.trailing)
+                        Blocks(blocks: item.blocks, streaming: streaming)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .modifier(DoneTask(done: item.task == true))
                     }
-                    .padding(.leading, CGFloat(item.depth) * 18)
                 }
             }
-        case .code(let language, let text, let closed):
-            CodeBlock(language: language, text: text, streaming: streaming && !closed)
-        case .quote(let lines):
+        case .code(let language, let code, let closed):
+            CodeBlock(language: language.isEmpty ? nil : language, text: code, streaming: streaming && !closed)
+        case .quote(let blocks):
             HStack(spacing: 10) {
                 Rectangle().fill(Palette.line).frame(width: 3)
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in Inline.text((line)) }
-                }
-                .foregroundStyle(Palette.textSecondary)
+                Blocks(blocks: blocks, streaming: streaming)
+                    .foregroundStyle(Palette.textSecondary)
             }
-        case .table(let header, let rows):
+        case .table(let alignments, let header, let rows):
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
-                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Inline.text((cell)).fontWeight(.semibold)
+                    ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
+                        Inline.text(cell).fontWeight(.semibold)
+                            .gridColumnAlignment(Self.alignment(alignments, column))
                     }
                 }
                 Divider()
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Inline.text((cell)) }
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Inline.text(cell) }
                     }
                 }
             }
             .font(.ui(.meta))
         case .rule:
             Divider()
+        }
+    }
+
+    private static func alignment(_ alignments: [TableAlign], _ column: Int) -> HorizontalAlignment {
+        switch column < alignments.count ? alignments[column] : .none {
+        case .center: .center
+        case .right: .trailing
+        case .left, .none: .leading
+        }
+    }
+}
+
+/// A finished task's words recede; any other item keeps the prose's ink.
+private struct DoneTask: ViewModifier {
+    let done: Bool
+
+    func body(content: Content) -> some View {
+        if done {
+            content.foregroundStyle(Palette.textTertiary)
+        } else {
+            content
         }
     }
 }
@@ -108,7 +127,7 @@ private struct Block: View {
 /// bold reads as shouting.
 @MainActor
 enum Inline {
-    static func text(_ source: AttributedString) -> Text { Text(styled(source)) }
+    static func text(_ runs: [InlineRun]) -> Text { Text(styled(ProseText.attributed(runs))) }
 
     static func styled(_ text: AttributedString) -> AttributedString {
         var text = text

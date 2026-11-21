@@ -845,8 +845,8 @@ final class ChatModelTests: XCTestCase {
     func testPromptsOnTheirWayAreDrawnWhereTheyLand() async {
         var sending = frame()
         sending.underway = [
-            SentPrompt(inputId: [1], text: [.text("now")], lands: .feed, underway: .sending(waiting: false)),
-            SentPrompt(inputId: [2], text: [.text("later")], lands: .queue, underway: .mayNotHaveArrived),
+            SentPrompt(inputId: [1], text: [.text(Markdown(words: "now"))], lands: .feed, underway: .sending(waiting: false)),
+            SentPrompt(inputId: [2], text: [.text(Markdown(words: "later"))], lands: .queue, underway: .mayNotHaveArrived),
         ]
         let model = ChatModel(source: FakeChat(rows: [], frame: sending))
         XCTAssertEqual(model.landingInFeed.map(\.inputId), [[1]])

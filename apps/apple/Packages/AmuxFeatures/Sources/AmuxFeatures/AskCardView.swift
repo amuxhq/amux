@@ -1409,17 +1409,17 @@ struct QuestionCard: View {
 
     @ViewBuilder
     private func question(_ question: QuestionView, at index: Int) -> some View {
-        Text(design.inline(question.question))
+        Text(design.inline(question.questionRuns))
             .designFont(.body, design)
             .foregroundStyle(design.ink.color)
             .fixedSize(horizontal: false, vertical: true)
-            .identified("ask.question", label: AgentText.plain(question.question))
+            .identified("ask.question", label: ProseText.plain(question.questionRuns))
         if let shown = previewed(question, at: index) {
             let option = question.options[shown]
             VStack(alignment: .leading, spacing: 4) {
                 // Named, because before a pick it is the first option's,
                 // which nothing else on the card says.
-                Text(design.inline(option.label))
+                Text(design.inline(option.labelRuns))
                     .designFont(.caption, design)
                     .foregroundStyle(design.inkMuted.color)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1433,7 +1433,7 @@ struct QuestionCard: View {
                             .fill(design.sunken.color)
                     }
             }
-            .identified("ask.preview", label: AgentText.plain(option.label))
+            .identified("ask.preview", label: ProseText.plain(option.labelRuns))
         }
         VStack(spacing: 6) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { position, option in
@@ -1515,11 +1515,11 @@ struct QuestionCard: View {
             select(position, in: question, at: index)
         } label: {
             OptionRow(
-                label: option.label, detail: option.description != option.label ? option.description : "",
+                label: option.labelRuns, detail: option.description != option.label ? option.descriptionRuns : [],
                 recommended: option.recommended, multi: question.multiSelect, selected: selected)
         }
         .buttonStyle(.amuxControl)
-        .identified("ask.option.\(position)", label: AgentText.plain(option.label), value: selected ? "selected" : nil)
+        .identified("ask.option.\(position)", label: ProseText.plain(option.labelRuns), value: selected ? "selected" : nil)
     }
 
     private func select(_ position: UInt32, in question: QuestionView, at index: Int) {
@@ -1576,7 +1576,7 @@ struct QuestionCard: View {
                 if !question.multiSelect { picks[index] = [] }
             } label: {
                 OptionRow(
-                    label: String(localized: "Something else…"), detail: "", recommended: false,
+                    label: [InlineRun(String(localized: "Something else…"))], detail: [], recommended: false,
                     multi: question.multiSelect, selected: false, quiet: true)
             }
             .buttonStyle(.amuxControl)
@@ -1618,7 +1618,7 @@ struct QuestionCard: View {
                     step = index
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(design.inline(question.header.isEmpty ? question.question : "\(question.header) · \(question.question)"))
+                        Text(design.inline(question.header.isEmpty ? question.questionRuns : question.headerRuns + [InlineRun(" · ")] + question.questionRuns))
                             .designFont(.detail, design)
                             .foregroundStyle(design.inkMuted.color)
                             .lineLimit(2)
@@ -1655,7 +1655,7 @@ struct QuestionCard: View {
         guard picks.indices.contains(index) else { return "" }
         var parts = picks[index].sorted().compactMap { position in
             question.options.indices.contains(Int(position))
-                ? AgentText.plain(question.options[Int(position)].label) : nil
+                ? ProseText.plain(question.options[Int(position)].labelRuns) : nil
         }
         if let other = others[index], !other.isEmpty {
             parts.append(question.secret ? String(localized: "answered (hidden)") : "“\(other)”")
@@ -1735,8 +1735,8 @@ struct QuestionCard: View {
 /// description under it.
 struct OptionRow: View {
     @Environment(\.design) private var design
-    let label: String
-    let detail: String
+    let label: [InlineRun]
+    let detail: [InlineRun]
     let recommended: Bool
     let multi: Bool
     let selected: Bool

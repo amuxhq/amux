@@ -8191,11 +8191,15 @@ enum class SendState {
     Sent,
 }
 
-/** A prompt of this client's on its way to the agent. */
+/**
+ * A prompt of this client's on its way to the agent. Its words come
+ * parsed, as its row's will once it lands, so it reads the same before and
+ * after.
+ */
 @Serializable
 data class SentPrompt(
     @SerialName("input_id") val inputId: List<Int>,
-    @SerialName("text") val text: List<Segment>,
+    @SerialName("text") val text: List<ProsePart>,
     @SerialName("lands") val lands: Lands,
     @SerialName("underway") val underway: Underway,
 )

@@ -23,7 +23,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | --- | --- |
 | `AmuxCore` | The Swift side of the bridge (`Runtime`, `Profile`, `Chat`), the observable stores screens read (`RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `FleetStore`, `HostsStore`, `AccountRegistry`), the account service and App Store adapters, web sign-in, local-network discovery, report assembly and signposts; builds for macOS too, for the [Mac app](MAC.md) |
 | `AmuxCore/AmuxValues` | Swift mirrors of every value the bridge carries, generated from the Rust definitions; never edited by hand |
-| `AmuxCore/AmuxWords` | How the Apple clients word and place those values: a fleet row's state and second line, the chat's typed facts, how a run of tool steps folds and joins the rail, the agent's markdown parsed into blocks, places and ages. Shared with the [Mac app](MAC.md) so both say the same words, and free of the bridge so the Mac's storybook can link it |
+| `AmuxCore/AmuxWords` | How the Apple clients word and place those values: a fleet row's state and second line, the chat's typed facts, how a run of tool steps folds and joins the rail, the agent's markdown blocks drawn as attributed text, places and ages. Shared with the [Mac app](MAC.md) so both say the same words, and free of the bridge so the Mac's storybook can link it |
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
@@ -187,9 +187,9 @@ A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.
 
 Code is coloured by the shared view's highlighting, the terminal's own:
-fenced blocks in the agent's markdown and the patch on an edit card. The
-phone parses markdown itself (`AmuxWords`), so each block asks the bridge
-for its runs (`CodeHighlighting`, read from the environment, which the app
+fenced blocks in the agent's markdown and the patch on an edit card. A
+row's markdown arrives parsed by the shared view layer, the same blocks
+every client draws, and each code block asks the bridge for its runs (`CodeHighlighting`, read from the environment, which the app
 and the catalogue set to the bridge's) away from the main thread, and draws
 them in the design's `syntax` colours (`Design.ink(_:)`, in `AmuxFeatures`:
 the design package holds the colours and no bridge values). Only the open fence
@@ -857,7 +857,7 @@ out only the cells in view.
 The rows' heights are the leaf's own, not UIKit's self-sizing. Its layout
 stacks the rows by height, measures a row with one hidden hosting view
 when it first comes within a screen of view (as if photographed, so a row
-that parses its markdown on a background task is measured at its final
+that loads anything on a background task is measured at its final
 shape), and forgets a height only when the model says that row was read
 again, the width changes or the environment does. The list reports no safe
 area to its cells: it runs under the status bar, the header and the home

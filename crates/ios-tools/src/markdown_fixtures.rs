@@ -56,6 +56,16 @@ const SOURCES: &[&str] = &[
     "1. Split read and write paths.\n2. Add unit tests.",
     "1. Split read and write paths.",
     "Updated backoff logic in `retry.rs`.",
+    "```rust\r\nfn a() {}\r\nfn b() {}\r\n```\r\n",
+    // The Android tests.
+    "# Release Plan\n## Verification Steps\nCheck **bold**, *italic*, ~~old~~, and `cargo test` inline.\n\n- First bullet\n  - Nested bullet\n1. Step one\n2. Step two\n\n---",
+    "```rust\nfn main() {\n    println!(\"hello\");\n}\n```",
+    "```diff\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context line\n```",
+    "> Keep surfaces neutral.\n> Spend colour only on attention.\n\n| Crate | Role |\n| --- | --- |\n| app-bridge | Shared runtime |\n| app-jni | Android JNI |",
+    "See [amux docs](https://amux.sh/docs) and [ignored](amux://callback).",
+    "First part.\n\nSecond part.",
+    "9. Nine\n10. Ten",
+    "- [x] Write the parser\n- [ ] Port the clients",
 ];
 
 /// Texts drawn while they are still being written.

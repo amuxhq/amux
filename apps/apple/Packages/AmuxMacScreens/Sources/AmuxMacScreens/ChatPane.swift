@@ -59,7 +59,7 @@ private struct Feed: View {
                 }
                 ForEach(Array(chat.landing.enumerated()), id: \.offset) { _, prompt in
                     VStack(alignment: .trailing, spacing: 2) {
-                        PromptBubble(segments: prompt.text, steered: false)
+                        PromptBubble(segments: prompt.text.map(\.segment), steered: false)
                         Text(ChatWords.underway(prompt.underway, host: host))
                             .font(.ui(.caption))
                             .foregroundStyle(Palette.textTertiary)

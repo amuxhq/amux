@@ -766,14 +766,13 @@ fn one_line(words: &[Segment]) -> String {
 /// stand once the agent has it; `when` is the time, or what it waits for
 /// while the link is down.
 pub fn pending_prompt(
-    words: &[Segment],
+    words: &[ProsePart],
     when: &str,
     width: usize,
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let mut drawn = Drawn::default();
-    let words = ui_view::prose_parts(words.to_vec(), false);
-    prompt_block(&mut drawn, &words, when, None, false, width, theme);
+    prompt_block(&mut drawn, words, when, None, false, width, theme);
     drawn.lines
 }
 

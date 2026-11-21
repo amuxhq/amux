@@ -7,7 +7,7 @@ use serde::Serialize;
 use ui_state::{Activity, Composer, InputState, InputWhat, Refusal, SessionState, Waiting};
 use wire::SignInState;
 
-use crate::segments::{Segment, segments};
+use crate::segments::{ProsePart, Segment, prose_parts, segments};
 use crate::settings::CommandView;
 
 /// Context use from here on is near full, which a client may set apart.
@@ -159,12 +159,14 @@ pub enum Underway {
     MayNotHaveArrived,
 }
 
-/// A prompt of this client's on its way to the agent.
+/// A prompt of this client's on its way to the agent. Its words come
+/// parsed, as its row's will once it lands, so it reads the same before and
+/// after.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SentPrompt {
     pub input_id: Vec<u8>,
-    pub text: Vec<Segment>,
+    pub text: Vec<ProsePart>,
     pub lands: Lands,
     pub underway: Underway,
 }
@@ -200,7 +202,7 @@ pub fn prompts_underway(state: &SessionState) -> Vec<SentPrompt> {
         }
         let prompt = |lands, underway| SentPrompt {
             input_id: sent.id.clone(),
-            text: segments(text, attachments, &sent.id),
+            text: prose_parts(segments(text, attachments, &sent.id), false),
             lands,
             underway,
         };

@@ -474,7 +474,7 @@ enum ComponentCatalog {
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 41_000, turnElapsedMs: 41_000),
                 queue: F.queue)),
             composer("not-confirmed", height: 280, frame: ScriptedChat.frame(underway: [
-                SentPrompt(inputId: [4], text: [.text("Run the focused tests.")], lands: .queue, underway: .mayNotHaveArrived),
+                SentPrompt(inputId: [4], text: [.text(Markdown(words: "Run the focused tests."))], lands: .queue, underway: .mayNotHaveArrived),
             ])),
             composer("rejected", height: 240, frame: ScriptedChat.frame(refused: [
                 RefusedPrompt(inputId: [5], reason: Refusal(reason: .hostUnreachable, detail: nil)),
@@ -482,8 +482,8 @@ enum ComponentCatalog {
             composer("sending", height: 280, frame: ScriptedChat.frame(
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 4_000, turnElapsedMs: 4_000),
                 underway: [
-                    SentPrompt(inputId: [6], text: [.text("Run the focused tests.")], lands: .queue, underway: .sending(waiting: false)),
-                    SentPrompt(inputId: [7], text: [.text("Then the Windows check.")], lands: .queue, underway: .sending(waiting: true)),
+                    SentPrompt(inputId: [6], text: [.text(Markdown(words: "Run the focused tests."))], lands: .queue, underway: .sending(waiting: false)),
+                    SentPrompt(inputId: [7], text: [.text(Markdown(words: "Then the Windows check."))], lands: .queue, underway: .sending(waiting: true)),
                 ])),
             // A provider subagent's chat: no field, what runs it, and its
             // own Stop while the provider offers one.
@@ -765,13 +765,13 @@ enum ComponentCatalog {
             chat("landing", chat: {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle, underway: [
-                        SentPrompt(inputId: [8], text: [.text("Now run the Windows check.")], lands: .feed, underway: .sending(waiting: false)),
+                        SentPrompt(inputId: [8], text: [.text(Markdown(words: "Now run the Windows check."))], lands: .feed, underway: .sending(waiting: false)),
                     ]))
             }),
             chat("landing-waiting", chat: {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle, underway: [
-                        SentPrompt(inputId: [8], text: [.text("Now run the Windows check.")], lands: .feed, underway: .sending(waiting: true)),
+                        SentPrompt(inputId: [8], text: [.text(Markdown(words: "Now run the Windows check."))], lands: .feed, underway: .sending(waiting: true)),
                     ]))
             }),
             chat("rename", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) },

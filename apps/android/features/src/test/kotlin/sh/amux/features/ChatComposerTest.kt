@@ -57,6 +57,8 @@ import sh.amux.values.Refusal
 import sh.amux.values.RefusalReason
 import sh.amux.values.RefusedPrompt
 import sh.amux.values.Segment
+import sh.amux.testsupport.plainMarkdown
+import sh.amux.values.ProsePart
 import sh.amux.values.SentPrompt
 import sh.amux.values.SignInState
 import sh.amux.values.SignInView
@@ -298,7 +300,7 @@ class ChatComposerTest {
         )
         val underwayRow = SentPrompt(
             inputId = listOf(2),
-            text = listOf(Segment.Text("Uncertain message")),
+            text = listOf(ProsePart.Text(plainMarkdown("Uncertain message"))),
             lands = Lands.Queue,
             underway = Underway.MayNotHaveArrived,
         )

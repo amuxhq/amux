@@ -1022,6 +1022,548 @@
           }
         }
       ]
+    },
+    {
+      "source": "```rust\r\nfn a() {}\r\nfn b() {}\r\n```\r\n",
+      "blocks": [
+        {
+          "Code": {
+            "language": "rust",
+            "code": "fn a() {}\nfn b() {}",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "# Release Plan\n## Verification Steps\nCheck **bold**, *italic*, ~~old~~, and `cargo test` inline.\n\n- First bullet\n  - Nested bullet\n1. Step one\n2. Step two\n\n---",
+      "blocks": [
+        {
+          "Heading": {
+            "level": 1,
+            "text": [
+              {
+                "text": "Release Plan",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Heading": {
+            "level": 2,
+            "text": [
+              {
+                "text": "Verification Steps",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Check ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "bold",
+                "strong": true,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "italic",
+                "strong": false,
+                "emphasis": true,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "old",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": true,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", and ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "cargo test",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": true,
+                "link": null
+              },
+              {
+                "text": " inline.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": false,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "First bullet",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "List": {
+                      "ordered": false,
+                      "start": 1,
+                      "depth": 1,
+                      "items": [
+                        {
+                          "task": null,
+                          "blocks": [
+                            {
+                              "Paragraph": {
+                                "text": [
+                                  {
+                                    "text": "Nested bullet",
+                                    "strong": false,
+                                    "emphasis": false,
+                                    "strikethrough": false,
+                                    "code": false,
+                                    "link": null
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": true,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Step one",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Step two",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "Rule"
+      ]
+    },
+    {
+      "source": "```rust\nfn main() {\n    println!(\"hello\");\n}\n```",
+      "blocks": [
+        {
+          "Code": {
+            "language": "rust",
+            "code": "fn main() {\n    println!(\"hello\");\n}",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "```diff\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context line\n```",
+      "blocks": [
+        {
+          "Code": {
+            "language": "diff",
+            "code": "@@ -1,2 +1,2 @@\n-old line\n+new line\n context line",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "> Keep surfaces neutral.\n> Spend colour only on attention.\n\n| Crate | Role |\n| --- | --- |\n| app-bridge | Shared runtime |\n| app-jni | Android JNI |",
+      "blocks": [
+        {
+          "Quote": {
+            "blocks": [
+              {
+                "Paragraph": {
+                  "text": [
+                    {
+                      "text": "Keep surfaces neutral.\nSpend colour only on attention.",
+                      "strong": false,
+                      "emphasis": false,
+                      "strikethrough": false,
+                      "code": false,
+                      "link": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Table": {
+            "alignments": [
+              "None",
+              "None"
+            ],
+            "header": [
+              [
+                {
+                  "text": "Crate",
+                  "strong": false,
+                  "emphasis": false,
+                  "strikethrough": false,
+                  "code": false,
+                  "link": null
+                }
+              ],
+              [
+                {
+                  "text": "Role",
+                  "strong": false,
+                  "emphasis": false,
+                  "strikethrough": false,
+                  "code": false,
+                  "link": null
+                }
+              ]
+            ],
+            "rows": [
+              [
+                [
+                  {
+                    "text": "app-bridge",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ],
+                [
+                  {
+                    "text": "Shared runtime",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ]
+              ],
+              [
+                [
+                  {
+                    "text": "app-jni",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ],
+                [
+                  {
+                    "text": "Android JNI",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "See [amux docs](https://amux.sh/docs) and [ignored](amux://callback).",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "See ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "amux docs",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": "https://amux.sh/docs"
+              },
+              {
+                "text": " and ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "ignored",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": "amux://callback"
+              },
+              {
+                "text": ".",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "First part.\n\nSecond part.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "First part.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Second part.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "9. Nine\n10. Ten",
+      "blocks": [
+        {
+          "List": {
+            "ordered": true,
+            "start": 9,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Nine",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Ten",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "- [x] Write the parser\n- [ ] Port the clients",
+      "blocks": [
+        {
+          "List": {
+            "ordered": false,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": true,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Write the parser",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": false,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Port the clients",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "streaming": [

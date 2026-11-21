@@ -454,13 +454,14 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func draft(of input: [UInt8]) -> Draft? {
         let frame = lock.withLock { current }
         if let words = refusedWords[input] { return Draft(words: words, attachments: []) }
-        let text = frame.queue.first { $0.inputId == input }?.text
-            ?? frame.underway.first { $0.inputId == input }?.text
-        return text.map { segments in
-            let words = segments.compactMap { segment -> String? in
-                if case .text(let text) = segment { text } else { nil }
-            }
-            return Draft(words: words.joined(), attachments: [])
+        let queued = frame.queue.first { $0.inputId == input }?.text.map { segment -> String? in
+            if case .text(let text) = segment { text } else { nil }
+        }
+        let underway = frame.underway.first { $0.inputId == input }?.text.map { part -> String? in
+            if case .text(let markdown) = part { markdown.source } else { nil }
+        }
+        return (queued ?? underway).map { words in
+            Draft(words: words.compactMap { $0 }.joined(), attachments: [])
         }
     }
     public func interrupt() async -> ActOutcome? { .done }

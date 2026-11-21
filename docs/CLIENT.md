@@ -389,6 +389,16 @@ the permission it names from then on, sent back) and `writing` (the plan still s
 a sent message can show what was pasted in place of the chip; a command's row keeps its `output_tail` beside its
 head, for a step opened to show how it ended; and a background command's row its `duration_ms` once it has ended.
 
+**Prose arrives parsed.** The agent's words, a prompt's, an agent message's and a plan's body are
+[`Markdown`](../crates/ui-view/src/markdown.rs): the source and the blocks one parser (pulldown-cmark, read
+CommonMark's and GitHub's way, with a single newline kept as a line break) made of it. Blocks are headings,
+paragraphs, lists (ordered or not, their start number, their items holding blocks, task state), quotes holding
+blocks, tables with their column alignments, rules and code with its language and whether its fence has closed; their
+words are inline runs (strong, emphasis, strikethrough, code, links with their target). A question's, an option's
+and a picked answer's words come as inline runs too. Parsing happens when the row is built, kept by source, so a
+streaming reply is parsed once per revision; while it streams, a last line of pipes waits for its delimiter row.
+Clients only draw the blocks: which links to open, how to colour code and how to set a list's markers is theirs.
+
 **Rows are items.** `chat_rows` emits exactly one [`Row`](../crates/ui-view/src/rows.rs) per item, and the row id
 is always the item key. A `Row` carries its `kind` (a `RowKind`), its `run` (a `Run`, when it is in one), a
 `collapsed` flag the client skips, the permission `decision` drawn on a tool call's own row, `attention` (an open

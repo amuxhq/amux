@@ -1,28 +1,23 @@
+import AmuxFixtures
+import AmuxValues
 import SwiftUI
 import UIKit
 import XCTest
 @testable import AmuxFeatures
 
-/// A row's text is drawn in its first frame when the feed has already
-/// parsed it to measure the row, rather than standing as an empty slot
-/// until the row's own parse returns.
+/// A row's text arrives parsed, so it is drawn in its first frame rather
+/// than standing as an empty slot the feed measures too short.
 @MainActor
 final class ProseTests: XCTestCase {
-    func testTextParsedToMeasureItsRowIsDrawnAtOnce() {
-        let markdown = "measured before its cell: \(UUID())"
-        _ = ParsedMarkdown.parse(markdown)
-        XCTAssertGreaterThan(firstHeight(of: markdown), 10, "the measured text was not drawn at once")
-    }
-
-    func testTextNotYetParsedWaitsForItsParse() {
-        // The other side: text nobody has parsed is parsed away from the
-        // main thread, and stands empty meanwhile. Without this the test
-        // above could pass with a row that never waits at all.
-        XCTAssertLessThan(firstHeight(of: "never measured: \(UUID())"), 1)
+    func testProseIsDrawnInItsFirstLayout() {
+        XCTAssertGreaterThan(firstHeight(of: Markdown(words: "drawn at once: \(UUID())")), 10)
+        XCTAssertGreaterThan(
+            firstHeight(of: MarkdownFixtures.parsed("1. Split read and write paths.\n2. Add unit tests.")), 30,
+            "a list's two items stand on two lines")
     }
 
     /// How tall the prose stands in its first layout, before any task runs.
-    private func firstHeight(of markdown: String) -> CGFloat {
+    private func firstHeight(of markdown: Markdown) -> CGFloat {
         let host = UIHostingController(rootView: Prose(markdown: markdown))
         host.view.frame = CGRect(x: 0, y: 0, width: 320, height: 0)
         host.view.layoutIfNeeded()

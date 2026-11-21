@@ -224,7 +224,7 @@ public enum CodeText {
     ///
     /// These are the shared view's own lines because the code has no other
     /// line ending: the markdown parser turns every `\r\n` and lone `\r`
-    /// into `\n` as the text comes in (``MarkdownDocument/parse(_:)``).
+    /// into `\n` as the text comes in, before a row reaches this app.
     /// Code split here with its `\r` still on would keep it on each line,
     /// which the shared view drops, and no line would read as its answer.
     public static func lines(_ code: String) -> [String] {

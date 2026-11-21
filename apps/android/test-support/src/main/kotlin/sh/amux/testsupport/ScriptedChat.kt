@@ -48,6 +48,7 @@ import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Run
 import sh.amux.values.RunCounts
+import sh.amux.values.ProsePart
 import sh.amux.values.Segment
 import sh.amux.values.SendOutcome
 import sh.amux.values.SentPrompt
@@ -468,11 +469,15 @@ class ScriptedChat(
     override fun draftOf(inputId: List<Int>): Draft? = lock.withLock {
         drafts[inputId]?.let { return it }
         refusedWords[inputId]?.let { return Draft(listOf(DraftPart.Text(it))) }
-        val segments = current.queue.firstOrNull { it.inputId == inputId }?.text
+        // A queued prompt holds its words as typed; one on its way holds them
+        // parsed, with their source beside the blocks.
+        val words = current.queue.firstOrNull { it.inputId == inputId }?.text
+            ?.mapNotNull { (it as? Segment.Text)?.value }
             ?: current.underway.firstOrNull { it.inputId == inputId }?.text
+                ?.mapNotNull { (it as? ProsePart.Text)?.value?.source }
             ?: return null
-        val words = segments.mapNotNull { (it as? Segment.Text)?.value }.joinToString(separator = "")
-        Draft(if (words.isEmpty()) emptyList() else listOf(DraftPart.Text(words)))
+        val joined = words.joinToString(separator = "")
+        Draft(if (joined.isEmpty()) emptyList() else listOf(DraftPart.Text(joined)))
     }
 
     override suspend fun sendNow(inputId: List<Int>): ActOutcome? = lock.withLock {

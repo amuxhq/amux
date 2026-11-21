@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -24,6 +25,8 @@ import androidx.compose.ui.text.AnnotatedString
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.lang.ref.WeakReference
+import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.util.Base64
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -32,13 +35,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import sh.amux.core.runtime.AccountId
+import sh.amux.core.runtime.AmuxCloudService
+import sh.amux.core.runtime.CloudEndpoint
 import sh.amux.core.runtime.Entitlement
 import sh.amux.core.runtime.EntitlementSource
 import sh.amux.core.runtime.Grant
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.PairingStore
 import sh.amux.core.runtime.RuntimeCoordinator
+import sh.amux.core.runtime.SignInIntent
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.core.runtime.id
 import sh.amux.design.AppearanceMode
@@ -48,14 +63,18 @@ import sh.amux.push.SealedPush
 import sh.amux.push.Wants
 import sh.amux.shell.PairingModal
 import sh.amux.shell.Route
+import sh.amux.shell.ShellAction
 import sh.amux.shell.Tab
+import sh.amux.testsupport.CloudCall
+import sh.amux.testsupport.CloudScript
 import sh.amux.testsupport.DoorArgs
 import sh.amux.testsupport.DoorCodec
 import sh.amux.testsupport.DoorFound
 import sh.amux.testsupport.DoorReply
 import sh.amux.testsupport.DoorRequest
-import sh.amux.testsupport.DoorStartConfig
 import sh.amux.testsupport.ScriptedCloudService
+import sh.amux.testsupport.ScriptedCloudState
+import sh.amux.testsupport.ScriptedWebAuth
 import sh.amux.testsupport.VisibleElement
 import sh.amux.testsupport.VisibleFrame
 import sh.amux.testsupport.VisibleState
@@ -63,11 +82,12 @@ import sh.amux.values.Found
 import sh.amux.words.name
 
 /**
- * Debug-only bridge connecting incoming NDJSON [DoorRequest]s to the live
+ * Debug-only bridge connecting incoming NDJSON door requests to the live
  * [MainActivity], Compose semantics tree, and embedded [Composition].
  */
 internal object DoorHost {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val json = Json { ignoreUnknownKeys = true }
 
     @Volatile
     private var activityRef: WeakReference<Activity>? = null
@@ -80,6 +100,12 @@ internal object DoorHost {
 
     @Volatile
     private var activeStartConfigJson: String? = null
+
+    @Volatile
+    private var activeCloudUrl: String? = null
+
+    @Volatile
+    private var activeInstallDir: File? = null
 
     private val _fontScaleOverride = MutableStateFlow<Float?>(null)
     val fontScaleOverride: StateFlow<Float?> = _fontScaleOverride.asStateFlow()
@@ -156,6 +182,10 @@ internal object DoorHost {
         } catch (_: Throwable) {
             return null
         }
+        val rawObj = runCatching { json.parseToJsonElement(rawConfig) as? JsonObject }.getOrNull()
+        val cloudUrl = rawObj?.optionalString("cloud_url")?.trim()?.takeIf { it.isNotEmpty() }
+        val notificationsDismissed = rawObj?.optionalBoolean("notifications_dismissed") ?: true
+
         val app = activity.application as? AmuxApplication ?: return null
         val appContext = app.applicationContext
 
@@ -168,21 +198,42 @@ internal object DoorHost {
 
         // Tear down the default composition completely before replacing it.
         currentComposition.shutdown()
+        _fontScaleOverride.value = null
 
         if (config.freshStart) {
             installDir.deleteRecursively()
             accountsFile.delete()
         }
 
-        val cloudService = if (config.scriptedCloud) {
-            ScriptedCloudService().also { scriptedCloud = it }
-        } else {
-            scriptedCloud = null
-            null
+        activeCloudUrl = cloudUrl
+        activeInstallDir = installDir
+
+        val parsedCloud = cloudUrl?.let(::parseHostPort)
+        val cloudService = when {
+            config.scriptedCloud -> {
+                val initialState = if (parsedCloud != null) {
+                    ScriptedCloudState(
+                        relayHost = parsedCloud.first,
+                        relayPort = parsedCloud.second,
+                    )
+                } else {
+                    ScriptedCloudState()
+                }
+                ScriptedCloudService(initialState).also { scriptedCloud = it }
+            }
+            cloudUrl != null -> {
+                scriptedCloud = null
+                AmuxCloudService(endpoint = CloudEndpoint.Production.copy(baseUrl = cloudUrl))
+            }
+            else -> {
+                scriptedCloud = null
+                null
+            }
         }
 
         val overrides = CompositionOverrides(
             cloud = cloudService,
+            authPresenter = if (config.scriptedCloud) ScriptedWebAuth() else null,
             options = RuntimeCoordinator.Options(
                 discoveryScope = config.discoveryScope,
                 lan = config.lan,
@@ -198,6 +249,9 @@ internal object DoorHost {
         )
 
         val driven = Composition(context = appContext, overrides = overrides)
+        if (notificationsDismissed) {
+            driven.handleShellAction(ShellAction.DismissNotifications, appContext)
+        }
         app.replaceCompositionForTest(driven)
         activeStartConfigJson = rawConfig
         return driven
@@ -218,6 +272,151 @@ internal object DoorHost {
         }
         return candidate
     }
+
+    fun isExtendedRequest(kind: String, obj: JsonObject): Boolean = when (kind) {
+        "clear",
+        "paste",
+        "scroll",
+        "screenshot",
+        "triggerReport",
+        "background",
+        "foreground",
+        "addAccount",
+        "calls",
+        "readRuntimeLog",
+        "dismissNotifications",
+        -> true
+        "tap" -> obj.optionalBoolean("long") == true
+        "open" -> obj.optionalString("url") != null ||
+            obj.optionalString("uri") != null ||
+            obj.optionalString("screen")?.let { it.startsWith("https://") || it.startsWith("amux://") } == true
+        "connect" -> obj.optionalString("relay").isNullOrBlank()
+        "cloud" -> true
+        else -> false
+    }
+
+    suspend fun handleExtended(kind: String, obj: JsonObject): String =
+        withContext(Dispatchers.Main.immediate) {
+            when (kind) {
+                "clear" -> {
+                    val id = obj.optionalString("identifier") ?: obj.optionalString("id")
+                        ?: return@withContext encodeError("clear requires 'identifier'")
+                    DoorCodec.encodeReply(clear(id))
+                }
+                "paste" -> {
+                    val id = obj.optionalString("identifier") ?: obj.optionalString("id")
+                        ?: return@withContext encodeError("paste requires 'identifier'")
+                    val text = obj.optionalString("text")
+                        ?: return@withContext encodeError("paste requires 'text'")
+                    DoorCodec.encodeReply(paste(id, text))
+                }
+                "scroll" -> {
+                    val id = obj.optionalString("identifier") ?: obj.optionalString("id")
+                    val direction = obj.optionalString("direction") ?: "bottom"
+                    DoorCodec.encodeReply(scroll(id, direction))
+                }
+                "tap" -> {
+                    val id = obj.optionalString("identifier") ?: obj.optionalString("id")
+                        ?: return@withContext encodeError("tap requires 'identifier'")
+                    DoorCodec.encodeReply(longPress(id))
+                }
+                "open" -> {
+                    val url = obj.optionalString("url")
+                        ?: obj.optionalString("uri")
+                        ?: obj.optionalString("screen")
+                        ?: return@withContext encodeError("open requires 'url' or 'screen'")
+                    DoorCodec.encodeReply(openUrl(url))
+                }
+                "screenshot", "triggerReport" -> {
+                    DoorCodec.encodeReply(triggerReport())
+                }
+                "background" -> {
+                    DoorCodec.encodeReply(setBackground(true))
+                }
+                "foreground" -> {
+                    DoorCodec.encodeReply(setBackground(false))
+                }
+                "connect" -> {
+                    val relay = obj.optionalString("relay")?.takeIf { it.isNotBlank() }
+                        ?: activeCloudUrl
+                        ?: return@withContext encodeError("connect requires 'relay' or configured cloud_url")
+                    val token = obj.optionalString("token")
+                        ?: return@withContext encodeError("connect requires 'token'")
+                    val user = obj.optionalString("user")
+                        ?: return@withContext encodeError("connect requires 'user'")
+                    val tier = obj.optionalString("tier") ?: "pro"
+                    DoorCodec.encodeReply(connect(relay, token, user, tier))
+                }
+                "addAccount" -> {
+                    val relay = obj.optionalString("relay")?.takeIf { it.isNotBlank() }
+                        ?: activeCloudUrl
+                        ?: return@withContext encodeError("addAccount requires 'relay' or configured cloud_url")
+                    val token = obj.optionalString("token")
+                        ?: return@withContext encodeError("addAccount requires 'token'")
+                    val user = obj.optionalString("user")
+                        ?: return@withContext encodeError("addAccount requires 'user'")
+                    val tier = obj.optionalString("tier") ?: "pro"
+                    DoorCodec.encodeReply(connect(relay, token, user, tier))
+                }
+                "cloud" -> {
+                    val cloud = scriptedCloud
+                        ?: return@withContext encodeError("launch did not enable scripted cloud")
+                    val scriptObj = obj["cloud"] as? JsonObject
+                        ?: return@withContext encodeError("cloud requires 'cloud' object")
+                    var script = CloudScript.fromJsonObject(scriptObj)
+                    val parsed = activeCloudUrl?.let(::parseHostPort)
+                    if (parsed != null) {
+                        if ("relayHost" !in scriptObj) {
+                            script = script.copy(relayHost = parsed.first)
+                        }
+                        if ("relayPort" !in scriptObj) {
+                            script = script.copy(relayPort = parsed.second)
+                        }
+                    }
+                    cloud.scripted = script.toState()
+                    DoorCodec.encodeReply(DoorReply.Ack)
+                }
+                "calls" -> {
+                    val cloud = scriptedCloud
+                    val formatted = cloud?.calls.orEmpty().map(::formatCloudCall)
+                    val payload = buildJsonObject {
+                        put("kind", "calls")
+                        put(
+                            "cloud",
+                            buildJsonArray {
+                                for (call in formatted) {
+                                    add(JsonPrimitive(call))
+                                }
+                            },
+                        )
+                    }
+                    json.encodeToString(JsonObject.serializer(), payload)
+                }
+                "readRuntimeLog" -> {
+                    val dir = activeInstallDir
+                        ?: return@withContext encodeError("app has not started")
+                    val logFile = File(dir, "runtime.log")
+                    val content = if (logFile.isFile) {
+                        runCatching { logFile.readText(StandardCharsets.UTF_8) }.getOrDefault("")
+                    } else {
+                        ""
+                    }
+                    val payload = buildJsonObject {
+                        put("kind", "log")
+                        put("text", content)
+                    }
+                    json.encodeToString(JsonObject.serializer(), payload)
+                }
+                "dismissNotifications" -> {
+                    val comp = composition ?: return@withContext encodeError("app has not started")
+                    val activity = activityRef?.get() ?: return@withContext encodeError("no activity on screen")
+                    comp.handleShellAction(ShellAction.DismissNotifications, activity)
+                    awaitFrame()
+                    DoorCodec.encodeReply(DoorReply.Ack)
+                }
+                else -> encodeError("no door request named $kind")
+            }
+        }
 
     suspend fun handle(request: DoorRequest): DoorReply = withContext(Dispatchers.Main.immediate) {
         when (request) {
@@ -380,7 +579,7 @@ internal object DoorHost {
             return direct.joinToString(", ")
         }
         val nested = mutableListOf<String>()
-        collectDescendantText(node, nested, maxDepth = 4)
+        collectDescendantText(node, nested, maxDepth = 6)
         return nested.distinct().takeIf { it.isNotEmpty() }?.joinToString(", ")
     }
 
@@ -486,6 +685,24 @@ internal object DoorHost {
         return DoorReply.Ack
     }
 
+    private suspend fun longPress(identifier: String): DoorReply {
+        settle()
+        val located = findByTag(identifier)
+            ?: return DoorReply.Error("no element named $identifier")
+        if (SemanticsProperties.Disabled in located.node.config) {
+            return DoorReply.Error("$identifier is disabled")
+        }
+        val longClickAction = findLongClickableNode(located.node)
+            ?.config
+            ?.getOrNull(SemanticsActions.OnLongClick)
+            ?.action
+        if (longClickAction != null && longClickAction.invoke()) {
+            awaitFrame()
+            return DoorReply.Ack
+        }
+        return DoorReply.Error("$identifier has no OnLongClick action")
+    }
+
     private fun findClickableNode(node: SemanticsNode): SemanticsNode? {
         if (node.config.getOrNull(SemanticsActions.OnClick) != null) return node
         val queue = ArrayDeque<SemanticsNode>()
@@ -500,6 +717,18 @@ internal object DoorHost {
         var parent = node.parent
         while (parent != null) {
             if (parent.config.getOrNull(SemanticsActions.OnClick) != null) {
+                return parent
+            }
+            parent = parent.parent
+        }
+        return null
+    }
+
+    private fun findLongClickableNode(node: SemanticsNode): SemanticsNode? {
+        if (node.config.getOrNull(SemanticsActions.OnLongClick) != null) return node
+        var parent = node.parent
+        while (parent != null) {
+            if (parent.config.getOrNull(SemanticsActions.OnLongClick) != null) {
                 return parent
             }
             parent = parent.parent
@@ -538,6 +767,111 @@ internal object DoorHost {
         return DoorReply.Error("failed to type into $identifier")
     }
 
+    private suspend fun paste(identifier: String, text: String): DoorReply {
+        settle()
+        val located = findByTag(identifier)
+            ?: return DoorReply.Error("no element named $identifier")
+        val target = findEditableNode(located.node)
+            ?: return DoorReply.Error("$identifier does not take text")
+        if (SemanticsProperties.Disabled in target.config) {
+            return DoorReply.Error("$identifier is disabled")
+        }
+
+        target.config.getOrNull(SemanticsActions.RequestFocus)?.action?.invoke()
+        awaitFrame()
+
+        val setTextAction = target.config.getOrNull(SemanticsActions.SetText)?.action
+        if (setTextAction != null) {
+            val existing = target.config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty()
+            val separator = if (existing.isNotEmpty() && !existing.last().isWhitespace()) " " else ""
+            val updated = existing + separator + text
+            if (setTextAction.invoke(AnnotatedString(updated))) {
+                awaitFrame()
+                return DoorReply.Ack
+            }
+        }
+
+        val insertAction = target.config.getOrNull(SemanticsActions.InsertTextAtCursor)?.action
+        if (insertAction != null && insertAction.invoke(AnnotatedString(text))) {
+            awaitFrame()
+            return DoorReply.Ack
+        }
+        return DoorReply.Error("failed to paste into $identifier")
+    }
+
+    private suspend fun clear(identifier: String): DoorReply {
+        settle()
+        val located = findByTag(identifier)
+            ?: return DoorReply.Error("no element named $identifier")
+        val target = findEditableNode(located.node)
+            ?: return DoorReply.Error("$identifier does not take text")
+        if (SemanticsProperties.Disabled in target.config) {
+            return DoorReply.Error("$identifier is disabled")
+        }
+
+        target.config.getOrNull(SemanticsActions.RequestFocus)?.action?.invoke()
+        awaitFrame()
+
+        val setTextAction = target.config.getOrNull(SemanticsActions.SetText)?.action
+        if (setTextAction != null && setTextAction.invoke(AnnotatedString(""))) {
+            awaitFrame()
+            return DoorReply.Ack
+        }
+        return DoorReply.Error("failed to clear $identifier")
+    }
+
+    private suspend fun scroll(identifier: String?, direction: String): DoorReply {
+        settle()
+        val located = if (!identifier.isNullOrBlank()) {
+            findByTag(identifier)
+                ?: return DoorReply.Error("no element named $identifier")
+        } else {
+            val topRoot = composeRoots().lastOrNull()
+                ?: return DoorReply.Error("no Compose root attached")
+            val scrollable = findNodeInSubtree(topRoot.second.semanticsOwner.rootSemanticsNode) {
+                it.config.getOrNull(SemanticsActions.ScrollBy) != null
+            } ?: return DoorReply.Error("no scrollable element on screen")
+            LocatedNode(topRoot.first, scrollable)
+        }
+
+        val scrollNode = findScrollableNode(located.node)
+            ?: return DoorReply.Error("no scrollable ancestor or descendant for ${identifier ?: "screen"}")
+        val scrollAction = scrollNode.config.getOrNull(SemanticsActions.ScrollBy)?.action
+            ?: return DoorReply.Error("element does not support ScrollBy")
+
+        val deltaY = when (direction.lowercase()) {
+            "bottom" -> 10_000f
+            "top" -> -10_000f
+            "down" -> 600f
+            "up" -> -600f
+            else -> return DoorReply.Error("unknown scroll direction: $direction")
+        }
+        val repeats = if (direction.equals("bottom", true) || direction.equals("top", true)) 3 else 1
+        repeat(repeats) {
+            scrollAction.invoke(0f, deltaY)
+            awaitFrame()
+        }
+        settle()
+        return DoorReply.Ack
+    }
+
+    private fun findScrollableNode(node: SemanticsNode): SemanticsNode? {
+        if (node.config.getOrNull(SemanticsActions.ScrollBy) != null) return node
+        var parent = node.parent
+        while (parent != null) {
+            if (parent.config.getOrNull(SemanticsActions.ScrollBy) != null) return parent
+            parent = parent.parent
+        }
+        val queue = ArrayDeque<SemanticsNode>()
+        queue.addAll(node.children)
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            if (current.config.getOrNull(SemanticsActions.ScrollBy) != null) return current
+            queue.addAll(current.children)
+        }
+        return null
+    }
+
     private fun findEditableNode(node: SemanticsNode): SemanticsNode? {
         if (node.config.getOrNull(SemanticsActions.SetText) != null ||
             node.config.getOrNull(SemanticsActions.InsertTextAtCursor) != null
@@ -560,7 +894,7 @@ internal object DoorHost {
         return DoorReply.Ack
     }
 
-    // --- Runtime, pairing & navigation -------------------------------------
+    // --- Runtime, pairing, lifecycle & navigation --------------------------
 
     private suspend fun injectDiscovered(entries: List<DoorFound>): DoorReply {
         val comp = composition ?: return DoorReply.Error("app has not started")
@@ -613,6 +947,36 @@ internal object DoorHost {
             return DoorReply.Error("nothing is running")
         }
         return confirmPairing(stores)
+    }
+
+    private suspend fun openUrl(url: String): DoorReply {
+        val comp = composition ?: return DoorReply.Error("app has not started")
+        if (comp.handleIncomingUri(Uri.parse(url)) == null) {
+            return DoorReply.Error("unrecognized link")
+        }
+        awaitFrame()
+        return DoorReply.Ack
+    }
+
+    private suspend fun triggerReport(): DoorReply {
+        val activity = activityRef?.get() as? MainActivity
+            ?: return DoorReply.Error("no MainActivity on screen")
+        activity.screenCaptureCallback.onScreenCaptured()
+        awaitFrame()
+        awaitFrame()
+        return DoorReply.Ack
+    }
+
+    private suspend fun setBackground(backgrounded: Boolean): DoorReply {
+        val comp = composition ?: return DoorReply.Error("app has not started")
+        if (backgrounded) {
+            comp.runtime.setActive(false)
+            comp.runtime.suspending()
+        } else {
+            comp.runtime.setActive(true)
+        }
+        awaitFrame()
+        return DoorReply.Ack
     }
 
     private suspend fun confirmPairing(stores: StoreBundle): DoorReply {
@@ -674,6 +1038,7 @@ internal object DoorHost {
             Entitlement.Active(grant = Grant.Purchased(EntitlementSource.Web), renewsAtMs = null)
         }
         comp.accounts.entitlement(entitlement, forAccount = account)
+        awaitFrame()
         return DoorReply.Ack
     }
 
@@ -924,6 +1289,46 @@ internal object DoorHost {
         }
         return DoorReply.Ack
     }
+
+    private fun parseHostPort(url: String): Pair<String, Int>? = try {
+        val uri = URI(url)
+        val host = uri.host?.takeIf { it.isNotBlank() } ?: return null
+        val port = when {
+            uri.port > 0 -> uri.port
+            uri.scheme.equals("http", ignoreCase = true) -> 80
+            else -> 443
+        }
+        host to port
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun formatCloudCall(call: CloudCall): String = when (call) {
+        is CloudCall.SignIn -> when (val intent = call.intent) {
+            SignInIntent.Adding -> "signIn select"
+            is SignInIntent.Returning -> "signIn hint ${intent.account.email}"
+        }
+        is CloudCall.HandOver -> "handOver ${call.account.value}"
+        is CloudCall.ForgetSession -> "forgetSession ${call.account.value}"
+        is CloudCall.EntitlementRead -> "entitlement ${call.account.value}"
+        is CloudCall.RecordPurchase -> "recordPurchase ${call.account.value}"
+        is CloudCall.RequestDeletion -> "requestDeletion ${call.account.value}"
+        is CloudCall.RegisterDevice -> "registerDevice ${call.account.value}"
+        is CloudCall.RemoveDevice -> "removeDevice ${call.account.value}"
+    }
+
+    private fun encodeError(message: String): String =
+        DoorCodec.encodeReply(DoorReply.Error(message))
+
+    private fun JsonObject.optionalString(key: String): String? {
+        val el = this[key] ?: return null
+        if (el is JsonNull) return null
+        val prim = el as? JsonPrimitive ?: return null
+        return if (prim.isString) prim.content else prim.contentOrNull
+    }
+
+    private fun JsonObject.optionalBoolean(key: String): Boolean? =
+        this[key]?.takeUnless { it is JsonNull }?.let { (it as? JsonPrimitive)?.booleanOrNull }
 
     private const val HPKE_VECTOR_PRIVATE_KEY_B64 = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE="
     private const val HPKE_VECTOR_SEALED_B64 =

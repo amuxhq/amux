@@ -635,7 +635,7 @@ class ChatScreenTest {
                     rowSource = StaticChatRowSource(emptyList()),
                     callbacks = ChatScreenCallbacks(
                         onReachedTop = { retried += it },
-                        onDraftChange = { draftChanges += it },
+                        onDraftChange = { text, _ -> draftChanges += text },
                     ),
                 )
             }
@@ -687,7 +687,7 @@ class ChatScreenTest {
                     state = screenState,
                     rowSource = StaticChatRowSource(emptyList()),
                     callbacks = ChatScreenCallbacks(
-                        onDraftChange = { draftChanges += it },
+                        onDraftChange = { text, _ -> draftChanges += text },
                     ),
                 )
             }

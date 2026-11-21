@@ -300,11 +300,16 @@ public final class ChatModel {
     public private(set) var toNewest = 0
     public var draft = "" {
         didSet {
+            let edit = editing
+            editing = nil
             guard draft != oldValue, !regathering else { return }
-            movePlaces(from: oldValue, to: draft)
+            movePlaces(from: oldValue, to: draft, by: edit)
             keepDraft()
         }
     }
+    /// The edit the field made, as `type` worked it out, for the draft's
+    /// next change to move the placed attachments by.
+    @ObservationIgnored private var editing: DraftEdit?
     public private(set) var attachments: [DraftAttachment] = [] {
         didSet { if attachments != oldValue, !regathering { keepDraft() } }
     }
@@ -1039,32 +1044,37 @@ public final class ChatModel {
     /// leaves the draft and joins it as one inline text attachment. Only
     /// the person's typing comes through here, so words put back into the
     /// draft stay words.
-    public func type(_ text: String) {
+    ///
+    /// - Parameter caret: where the field's caret stands after the edit,
+    ///   among `text`'s characters, when it knows. What was typed ends
+    ///   there, which says which of a run of repeated characters it was;
+    ///   without it, or with a caret the field has yet to move, the edit is
+    ///   read from the two texts alone.
+    public func type(_ text: String, caret: Int? = nil) {
         var new = Array(
             text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n"))
+        var caret = new.count == text.count ? caret : nil
         // The field goes on showing a paste after the draft takes it out,
         // and sends it back with its echo of the paste and with the next
         // keystroke; it is taken out again until the field has redrawn.
         if let pasted, new.count >= pasted.at + pasted.text.count,
            Array(new[pasted.at..<(pasted.at + pasted.text.count)]) == pasted.text {
             new.removeSubrange(pasted.at..<(pasted.at + pasted.text.count))
+            caret = nil
             redrawField()
         } else {
             pasted = nil
         }
         let old = Array(draft)
-        var head = 0
-        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
-        var tail = 0
-        while tail < old.count - head, tail < new.count - head,
-              old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
-        var inserted = Array(new[head..<(new.count - tail)])
+        let edit = caret.flatMap { DraftEdit(endingAt: $0, from: old, to: new) } ?? DraftEdit(from: old, to: new)
+        var inserted = Array(new[edit.start..<edit.insertedEnd])
         guard Bridge.pastesAsAttachment(String(inserted)) else {
+            editing = edit
             draft = String(new)
             return
         }
-        var before = Array(new[..<head])
-        var after = Array(new[(new.count - tail)...])
+        var before = Array(new[..<edit.start])
+        var after = Array(new[edit.insertedEnd...])
         // Pasting beside a word, the text view adds a space to keep the
         // words apart; the space belongs to the sentence, not to the paste.
         if inserted.first == " ", before.last.map({ !$0.isWhitespace }) ?? false {
@@ -1075,6 +1085,10 @@ public final class ChatModel {
             inserted.removeLast()
             after.insert(" ", at: 0)
         }
+        // The paste leaves the draft: what it replaced goes, and a space
+        // kept to part it from a word stays as the edit's own.
+        let kept = before.count + after.count
+        editing = DraftEdit(start: edit.start, removedEnd: edit.removedEnd, insertedEnd: kept - (old.count - edit.removedEnd))
         draft = String(before + after)
         // In place order, ahead of the first one after the cursor and of
         // the photos and files that follow every word.
@@ -1134,10 +1148,11 @@ public final class ChatModel {
         let joined =
             if draft.isEmpty { words } else if words.isEmpty { draft } else { words + "\n" + draft }
         // What the composer holds moves down past the words put back ahead
-        // of it. With words or a placed paste in the composer, the photos
-        // and files put back stay with their own words rather than falling
-        // to the end of everything.
-        let ahead = draft.isEmpty || words.isEmpty ? 0 : words.count + 1
+        // of it, and past the line break that parts them from its own words.
+        // With words or a placed paste in the composer, the photos and files
+        // put back stay with their own words rather than falling to the end
+        // of everything.
+        let ahead = words.isEmpty ? 0 : draft.isEmpty ? words.count : words.count + 1
         let anchored = !draft.isEmpty || attachmentPlaces.contains { $0 != nil }
         let returned: [Int?] = sent.places.map { place in anchored ? Optional(place ?? words.count) : place }
         regathering = true
@@ -1151,22 +1166,19 @@ public final class ChatModel {
     /// Moves each placed attachment with the words around it as the draft
     /// goes from `old` to `new`: one before the change stays, one after it
     /// moves by what the change added or took away, and one inside words
-    /// that were replaced goes to the end of what replaced them.
-    private func movePlaces(from old: String, to new: String) {
+    /// that were replaced goes to the end of what replaced them. The change
+    /// is the field's own edit when `type` knew it; otherwise it is read
+    /// from the two texts, which cannot tell which of a run of repeated
+    /// characters changed.
+    private func movePlaces(from old: String, to new: String, by known: DraftEdit?) {
         guard attachmentPlaces.contains(where: { $0 != nil }) else { return }
         let (a, b) = (Array(old), Array(new))
-        var head = 0
-        while head < a.count, head < b.count, a[head] == b[head] { head += 1 }
-        var tail = 0
-        while tail < a.count - head, tail < b.count - head, a[a.count - 1 - tail] == b[b.count - 1 - tail] {
-            tail += 1
-        }
-        let (oldEnd, newEnd) = (a.count - tail, b.count - tail)
+        let edit = known.flatMap { $0.fits(a, b) ? $0 : nil } ?? DraftEdit(from: a, to: b)
         attachmentPlaces = attachmentPlaces.map { place in
             guard let place else { return nil }
-            if place <= head { return place }
-            if place >= oldEnd { return min(max(place + b.count - a.count, 0), b.count) }
-            return newEnd
+            if place <= edit.start { return place }
+            if place >= edit.removedEnd { return min(max(place + b.count - a.count, 0), b.count) }
+            return edit.insertedEnd
         }
     }
 
@@ -1503,7 +1515,9 @@ extension Draft {
     }
 
     /// Each attachment's place among the words' characters, in order; nil
-    /// for one after every word, so words typed later go before it.
+    /// for a photo or file after every word, so words typed later go before
+    /// it. A paste keeps its place wherever it is, so words typed after it
+    /// go after it as they did before it was put back.
     public var places: [Int?] {
         let lastWords = parts.lastIndex { if case .text = $0 { true } else { false } }
         var count = 0
@@ -1511,7 +1525,9 @@ extension Draft {
         for (index, part) in parts.enumerated() {
             switch part {
             case .text(let words): count += words.count
-            case .attachment: places.append(lastWords.map { index < $0 } == true ? count : nil)
+            case .attachment(let attachment):
+                let pasted = if case .text = attachment { true } else { false }
+                places.append(pasted || lastWords.map { index < $0 } == true ? count : nil)
             }
         }
         return places
@@ -1564,5 +1580,49 @@ extension RowKind {
         default: nil
         }
         return phase == .pending || phase == .running
+    }
+}
+
+/// One edit of the draft: the characters from `start` to `removedEnd` of
+/// the old text became those from `start` to `insertedEnd` of the new.
+struct DraftEdit: Equatable {
+    let start: Int
+    let removedEnd: Int
+    let insertedEnd: Int
+
+    init(start: Int, removedEnd: Int, insertedEnd: Int) {
+        (self.start, self.removedEnd, self.insertedEnd) = (start, removedEnd, insertedEnd)
+    }
+
+    /// The edit read from the texts alone: the characters between what the
+    /// two share at the start and at the end.
+    init(from old: [Character], to new: [Character]) {
+        var head = 0
+        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
+        var tail = 0
+        while tail < old.count - head, tail < new.count - head,
+              old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
+        self.init(start: head, removedEnd: old.count - tail, insertedEnd: new.count - tail)
+    }
+
+    /// The edit that leaves the caret at `caret` in `new`: what it put in
+    /// ends there, and starts where the two texts part or at the caret,
+    /// whichever comes first. Nil when no such edit takes `old` to `new`,
+    /// as when the caret has yet to move with the edit.
+    init?(endingAt caret: Int, from old: [Character], to new: [Character]) {
+        let removedEnd = caret + old.count - new.count
+        var head = 0
+        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
+        let edit = DraftEdit(start: min(head, caret, removedEnd), removedEnd: removedEnd, insertedEnd: caret)
+        guard edit.fits(old, new) else { return nil }
+        self = edit
+    }
+
+    /// Whether this is an edit that takes `old` to `new`.
+    func fits(_ old: [Character], _ new: [Character]) -> Bool {
+        guard start >= 0, start <= removedEnd, removedEnd <= old.count, start <= insertedEnd,
+              insertedEnd <= new.count, old.count - removedEnd == new.count - insertedEnd
+        else { return false }
+        return old[..<start] == new[..<start] && old[removedEnd...] == new[insertedEnd...]
     }
 }

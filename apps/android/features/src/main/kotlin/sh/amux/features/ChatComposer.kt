@@ -52,9 +52,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
@@ -278,7 +280,7 @@ data class ChatComposerState(
  */
 @Immutable
 data class ChatComposerCallbacks(
-    val onDraftChange: (String) -> Unit = {},
+    val onDraftChange: (String, FieldEdit?) -> Unit = { _, _ -> },
     val onSend: () -> Unit = {},
     val onResume: () -> Unit = {},
     val onInterrupt: () -> Unit = {},
@@ -1790,12 +1792,45 @@ internal class DraftField(
 )
 
 /**
+ * One edit as the field made it: the characters from [start] to [removedEnd]
+ * of [original] became those from [start] to [insertedEnd] of the new text.
+ * Only the field knows which of a run of repeated characters was typed or
+ * deleted, and a paste chip beside them moves by that.
+ */
+@Immutable
+data class FieldEdit(val original: String, val start: Int, val removedEnd: Int, val insertedEnd: Int)
+
+/**
+ * The span every change in this edit falls within, as one edit. The change
+ * list is marked experimental; it is the only account of which characters an
+ * edit touched, and without it a chip beside repeated characters moves to the
+ * wrong side.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private fun TextFieldBuffer.fieldEdit(): FieldEdit? {
+    val count = changes.changeCount
+    if (count == 0) return null
+    var start = Int.MAX_VALUE
+    var removedEnd = 0
+    var insertedEnd = 0
+    for (index in 0 until count) {
+        val original = changes.getOriginalRange(index)
+        val range = changes.getRange(index)
+        start = minOf(start, original.min, range.min)
+        removedEnd = maxOf(removedEnd, original.max)
+        insertedEnd = maxOf(insertedEnd, range.max)
+    }
+    return FieldEdit(originalText.toString(), start, removedEnd, insertedEnd)
+}
+
+/**
  * The composer's text as the field holds it.
  *
  * The field owns its text, so typing is drawn at once and never waits on the
  * chat model. Every edit the person makes (typing, pasting, dictating into
  * the keyboard) passes through [DraftField.typing], which hands it to the
- * model through [onDraftChange] and counts it. The model answers with its
+ * model through [onDraftChange], with the span the edit replaced, and counts
+ * it. The model answers with its
  * draft and the number of edits it has taken, [draftEdits].
  *
  * An answer that has not yet caught up with the field's edits is ignored:
@@ -1815,7 +1850,7 @@ internal class DraftField(
 internal fun rememberDraftField(
     draft: String,
     draftEdits: Int,
-    onDraftChange: (String) -> Unit,
+    onDraftChange: (String, FieldEdit?) -> Unit,
 ): DraftField {
     val currentOnDraftChange by rememberUpdatedState(onDraftChange)
     // The edits this field has handed to the model, starting from the
@@ -1827,7 +1862,7 @@ internal fun rememberDraftField(
             typing = InputTransformation {
                 if (asCharSequence().contentEquals(originalText)) return@InputTransformation
                 handed[0] += 1
-                currentOnDraftChange(asCharSequence().toString())
+                currentOnDraftChange(asCharSequence().toString(), fieldEdit())
             },
         )
     }

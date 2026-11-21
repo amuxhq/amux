@@ -491,7 +491,7 @@ class ChatComposerTest {
                         draft = model.draft,
                         draftEdits = model.edits,
                     ),
-                    callbacks = ChatComposerCallbacks(onDraftChange = model::type),
+                    callbacks = ChatComposerCallbacks(onDraftChange = { text, _ -> model.type(text) }),
                 )
             }
         }

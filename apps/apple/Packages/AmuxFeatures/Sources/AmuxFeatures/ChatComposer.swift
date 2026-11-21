@@ -44,6 +44,10 @@ struct ComposerBox: View {
     var focused: FocusState<Bool>.Binding
     /// The chip's ✕ asks before the drafts go.
     @State private var discarding = false
+    /// The field's selection, read for where the caret stands after each
+    /// edit: a paste's chip moves by the edit the person made, which the
+    /// texts alone cannot tell among repeated characters.
+    @State private var selection: TextSelection?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -58,7 +62,10 @@ struct ComposerBox: View {
             }
             // No clear button: chat apps keep none, and one beside the words
             // wipes a long draft on a stray tap.
-            TextField(placeholder, text: Binding(get: { model.draft }, set: { model.type($0) }), axis: .vertical)
+            TextField(
+                placeholder,
+                text: Binding(get: { model.draft }, set: { model.type($0, caret: Self.caret(selection, in: $0)) }),
+                selection: $selection, axis: .vertical)
                 .lineLimit(1...8)
                 .designFont(.body, design)
                 .foregroundStyle(design.ink.color)
@@ -1213,5 +1220,19 @@ struct FootCard: View {
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
         .identified("chat.foot.\(kind)", label: title, value: detail)
+    }
+}
+
+extension ComposerBox {
+    /// The caret's place among `text`'s characters, when the selection is a
+    /// caret that falls within it. The field may tell the text before the
+    /// caret has moved with it; the model checks the caret against the edit
+    /// and reads the texts alone when it does not fit.
+    static func caret(_ selection: TextSelection?, in text: String) -> Int? {
+        guard case .selection(let range)? = selection?.indices, range.isEmpty,
+              range.lowerBound <= text.endIndex,
+              let at = String.Index(range.lowerBound, within: text)
+        else { return nil }
+        return text.distance(from: text.startIndex, to: at)
     }
 }

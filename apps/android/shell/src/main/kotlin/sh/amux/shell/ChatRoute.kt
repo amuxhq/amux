@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import sh.amux.core.runtime.Bridge
 import sh.amux.core.runtime.ChatLease
 import sh.amux.core.runtime.ChatModel
+import sh.amux.core.runtime.DraftEdit
 import sh.amux.core.runtime.DictationState
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.PickedAttachment
@@ -363,7 +364,9 @@ internal fun ChatRoute(
             onOpenLink = { link -> ShellPlatform.openExternalLink(context, link) },
             onCopyCode = { code -> ShellPlatform.copyToClipboard(context, code) },
             onCopyAddress = { address -> ShellPlatform.copyToClipboard(context, address) },
-            onDraftChange = { text -> model.type(text) },
+            onDraftChange = { text, edit ->
+                model.type(text, edit?.let { DraftEdit(it.original, it.start, it.removedEnd, it.insertedEnd) })
+            },
             onSend = {
                 dictation?.cancel()
                 model.stopDictation()

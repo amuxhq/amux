@@ -60,7 +60,8 @@ fn windows(kind: Kind, log: &Log) -> Vec<String> {
                 )
             })
             .collect(),
-        ui_state::Usage::Unknown => Vec::new(),
+        // An ACP agent names no limit windows.
+        ui_state::Usage::Acp(_) | ui_state::Usage::Unknown => Vec::new(),
     }
 }
 

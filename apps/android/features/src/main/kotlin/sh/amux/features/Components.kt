@@ -34,7 +34,24 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchColors
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import sh.amux.design.IconSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,14 +112,13 @@ fun AmuxStateMark(
             }
         }
         RowState.Working, RowState.Starting -> {
-            val scale: Float
-            val alpha: Float
-            if (still) {
-                scale = 0.78f
-                alpha = 0.65f
+            // The breath is read in the draw block only, so a working row
+            // redraws its mark each frame without recomposing the row.
+            val phase: State<Float>? = if (still) {
+                null
             } else {
                 val transition = rememberInfiniteTransition(label = "workingMark")
-                val phase by transition.animateFloat(
+                transition.animateFloat(
                     initialValue = 0f,
                     targetValue = 1f,
                     animationSpec = infiniteRepeatable(
@@ -111,10 +127,11 @@ fun AmuxStateMark(
                     ),
                     label = "breath",
                 )
-                scale = 0.55f + 0.45f * phase
-                alpha = 0.35f + 0.5f * phase
             }
             Canvas(modifier = modifier.size(size)) {
+                val now = phase?.value
+                val scale = if (now == null) 0.78f else 0.55f + 0.45f * now
+                val alpha = if (now == null) 0.65f else 0.35f + 0.5f * now
                 drawCircle(
                     color = colors.ink.copy(alpha = alpha),
                     radius = (this.size.minDimension / 2f) * scale,
@@ -274,7 +291,7 @@ fun AmuxEmptyCard(
                         imageVector = icon,
                         contentDescription = null,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(IconSize.Row),
                     )
                 }
             }
@@ -313,7 +330,7 @@ fun AmuxEmptyCard(
                         imageVector = Icons.Outlined.Close,
                         contentDescription = dismissLabel,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(IconSize.Control),
                     )
                 }
             }
@@ -380,7 +397,7 @@ fun AmuxAccountAvatar(
                     imageVector = Icons.Outlined.Person,
                     contentDescription = null,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             }
         }
@@ -527,3 +544,246 @@ fun AmuxInsetHairline(
         color = AmuxTheme.colors.hairline.copy(alpha = 0.65f),
     )
 }
+
+/**
+ * The one bottom sheet setup every sheet in the app goes through: expanded at
+ * once, on the raised surface so it reads apart from the page behind it in
+ * dark mode, with cards inside it on sunken.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AmuxSheet(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentWindowInsets: @Composable () -> WindowInsets = { BottomSheetDefaults.windowInsets },
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        modifier = modifier,
+        containerColor = colors.raised,
+        contentColor = colors.ink,
+        contentWindowInsets = contentWindowInsets,
+        content = content,
+    )
+}
+
+/** One action in a sheet or menu list: a glyph and its label, red when it destroys. */
+@Composable
+fun AmuxActionRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    destructive: Boolean = false,
+    minHeight: Dp = 52.dp,
+) {
+    val colors = AmuxTheme.colors
+    val tint = if (destructive) colors.removed else colors.ink
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .thumbTarget(minHeight = minHeight)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = Space.margin, vertical = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.m),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(IconSize.Row),
+        )
+        Text(
+            text = label,
+            style = AmuxTheme.typography.body,
+            color = tint,
+        )
+    }
+}
+
+/**
+ * One choice of several, picked by tapping anywhere on the row.
+ *
+ * The row is the selectable element and its radio only draws the state, so
+ * TalkBack reads the row once, says whether it is selected, and offers one
+ * stop instead of two. Its parent groups its rows with
+ * `Modifier.selectableGroup()`.
+ */
+@Composable
+fun AmuxRadioRow(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    detail: String = "",
+    warn: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val colors = AmuxTheme.colors
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = selected,
+                enabled = enabled || selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .thumbTarget()
+            .padding(horizontal = Space.s, vertical = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled || selected,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = colors.ink,
+                unselectedColor = colors.inkMuted,
+                disabledSelectedColor = colors.inkMuted,
+                disabledUnselectedColor = colors.inkFaint,
+            ),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(Space.xxs),
+        ) {
+            Text(
+                text = title,
+                style = if (selected) AmuxTheme.typography.bodyEmphasis else AmuxTheme.typography.body,
+                color = when {
+                    warn -> colors.removed
+                    !enabled && !selected -> colors.inkFaint
+                    else -> colors.ink
+                },
+            )
+            if (detail.isNotEmpty() && detail != title) {
+                Text(
+                    text = detail,
+                    style = AmuxTheme.typography.detail,
+                    color = colors.inkMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A setting turned on or off by tapping anywhere on the row.
+ *
+ * The row is the toggleable element and its switch only draws the state, so
+ * TalkBack reads the row's words once with its on or off state as one stop.
+ * [modifier] shapes the row before it is made toggleable (fill, clip,
+ * background, touch target); [contentPadding] goes inside it.
+ */
+@Composable
+fun AmuxSwitchRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(horizontal = Space.l, vertical = Space.m),
+    enabled: Boolean = true,
+    colors: SwitchColors = amuxInkSwitchColors(),
+    switchModifier: Modifier = Modifier,
+    spacing: Dp = Space.m,
+    labels: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(contentPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing),
+    ) {
+        labels()
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            colors = colors,
+            modifier = switchModifier.thumbTarget(),
+        )
+    }
+}
+
+/**
+ * What an action does, one line each: a check for what stays and a cross
+ * for what goes, or an ellipsis while it is still being found out.
+ */
+@Composable
+internal fun ConsequenceRow(
+    kept: Boolean,
+    text: String,
+    modifier: Modifier = Modifier,
+    pending: Boolean = false,
+) {
+    val colors = AmuxTheme.colors
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        Icon(
+            imageVector = when {
+                pending -> Icons.Outlined.MoreHoriz
+                kept -> Icons.Outlined.Check
+                else -> Icons.Outlined.Close
+            },
+            contentDescription = null,
+            tint = if (kept || pending) colors.inkMuted else colors.removed,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(IconSize.Inline),
+        )
+        Text(
+            text = text,
+            style = AmuxTheme.typography.detail,
+            color = if (kept || pending) colors.inkMuted else colors.ink,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** Neutral ink switch colours for settings and choices that are not asks. */
+@Composable
+internal fun amuxInkSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedThumbColor = AmuxTheme.colors.ground,
+    checkedTrackColor = AmuxTheme.colors.ink,
+    checkedBorderColor = AmuxTheme.colors.ink,
+    uncheckedThumbColor = AmuxTheme.colors.inkMuted,
+    uncheckedTrackColor = AmuxTheme.colors.sunken,
+    uncheckedBorderColor = AmuxTheme.colors.hairline,
+)
+
+/** Switch colours for an ask, where turning one on is what the agent waits on. */
+@Composable
+internal fun amuxSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedThumbColor = AmuxTheme.colors.onAccent,
+    checkedTrackColor = AmuxTheme.colors.accent,
+    uncheckedThumbColor = AmuxTheme.colors.inkMuted,
+    uncheckedTrackColor = AmuxTheme.colors.sunken,
+    uncheckedBorderColor = AmuxTheme.colors.hairline,
+)
+
+@Composable
+internal fun amuxTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = AmuxTheme.colors.ink,
+    unfocusedBorderColor = AmuxTheme.colors.hairline,
+    errorBorderColor = AmuxTheme.colors.accent,
+    focusedContainerColor = AmuxTheme.colors.ground,
+    unfocusedContainerColor = AmuxTheme.colors.ground,
+    cursorColor = AmuxTheme.colors.ink,
+)

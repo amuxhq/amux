@@ -43,13 +43,22 @@
     <string name="chat_new_activity">New activity</string>
     <string name="chat_go_to_newest">Go to Newest</string>
 
+    <!-- Agent dialogs: rename, settle and delete, from a chat or the agents list -->
+    <string name="agent_rename_title">Rename %1$s</string>
+    <string name="agent_rename_label">Name</string>
+    <string name="agent_rename_confirm">Rename</string>
+    <string name="agent_settle_title">Settle %1$s?</string>
+    <string name="agent_settle_stops_now">Settling stops it now.</string>
+    <string name="agent_settle_keeps">Its chat and edits stay, and a message resumes it.</string>
+    <string name="agent_settle_confirm">Settle</string>
+    <string name="agent_delete_title">Delete %1$s?</string>
+    <string name="agent_delete_edits_stay">Its edits stay. Nothing is reverted.</string>
+    <string name="agent_delete_chat_goes">The chat is deleted on every device.</string>
+    <string name="agent_delete_subagent_goes">Its subagent is deleted too.</string>
+    <string name="agent_delete_subagents_go">Its %1$d subagents are deleted too.</string>
+    <string name="agent_delete_confirm">Delete</string>
+
     <!-- Chat dialogs & preview -->
-    <string name="chat_rename_title">Rename %1$s</string>
-    <string name="chat_rename_placeholder">Name</string>
-    <string name="chat_settle_title">Settle %1$s?</string>
-    <string name="chat_settle_stops_now">Settling stops it now.</string>
-    <string name="chat_settle_keeps_chat">Its chat and edits stay. A message resumes it.</string>
-    <string name="chat_delete_title">Delete %1$s?</string>
     <string name="chat_preview_unavailable">Preview unavailable for this attachment.</string>
     <string name="chat_preview_open">Open</string>
     <string name="chat_preview_share">Share</string>

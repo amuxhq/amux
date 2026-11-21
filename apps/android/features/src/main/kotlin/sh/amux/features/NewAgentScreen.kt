@@ -1,13 +1,12 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,25 +34,22 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -67,7 +63,6 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
@@ -599,12 +594,8 @@ fun NewAgentScreen(
 
     // Folder browsing modal sheet
     if (state.browsing) {
-        val browseSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AmuxSheet(
             onDismissRequest = { onAction(NewAgentAction.SetBrowsing(false)) },
-            sheetState = browseSheetState,
-            containerColor = colors.ground,
-            contentColor = colors.ink,
         ) {
             NewAgentDirectoriesContent(
                 state = state,
@@ -616,12 +607,8 @@ fun NewAgentScreen(
     // Host / Model / Effort / Permission / Mode picker sheets
     val picker = activePicker
     if (picker != null) {
-        val pickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AmuxSheet(
             onDismissRequest = { activePicker = null },
-            sheetState = pickerSheetState,
-            containerColor = colors.ground,
-            contentColor = colors.ink,
         ) {
             when (picker) {
                 ActiveNewAgentPicker.Host -> {
@@ -876,7 +863,7 @@ private fun NewAgentFieldRow(
                     imageVector = Icons.Outlined.ChevronRight,
                     contentDescription = null,
                     tint = colors.inkFaint,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             }
         }
@@ -906,7 +893,7 @@ private fun NewAgentFieldRow(
                     imageVector = Icons.Outlined.ChevronRight,
                     contentDescription = null,
                     tint = colors.inkFaint,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             }
         }
@@ -922,20 +909,13 @@ private fun WorktreeToggleRow(
     val colors = AmuxTheme.colors
     val title = stringResource(R.string.new_agent_worktree_title)
     val detail = stringResource(R.string.new_agent_worktree_detail)
-    val switchColors = SwitchDefaults.colors(
-        checkedThumbColor = colors.ground,
-        checkedTrackColor = colors.ink,
-        checkedBorderColor = colors.ink,
-        uncheckedThumbColor = colors.inkMuted,
-        uncheckedTrackColor = colors.sunken,
-        uncheckedBorderColor = colors.hairline,
-    )
-
     if (isLargeText) {
+        // At large text the switch goes under its words, where there is room
+        // for it; the whole block is still the one control.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(role = Role.Switch) { onCheckedChange(!checked) }
+                .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
                 .padding(horizontal = Space.l, vertical = Space.m)
                 .testTag(NewAgentTags.WORKTREE_ROW),
             verticalArrangement = Arrangement.spacedBy(Space.s),
@@ -952,24 +932,22 @@ private fun WorktreeToggleRow(
             )
             Switch(
                 checked = checked,
-                onCheckedChange = onCheckedChange,
-                colors = switchColors,
+                onCheckedChange = null,
+                colors = amuxInkSwitchColors(),
                 modifier = Modifier
                     .thumbTarget()
-                    .semantics { contentDescription = title }
                     .testTag(NewAgentTags.WORKTREE_SWITCH),
             )
         }
     } else {
-        Row(
+        AmuxSwitchRow(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
             modifier = Modifier
                 .fillMaxWidth()
                 .thumbTarget()
-                .clickable(role = Role.Switch) { onCheckedChange(!checked) }
-                .padding(horizontal = Space.l, vertical = Space.m)
                 .testTag(NewAgentTags.WORKTREE_ROW),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.m),
+            switchModifier = Modifier.testTag(NewAgentTags.WORKTREE_SWITCH),
         ) {
             Column(
                 modifier = Modifier.weight(1f),
@@ -986,15 +964,6 @@ private fun WorktreeToggleRow(
                     color = colors.inkMuted,
                 )
             }
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                colors = switchColors,
-                modifier = Modifier
-                    .thumbTarget()
-                    .semantics { contentDescription = title }
-                    .testTag(NewAgentTags.WORKTREE_SWITCH),
-            )
         }
     }
 }
@@ -1064,7 +1033,7 @@ fun NewAgentDirectoriesContent(
                         imageVector = Icons.Outlined.Search,
                         contentDescription = null,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(IconSize.Control),
                     )
                 },
                 trailingIcon = {
@@ -1080,7 +1049,7 @@ fun NewAgentDirectoriesContent(
                                 imageVector = Icons.Outlined.Close,
                                 contentDescription = clearLabel,
                                 tint = colors.inkMuted,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                     }
@@ -1314,7 +1283,7 @@ private fun DirectorySection(
                             imageVector = if (isRecent) Icons.Outlined.Schedule else Icons.Outlined.Folder,
                             contentDescription = null,
                             tint = colors.inkFaint,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(IconSize.Control),
                         )
                         Column(
                             modifier = Modifier.weight(1f),
@@ -1340,7 +1309,7 @@ private fun DirectorySection(
                                 imageVector = Icons.Outlined.Check,
                                 contentDescription = null,
                                 tint = colors.ink,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                     }
@@ -1354,7 +1323,7 @@ private fun DirectorySection(
                             imageVector = if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
                             contentDescription = pinDesc,
                             tint = if (pinned) colors.ink else colors.inkFaint,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(IconSize.Control),
                         )
                     }
                 }
@@ -1390,15 +1359,15 @@ private fun HostPickerSheetContent(
                 .fillMaxWidth()
                 .padding(horizontal = Space.margin),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
                 hosts.forEachIndexed { index, host ->
                     if (index > 0) AmuxHairline()
                     val selected = host.hostId == selectedHostId
                     val subtitle = hostPickerSubtitle(host, host.hostId in connectingHostIds)
-                    PickerRadioRow(
+                    AmuxRadioRow(
                         title = host.name,
                         detail = subtitle,
-                        current = selected,
+                        selected = selected,
                         warn = false,
                         enabled = host.isOnline,
                         onClick = { if (host.isOnline) onSelect(host.hostId) },
@@ -1443,13 +1412,13 @@ private fun ChoicePickerSheetContent(
                 .fillMaxWidth()
                 .padding(horizontal = Space.margin),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
                 options.forEachIndexed { index, option ->
                     if (index > 0) AmuxHairline()
-                    PickerRadioRow(
+                    AmuxRadioRow(
                         title = option.title,
                         detail = option.detail,
-                        current = option.current,
+                        selected = option.current,
                         warn = option.warn,
                         enabled = option.enabled,
                         onClick = { if (option.enabled) onSelect(option.value) },
@@ -1488,66 +1457,8 @@ private fun PickerSheetHeader(
                 imageVector = Icons.Outlined.Close,
                 contentDescription = closeLabel,
                 tint = colors.inkMuted,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(IconSize.Row),
             )
-        }
-    }
-}
-
-@Composable
-private fun PickerRadioRow(
-    title: String,
-    detail: String,
-    current: Boolean,
-    warn: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = AmuxTheme.colors
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled || current, role = Role.RadioButton, onClick = onClick)
-            .thumbTarget()
-            .padding(horizontal = Space.s, vertical = Space.s)
-            .semantics { selected = current },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        RadioButton(
-            selected = current,
-            onClick = if (enabled || current) onClick else null,
-            enabled = enabled || current,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = colors.ink,
-                unselectedColor = colors.inkMuted,
-                disabledSelectedColor = colors.inkMuted,
-                disabledUnselectedColor = colors.inkFaint,
-            ),
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(Space.xxs),
-        ) {
-            Text(
-                text = title,
-                style = if (current) AmuxTheme.typography.bodyEmphasis else AmuxTheme.typography.body,
-                color = when {
-                    warn -> colors.removed
-                    !enabled && !current -> colors.inkFaint
-                    else -> colors.ink
-                },
-            )
-            if (detail.isNotEmpty() && detail != title) {
-                Text(
-                    text = detail,
-                    style = AmuxTheme.typography.detail,
-                    color = colors.inkMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
     }
 }

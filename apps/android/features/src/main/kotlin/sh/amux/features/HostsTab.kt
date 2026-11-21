@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ fun HostsTab(
     state: HostsTabState,
     onAction: (HostsAction) -> Unit,
     modifier: Modifier = Modifier,
+    clock: ElapsedClock = ElapsedClock { state.nowMs },
 ) {
     val colors = AmuxTheme.colors
     val subtitle = hostsSubtitle(state)
@@ -107,6 +109,7 @@ fun HostsTab(
                     state = state,
                     onAction = onAction,
                     contentPadding = innerPadding,
+                    clock = clock,
                 )
             }
         }
@@ -186,6 +189,7 @@ private fun HostsListContent(
     state: HostsTabState,
     onAction: (HostsAction) -> Unit,
     contentPadding: PaddingValues,
+    clock: ElapsedClock,
 ) {
     val grouped = HostReachGroup.entries.mapNotNull { group ->
         val matching = state.hosts.filter { host ->
@@ -263,6 +267,7 @@ private fun HostsListContent(
                             HostRowItem(
                                 host = host,
                                 state = state,
+                                clock = clock,
                                 onClick = { onAction(HostsAction.Open(host.hostId)) },
                             )
                             if (index < hostsInGroup.lastIndex) {
@@ -291,6 +296,7 @@ private fun reachGroupTitle(group: HostReachGroup): String = when (group) {
 private fun HostRowItem(
     host: HostView,
     state: HostsTabState,
+    clock: ElapsedClock,
     onClick: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
@@ -309,7 +315,7 @@ private fun HostRowItem(
             imageVector = hostGlyph(host.platform),
             contentDescription = null,
             tint = if (reachable) colors.inkMuted else colors.inkFaint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(IconSize.Row),
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -323,7 +329,7 @@ private fun HostRowItem(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = hostStatusLine(host = host, state = state),
+                text = hostStatusLine(host = host, state = state, clock = clock),
                 style = AmuxTheme.typography.detail,
                 color = colors.inkMuted,
                 maxLines = 2,
@@ -334,7 +340,7 @@ private fun HostRowItem(
             imageVector = Icons.Outlined.ChevronRight,
             contentDescription = null,
             tint = colors.inkFaint,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(IconSize.Control),
         )
     }
 }
@@ -347,7 +353,7 @@ private fun hostGlyph(platform: Platform?): ImageVector = when (platform) {
 }
 
 @Composable
-private fun hostStatusLine(host: HostView, state: HostsTabState): String {
+private fun hostStatusLine(host: HostView, state: HostsTabState, clock: ElapsedClock): String {
     val parts = mutableListOf<String>()
     host.platform?.label?.let { parts.add(it) }
     val status = when (host.reachGroup()) {
@@ -361,8 +367,10 @@ private fun hostStatusLine(host: HostView, state: HostsTabState): String {
             host.reach == Reach.Offline(Offline.SignedOut) -> stringResource(R.string.hosts_status_signed_out)
             else -> {
                 val goneAt = state.wentOfflineAtMs[host.hostId]
-                if (goneAt != null && state.nowMs >= goneAt) {
-                    val age = Elapsed.spelled((state.nowMs - goneAt) / 1_000.0)
+                // Read here, in the row, so the clock's tick redraws this row only.
+                val nowMs = if (goneAt != null) clock.nowMs() else 0L
+                if (goneAt != null && nowMs >= goneAt) {
+                    val age = Elapsed.spelled((nowMs - goneAt) / 1_000.0)
                     stringResource(R.string.hosts_status_offline_for, age)
                 } else {
                     stringResource(R.string.hosts_status_offline)

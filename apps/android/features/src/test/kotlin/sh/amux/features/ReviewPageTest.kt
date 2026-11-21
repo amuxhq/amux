@@ -26,7 +26,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
-import sh.amux.values.Comparison
 import sh.amux.values.DiffLine
 import sh.amux.values.FileStatus
 import sh.amux.values.Hunk
@@ -89,26 +88,18 @@ class ReviewPageTest {
     )
 
     @Test
-    fun fileSelectionComparisonToggleAndDiffLinesWork() {
+    fun fileSelectionAndDiffLinesWork() {
         val actions = mutableListOf<ReviewPageAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 ReviewPage(
-                    state = ReviewPageState(
-                        doc = sampleDoc(),
-                        comparison = Comparison.Uncommitted,
-                        baseBranch = "main",
-                    ),
+                    state = ReviewPageState(doc = sampleDoc()),
                     onAction = { actions += it },
                 )
             }
         }
 
         composeRule.onNodeWithText("return valid;").assertIsDisplayed()
-
-        // Switch comparison
-        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("onbranch")).performClick()
-        assertEquals(ReviewPageAction.SelectComparison(Comparison.OnBranch), actions.last())
 
         // Switch file chip
         composeRule.onNodeWithTag(AskReviewTags.reviewFileChip(1)).performClick()
@@ -122,8 +113,6 @@ class ReviewPageTest {
             ReviewPageState(
                 doc = sampleDoc(),
                 comments = emptyList(),
-                comparison = Comparison.Uncommitted,
-                baseBranch = "main",
             ),
         )
         val emitted = mutableListOf<ReviewPageAction>()
@@ -245,14 +234,8 @@ class ReviewPageTest {
     }
 
     @Test
-    fun switchingComparisonClearsOpenCommentComposerAndBlocksEdits() {
-        var state by mutableStateOf(
-            ReviewPageState(
-                doc = sampleDoc(),
-                comparison = Comparison.Uncommitted,
-                baseBranch = "main",
-            ),
-        )
+    fun aReloadedDiffClosesTheOpenCommentComposer() {
+        var state by mutableStateOf(ReviewPageState(doc = sampleDoc()))
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 ReviewPage(state = state, onAction = {})
@@ -262,13 +245,8 @@ class ReviewPageTest {
         composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertIsDisplayed()
 
-        state = state.copy(switching = true)
+        state = state.copy(doc = sampleDoc().copy(head = "a-later-head"))
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SWITCHING).assertIsDisplayed()
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertDoesNotExist()
-
-        // Tapping a line while switching must not reopen the comment composer.
-        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertDoesNotExist()
     }
 
@@ -303,39 +281,32 @@ class ReviewPageTest {
     }
 
     @Test
-    fun tappingActiveComparisonChipIsNoOpAndPreservesOpenCommentDraft() {
+    fun theCommentDraftSurvivesThePageRedrawingUnderIt() {
+        var state by mutableStateOf(ReviewPageState(doc = sampleDoc()))
         val actions = mutableListOf<ReviewPageAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                ReviewPage(
-                    state = ReviewPageState(
-                        doc = sampleDoc(),
-                        comparison = Comparison.Uncommitted,
-                        baseBranch = "main",
-                    ),
-                    onAction = { actions += it },
-                )
+                ReviewPage(state = state, onAction = { actions += it })
             }
         }
 
-        // Direct tap on the active comparison chip must not emit SelectComparison.
-        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("uncommitted")).performClick()
-        assertEquals(emptyList<ReviewPageAction>(), actions)
-
-        // Even while a comment draft is open, invoking the active comparison chip keeps it intact.
         composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_INPUT).performSemanticsAction(SemanticsActions.SetText) {
             it(AnnotatedString("Keep this draft"))
         }
-        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("uncommitted"))
-            .performSemanticsAction(SemanticsActions.OnClick)
-        assertEquals(emptyList<ReviewPageAction>(), actions)
+        state = state.copy(loading = true)
+        composeRule.waitForIdle()
+
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertIsDisplayed()
         composeRule.onNodeWithText("Keep this draft").assertIsDisplayed()
+        assertEquals(emptyList<ReviewPageAction>(), actions)
 
-        // Selecting a different comparison emits SelectComparison.
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_CANCEL).performClick()
-        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("onbranch")).performClick()
-        assertEquals(listOf(ReviewPageAction.SelectComparison(Comparison.OnBranch)), actions)
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_ADD).performClick()
+        assertEquals(
+            listOf<ReviewPageAction>(
+                ReviewPageAction.AddComment("src/auth.rs", line = 15, oldLine = 0, text = "Keep this draft"),
+            ),
+            actions,
+        )
     }
 }

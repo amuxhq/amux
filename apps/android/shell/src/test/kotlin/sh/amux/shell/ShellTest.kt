@@ -1,7 +1,10 @@
 package sh.amux.shell
 
+import androidx.compose.runtime.Recomposer
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -69,7 +72,6 @@ import sh.amux.features.NewAgentTags
 import sh.amux.features.PaywallTags
 import sh.amux.features.ReportTags
 import sh.amux.features.SettingsTags
-import sh.amux.features.SettledTags
 import sh.amux.features.TestTags
 import sh.amux.values.AccountBinding
 import sh.amux.values.AccountView
@@ -265,7 +267,7 @@ class ShellTest {
         val pairing = sh.amux.core.runtime.PairingState()
 
         // Without discovery, an addressless QR invitation requires signing in.
-        val beforeDiscovery = StateMappers.toPairingSheetState(
+        val beforeDiscovery = HostsMappers.toPairingSheetState(
             pairing = pairing,
             modal = modal,
             signedIn = false,
@@ -290,7 +292,7 @@ class ShellTest {
             providers = emptyList(),
             platform = Platform.Linux,
         )
-        val afterDiscovery = StateMappers.toPairingSheetState(
+        val afterDiscovery = HostsMappers.toPairingSheetState(
             pairing = pairing,
             modal = modal,
             signedIn = false,
@@ -715,6 +717,105 @@ class ShellTest {
     }
 
     @Test
+    fun agentsListKeepsItsScrollAcrossOpeningAChatAndComingBack() {
+        val router = Router()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val (hostId, desk) = sampleDeskHost("bbbbbbbb-1111-2222-3333-444444444444")
+        val rows = List(40) { index ->
+            sampleFleetRow(AgentKey(hostId.bytes, List(16) { index }), "agent-%02d".format(index))
+        }
+        val fakeChat = FakeShellChat(rows[30].card.agent)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            scope = shellScope,
+            chatBridge = FakeShellChatBridge(),
+            opener = { fakeChat },
+        )
+        stores.hosts.show(listOf(desk))
+        stores.fleet.show(
+            FleetView(
+                sections = listOf(FleetSection(SectionKind.Live, rows.size, false, rows)),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(router = router, accounts = accounts, stores = stores, deviceName = "Pixel 9")
+            }
+        }
+
+        composeRule.onNodeWithTag(TestTags.HOME_LIST).performScrollToNode(hasTestTag(TestTags.homeRow("agent-30")))
+        composeRule.onNodeWithTag(TestTags.homeRow("agent-30")).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+
+        composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
+        composeRule.waitForIdle()
+
+        // Back on the list, the row that was opened is still in view and the
+        // top of the list is still scrolled away.
+        composeRule.onNodeWithTag(TestTags.homeRow("agent-30")).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.homeRow("agent-00")).assertDoesNotExist()
+    }
+
+    @Test
+    fun aFleetChangeForAnotherAgentLeavesTheOpenChatAlone() {
+        val router = Router()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val (hostId, desk) = sampleDeskHost("cccccccc-1111-2222-3333-444444444444")
+        val openKey = AgentKey(hostId.bytes, List(16) { 51 })
+        val otherKey = AgentKey(hostId.bytes, List(16) { 52 })
+        val openRow = sampleFleetRow(openKey, "open-agent")
+        val otherRow = sampleFleetRow(otherKey, "other-agent")
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            scope = shellScope,
+            chatBridge = FakeShellChatBridge(),
+            opener = { FakeShellChat(openKey) },
+        )
+        fun showFleet(open: FleetRow, other: FleetRow) = stores.fleet.show(
+            FleetView(
+                sections = listOf(FleetSection(SectionKind.Live, 2, false, listOf(open, other))),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+        stores.hosts.show(listOf(desk))
+        showFleet(openRow, otherRow)
+        router.push(Route.Conversation(openKey))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(router = router, accounts = accounts, stores = stores, deviceName = "Pixel 9")
+            }
+        }
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.waitForIdle()
+
+        val before = composeRule.runOnIdle { recompositions() }
+        composeRule.runOnIdle {
+            showFleet(openRow, otherRow.copy(secondLine = SecondLine.LastSaid("Something new elsewhere.")))
+        }
+        composeRule.waitForIdle()
+        assertEquals("another agent's turn recomposed the open chat", before, composeRule.runOnIdle { recompositions() })
+
+        // The open agent's own row moving does reach the chat, so the count
+        // above is one that would have moved.
+        composeRule.runOnIdle {
+            showFleet(openRow.copy(card = openRow.card.copy(name = "renamed-agent")), otherRow)
+        }
+        composeRule.waitForIdle()
+        assertTrue(composeRule.runOnIdle { recompositions() } > before)
+    }
+
+    /** How many times any composition in the test has recomposed and applied changes. */
+    private fun recompositions(): Long = Recomposer.runningRecomposers.value.sumOf { it.changeCount }
+
+    @Test
     fun askActionsBindToRenderedAskKey() {
         val router = Router()
         val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
@@ -998,11 +1099,11 @@ class ShellTest {
 
         composeRule.onNodeWithTag(TestTags.HOME_SETTLED_ROW).performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(SettledTags.SCREEN).assertIsDisplayed()
-        composeRule.onNodeWithTag(SettledTags.row("old-migration")).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_SETTLED).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.settledRow("old-migration")).assertIsDisplayed()
 
-        composeRule.onNodeWithTag(SettledTags.rowMenu("old-migration")).performClick()
-        composeRule.onNodeWithTag(SettledTags.ACTION_UNSETTLE).performClick()
+        composeRule.onNodeWithTag(TestTags.settledRowMenu("old-migration")).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_ACTION_UNSETTLE).performClick()
         composeRule.waitForIdle()
         assertEquals(listOf(AgentAct.Unfile to settledKey), acts)
     }
@@ -1240,7 +1341,7 @@ class ShellTest {
             forAccount = AccountId("sub-ada"),
         )
         val deletion = DeletionStore(asking = AccountId("sub-ada"))
-        val ui = StateMappers.toDeleteAccountSheetState(
+        val ui = AccountMappers.toDeleteAccountSheetState(
             deletion = deletion.snapshot,
             registry = accounts.snapshot,
             formatBillingWarning = { date -> "Renews on $date" },

@@ -32,6 +32,10 @@ kotlin {
     jvmToolchain(21)
 }
 
+composeCompiler {
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-stability.conf"))
+}
+
 dependencies {
     implementation(project(":core:values"))
     implementation(project(":core:words"))

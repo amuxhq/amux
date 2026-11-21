@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -20,16 +20,12 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -37,7 +33,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
@@ -76,12 +71,8 @@ fun ChatSettingsModalSheet(
     onSelectCommand: ((CommandView) -> Unit)? = null,
 ) {
     val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AmuxSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.ground,
-        contentColor = colors.ink,
     ) {
         ChatSettingsSheetContent(
             state = state,
@@ -147,7 +138,7 @@ fun ChatSettingsSheetContent(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = closeLabel,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(IconSize.Row),
                 )
             }
         }
@@ -253,7 +244,7 @@ private fun ModelsSection(
                     .fillMaxWidth()
                     .padding(horizontal = Space.margin),
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
                     models.forEachIndexed { index, choice ->
                         if (index > 0) AmuxHairline()
                         val detail = if (choice.unlisted) {
@@ -261,10 +252,10 @@ private fun ModelsSection(
                         } else {
                             choice.description
                         }
-                        SettingsRadioRow(
+                        AmuxRadioRow(
                             title = choice.displayName,
                             detail = detail,
-                            current = choice.current,
+                            selected = choice.current,
                             warn = false,
                             enabled = true,
                             onClick = { if (!choice.current) onPick(choice.value) },
@@ -384,13 +375,13 @@ private fun PermissionsSection(
                         .fillMaxWidth()
                         .padding(horizontal = Space.margin),
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
                         pickable.forEachIndexed { index, choice ->
                             if (index > 0) AmuxHairline()
-                            SettingsRadioRow(
+                            AmuxRadioRow(
                                 title = ChatWords.permission(choice),
                                 detail = ChatWords.permissionDetail(choice),
-                                current = choice.current,
+                                selected = choice.current,
                                 warn = choice.neverAsks,
                                 enabled = choice.settable,
                                 onClick = {
@@ -503,7 +494,7 @@ private fun ModesSection(
                 .fillMaxWidth()
                 .padding(horizontal = Space.margin),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
                 modes.forEachIndexed { index, choice ->
                     if (index > 0) AmuxHairline()
                     val detail = if (choice.unlisted) {
@@ -511,10 +502,10 @@ private fun ModesSection(
                     } else {
                         ""
                     }
-                    SettingsRadioRow(
+                    AmuxRadioRow(
                         title = ChatWords.mode(choice),
                         detail = detail,
-                        current = choice.current,
+                        selected = choice.current,
                         warn = false,
                         enabled = changeable == Changeable.Pick && choice.settable,
                         onClick = {
@@ -534,64 +525,6 @@ private fun ModesSection(
                 color = colors.inkMuted,
                 modifier = Modifier.padding(horizontal = Space.margin),
             )
-        }
-    }
-}
-
-@Composable
-private fun SettingsRadioRow(
-    title: String,
-    detail: String,
-    current: Boolean,
-    warn: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = AmuxTheme.colors
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled || current, role = Role.RadioButton, onClick = onClick)
-            .thumbTarget()
-            .padding(horizontal = Space.s, vertical = Space.s)
-            .semantics { selected = current },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        RadioButton(
-            selected = current,
-            onClick = null,
-            enabled = enabled || current,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = colors.ink,
-                unselectedColor = colors.inkMuted,
-                disabledSelectedColor = colors.inkMuted,
-                disabledUnselectedColor = colors.inkFaint,
-            ),
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(Space.xxs),
-        ) {
-            Text(
-                text = title,
-                style = if (current) AmuxTheme.typography.bodyEmphasis else AmuxTheme.typography.body,
-                color = when {
-                    warn -> colors.removed
-                    !enabled && !current -> colors.inkFaint
-                    else -> colors.ink
-                },
-            )
-            if (detail.isNotEmpty() && detail != title) {
-                Text(
-                    text = detail,
-                    style = AmuxTheme.typography.detail,
-                    color = colors.inkMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
     }
 }

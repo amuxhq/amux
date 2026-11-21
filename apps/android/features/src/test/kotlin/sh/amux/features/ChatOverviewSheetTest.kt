@@ -176,7 +176,7 @@ class ChatOverviewSheetTest {
                 ChatOverviewStrip(
                     overview = state.overview,
                     context = state.context,
-                    nowMs = nowMs,
+                    clock = ElapsedClock { nowMs },
                     onOpenOverview = { openedOverview = true },
                     onOpenReview = { openedReview = true },
                 )

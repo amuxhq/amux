@@ -1,26 +1,24 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,7 +27,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -38,42 +35,33 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material.icons.outlined.WifiOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -88,28 +76,25 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.time.Instant
-import kotlinx.coroutines.launch
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
-import sh.amux.design.LocalAmuxPhotographed
 import sh.amux.design.Space
 import sh.amux.design.thumbTarget
 import sh.amux.push.Said
 import sh.amux.push.Wants
 import sh.amux.values.ActivityKind
 import sh.amux.values.AgentKey
+import sh.amux.values.AgentNameProblem
 import sh.amux.values.DeleteWarning
 import sh.amux.values.FleetFilter
 import sh.amux.values.FleetOnly
 import sh.amux.values.FleetRow
-import sh.amux.values.FleetSection
 import sh.amux.values.HostView
 import sh.amux.values.RelayLink
 import sh.amux.values.SecondLine
 import sh.amux.values.SectionKind
 import sh.amux.words.ChatWords
-import sh.amux.words.DeleteWords
 import sh.amux.words.FleetWords
 import sh.amux.words.PlaceNames
 import sh.amux.words.RowState
@@ -140,7 +125,7 @@ internal data class HomeCallout(
 
 private sealed interface RowConfirmation {
     data class Settle(val row: FleetRow, val cuts: String) : RowConfirmation
-    data class Delete(val row: FleetRow, val warning: DeleteWarning?) : RowConfirmation
+    data class Delete(val row: FleetRow) : RowConfirmation
 }
 
 /**
@@ -158,10 +143,10 @@ fun AgentsHome(
     searchExpanded: Boolean = false,
     onSearchExpandedChange: (Boolean) -> Unit = {},
     onPreviewDelete: (suspend (AgentKey) -> Result<DeleteWarning?>)? = null,
+    validateAgentName: (String) -> AgentNameProblem? = ::defaultValidateAgentName,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val colors = AmuxTheme.colors
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val fabExpanded by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 24
@@ -170,7 +155,6 @@ fun AgentsHome(
 
     var actionRow by remember { mutableStateOf<FleetRow?>(null) }
     var renamingRow by remember { mutableStateOf<FleetRow?>(null) }
-    var renameDraft by remember { mutableStateOf("") }
     var confirming by remember { mutableStateOf<RowConfirmation?>(null) }
 
     val showSearchControl = state.scope == HomeScope.Fleet &&
@@ -215,7 +199,7 @@ fun AgentsHome(
                                     onClick = { onAction(HomeAction.Back) },
                                     modifier = Modifier
                                         .thumbTarget()
-                                        .testTag(TestTags.NAV_BACK),
+                                        .testTag(TestTags.SETTLED_BACK),
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
@@ -390,7 +374,6 @@ fun AgentsHome(
             },
             onRename = {
                 actionRow = null
-                renameDraft = currentActionRow.card.handle.ifEmpty { currentActionRow.name }
                 renamingRow = currentActionRow
             },
             onSettle = {
@@ -417,200 +400,55 @@ fun AgentsHome(
             },
             onDelete = {
                 actionRow = null
-                val initialWarning = DeleteWords.asking(currentActionRow.card.workspaceGoes)
-                confirming = RowConfirmation.Delete(currentActionRow, initialWarning)
-                if (initialWarning != null && onPreviewDelete != null) {
-                    coroutineScope.launch {
-                        val answer = onPreviewDelete(currentActionRow.id)
-                        val active = confirming
-                        if (active is RowConfirmation.Delete && active.row.id == currentActionRow.id) {
-                            confirming = active.copy(
-                                warning = DeleteWords.answered(active.warning, answer),
-                            )
-                        }
-                    }
-                }
+                confirming = RowConfirmation.Delete(currentActionRow)
             },
         )
     }
 
-    // Rename AlertDialog
     val currentRenameRow = renamingRow
     if (currentRenameRow != null) {
-        AlertDialog(
-            onDismissRequest = { renamingRow = null },
-            containerColor = colors.raised,
-            titleContentColor = colors.ink,
-            textContentColor = colors.ink,
-            modifier = Modifier.testTag(TestTags.HOME_RENAME_DIALOG),
-            title = {
-                Text(
-                    text = stringResource(R.string.home_rename_title),
-                    style = AmuxTheme.typography.identifier,
-                )
+        RenameAgentDialog(
+            currentName = currentRenameRow.name,
+            initialDraft = currentRenameRow.card.handle.ifEmpty { currentRenameRow.name },
+            validateName = validateAgentName,
+            onDismiss = { renamingRow = null },
+            onConfirm = { name ->
+                renamingRow = null
+                onAction(HomeAction.Rename(currentRenameRow.id, name))
             },
-            text = {
-                val inputShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
-                val photographed = LocalAmuxPhotographed.current
-                Box(
-                    modifier = Modifier
-                        .width(260.dp)
-                        .clip(inputShape)
-                        .background(colors.ground)
-                        .border(AmuxTheme.metrics.hairline, colors.hairline, inputShape)
-                        .padding(horizontal = Space.m, vertical = Space.m),
-                ) {
-                    if (renameDraft.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.home_rename_placeholder),
-                            style = AmuxTheme.typography.body,
-                            color = colors.inkFaint,
-                        )
-                    }
-                    BasicTextField(
-                        value = renameDraft,
-                        onValueChange = { renameDraft = it },
-                        singleLine = true,
-                        textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
-                        cursorBrush = SolidColor(if (photographed) Color.Unspecified else colors.ink),
-                        modifier = Modifier
-                            .width(236.dp)
-                            .testTag(TestTags.HOME_RENAME_INPUT),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val trimmed = renameDraft.trim()
-                        if (trimmed.isNotEmpty()) {
-                            onAction(HomeAction.Rename(currentRenameRow.id, trimmed))
-                        }
-                        renamingRow = null
-                    },
-                    enabled = renameDraft.trim().isNotEmpty(),
-                    modifier = Modifier.testTag(TestTags.HOME_RENAME_CONFIRM),
-                ) {
-                    Text(
-                        text = stringResource(R.string.home_action_rename),
-                        style = AmuxTheme.typography.bodyEmphasis,
-                        color = colors.ink,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { renamingRow = null }) {
-                    Text(
-                        text = stringResource(R.string.action_cancel),
-                        style = AmuxTheme.typography.body,
-                        color = colors.inkMuted,
-                    )
-                }
-            },
+            tags = AgentDialogTags.Home,
         )
     }
 
-    // Settle / Delete confirmation AlertDialog
     when (val dialog = confirming) {
         is RowConfirmation.Settle -> {
-            AlertDialog(
-                onDismissRequest = { confirming = null },
-                containerColor = colors.raised,
-                titleContentColor = colors.ink,
-                textContentColor = colors.inkMuted,
-                title = {
-                    Text(
-                        text = stringResource(R.string.home_settle_title, dialog.row.name),
-                        style = AmuxTheme.typography.identifier,
-                    )
+            SettleAgentDialog(
+                agentName = dialog.row.name,
+                cuts = dialog.cuts,
+                onDismiss = { confirming = null },
+                onConfirm = {
+                    confirming = null
+                    onAction(HomeAction.Settle(dialog.row.id))
                 },
-                text = {
-                    Text(
-                        text = stringResource(R.string.home_settle_confirm_detail, dialog.cuts),
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkMuted,
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            confirming = null
-                            onAction(HomeAction.Settle(dialog.row.id))
-                        },
-                        modifier = Modifier.testTag(TestTags.HOME_SETTLE_CONFIRM),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.home_action_settle),
-                            style = AmuxTheme.typography.bodyEmphasis,
-                            color = colors.removed,
-                        )
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirming = null }) {
-                        Text(
-                            text = stringResource(R.string.action_cancel),
-                            style = AmuxTheme.typography.body,
-                            color = colors.inkMuted,
-                        )
-                    }
-                },
+                tags = AgentDialogTags.Home,
             )
         }
         is RowConfirmation.Delete -> {
-            val message = DeleteWords.message(
-                descendants = dialog.row.card.descendants,
-                warning = dialog.warning,
-            )
-            AlertDialog(
-                onDismissRequest = { confirming = null },
-                containerColor = colors.raised,
-                titleContentColor = colors.ink,
-                textContentColor = colors.inkMuted,
-                title = {
-                    Text(
-                        text = stringResource(R.string.home_delete_title, dialog.row.name),
-                        style = AmuxTheme.typography.identifier,
-                    )
-                },
-                text = {
-                    Text(
-                        text = message,
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkMuted,
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            confirming = null
-                            onAction(
-                                HomeAction.Delete(
-                                    agent = dialog.row.id,
-                                    discardingChanges = DeleteWords.discards(dialog.warning),
-                                ),
-                            )
-                        },
-                        enabled = !DeleteWords.awaitsAnswer(dialog.warning),
-                        modifier = Modifier.testTag(TestTags.HOME_DELETE_CONFIRM),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.home_action_delete),
-                            style = AmuxTheme.typography.bodyEmphasis,
-                            color = colors.removed,
-                        )
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirming = null }) {
-                        Text(
-                            text = stringResource(R.string.action_cancel),
-                            style = AmuxTheme.typography.body,
-                            color = colors.inkMuted,
-                        )
-                    }
-                },
-            )
+            // Keyed by the row, so a second delete asks the host afresh.
+            key(dialog.row.id) {
+                DeleteAgentDialog(
+                    agentName = dialog.row.name,
+                    descendants = dialog.row.card.descendants,
+                    workspaceGoes = dialog.row.card.workspaceGoes,
+                    onPreviewDelete = onPreviewDelete?.let { preview -> { preview(dialog.row.id) } },
+                    onDismiss = { confirming = null },
+                    onConfirm = { discardingChanges ->
+                        confirming = null
+                        onAction(HomeAction.Delete(agent = dialog.row.id, discardingChanges = discardingChanges))
+                    },
+                    tags = AgentDialogTags.Home,
+                )
+            }
         }
         null -> Unit
     }
@@ -646,7 +484,7 @@ private fun FleetSearchBar(
                     imageVector = Icons.Outlined.Search,
                     contentDescription = null,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             },
             trailingIcon = {
@@ -662,7 +500,7 @@ private fun FleetSearchBar(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = clearLabel,
                             tint = colors.inkMuted,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(IconSize.Control),
                         )
                     }
                 }
@@ -893,6 +731,8 @@ private fun FleetListContent(
                         namesHosts = namesHosts,
                         now = nowInstant,
                         showDivider = index < closedRows.lastIndex,
+                        rowTag = TestTags.settledRow(row.name),
+                        menuTag = TestTags.settledRowMenu(row.name),
                         onOpen = { onOpenRow(row) },
                         onOpenMenu = { onOpenRowMenu(row) },
                         onToggleFamily = { onToggleFamily(row) },
@@ -983,6 +823,8 @@ private fun AgentListRow(
     onOpen: () -> Unit,
     onOpenMenu: () -> Unit,
     onToggleFamily: () -> Unit,
+    rowTag: String = TestTags.homeRow(row.name),
+    menuTag: String = TestTags.homeRowMenu(row.name),
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
@@ -1034,7 +876,7 @@ private fun AgentListRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(TestTags.homeRow(row.name)),
+            .testTag(rowTag),
     ) {
         Row(
             modifier = Modifier
@@ -1088,7 +930,7 @@ private fun AgentListRow(
                             imageVector = Icons.Outlined.PushPin,
                             contentDescription = pinnedDesc,
                             tint = colors.inkFaint,
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(IconSize.Small),
                         )
                     }
                 }
@@ -1152,7 +994,7 @@ private fun AgentListRow(
                         },
                         contentDescription = null,
                         tint = colors.inkFaint,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                 }
             }
@@ -1162,13 +1004,13 @@ private fun AgentListRow(
                 onClick = onOpenMenu,
                 modifier = Modifier
                     .thumbTarget()
-                    .testTag(TestTags.homeRowMenu(row.name)),
+                    .testTag(menuTag),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.MoreVert,
                     contentDescription = moreDesc,
                     tint = colors.inkFaint,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             }
         }
@@ -1248,7 +1090,7 @@ private fun SettledFooterRow(
                 imageVector = Icons.Outlined.Archive,
                 contentDescription = null,
                 tint = colors.inkMuted,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(IconSize.Control),
             )
             Text(
                 text = stringResource(R.string.home_section_settled),
@@ -1366,12 +1208,8 @@ private fun AgentRowActionSheet(
     onDelete: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AmuxSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.raised,
-        contentColor = colors.ink,
     ) {
         Column(
             modifier = Modifier
@@ -1390,59 +1228,59 @@ private fun AgentRowActionSheet(
             AmuxHairline()
             if (row.pinnable) {
                 if (row.pinned) {
-                    SheetActionItem(
-                        label = stringResource(R.string.home_action_unpin),
+                    AmuxActionRow(
                         icon = Icons.Outlined.PushPin,
-                        testTag = TestTags.HOME_ACTION_UNPIN,
+                        label = stringResource(R.string.home_action_unpin),
                         onClick = onUnpin,
+                        modifier = Modifier.testTag(TestTags.HOME_ACTION_UNPIN),
                     )
                 } else {
-                    SheetActionItem(
-                        label = stringResource(R.string.home_action_pin),
+                    AmuxActionRow(
                         icon = Icons.Outlined.PushPin,
-                        testTag = TestTags.HOME_ACTION_PIN,
+                        label = stringResource(R.string.home_action_pin),
                         onClick = onPin,
+                        modifier = Modifier.testTag(TestTags.HOME_ACTION_PIN),
                     )
                 }
             }
-            SheetActionItem(
-                label = stringResource(R.string.home_action_rename),
+            AmuxActionRow(
                 icon = Icons.Outlined.Edit,
-                testTag = TestTags.HOME_ACTION_RENAME,
+                label = stringResource(R.string.home_action_rename),
                 onClick = onRename,
+                modifier = Modifier.testTag(TestTags.HOME_ACTION_RENAME),
             )
             when {
                 row.closed -> {
-                    SheetActionItem(
-                        label = stringResource(R.string.home_action_unsettle),
+                    AmuxActionRow(
                         icon = Icons.Outlined.Unarchive,
-                        testTag = TestTags.HOME_ACTION_UNSETTLE,
+                        label = stringResource(R.string.home_action_unsettle),
                         onClick = onUnsettle,
+                        modifier = Modifier.testTag(TestTags.HOME_ACTION_UNSETTLE),
                     )
                     if (row.deletable) {
-                        SheetActionItem(
-                            label = stringResource(R.string.home_action_delete_agent),
+                        AmuxActionRow(
                             icon = Icons.Outlined.DeleteOutline,
-                            destructive = true,
-                            testTag = TestTags.HOME_ACTION_DELETE,
+                            label = stringResource(R.string.home_action_delete_agent),
                             onClick = onDelete,
+                            destructive = true,
+                            modifier = Modifier.testTag(TestTags.HOME_ACTION_DELETE),
                         )
                     }
                 }
                 row.card.closeHeld -> {
-                    SheetActionItem(
-                        label = stringResource(R.string.home_action_cancel_settle),
+                    AmuxActionRow(
                         icon = Icons.AutoMirrored.Outlined.Undo,
-                        testTag = TestTags.HOME_ACTION_CANCEL_SETTLE,
+                        label = stringResource(R.string.home_action_cancel_settle),
                         onClick = onCancelSettle,
+                        modifier = Modifier.testTag(TestTags.HOME_ACTION_CANCEL_SETTLE),
                     )
                 }
                 else -> {
-                    SheetActionItem(
-                        label = stringResource(R.string.home_action_settle),
+                    AmuxActionRow(
                         icon = Icons.Outlined.CheckCircle,
-                        testTag = TestTags.HOME_ACTION_SETTLE,
+                        label = stringResource(R.string.home_action_settle),
                         onClick = onSettle,
+                        modifier = Modifier.testTag(TestTags.HOME_ACTION_SETTLE),
                     )
                 }
             }
@@ -1450,176 +1288,3 @@ private fun AgentRowActionSheet(
     }
 }
 
-@Composable
-private fun SheetActionItem(
-    label: String,
-    icon: ImageVector,
-    testTag: String,
-    destructive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val tint = if (destructive) colors.removed else colors.ink
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .thumbTarget(minHeight = 52.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = Space.margin, vertical = Space.m)
-            .testTag(testTag),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.m),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
-        Text(
-            text = label,
-            style = AmuxTheme.typography.body,
-            color = tint,
-        )
-    }
-}
-
-/**
- * Account switcher M3 [ModalBottomSheet] opened from the top-right account avatar.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AccountSwitcherSheet(
-    accounts: List<AccountUi>,
-    onSelectAccount: (String) -> Unit,
-    onSignInAgain: (String) -> Unit,
-    onAddAccount: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.raised,
-        contentColor = colors.ink,
-    ) {
-        AccountSwitcherContent(
-            accounts = accounts,
-            onSelectAccount = onSelectAccount,
-            onSignInAgain = onSignInAgain,
-            onAddAccount = onAddAccount,
-            onOpenSettings = onOpenSettings,
-        )
-    }
-}
-
-/**
- * Inner content of [AccountSwitcherSheet], exposed separately for direct testing
- * and storybook rendering.
- */
-@Composable
-fun AccountSwitcherContent(
-    accounts: List<AccountUi>,
-    onSelectAccount: (String) -> Unit,
-    onSignInAgain: (String) -> Unit,
-    onAddAccount: () -> Unit,
-    onOpenSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = AmuxTheme.colors
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = Space.xl)
-            .testTag(TestTags.ACCOUNTS_SHEET),
-    ) {
-        Text(
-            text = stringResource(R.string.accounts_sheet_title),
-            style = AmuxTheme.typography.identifier,
-            color = colors.ink,
-            modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.s),
-        )
-        AmuxHairline()
-
-        for (account in accounts) {
-            val detail = if (account.signedIn) {
-                account.line
-            } else {
-                stringResource(R.string.accounts_signed_out_tap)
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .thumbTarget(minHeight = 56.dp)
-                    .clickable(role = Role.Button) {
-                        if (account.signedIn) {
-                            onSelectAccount(account.id)
-                        } else {
-                            onSignInAgain(account.id)
-                        }
-                    }
-                    .padding(horizontal = Space.margin, vertical = Space.s)
-                    .testTag(TestTags.accountRow(account.email)),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.m),
-            ) {
-                AmuxAccountAvatar(
-                    account = account,
-                    onClick = null,
-                )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                ) {
-                    Text(
-                        text = account.name,
-                        style = AmuxTheme.typography.bodyEmphasis,
-                        color = if (account.signedIn) colors.ink else colors.inkMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = detail,
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (account.selected) {
-                    val selectedDesc = stringResource(R.string.accounts_selected)
-                    Icon(
-                        imageVector = Icons.Outlined.Check,
-                        contentDescription = selectedDesc,
-                        tint = colors.ink,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-        }
-
-        if (accounts.isNotEmpty()) {
-            AmuxHairline(modifier = Modifier.padding(vertical = Space.xs))
-        }
-
-        SheetActionItem(
-            label = stringResource(
-                if (accounts.isEmpty()) R.string.accounts_sign_in else R.string.accounts_add,
-            ),
-            icon = Icons.Outlined.PersonAdd,
-            testTag = if (accounts.isEmpty()) TestTags.ACCOUNTS_SIGN_IN else TestTags.ACCOUNTS_ADD,
-            onClick = onAddAccount,
-        )
-
-        AmuxHairline(modifier = Modifier.padding(vertical = Space.xs))
-
-        SheetActionItem(
-            label = stringResource(R.string.accounts_settings),
-            icon = Icons.Outlined.Settings,
-            testTag = TestTags.ACCOUNTS_SETTINGS,
-            onClick = onOpenSettings,
-        )
-    }
-}

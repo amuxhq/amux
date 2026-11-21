@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,7 +42,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
@@ -119,11 +119,12 @@ fun HostPage(
     state: HostPageState,
     onAction: (HostPageAction) -> Unit,
     modifier: Modifier = Modifier,
+    clock: ElapsedClock = ElapsedClock { state.nowMs },
 ) {
     val colors = AmuxTheme.colors
     val isLargeText = LocalDensity.current.fontScale >= 1.3f
     val host = state.host
-    val reachLine = host?.let { hostReachLine(it, state) }
+    val reachLine = host?.let { hostReachLine(it, state, clock) }
     var confirmingRevoke by remember { mutableStateOf(false) }
     var copiedKey by remember { mutableStateOf<String?>(null) }
 
@@ -247,9 +248,10 @@ fun HostPage(
                                 modifier = Modifier.testTag(HostPageTags.FACT_REACH),
                             )
                             val goneAt = state.wentOfflineAtMs
-                            if (!host.isOnline && goneAt != null && state.nowMs >= goneAt) {
+                            val nowMs = if (!host.isOnline && goneAt != null) clock.nowMs() else 0L
+                            if (!host.isOnline && goneAt != null && nowMs >= goneAt) {
                                 AmuxInsetHairline()
-                                val elapsed = Elapsed.spelled((state.nowMs - goneAt) / 1_000.0)
+                                val elapsed = Elapsed.spelled((nowMs - goneAt) / 1_000.0)
                                 HostFactRow(
                                     label = stringResource(R.string.host_page_fact_last_seen),
                                     value = stringResource(R.string.host_page_fact_last_seen_ago, elapsed),
@@ -583,7 +585,7 @@ private fun CopyableMonoRow(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(IconSize.Inline),
                 )
                 Text(
                     text = stringResource(R.string.host_page_copied),
@@ -596,14 +598,14 @@ private fun CopyableMonoRow(
                 imageVector = Icons.Outlined.ContentCopy,
                 contentDescription = null,
                 tint = colors.inkFaint,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(IconSize.Control),
             )
         }
     }
 }
 
 @Composable
-private fun hostReachLine(host: HostView, state: HostPageState): String = when (host.reachGroup()) {
+private fun hostReachLine(host: HostView, state: HostPageState, clock: ElapsedClock): String = when (host.reachGroup()) {
     HostReachGroup.OnThisNetwork -> stringResource(R.string.host_page_reach_direct)
     HostReachGroup.ThroughTheRelay -> stringResource(R.string.host_page_reach_relay)
     HostReachGroup.Away -> stringResource(R.string.host_page_reach_away)
@@ -613,8 +615,9 @@ private fun hostReachLine(host: HostView, state: HostPageState): String = when (
         host.reach == Reach.Offline(Offline.SignedOut) -> stringResource(R.string.host_page_reach_signed_out)
         else -> {
             val goneAt = state.wentOfflineAtMs
-            if (goneAt != null && state.nowMs >= goneAt) {
-                val age = Elapsed.spelled((state.nowMs - goneAt) / 1_000.0)
+            val nowMs = if (goneAt != null) clock.nowMs() else 0L
+            if (goneAt != null && nowMs >= goneAt) {
+                val age = Elapsed.spelled((nowMs - goneAt) / 1_000.0)
                 stringResource(R.string.host_page_reach_offline_for, age)
             } else {
                 stringResource(R.string.host_page_reach_offline)

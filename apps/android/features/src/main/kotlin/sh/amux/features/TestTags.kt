@@ -48,8 +48,11 @@ object TestTags {
     const val HOME_ACTION_DELETE: String = "home.action.delete"
     const val HOME_RENAME_DIALOG: String = "home.rename.dialog"
     const val HOME_RENAME_INPUT: String = "home.rename.input"
+    const val HOME_RENAME_PROBLEM: String = "home.rename.problem"
     const val HOME_RENAME_CONFIRM: String = "home.rename.confirm"
+    const val HOME_SETTLE_DIALOG: String = "home.settle.dialog"
     const val HOME_SETTLE_CONFIRM: String = "home.settle.confirm"
+    const val HOME_DELETE_DIALOG: String = "home.delete.dialog"
     const val HOME_DELETE_CONFIRM: String = "home.delete.confirm"
 
     // Account switcher sheet
@@ -94,11 +97,14 @@ object TestTags {
     const val SCREEN_HOST: String = "screen.host"
     const val SCREEN_NEW_AGENT: String = "screen.new-agent"
     const val SCREEN_SETTINGS: String = "screen.settings"
-    const val SCREEN_SETTLED: String = "screen.settled"
+    const val SCREEN_SETTLED: String = "settled"
+    const val SETTLED_BACK: String = "settled.back"
     const val SCREEN_PAYWALL: String = "screen.paywall"
 
     fun homeRow(name: String): String = "home.row.$name"
     fun homeRowMenu(name: String): String = "home.row.$name.menu"
+    fun settledRow(name: String): String = "settled.row.$name"
+    fun settledRowMenu(name: String): String = "settled.row.$name.menu"
     fun homeFamily(name: String): String = "home.family.$name"
     fun homeFilter(kind: String): String = "home.filter.$kind"
     fun homeFound(name: String): String = "home.found.$name"

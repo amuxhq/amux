@@ -124,7 +124,6 @@
     <string name="review_empty_detail">There are no changes to review right now.</string>
     <string name="review_loading_title">Loading changes…</string>
     <string name="review_loading_detail">Reading the diff from the host.</string>
-    <string name="review_switching">Switching diff…</string>
     <string name="review_error_title">Could not load changes</string>
     <string name="review_diff_added">+%1$d</string>
     <string name="review_diff_removed">−%1$d</string>

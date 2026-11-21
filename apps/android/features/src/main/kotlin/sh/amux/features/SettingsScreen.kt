@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,8 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -400,7 +399,7 @@ private fun AccountsSection(
                         imageVector = Icons.Outlined.Add,
                         contentDescription = null,
                         tint = colors.accent,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(IconSize.Row),
                     )
                     Text(
                         text = stringResource(R.string.settings_add_account),
@@ -584,7 +583,7 @@ private fun AccountTrailing(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = stringResource(R.string.settings_account_active),
                     tint = colors.ink,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             }
         }
@@ -902,15 +901,14 @@ private fun SettingsToggleRow(
     switchTag: String,
 ) {
     val colors = AmuxTheme.colors
-    Row(
+    AmuxSwitchRow(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
         modifier = Modifier
             .fillMaxWidth()
             .thumbTarget()
-            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
-            .padding(horizontal = Space.l, vertical = Space.m)
             .testTag(rowTag),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.m),
+        switchModifier = Modifier.testTag(switchTag),
     ) {
         Column(
             modifier = Modifier.weight(1f),
@@ -927,22 +925,6 @@ private fun SettingsToggleRow(
                 color = colors.inkMuted,
             )
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = colors.ground,
-                checkedTrackColor = colors.ink,
-                checkedBorderColor = colors.ink,
-                uncheckedThumbColor = colors.inkMuted,
-                uncheckedTrackColor = colors.sunken,
-                uncheckedBorderColor = colors.hairline,
-            ),
-            modifier = Modifier
-                .thumbTarget()
-                .semantics { contentDescription = title }
-                .testTag(switchTag),
-        )
     }
 }
 
@@ -974,7 +956,7 @@ private fun ExportDiagnosticsRow(
                     imageVector = Icons.Outlined.FileDownload,
                     contentDescription = null,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(IconSize.Row),
                 )
             }
             Text(
@@ -1083,7 +1065,7 @@ private fun ThisPhoneSection(
                                 },
                                 contentDescription = null,
                                 tint = colors.inkMuted,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(IconSize.Inline),
                             )
                             Text(
                                 text = stringResource(
@@ -1210,7 +1192,7 @@ private fun SettingsNavigationRow(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = colors.inkFaint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(IconSize.Row),
         )
     }
 }
@@ -1259,7 +1241,7 @@ private fun SettingsIconRow(
             imageVector = icon,
             contentDescription = null,
             tint = colors.inkMuted,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(IconSize.Row),
         )
         Text(
             text = label,
@@ -1271,7 +1253,7 @@ private fun SettingsIconRow(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = colors.inkFaint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(IconSize.Row),
         )
     }
 }

@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -32,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -454,7 +456,7 @@ private fun MarkdownCodeBlockView(
                         imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
                         contentDescription = copyLabel,
                         tint = if (copied) colors.added else colors.inkMuted,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                 }
             }
@@ -627,11 +629,12 @@ private fun StreamingPulseIndicator() {
     val reduced = Motion.isReducedMotion()
     val streamingLabel = stringResource(R.string.markdown_streaming)
 
-    val alpha: Float = if (reduced) {
-        0.55f
+    // Read in the draw block only, so the pulse redraws without recomposing.
+    val alpha: State<Float>? = if (reduced) {
+        null
     } else {
         val transition = rememberInfiniteTransition(label = "markdownStreaming")
-        val animated by transition.animateFloat(
+        transition.animateFloat(
             initialValue = 0.25f,
             targetValue = 0.85f,
             animationSpec = infiniteRepeatable(
@@ -640,7 +643,6 @@ private fun StreamingPulseIndicator() {
             ),
             label = "streamingAlpha",
         )
-        animated
     }
 
     Canvas(
@@ -649,6 +651,6 @@ private fun StreamingPulseIndicator() {
             .semantics { contentDescription = streamingLabel }
             .testTag(MarkdownViewTags.STREAMING),
     ) {
-        drawCircle(color = colors.inkMuted.copy(alpha = alpha))
+        drawCircle(color = colors.inkMuted.copy(alpha = alpha?.value ?: 0.55f))
     }
 }

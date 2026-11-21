@@ -1,13 +1,12 @@
 package sh.amux.features
 
-import androidx.compose.foundation.BorderStroke
+import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,10 +28,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -120,17 +117,15 @@ sealed interface ChatOverviewAction {
 fun ChatOverviewModalSheet(
     state: ChatOverviewState,
     onAction: (ChatOverviewAction) -> Unit,
+    clock: ElapsedClock = ElapsedClock.Still,
 ) {
-    val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AmuxSheet(
         onDismissRequest = { onAction(ChatOverviewAction.Dismiss) },
-        sheetState = sheetState,
-        containerColor = colors.ground,
-        contentColor = colors.ink,
     ) {
+        // The open sheet counts its jobs' and limits' times with the chat's
+        // clock; read here, a tick redraws the sheet and not the chat.
         ChatOverviewSheetContent(
-            state = state,
+            state = state.copy(nowMs = clock.nowMs()),
             onAction = onAction,
         )
     }
@@ -334,7 +329,7 @@ private fun OverviewPlaceHeader(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = closeLabel,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(IconSize.Row),
                 )
             }
         }
@@ -428,7 +423,7 @@ private fun OverviewTasksSection(tasks: TasksView) {
                             imageVector = icon,
                             contentDescription = null,
                             tint = iconTint,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(IconSize.Inline),
                         )
                         Text(
                             text = entry.subject,
@@ -521,7 +516,7 @@ private fun OverviewJobsSection(
                                         imageVector = Icons.Outlined.StopCircle,
                                         contentDescription = stopDescription,
                                         tint = colors.inkMuted,
-                                        modifier = Modifier.size(20.dp),
+                                        modifier = Modifier.size(IconSize.Row),
                                     )
                                 }
                             }
@@ -979,7 +974,7 @@ fun ChatOverviewStrip(
     overview: Overview?,
     context: ContextView?,
     changeTotals: ChangeTotals? = null,
-    nowMs: Long = 0L,
+    clock: ElapsedClock = ElapsedClock.Still,
     onOpenOverview: () -> Unit,
     onOpenReview: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -1052,7 +1047,7 @@ fun ChatOverviewStrip(
                 if (drewRow) AmuxHairline()
                 drewRow = true
                 val label = if (usage.blocked) {
-                    ChatWords.limitReached(usage, now = Instant.ofEpochMilli(nowMs))
+                    ChatWords.limitReached(usage, now = Instant.ofEpochMilli(clock.nowMs()))
                 } else {
                     stringResource(R.string.overview_strip_usage_near)
                 }
@@ -1100,7 +1095,7 @@ fun ChatOverviewStrip(
                         imageVector = Icons.Outlined.ChevronRight,
                         contentDescription = null,
                         tint = colors.inkFaint,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                 }
             }
@@ -1147,7 +1142,7 @@ private fun StripRow(
             imageVector = Icons.Outlined.ChevronRight,
             contentDescription = null,
             tint = colors.inkFaint,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(IconSize.Inline),
         )
     }
 }

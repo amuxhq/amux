@@ -1,6 +1,6 @@
 package sh.amux.features
 
-import android.graphics.BitmapFactory
+import sh.amux.design.IconSize
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -64,7 +64,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -266,7 +265,7 @@ fun ReportOfferBanner(
                 imageVector = Icons.Outlined.BugReport,
                 contentDescription = null,
                 tint = colors.inkMuted,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(IconSize.Row),
             )
             Column(
                 modifier = Modifier
@@ -313,7 +312,7 @@ fun ReportOfferBanner(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = dismissLabel,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
             }
         }
@@ -508,15 +507,10 @@ fun ReportOverlayContent(
 
 @Composable
 internal fun rememberReportImageBitmap(imageBytes: ByteArray?): ImageBitmap? =
-    remember(imageBytes) {
-        imageBytes
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { bytes ->
-                runCatching {
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                }.getOrNull()
-            }
-    }
+    rememberDecodedImage(
+        bytes = imageBytes?.takeIf { it.isNotEmpty() },
+        maxPx = rememberScreenMaxPx(),
+    ).bitmapOrNull
 
 internal fun computeFittedImageRect(
     containerWidth: Float,
@@ -923,7 +917,7 @@ private fun ReportMarksList(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = removeLabel,
                             tint = colors.inkMuted,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(IconSize.Control),
                         )
                     }
                 }
@@ -1043,7 +1037,7 @@ private fun ReportComposerDock(
                         imageVector = Icons.Outlined.Description,
                         contentDescription = null,
                         tint = colors.inkFaint,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                     val disclosureRes = when {
                         state.screenshotPending && state.dumpReady ->
@@ -1185,7 +1179,7 @@ private fun ReportSentContent(
                         imageVector = Icons.Outlined.ContentCopy,
                         contentDescription = null,
                         tint = colors.ink,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                     Spacer(modifier = Modifier.size(Space.xs))
                     Text(

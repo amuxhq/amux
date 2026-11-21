@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
+import sh.amux.design.AmuxShapes
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -24,8 +26,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.text.TextRange
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.automirrored.outlined.ViewList
@@ -53,6 +60,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -188,6 +197,8 @@ object ChatComposerTags {
 data class ChatComposerState(
     val composer: ComposerView,
     val draft: String = "",
+    /** How many of the composer's edits the model had taken when it wrote [draft]. */
+    val draftEdits: Int = 0,
     val host: String = "",
     val reach: Reach = Reach.Online(RouteKind.Direct),
     val connecting: Boolean = false,
@@ -215,7 +226,6 @@ data class ChatComposerState(
     val dictationEnabled: Boolean = false,
     val dictationActive: Boolean = false,
     val dictationSentence: String? = null,
-    val nowMs: Long = 0L,
 ) {
     val hasDraft: Boolean
         get() = draft.trim().isNotEmpty() || attachments.isNotEmpty()
@@ -259,6 +269,7 @@ fun ChatComposer(
     state: ChatComposerState,
     callbacks: ChatComposerCallbacks = ChatComposerCallbacks(),
     modifier: Modifier = Modifier,
+    clock: ElapsedClock = ElapsedClock.Still,
 ) {
     val nativeMode = state.composer.mode as? Composer.Native
 
@@ -318,13 +329,14 @@ fun ChatComposer(
                 liveSubagents = state.liveSubagents,
                 kind = state.kind,
                 phase = state.phase,
-                nowMs = state.nowMs,
+                clock = clock,
                 onStop = callbacks.onStopNative,
             )
         } else {
             StandardComposerCard(
                 state = state,
                 callbacks = callbacks,
+                clock = clock,
             )
         }
     }
@@ -390,7 +402,7 @@ private fun SignInNoticeCard(
                 tint = colors.accent,
                 modifier = Modifier
                     .padding(top = Space.xxs)
-                    .size(18.dp),
+                    .size(IconSize.Control),
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -449,7 +461,7 @@ private fun PromptsQueueStrip(
                         imageVector = Icons.Outlined.Schedule,
                         contentDescription = null,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -491,7 +503,7 @@ private fun PromptsQueueStrip(
                                 imageVector = Icons.Outlined.ArrowUpward,
                                 contentDescription = sendNowLabel,
                                 tint = colors.inkMuted,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                     }
@@ -507,7 +519,7 @@ private fun PromptsQueueStrip(
                                 imageVector = Icons.Outlined.Edit,
                                 contentDescription = withdrawLabel,
                                 tint = colors.inkMuted,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                     }
@@ -534,7 +546,7 @@ private fun PromptsQueueStrip(
                         imageVector = if (lost) Icons.Outlined.ErrorOutline else Icons.AutoMirrored.Outlined.Send,
                         contentDescription = null,
                         tint = if (lost) colors.accent else colors.inkMuted,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                     Column(
                         modifier = Modifier.weight(1f),
@@ -566,7 +578,7 @@ private fun PromptsQueueStrip(
                                 imageVector = Icons.Outlined.Refresh,
                                 contentDescription = resendLabel,
                                 tint = colors.inkMuted,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                         val discardLabel = stringResource(R.string.chat_composer_discard)
@@ -580,7 +592,7 @@ private fun PromptsQueueStrip(
                                 imageVector = Icons.Outlined.Close,
                                 contentDescription = discardLabel,
                                 tint = colors.inkMuted,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                     }
@@ -603,7 +615,7 @@ private fun PromptsQueueStrip(
                         imageVector = Icons.Outlined.ErrorOutline,
                         contentDescription = null,
                         tint = colors.removed,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(IconSize.Inline),
                     )
                     Text(
                         text = reasonText,
@@ -622,7 +634,7 @@ private fun PromptsQueueStrip(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = dismissLabel,
                             tint = colors.inkMuted,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(IconSize.Control),
                         )
                     }
                 }
@@ -727,6 +739,7 @@ private fun SlashMatchesPopup(
 private fun StandardComposerCard(
     state: ChatComposerState,
     callbacks: ChatComposerCallbacks,
+    clock: ElapsedClock,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
@@ -768,7 +781,7 @@ private fun StandardComposerCard(
                     activity = activity,
                     subject = state.activitySubject,
                     subagents = state.liveSubagents,
-                    nowMs = state.nowMs,
+                    clock = clock,
                 )
             } else if (exitedCause != null) {
                 ExitedHeadLine(
@@ -814,24 +827,29 @@ private fun StandardComposerCard(
                 }
             }
 
+            val field = rememberDraftField(
+                draft = state.draft,
+                draftEdits = state.draftEdits,
+                onDraftChange = callbacks.onDraftChange,
+            )
             BasicTextField(
-                value = state.draft,
-                onValueChange = callbacks.onDraftChange,
+                state = field.state,
+                inputTransformation = field.typing,
                 textStyle = typography.body.copy(color = colors.ink),
                 cursorBrush = SolidColor(colors.ink),
-                maxLines = 8,
+                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = Space.xxs)
                     .thumbTarget()
                     .semantics { contentDescription = placeholder }
                     .testTag(ChatComposerTags.INPUT_FIELD),
-                decorationBox = { innerTextField ->
+                decorator = { innerTextField ->
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        if (state.draft.isEmpty()) {
+                        if (field.state.text.isEmpty()) {
                             Text(
                                 text = placeholder,
                                 style = typography.body,
@@ -881,7 +899,7 @@ private fun StandardComposerCard(
                                 imageVector = Icons.Outlined.Add,
                                 contentDescription = attachLabel,
                                 tint = colors.ink,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(IconSize.Control),
                             )
                         }
                     }
@@ -947,7 +965,7 @@ private fun StandardComposerCard(
                             imageVector = if (state.dictationActive) Icons.Outlined.StopCircle else Icons.Outlined.Mic,
                             contentDescription = dictateLabel,
                             tint = if (state.dictationActive) colors.accent else colors.inkMuted,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(IconSize.Row),
                         )
                     }
                 }
@@ -1017,11 +1035,11 @@ private fun ControlsSummaryStrip(
             Surface(
                 modifier = Modifier
                     .thumbTarget()
-                    .clip(RoundedCornerShape(50))
+                    .clip(AmuxShapes.Pill)
                     .clickable(enabled = settingsAvailable, role = Role.Button, onClick = onOpenSettings)
                     .semantics { contentDescription = settingsDescription }
                     .testTag(ChatComposerTags.MODEL_CHIP),
-                shape = RoundedCornerShape(50),
+                shape = AmuxShapes.Pill,
                 color = colors.sunken,
                 border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
             ) {
@@ -1047,7 +1065,7 @@ private fun ControlsSummaryStrip(
                         imageVector = Icons.Outlined.ExpandMore,
                         contentDescription = null,
                         tint = colors.inkFaint,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(IconSize.Small),
                     )
                 }
             }
@@ -1058,11 +1076,11 @@ private fun ControlsSummaryStrip(
             Surface(
                 modifier = Modifier
                     .thumbTarget()
-                    .clip(RoundedCornerShape(50))
+                    .clip(AmuxShapes.Pill)
                     .clickable(role = Role.Button, onClick = onOpenOverview)
                     .semantics { contentDescription = overviewText }
                     .testTag(ChatComposerTags.OVERVIEW_CHIP),
-                shape = RoundedCornerShape(50),
+                shape = AmuxShapes.Pill,
                 color = colors.sunken,
                 border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
             ) {
@@ -1075,7 +1093,7 @@ private fun ControlsSummaryStrip(
                         imageVector = Icons.AutoMirrored.Outlined.ViewList,
                         contentDescription = null,
                         tint = colors.inkMuted,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(IconSize.Small),
                     )
                     Text(
                         text = overviewText,
@@ -1105,7 +1123,7 @@ private fun ComposerPrimaryControl(
             Button(
                 onClick = callbacks.onResume,
                 enabled = enabled,
-                shape = RoundedCornerShape(50),
+                shape = AmuxShapes.Pill,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.ink,
                     contentColor = colors.ground,
@@ -1143,7 +1161,7 @@ private fun ComposerPrimaryControl(
                         imageVector = Icons.Outlined.Stop,
                         contentDescription = interruptLabel,
                         tint = colors.ground,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(IconSize.Control),
                     )
                 }
             }
@@ -1172,7 +1190,7 @@ private fun ComposerPrimaryControl(
                         imageVector = Icons.Outlined.ArrowUpward,
                         contentDescription = sendLabel,
                         tint = if (enabled) colors.ground else colors.inkFaint,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(IconSize.Control),
                     )
                 }
             }
@@ -1188,7 +1206,7 @@ private fun NativeSubagentComposerCard(
     liveSubagents: GroupState,
     kind: Kind?,
     phase: PhaseView,
-    nowMs: Long,
+    clock: ElapsedClock,
     onStop: (key: String) -> Unit,
 ) {
     val colors = AmuxTheme.colors
@@ -1215,7 +1233,7 @@ private fun NativeSubagentComposerCard(
                     activity = activity,
                     subject = activitySubject,
                     subagents = liveSubagents,
-                    nowMs = nowMs,
+                    clock = clock,
                 )
             }
             Row(
@@ -1227,7 +1245,7 @@ private fun NativeSubagentComposerCard(
                     imageVector = Icons.Outlined.AccountTree,
                     contentDescription = null,
                     tint = colors.inkMuted,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(IconSize.Control),
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -1304,7 +1322,7 @@ private fun ExitedHeadLine(
             imageVector = Icons.Outlined.StopCircle,
             contentDescription = null,
             tint = colors.inkMuted,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(IconSize.Inline),
         )
         Text(
             text = title,
@@ -1330,10 +1348,13 @@ private fun ActivityLineView(
     activity: Activity,
     subject: String?,
     subagents: GroupState,
-    nowMs: Long,
+    clock: ElapsedClock,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
+    // The one place the activity line reads the clock, so a tick redraws
+    // this line and not the composer around it.
+    val nowMs = clock.nowMs()
     val elapsedMs = remember(activity, nowMs) {
         if (nowMs > 0L && activity.sinceMs > 0L) {
             maxOf(0L, nowMs - activity.sinceMs)
@@ -1407,11 +1428,13 @@ private fun ActivityLineView(
 private fun ActivityHairlineRule() {
     val colors = AmuxTheme.colors
     val reduced = Motion.isReducedMotion()
-    val progress: Float = if (reduced) {
-        0.5f
+    // The animated value is read only inside the draw block, so each frame
+    // redraws the rule without recomposing the composer around it.
+    val progress: State<Float>? = if (reduced) {
+        null
     } else {
         val transition = rememberInfiniteTransition(label = "activityHairline")
-        val animated by transition.animateFloat(
+        transition.animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
@@ -1420,17 +1443,6 @@ private fun ActivityHairlineRule() {
             ),
             label = "activityLeg",
         )
-        animated
-    }
-
-    val (startFrac, endFrac) = remember(progress, reduced) {
-        if (reduced) {
-            0.29f to 0.71f
-        } else {
-            val leading = smootherstep(((progress - 0.04f) / 0.74f).coerceIn(0f, 1f))
-            val trailing = smootherstep(((progress - 0.22f) / 0.74f).coerceIn(0f, 1f))
-            (0.87f * trailing) to (0.13f + 0.87f * leading)
-        }
     }
 
     val ink = colors.inkMuted.copy(alpha = 0.7f)
@@ -1439,6 +1451,18 @@ private fun ActivityHairlineRule() {
             .fillMaxWidth()
             .height(1.5.dp),
     ) {
+        val startFrac: Float
+        val endFrac: Float
+        if (progress == null) {
+            startFrac = 0.29f
+            endFrac = 0.71f
+        } else {
+            val now = progress.value
+            val leading = smootherstep(((now - 0.04f) / 0.74f).coerceIn(0f, 1f))
+            val trailing = smootherstep(((now - 0.22f) / 0.74f).coerceIn(0f, 1f))
+            startFrac = 0.87f * trailing
+            endFrac = 0.13f + 0.87f * leading
+        }
         val x = size.width * startFrac
         val width = (size.width * (endFrac - startFrac)).coerceAtLeast(size.height)
         drawRoundRect(
@@ -1452,3 +1476,67 @@ private fun ActivityHairlineRule() {
 
 private fun smootherstep(t: Float): Float =
     t * t * t * (t * (t * 6f - 15f) + 10f)
+
+/** The composer's text field: its text, and the hook that hands each typed edit to the model. */
+@Stable
+internal class DraftField(
+    val state: TextFieldState,
+    val typing: InputTransformation,
+)
+
+/**
+ * The composer's text as the field holds it.
+ *
+ * The field owns its text, so typing is drawn at once and never waits on the
+ * chat model. Every edit the person makes (typing, pasting, dictating into
+ * the keyboard) passes through [DraftField.typing], which hands it to the
+ * model through [onDraftChange] and counts it. The model answers with its
+ * draft and the number of edits it has taken, [draftEdits].
+ *
+ * An answer that has not yet caught up with the field's edits is ignored:
+ * the field is ahead of it, and the answer to its latest edit is on its way.
+ * An answer that has caught up is the truth, and when its text differs from
+ * the field's, the model rewrote the draft (a long paste became a chip, a
+ * command was inserted, a sent message cleared it, a kept draft or dictation
+ * came back). The field takes the rewrite, keeping the caret as far from the
+ * end as it was, so a paste chip lands where the caret stood. A rewrite is
+ * written to the field directly, not as typing, so it is never handed back.
+ *
+ * The answer is followed by its count as well as its text: a paste that
+ * becomes a chip leaves the model's text as it was before the paste, and
+ * only the count says the model has answered it.
+ */
+@Composable
+internal fun rememberDraftField(
+    draft: String,
+    draftEdits: Int,
+    onDraftChange: (String) -> Unit,
+): DraftField {
+    val currentOnDraftChange by rememberUpdatedState(onDraftChange)
+    // The edits this field has handed to the model, starting from the
+    // model's own count so a field drawn again over a kept draft agrees.
+    val handed = remember { intArrayOf(draftEdits) }
+    val field = remember {
+        DraftField(
+            state = TextFieldState(initialText = draft, initialSelection = TextRange(draft.length)),
+            typing = InputTransformation {
+                if (asCharSequence().contentEquals(originalText)) return@InputTransformation
+                handed[0] += 1
+                currentOnDraftChange(asCharSequence().toString())
+            },
+        )
+    }
+
+    LaunchedEffect(draft, draftEdits) {
+        if (draftEdits < handed[0]) return@LaunchedEffect
+        handed[0] = draftEdits
+        val text = field.state.text
+        if (text.contentEquals(draft)) return@LaunchedEffect
+        val fromEnd = text.length - field.state.selection.end
+        field.state.edit {
+            replace(0, length, draft)
+            selection = TextRange((draft.length - fromEnd).coerceIn(0, draft.length))
+        }
+    }
+    return field
+}

@@ -1,6 +1,8 @@
 package sh.amux.features
 
+import sh.amux.design.IconSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,28 +24,31 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import sh.amux.design.AmuxHairline
@@ -52,6 +57,9 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
 import sh.amux.design.thumbTarget
 import sh.amux.words.RowState
+import sh.amux.words.hostName
+import sh.amux.words.id
+import sh.amux.words.name
 
 /** Semantic test tags for account sign-in, removal, and deletion sheets and dialogs. */
 object AccountSheetTags {
@@ -139,12 +147,8 @@ fun SignInOfferSheet(
     onAction: (SignInOfferAction) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AmuxSheet(
         onDismissRequest = { if (!state.working) onAction(SignInOfferAction.Decline) },
-        sheetState = sheetState,
-        containerColor = colors.ground,
-        contentColor = colors.ink,
     ) {
         SignInOfferSheetContent(
             state = state,
@@ -604,12 +608,8 @@ fun DeleteAccountSheet(
     onAction: (DeleteAccountAction) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AmuxSheet(
         onDismissRequest = { if (!state.working) onAction(DeleteAccountAction.Cancel) },
-        sheetState = sheetState,
-        containerColor = colors.ground,
-        contentColor = colors.ink,
         contentWindowInsets = { WindowInsets.navigationBars.union(WindowInsets.ime) },
     ) {
         DeleteAccountSheetContent(
@@ -899,30 +899,138 @@ fun DeleteAccountSheetContent(
     }
 }
 
+/**
+ * Account switcher M3 [ModalBottomSheet] opened from the top-right account avatar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ConsequenceRow(
-    kept: Boolean,
-    text: String,
+fun AccountSwitcherSheet(
+    accounts: List<AccountUi>,
+    onSelectAccount: (String) -> Unit,
+    onSignInAgain: (String) -> Unit,
+    onAddAccount: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    AmuxSheet(
+        onDismissRequest = onDismiss,
     ) {
-        Icon(
-            imageVector = if (kept) Icons.Outlined.Check else Icons.Outlined.Close,
-            contentDescription = null,
-            tint = if (kept) colors.inkMuted else colors.removed,
-            modifier = Modifier
-                .padding(top = 2.dp)
-                .size(16.dp),
+        AccountSwitcherContent(
+            accounts = accounts,
+            onSelectAccount = onSelectAccount,
+            onSignInAgain = onSignInAgain,
+            onAddAccount = onAddAccount,
+            onOpenSettings = onOpenSettings,
         )
+    }
+}
+
+/**
+ * Inner content of [AccountSwitcherSheet], exposed separately for direct testing
+ * and storybook rendering.
+ */
+@Composable
+fun AccountSwitcherContent(
+    accounts: List<AccountUi>,
+    onSelectAccount: (String) -> Unit,
+    onSignInAgain: (String) -> Unit,
+    onAddAccount: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AmuxTheme.colors
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = Space.xl)
+            .testTag(TestTags.ACCOUNTS_SHEET),
+    ) {
         Text(
-            text = text,
-            style = AmuxTheme.typography.detail,
-            color = if (kept) colors.inkMuted else colors.ink,
-            modifier = Modifier.weight(1f),
+            text = stringResource(R.string.accounts_sheet_title),
+            style = AmuxTheme.typography.identifier,
+            color = colors.ink,
+            modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.s),
+        )
+        AmuxHairline()
+
+        for (account in accounts) {
+            val detail = if (account.signedIn) {
+                account.line
+            } else {
+                stringResource(R.string.accounts_signed_out_tap)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .thumbTarget(minHeight = 56.dp)
+                    .clickable(role = Role.Button) {
+                        if (account.signedIn) {
+                            onSelectAccount(account.id)
+                        } else {
+                            onSignInAgain(account.id)
+                        }
+                    }
+                    .padding(horizontal = Space.margin, vertical = Space.s)
+                    .testTag(TestTags.accountRow(account.email)),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.m),
+            ) {
+                AmuxAccountAvatar(
+                    account = account,
+                    onClick = null,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
+                ) {
+                    Text(
+                        text = account.name,
+                        style = AmuxTheme.typography.bodyEmphasis,
+                        color = if (account.signedIn) colors.ink else colors.inkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = detail,
+                        style = AmuxTheme.typography.detail,
+                        color = colors.inkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (account.selected) {
+                    val selectedDesc = stringResource(R.string.accounts_selected)
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = selectedDesc,
+                        tint = colors.ink,
+                        modifier = Modifier.size(IconSize.Row),
+                    )
+                }
+            }
+        }
+
+        if (accounts.isNotEmpty()) {
+            AmuxHairline(modifier = Modifier.padding(vertical = Space.xs))
+        }
+
+        AmuxActionRow(
+            icon = Icons.Outlined.PersonAdd,
+            label = stringResource(
+                if (accounts.isEmpty()) R.string.accounts_sign_in else R.string.accounts_add,
+            ),
+            onClick = onAddAccount,
+            modifier = Modifier.testTag(if (accounts.isEmpty()) TestTags.ACCOUNTS_SIGN_IN else TestTags.ACCOUNTS_ADD),
+        )
+
+        AmuxHairline(modifier = Modifier.padding(vertical = Space.xs))
+
+        AmuxActionRow(
+            icon = Icons.Outlined.Settings,
+            label = stringResource(R.string.accounts_settings),
+            onClick = onOpenSettings,
+            modifier = Modifier.testTag(TestTags.ACCOUNTS_SETTINGS),
         )
     }
 }

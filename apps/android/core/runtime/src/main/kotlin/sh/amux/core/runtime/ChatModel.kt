@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import sh.amux.values.ActOutcome
+import sh.amux.values.ActivityKind
 import sh.amux.values.AskCard
 import sh.amux.values.BlobRef
 import sh.amux.values.CardState
@@ -59,6 +60,7 @@ import sh.amux.values.SettingsView
 import sh.amux.values.SubagentGroup
 import sh.amux.values.TurnPart
 import sh.amux.values.TurnPlace
+import sh.amux.words.ChatWords
 import sh.amux.words.ChatNotices
 import sh.amux.words.EMPTY_GROUP_STATE
 
@@ -223,6 +225,16 @@ data class ChatUiState(
     val openedAttachment: File? = null,
     val dictation: DictationState = DictationState(),
     val slashMatches: List<CommandMatch> = emptyList(),
+    /** What the running activity is working on, from its row, or null. */
+    val activitySubject: String? = null,
+    /** The bytes of the draft's images that this phone holds, by blob hash. */
+    val draftImages: Map<List<Int>, ByteArray> = emptyMap(),
+    /**
+     * How many edits [ChatModel.type] has taken from the composer. Each one
+     * publishes, even when it leaves [draft] as it was (a paste that became a
+     * chip), so the composer can tell which of its edits [draft] answers.
+     */
+    val typedEdits: Int = 0,
 ) {
     val arrivalsHeld: Boolean
         get() = frame?.arrivalsHeld == true
@@ -365,6 +377,10 @@ class ChatModel(
 
     private var loadingHintJob: Job? = null
     private val blobCache = BlobLruCache(maxBytes = blobCacheMaxBytes)
+
+    private var typedEdits = 0
+    private var activityKey: String? = null
+    private var activitySubject: String? = null
 
     internal val blobCacheBytes: Long
         get() = blobCache.totalBytes
@@ -1155,6 +1171,7 @@ class ChatModel(
      * [DraftAttachment.Text] chips via [ChatBridge.pastesAsAttachment].
      */
     fun type(text: String) {
+        typedEdits += 1
         var updated = text.replace("\r\n", "\n").replace("\r", "\n")
         val previousPaste = pasted
         if (
@@ -1182,7 +1199,9 @@ class ChatModel(
         }
         var inserted = updated.substring(head, updated.length - tail)
         if (!bridge.pastesAsAttachment(inserted)) {
-            setDraft(updated)
+            // An edit that leaves the draft as it was still answers the
+            // composer, which counts on hearing back about every edit.
+            if (draftText == updated) publish() else setDraft(updated)
             return
         }
         var before = updated.substring(0, head)
@@ -1712,7 +1731,37 @@ class ChatModel(
         source.discard(refused.inputId)
     }
 
+    /**
+     * Names what the running activity works on, from the row it runs in. A
+     * row in the window is read from its cell; one outside it is asked of the
+     * session once per activity, not on every publish.
+     */
+    private fun refreshActivitySubject() {
+        val key = (frame?.composer?.activity?.kind as? ActivityKind.Running)?.key
+        if (key == null) {
+            activityKey = null
+            activitySubject = null
+            return
+        }
+        val row = cells[key]?.row
+        if (row == null && key == activityKey) return
+        activityKey = key
+        activitySubject = (row ?: rowOrNull(key))?.let(ChatWords::subject)
+    }
+
+    /** The draft's images this phone already holds, read from the cache and the session. */
+    private fun draftImages(): Map<List<Int>, ByteArray> {
+        if (positionedAttachments.none { it.attachment is DraftAttachment.Image }) return emptyMap()
+        return buildMap {
+            for (entry in positionedAttachments) {
+                val image = entry.attachment as? DraftAttachment.Image ?: continue
+                blob(image.value.hash)?.let { put(image.value.hash, it) }
+            }
+        }
+    }
+
     private fun publish() {
+        refreshActivitySubject()
         _state.value = ChatUiState(
             keys = mutableKeys.toList(),
             sequence = sequence,
@@ -1744,6 +1793,9 @@ class ChatModel(
             openedAttachment = openedAttachment,
             dictation = dictation,
             slashMatches = slashMatches,
+            activitySubject = activitySubject,
+            draftImages = draftImages(),
+            typedEdits = typedEdits,
         )
     }
 

@@ -1,5 +1,15 @@
 package sh.amux.core.runtime
 
+import sh.amux.values.FamilyHeader
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -165,6 +175,28 @@ class StoreBundle(
         }
         _profileVersion.value += 1
     }
+
+    /**
+     * The family header of [agent]'s chat: its parent and its subagents, as
+     * the fleet currently stands.
+     *
+     * Read again off the main thread whenever the fleet's rows move, since a
+     * family changes with any of its members, and given out only when it
+     * changes, so a chat that draws it does not recompose for a fleet change
+     * elsewhere.
+     */
+    /**
+     * [agent]'s family as it stands now, read on the calling thread: the
+     * first frame of a chat draws its family bar from this, then follows
+     * [family].
+     */
+    fun familyNow(agent: AgentKey): FamilyHeader? = profile?.family(agent)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun family(agent: AgentKey, reading: CoroutineDispatcher = Dispatchers.Default): Flow<FamilyHeader?> =
+        combine(profileVersion, fleet.state.map { it.rows }.distinctUntilChanged()) { _, _ -> profile }
+            .mapLatest { current -> current?.let { withContext(reading) { it.family(agent) } } }
+            .distinctUntilChanged()
 
     /** Applies one event stepped out of the runtime for this profile. */
     fun moved(event: FleetEvent) {

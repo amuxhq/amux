@@ -27,22 +27,23 @@ import sh.amux.design.Space
 import sh.amux.features.AgentsHome
 import sh.amux.features.AgentsHomeState
 import sh.amux.features.AskReviewTags
-import sh.amux.features.ChatDeleteDialogContent
+import sh.amux.features.ElapsedClock
 import sh.amux.features.ChatOverviewSheetContent
 import sh.amux.features.ChatOverviewState
 import sh.amux.features.ChatOverviewStopDialogContent
-import sh.amux.features.ChatRenameDialogContent
 import sh.amux.features.ChatScreen
 import sh.amux.features.ChatScreenState
 import sh.amux.features.ChatSettingsSheetContent
 import sh.amux.features.ChatSettingsState
 import sh.amux.features.ChatSubject
 import sh.amux.features.ChatUnavailableScreen
+import sh.amux.features.DeleteAgentCard
 import sh.amux.features.DeleteAccountPhaseUi
 import sh.amux.features.DeleteAccountSheetContent
 import sh.amux.features.DeleteAccountSheetState
 import sh.amux.features.HostPage
 import sh.amux.features.HostPageState
+import sh.amux.features.HomeScope
 import sh.amux.features.HostsTab
 import sh.amux.features.HostsTabState
 import sh.amux.features.NewAgentDirectoriesContent
@@ -59,14 +60,13 @@ import sh.amux.features.PaywallPlanUi
 import sh.amux.features.PaywallScreen
 import sh.amux.features.PaywallScreenState
 import sh.amux.features.QuestionDraft
+import sh.amux.features.RenameAgentCard
 import sh.amux.features.ReportDeliveryUi
 import sh.amux.features.ReportMarkUi
 import sh.amux.features.ReportOverlayContent
 import sh.amux.features.ReportUiState
 import sh.amux.features.ReviewPage
 import sh.amux.features.ReviewPageState
-import sh.amux.features.SettledScreen
-import sh.amux.features.SettledScreenState
 import sh.amux.features.SettingsAccountItem
 import sh.amux.features.SettingsAppearance
 import sh.amux.features.SettingsEntitlementBadge
@@ -139,6 +139,9 @@ data class Story(
 object Stories {
     private const val NOW_MS: Long = CatalogFixtures.NOW_MS
 
+    /** Every chat story is drawn at the catalogue's one moment. */
+    private val STORY_CLOCK = ElapsedClock { NOW_MS }
+
     /**
      * Android's largest text size. Large-text stories draw at it, as iOS's
      * draw at an accessibility size.
@@ -194,12 +197,9 @@ object Stories {
             id = "fleet.settled",
             area = "Fleet",
             title = "Settled agents",
-            description = "Settled archive list with search, restore, and delete actions.",
+            description = "The busy fleet's settled agents on a page of their own, with the way back.",
         ) {
-            SettledScreen(
-                state = SettledScreenState(rows = StoryFleet.settled(), query = "", nowMs = NOW_MS),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.busy().copy(scope = HomeScope.Closed), onAction = {})
         },
         Story(
             id = "fleet.no-agents",
@@ -548,7 +548,7 @@ object Stories {
                 canResume = true,
             )
             DialogStoryFrame(background = { StoryChatScreen(chat) }) {
-                ChatDeleteDialogContent(
+                DeleteAgentCard(
                     agentName = F.closedSubject.name,
                     descendants = 0,
                     warning = null,
@@ -565,7 +565,7 @@ object Stories {
         ) {
             val chat = chat(rows = F.conversation, frame = ScriptedChat.frame())
             DialogStoryFrame(background = { StoryChatScreen(chat) }) {
-                ChatRenameDialogContent(currentName = F.subject.name, onDismiss = {}, onConfirm = {})
+                RenameAgentCard(currentName = F.subject.name, onDismiss = {}, onConfirm = {})
             }
         },
         Story(
@@ -835,9 +835,6 @@ object Stories {
             ReviewPage(
                 state = ReviewPageState(
                     doc = null,
-                    comparison = Comparison.Uncommitted,
-                    comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
-                    baseBranch = "main",
                 ),
                 onAction = {},
             )
@@ -1191,7 +1188,7 @@ object Stories {
 
     @Composable
     private fun StoryChatScreen(chat: StoryChat) {
-        ChatScreen(state = chat.state, rowSource = chat.source)
+        ChatScreen(state = chat.state, rowSource = chat.source, clock = STORY_CLOCK)
     }
 
     /**
@@ -1245,7 +1242,6 @@ object Stories {
             activitySubject = running?.let { key -> folded.firstOrNull { it.id == key } }?.let(ChatWords::subject),
             keptQuestionDraft = questionDraft,
             dictationEnabled = true,
-            nowMs = NOW_MS,
         )
         val source = StaticChatRowSource(
             rows = folded,
@@ -1318,7 +1314,7 @@ object Stories {
         comparison = state.comparison,
         baseBranch = state.frame?.git?.baseBranch,
         changeTotals = state.changes,
-        nowMs = state.nowMs,
+        nowMs = NOW_MS,
     )
 
     /** An ask docked over a chat that has only just been asked something. */
@@ -1535,9 +1531,6 @@ object Stories {
                 ReviewComment(path = errors, line = 11, oldLine = 0, text = "Say what refused it, not only that it was refused."),
                 ReviewComment(path = pairingDoc, line = 3, oldLine = 0, text = "Link the error table here."),
             ),
-            comparison = Comparison.Uncommitted,
-            comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
-            baseBranch = "main",
             selectedFileIndex = 0,
         )
     }

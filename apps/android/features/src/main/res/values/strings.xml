@@ -47,11 +47,6 @@
     <string name="home_action_cancel_settle">Cancel Settle</string>
     <string name="home_action_delete_agent">Delete Agent</string>
     <string name="home_action_delete">Delete</string>
-    <string name="home_rename_title">Rename Agent</string>
-    <string name="home_rename_placeholder">Name</string>
-    <string name="home_settle_title">Settle %1$s?</string>
-    <string name="home_settle_confirm_detail">%1$s Settling stops it now.</string>
-    <string name="home_delete_title">Delete %1$s?</string>
 
     <!-- Callouts & offers -->
     <string name="callout_away_title">%1$s is away</string>

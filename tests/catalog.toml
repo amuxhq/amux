@@ -1045,7 +1045,7 @@ swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests"
 [[suite]]
 name = "phone-journeys"
 contract = "A person can complete every declared phone story through the real app and production amux path against a served topology."
-paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/topologies/phone-acp.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
 recipe = "just ios journey"
 boundary = "Journeys"
 oracle = "Declared acts, independent door and host observations, exact element geometry, exits, and teardown evidence."
@@ -1057,7 +1057,7 @@ lane = "journey"
 evidence = "target/journeys/phone"
 update = "UPDATE_JOURNEY_GOLDENS=1 just ios journey -- conversation-decision-claude-sdk"
 journey_manifest = "journeys/manifest.json"
-journeys = ["account-sign-in", "one-tap-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
+journeys = ["account-sign-in", "one-tap-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume", "acp-conversation", "acp-interrupt-and-queue", "acp-unresumable", "acp-signed-out"]
 
 [[suite]]
 name = "terminal-journeys"

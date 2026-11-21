@@ -7,8 +7,8 @@
 //! modification time (git rereads an entry written in the same second as
 //! the index, judged by the index file's time), so the person's index is
 //! never touched. The paths that differ from it are listed and measured
-//! before anything is added: a file over the size cap is left out and
-//! named, too many paths refuse the snapshot, and the rest are added to the
+//! before anything is added: a file over the size cap, or one that cannot
+//! be read, is left out and named, too many paths refuse the snapshot, and the rest are added to the
 //! copy with `.gitignore` respected. Its tree is committed with HEAD as the
 //! parent and a fixed identity, so no configuration of the person's is
 //! needed and nothing personal is stored.
@@ -30,9 +30,9 @@ use crate::{GitError, LARGE_FILE_BYTES, Scratch, Status};
 pub struct Snapshot {
     /// The snapshot's commit, by its full object id.
     pub commit: String,
-    /// The paths left out of it for being over
-    /// [`LARGE_FILE_BYTES`](crate::LARGE_FILE_BYTES), from the repository's
-    /// top folder.
+    /// The paths left out of it, from the repository's top folder: for
+    /// being over [`LARGE_FILE_BYTES`](crate::LARGE_FILE_BYTES), or for
+    /// being a file that could not be read. A reader lists both as large.
     pub omitted: Vec<String>,
     /// A merge or rebase was under way, so conflicted files hold their
     /// markers as content.
@@ -250,12 +250,13 @@ async fn attempt(
             // An untracked file gone since it was listed is simply not there.
             Err(_) => continue,
         };
-        if meta.is_file() && lfs.contains(path) {
-            pointed.push((path, meta));
+        let is_lfs = lfs.contains(path);
+        if left_out(root, path, &meta, limits, is_lfs, unmerged.contains(path)) {
+            omitted.push(lossy(path));
             continue;
         }
-        if left_out(&meta, limits, false, unmerged.contains(path)) {
-            omitted.push(lossy(path));
+        if meta.is_file() && is_lfs {
+            pointed.push((path, meta));
             continue;
         }
         added.push(path);
@@ -348,11 +349,27 @@ async fn attempt(
     }))
 }
 
-/// Whether a file a snapshot measured is left out of it: a regular file
-/// over the size cap, unless LFS tracks it (it is stored as its pointer) or
-/// it is in conflict (its markers are what a merge under way needs seen).
-fn left_out(meta: &std::fs::Metadata, limits: &Limits, lfs: bool, unmerged: bool) -> bool {
-    meta.is_file() && meta.len() > limits.large_file_bytes && !lfs && !unmerged
+/// Whether a file a snapshot measured at `path` is left out of it: a
+/// regular file over the size cap, unless LFS tracks it (it is stored as
+/// its pointer) or it is in conflict (its markers are what a merge under
+/// way needs seen); or one that cannot be read, which git's add would fail
+/// on, and with it every snapshot until the person removed or ignored it
+/// (a file a container left owned by root, say). Either way it is named,
+/// so the reader is told it is not there. A file gone since it was listed
+/// is not left out here: the add finds it gone and the snapshot is tried
+/// again.
+fn left_out(
+    root: &Path,
+    path: &[u8],
+    meta: &std::fs::Metadata,
+    limits: &Limits,
+    lfs: bool,
+    unmerged: bool,
+) -> bool {
+    meta.is_file()
+        && ((meta.len() > limits.large_file_bytes && !lfs && !unmerged)
+            || std::fs::File::open(on_disk(root, path))
+                .is_err_and(|error| error.kind() != std::io::ErrorKind::NotFound))
 }
 
 /// The paths in conflict in the index `git` runs on.
@@ -532,7 +549,14 @@ async fn still_left_out(
     let unmerged = unmerged(git).await?;
     Ok(paths.iter().all(|path| {
         std::fs::symlink_metadata(on_disk(root, path)).is_ok_and(|meta| {
-            left_out(&meta, limits, lfs.contains(*path), unmerged.contains(*path))
+            left_out(
+                root,
+                path,
+                &meta,
+                limits,
+                lfs.contains(*path),
+                unmerged.contains(*path),
+            )
         })
     }))
 }

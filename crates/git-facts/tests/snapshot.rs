@@ -808,6 +808,69 @@ async fn a_left_out_file_moves_the_tree_once_it_would_be_taken() {
     assert!(!moved().await.unwrap());
 }
 
+/// A file the snapshot cannot read, as one a container left owned by root
+/// in a bind-mounted folder, would fail git's add and with it every
+/// snapshot. It is left out and named as a file over the cap is, a tracked
+/// one keeping what the index holds; the tree has not moved while it stays
+/// unreadable, and has once a snapshot could take it.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unreadable_file_is_left_out_and_named() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let repo = repository();
+    let root = repo.path();
+    write(root, "tracked.txt", "committed\n");
+    git(root, &["add", "tracked.txt"]);
+    git(root, &["commit", "-q", "-m", "tracked"]);
+    write(root, "tracked.txt", "edited\n");
+    write(root, "locked.txt", "locked\n");
+    write(root, "base.txt", "edited\n");
+    let lock = |path: &str, mode: u32| {
+        std::fs::set_permissions(root.join(path), std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    lock("tracked.txt", 0o000);
+    lock("locked.txt", 0o000);
+    if std::fs::read(root.join("locked.txt")).is_ok() {
+        // Run as root, every file reads.
+        return;
+    }
+
+    let store = store();
+    let snapshot = take(root, &store.store).await;
+    let mut omitted = snapshot.omitted.clone();
+    omitted.sort();
+    assert_eq!(omitted, ["locked.txt", "tracked.txt"]);
+    assert_eq!(
+        paths(&tree(root, &store.store, &snapshot.commit).await),
+        ["base.txt", "tracked.txt"]
+    );
+    assert_eq!(
+        read(root, &store.store, &snapshot.commit, "tracked.txt")
+            .await
+            .unwrap(),
+        b"committed\n"
+    );
+    assert_eq!(
+        read(root, &store.store, &snapshot.commit, "base.txt")
+            .await
+            .unwrap(),
+        b"edited\n"
+    );
+    let moved = || {
+        snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted,
+        )
+    };
+    assert!(!moved().await.unwrap());
+    lock("locked.txt", 0o644);
+    assert!(moved().await.unwrap(), "readable again");
+    lock("tracked.txt", 0o644);
+}
+
 /// More changed and untracked paths than the cap refuse the snapshot,
 /// before anything is stored.
 #[tokio::test]

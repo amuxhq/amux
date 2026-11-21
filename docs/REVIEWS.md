@@ -120,7 +120,11 @@ snapshot` (`snapshot::take`):
 2. The paths that differ from that index, and the untracked ones, are listed
    and measured before anything is stored. A file over 1 MiB is left out and
    named (`omitted`, listed as large), unless it is in conflict or Git LFS
-   tracks it; more than 10,000 paths refuse the snapshot.
+   tracks it; so is a file that cannot be read (one a container left owned
+   by root, say), which would otherwise fail git's add and every snapshot
+   after it, and is listed as large too, since that is how every client
+   already says a file is not shown; a tracked one keeps what the index
+   holds. More than 10,000 paths refuse the snapshot.
 3. The rest are added to the copy with the snapshot store as git's only
    object directory, its tree written, and the tree committed with the
    repository's objects readable as an alternate, since only the commit
@@ -166,8 +170,8 @@ nothing. A sparse index is untested.
 differs from a snapshot without storing anything: untracked files are marked
 in a copy of the index without being stored, and the one object marking
 writes (the empty blob) goes to a folder of its own that is then removed. A
-path the snapshot left out for its size counts as moved only once a snapshot
-would take it (it shrank, went or no longer differs). The daemon core asks
+path the snapshot left out counts as moved only once a snapshot would take
+it (it shrank, became readable, went or no longer differs). The daemon core asks
 this at every turn end of an agent whose checkout holds a review, as a job
 off its thread, and writes the answer onto the review's row entry.
 
@@ -266,7 +270,8 @@ whose hunks all go stays as the rename alone. The summary's
 hunks, and is empty before the first round and when the last round's
 snapshot can no longer be read.
 
-**A file the snapshot left out** for its size is listed as large, changed
+**A file the snapshot left out**, for its size or because it could not be
+read, is listed as large, changed
 when the base's tree holds a file at its path and made otherwise: the tree
 says so, and the file's bytes, however many, are never read for it
 (`compare::files_at`).
@@ -581,7 +586,7 @@ client keyed by review, path and content; and a review belongs to one agent.
 
 | What | Where | Run |
 | --- | --- | --- |
-| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable, and what only dropped ones held goes, packed or loose; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
+| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large and unreadable files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable, and what only dropped ones held goes, packed or loose; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
 | `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
 | `GetFiles`: colouring from whole files, scopes and outlines on either side, more context, since-last limits, caps, the object-id cache, snippets | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |
 | A person on a paired host reviewing through the carrier, the copy following the entry, deletion removing rows, folder and copy; agents, tools sockets, copies and hosts without the experiment refused | `spec_reviews` in [`crates/testnet/tests/`](../crates/testnet/tests/) | `just suite many-daemon-protocol-spec` |

@@ -91,19 +91,23 @@ browser refuses a message over 1 MB to an extension, so a response message
 larger than 512 KiB goes in parts the extension joins. Every call carries the
 surface header `browser`.
 
-**Addressing a host.** A call may also name an `authority`, the host it is
+**Addressing a host.** Every call names an `authority`, the host it is
 for, as every client addresses a host service: the host's id in its one
 written form (lowercase, hyphenated), which browser-core's `authority` op
-gives. Without one the call is made to the node behind the target's socket.
-With one, the bridge makes the call with that authority on the same socket,
+gives, or `amux.local` for the node behind the target's socket. A call
+without one comes from an extension written for an earlier framing: the
+bridge ends it with "failed precondition", saying the extension needs
+updating, and stops, so nothing of it reaches the node. The bridge makes
+each call with its authority on the target's socket,
 on a channel of its own (a channel writes its own authority over every
 request's, so the bridge keeps one per target and authority), and the router
 behind the socket decides: another host's id is carried to that host over
 the link, anything else is answered by the node. The bridge does not read
 what the authority names; text that no HTTP request could carry as one ends
 the call "invalid argument". The extension names the owning host on every act
-on an agent (creating it, storing a screenshot, sending the review) and none
-on reads of its own node (profiles, the device's identity, the fleet).
+on an agent (creating it, storing a screenshot, sending the review) and
+`amux.local` on reads of its own node (profiles, the device's identity, the
+fleet).
 
 **Counting.** The node reads the surface header into the caller, and a call
 it carries reaches the owner as a person on the browser at this host. So the

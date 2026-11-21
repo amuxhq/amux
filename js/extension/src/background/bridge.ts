@@ -71,7 +71,11 @@ export function toBase64(bytes: Uint8Array): string {
 
 /** A frame as the bridge sends it. */
 type Frame =
-  /** `framing`: the revision of the framing the bridge speaks, which only adds. */
+  /**
+   * `framing`: the revision of the framing the bridge speaks. A revision may
+   * drop what an earlier one allowed, as 2 made every call name its authority,
+   * so a bridge below `FRAMING` cannot serve this extension.
+   */
   | { hello: { version: string; framing: number } }
   | { id: number; message: string; more?: boolean }
   | { id: number; end: End };

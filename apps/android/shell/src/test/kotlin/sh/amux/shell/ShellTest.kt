@@ -6,9 +6,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.AnnotatedString
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -26,25 +28,54 @@ import org.robolectric.annotation.Config
 import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
 import sh.amux.core.runtime.ChatBridge
+import sh.amux.core.runtime.DeletionStore
+import sh.amux.core.runtime.EntitlementSource
 import sh.amux.core.runtime.FleetEvent
+import sh.amux.core.runtime.FrozenFrame
 import sh.amux.core.runtime.HostId
+import sh.amux.core.runtime.NewAgentBridge
+import sh.amux.core.runtime.NewAgentSource
 import sh.amux.core.runtime.OpenChat
+import sh.amux.core.runtime.PaywallStore
+import sh.amux.core.runtime.Plan
+import sh.amux.core.runtime.RemovalStore
+import sh.amux.core.runtime.ReportCapture
+import sh.amux.core.runtime.ReportReceipt
+import sh.amux.core.runtime.ReportSending
+import sh.amux.core.runtime.ReportState
+import sh.amux.core.runtime.ReportStore
 import sh.amux.core.runtime.RuntimeFailure
+import sh.amux.core.runtime.SignInIntent
+import sh.amux.core.runtime.SignInStore
+import sh.amux.core.runtime.SignedInAccount
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
+import sh.amux.design.AppearanceMode
+import sh.amux.features.AccountSheetTags
 import sh.amux.features.AskReviewTags
 import sh.amux.features.ChatComposerTags
 import sh.amux.features.ChatScreenTags
+import sh.amux.features.HostPageTags
+import sh.amux.features.NewAgentTags
+import sh.amux.features.PaywallTags
+import sh.amux.features.ReportTags
+import sh.amux.features.SettingsTags
+import sh.amux.features.SettledTags
 import sh.amux.features.TestTags
+import sh.amux.values.AccountBinding
+import sh.amux.values.AccountView
 import sh.amux.values.ActOutcome
+import sh.amux.values.AgentAct
 import sh.amux.values.AgentKey
+import sh.amux.values.AgentNameProblem
 import sh.amux.values.AskBody
 import sh.amux.values.AskCard
 import sh.amux.values.AskMoved
 import sh.amux.values.Attention
 import sh.amux.values.Base
 import sh.amux.values.BlobRef
+import sh.amux.values.Catalogue
 import sh.amux.values.ChangeTotals
 import sh.amux.values.Changeability
 import sh.amux.values.Changeable
@@ -63,6 +94,8 @@ import sh.amux.values.ControlsSummary
 import sh.amux.values.Diff
 import sh.amux.values.DiffBase
 import sh.amux.values.DiffLine
+import sh.amux.values.Directories
+import sh.amux.values.Directory
 import sh.amux.values.Draft
 import sh.amux.values.DraftAttachment
 import sh.amux.values.Empty
@@ -79,20 +112,29 @@ import sh.amux.values.FrozenReview
 import sh.amux.values.Git
 import sh.amux.values.HostView
 import sh.amux.values.Hunk
+import sh.amux.values.Identity
 import sh.amux.values.InputState
 import sh.amux.values.KeysMoved
 import sh.amux.values.Kind
 import sh.amux.values.LineKind
 import sh.amux.values.ModelChoice
+import sh.amux.values.NewAgent
+import sh.amux.values.NewAgentChoices
+import sh.amux.values.NewAgentPick
 import sh.amux.values.Overview
 import sh.amux.values.PageOutcome
+import sh.amux.values.PairedPeer
 import sh.amux.values.PhaseView
 import sh.amux.values.Platform
+import sh.amux.values.ProfileView
+import sh.amux.values.Provider
 import sh.amux.values.QuestionResponse
 import sh.amux.values.Reach
+import sh.amux.values.RelayLink
 import sh.amux.values.ReviewComment
 import sh.amux.values.ReviewDoc
 import sh.amux.values.ReviewFile
+import sh.amux.values.Roster
 import sh.amux.values.RouteKind
 import sh.amux.values.Row
 import sh.amux.values.RowKind
@@ -102,6 +144,7 @@ import sh.amux.values.Segment
 import sh.amux.values.SendOutcome
 import sh.amux.values.SettingChange
 import sh.amux.values.SettingsView
+import sh.amux.values.SignInOfferView
 import sh.amux.words.EMPTY_GROUP_STATE
 
 @RunWith(RobolectricTestRunner::class)
@@ -769,6 +812,344 @@ class ShellTest {
         assertEquals(2, openAttempts)
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
         composeRule.onNodeWithText("src/lib.rs").assertIsDisplayed()
+    }
+
+    @Test
+    fun newAgentRouteCreatesAgentPopsAndOpensConversation() {
+        val (hostId, desk) = sampleDeskHost("cccccccc-cccc-cccc-cccc-cccccccccccc")
+        val createdKey = AgentKey(host = hostId.bytes, agent = List(16) { 21 })
+        val router = Router()
+        val accounts = AccountRegistry()
+        val createdRequests = mutableListOf<NewAgent>()
+        val fakeChat = FakeShellChat(createdKey)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            chatBridge = FakeShellChatBridge(),
+            opener = { fakeChat },
+        )
+        stores.hosts.show(listOf(desk))
+        stores.fleet.show(
+            FleetView(
+                sections = listOf(
+                    FleetSection(
+                        kind = SectionKind.Live,
+                        families = 1,
+                        foldedByDefault = false,
+                        rows = listOf(sampleFleetRow(AgentKey(hostId.bytes, List(16) { 3 }), "existing")),
+                    ),
+                ),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+        val fakeNewAgentSource = object : NewAgentSource {
+            override suspend fun hostCatalogue(host: HostId, provider: Provider): Result<Catalogue> =
+                Result.success(Catalogue(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null))
+
+            override suspend fun directories(host: HostId, query: String, limit: Int): Result<Directories> =
+                Result.success(
+                    Directories(
+                        repositories = listOf(Directory("/Users/ada/source/amux", "amux", null)),
+                        recent = emptyList(),
+                        history = emptyList(),
+                    ),
+                )
+
+            override suspend fun pinFolder(host: HostId, path: String, pinned: Boolean): Result<Unit> =
+                Result.success(Unit)
+
+            override suspend fun createAgent(agent: NewAgent): Result<AgentKey> {
+                createdRequests += agent
+                return Result.success(createdKey)
+            }
+        }
+        val fakeNewAgentBridge = object : NewAgentBridge {
+            override fun newAgentSettings(catalogue: Catalogue, chosen: NewAgentChoices): SettingsView? = null
+            override fun newAgentPick(catalogue: Catalogue, chosen: NewAgentChoices, pick: NewAgentPick): NewAgentChoices? = chosen
+            override fun agentNameProblem(name: String): AgentNameProblem? = null
+        }
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                    newAgentSourceProvider = { fakeNewAgentSource },
+                    newAgentBridge = fakeNewAgentBridge,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(TestTags.HOME_FAB_NEW_AGENT).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(NewAgentTags.SCREEN).assertIsDisplayed()
+
+        composeRule.onNodeWithTag(NewAgentTags.START_BUTTON).performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, createdRequests.size)
+        assertEquals("/Users/ada/source/amux", createdRequests.single().cwd)
+        assertEquals(Route.Conversation(createdKey), router.snapshot.topRoute)
+        assertFalse(Route.NewAgent in router.snapshot.currentStack)
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+    }
+
+    @Test
+    fun hostPageShowsRosterFingerprintPairsAgainAndRevokes() {
+        val (hostId, desk) = sampleDeskHost("dddddddd-dddd-dddd-dddd-dddddddddddd")
+        val router = Router()
+        val accounts = AccountRegistry()
+        val stores = StoreBundle(account = AccountId("signed-out"))
+        stores.hosts.show(listOf(desk))
+        stores.hosts.showRoster(
+            Roster(
+                identity = Identity(List(16) { 1 }, "Pixel 9", "1111222233334444"),
+                peers = listOf(PairedPeer(hostId.bytes, "desk", "abcdef1234567890")),
+            ),
+        )
+        stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = listOf(desk))
+        router.selectTab(Tab.Hosts)
+        router.push(Route.Host(hostId))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(HostPageTags.SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(HostPageTags.FINGERPRINT_ROW).performScrollTo().assertIsDisplayed()
+
+        // Pair Again raises the pairing sheet
+        composeRule.onNodeWithTag(HostPageTags.PAIR_AGAIN).performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertEquals(PairingModal.Code(hostId), router.snapshot.pairing)
+        composeRule.onNodeWithTag(TestTags.PAIRING_CLOSE).performClick()
+        composeRule.waitForIdle()
+
+        // Revoke requires confirmation dialog and pops back to HostsTab
+        composeRule.onNodeWithTag(HostPageTags.REVOKE).performScrollTo().performClick()
+        composeRule.onNodeWithTag(HostPageTags.REVOKE_DIALOG).assertIsDisplayed()
+        composeRule.onNodeWithTag(HostPageTags.REVOKE_CONFIRM).performClick()
+        composeRule.waitForIdle()
+        assertNull(router.snapshot.topRoute)
+        composeRule.onNodeWithTag(TestTags.HOSTS_SCREEN).assertIsDisplayed()
+    }
+
+    @Test
+    fun settledRouteUnsettlesAndOpensSettledAgents() {
+        val (hostId, desk) = sampleDeskHost("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+        val settledKey = AgentKey(hostId.bytes, List(16) { 33 })
+        val settledRow = sampleFleetRow(settledKey, "old-migration").copy(
+            card = sampleFleetRow(settledKey, "old-migration").card.copy(filing = Filing.Closed),
+        )
+        val liveRow = sampleFleetRow(AgentKey(hostId.bytes, List(16) { 34 }), "active-job")
+        val acts = mutableListOf<Pair<AgentAct, AgentKey>>()
+        val router = Router()
+        val accounts = AccountRegistry()
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            acting = { act, key ->
+                acts += act to key
+                Result.success(Unit)
+            },
+        )
+        stores.hosts.show(listOf(desk))
+        stores.fleet.show(
+            FleetView(
+                sections = listOf(
+                    FleetSection(SectionKind.Live, 1, false, listOf(liveRow)),
+                    FleetSection(SectionKind.Closed, 1, true, listOf(settledRow)),
+                ),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(TestTags.HOME_SETTLED_ROW).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(SettledTags.SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(SettledTags.row("old-migration")).assertIsDisplayed()
+
+        composeRule.onNodeWithTag(SettledTags.rowMenu("old-migration")).performClick()
+        composeRule.onNodeWithTag(SettledTags.ACTION_UNSETTLE).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf(AgentAct.Unfile to settledKey), acts)
+    }
+
+    @Test
+    fun settingsPaywallAccountSheetsAndReportOverlayEmitActionsAndOverlayRoutes() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        accounts.show(
+            listOf(
+                ProfileView(
+                    id = "prof-1",
+                    label = "Ada",
+                    subject = "sub-ada",
+                    account = AccountView(
+                        binding = AccountBinding.SignedIn,
+                        email = "ada@example.com",
+                        name = "Ada",
+                        picture = "",
+                        pro = false,
+                        relay = RelayLink.Connected,
+                    ),
+                ),
+            ),
+        )
+        val stores = StoreBundle(account = AccountId("sub-ada"))
+        stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = emptyList())
+        stores.hosts.showRoster(
+            Roster(
+                identity = Identity(List(16) { 1 }, "Pixel 9", "deadbeefcafebabe"),
+                peers = emptyList(),
+            ),
+        )
+
+        val paywall = PaywallStore(
+            plans = listOf(
+                Plan(Plan.MONTHLY_ID, Plan.Period.Monthly, "$12"),
+                Plan(Plan.YEARLY_ID, Plan.Period.Yearly, "$96", "Save 33%"),
+            ),
+        )
+        val deletion = DeletionStore(
+            asking = AccountId("sub-ada"),
+            typed = "ada@example.com",
+            phase = DeletionStore.Phase.Blocked(
+                source = EntitlementSource.Web,
+                manageUrl = "https://billing.example.com/portal",
+            ),
+        )
+        val report = ReportStore()
+        val actions = mutableListOf<ShellAction>()
+
+        router.push(Route.Settings)
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                    appVersion = "0.10.0",
+                    appearanceMode = AppearanceMode.System,
+                    paywall = paywall,
+                    deletion = deletion,
+                    report = report,
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        // Delete account 409 blocked sheet renders and handles Try Again
+        composeRule.onNodeWithTag(AccountSheetTags.DELETE_BLOCKED).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(AccountSheetTags.DELETE_TRY_AGAIN).performScrollTo().performClick()
+        assertTrue(ShellAction.RetryDeleteAccount in actions)
+        composeRule.runOnIdle { deletion.dismiss() }
+        composeRule.waitForIdle()
+
+        // Settings screen emits appearance, privacy, export, and report actions
+        composeRule.onNodeWithTag(SettingsTags.SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(SettingsTags.APPEARANCE_DARK).performScrollTo().performClick()
+        assertTrue(ShellAction.SetAppearance(AppearanceMode.Dark) in actions)
+
+        composeRule.onNodeWithTag(SettingsTags.EXPORT_DIAGNOSTICS).performScrollTo().performClick()
+        assertTrue(ShellAction.ExportDiagnostics in actions)
+
+        // Screenshot offer banner opens ReportOverlay above Settings and sends report
+        composeRule.runOnIdle {
+            report.offer {
+                ReportCapture(
+                    frame = FrozenFrame(byteArrayOf(1, 2, 3), 412.0, 915.0, 2.0),
+                    dump = CompletableDeferred(Result.failure(RuntimeFailure("none"))),
+                    route = "settings",
+                )
+            }
+        }
+        composeRule.onNodeWithTag(ReportTags.OFFER_BANNER).assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportTags.OFFER_OPEN).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ReportTags.OVERLAY).assertIsDisplayed()
+        composeRule.onNodeWithTag(ReportTags.SEND).performClick()
+        assertTrue(ShellAction.SendReport in actions)
+        composeRule.onNodeWithTag(ReportTags.CLOSE).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ReportTags.OVERLAY).assertDoesNotExist()
+
+        // Paywall route renders plans and emits subscribe action
+        composeRule.runOnIdle { router.push(Route.Paywall(Tab.Agents)) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(PaywallTags.SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(PaywallTags.SUBSCRIBE_BUTTON).performClick()
+        assertTrue(ShellAction.PurchasePaywallPlan in actions)
+    }
+
+    @Test
+    fun signInOfferSheetRendersIncomingOfferAndSignInResultDialogRendersMismatch() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val stores = StoreBundle(account = AccountId("signed-out"))
+        stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = emptyList())
+        stores.moved(
+            FleetEvent.SignInOffers(
+                listOf(
+                    SignInOfferView(
+                        hostId = List(16) { 5 },
+                        hostName = "studio",
+                        email = "ada@example.com",
+                        accountName = "Ada",
+                    ),
+                ),
+            ),
+        )
+        val signIn = SignInStore(
+            initialPhase = SignInStore.Phase.Mismatched(
+                wanted = SignedInAccount(AccountId("sub-1"), "ada@example.com"),
+                got = SignedInAccount(AccountId("sub-2"), "other@example.com"),
+            ),
+            initialIntent = SignInIntent.Returning(SignedInAccount(AccountId("sub-1"), "ada@example.com")),
+        )
+        val actions = mutableListOf<ShellAction>()
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                    signIn = signIn,
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_RESULT_DIALOG).assertIsDisplayed()
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_RESULT_KEEP).performClick()
+        assertTrue(ShellAction.KeepMismatchedSignIn in actions)
     }
 
     private class FakeShellChatBridge : ChatBridge {

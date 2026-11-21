@@ -283,26 +283,4 @@ class AgentsHomeTest {
         assertEquals(HomeAction.NewAgent, actions.last())
         composeRule.onNodeWithText("No agents yet").assertIsDisplayed()
     }
-
-    @Test
-    fun hostPlaceholderRevokeRequiresConfirmationNamingComputer() {
-        var revoked = false
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                HostPlaceholder(
-                    hostName = "studio-mac",
-                    reachLabel = "direct",
-                    onPairAgain = {},
-                    onRevoke = { revoked = true },
-                    onBack = {},
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag(TestTags.HOST_REVOKE_BUTTON).performClick()
-        assertTrue("first tap must open confirmation dialog instead of revoking", !revoked)
-        composeRule.onNodeWithText("Revoke studio-mac?").assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.HOST_REVOKE_CONFIRM).performClick()
-        assertTrue("confirming dialog must revoke computer", revoked)
-    }
 }

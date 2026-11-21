@@ -32,6 +32,7 @@ data class SignInOffersState(
     val received: List<SignInOfferView> = emptyList(),
     val answering: List<Int>? = null,
     val failure: SignInOffers.Failure? = null,
+    val revision: Int = 0,
 )
 
 /** Tracks incoming and outgoing one-tap account offers across paired hosts. */
@@ -68,6 +69,7 @@ class SignInOffers {
     fun paired(host: HostId) {
         if (host !in pairedHosts) {
             pairedHosts.add(host)
+            _state.update { it.copy(revision = it.revision + 1) }
         }
     }
 
@@ -128,11 +130,13 @@ class SignInOffers {
         @Suppress("UNUSED_VARIABLE")
         val ignored = outcome
         settledHosts.add(to)
-        _state.update { it.copy(answering = null) }
+        _state.update { it.copy(answering = null, revision = it.revision + 1) }
     }
 
     fun notOffering(host: HostId) {
-        settledHosts.add(host)
+        if (settledHosts.add(host)) {
+            _state.update { it.copy(revision = it.revision + 1) }
+        }
     }
 
     fun dismissFailure() {

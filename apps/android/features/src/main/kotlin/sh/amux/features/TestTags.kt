@@ -88,7 +88,7 @@ object TestTags {
     const val STORE_FAILURE_CAUSE: String = "store-failure.cause"
     const val STORE_FAILURE_RELAUNCH: String = "store-failure.relaunch"
 
-    // Placeholder detail routes
+    // Detail routes
     const val SCREEN_CONVERSATION: String = "screen.conversation"
     const val SCREEN_CHANGES: String = "screen.changes"
     const val SCREEN_HOST: String = "screen.host"

@@ -170,19 +170,4 @@
     <string name="store_failure_title">Store unavailable</string>
     <string name="store_failure_cause">amux stopped because it can’t use this account’s store.</string>
     <string name="store_failure_relaunch">Relaunch</string>
-
-    <!-- Placeholders for upcoming full screens -->
-    <string name="placeholder_host_pair_again">Pair Again</string>
-    <string name="placeholder_host_revoke">Revoke</string>
-    <string name="placeholder_host_revoke_title">Revoke %1$s?</string>
-    <string name="placeholder_host_revoke_detail">This phone will no longer reach %1$s until you pair it again.</string>
-    <string name="placeholder_host_detail">Host details are coming next.</string>
-    <string name="placeholder_new_agent_title">New Agent</string>
-    <string name="placeholder_new_agent_detail">Agent creation is coming next.</string>
-    <string name="placeholder_settings_title">Settings</string>
-    <string name="placeholder_settings_this_phone">This phone</string>
-    <string name="placeholder_settings_account">Account</string>
-    <string name="placeholder_settings_signed_out">Signed out</string>
-    <string name="placeholder_paywall_title">amux Pro</string>
-    <string name="placeholder_paywall_detail">Manage your subscription on amux.sh.</string>
 </resources>

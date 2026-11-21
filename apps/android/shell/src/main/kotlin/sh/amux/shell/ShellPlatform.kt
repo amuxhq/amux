@@ -1,5 +1,6 @@
 package sh.amux.shell
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,11 +12,15 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
+import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.math.floor
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +33,7 @@ import sh.amux.words.OpenableLink
 /**
  * Android platform helpers owned by `:shell` so `:features` stays pure Compose.
  */
-internal object ShellPlatform {
+object ShellPlatform {
     internal const val MAX_TRANSCODE_DIMENSION: Int = 4096
     internal const val MAX_TRANSCODE_PIXELS: Long = 16_777_216L
 
@@ -59,12 +64,23 @@ internal object ShellPlatform {
     }
 
     fun openExternalLink(context: Context, link: OpenableLink) {
-        val uri = runCatching { Uri.parse(link.url) }.getOrNull() ?: return
+        openExternalUrl(context, link.url)
+    }
+
+    /**
+     * Opens an external `http`/`https` URL in Chrome Custom Tabs (falling back
+     * to `ACTION_VIEW`), or a `mailto:` URL via `ACTION_VIEW`.
+     */
+    fun openExternalUrl(context: Context, url: String) {
+        val uri = runCatching { Uri.parse(url.trim()) }.getOrNull() ?: return
         val scheme = uri.scheme?.lowercase()
         when (scheme) {
             "http", "https" -> {
                 val openedCustomTab = runCatching {
                     val customTabs = CustomTabsIntent.Builder().build()
+                    if (context !is Activity) {
+                        customTabs.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
                     customTabs.launchUrl(context, uri)
                 }.isSuccess
                 if (!openedCustomTab) {
@@ -72,6 +88,41 @@ internal object ShellPlatform {
                 }
             }
             "mailto" -> launchViewIntent(context, uri)
+        }
+    }
+
+    /**
+     * Prepares a diagnostic dump file or directory for sharing via [FileProvider]
+     * by copying a single file or zipping a dump bundle directory into
+     * `cacheDir/exports/`.
+     */
+    suspend fun prepareShareableExport(context: Context, source: File): File = withContext(Dispatchers.IO) {
+        val exportsDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val baseName = source.name.ifBlank { "amux-diagnostics" }
+        if (source.isDirectory) {
+            val zipName = if (baseName.endsWith(".zip", ignoreCase = true)) baseName else "$baseName.zip"
+            val target = File(exportsDir, zipName)
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(target))).use { zos ->
+                val rootPath = source.canonicalFile.toPath()
+                source.walkTopDown().filter { it.isFile }.forEach { entryFile ->
+                    val rel = rootPath.relativize(entryFile.canonicalFile.toPath()).toString()
+                        .replace(File.separatorChar, '/')
+                    zos.putNextEntry(ZipEntry(rel))
+                    entryFile.inputStream().use { input -> input.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+            target
+        } else {
+            val canonicalCache = context.cacheDir.canonicalFile
+            val canonicalSource = source.canonicalFile
+            if (canonicalSource.path.startsWith("${canonicalCache.path}${File.separator}")) {
+                canonicalSource
+            } else {
+                val target = File(exportsDir, baseName)
+                source.copyTo(target, overwrite = true)
+                target
+            }
         }
     }
 

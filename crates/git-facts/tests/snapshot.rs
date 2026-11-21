@@ -1123,12 +1123,26 @@ async fn mid_merge_the_snapshot_holds_the_markers() {
     git(root, &["switch", "-q", "main"]);
     write(root, "base.txt", "main\n");
     git(root, &["commit", "-q", "-am", "main"]);
+    // With an identity of its own: git refuses to start a merge without
+    // one, before any conflict, on a machine where none is configured and
+    // none can be guessed from the host's name.
     let merged = Command::new("git")
-        .args(["merge", "side"])
+        .args([
+            "-c",
+            "user.name=amux",
+            "-c",
+            "user.email=amux@example.invalid",
+            "merge",
+            "side",
+        ])
         .current_dir(root)
         .output()
         .unwrap();
-    assert!(!merged.status.success());
+    assert!(
+        root.join(".git/MERGE_HEAD").exists(),
+        "the merge stops at its conflict: {}",
+        String::from_utf8_lossy(&merged.stderr)
+    );
 
     let store = store();
     let snapshot = take(root, &store.store).await;

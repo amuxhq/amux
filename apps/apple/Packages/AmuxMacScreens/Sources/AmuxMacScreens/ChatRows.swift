@@ -663,11 +663,11 @@ struct SentReviewChip: View {
         let sent: SentReviewRef
         /// What the agent read, shown once the host holds none of the round.
         let text: String
-        /// The comments it sent, each at its revision, name it: the host
-        /// finds its round by them.
+        /// The review and the input that sent it name it: the host finds
+        /// its round by the input.
         var id: String {
-            sent.comments.map { comment in
-                comment.id.map { String(format: "%02x", $0) }.joined() + "@\(comment.revision)"
+            [sent.reviewId, sent.inputId].map { bytes in
+                bytes.map { String(format: "%02x", $0) }.joined()
             }.joined(separator: ".")
         }
     }

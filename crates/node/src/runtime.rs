@@ -815,6 +815,7 @@ impl ProfileRuntime {
         runtime.tell_own_host();
         runtime.refresh_folders();
         runtime.refresh_folders_now_and_then();
+        runtime.refresh_agents();
         runtime
     }
 
@@ -956,11 +957,6 @@ impl ProfileRuntime {
         self.launch.lock().unwrap().clone()
     }
 
-    /// Which Claude a new agent here runs, as the host publishes it.
-    pub(crate) fn launch_claude_kind(&self) -> wire::Kind {
-        self.launch.lock().unwrap().claude_kind
-    }
-
     /// The settings the profile's core reads, without the rest of
     /// [`Launch`].
     pub(crate) fn core_settings(&self) -> daemon_core::Settings {
@@ -1093,14 +1089,8 @@ impl ProfileRuntime {
         }
         let picked = spec::picked_at_creation(agent, &request);
         // The host's copy of what the provider offers, which says which
-        // efforts a remembered model takes. An ACP agent starts with no
-        // remembered pick, so needs none.
-        let provider = match kind {
-            Kind::Codex => Some(crate::Provider::Codex),
-            Kind::ClaudePty | Kind::ClaudeSdk => Some(crate::Provider::Claude),
-            Kind::Acp | Kind::Unspecified => None,
-        };
-        let offered = provider.and_then(|provider| self.offers().offered(provider));
+        // efforts a remembered model takes.
+        let offered = self.offers().offered(agent.provider_id());
         let filled = spec::with_remembered(agent, &self.launch().new_agent, offered.as_ref());
         let resolved = spec::resolve(&filled);
         let mut request = request;
@@ -1472,7 +1462,7 @@ impl ProfileRuntime {
         if kind != Kind::ClaudePty {
             return None;
         }
-        self.folder_catalogue(crate::Provider::Claude, Path::new(cwd))
+        self.folder_catalogue(wire::agents::CLAUDE, Path::new(cwd))
             .await
             .ok()
             .map(|offered| wire::Catalogue {

@@ -266,14 +266,14 @@ pub enum AppEvent {
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
-        provider: wire::Provider,
+        provider: String,
         hash: Vec<u8>,
         catalogue: wire::Catalogue,
     },
 }
 
 /// A host, a provider, and the catalogue hash the host named when asked.
-type OfferAsked = (Vec<u8>, wire::Provider, Option<Vec<u8>>);
+type OfferAsked = (Vec<u8>, String, Option<Vec<u8>>);
 
 /// What the loop does after a key.
 #[derive(Debug, PartialEq)]
@@ -855,7 +855,7 @@ impl App {
                 catalogue,
             } => {
                 if let Some(setup) = self.home.open_setup() {
-                    setup.offer(&host, provider, &hash, &catalogue);
+                    setup.offer(&host, &provider, &hash, &catalogue);
                 }
                 self.host_offers.insert(hash, catalogue);
             }
@@ -1874,30 +1874,28 @@ impl App {
         let host = setup.host.clone();
         let chosen = setup.agent.provider();
         let mut asks = Vec::new();
-        for provider in crate::setup::PROVIDERS {
-            let named = fleet
-                .host(&host)
-                .and_then(|entry| {
-                    entry
-                        .providers
-                        .iter()
-                        .find(|offer| offer.provider == provider as i32)
-                })
-                .and_then(|offer| offer.catalogue.clone());
+        let listed = fleet
+            .host(&host)
+            .map(|entry| entry.providers.clone())
+            .unwrap_or_default();
+        for offer in listed {
+            let provider = offer.provider.clone();
+            let named = offer.catalogue.clone();
             if let Some((hash, held)) = named
                 .as_ref()
                 .and_then(|hash| Some((hash, self.host_offers.get(hash)?)))
             {
                 if setup.offered_hash() != Some(hash.as_slice()) {
-                    setup.offer(&host, provider, hash, held);
+                    setup.offer(&host, &provider, hash, held);
                 }
                 continue;
             }
             if self
                 .offers_asked
-                .insert((host.clone(), provider, named.clone()))
+                .insert((host.clone(), provider.clone(), named.clone()))
             {
-                asks.push((provider, provider == chosen));
+                let chosen = provider == chosen;
+                asks.push((provider, offer.name().to_owned(), chosen));
             }
         }
         let host_name = fleet
@@ -1906,14 +1904,14 @@ impl App {
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "this computer".to_owned());
         drop(fleet);
-        for (provider, chosen) in asks {
+        for (provider, name, chosen) in asks {
             let client = self.client.clone();
             let host = host.clone();
             let host_name = host_name.clone();
             self.spawn(async move {
                 let request = wire::GetCatalogueRequest {
                     host_id: host.clone(),
-                    provider: provider as i32,
+                    provider: provider.clone(),
                 };
                 let answer = client
                     .get_catalogue(request)
@@ -1933,10 +1931,7 @@ impl App {
                     }),
                     // Only the agent being set up is worth a word.
                     Err(error) if chosen => Some(AppEvent::Notice(
-                        format!(
-                            "could not ask {host_name} what {} offers: {error}",
-                            crate::setup::provider_name(provider)
-                        ),
+                        format!("could not ask {host_name} what {name} offers: {error}"),
                         Tone::Warn,
                     )),
                     Err(_) => None,

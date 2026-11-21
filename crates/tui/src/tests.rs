@@ -2772,7 +2772,15 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
         "studio",
         wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
     );
-    studio.claude_kind = Kind::ClaudePty as i32;
+    studio.providers = vec![wire::ProviderOnHost {
+        provider: "claude".into(),
+        descriptor: Some(wire::ProviderDescriptor {
+            name: "Claude".into(),
+            kind: Kind::ClaudePty as i32,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }];
     inventory(&mut fleet, wire::inventory_event::Of::Host(studio));
     let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
@@ -2805,7 +2813,7 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     assert!(screen.contains("Claude · … · … │ ~/work/amux"), "{screen}");
     home.open_setup()
         .unwrap()
-        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Claude · Opus (high) · ask │ ~/work/amux"),
@@ -2843,7 +2851,7 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
     });
     home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup().unwrap();
-    setup.offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+    setup.offer(b"a", "claude", &[1; 32], &claude_offer());
     setup.pick(crate::setup::Item::Permission, "bypassPermissions");
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
     terminal
@@ -2876,7 +2884,7 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
     home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup().unwrap();
     setup.pick(crate::setup::Item::Kind, "1");
-    setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
+    setup.offer(b"a", "codex", &[2; 32], &codex_offer());
     setup.pick(crate::setup::Item::Permission, "read-only");
     let edge_of = |home: &mut crate::home::Home| {
         let mut terminal =
@@ -3041,11 +3049,11 @@ fn a_new_agent_offers_what_its_host_offers() {
     // What another host offers is not this one's.
     home.open_setup()
         .unwrap()
-        .offer(b"b", wire::Provider::Codex, &[2; 32], &codex_offer());
+        .offer(b"b", "codex", &[2; 32], &codex_offer());
     assert!(home.open_setup().unwrap().offered.is_none());
     home.open_setup()
         .unwrap()
-        .offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
+        .offer(b"a", "codex", &[2; 32], &codex_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6.1 Sol (medium) · ask │ ~/work/amux"),
@@ -3133,7 +3141,7 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     home_screen(&mut home, &fleet, theme());
     home.open_setup()
         .unwrap()
-        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     let mut seen = Vec::new();
     for _ in 0..4 {
         home.key(&fleet, key(KeyCode::BackTab));
@@ -3157,14 +3165,16 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers = vec![
             wire::ProviderOnHost {
-                provider: wire::Provider::Claude as i32,
+                provider: "claude".to_owned(),
                 catalogue: Some(vec![1; 32]),
                 signed_in: true,
+                ..Default::default()
             },
             wire::ProviderOnHost {
-                provider: wire::Provider::Codex as i32,
+                provider: "codex".to_owned(),
                 catalogue: Some(vec![2; 32]),
                 signed_in: false,
+                ..Default::default()
             },
         ];
     }

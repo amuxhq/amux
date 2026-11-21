@@ -49,8 +49,9 @@ public protocol NewAgentSurface: AnyObject {
     var found: [Directory] { get }
     var typed: String { get set }
 
-    var provider: Provider { get }
-    func choose(provider: Provider)
+    /// The chosen provider's id ("claude", "codex").
+    var provider: String { get }
+    func choose(provider: String)
     /// What the chosen host has said of the chosen provider; nil before it
     /// was asked.
     var offer: OfferState? { get }
@@ -331,7 +332,7 @@ public struct NewAgentPage: View {
 
     // MARK: - What runs there
 
-    private func signedIn(_ provider: Provider) -> Bool? {
+    private func signedIn(_ provider: String) -> Bool? {
         chosenHost?.providers.first { $0.provider == provider }?.signedIn
     }
 
@@ -356,7 +357,7 @@ public struct NewAgentPage: View {
                 ? settings.efforts.first(where: \.current)?.value.capitalized : nil
         }
         return ChipLabel(
-            icon: surface.provider == .codex ? "provider-codex" : "provider-claude",
+            icon: surface.provider == "codex" ? "provider-codex" : "provider-claude",
             text: model ?? Self.title(surface.provider), detail: model == nil ? nil : effort, tint: .primary)
             .help(Self.title(surface.provider))
     }
@@ -398,20 +399,14 @@ public struct NewAgentPage: View {
         }
     }
 
-    static func title(_ provider: Provider) -> String {
-        switch provider {
-        case .codex: "Codex"
-        case .claude, .unspecified: "Claude"
-        }
+    static func title(_ provider: String) -> String {
+        provider == "codex" ? "Codex" : "Claude"
     }
 
     /// How to sign in where the agent would run, which is where the
     /// provider keeps its credential.
-    static func signInSteps(_ provider: Provider) -> String {
-        switch provider {
-        case .codex: "Run codex login there."
-        case .claude, .unspecified: "Run claude and sign in with /login there."
-        }
+    static func signInSteps(_ provider: String) -> String {
+        provider == "codex" ? "Run codex login there." : "Run claude and sign in with /login there."
     }
 
     // MARK: - Said under it
@@ -493,11 +488,11 @@ public struct AgentPicker: View {
         let host = surface.hosts.first { $0.hostId == surface.machine }
         let hostName = host.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "this computer"
         ModelPicker(
-            providers: [Provider.claude, .codex].map { provider in
+            providers: ["claude", "codex"].map { provider in
                 let signedIn = host?.providers.first { $0.provider == provider }?.signedIn
                 return ModelPicker.ProviderItem(
                     provider: provider, name: NewAgentPage.title(provider),
-                    glyph: provider == .codex ? "provider-codex" : "provider-claude",
+                    glyph: provider == "codex" ? "provider-codex" : "provider-claude",
                     note: signedIn == false ? "Not signed in on \(hostName)" : nil)
             },
             provider: surface.provider,

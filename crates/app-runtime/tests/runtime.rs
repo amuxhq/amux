@@ -805,10 +805,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
     let net = Net::start(topology).await.unwrap();
     let (runtime, mut host) = open(&net).await;
     let desk = net.host("desk").unwrap().host_id.as_bytes().to_vec();
-    let catalogue = runtime
-        .host_catalogue(&desk, wire::Provider::Claude)
-        .await
-        .unwrap();
+    let catalogue = runtime.host_catalogue(&desk, "claude").await.unwrap();
     assert!(!catalogue.models.is_empty(), "{catalogue:?}");
     let plan = catalogue
         .permissions
@@ -822,7 +819,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
                     && host
                         .providers
                         .iter()
-                        .any(|offer| offer.provider == wire::Provider::Claude && offer.signed_in)
+                        .any(|offer| offer.provider == "claude" && offer.signed_in)
             });
             if signed_in {
                 return;

@@ -341,8 +341,8 @@ Everything the app does is also a command. Name an agent by its name, by
 
 | Command | What it does |
 |---|---|
-| `amux ls` | List your agents, subagents beneath the agent that started them |
-| `amux new claude` or `amux new codex` | Start an agent in this folder; `--worktree` starts it in a new worktree of the folder's repository |
+| `amux ls` | List your agents, subagents beneath the agent that started them, each with the agent it runs (`claude`, `codex`, `opencode`, …) |
+| `amux new claude`, `amux new codex`, or `amux new <agent>` for [another agent](other-agents.md) | Start an agent in this folder; `--worktree` starts it in a new worktree of the folder's repository |
 | `amux send <agent> <message>` | Send an agent a message |
 | `amux attach <agent>` | Open an agent's chat in this terminal |
 | `amux settle <agent>` | You're done with an agent: stops it if it's running, and settles its subagents. It can be resumed later. |

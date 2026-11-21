@@ -148,6 +148,20 @@ fn the_store_holds_what_the_release_left(install: &Install) {
     };
     let (keeper, child, asker, afar) = (named(AGENT), named(CHILD), named(ASKER), named(AFAR));
     assert_eq!(child.parent.as_ref(), Some(&keeper.agent));
+    // A release's rows name no program: each reads as the one its kind
+    // implies, which is what the inventory says of it.
+    for row in [keeper, child, asker, afar] {
+        assert_eq!(row.provider, "", "{} named its program", row.name);
+        let kind = wire::Kind::try_from(row.kind).unwrap();
+        assert_eq!(row.provider_id(), wire::agents::implied_by(kind));
+        assert!(
+            matches!(row.provider_id(), "claude" | "codex"),
+            "{} reads as {:?}",
+            row.name,
+            row.provider_id()
+        );
+        assert_eq!(node::to_wire(row).provider, row.provider_id());
+    }
 
     // The paired host: its pinned key, where it answered, and its agent.
     let hosts = store.trusted_hosts().unwrap();
@@ -211,6 +225,12 @@ fn an_agents_directory_reads(dir: &Path, agent: uuid::Uuid) {
     let spec = std::fs::read(dir.join("spec.1")).expect("the release's spec");
     let spec = wire::AgentSpec::decode(spec.as_slice()).unwrap();
     assert_eq!(spec.agent_id, agent.as_bytes());
+    // A release's spec names no program; its kind says which.
+    assert!(
+        matches!(spec.provider_id(), "claude" | "codex"),
+        "the spec reads as {:?}",
+        spec.provider_id()
+    );
     let journal = journal::Reader::new(dir.join(agent_dir::JOURNAL), 0)
         .read_to_end()
         .unwrap();

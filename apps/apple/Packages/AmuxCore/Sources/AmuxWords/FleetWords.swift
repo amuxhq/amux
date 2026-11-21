@@ -65,7 +65,7 @@ public enum FleetWords {
         switch kind {
         case .claudeSdk, .claudePty: "Claude"
         case .codex: "Codex"
-        case .unspecified: String(localized: "the provider")
+        case .acp, .unspecified: String(localized: "the provider")
         }
     }
 }

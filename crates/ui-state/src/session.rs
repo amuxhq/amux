@@ -305,6 +305,24 @@ impl SessionState {
         self.host.as_ref()
     }
 
+    /// What the agent can do: what its newest snapshot says, else what its
+    /// host says its provider can do (a snapshot an earlier build wrote
+    /// says nothing), else what every agent of its kind can do, else
+    /// nothing beyond what every agent can.
+    pub fn capabilities(&self) -> wire::AgentCapabilities {
+        self.snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.capabilities)
+            .or_else(|| {
+                self.host
+                    .as_ref()?
+                    .provider(self.agent.provider_id())?
+                    .capabilities
+            })
+            .or_else(|| wire::AgentCapabilities::of_kind(self.kind()))
+            .unwrap_or_default()
+    }
+
     /// The newest snapshot, decoded, with what the agent offers when its
     /// catalogue is held.
     pub fn agent_state(&self) -> &AgentState {
@@ -415,7 +433,8 @@ impl SessionState {
 
     /// Stopping a provider subagent from its own chat: its own job, which
     /// its snapshot lists under the provider's id for it while it can be
-    /// stopped. Terminal Claude stops no single subagent, so lists none.
+    /// stopped. An agent that stops no single job (terminal Claude) stops
+    /// no single subagent either, so lists none.
     pub fn native_stop(&self) -> JobStop {
         let Some(native) = &self.agent.native else {
             return JobStop::Unavailable;
@@ -424,7 +443,7 @@ impl SessionState {
             job.kind() == wire::BackgroundKind::Subagent && job.key == native.provider_child_id
         });
         match own {
-            _ if self.exited() || self.kind() == Kind::ClaudePty => JobStop::Unavailable,
+            _ if self.exited() || !self.capabilities().stops_job => JobStop::Unavailable,
             None => JobStop::Unavailable,
             Some(job) if job.key.is_empty() => JobStop::Unavailable,
             Some(job) if job.stopping => JobStop::Stopping,

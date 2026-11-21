@@ -92,10 +92,10 @@ impl Host {
 const CLAUDE_ASKED: &str = "amux-catalogue";
 const CODEX_ASKED: &str = "\"model/list\"";
 
-fn by_host(host: uuid::Uuid, provider: wire::Provider) -> tonic::Request<GetCatalogueRequest> {
+fn by_host(host: uuid::Uuid, provider: &str) -> tonic::Request<GetCatalogueRequest> {
     tonic::Request::new(GetCatalogueRequest {
         host_id: host.as_bytes().to_vec(),
-        provider: provider as i32,
+        provider: provider.to_owned(),
     })
 }
 
@@ -114,7 +114,7 @@ impl std::ops::Deref for Asked {
     }
 }
 
-async fn ask(api: &node::ClientApi, host: uuid::Uuid, provider: wire::Provider) -> Asked {
+async fn ask(api: &node::ClientApi, host: uuid::Uuid, provider: &str) -> Asked {
     let blob = api
         .get_catalogue(by_host(host, provider))
         .await
@@ -128,12 +128,65 @@ fn values<T>(listed: &[T], value: impl Fn(&T) -> &str) -> Vec<&str> {
     listed.iter().map(value).collect()
 }
 
-fn on_host(provider: wire::Provider, asked: &Asked, signed_in: bool) -> ProviderOnHost {
+/// Claude's or Codex's entry on a host whose Claude runs headless, as
+/// [`listed`] reads it.
+fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
+    let (name, kind, hint, capabilities) = match provider {
+        "claude" => (
+            "Claude",
+            wire::Kind::ClaudeSdk,
+            "Run claude and sign in with /login.",
+            wire::AgentCapabilities::claude_sdk(),
+        ),
+        _ => (
+            "Codex",
+            wire::Kind::Codex,
+            "Run codex login.",
+            wire::AgentCapabilities::codex(),
+        ),
+    };
     ProviderOnHost {
-        provider: provider as i32,
+        provider: provider.to_owned(),
         catalogue: Some(asked.blob.hash.clone()),
         signed_in,
+        descriptor: Some(wire::ProviderDescriptor {
+            name: name.to_owned(),
+            kind: kind as i32,
+            sign_in_hint: hint.to_owned(),
+            version: String::new(),
+        }),
+        capabilities: Some(capabilities),
     }
+}
+
+/// Claude's or Codex's entry before the host has asked it: named, but with
+/// no catalogue and nothing said of its sign-in.
+fn unasked(provider: &str) -> ProviderOnHost {
+    let mut entry = on_host(
+        provider,
+        &Asked {
+            blob: GetCatalogueResponse::default(),
+            catalogue: Catalogue::default(),
+        },
+        false,
+    );
+    entry.catalogue = None;
+    entry
+}
+
+/// A host's providers as it listed them, each asked one's version checked
+/// as given and then left out, since the fakes' versions are their own.
+fn listed(providers: Vec<ProviderOnHost>) -> Vec<ProviderOnHost> {
+    providers
+        .into_iter()
+        .map(|mut provider| {
+            let asked = provider.catalogue.is_some();
+            let descriptor = provider.descriptor.as_mut().expect("a descriptor");
+            assert_eq!(!descriptor.version.is_empty(), asked, "{descriptor:?}");
+            descriptor.version.clear();
+            provider
+        })
+        .collect()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -147,12 +200,13 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     let runtime = runtime(&daemon, &host.install);
     let api = node::ClientApi::new(&runtime, None);
     let here = runtime.host();
-    assert!(
-        runtime.host_entry().providers.is_empty(),
-        "nothing asked yet"
+    assert_eq!(
+        listed(runtime.host_entry().providers),
+        [unasked("claude"), unasked("codex")],
+        "named, and nothing asked yet"
     );
 
-    let claude = ask(&api, here, wire::Provider::Claude).await;
+    let claude = ask(&api, here, "claude").await;
     assert_eq!(values(&claude.models, |m| &m.value), ["opus", "haiku"]);
     assert_eq!(claude.models[0].efforts, ["low", "high"]);
     assert_eq!(values(&claude.commands, |c| &c.name), ["review"]);
@@ -169,7 +223,7 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
         "the hash names exactly the bytes served"
     );
 
-    let codex = ask(&api, here, wire::Provider::Codex).await;
+    let codex = ask(&api, here, "codex").await;
     assert_eq!(values(&codex.models, |m| &m.value), ["opus", "haiku"]);
     // The commands amux runs for Codex, then its skills; the scripted
     // `review` skill is named like the command, which `/review` runs.
@@ -188,15 +242,15 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     );
 
     // A second ask answers from the copy: neither provider runs again.
-    assert_eq!(ask(&api, here, wire::Provider::Claude).await, claude);
-    assert_eq!(ask(&api, here, wire::Provider::Codex).await, codex);
+    assert_eq!(ask(&api, here, "claude").await, claude);
+    assert_eq!(ask(&api, here, "codex").await, codex);
     assert_eq!(host.asked(CLAUDE_ASKED), 1);
     assert_eq!(host.asked(CODEX_ASKED), 1);
 
     // The host's entry in the fleet list names each copy, signed in.
     let expected = vec![
-        on_host(wire::Provider::Claude, &claude, true),
-        on_host(wire::Provider::Codex, &codex, true),
+        on_host("claude", &claude, true),
+        on_host("codex", &codex, true),
     ];
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
     let mut seen = Vec::new();
@@ -205,16 +259,18 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     })
     .await;
     match &seen[0].of {
-        Some(inventory_event::Of::Host(entry)) => assert_eq!(entry.providers, expected),
+        Some(inventory_event::Of::Host(entry)) => {
+            assert_eq!(listed(entry.providers.clone()), expected)
+        }
         other => panic!("the inventory opens with this host, not {other:?}"),
     }
 
-    // A provider this build does not know, and none at all.
-    for provider in [99, wire::Provider::Unspecified as i32] {
+    // A provider this host does not know, and none at all.
+    for provider in ["nobody", ""] {
         let unknown = api
             .get_catalogue(tonic::Request::new(GetCatalogueRequest {
                 host_id: here.as_bytes().to_vec(),
-                provider,
+                provider: provider.to_owned(),
             }))
             .await
             .unwrap_err();
@@ -226,9 +282,9 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     daemon.shutdown().await.unwrap();
     let daemon = host.install.start("boot-2", host.launch()).await;
     let runtime = support::runtime(&daemon, &host.install);
-    assert_eq!(runtime.host_entry().providers, expected);
+    assert_eq!(listed(runtime.host_entry().providers), expected);
     let api = node::ClientApi::new(&runtime, None);
-    assert_eq!(ask(&api, here, wire::Provider::Codex).await, codex);
+    assert_eq!(ask(&api, here, "codex").await, codex);
     assert_eq!(host.asked(CODEX_ASKED), 1, "the kept copy answers");
     drop((api, runtime));
     daemon.shutdown().await.unwrap();
@@ -247,13 +303,13 @@ async fn a_signed_out_provider_says_so_and_is_asked_again_once_due() {
     let api = node::ClientApi::new(&runtime, None);
     let here = runtime.host();
 
-    let claude = ask(&api, here, wire::Provider::Claude).await;
-    let codex = ask(&api, here, wire::Provider::Codex).await;
+    let claude = ask(&api, here, "claude").await;
+    let codex = ask(&api, here, "codex").await;
     assert_eq!(
-        runtime.host_entry().providers,
+        listed(runtime.host_entry().providers),
         [
-            on_host(wire::Provider::Claude, &claude, false),
-            on_host(wire::Provider::Codex, &codex, false)
+            on_host("claude", &claude, false),
+            on_host("codex", &codex, false)
         ],
         "both read signed out"
     );
@@ -261,16 +317,10 @@ async fn a_signed_out_provider_says_so_and_is_asked_again_once_due() {
 
     // Signing in shows at the next ask.
     host.play(&Script::default());
-    let codex = ask(&api, here, wire::Provider::Codex).await;
+    let codex = ask(&api, here, "codex").await;
     assert_eq!(host.asked(CODEX_ASKED), 2);
-    let entry = runtime.host_entry();
-    assert!(
-        entry
-            .providers
-            .contains(&on_host(wire::Provider::Codex, &codex, true)),
-        "{:?}",
-        entry.providers
-    );
+    let entry = listed(runtime.host_entry().providers);
+    assert!(entry.contains(&on_host("codex", &codex, true)), "{entry:?}");
 
     drop((api, runtime));
     daemon.shutdown().await.unwrap();
@@ -291,8 +341,8 @@ async fn a_new_provider_version_is_asked_again() {
     let api = node::ClientApi::new(&runtime, None);
     let here = runtime.host();
 
-    let first = ask(&api, here, wire::Provider::Claude).await;
-    assert_eq!(ask(&api, here, wire::Provider::Claude).await, first);
+    let first = ask(&api, here, "claude").await;
+    assert_eq!(ask(&api, here, "claude").await, first);
     assert_eq!(
         host.asked(CLAUDE_ASKED),
         1,
@@ -300,7 +350,7 @@ async fn a_new_provider_version_is_asked_again() {
     );
     assert_eq!(
         runtime
-            .host_catalogue(node::Provider::Claude)
+            .host_catalogue("claude")
             .await
             .unwrap()
             .provider_version,
@@ -312,15 +362,11 @@ async fn a_new_provider_version_is_asked_again() {
         models: vec![model("opus"), model("fable")],
         ..Script::default()
     });
-    let second = ask(&api, here, wire::Provider::Claude).await;
+    let second = ask(&api, here, "claude").await;
     assert_eq!(host.asked(CLAUDE_ASKED), 2);
     assert_eq!(values(&second.models, |m| &m.value), ["opus", "fable"]);
     assert_ne!(second.blob.hash, first.blob.hash);
-    assert!(runtime.host_entry().providers.contains(&on_host(
-        wire::Provider::Claude,
-        &second,
-        true
-    )));
+    assert!(listed(runtime.host_entry().providers).contains(&on_host("claude", &second, true)));
 
     drop((api, runtime));
     daemon.shutdown().await.unwrap();
@@ -351,18 +397,18 @@ async fn a_paired_host_answers_for_its_peers_providers() {
 
     let on_laptop = node::ClientApi::new(&laptop_runtime, None);
     let desk_host = desk_runtime.host();
-    let codex = ask(&on_laptop, desk_host, wire::Provider::Codex).await;
+    let codex = ask(&on_laptop, desk_host, "codex").await;
     assert_eq!(values(&codex.models, |m| &m.value), ["gpt-desk"]);
     let on_desk = node::ClientApi::new(&desk_runtime, None);
-    assert_eq!(ask(&on_desk, desk_host, wire::Provider::Codex).await, codex);
+    assert_eq!(ask(&on_desk, desk_host, "codex").await, codex);
     assert_eq!(desk.asked(CODEX_ASKED), 1, "the desk asked once, for both");
 
     // The laptop's fleet list carries the desk's word for its providers.
-    let expected = vec![on_host(wire::Provider::Codex, &codex, false)];
+    let expected = vec![unasked("claude"), on_host("codex", &codex, false)];
     until("the laptop to list the desk's providers", || {
         let listed = laptop_runtime
             .host_entry_of(desk_host)
-            .map(|entry| entry.providers);
+            .map(|entry| listed(entry.providers));
         let expected = expected.clone();
         async move {
             if listed == Some(expected) {
@@ -436,10 +482,7 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
     let offered = Catalogue::decode(blob.bytes.as_slice()).unwrap();
     // A folder with no project of its own offers what the host's Claude
     // offers anywhere; the agent's was asked in its folder.
-    let hosts = runtime
-        .host_catalogue(node::Provider::Claude)
-        .await
-        .unwrap();
+    let hosts = runtime.host_catalogue("claude").await.unwrap();
     assert_eq!(offered.models, hosts.catalogue.models);
     assert_eq!(offered.commands, hosts.catalogue.commands);
     assert_eq!(
@@ -579,7 +622,7 @@ async fn a_host_under_a_managed_mcp_config_still_asks_claude() {
     let daemon = host.install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &host.install);
     let api = node::ClientApi::new(&runtime, None);
-    let claude = ask(&api, runtime.host(), wire::Provider::Claude).await;
+    let claude = ask(&api, runtime.host(), "claude").await;
     assert_eq!(values(&claude.models, |m| &m.value), ["opus"]);
 }
 
@@ -619,7 +662,7 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
             .unwrap()
             .provider_args
     };
-    let before = ask(&api, here, wire::Provider::Claude).await;
+    let before = ask(&api, here, "claude").await;
 
     let unpicked = runtime
         .spawn(create("first", None, false), None)
@@ -634,7 +677,7 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         .spawn(create("second", Some("haiku"), true), None)
         .await
         .unwrap();
-    let kept = ask(&api, here, wire::Provider::Claude).await;
+    let kept = ask(&api, here, "claude").await;
     assert_eq!(
         kept.new_agent.as_ref().and_then(|new| new.model.as_deref()),
         Some("haiku")
@@ -749,6 +792,28 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
         host.asked("\"initialize\""),
         1,
         "the copy answers the second ask"
+    );
+
+    // The host's entry lists it after Claude and Codex, by the name its
+    // config gives, with what an agent of it can do.
+    let entry = runtime.host_entry();
+    let ids: Vec<&str> = entry
+        .providers
+        .iter()
+        .map(|p| p.provider.as_str())
+        .collect();
+    assert_eq!(ids, ["claude", "codex", "mine"]);
+    let mine = entry.provider("mine").unwrap();
+    assert_eq!(mine.catalogue.as_ref(), Some(&copy.blob.hash));
+    assert!(mine.signed_in);
+    let descriptor = mine.descriptor.clone().unwrap();
+    assert_eq!(descriptor.name, "Mine");
+    assert_eq!(descriptor.kind(), wire::Kind::Acp);
+    assert_eq!(descriptor.version, "3.1.4");
+    assert_eq!(
+        mine.capabilities,
+        Some(wire::AgentCapabilities::acp(true, true, false)),
+        "it loads a conversation, takes images and is not known to steer"
     );
 
     // A conversation with it on this host published its catalogue and was

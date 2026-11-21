@@ -36,7 +36,6 @@ use wire::{
 
 use crate::blobs::BlobError;
 use crate::forward::{ForwardError, Owner};
-use crate::offers::CatalogueError;
 use crate::runtime::{AgentId, ProfileRuntime};
 use crate::telemetry::{self, InputShape};
 
@@ -183,12 +182,8 @@ pub(crate) fn upgrade(runtime: &Weak<ProfileRuntime>) -> Result<Arc<ProfileRunti
 /// What a provider offers on this host with no agent running.
 pub(crate) async fn own_catalogue(
     runtime: &ProfileRuntime,
-    provider: i32,
+    provider: &str,
 ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
-    let provider = crate::Provider::try_from(provider)
-        .ok()
-        .filter(|provider| crate::offers::ASKED.contains(provider))
-        .ok_or_else(|| status(CatalogueError::NoProvider(provider).to_wire()))?;
     runtime
         .host_catalogue(provider)
         .await
@@ -623,7 +618,7 @@ impl AgentService for ClientApi {
         if host != runtime.host() {
             return forwarded(&runtime, host, request).await;
         }
-        own_catalogue(&runtime, request.provider).await
+        own_catalogue(&runtime, &request.provider).await
     }
 
     async fn pin_folder(

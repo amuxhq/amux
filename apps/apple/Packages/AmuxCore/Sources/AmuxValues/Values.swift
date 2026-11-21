@@ -4402,6 +4402,9 @@ public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
     case claudePty = "ClaudePty"
     case claudeSdk = "ClaudeSdk"
     case codex = "Codex"
+    /// An agent program that speaks the Agent Client Protocol; which one is
+    /// the agent's provider id.
+    case acp = "Acp"
 }
 
 /// Where a prompt on its way is drawn: where it was sent to (see
@@ -5645,26 +5648,23 @@ public struct ProfileView: Codable, Hashable, Sendable {
     }
 }
 
-/// Which provider's program a host runs: the vocabulary amux uses to ask a
-/// host what it offers with no agent running. Distinct from Kind, which is
-/// the interpreter.
-public enum Provider: String, Codable, Hashable, Sendable, CaseIterable {
-    case unspecified = "Unspecified"
-    case claude = "Claude"
-    case codex = "Codex"
-}
-
 public struct ProviderSignIn: Codable, Hashable, Sendable {
-    public var provider: Provider
+    /// The provider's id, as the host names it ("claude", "codex", an ACP
+    /// agent's).
+    public var provider: String
+    /// What people call it, as the host names it ("Claude", "OpenCode").
+    public var name: String
     public var signedIn: Bool
 
-    public init(provider: Provider, signedIn: Bool) {
+    public init(provider: String, name: String, signedIn: Bool) {
         self.provider = provider
+        self.name = name
         self.signedIn = signedIn
     }
 
     private enum CodingKeys: String, CodingKey {
         case provider
+        case name
         case signedIn = "signed_in"
     }
 }

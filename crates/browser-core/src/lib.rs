@@ -341,7 +341,10 @@ fn answer(request: Request) -> Result<Value, String> {
         } => {
             let local_host = unhex(&local_host)?;
             let kind = with_fleet(fleet, |state| {
-                state.host(&local_host).map(|host| host.claude_kind())
+                state
+                    .host(&local_host)
+                    .and_then(|host| host.provider(wire::agents::CLAUDE))
+                    .map(wire::ProviderOnHost::kind)
             })?
             .unwrap_or(wire::Kind::ClaudePty);
             let config = wire::ClaudeCreateConfig::default();

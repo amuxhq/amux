@@ -15,14 +15,21 @@ application channels on separate native streams.
 | `installation_service.proto` | `InstallationService`: the installation and its profiles |
 | `profile_admin_service.proto` | `ProfileAdminService`: one profile's account, pairing, peers and dump |
 | `pairing_service.proto` | `PairingService`: two hosts coming to trust each other |
-| `inventory.proto` | Hosts and agent rows |
-| `records.proto` | The kind-neutral session records |
+| `inventory.proto` | Hosts, the agent programs each runs, and agent rows |
+| `records.proto` | The kind-neutral session records, and what an agent can do (`AgentCapabilities`) |
 | `chat.proto` | What the kinds share inside a body |
 | `claude.proto`, `codex.proto`, `acp.proto` | The per-kind bodies |
 | `agent_process.proto` | The agent process's spec and its `ctl.sock` and `pty.sock` frames |
 | `link.proto` | Host-to-host link control |
 | `dump.proto` | The diagnostic dump |
 | `error.proto` | `ErrorReason`, the amux reasons a `google.rpc.ErrorInfo` names |
+
+A `Kind` is an interpreter; which agent program it runs is a provider id, a
+plain string: `claude` (both Claude kinds), `codex`, or an ACP agent's
+(`antigravity`, `opencode`, `grok`, or one a person added in a host's
+config). Ids are strings rather than an enum because a person can add an
+agent no build knows. `ProviderOnHost`, `GetCatalogueRequest`, `Agent` and
+`AgentSpec` name a provider by its id.
 
 ## Compatibility
 

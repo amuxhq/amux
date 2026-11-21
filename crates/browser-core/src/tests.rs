@@ -31,7 +31,15 @@ fn fleet_with_one_agent(kind: wire::Kind) -> u32 {
             name: "desk".into(),
             ..Default::default()
         }),
-        claude_kind: wire::Kind::ClaudeSdk as i32,
+        providers: vec![wire::ProviderOnHost {
+            provider: "claude".into(),
+            descriptor: Some(wire::ProviderDescriptor {
+                name: "Claude".into(),
+                kind: wire::Kind::ClaudeSdk as i32,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }],
         standing: Some(wire::host_entry::Standing::Trusted(Default::default())),
         ..Default::default()
     };

@@ -48,6 +48,7 @@ pub mod google {
 pub use google::rpc;
 
 pub mod agents;
+mod capabilities;
 pub mod codex;
 mod continued;
 mod entry;
@@ -282,6 +283,15 @@ impl create_agent_request::Agent {
             Self::Acp(_) => Kind::Acp,
         }
     }
+
+    /// The provider id of the program this arm starts: Claude's or Codex's,
+    /// or the ACP agent's it names.
+    pub fn provider_id(&self) -> &str {
+        match self {
+            Self::Acp(acp) => &acp.agent,
+            other => agents::implied_by(other.kind()),
+        }
+    }
 }
 
 impl Profile {
@@ -433,6 +443,38 @@ impl HostEntry {
     /// Whether the host is signed in to its account, as it said.
     pub fn account_signed_in(&self) -> Option<bool> {
         self.host.as_ref()?.account_signed_in
+    }
+}
+
+impl HostEntry {
+    /// What the host says of the provider with this id, when it runs it.
+    pub fn provider(&self, id: &str) -> Option<&ProviderOnHost> {
+        self.providers
+            .iter()
+            .find(|provider| provider.provider == id)
+    }
+}
+
+impl ProviderOnHost {
+    /// The kind a new agent of this provider starts as on its host.
+    pub fn kind(&self) -> Kind {
+        self.descriptor
+            .as_ref()
+            .map_or(Kind::Unspecified, ProviderDescriptor::kind)
+    }
+
+    /// What people call it, else its id.
+    pub fn name(&self) -> &str {
+        self.descriptor
+            .as_ref()
+            .map(|descriptor| descriptor.name.as_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&self.provider)
+    }
+
+    /// Whether it is signed in, once the host has asked it.
+    pub fn signed_in(&self) -> Option<bool> {
+        self.catalogue.is_some().then_some(self.signed_in)
     }
 }
 

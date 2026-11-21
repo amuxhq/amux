@@ -20,7 +20,7 @@ use settings::ChatInSetting;
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
 use wire::{
-    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, HostEntry, Kind, PromptSubmission,
+    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, Kind, PromptSubmission,
     create_agent_request,
 };
 
@@ -61,35 +61,18 @@ impl Agent {
         }
     }
 
-    /// The provider a host's catalogue is asked for.
-    pub fn provider(self) -> wire::Provider {
+    /// The provider id a host's catalogue is asked for.
+    pub fn provider(self) -> &'static str {
         match self {
-            Agent::Claude => wire::Provider::Claude,
-            Agent::Codex => wire::Provider::Codex,
+            Agent::Claude => wire::agents::CLAUDE,
+            Agent::Codex => wire::agents::CODEX,
         }
     }
 }
 
-/// A provider as a person names it.
-pub fn provider_name(provider: wire::Provider) -> &'static str {
-    match provider {
-        wire::Provider::Claude => "Claude",
-        wire::Provider::Codex => "Codex",
-        wire::Provider::Unspecified => "the provider",
-    }
-}
-
-/// Every provider a host can be asked about.
-pub const PROVIDERS: [wire::Provider; 2] = [wire::Provider::Claude, wire::Provider::Codex];
-
 /// Whether `provider` is signed in on `host`, once the host has said.
-pub fn signed_in(fleet: &FleetState, host: &[u8], provider: wire::Provider) -> Option<bool> {
-    fleet
-        .host(host)?
-        .providers
-        .iter()
-        .find(|offer| offer.provider == provider as i32)
-        .map(|offer| offer.signed_in)
+pub fn signed_in(fleet: &FleetState, host: &[u8], provider: &str) -> Option<bool> {
+    fleet.host(host)?.provider(provider)?.signed_in()
 }
 
 /// One of the settings, as the composer's edge shows it and a flyover
@@ -185,13 +168,7 @@ impl Setup {
 
     /// Takes what `host` offers for `provider`, when that is what this
     /// setup is for; the choices already made stay, offered or not.
-    pub fn offer(
-        &mut self,
-        host: &[u8],
-        provider: wire::Provider,
-        hash: &[u8],
-        catalogue: &wire::Catalogue,
-    ) {
+    pub fn offer(&mut self, host: &[u8], provider: &str, hash: &[u8], catalogue: &wire::Catalogue) {
         if host == self.host && provider == self.agent.provider() {
             self.offered = Some((hash.to_vec(), catalogue.clone()));
         }
@@ -251,7 +228,8 @@ impl Setup {
         let mut setup = self.clone();
         setup.host_claude_kind = fleet
             .host(&self.host)
-            .map_or(Kind::Unspecified, HostEntry::claude_kind);
+            .and_then(|entry| entry.provider(wire::agents::CLAUDE))
+            .map_or(Kind::Unspecified, wire::ProviderOnHost::kind);
         Box::new(setup)
     }
 

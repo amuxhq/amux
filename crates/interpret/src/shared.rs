@@ -557,6 +557,12 @@ pub struct Shared<A: OpenAsk> {
     /// agents of their own has none, and one with none writes none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     subagents: BTreeMap<String, Native<A>>,
+    /// What the agent can do, as its snapshot says: fixed by the kind for
+    /// Claude and Codex, and for an ACP agent set by its interpreter from
+    /// what the agent's program said. None until then, and in a checkpoint
+    /// an earlier build wrote, which the next incarnation fills.
+    #[serde(default, with = "serde_pb::opt_msg")]
+    capabilities: Option<wire::AgentCapabilities>,
     /// What the checks after every step watch.
     watch: Watch,
 }
@@ -645,6 +651,7 @@ impl<A: OpenAsk> Shared<A> {
             housekeeping: false,
             housekept: false,
             subagents: BTreeMap::new(),
+            capabilities: wire::AgentCapabilities::of_kind(kind),
             watch: Watch::default(),
         };
         shared.bootstrap(spec);
@@ -669,6 +676,15 @@ impl<A: OpenAsk> Shared<A> {
         // Nor any subagent of the last one. One that process never ended
         // takes the end of its incarnation, which the journal holds.
         self.subagents.clear();
+        // A kind whose agents are all alike says so again, for a state an
+        // earlier build checkpointed without it; an ACP agent's interpreter
+        // says it from the new process's handshake.
+        if let Some(fixed) = wire::Kind::try_from(self.kind)
+            .ok()
+            .and_then(wire::AgentCapabilities::of_kind)
+        {
+            self.capabilities = Some(fixed);
+        }
         self.now_ms = self.now_ms.max(spec.created_at_ms);
         self.fresh = true;
         self.bootstrap(spec);
@@ -860,6 +876,7 @@ impl<A: OpenAsk> Shared<A> {
             catalogue: self.catalogue.clone(),
             background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
             notice: notice.map(Box::new),
+            capabilities: self.capabilities,
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -871,6 +888,11 @@ impl<A: OpenAsk> Shared<A> {
             self.last_snapshot = Some(snapshot.clone());
             emit.step.snapshot = Some(snapshot);
         }
+    }
+
+    /// Says what the agent can do from now on, on its next snapshot.
+    pub fn set_capabilities(&mut self, capabilities: wire::AgentCapabilities) {
+        self.capabilities = Some(capabilities);
     }
 
     /// Needs-you whenever an ask is open; starting until the provider

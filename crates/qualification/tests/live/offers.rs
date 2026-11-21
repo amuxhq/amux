@@ -121,7 +121,7 @@ impl Install {
     async fn host_catalogue_of(
         &self,
         host_id: Vec<u8>,
-        provider: wire::Provider,
+        provider: &str,
     ) -> Result<(Vec<u8>, wire::Catalogue), String> {
         let blob = self
             .client
@@ -129,7 +129,7 @@ impl Install {
             .clone()
             .get_catalogue(GetCatalogueRequest {
                 host_id,
-                provider: provider as i32,
+                provider: provider.to_owned(),
             })
             .await
             .map_err(|status| format!("the host's catalogue: {status}"))?
@@ -195,7 +195,7 @@ impl Install {
             Kind::ClaudePty => {
                 let host = self.host_entry().await?;
                 let (_, copy) = self
-                    .host_catalogue_of(host.host_id().to_vec(), wire::Provider::Claude)
+                    .host_catalogue_of(host.host_id().to_vec(), "claude")
                     .await?;
                 (
                     Some(wire::Catalogue {
@@ -225,8 +225,8 @@ impl Install {
     /// names that copy, signed in, on its own fleet entry.
     pub(super) async fn host_catalogue(&self) -> Result<Verdict, String> {
         let provider = match self.kind {
-            Kind::Codex => wire::Provider::Codex,
-            _ => wire::Provider::Claude,
+            Kind::Codex => "codex",
+            _ => "claude",
         };
         let host = self.host_entry().await?;
         let (hash, catalogue) = self
@@ -237,9 +237,7 @@ impl Install {
         }
         let host = self.host_entry().await?;
         let named = host
-            .providers
-            .iter()
-            .find(|on_host| on_host.provider == provider as i32)
+            .provider(provider)
             .ok_or_else(|| format!("the host's entry names no {provider:?}"))?;
         if named.catalogue.as_ref() != Some(&hash) {
             return Err("the host's entry names another catalogue".into());

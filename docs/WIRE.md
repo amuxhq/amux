@@ -300,7 +300,33 @@ the `queue` of `QueuedInput`s, `phase`, `working_on`, `title`, `at_ms`,
 `background_jobs` is how many jobs the body's background list holds (zero
 while it is unknown), so the daemon can put the count on the inventory row
 without decoding the body. `Phase` is `PHASE_STARTING`,
-`PHASE_IDLE`, `PHASE_WORKING` or `PHASE_NEEDS_YOU`.
+`PHASE_IDLE`, `PHASE_WORKING` or `PHASE_NEEDS_YOU`. `capabilities` says what
+this agent can do (see [capabilities](#capabilities)).
+
+### Capabilities
+
+What one agent can do and another cannot is said as data, so a client
+decides what to offer from `AgentCapabilities` and never from the agent's
+kind or provider id. The interpreter fills them on the agent's snapshot, from
+its kind and from what the agent's program said; a host fills them on each
+`ProviderOnHost` it lists, for an agent started there now. A snapshot an
+earlier build wrote has none, and a client then reads its host's for the
+agent's provider. False is the safe reading of each: a client that leaves a
+control out loses only that control.
+
+| Field | Means | Terminal Claude | Headless Claude | Codex | An ACP agent |
+| --- | --- | --- | --- | --- | --- |
+| `stops_job` | one background job can be stopped (`StopJob`) | no | yes | yes | no |
+| `switches_back` | its own view can go to another conversation and back (`SwitchBack`) | yes | no | no | no |
+| `attachable` | it has a terminal of its own a client on its host can attach to | yes | no | yes, but not on Windows | no |
+| `resumable` | a later process reopens its conversation, so it can suspend and be resumed after it exits | yes | yes | yes | when its `initialize` offered `session/resume` or `session/load`; unknown is no |
+| `sends_now` | a queued prompt can go into the running turn (`SendQueuedNow`) | yes | yes | yes | only an agent known to fold a prompt into its turn (Antigravity) |
+| `images` | a prompt may carry images | yes | yes | yes | when its prompt capabilities take them |
+| `files` | a prompt may carry files | yes | yes | yes | yes |
+| `passes_unknown_commands` | a slash command it does not list goes to it as typed | yes | yes | no | yes |
+
+Which model, effort, permission and mode an agent can change is said by its
+catalogue's `settable` flags, not here.
 
 `phase_since_ms` is the interpreter's clock when `phase` last changed. The
 part every interpreter shares stamps it, so streamed output and other changes
@@ -649,8 +675,10 @@ the replica's current snapshot names it (see [attachments](ATTACHMENTS.md)),
 so the picker still reads with the origin away. A hash that names no blob is
 `NOT_FOUND`.
 
-`GetCatalogue(host_id, provider)` names a host and a `Provider`
-(`PROVIDER_CLAUDE` or `PROVIDER_CODEX`) and answers what that provider offers there with no agent running,
+`GetCatalogue(host_id, provider)` names a host and a provider by its id
+(`claude`, `codex`, or an ACP agent's: `antigravity`, `opencode`, `grok`, or
+one a person added under `[agents.<id>]` in that host's config) and answers
+what that provider offers there with no agent running,
 as a `GetCatalogueResponse`: the encoded `Catalogue` and the SHA-256 of exactly
 those bytes, which is the hash the host's entry names for that provider. The
 daemon holds no provider code: it runs the hidden helper `amux internal catalogue <provider>`, which
@@ -660,9 +688,19 @@ folder. It asks again when the copy is half an hour old, when the provider's
 `--version` prints something new (read at most once a minute), and for a copy
 that says signed out once a minute has passed. Both Claude kinds share
 Claude's copy; terminal Claude, which offers nothing a program can read,
-offers its host's Claude models and commands. A paired host's providers are
-asked on that host. A helper that fails answers with the copy when there is
-one, else `UNAVAILABLE`; an unknown provider is `INVALID_ARGUMENT`.
+offers its host's Claude models and commands. An ACP agent is asked with
+`initialize` alone, so asking leaves no conversation in its history; where
+that lists no models (every built-in but Grok), its copy is what the host's
+newest conversation with the agent published, and nothing before the first.
+The host asks each ACP agent its config names as it starts and whenever that
+list changes, so its entry lists every agent it offers without a client
+asking. A paired host's providers are asked on that host. A helper that fails
+answers with the copy when there is one, else `UNAVAILABLE`; a provider the
+host does not know is `INVALID_ARGUMENT`, and an ACP agent whose program is
+not found there `FAILED_PRECONDITION`. Each host keeps the model and effort a
+person last picked per provider id (`new_agent.<id>.model` and `.effort` in
+its config) and lays them over what a new agent starts with in the copy it
+serves.
 
 A blob lives as long as its agent's directory. See
 [attachments](ATTACHMENTS.md) for the attachment types and lifetimes.
@@ -697,7 +735,10 @@ off between attempts. A paired host following this host's inventory does the
 same: on `Lagged` it follows again under the same session, and its sources
 for that host's agents keep running.
 
-`Agent` is the inventory row. It carries `kind`, `name` (always set, unique
+`Agent` is the inventory row. It carries `kind`, `provider` (the agent
+program's id, as the host's `providers` name it; a row from a host older than
+the field names none, and its kind says which: Claude's kinds are `claude`,
+Codex's `codex`), `name` (always set, unique
 on its host), `title` (what a person reads it as when present: its provider's
 title for a conversation nobody named, or one a person gave in the provider's
 own interface; copied from the snapshot envelope and cleared by a rename),
@@ -772,9 +813,17 @@ the queue; an older one draws the prompt's own words.
 `HostEntry` carries the host's own word (its `Host`: name, version, platform,
 capabilities and whether it is signed in), its `generation`, which changes
 only after an unclean reboot of that host (see
-[the journal and store](JOURNAL_AND_STORE.md)), and its `providers`: per
-provider the host has been asked about, the hash of what that provider offers
-there and whether it is signed in; a paired host's come from that host's own
+[the journal and store](JOURNAL_AND_STORE.md)), and its `providers`: each
+agent program the host runs, Claude and Codex always and then each ACP agent
+it offers once it has asked it, as a `ProviderOnHost`. That names the
+provider by its id, and once asked, the hash of what it offers there and
+whether it is signed in (`signed_in` says nothing while `catalogue` is
+absent). Its `descriptor` is what a client needs to offer it without knowing
+it: the name people call it, the kind a new agent of it starts as on that host
+(for Claude, terminal or headless as the host's settings choose; this replaced
+the entry's `claude_kind`), what a person does to sign in, and its version.
+Its `capabilities` say what an agent of it started there now can do (see
+[capabilities](#capabilities)). A paired host's come from that host's own
 entry. Its `standing` is one of two arms. A pairing candidate is `Candidate`,
 carrying the addresses discovery found it at and `announced_by`, the
 neighbors that announce it, nearest route first, each a `Host` whose

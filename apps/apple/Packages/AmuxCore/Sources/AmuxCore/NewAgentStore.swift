@@ -16,13 +16,8 @@ public final class NewAgentStore {
 
         public var id: String { rawValue }
 
-        /// The provider as the runtime names it.
-        public var wire: AmuxValues.Provider {
-            switch self {
-            case .claude: .claude
-            case .codex: .codex
-            }
-        }
+        /// The provider's id, as the runtime and the host name it.
+        public var wire: String { rawValue }
 
         public var title: String {
             switch self {
@@ -37,7 +32,7 @@ public final class NewAgentStore {
             switch kind {
             case .claudePty, .claudeSdk: self = .claude
             case .codex: self = .codex
-            case .unspecified: return nil
+            case .acp, .unspecified: return nil
             }
         }
 
@@ -51,7 +46,7 @@ public final class NewAgentStore {
             case .claude:
                 switch claude {
                 case .claudePty: .claudePty
-                case .claudeSdk, .codex, .unspecified, nil: .claudeSdk
+                case .claudeSdk, .codex, .acp, .unspecified, nil: .claudeSdk
                 }
             case .codex: .codex
             }

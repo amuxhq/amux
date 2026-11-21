@@ -151,6 +151,12 @@ pub struct AgentRow {
     /// is written by the experiments this host runs, with
     /// [`Sqlite::set_experimental`], and a registry write leaves it.
     pub experimental: std::collections::BTreeMap<String, Vec<u8>>,
+    /// Which agent program the agent runs, by its provider id (`claude`,
+    /// `codex`, an ACP agent's). Empty on a row written before the store
+    /// kept it, and on a replica whose origin did not say, where the kind
+    /// names the program ([`wire::agents::provider_or_implied`]). The
+    /// registry owns it; a replica copies its origin's.
+    pub provider: String,
 }
 
 impl AgentRow {
@@ -202,7 +208,17 @@ impl AgentRow {
             name_given: false,
             native: None,
             experimental: std::collections::BTreeMap::new(),
+            provider: String::new(),
         }
+    }
+
+    /// The agent's provider id, derived from its kind on a row that names
+    /// none.
+    pub fn provider_id(&self) -> &str {
+        wire::agents::provider_or_implied(
+            &self.provider,
+            wire::Kind::try_from(self.kind).unwrap_or_default(),
+        )
     }
 }
 

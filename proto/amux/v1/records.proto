@@ -254,6 +254,45 @@ message Snapshot {
   // working, so a turn's own replies cost no snapshot beyond its end. The
   // daemon copies it onto the inventory row.
   optional string last_said = 14;
+  // What this agent can do that differs between agents, filled by its
+  // interpreter from what its program said. Absent in a snapshot an earlier
+  // build wrote: a client then takes what the agent's host says its
+  // provider can do (ProviderOnHost.capabilities). Not copied onto the row.
+  AgentCapabilities capabilities = 15;
+}
+
+// What an agent can do that differs between agents and kinds, as data: a
+// client offers a control when the capability says the agent takes it, and
+// never decides by the agent's kind or provider. The model, effort,
+// permission and mode an agent can change are said elsewhere, by its
+// catalogue. Filled for a running agent by its interpreter (on its
+// snapshot) and for a provider a host offers by that host (on
+// ProviderOnHost). False is the safe reading of every field: a client
+// that leaves out a control the agent has loses only that control, and
+// never sends an input the agent would refuse.
+message AgentCapabilities {
+  // One background job can be stopped on its own (a StopJob input).
+  bool stops_job = 1;
+  // The agent's own view can go to another of its conversations, and be
+  // brought back (a SwitchBack input): terminal Claude's.
+  bool switches_back = 2;
+  // The agent runs with a terminal interface of its own, which a client on
+  // its host can attach to.
+  bool attachable = 3;
+  // A later process of its program reopens its conversation, so the agent
+  // can be suspended and resumed once it has exited. An agent whose program
+  // cannot, or has not yet said it can, is false: it never suspends, and
+  // its exit is final.
+  bool resumable = 4;
+  // A queued prompt can be sent into the running turn (SendQueuedNow).
+  bool sends_now = 5;
+  // A prompt may carry images that the provider sees as images.
+  bool images = 6;
+  // A prompt may carry files.
+  bool files = 7;
+  // A slash command the agent does not list goes to it as typed; false: a
+  // client refuses it before sending.
+  bool passes_unknown_commands = 8;
 }
 
 // What a notification says, in data rather than sentences: each client words

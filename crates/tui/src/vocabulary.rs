@@ -336,7 +336,7 @@ impl HomeScene {
     }
 
     /// The open new-agent composer told what the desk offers its agent.
-    pub fn offer(&mut self, provider: wire::Provider, catalogue: &wire::Catalogue) {
+    pub fn offer(&mut self, provider: &str, catalogue: &wire::Catalogue) {
         if let Some(setup) = self.home.open_setup() {
             setup.offer(b"desk", provider, &[1; 32], catalogue);
         }

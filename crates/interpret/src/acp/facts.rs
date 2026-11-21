@@ -819,6 +819,7 @@ impl State {
         }
         self.reopens = Some(super::Reopens::of(&init));
         self.takes = Some(super::Takes::of(&init));
+        self.say_capabilities();
         // A conversation this process cannot reopen ends here; the agent
         // process sends no session request for it.
         if super::opening(&init, self.session_id.as_deref()) == super::Opening::Unresumable {

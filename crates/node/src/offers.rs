@@ -1,5 +1,6 @@
 //! What each provider offers on this host with no agent running, and
-//! whether it is signed in. The daemon holds no provider code: it starts
+//! whether it is signed in. A provider is named by its id: `claude`,
+//! `codex`, or an ACP agent's. The daemon holds no provider code: it starts
 //! the hidden helper `amux catalogue <provider>` the way it starts an agent
 //! process, and the helper runs the provider just long enough to ask. One
 //! copy per provider, kept in `providers/<provider>` under the profile, so
@@ -9,26 +10,33 @@
 //! recheck is due (signing in should show soon), or when the provider's
 //! `--version` prints something else than when it was asked. The version
 //! is read at most once per recheck interval.
+//!
+//! Claude and Codex are asked when a client first wants what they offer.
+//! An ACP agent is asked when the runtime starts and whenever the agents
+//! the config names change ([`ProfileRuntime::refresh_agents`]): asking one
+//! is an `initialize` and nothing else, and no client could name an agent
+//! a person added before its host lists it.
 
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use prost::Message as _;
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
-pub use wire::Provider;
-use wire::{Catalogue, ErrorCode, GetCatalogueResponse, ProviderOffer, ProviderOnHost};
+use wire::agents::{CLAUDE, CODEX};
+use wire::{
+    AgentCapabilities, Catalogue, ErrorCode, GetCatalogueResponse, ProviderDescriptor,
+    ProviderOffer, ProviderOnHost,
+};
 
 use crate::runtime::{Launch, ProfileRuntime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogueError {
-    #[error("no provider numbered {0}")]
-    NoProvider(i32),
     /// No built-in agent and no `[agents.<id>]` entry has the id.
     #[error("this computer knows no agent {0:?}")]
     NoAgent(String),
@@ -48,7 +56,7 @@ pub enum CatalogueError {
 impl CatalogueError {
     pub fn to_wire(&self) -> wire::Error {
         let code = match self {
-            Self::NoProvider(_) | Self::NoAgent(_) => ErrorCode::InvalidArgument,
+            Self::NoAgent(_) => ErrorCode::InvalidArgument,
             Self::NotInstalled(_) => ErrorCode::FailedPrecondition,
             Self::Helper(_) => ErrorCode::Unavailable,
             Self::Read(_) | Self::Write(_) | Self::Store(_) => ErrorCode::Internal,
@@ -68,25 +76,37 @@ pub const PROVIDERS: &str = "providers";
 /// How long `<provider> --version` may take.
 const VERSION_PATIENCE: Duration = Duration::from_secs(10);
 
-/// The providers a host can be asked about.
-pub const ASKED: [Provider; 2] = [Provider::Claude, Provider::Codex];
+/// The providers that are not ACP agents, which the host asks with their
+/// own commands: what `amux catalogue` takes and their copies are named.
+pub const OWN: [&str; 2] = [CLAUDE, CODEX];
 
-/// A provider as `amux catalogue` takes it and its copy's file is named:
-/// the enum value's own name, lowercase, without the enum's prefix.
-pub(crate) fn provider_word(provider: Provider) -> String {
-    provider
-        .as_str_name()
-        .trim_start_matches("PROVIDER_")
-        .to_ascii_lowercase()
+fn own_command<'a>(provider: &str, launch: &'a Launch) -> &'a str {
+    if provider == CLAUDE {
+        &launch.claude_command
+    } else {
+        &launch.codex_command
+    }
 }
 
-fn provider_command(provider: Provider, launch: &Launch) -> &str {
-    match provider {
-        Provider::Claude => &launch.claude_command,
-        Provider::Codex => &launch.codex_command,
-        // Not one ASKED holds.
-        Provider::Unspecified => "",
+/// What a person does to sign in to Claude or Codex, in the words amux's
+/// clients have always given; an ACP agent's comes from its `initialize`.
+fn own_sign_in_hint(provider: &str) -> &'static str {
+    if provider == CLAUDE {
+        "Run claude and sign in with /login."
+    } else {
+        "Run codex login."
     }
+}
+
+/// The first sign-in method an ACP agent describes, as its words for what
+/// a person does; empty where it describes none.
+fn agent_sign_in_hint(acp: Option<&wire::AcpOffer>) -> String {
+    acp.into_iter()
+        .flat_map(|acp| &acp.sign_in_methods)
+        .map(|method| method.description.trim())
+        .find(|description| !description.is_empty())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// What a provider offers on this host, as last asked.
@@ -118,108 +138,161 @@ struct Held {
     version_read_at_ms: i64,
 }
 
+impl Held {
+    fn of(asked: ProviderOffer, offer: HostCatalogue, version_read_at_ms: i64) -> Self {
+        Self {
+            asked_at_ms: asked.asked_at_ms,
+            asked,
+            offer,
+            version_read_at_ms,
+        }
+    }
+}
+
 /// The copies, and one run at a time per provider.
 pub(crate) struct Offers {
-    held: Mutex<HashMap<Provider, Held>>,
-    /// Each ACP agent's copy, by its id, read from its file when first
-    /// asked for. Kept apart from Claude's and Codex's because the wire's
-    /// providers name those two alone; an agent's id is the key it will
-    /// have once the wire names every provider by its id.
-    agents: Mutex<HashMap<String, Held>>,
-    /// One helper run at a time per ACP agent.
-    agent_runs: Mutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    /// Each provider's copy by its id: Claude's and Codex's, and each ACP
+    /// agent's, read from its file when first asked for.
+    held: Mutex<HashMap<String, Held>>,
+    /// One helper run at a time per provider.
+    runs: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// What each provider offered when asked from inside a folder an agent
     /// works in, kept in memory only.
-    folders: Mutex<HashMap<(Provider, PathBuf), Held>>,
-    runs: HashMap<Provider, tokio::sync::Mutex<()>>,
+    folders: Mutex<HashMap<(String, PathBuf), Held>>,
 }
 
 impl Offers {
-    /// The copies the profile kept; an unreadable one is asked again.
+    /// The copies the profile kept of Claude's and Codex's; an unreadable
+    /// one is asked again. An ACP agent's is read when it is first asked
+    /// for, which the runtime does as it starts.
     pub(crate) fn load(profile_dir: &Path, launch: &Launch) -> Self {
         let mut held = HashMap::new();
-        for provider in ASKED {
+        for provider in OWN {
             let Ok(bytes) = std::fs::read(copy_path(profile_dir, provider)) else {
                 continue;
             };
             let Ok(offer) = ProviderOffer::decode(bytes.as_slice()) else {
                 continue;
             };
-            let asked_at_ms = offer.asked_at_ms;
-            held.insert(
-                provider,
-                Held {
-                    offer: host_catalogue(offer.clone(), &remembered(provider, launch)),
-                    asked: offer,
-                    asked_at_ms,
-                    version_read_at_ms: i64::MIN,
-                },
-            );
+            let catalogue = host_catalogue(offer.clone(), &remembered(provider, launch));
+            held.insert(provider.to_owned(), Held::of(offer, catalogue, i64::MIN));
         }
         Self {
             held: Mutex::new(held),
-            agents: Mutex::new(HashMap::new()),
-            agent_runs: Mutex::new(HashMap::new()),
+            runs: Mutex::new(HashMap::new()),
             folders: Mutex::new(HashMap::new()),
-            runs: ASKED
-                .into_iter()
-                .map(|provider| (provider, tokio::sync::Mutex::new(())))
-                .collect(),
         }
     }
 
-    /// Names the copies again after the host's remembered picks changed, so
-    /// each hash follows what a client would now be told.
+    /// The lock that keeps to one helper run at a time for `provider`.
+    fn run(&self, provider: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.runs
+            .lock()
+            .unwrap()
+            .entry(provider.to_owned())
+            .or_default()
+            .clone()
+    }
+
+    /// Names Claude's and Codex's copies again after the host's remembered
+    /// picks changed, so each hash follows what a client would now be told.
+    /// An ACP agent's is named again the next time it is asked for.
     pub(crate) fn remembered_changed(&self, launch: &Launch) {
         for (provider, held) in self.held.lock().unwrap().iter_mut() {
-            held.offer = host_catalogue(held.asked.clone(), &remembered(*provider, launch));
+            if OWN.contains(&provider.as_str()) {
+                held.offer = host_catalogue(held.asked.clone(), &remembered(provider, launch));
+            }
         }
     }
 
     /// The copy of what `provider` offers, as last asked.
-    pub(crate) fn offered(&self, provider: Provider) -> Option<Catalogue> {
+    pub(crate) fn offered(&self, provider: &str) -> Option<Catalogue> {
         let held = self.held.lock().unwrap();
-        held.get(&provider).map(|held| held.offer.catalogue.clone())
+        held.get(provider).map(|held| held.offer.catalogue.clone())
     }
 
-    /// Per provider asked, its hash and whether it is signed in: what this
-    /// host's entry in the fleet list says.
-    pub(crate) fn on_host(&self) -> Vec<ProviderOnHost> {
+    /// Per provider, how clients name it and what its agents can do, and
+    /// once asked its hash and whether it is signed in: what this host's
+    /// entry in the fleet list says. Claude and Codex always, so a client
+    /// knows the kind a new Claude agent starts as before it asks; then the
+    /// ACP agents the config names that have been asked, in its order. An
+    /// agent no longer named is left out.
+    pub(crate) fn on_host(&self, launch: &Launch) -> Vec<ProviderOnHost> {
         let held = self.held.lock().unwrap();
-        ASKED
-            .into_iter()
-            .filter_map(|provider| {
-                let held = held.get(&provider)?;
-                Some(ProviderOnHost {
-                    provider: provider as i32,
-                    catalogue: Some(held.offer.blob.hash.clone()),
-                    signed_in: held.offer.signed_in,
-                })
+        let own = OWN.into_iter().map(|provider| {
+            let held = held.get(provider);
+            let kind = if provider == CLAUDE {
+                launch.claude_kind
+            } else {
+                wire::Kind::Codex
+            };
+            ProviderOnHost {
+                provider: provider.to_owned(),
+                catalogue: held.map(|held| held.offer.blob.hash.clone()),
+                signed_in: held.is_some_and(|held| held.offer.signed_in),
+                descriptor: Some(ProviderDescriptor {
+                    name: if provider == CLAUDE {
+                        "Claude"
+                    } else {
+                        "Codex"
+                    }
+                    .to_owned(),
+                    kind: kind as i32,
+                    sign_in_hint: own_sign_in_hint(provider).to_owned(),
+                    version: held
+                        .map(|held| held.offer.provider_version.clone())
+                        .unwrap_or_default(),
+                }),
+                capabilities: AgentCapabilities::of_kind(kind),
+            }
+        });
+        let agents = launch.agents.iter().filter_map(|program| {
+            let held = held.get(&program.id)?;
+            Some(ProviderOnHost {
+                provider: program.id.clone(),
+                catalogue: Some(held.offer.blob.hash.clone()),
+                signed_in: held.offer.signed_in,
+                descriptor: Some(ProviderDescriptor {
+                    name: program.name.clone(),
+                    kind: wire::Kind::Acp as i32,
+                    sign_in_hint: agent_sign_in_hint(held.offer.acp.as_ref()),
+                    version: held.offer.provider_version.clone(),
+                }),
+                // A copy an earlier build asked says nothing of them: it
+                // reads as able to do nothing beyond what every agent can,
+                // until the agent is asked again.
+                capabilities: Some(
+                    held.asked
+                        .capabilities
+                        .unwrap_or_else(|| AgentCapabilities::acp(false, false, false)),
+                ),
             })
-            .collect()
+        });
+        own.chain(agents).collect()
+    }
+
+    /// Forgets an ACP agent's copy, once the host no longer offers it.
+    fn forget(&self, agent: &str) -> bool {
+        self.held.lock().unwrap().remove(agent).is_some()
     }
 }
 
-fn copy_path(profile_dir: &Path, provider: Provider) -> PathBuf {
-    profile_dir.join(PROVIDERS).join(provider_word(provider))
-}
-
-/// An ACP agent's copy: named by its id, which is never `claude` or `codex`.
-fn agent_copy_path(profile_dir: &Path, agent: &str) -> PathBuf {
-    profile_dir.join(PROVIDERS).join(agent)
+/// A provider's copy: named by its id. An ACP agent's id is never
+/// `claude` or `codex`, which the config refuses.
+fn copy_path(profile_dir: &Path, provider: &str) -> PathBuf {
+    profile_dir.join(PROVIDERS).join(provider)
 }
 
 /// The picks a new agent of `provider` starts with on this host. A host that
 /// runs Claude in its own terminal keeps to Claude's own settings.
-fn remembered(provider: Provider, launch: &Launch) -> settings::NewAgentDefaults {
+fn remembered(provider: &str, launch: &Launch) -> settings::NewAgentDefaults {
     match provider {
-        Provider::Claude if launch.claude_kind == wire::Kind::ClaudePty => {
+        CLAUDE if launch.claude_kind == wire::Kind::ClaudePty => {
             settings::NewAgentDefaults::default()
         }
-        Provider::Claude => launch.new_agent.claude.clone(),
-        Provider::Codex => launch.new_agent.codex.clone(),
-        // Not one ASKED holds.
-        Provider::Unspecified => settings::NewAgentDefaults::default(),
+        CLAUDE => launch.new_agent.claude.clone(),
+        CODEX => launch.new_agent.codex.clone(),
+        _ => settings::NewAgentDefaults::default(),
     }
 }
 
@@ -266,9 +339,13 @@ pub(crate) struct Learned {
 /// together: the helper's catalogue where it lists models without a
 /// session (Grok), else the newest conversation's; and the helper's
 /// sign-in state where `initialize` shows one, else the newest
-/// conversation's. A new agent starts on the agent's own defaults, so no
-/// remembered pick is laid over it.
-fn agent_catalogue(asked: &ProviderOffer, learned: Learned) -> HostCatalogue {
+/// conversation's; with the host's remembered picks for the agent laid
+/// over what a new one starts with.
+fn agent_catalogue(
+    asked: &ProviderOffer,
+    learned: Learned,
+    remembered: &settings::NewAgentDefaults,
+) -> HostCatalogue {
     let mut offer = asked.clone();
     let listed = offer
         .catalogue
@@ -284,25 +361,32 @@ fn agent_catalogue(asked: &ProviderOffer, learned: Learned) -> HostCatalogue {
         acp.set_sign_in(learned.sign_in);
         offer.signed_in = learned.sign_in != wire::SignInState::SignedOut;
     }
-    host_catalogue(offer, &settings::NewAgentDefaults::default())
+    host_catalogue(offer, remembered)
 }
 
 impl ProfileRuntime {
-    /// What `provider` offers on this host, from the copy while it holds,
-    /// else from the helper. A failed ask answers with the copy when there
-    /// is one.
-    pub async fn host_catalogue(
-        &self,
-        provider: Provider,
-    ) -> Result<HostCatalogue, CatalogueError> {
+    /// What `provider` offers on this host, by its id: Claude's or Codex's
+    /// copy, or an ACP agent's ([`Self::agent_catalogue`]).
+    pub async fn host_catalogue(&self, provider: &str) -> Result<HostCatalogue, CatalogueError> {
+        match provider {
+            CLAUDE | CODEX => self.own_catalogue(provider).await,
+            agent => self.agent_catalogue(agent).await,
+        }
+    }
+
+    /// What Claude or Codex offers on this host, from the copy while it
+    /// holds, else from the helper. A failed ask answers with the copy when
+    /// there is one.
+    async fn own_catalogue(&self, provider: &str) -> Result<HostCatalogue, CatalogueError> {
         let offers = self.offers();
-        let _run = offers.runs[&provider].lock().await;
+        let run = offers.run(provider);
+        let _run = run.lock().await;
         let launch = self.launch();
-        let command = provider_command(provider, &launch).to_owned();
+        let command = own_command(provider, &launch).to_owned();
         let now = self.clock_now();
         let held = {
             let held = offers.held.lock().unwrap();
-            held.get(&provider).map(|held| {
+            held.get(provider).map(|held| {
                 let age = now.saturating_sub(held.asked_at_ms);
                 let current = age < launch.catalogue_max_age_ms
                     && (held.offer.signed_in || age < launch.catalogue_recheck_ms);
@@ -318,7 +402,7 @@ impl ProfileRuntime {
         if let (Some((offer, true, _)), Some(version)) = (&held, &version)
             && *version == offer.provider_version
         {
-            if let Some(held) = offers.held.lock().unwrap().get_mut(&provider) {
+            if let Some(held) = offers.held.lock().unwrap().get_mut(provider) {
                 held.version_read_at_ms = now;
             }
             return Ok(offer.clone());
@@ -326,12 +410,19 @@ impl ProfileRuntime {
 
         let providers = self.dir().join(PROVIDERS);
         let asked = match self
-            .ask_provider(provider, &command, &launch, &providers)
+            .run_helper(
+                provider,
+                &command,
+                &[],
+                &launch.provider_env,
+                &launch,
+                &providers,
+            )
             .await
         {
             Ok(asked) => asked,
             Err(error) => {
-                tracing::warn!(provider = provider_word(provider), %error, "asking what the provider offers failed");
+                tracing::warn!(provider, %error, "asking what the provider offers failed");
                 return match held {
                     Some((offer, _, _)) => Ok(offer),
                     None => Err(error),
@@ -343,24 +434,25 @@ impl ProfileRuntime {
             asked_at_ms: now,
             ..asked
         };
+        self.keep_copy(provider, &offer).await?;
+        let answer = host_catalogue(offer.clone(), &remembered(provider, &launch));
+        offers
+            .held
+            .lock()
+            .unwrap()
+            .insert(provider.to_owned(), Held::of(offer, answer.clone(), now));
+        self.tell_own_host();
+        Ok(answer)
+    }
+
+    /// Writes `offer` as `provider`'s copy under the profile.
+    async fn keep_copy(&self, provider: &str, offer: &ProviderOffer) -> Result<(), CatalogueError> {
         let path = copy_path(self.dir(), provider);
         let bytes = offer.encode_to_vec();
         tokio::task::spawn_blocking(move || crate::install::write_cache(&path, &bytes))
             .await
             .map_err(|error| CatalogueError::Write(io::Error::other(error)))?
-            .map_err(CatalogueError::Write)?;
-        let answer = host_catalogue(offer.clone(), &remembered(provider, &launch));
-        offers.held.lock().unwrap().insert(
-            provider,
-            Held {
-                asked: offer,
-                offer: answer.clone(),
-                asked_at_ms: now,
-                version_read_at_ms: now,
-            },
-        );
-        self.tell_own_host();
-        Ok(answer)
+            .map_err(CatalogueError::Write)
     }
 
     /// What `provider` offers an agent working in `folder`. Claude lists a
@@ -370,13 +462,13 @@ impl ProfileRuntime {
     /// would be; an ask that fails answers with the host's catalogue.
     pub async fn folder_catalogue(
         &self,
-        provider: Provider,
+        provider: &'static str,
         folder: &Path,
     ) -> Result<HostCatalogue, CatalogueError> {
         let offers = self.offers();
         let launch = self.launch();
         let now = self.clock_now();
-        let key = (provider, folder.to_owned());
+        let key = (provider.to_owned(), folder.to_owned());
         if let Some(held) = offers.folders.lock().unwrap().get(&key) {
             let age = now.saturating_sub(held.asked_at_ms);
             if age < launch.catalogue_max_age_ms
@@ -385,10 +477,19 @@ impl ProfileRuntime {
                 return Ok(held.offer.clone());
             }
         }
-        let command = provider_command(provider, &launch).to_owned();
+        let command = own_command(provider, &launch).to_owned();
         let asked = {
-            let _run = offers.runs[&provider].lock().await;
-            self.ask_provider(provider, &command, &launch, folder).await
+            let run = offers.run(provider);
+            let _run = run.lock().await;
+            self.run_helper(
+                provider,
+                &command,
+                &[],
+                &launch.provider_env,
+                &launch,
+                folder,
+            )
+            .await
         };
         match asked {
             Ok(asked) => {
@@ -397,37 +498,18 @@ impl ProfileRuntime {
                     ..asked
                 };
                 let answer = host_catalogue(asked.clone(), &Default::default());
-                offers.folders.lock().unwrap().insert(
-                    key,
-                    Held {
-                        asked,
-                        offer: answer.clone(),
-                        asked_at_ms: now,
-                        version_read_at_ms: now,
-                    },
-                );
+                offers
+                    .folders
+                    .lock()
+                    .unwrap()
+                    .insert(key, Held::of(asked, answer.clone(), now));
                 Ok(answer)
             }
             Err(error) => {
-                tracing::warn!(provider = provider_word(provider), %error, "asking what the provider offers in a folder failed");
+                tracing::warn!(provider, %error, "asking what the provider offers in a folder failed");
                 self.host_catalogue(provider).await
             }
         }
-    }
-
-    /// Runs `amux catalogue <provider>` in `folder`, in its own process
-    /// group, and reads what it wrote to the profile's providers directory.
-    /// The caller holds the provider's run lock.
-    async fn ask_provider(
-        &self,
-        provider: Provider,
-        command: &str,
-        launch: &Launch,
-        folder: &Path,
-    ) -> Result<ProviderOffer, CatalogueError> {
-        let word = provider_word(provider);
-        self.run_helper(&word, command, &[], &launch.provider_env, launch, folder)
-            .await
     }
 
     /// Runs `amux internal catalogue <word> --command <command> [--arg
@@ -505,14 +587,51 @@ impl ProfileRuntime {
         crate::agents::offered(&launch.agents, &launch.provider_env)
     }
 
+    /// Asks every ACP agent the config names what it offers, in the
+    /// background, so the host's entry lists each one it offers with its
+    /// version, sign-in and what it can do; an agent whose command is no
+    /// longer found leaves the entry. Run as the runtime starts and whenever
+    /// the agents the config names change.
+    pub(crate) fn refresh_agents(self: &Arc<Self>) {
+        let runtime = Arc::downgrade(self);
+        let ids: Vec<String> = self
+            .launch()
+            .agents
+            .iter()
+            .map(|program| program.id.clone())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        tokio::spawn(async move {
+            for id in ids {
+                let Some(runtime) = runtime.upgrade() else {
+                    return;
+                };
+                match runtime.agent_catalogue(&id).await {
+                    Ok(_) => {}
+                    Err(CatalogueError::NotInstalled(_) | CatalogueError::NoAgent(_)) => {
+                        if runtime.offers().forget(&id) {
+                            runtime.tell_own_host();
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(agent = id, %error, "asking an agent what it offers failed")
+                    }
+                }
+            }
+        });
+    }
+
     /// What the ACP agent `agent` offers on this host, and whether it is
     /// signed in: the helper's answer to `initialize`, asked again once old
     /// (or once a recheck is due while it says signed out), with what this
     /// host's own conversations with the agent showed where `initialize`
-    /// alone does not tell. The helper opens no session, so asking leaves
-    /// nothing in the agent's history; before any conversation, an agent
-    /// that lists nothing without one offers no models. A failed ask
-    /// answers with the copy when there is one.
+    /// alone does not tell, and the host's remembered picks for the agent
+    /// laid over it. The helper opens no session, so asking leaves nothing
+    /// in the agent's history; before any conversation, an agent that lists
+    /// nothing without one offers no models. A failed ask answers with the
+    /// copy when there is one.
     pub async fn agent_catalogue(&self, agent: &str) -> Result<HostCatalogue, CatalogueError> {
         let launch = self.launch();
         let program = launch
@@ -524,40 +643,27 @@ impl ProfileRuntime {
             .find(&launch.provider_env)
             .ok_or_else(|| CatalogueError::NotInstalled(program.name.clone()))?;
         let offers = self.offers();
-        let run = offers
-            .agent_runs
-            .lock()
-            .unwrap()
-            .entry(agent.to_owned())
-            .or_default()
-            .clone();
+        let run = offers.run(agent);
         let _run = run.lock().await;
         let now = self.clock_now();
         let held = {
-            let mut held = offers.agents.lock().unwrap();
+            let mut held = offers.held.lock().unwrap();
             if !held.contains_key(agent)
-                && let Ok(bytes) = std::fs::read(agent_copy_path(self.dir(), agent))
+                && let Ok(bytes) = std::fs::read(copy_path(self.dir(), agent))
                 && let Ok(asked) = ProviderOffer::decode(bytes.as_slice())
             {
-                held.insert(
-                    agent.to_owned(),
-                    Held {
-                        offer: host_catalogue(asked.clone(), &Default::default()),
-                        asked_at_ms: asked.asked_at_ms,
-                        asked,
-                        version_read_at_ms: i64::MIN,
-                    },
-                );
+                let offer = host_catalogue(asked.clone(), &Default::default());
+                held.insert(agent.to_owned(), Held::of(asked, offer, i64::MIN));
             }
             held.get(agent).map(|held| {
                 let age = now.saturating_sub(held.asked_at_ms);
                 let current = age < launch.catalogue_max_age_ms
                     && (held.offer.signed_in || age < launch.catalogue_recheck_ms);
-                (held.asked.clone(), current)
+                (held.asked.clone(), held.offer.blob.hash.clone(), current)
             })
         };
-        let asked = match held {
-            Some((asked, true)) => asked,
+        let (asked, was) = match held {
+            Some((asked, was, true)) => (asked, Some(was)),
             held => {
                 let providers = self.dir().join(PROVIDERS);
                 let env = program.environment(&launch.provider_env);
@@ -571,29 +677,13 @@ impl ProfileRuntime {
                             asked_at_ms: now,
                             ..asked
                         };
-                        let copy = agent_copy_path(self.dir(), agent);
-                        let bytes = asked.encode_to_vec();
-                        tokio::task::spawn_blocking(move || {
-                            crate::install::write_cache(&copy, &bytes)
-                        })
-                        .await
-                        .map_err(|error| CatalogueError::Write(io::Error::other(error)))?
-                        .map_err(CatalogueError::Write)?;
-                        offers.agents.lock().unwrap().insert(
-                            agent.to_owned(),
-                            Held {
-                                offer: host_catalogue(asked.clone(), &Default::default()),
-                                asked: asked.clone(),
-                                asked_at_ms: now,
-                                version_read_at_ms: now,
-                            },
-                        );
-                        asked
+                        self.keep_copy(agent, &asked).await?;
+                        (asked, held.map(|(_, was, _)| was))
                     }
                     Err(error) => {
                         tracing::warn!(agent, %error, "asking what the agent offers failed");
                         match held {
-                            Some((asked, _)) => asked,
+                            Some((asked, was, _)) => (asked, Some(was)),
                             None => return Err(error),
                         }
                     }
@@ -601,7 +691,22 @@ impl ProfileRuntime {
             }
         };
         let learned = self.learned(agent).await?;
-        Ok(agent_catalogue(&asked, learned))
+        let answer = agent_catalogue(&asked, learned, &remembered(agent, &launch));
+        let moved = was.as_ref() != Some(&answer.blob.hash);
+        let asked_at = asked.asked_at_ms;
+        offers.held.lock().unwrap().insert(
+            agent.to_owned(),
+            Held {
+                asked,
+                offer: answer.clone(),
+                asked_at_ms: asked_at,
+                version_read_at_ms: now,
+            },
+        );
+        if moved {
+            self.tell_own_host();
+        }
+        Ok(answer)
     }
 
     /// What this host's own conversations with the ACP agent `agent` have
@@ -712,6 +817,7 @@ mod tests {
                 sign_in: sign_in as i32,
                 ..Default::default()
             }),
+            capabilities: None,
         }
     }
 
@@ -720,13 +826,13 @@ mod tests {
     #[test]
     fn an_agents_catalogue_is_learned_from_its_newest_conversation() {
         let helper = asked(Some(Catalogue::default()), SignInState::Unspecified);
-        let before = agent_catalogue(&helper, Learned::default());
+        let before = agent_catalogue(&helper, Learned::default(), &Default::default());
         assert!(before.catalogue.models.is_empty());
         let learned = Learned {
             catalogue: Some(catalogue("gemini-4")),
             sign_in: SignInState::Unspecified,
         };
-        let after = agent_catalogue(&helper, learned);
+        let after = agent_catalogue(&helper, learned, &Default::default());
         assert_eq!(after.catalogue.models[0].value, "gemini-4");
         assert_eq!(after.catalogue.new_agent, None, "the agent's own defaults");
         assert_eq!(after.provider_version, "1.0");
@@ -741,7 +847,7 @@ mod tests {
             catalogue: Some(catalogue("grok-4")),
             sign_in: SignInState::SignedOut,
         };
-        let offer = agent_catalogue(&helper, learned);
+        let offer = agent_catalogue(&helper, learned, &Default::default());
         assert_eq!(offer.catalogue.models[0].value, "grok-5");
         assert!(offer.signed_in, "initialize showed it signed in");
         assert_eq!(offer.acp.unwrap().sign_in(), SignInState::SignedIn);
@@ -758,10 +864,11 @@ mod tests {
                 catalogue: None,
                 sign_in: SignInState::SignedOut,
             },
+            &Default::default(),
         );
         assert!(!out.signed_in);
         assert_eq!(out.acp.unwrap().sign_in(), SignInState::SignedOut);
-        let unknown = agent_catalogue(&helper, Learned::default());
+        let unknown = agent_catalogue(&helper, Learned::default(), &Default::default());
         assert!(unknown.signed_in, "never called signed out on a guess");
         assert_eq!(unknown.acp.unwrap().sign_in(), SignInState::Unspecified);
     }

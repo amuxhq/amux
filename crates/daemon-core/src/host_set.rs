@@ -153,14 +153,6 @@ impl Daemon {
         }
     }
 
-    /// What a trusted host's own entry said a new Claude agent runs there.
-    pub(crate) fn claude_kind_said(&mut self, host: HostId, kind: i32) {
-        if self.host_set.claude_kinds.get(&host) != Some(&kind) {
-            self.host_set.claude_kinds.insert(host, kind);
-            self.touched.host_set = true;
-        }
-    }
-
     /// Recomputes the set, when the step moved anything it is made of, and
     /// tells every inventory stream what changed.
     pub(crate) fn publish_host_set(&mut self, out: &mut Vec<Output>) {
@@ -238,12 +230,6 @@ impl Daemon {
                         current: self.sources.ready(host),
                     })),
                     push_key: None,
-                    claude_kind: self
-                        .host_set
-                        .claude_kinds
-                        .get(&host)
-                        .copied()
-                        .unwrap_or_default(),
                     folders: self
                         .host_set
                         .folders

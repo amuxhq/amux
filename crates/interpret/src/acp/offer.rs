@@ -19,6 +19,8 @@ pub struct HostOffer {
     pub acp: AcpOffer,
     /// The version the agent names, empty where it names none.
     pub version: String,
+    /// What an agent started now can do, by this answer.
+    pub capabilities: wire::AgentCapabilities,
 }
 
 impl HostOffer {
@@ -118,6 +120,7 @@ pub fn host_offer(agent: &str, init: &InitializeResponse) -> HostOffer {
     HostOffer {
         catalogue,
         version,
+        capabilities: super::capabilities(agent, Some(reopens), Some(super::Takes::of(init))),
         acp: AcpOffer {
             name: agent_info.map(|info| info.name).unwrap_or_default(),
             reopen: reopen as i32,

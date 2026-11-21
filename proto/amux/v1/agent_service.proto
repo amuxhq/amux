@@ -220,7 +220,8 @@ message GetDiffResponse {
 
 message GetCatalogueRequest {
   bytes host_id = 1;
-  Provider provider = 2;
+  // The provider's id, as ProviderOnHost names it.
+  string provider = 2;
 }
 
 // The encoded Catalogue and the SHA-256 of exactly these bytes, which is

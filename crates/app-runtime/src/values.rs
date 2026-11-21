@@ -503,7 +503,11 @@ pub struct HostView {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ProviderSignIn {
-    pub provider: wire::Provider,
+    /// The provider's id, as the host names it ("claude", "codex", an ACP
+    /// agent's).
+    pub provider: String,
+    /// What people call it, as the host names it ("Claude", "OpenCode").
+    pub name: String,
     pub signed_in: bool,
 }
 

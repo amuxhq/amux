@@ -663,7 +663,7 @@ public final class Profile: @unchecked Sendable {
     /// What a provider offers on a host with no agent running there: what a
     /// new agent picks its model, effort, permission and mode from.
     public func hostCatalogue(
-        on host: HostId, provider: Provider
+        on host: HostId, provider: String
     ) async -> Result<Catalogue, RuntimeFailure> {
         let (host, provider) = (Bridge.json(host.bytes), Bridge.json(provider))
         return await act(Catalogue.self) { live in

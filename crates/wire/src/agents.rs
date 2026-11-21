@@ -47,3 +47,45 @@ pub const BUILT_INS: [BuiltIn; 3] = [
 pub fn built_in(id: &str) -> Option<&'static BuiltIn> {
     BUILT_INS.iter().find(|agent| agent.id == id)
 }
+
+/// Claude Code's provider id, for both of its kinds.
+pub const CLAUDE: &str = "claude";
+/// Codex's provider id.
+pub const CODEX: &str = "codex";
+
+/// The provider id a kind implies where nothing names one: what a spec or
+/// row an earlier build wrote, before every agent named its provider, runs.
+/// Empty for an ACP agent, whose kind names no program, and for a kind this
+/// build does not know.
+pub fn implied_by(kind: crate::Kind) -> &'static str {
+    match kind {
+        crate::Kind::ClaudePty | crate::Kind::ClaudeSdk => CLAUDE,
+        crate::Kind::Codex => CODEX,
+        crate::Kind::Acp | crate::Kind::Unspecified => "",
+    }
+}
+
+/// `provider` where it names one, else the one `kind` implies.
+pub fn provider_or_implied(provider: &str, kind: crate::Kind) -> &str {
+    if provider.is_empty() {
+        implied_by(kind)
+    } else {
+        provider
+    }
+}
+
+impl crate::AgentSpec {
+    /// The agent's provider id, derived from its kind in a spec an earlier
+    /// build wrote without one.
+    pub fn provider_id(&self) -> &str {
+        provider_or_implied(&self.provider, self.kind())
+    }
+}
+
+impl crate::Agent {
+    /// The row's provider id, derived from its kind in a row an earlier
+    /// build sent without one.
+    pub fn provider_id(&self) -> &str {
+        provider_or_implied(&self.provider, self.kind())
+    }
+}

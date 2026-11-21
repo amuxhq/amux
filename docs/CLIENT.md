@@ -20,8 +20,13 @@ Three rules shape the library:
   which answers from its rows and reaches other hosts itself. A client never opens a store, never dials another
   host, never holds a cursor, and never reads disk.
 - **Per-kind knowledge lives in one thin layer.** The model knows an agent's kind (terminal Claude, headless
-  Claude, Codex) only where it decodes a snapshot or item body. Everything above that works on kind-neutral
-  facts; the views read the decoded bodies to produce typed rows and cards.
+  Claude, Codex, an ACP agent) only where it decodes a snapshot or item body, or builds the input in a kind's
+  arm. Everything above that works on kind-neutral facts; the views read the decoded bodies to produce typed rows
+  and cards. What an agent can do is its `AgentCapabilities` (on its snapshot, else its host's
+  `ProviderOnHost`), and how a provider is named, started and signed in to is that host's `ProviderDescriptor`
+  ([the wire](WIRE.md#capabilities)); a client never decides either by matching a kind or a provider id.
+  `just client-kind-check` holds the client crates to this: it lists every place in them that still matches a
+  kind or a provider's name, each with why, and fails on any other.
 - **Nothing is persisted.** Every value the model holds can be re-served by the runtime, so the model is never
   saved, checkpointed or restored. Closing a chat narrows its session to the few rows the fleet keeps, or drops it
   for an exited agent; opening it again pages or rebuilds the rest from the runtime's rows.

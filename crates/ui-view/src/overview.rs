@@ -9,8 +9,8 @@ use serde::Serialize;
 pub use ui_state::JobStop;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    BackgroundKind, Diff, DiffBase, DiffFileChange, Kind, Limit, TaskListStatus, UsageMeter,
-    UsageState, diff_base,
+    BackgroundKind, Diff, DiffBase, DiffFileChange, Limit, TaskListStatus, UsageMeter, UsageState,
+    diff_base,
 };
 
 use crate::review::FileStatus;
@@ -229,7 +229,7 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
     });
     // Headless Claude and Codex stop one job on request; terminal Claude
     // has no way to.
-    let stops_one = matches!(state.kind(), Kind::ClaudeSdk | Kind::Codex);
+    let stops_one = state.capabilities().stops_job;
     // A provider subagent's own job is the subagent itself, which its
     // composer stops; the overview lists only what it started.
     let own_job = state

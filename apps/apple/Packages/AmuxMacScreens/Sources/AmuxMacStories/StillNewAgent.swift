@@ -17,7 +17,7 @@ final class StillNewAgent: NewAgentSurface {
     private(set) var directory: String
     var query = ""
     var typed = ""
-    private(set) var provider: Provider = .claude
+    private(set) var provider = "claude"
     private var choices: [String: String] = [:]
     var newWorktree = false
     var name = ""
@@ -54,7 +54,7 @@ final class StillNewAgent: NewAgentSurface {
         return (repositories + recent + history).filter { $0.path.lowercased().contains(wanted) }
     }
 
-    func choose(provider: Provider) {
+    func choose(provider: String) {
         self.provider = provider
         choices = [:]
     }

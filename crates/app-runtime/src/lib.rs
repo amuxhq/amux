@@ -34,10 +34,6 @@ use ui_state::AgentKey;
 use ui_view::{FamilyHeader, FleetCard, FleetView, Repository};
 use values::{AgentAct, Directories, Directory, Draft, NewAgent, ProviderSignIn};
 pub use values::{FleetDelta, HostView};
-/// The provider whose catalogue `host_catalogue` reads, named here so the
-/// phone's bridge passes it on without a dependency of its own on the wire
-/// crate.
-pub use wire::Provider;
 use wire::{CreateAgentRequest, DeleteAgentRequest, DumpRequest, Filing, Kind, RenameAgentRequest};
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -234,15 +230,22 @@ impl AppRuntime {
                     .candidate()
                     .is_some_and(|candidate| candidate.pairing_open),
                 signed_in: host.account_signed_in(),
-                claude_kind: Some(host.claude_kind())
+                claude_kind: host
+                    .provider(wire::agents::CLAUDE)
+                    .map(wire::ProviderOnHost::kind)
                     .filter(|kind| *kind != wire::Kind::Unspecified),
                 current: host.current(),
+                // Only a provider the host has asked says whether it is
+                // signed in.
                 providers: host
                     .providers
                     .iter()
-                    .map(|offer| ProviderSignIn {
-                        provider: offer.provider(),
-                        signed_in: offer.signed_in,
+                    .filter_map(|offer| {
+                        Some(ProviderSignIn {
+                            provider: offer.provider.clone(),
+                            name: offer.name().to_owned(),
+                            signed_in: offer.signed_in()?,
+                        })
                     })
                     .collect(),
             })
@@ -331,13 +334,13 @@ impl AppRuntime {
     pub async fn host_catalogue(
         &self,
         host_id: &[u8],
-        provider: Provider,
+        provider: &str,
     ) -> Result<wire::Catalogue, RpcError> {
         let blob = self
             .client
             .get_catalogue(wire::GetCatalogueRequest {
                 host_id: host_id.to_vec(),
-                provider: provider as i32,
+                provider: provider.to_owned(),
             })
             .await?;
         wire::Catalogue::decode(blob.bytes.as_slice()).map_err(|error| {

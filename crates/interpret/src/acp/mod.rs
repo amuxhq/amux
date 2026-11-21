@@ -42,10 +42,10 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 pub use wire::agents::{BUILT_INS, BuiltIn, built_in};
 use wire::{
-    AcpAnswer, AcpAsk, AcpItem, AcpSnapshot, AcpTool, AgentSpec, AskItem, AskOutcome, Catalogue,
-    ContextMeter, Envelope, FormAction, Input, KindInput, OfferedCommand, OfferedMode,
-    OfferedModel, QueuedInput, Refusal, Step, TaskList, TaskListEntry, acp_answer, acp_ask,
-    acp_input, acp_item, ask_item as wire_ask_item,
+    AcpAnswer, AcpAsk, AcpItem, AcpSnapshot, AcpTool, AgentCapabilities, AgentSpec, AskItem,
+    AskOutcome, Catalogue, ContextMeter, Envelope, FormAction, Input, KindInput, OfferedCommand,
+    OfferedMode, OfferedModel, QueuedInput, Refusal, Step, TaskList, TaskListEntry, acp_answer,
+    acp_ask, acp_input, acp_item, ask_item as wire_ask_item,
 };
 
 use crate::claude_common::{clip, describe_cause, or_dash};
@@ -121,6 +121,16 @@ pub fn opening(init: &InitializeResponse, saved: Option<&str>) -> Opening {
     } else {
         Opening::Unresumable
     }
+}
+
+/// What an ACP agent can do, from what its process said at `initialize`
+/// (None before it has answered, which reads as cannot) and its quirks.
+fn capabilities(agent: &str, reopens: Option<Reopens>, takes: Option<Takes>) -> AgentCapabilities {
+    AgentCapabilities::acp(
+        reopens.is_some_and(|reopens| reopens.resume || reopens.load),
+        takes.is_some_and(|takes| takes.images),
+        quirks(agent).steers,
+    )
 }
 
 /// What tells one ACP agent from another, where the protocol leaves room.
@@ -625,8 +635,10 @@ impl State {
         .into_iter()
         .filter_map(|(category, value)| Some((category, value?)))
         .collect();
+        let mut shared = Shared::new(spec, KIND);
+        shared.set_capabilities(capabilities(&spec.provider, None, None));
         Self {
-            shared: Shared::new(spec, KIND),
+            shared,
             agent: spec.provider.clone(),
             incarnation: spec.incarnation,
             session_id: None,
@@ -659,6 +671,12 @@ impl State {
 
     fn quirks(&self) -> Quirks {
         quirks(&self.agent)
+    }
+
+    /// Says on the snapshot what the agent can do, as its process last said.
+    fn say_capabilities(&mut self) {
+        let capabilities = capabilities(&self.agent, self.reopens, self.takes);
+        self.shared.set_capabilities(capabilities);
     }
 
     fn choice(&self, category: Category) -> Option<&Choice> {

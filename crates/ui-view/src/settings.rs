@@ -371,7 +371,9 @@ pub fn slash(state: &SessionState, text: &str) -> Slash {
                 None => typed_setting(&change).map_or(Slash::Prompt, Slash::Typed),
             }
         }
-        None if kind == Kind::Codex => {
+        // An agent that refuses a command it does not list (Codex) is
+        // told nothing it would refuse.
+        None if !state.capabilities().passes_unknown_commands => {
             let commands: Vec<String> = view
                 .commands
                 .iter()

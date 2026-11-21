@@ -43,11 +43,11 @@ public struct HostPage: View {
                         Text(meaning).foregroundStyle(Palette.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                let providers = host.providers.filter { $0.provider != .unspecified }
+                let providers = host.providers.filter { !$0.provider.isEmpty }
                 if !providers.isEmpty {
                     group("Coding tools") {
                         ForEach(Array(providers.enumerated()), id: \.offset) { _, signIn in
-                            fact(signIn.provider == .codex ? "Codex" : "Claude", signIn.signedIn ? "Signed in" : "Not signed in",
+                            fact(signIn.name, signIn.signedIn ? "Signed in" : "Not signed in",
                                  quiet: !signIn.signedIn)
                         }
                     }

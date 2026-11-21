@@ -113,7 +113,7 @@ extension ChatWords {
         switch kind {
         case .claudeSdk?, .claudePty?: String(localized: "Claude runs this subagent")
         case .codex?: String(localized: "Codex runs this subagent")
-        case .unspecified?, nil: String(localized: "Its provider runs this subagent")
+        case .acp?, .unspecified?, nil: String(localized: "Its provider runs this subagent")
         }
     }
 

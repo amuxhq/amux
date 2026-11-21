@@ -112,6 +112,8 @@ impl Daemon {
     ) -> Result<AgentRow, StoreError> {
         let names = self.own_names()?;
         let mut row = AgentRow::new(key, host.kind, host.cwd.clone());
+        // Run by its host's provider process, so of its host's program.
+        row.provider = host.provider_id().to_owned();
         // Never a word pair or a name taken from what it is about: those
         // are names a person would choose, and the provider's description
         // is the title.

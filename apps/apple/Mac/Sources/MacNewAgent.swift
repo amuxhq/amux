@@ -60,9 +60,9 @@ final class MacNewAgent: NewAgentSurface {
         set { model.typed = newValue }
     }
 
-    var provider: Provider { model.provider.wire }
+    var provider: String { model.provider.wire }
 
-    func choose(provider: Provider) {
+    func choose(provider: String) {
         if let chosen = NewAgentStore.Provider.allCases.first(where: { $0.wire == provider }) {
             model.choose(provider: chosen)
         }

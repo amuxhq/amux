@@ -1000,6 +1000,7 @@ impl Daemon {
         let mut row = AgentRow::new(self.own_key(create.agent), create.spec.kind(), cwd);
         row.name = name.to_owned();
         row.name_given = create.given.is_some();
+        row.provider = create.spec.provider_id().to_owned();
         row.parent = create
             .spec
             .parent

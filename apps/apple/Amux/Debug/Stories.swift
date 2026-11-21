@@ -240,7 +240,7 @@ enum StoryFleet {
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
             candidate: candidate, reach: .online(.direct),
             addrs: candidate && !relayOnly ? ["192.168.1.\(index):4433"] : [], relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
-            providers: [ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: true)],
+            providers: [ProviderSignIn(provider: "claude", name: "Claude", signedIn: true), ProviderSignIn(provider: "codex", name: "Codex", signedIn: true)],
             claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)
     }
 

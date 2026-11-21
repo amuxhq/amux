@@ -33,7 +33,9 @@
 //!   load or neither), whether prompts take images and embedded files, its
 //!   sign-in methods with the hint each gives, and its sign-in state where
 //!   `initialize` shows it (Grok), unspecified elsewhere;
-//! - `signed_in`: false only when the agent is known to be signed out.
+//! - `signed_in`: false only when the agent is known to be signed out;
+//! - `capabilities`: what an agent started now can do, by that answer and
+//!   the agent's known ways (whether it steers a running turn).
 //!
 //! The program not starting, exiting before it answers, or refusing
 //! `initialize` exits non-zero with the reason on stderr, and writes no
@@ -55,17 +57,10 @@ use codex_protocol::server::{
 use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
 use prost::Message as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-use wire::{Catalogue, Provider, ProviderOffer};
+use wire::{Catalogue, ProviderOffer};
 
 const INITIALIZE: &str = "amux-catalogue";
 const SETTINGS: &str = "amux-settings";
-
-/// The provider a word on the command line names: the `Provider` value's
-/// own name, lowercase, without the enum's prefix, as the daemon writes it.
-pub fn provider_named(word: &str) -> Option<Provider> {
-    Provider::from_str_name(&format!("PROVIDER_{}", word.to_ascii_uppercase()))
-        .filter(|provider| *provider != Provider::Unspecified)
-}
 
 /// Asks `provider`, run as `command` (with `args` for an ACP agent), and
 /// writes a `ProviderOffer` to `out`; the exit code says whether it could.
@@ -81,8 +76,8 @@ pub fn main(provider: &str, command: &str, args: &[String], out: &Path) -> i32 {
         }
     };
     let asked = runtime.block_on(async {
-        let named = provider_named(provider);
-        if named.is_some() && !args.is_empty() {
+        let own = [wire::agents::CLAUDE, wire::agents::CODEX].contains(&provider);
+        if own && !args.is_empty() {
             return Err(format!("{provider} takes no --arg"));
         }
         let plain = |(catalogue, signed_in)| ProviderOffer {
@@ -90,10 +85,10 @@ pub fn main(provider: &str, command: &str, args: &[String], out: &Path) -> i32 {
             signed_in,
             ..ProviderOffer::default()
         };
-        match named {
-            Some(Provider::Claude) => ask_claude(command).await.map(plain),
-            Some(Provider::Codex) => ask_codex(command).await.map(plain),
-            Some(Provider::Unspecified) | None => ask_acp(provider, command, args).await,
+        match provider {
+            wire::agents::CLAUDE => ask_claude(command).await.map(plain),
+            wire::agents::CODEX => ask_codex(command).await.map(plain),
+            agent => ask_acp(agent, command, args).await,
         }
     });
     let written = asked.and_then(|offer| {
@@ -431,6 +426,7 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         catalogue: Some(offer.catalogue),
         provider_version: offer.version,
         acp: Some(offer.acp),
+        capabilities: Some(offer.capabilities),
         asked_at_ms: 0,
     })
 }

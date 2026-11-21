@@ -214,6 +214,67 @@ fn opened(provider: &str, capabilities: serde_json::Value) -> interpret::acp::St
     state
 }
 
+/// The capabilities the snapshots in `stepped` say, newest last.
+fn said_capabilities(stepped: &interpret::Stepped) -> Option<wire::AgentCapabilities> {
+    stepped.step.snapshot.as_ref()?.capabilities
+}
+
+/// An ACP agent's snapshot says what its process can do: nothing it has
+/// not said before `initialize` answers, and what that answer offered
+/// after, with send-now for an agent known to steer.
+#[test]
+fn an_acp_agents_snapshot_says_what_its_process_can_do() {
+    for (provider, steers) in [("antigravity", true), ("my-own-agent", false)] {
+        let (mut state, first) = Acp::initial(&spec(provider));
+        assert_eq!(
+            first.snapshot.unwrap().capabilities,
+            Some(wire::AgentCapabilities::acp(false, false, steers)),
+            "{provider} before it answered"
+        );
+        let answered = Acp::step(
+            &mut state,
+            rpc(
+                serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
+                "result": {"protocolVersion": 1, "agentCapabilities": {
+                    "loadSession": true, "promptCapabilities": {"image": true}}}}),
+            ),
+        );
+        assert_eq!(
+            said_capabilities(&answered),
+            Some(wire::AgentCapabilities::acp(true, true, steers)),
+            "{provider} once it answered"
+        );
+    }
+}
+
+/// Claude's and Codex's snapshots say what every agent of their kind can
+/// do, from the first.
+#[test]
+fn the_other_kinds_snapshots_say_what_their_kind_can_do() {
+    let spec = |kind: wire::Kind| wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        kind: kind as i32,
+        incarnation: 1,
+        ..Default::default()
+    };
+    let first = |step: wire::Step| step.snapshot.unwrap().capabilities;
+    use interpret::claude_pty::ClaudePty;
+    use interpret::claude_sdk::ClaudeSdk;
+    use interpret::codex::Codex;
+    assert_eq!(
+        first(ClaudePty::initial(&spec(wire::Kind::ClaudePty)).1),
+        Some(wire::AgentCapabilities::claude_pty())
+    );
+    assert_eq!(
+        first(ClaudeSdk::initial(&spec(wire::Kind::ClaudeSdk)).1),
+        Some(wire::AgentCapabilities::claude_sdk())
+    );
+    assert_eq!(
+        first(Codex::initial(&spec(wire::Kind::Codex)).1),
+        Some(wire::AgentCapabilities::codex())
+    );
+}
+
 #[test]
 fn a_session_no_new_process_can_reopen_is_held() {
     let held = opened("my-own-agent", serde_json::json!({}));
@@ -822,6 +883,13 @@ fn the_hosts_copy_comes_from_initialize_alone() {
     assert!(models.contains(&new_agent.model.as_deref().unwrap()));
     assert!(new_agent.effort.is_some());
 
+    // Grok 1.0.89 resumes and takes images; it queues a mid-turn prompt
+    // itself rather than steering.
+    assert_eq!(
+        grok.capabilities,
+        wire::AgentCapabilities::acp(true, true, false)
+    );
+
     let signed_out = interpret::acp::host_offer("grok", &recorded_initialize("grok-signed_out"));
     assert_eq!(signed_out.acp.sign_in, wire::SignInState::SignedOut as i32);
     assert!(!signed_out.signed_in());
@@ -835,6 +903,11 @@ fn the_hosts_copy_comes_from_initialize_alone() {
         assert!(!offer.version.is_empty());
         assert_eq!(offer.acp.reopen, wire::AcpReopen::Resume as i32);
         assert!(offer.acp.images && offer.acp.embedded_context);
+        assert_eq!(
+            offer.capabilities,
+            wire::AgentCapabilities::acp(true, true, agent == "antigravity"),
+            "{agent}: it resumes and takes images; only Antigravity steers"
+        );
         assert_eq!(offer.acp.sign_in, wire::SignInState::Unspecified as i32);
         assert!(offer.signed_in());
         assert!(offer.catalogue.models.is_empty());

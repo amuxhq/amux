@@ -1566,8 +1566,8 @@ extension CatalogFixtures {
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
             reach: .online(.direct), addrs: [], relayOnly: false, pairingOpen: false, current: true,
             providers: [
-                ProviderSignIn(provider: .claude, signedIn: signedIn),
-                ProviderSignIn(provider: .codex, signedIn: true),
+                ProviderSignIn(provider: "claude", name: "Claude", signedIn: signedIn),
+                ProviderSignIn(provider: "codex", name: "Codex", signedIn: true),
             ],
             claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
         HostView(
@@ -2012,7 +2012,7 @@ extension CatalogFixtures {
         candidate: Bool = false, addrs: [String] = [], relayOnly: Bool = false, pairingOpen: Bool = false,
         version: String? = "0.8.0",
         providers: [ProviderSignIn] = [
-            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
+            ProviderSignIn(provider: "claude", name: "Claude", signedIn: true), ProviderSignIn(provider: "codex", name: "Codex", signedIn: false),
         ]
     ) -> HostView {
         HostView(

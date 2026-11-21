@@ -314,7 +314,7 @@ impl AgentService for PeerApi {
             host,
             "a paired host answers only for its own providers",
         )?;
-        own_catalogue(&runtime, request.provider).await
+        own_catalogue(&runtime, &request.provider).await
     }
 
     /// A paired host pins on this host's list as a person here would: the

@@ -11,18 +11,19 @@ import SwiftUI
 struct ModelPicker: View {
     /// A provider the agent could be, for a new agent; none once it runs.
     struct ProviderItem: Identifiable {
-        let provider: Provider
+        /// The provider's id ("claude", "codex").
+        let provider: String
         let name: String
         let glyph: String
         /// Why it can't be picked now: "Not signed in on build-box".
         var note: String?
-        var id: Provider { provider }
+        var id: String { provider }
     }
 
     var providers: [ProviderItem] = []
-    var provider: Provider?
+    var provider: String?
     let settings: SettingsView?
-    var chooseProvider: (Provider) -> Void = { _ in }
+    var chooseProvider: (String) -> Void = { _ in }
     let chooseModel: (String) -> Void
     let chooseEffort: (String) -> Void
     let chooseMode: (String) -> Void

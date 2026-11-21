@@ -206,8 +206,8 @@ public struct HostPage: View {
         if let version = view.version {
             facts.append(Fact(id: "version", label: String(localized: "Version"), value: version, mono: true))
         }
-        for signIn in view.providers where signIn.provider != .unspecified {
-            let name = signIn.provider == .codex ? "Codex" : "Claude"
+        for signIn in view.providers where !signIn.provider.isEmpty {
+            let name = signIn.name
             facts.append(Fact(
                 id: "provider.\(name.lowercased())", label: name,
                 value: signIn.signedIn ? String(localized: "Signed in") : String(localized: "Not signed in")))

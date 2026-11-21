@@ -41,8 +41,8 @@ pub fn prompt_bootstrap(prompt: PromptSubmission) -> Result<Bootstrap, RegistryE
 /// agent's configuration. Carried from one incarnation's spec to the next.
 #[derive(Clone, Debug, Default)]
 pub struct Resolved {
-    /// The agent program's id, for a kind that runs one of many: an ACP
-    /// agent's. Empty for the others.
+    /// The agent program's provider id: `claude`, `codex`, or an ACP
+    /// agent's.
     pub provider: String,
     pub provider_args: Vec<String>,
     pub model: Option<String>,
@@ -140,7 +140,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 args.extend(["--effort".to_owned(), effort.clone()]);
             }
             Resolved {
-                provider: String::new(),
+                provider: wire::agents::CLAUDE.to_owned(),
                 provider_args: args,
                 model: claude.model,
                 permission: claude.permission,
@@ -172,7 +172,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 }
             }
             Resolved {
-                provider: String::new(),
+                provider: wire::agents::CODEX.to_owned(),
                 provider_args: args,
                 model: codex.model,
                 permission: codex.permission,

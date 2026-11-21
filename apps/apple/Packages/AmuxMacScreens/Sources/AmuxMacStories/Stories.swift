@@ -301,7 +301,7 @@ public enum Stories {
     private static var buildBox: HostView {
         var box = paired[0]
         box.providers = [
-            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
+            ProviderSignIn(provider: "claude", name: "Claude", signedIn: true), ProviderSignIn(provider: "codex", name: "Codex", signedIn: false),
         ]
         box.addrs = ["192.168.1.24:47821", "[fe80::1c2b:3a]:47821"]
         return box

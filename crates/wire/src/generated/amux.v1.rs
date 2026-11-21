@@ -520,6 +520,12 @@ pub struct Snapshot {
     /// daemon copies it onto the inventory row.
     #[prost(string, optional, tag = "14")]
     pub last_said: ::core::option::Option<::prost::alloc::string::String>,
+    /// What this agent can do that differs between agents, filled by its
+    /// interpreter from what its program said. Absent in a snapshot an earlier
+    /// build wrote: a client then takes what the agent's host says its
+    /// provider can do (ProviderOnHost.capabilities). Not copied onto the row.
+    #[prost(message, optional, tag = "15")]
+    pub capabilities: ::core::option::Option<AgentCapabilities>,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -529,6 +535,58 @@ impl ::prost::Name for Snapshot {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Snapshot".into()
+    }
+}
+/// What an agent can do that differs between agents and kinds, as data: a
+/// client offers a control when the capability says the agent takes it, and
+/// never decides by the agent's kind or provider. The model, effort,
+/// permission and mode an agent can change are said elsewhere, by its
+/// catalogue. Filled for a running agent by its interpreter (on its
+/// snapshot) and for a provider a host offers by that host (on
+/// ProviderOnHost). False is the safe reading of every field: a client
+/// that leaves out a control the agent has loses only that control, and
+/// never sends an input the agent would refuse.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentCapabilities {
+    /// One background job can be stopped on its own (a StopJob input).
+    #[prost(bool, tag = "1")]
+    pub stops_job: bool,
+    /// The agent's own view can go to another of its conversations, and be
+    /// brought back (a SwitchBack input): terminal Claude's.
+    #[prost(bool, tag = "2")]
+    pub switches_back: bool,
+    /// The agent runs with a terminal interface of its own, which a client on
+    /// its host can attach to.
+    #[prost(bool, tag = "3")]
+    pub attachable: bool,
+    /// A later process of its program reopens its conversation, so the agent
+    /// can be suspended and resumed once it has exited. An agent whose program
+    /// cannot, or has not yet said it can, is false: it never suspends, and
+    /// its exit is final.
+    #[prost(bool, tag = "4")]
+    pub resumable: bool,
+    /// A queued prompt can be sent into the running turn (SendQueuedNow).
+    #[prost(bool, tag = "5")]
+    pub sends_now: bool,
+    /// A prompt may carry images that the provider sees as images.
+    #[prost(bool, tag = "6")]
+    pub images: bool,
+    /// A prompt may carry files.
+    #[prost(bool, tag = "7")]
+    pub files: bool,
+    /// A slash command the agent does not list goes to it as typed; false: a
+    /// client refuses it before sending.
+    #[prost(bool, tag = "8")]
+    pub passes_unknown_commands: bool,
+}
+impl ::prost::Name for AgentCapabilities {
+    const NAME: &'static str = "AgentCapabilities";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentCapabilities".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentCapabilities".into()
     }
 }
 /// What a notification says, in data rather than sentences: each client words
@@ -4325,13 +4383,11 @@ pub struct HostEntry {
     /// Bumped only after an unclean reboot of that host.
     #[prost(uint64, tag = "2")]
     pub generation: u64,
-    /// What each provider offers on the host, once the host has asked it.
+    /// The agent programs the host runs, in the order a picker lists them:
+    /// Claude and Codex always, then each ACP agent the host offers once it
+    /// has asked it, built-in ones first.
     #[prost(message, repeated, tag = "3")]
     pub providers: ::prost::alloc::vec::Vec<ProviderOnHost>,
-    /// The kind this host's settings resolve to for a new Claude agent: every
-    /// client creates Claude agents on this host with it.
-    #[prost(enumeration = "Kind", tag = "6")]
-    pub claude_kind: i32,
     /// Set when this host wants notifications: the key they are sealed to, on
     /// the host's own entry in the inventory it serves. A daemon reads it only
     /// from that stream, whose handshake proves who sent it, and keeps it with
@@ -4514,15 +4570,30 @@ impl ::prost::Name for Candidate {
         "type.googleapis.com/amux.v1.Candidate".into()
     }
 }
+/// One agent program a host runs.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProviderOnHost {
-    #[prost(enumeration = "Provider", tag = "1")]
-    pub provider: i32,
-    /// The hash GetCatalogue answers with for this provider.
+    /// The provider's id: "claude", "codex", or an ACP agent's id
+    /// ("antigravity", "opencode", "grok", or one a person added in the host's
+    /// config). What GetCatalogueRequest and Agent.provider name it by.
+    #[prost(string, tag = "1")]
+    pub provider: ::prost::alloc::string::String,
+    /// The hash GetCatalogue answers with for this provider; absent until the
+    /// host has asked it, which GetCatalogue does.
     #[prost(bytes = "vec", optional, tag = "2")]
     pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// Whether the provider was signed in when the host asked it; says
+    /// nothing while `catalogue` is absent.
     #[prost(bool, tag = "3")]
     pub signed_in: bool,
+    /// How clients name and start it.
+    #[prost(message, optional, tag = "4")]
+    pub descriptor: ::core::option::Option<ProviderDescriptor>,
+    /// What an agent of this provider started on this host now can do. A
+    /// running agent's own snapshot says what it can, which is what a client
+    /// reads for that agent.
+    #[prost(message, optional, tag = "5")]
+    pub capabilities: ::core::option::Option<AgentCapabilities>,
 }
 impl ::prost::Name for ProviderOnHost {
     const NAME: &'static str = "ProviderOnHost";
@@ -4532,6 +4603,38 @@ impl ::prost::Name for ProviderOnHost {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.ProviderOnHost".into()
+    }
+}
+/// What a client needs to name a provider and start one of its agents,
+/// without knowing the provider.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ProviderDescriptor {
+    /// What people call it ("Claude", "Codex", "OpenCode", or the name a
+    /// person gave their own agent).
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// The kind a new agent of this provider starts as on this host: for
+    /// Claude, the one the host's settings choose (terminal or headless).
+    #[prost(enumeration = "Kind", tag = "2")]
+    pub kind: i32,
+    /// What a person does to sign in, in the provider's or amux's words
+    /// ("Run `opencode auth login` in the terminal"); empty when nothing is
+    /// known. amux never signs in for a person.
+    #[prost(string, tag = "3")]
+    pub sign_in_hint: ::prost::alloc::string::String,
+    /// The program's version as it gave it when the host asked; empty where it
+    /// gives none.
+    #[prost(string, tag = "4")]
+    pub version: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ProviderDescriptor {
+    const NAME: &'static str = "ProviderDescriptor";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ProviderDescriptor".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ProviderDescriptor".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4637,6 +4740,11 @@ pub struct Agent {
         ::prost::alloc::string::String,
         ::prost::alloc::vec::Vec<u8>,
     >,
+    /// Which agent program it runs, by its provider id ("claude", "codex", or
+    /// an ACP agent's, as ProviderOnHost names it). Clients name the agent
+    /// with the descriptor its host lists for that id.
+    #[prost(string, tag = "23")]
+    pub provider: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -4877,40 +4985,6 @@ impl Lifecycle {
             "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
             "LIFECYCLE_LIVE" => Some(Self::Live),
             "LIFECYCLE_EXITED" => Some(Self::Exited),
-            _ => None,
-        }
-    }
-}
-/// Which provider's program a host runs: the vocabulary amux uses to ask a
-/// host what it offers with no agent running. Distinct from Kind, which is
-/// the interpreter.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Provider {
-    Unspecified = 0,
-    Claude = 1,
-    Codex = 2,
-}
-impl Provider {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "PROVIDER_UNSPECIFIED",
-            Self::Claude => "PROVIDER_CLAUDE",
-            Self::Codex => "PROVIDER_CODEX",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
-            "PROVIDER_CLAUDE" => Some(Self::Claude),
-            "PROVIDER_CODEX" => Some(Self::Codex),
             _ => None,
         }
     }
@@ -8643,8 +8717,9 @@ impl ::prost::Name for GetDiffResponse {
 pub struct GetCatalogueRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "Provider", tag = "2")]
-    pub provider: i32,
+    /// The provider's id, as ProviderOnHost names it.
+    #[prost(string, tag = "2")]
+    pub provider: ::prost::alloc::string::String,
 }
 impl ::prost::Name for GetCatalogueRequest {
     const NAME: &'static str = "GetCatalogueRequest";
@@ -15215,10 +15290,11 @@ pub struct AgentSpec {
     /// The inventory row's title when this incarnation was spawned.
     #[prost(string, optional, tag = "16")]
     pub title: ::core::option::Option<::prost::alloc::string::String>,
-    /// Which agent program the kind runs, by its id: for kind acp, the ACP
-    /// agent's ("antigravity", "opencode", "grok", or one a person added).
-    /// Empty for the other kinds, whose kind names their program, and in a
-    /// spec an earlier build wrote.
+    /// Which agent program the kind runs, by its provider id: "claude",
+    /// "codex", or for kind acp the ACP agent's ("antigravity", "opencode",
+    /// "grok", or one a person added). Empty in a spec an earlier build wrote,
+    /// whose kind names its program: Claude's kinds are "claude", Codex's
+    /// "codex".
     #[prost(string, tag = "17")]
     pub provider: ::prost::alloc::string::String,
     /// What experiments tell the agent process, each entry keyed by an
@@ -15288,6 +15364,11 @@ pub struct ProviderOffer {
     /// Claude and Codex.
     #[prost(message, optional, tag = "5")]
     pub acp: ::core::option::Option<AcpOffer>,
+    /// What an ACP agent started now can do, as the helper read it from
+    /// `initialize` and the agent's known ways; absent for Claude and Codex,
+    /// whose kind says it.
+    #[prost(message, optional, tag = "6")]
+    pub capabilities: ::core::option::Option<AgentCapabilities>,
 }
 impl ::prost::Name for ProviderOffer {
     const NAME: &'static str = "ProviderOffer";

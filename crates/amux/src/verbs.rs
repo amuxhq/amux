@@ -74,14 +74,12 @@ fn short_id(id: &[u8]) -> String {
         .unwrap_or_default()
 }
 
-/// A kind as the listing says it: the agent a person chose, whichever
-/// interface it runs for.
-fn kind_word(kind: i32) -> &'static str {
-    match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::Unspecified => "unknown",
-        Kind::ClaudePty | Kind::ClaudeSdk => "claude",
-        Kind::Codex => "codex",
-        Kind::Acp => "acp",
+/// The agent a person chose, as the listing says it: its provider id, the
+/// word `amux new` takes, whichever interface it runs for.
+fn agent_word(agent: &Agent) -> &str {
+    match agent.provider_id() {
+        "" => "unknown",
+        id => id,
     }
 }
 
@@ -208,14 +206,24 @@ fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
         })
         .collect();
     let width = names.iter().map(String::len).max().unwrap_or(4).max(4);
+    let agent_width = rows
+        .iter()
+        .map(|(_, agent)| agent_word(agent).len())
+        .max()
+        .unwrap_or(5)
+        .max(5);
     let mut out = String::new();
-    let _ = writeln!(out, "{:width$}  {:8}  {:7}  STATE", "NAME", "ID", "KIND");
+    let _ = writeln!(
+        out,
+        "{:width$}  {:8}  {:agent_width$}  STATE",
+        "NAME", "ID", "AGENT"
+    );
     for (name, (_, agent)) in names.iter().zip(&rows) {
         let _ = writeln!(
             out,
-            "{name:width$}  {:8}  {:7}  {}",
+            "{name:width$}  {:8}  {:agent_width$}  {}",
             short_id(&agent.agent_id),
-            kind_word(agent.kind),
+            agent_word(agent),
             listed_state(agent, hosts, &host_name(&agent.host_id)),
         );
     }
@@ -285,7 +293,8 @@ async fn published_claude_kind(client: &mut Client, host: &[u8]) -> Result<Kind>
     Ok(hosts
         .iter()
         .find(|entry| entry.host_id() == host)
-        .map_or(Kind::Unspecified, HostEntry::claude_kind))
+        .and_then(|entry| entry.provider(wire::agents::CLAUDE))
+        .map_or(Kind::Unspecified, wire::ProviderOnHost::kind))
 }
 
 /// A prompt in the input arm the agent's kind takes.
@@ -656,5 +665,39 @@ mod tests {
             "{table}"
         );
         assert!(line("plap/c1").ends_with("plap is away"), "{table}");
+    }
+
+    /// The listing names each agent's program as `amux new` takes it: an
+    /// ACP agent by its own id, and an agent a host from before rows named
+    /// their program by what its kind implies.
+    #[test]
+    fn ls_names_each_agents_program() {
+        let agent = |id: u8, name: &str, kind: Kind, provider: &str| Agent {
+            agent_id: vec![id; 16],
+            host_id: vec![1; 16],
+            name: name.into(),
+            kind: kind as i32,
+            provider: provider.into(),
+            lifecycle: Lifecycle::Live as i32,
+            phase: Phase::Idle as i32,
+            created_at_ms: i64::from(id),
+            ..Agent::default()
+        };
+        let table = ls_table(
+            &[],
+            &[
+                agent(1, "old", Kind::ClaudeSdk, ""),
+                agent(2, "open", Kind::Acp, "opencode"),
+                agent(3, "cx", Kind::Codex, "codex"),
+            ],
+        );
+        let words: Vec<Vec<&str>> = table
+            .lines()
+            .map(|line| line.split_whitespace().collect())
+            .collect();
+        assert_eq!(words[0], ["NAME", "ID", "AGENT", "STATE"], "{table}");
+        assert_eq!(words[1][2], "claude", "{table}");
+        assert_eq!(words[2][2], "opencode", "{table}");
+        assert_eq!(words[3][2], "codex", "{table}");
     }
 }

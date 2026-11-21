@@ -204,13 +204,13 @@ pub fn all() -> Vec<Story> {
         story("new-agent.claude", || {
             let mut home = tui::vocabulary::authored_home();
             home.key(KeyCode::Char('n'));
-            home.offer(wire::Provider::Claude, &claude_offer());
+            home.offer("claude", &claude_offer());
             Scene::Home(Box::new(home))
         }),
         story("new-agent.browsing", || {
             let mut home = tui::vocabulary::authored_home();
             home.key(KeyCode::Char('n'));
-            home.offer(wire::Provider::Claude, &claude_offer());
+            home.offer("claude", &claude_offer());
             home.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
             home.key(KeyCode::Char('d'));
             Scene::Home(Box::new(home))

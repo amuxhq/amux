@@ -249,6 +249,7 @@ fn snapshot(kind: Kind, snapshot: Snapshot) -> Snapshot {
         catalogue: snapshot.catalogue,
         background_jobs: snapshot.background_jobs,
         notice: None,
+        capabilities: snapshot.capabilities,
     }
 }
 
@@ -365,6 +366,7 @@ fn rejected(rejected: wire::Rejected) -> wire::Rejected {
 /// The inventory row by its ids, kind and states: no name, folder, task,
 /// branch or exit words.
 fn agent(agent: Agent) -> Agent {
+    let provider = kept_provider(agent.provider_id());
     Agent {
         agent_id: agent.agent_id,
         host_id: agent.host_id,
@@ -390,7 +392,19 @@ fn agent(agent: Agent) -> Agent {
         native: agent.native,
         // An experiment's entry may name folders; none is kept.
         experimental: Default::default(),
+        // A person's own agent is named by what they chose; only amux's
+        // own ids are kept.
+        provider,
     }
+}
+
+/// A provider id as a record keeps it: Claude's, Codex's or a built-in
+/// agent's as it is, and any other as "custom".
+fn kept_provider(provider: &str) -> String {
+    let own = [wire::agents::CLAUDE, wire::agents::CODEX].contains(&provider)
+        || wire::agents::built_in(provider).is_some()
+        || provider.is_empty();
+    if own { provider } else { "custom" }.to_owned()
 }
 
 /// The host by its id, generation and standing's arm.
@@ -408,7 +422,6 @@ fn host(host: HostEntry) -> HostEntry {
             Standing::Trusted(_) => Standing::Trusted(Default::default()),
             Standing::Candidate(_) => Standing::Candidate(Default::default()),
         }),
-        claude_kind: host.claude_kind,
         push_key: None,
     }
 }

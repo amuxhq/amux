@@ -779,6 +779,10 @@ async fn run_established(
         first_packet_to_catch_up_ms: None,
     };
     logged.write(ctx.local_host.id());
+    // Hand the link to the path driver only after `Up` is written, so a
+    // fast punch never writes `PathChanged` ahead of `Up` in the link log.
+    ctx.links
+        .path_up(&link, peer_host.id, link_role, Some(&carrier));
     ctx.report_frame(link, peer_frame);
     if let Some(auth) = &ctx.connector_auth {
         ctx.report(auth.credential(link));
@@ -800,6 +804,7 @@ async fn run_established(
     let mut shutdown_rx = ctx.shutdown_rx.clone();
     let mut close_reason = wire::LinkCloseReason::Unspecified;
     let mut close_status = None;
+    let mut peer_revoked_us = false;
     let observing = ctx.observes.is_some();
     let mut observe = tokio::time::interval(OBSERVE_EVERY);
     observe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -831,6 +836,9 @@ async fn run_established(
                 match handle_control_body(&ctx, link, body, acceptor_auth.as_mut()).await {
                     ControlAction::Continue => {}
                     ControlAction::Close(reason, status) => {
+                        if reason == wire::LinkCloseReason::UserRevoked {
+                            peer_revoked_us = true;
+                        }
                         close_reason = reason;
                         close_status = status;
                         break;
@@ -880,6 +888,9 @@ async fn run_established(
                     if let Some((reason, status)) =
                         last_word(&ctx, link, &mut source).await
                     {
+                        if reason == wire::LinkCloseReason::UserRevoked {
+                            peer_revoked_us = true;
+                        }
                         close_reason = reason;
                         close_status = status;
                     }
@@ -952,6 +963,9 @@ async fn run_established(
                 if let Some((reason, status)) =
                     last_word(&ctx, link, &mut source).await
                 {
+                    if reason == wire::LinkCloseReason::UserRevoked {
+                        peer_revoked_us = true;
+                    }
                     close_reason = reason;
                     close_status = status;
                 }
@@ -965,15 +979,27 @@ async fn run_established(
     // first, or the control stream simply ended with it. This side has not
     // closed the carrier yet, so any reason it gives is the peer's.
     if carrier.close_reason() == Some(wire::LinkCloseReason::UserRevoked) {
-        peer_revoked(&ctx, link, peer_host.id).await;
+        peer_revoked_us = true;
     }
     // Drain control messages already queued before closing, most importantly
     // the protocol close emitted for an invalid inbound frame.
     while let Ok(message) = out_rx.try_recv() {
         let _ = write_message(&mut sink, &message).await;
     }
-    registered.leave(close_reason).await;
-    carrier.close(close_reason);
+    if peer_revoked_us {
+        // Evict this link and close its carrier and sibling links before
+        // telling the core `PeerRevoked`, then report `LinkDown` after
+        // `PeerRevoked`: callers woken by the revoked mark find no lingering
+        // carrier, and `reach` already sees `revoked` on `LinkDown` so it
+        // does not start a spurious redial.
+        ctx.links.remove(&link).await;
+        carrier.close(close_reason);
+        peer_revoked(&ctx, link, peer_host.id).await;
+        registered.leave(close_reason).await;
+    } else {
+        registered.leave(close_reason).await;
+        carrier.close(close_reason);
+    }
     LinkEvent {
         event: LinkTransition::Down,
         first_packet_to_catch_up_ms: None,
@@ -1103,9 +1129,6 @@ async fn handle_control_body(
         wire::message::Body::LinkClose(close) => {
             let reason = wire::LinkCloseReason::try_from(close.reason)
                 .unwrap_or(wire::LinkCloseReason::Unspecified);
-            if reason == wire::LinkCloseReason::UserRevoked {
-                peer_revoked(ctx, link, link.peer()).await;
-            }
             ControlAction::Close(reason, link_close_status(&close))
         }
         // The relay saw another link of this account present a paid plan:
@@ -1595,61 +1618,6 @@ mod tests {
         close
     }
 
-    /// The link log this test process writes, as the daemon's log would
-    /// hold it. It is the process's one subscriber, not one scoped to a
-    /// test: a scoped one misses events whose callsites another test's
-    /// thread registered first, while none was listening.
-    #[derive(Clone, Default)]
-    struct Traces(Arc<std::sync::Mutex<Vec<u8>>>);
-
-    fn traces() -> &'static Traces {
-        static TRACES: std::sync::OnceLock<Traces> = std::sync::OnceLock::new();
-        TRACES.get_or_init(|| {
-            use tracing_subscriber::Layer as _;
-            use tracing_subscriber::layer::SubscriberExt as _;
-            use tracing_subscriber::util::SubscriberInitExt as _;
-
-            let traces = Traces::default();
-            let writer = traces.clone();
-            tracing_subscriber::registry()
-                .with(
-                    tracing_subscriber::fmt::layer()
-                        .with_ansi(false)
-                        .with_writer(move || writer.clone())
-                        .with_filter(tracing_subscriber::filter::Targets::new().with_target(
-                            crate::link_log::TARGET,
-                            tracing_subscriber::filter::LevelFilter::INFO,
-                        )),
-                )
-                .try_init()
-                .expect("no other subscriber in node's unit tests");
-            traces
-        })
-    }
-
-    impl std::io::Write for Traces {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl Traces {
-        /// What `host` wrote to the link log.
-        fn link_log(&self, host: HostId) -> Vec<crate::link_log::LinkEvent> {
-            String::from_utf8_lossy(&self.0.lock().unwrap())
-                .lines()
-                .filter_map(crate::link_log::LinkEvent::parse)
-                .filter(|(writer, _)| *writer == host)
-                .map(|(_, event)| event)
-                .collect()
-        }
-    }
-
     /// A direct link over UDP writes its link log line when it comes up
     /// and again when it goes down, and the log reads both back.
     #[tokio::test]
@@ -1658,7 +1626,7 @@ mod tests {
         use crate::link::LinkEndpoint;
         use crate::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
 
-        let traces = traces();
+        let traces = crate::link_log::captured::log();
         let dialler = DeviceIdentity::for_test(HostId::new_v4());
         let listener = DeviceIdentity::for_test(HostId::new_v4());
         let server = LinkEndpoint::bind(

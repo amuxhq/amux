@@ -31,7 +31,7 @@ fn agent_reply(order: u64, words: &str) -> Item {
 fn the_review_pages_key_line_keeps_its_way_out_at_80_columns() {
     let state = chat(replies(1, 3));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
+    open_review(&mut view);
     let (buffer, _) = draw(&mut view, &state, 0, NARROW, SHORT, theme());
     let screen = text(&buffer);
     let keys = screen.lines().last().unwrap_or_default();

@@ -124,7 +124,8 @@ data class ChatRowCallbacks(
     val onToggleRun: (rowId: String) -> Unit = {},
     val onToggleGroup: (rowId: String) -> Unit = {},
     val onOpenAgent: (AgentKey) -> Unit = {},
-    val onOpenFileChange: (FileRow) -> Unit = {},
+    /** Opens a landed edit's file for review; null draws the rows inert. */
+    val onOpenFileChange: ((FileRow) -> Unit)? = null,
     val onOpenImage: (hash: List<Int>, label: String) -> Unit = { _, _ -> },
     val onOpenAttachment: (AttachmentView) -> Unit = {},
     val onOpenLink: (OpenableLink) -> Unit = {},

@@ -184,7 +184,7 @@ fn a_long_edit_path_keeps_the_files_name() {
             files: 1,
             added: 1,
             removed: 0,
-            lines: vec![],
+            patch: vec![],
             line: Some(1),
             reason: String::new(),
             created: Some(true),

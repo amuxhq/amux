@@ -41,7 +41,9 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
 import sh.amux.values.AskCard
 import sh.amux.values.ChoiceOutcome
-import sh.amux.values.EditLine
+import sh.amux.values.FilePatch
+import sh.amux.values.FileRow
+import sh.amux.values.PatchLine
 import sh.amux.values.LineKind
 import sh.amux.words.ChatWords
 
@@ -204,6 +206,24 @@ private fun AskScopeChoiceRow(
 internal const val DIFF_PREVIEW_LIMIT: Int = 12
 
 private const val DIFF_WHOLE_CAP: Int = 400
+
+/** One line of an edit's preview: where a file starts, where a hunk starts, or a patch line. */
+internal sealed interface EditLine {
+    data class File(val value: FileRow) : EditLine
+    data class Hunk(val newStart: Int) : EditLine
+    data class Line(val value: PatchLine) : EditLine
+}
+
+/**
+ * An edit's patch as the preview's lines: each file's header in a patch of
+ * several, each hunk's start where the provider said it, then its lines.
+ */
+internal fun editLines(patch: List<FilePatch>): List<EditLine> = patch.flatMap { file ->
+    listOfNotNull(file.file?.let { EditLine.File(it) }) +
+        file.hunks.flatMap { hunk ->
+            listOfNotNull(hunk.start?.let { EditLine.Hunk(it.new) }) + hunk.lines.map { EditLine.Line(it) }
+        }
+}
 
 /**
  * A short diff inline, green and red, with the whole of it one tap away.

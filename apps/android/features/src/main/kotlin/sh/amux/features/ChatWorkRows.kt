@@ -190,7 +190,7 @@ internal fun FileChangeRowView(
     rail: RailJoin,
     unresolvedFailure: Boolean,
     denialNote: String?,
-    onOpenFileChange: (FileRow) -> Unit,
+    onOpenFileChange: ((FileRow) -> Unit)?,
 ) {
     val tail = listOf(ChatWords.state(state, decided = row.decision != null).orEmpty())
     if (files.isEmpty()) {
@@ -226,10 +226,10 @@ internal fun FileChangeRowView(
                 subjectEmphasis = verb.isEmpty(),
                 meta = baseMeta.then(extra),
                 quote = if (index == 0) denialNote else null,
-                opens = true,
-                pushes = true,
-                actionDescription = openLabel,
-                onClick = { onOpenFileChange(file) },
+                opens = onOpenFileChange != null,
+                pushes = onOpenFileChange != null,
+                actionDescription = openLabel.takeIf { onOpenFileChange != null },
+                onClick = { onOpenFileChange?.invoke(file) },
                 modifier = Modifier.testTag(ChatRowTags.FILE_CHANGE_ITEM),
             )
         }

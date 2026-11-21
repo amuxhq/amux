@@ -1,7 +1,9 @@
 // The way to amux: native messaging to `amux internal browser`, which makes
 // each call as raw gRPC on the installation's socket or a profile's, and
 // streams the answers back. Calls are numbered; a response message too large
-// for one frame arrives in parts, joined here.
+// for one frame arrives in parts, joined here. Every call names who answers
+// it by its authority, which the bridge passes to the node behind the socket:
+// a host's id to carry it there, or `NODE` for the node itself.
 
 /** Where a call goes: the installation's front door, or a profile by its id in hex. */
 export type Target = "installation" | string;
@@ -28,6 +30,15 @@ export class CallError extends Error {
 
 /** gRPC's "unavailable": the daemon is not answering. */
 export const UNAVAILABLE = 14;
+
+/**
+ * The revision of the framing this extension speaks: every call carries an
+ * authority. An amux whose bridge says less is older than this extension.
+ */
+export const FRAMING = 2;
+
+/** The authority of a call the node behind the socket answers itself. */
+export const NODE = "amux.local";
 
 interface Open {
   onMessage(message: string): void;
@@ -60,7 +71,11 @@ export function toBase64(bytes: Uint8Array): string {
 
 /** A frame as the bridge sends it. */
 type Frame =
-  /** `framing`: the revision of the framing the bridge speaks, which only adds. */
+  /**
+   * `framing`: the revision of the framing the bridge speaks. A revision may
+   * drop what an earlier one allowed, as 2 made every call name its authority,
+   * so a bridge below `FRAMING` cannot serve this extension.
+   */
   | { hello: { version: string; framing: number } }
   | { id: number; message: string; more?: boolean }
   | { id: number; end: End };
@@ -72,6 +87,8 @@ export class Bridge {
   private open = new Map<number, Open>();
   /** The amux version the bridge said it is, once it said. */
   version: string | null = null;
+  /** The revision of the framing the bridge said it speaks, once it said. */
+  framing: number | null = null;
   /** Why the last port closed, if it did. */
   unreachable: Unreachable | null = null;
   private listeners = new Set<() => void>();
@@ -93,9 +110,15 @@ export class Bridge {
   private release() {
     if (this.held || this.open.size > 0 || !this.port) return;
     const port = this.port;
+    this.forget();
+    port.disconnect();
+  }
+
+  /** What a closed port said of itself, gone with it. */
+  private forget() {
     this.port = null;
     this.version = null;
-    port.disconnect();
+    this.framing = null;
   }
 
   /** Hears when reachability or the version changes. */
@@ -115,8 +138,7 @@ export class Bridge {
     port.onMessage.addListener((frame: Frame) => this.receive(frame));
     port.onDisconnect.addListener(() => {
       const error = chrome.runtime.lastError?.message ?? "";
-      this.port = null;
-      this.version = null;
+      this.forget();
       this.unreachable = /not found|forbidden/i.test(error) ? "not-installed" : "stopped";
       const ended: End = { code: UNAVAILABLE, message: error || "amux's bridge stopped", details: "" };
       const open = [...this.open.values()];
@@ -130,6 +152,7 @@ export class Bridge {
   private receive(frame: Frame) {
     if ("hello" in frame) {
       this.version = frame.hello.version;
+      this.framing = frame.hello.framing;
       this.unreachable = null;
       this.changed();
       return;
@@ -152,10 +175,13 @@ export class Bridge {
 
   /**
    * Opens a stream: `onMessage` hears each response message (base64),
-   * `onEnd` how it ended. Answers a function that cancels it.
+   * `onEnd` how it ended. `authority` names who answers it: a host's id in
+   * the form every client writes it, or `NODE`. Answers a function that
+   * cancels it.
    */
   stream(
     target: Target,
+    authority: string,
     method: string,
     body: string,
     onMessage: (message: string) => void,
@@ -163,11 +189,13 @@ export class Bridge {
   ): () => void {
     const id = this.next++;
     this.open.set(id, { onMessage, onEnd, part: [] });
+    const failed = (error: unknown) => {
+      if (this.open.delete(id)) onEnd({ code: UNAVAILABLE, message: String(error), details: "" });
+    };
     try {
-      this.connect().postMessage({ id, call: { target, method, body } });
+      this.connect().postMessage({ id, call: { target, method, body, authority } });
     } catch (error) {
-      this.open.delete(id);
-      onEnd({ code: UNAVAILABLE, message: String(error), details: "" });
+      failed(error);
     }
     return () => {
       if (this.open.delete(id)) {
@@ -177,12 +205,13 @@ export class Bridge {
     };
   }
 
-  /** A call answered by one message. */
-  unary(target: Target, method: string, body: string): Promise<string> {
+  /** A call answered by one message, by whoever `authority` names. */
+  unary(target: Target, authority: string, method: string, body: string): Promise<string> {
     return new Promise((resolve, reject) => {
       let answer: string | null = null;
       this.stream(
         target,
+        authority,
         method,
         body,
         (message) => {

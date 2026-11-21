@@ -55,7 +55,6 @@ class RowStateTest {
             branch = null,
             exitCause = exitCause,
             repository = null,
-            workspaceGoes = null,
         ),
         depth = 0,
         expanded = false,

@@ -20,6 +20,7 @@ node = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+ui-code = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }

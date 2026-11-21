@@ -428,11 +428,17 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
             None,
         )
         .await;
-    assert!(matches!(again, Err(RegistryError::AlreadyExists(_))));
+    assert!(
+        matches!(&again, Err(status) if status.code() == tonic::Code::AlreadyExists),
+        "{again:?}"
+    );
     let nowhere = runtime
         .spawn(create(&install.path("missing"), "nowhere", None), None)
         .await;
-    assert!(matches!(nowhere, Err(RegistryError::BadCwd(_))));
+    assert!(
+        matches!(&nowhere, Err(status) if status.code() == tonic::Code::InvalidArgument),
+        "{nowhere:?}"
+    );
 
     kill_all(&runtime).await;
     assert!(
@@ -829,12 +835,13 @@ async fn a_spawn_for_an_exited_parent_is_refused() {
         )
         .await
         .expect_err("a child was made for an exited parent");
-    assert!(
-        matches!(refusal, RegistryError::ParentEnded(id) if id == parent),
+    assert_eq!(
+        refusal.code(),
+        tonic::Code::FailedPrecondition,
         "{refusal:?}"
     );
     assert_eq!(
-        refusal.to_string(),
+        refusal.message(),
         format!("agent {parent} has ended and starts no more agents"),
     );
 
@@ -847,8 +854,9 @@ async fn a_spawn_for_an_exited_parent_is_refused() {
 /// outlives the stop: the create checks the parent and writes the child's
 /// row under one hold of the store, so either the parent's exit is already
 /// there and the create is refused, or the child's row is, and the exit
-/// stops it. Holding the core thread in a read lines both up behind it
-/// every run.
+/// stops it. Holding the core thread in a read lines the stop up behind
+/// it every run, and the create too whenever it reaches the core before
+/// the read lets go; either way one of the two outcomes holds.
 #[tokio::test]
 async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
     let install = Install::new();
@@ -870,15 +878,14 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
     let (stopped, spawned) = {
         // The read waits on `release`, so the core steps nothing until both
         // are queued behind it.
+        let mut tools = wire::agent_service_client(served_to(&runtime, Some(parent)).await);
         let (release, gate) = std::sync::mpsc::channel::<()>();
         let mut hold = std::pin::pin!(runtime.read_store(move |_| gate.recv().is_ok()));
         assert!(poll_once(&mut hold).await.is_pending());
         let mut stop = std::pin::pin!(runtime.file(parent, Filing::Closed));
         let early_stop = poll_once(&mut stop).await;
-        let mut spawn = std::pin::pin!(runtime.spawn(
-            create(&install.work, "late-child", Some("hold")),
-            Some(parent)
-        ));
+        let mut spawn =
+            std::pin::pin!(tools.create_agent(create(&install.work, "late-child", Some("hold"))));
         let early_spawn = poll_once(&mut spawn).await;
         release.send(()).unwrap();
         assert!(hold.await.unwrap());
@@ -898,10 +905,10 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
         )
     };
     stopped.expect("the stop completes");
-    match spawned {
-        Err(refusal) => assert!(
-            matches!(refusal, RegistryError::ParentEnded(id) if id == parent),
-            "{refusal:?}"
+    match spawned.map(|created| created.into_inner().agent.unwrap()) {
+        Err(refusal) => assert_eq!(
+            refusal.message(),
+            format!("agent {parent} has ended and starts no more agents"),
         ),
         Ok(child) => {
             let child = id_of(&child);
@@ -1067,11 +1074,7 @@ async fn a_create_without_a_kind_is_invalid() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(refused, RegistryError::NoKind), "{refused:?}");
-    assert_eq!(
-        refused.to_wire().code,
-        wire::ErrorCode::InvalidArgument as i32
-    );
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument, "{refused:?}");
     assert!(
         runtime
             .read_store(|store| store.agents().unwrap().is_empty())

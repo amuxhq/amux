@@ -24,7 +24,6 @@ import sh.amux.values.Connection
 import sh.amux.values.ControlsSummary
 import sh.amux.values.Draft
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.InputState
 import sh.amux.values.KeysMoved
 import sh.amux.values.Kind
@@ -87,8 +86,6 @@ class StoreBundleChatCacheTest {
         override suspend fun putBlob(data: ByteArray, name: String, mime: String): Result<sh.amux.values.BlobRef> =
             Result.failure(RuntimeFailure("unused"))
         override fun blob(hash: List<Int>): ByteArray? = null
-        override suspend fun review(comparison: Comparison): Result<FrozenReview> =
-            Result.failure(RuntimeFailure("unused"))
         override suspend fun openOverview(comparison: Comparison): Result<Overview> =
             Result.success(Overview(emptyList(), emptyList()))
         override fun keptDraft(): Draft? = initialDraft

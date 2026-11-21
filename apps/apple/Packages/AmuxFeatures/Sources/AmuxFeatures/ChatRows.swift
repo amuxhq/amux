@@ -905,7 +905,10 @@ struct PromptBubble: View {
                 }
             }
         }
+        // Combining drops the children that are buttons, as a sent review's
+        // chip is, so the words are said here whole, every chip among them.
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(ChatWords.spoken(of: text))
         .identified(
             "chat.row.prompt", label: ChatWords.text(of: text), value: steered ? "steered" : nil)
     }
@@ -1046,10 +1049,14 @@ struct ProseRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(text.enumerated()), id: \.offset) { _, segment in
+            ForEach(Array(text.enumerated()), id: \.offset) { index, segment in
                 switch segment {
                 case .text(let markdown):
-                    Prose(markdown: markdown, muted: workingNote)
+                    // Only the last of a streaming message's words are
+                    // still arriving.
+                    Prose(
+                        markdown: markdown, muted: workingNote,
+                        streaming: streaming && index == text.count - 1)
                 case .attachment(let view):
                     MessageAttachment(view: view)
                 }
@@ -1068,6 +1075,9 @@ struct Prose: View {
     @Environment(\.photographed) private var photographed
     let markdown: String
     var muted = false
+    /// Whether the text is still arriving, so a code block it ends inside
+    /// is the one still being written.
+    var streaming = false
     /// A heading drawn above the document, for text whose title arrives
     /// apart from it, such as a plan's.
     var title: String?
@@ -1099,7 +1109,7 @@ struct Prose: View {
                 MarkdownBlockView(block: .heading(level: 1, text: AttributedString(title)), muted: muted)
             }
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                MarkdownBlockView(block: block, muted: muted)
+                MarkdownBlockView(block: block, muted: muted, streaming: streaming)
             }
         }
         .frame(maxWidth: inBubble ? nil : .infinity, alignment: .leading)
@@ -1153,6 +1163,7 @@ private struct MarkdownBlockView: View {
     @Environment(\.design) private var design
     let block: MarkdownBlock
     let muted: Bool
+    var streaming = false
 
     private var ink: Color { muted ? design.inkMuted.color : design.ink.color }
 
@@ -1187,32 +1198,8 @@ private struct MarkdownBlockView: View {
                 }
             }
             .designFont(.body, design)
-        case .code(let language, let text):
-            VStack(alignment: .leading, spacing: 0) {
-                if let language, !language.isEmpty {
-                    Text(language)
-                        .designFont(.sectionTitle, design)
-                        .foregroundStyle(design.inkFaint.color)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                }
-                ScrollView(.horizontal) {
-                    Text(text)
-                        .designFont(.mono, design)
-                        .foregroundStyle(design.ink.color)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                }
-                .scrollIndicators(.hidden)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                let shape = RoundedRectangle(
-                    cornerRadius: design.metrics.controlRadius, style: .continuous)
-                shape.fill(design.sunken.color)
-                    .overlay(shape.strokeBorder(design.hairline.color, lineWidth: 1))
-            }
+        case .code(let language, let text, let closed):
+            CodeBlock(language: language, text: text, streaming: streaming && !closed)
         case .quote(let lines):
             HStack(alignment: .top, spacing: 10) {
                 Capsule().fill(design.inkFaint.color.opacity(0.45)).frame(width: 2.5)
@@ -1275,6 +1262,58 @@ private struct MarkdownBlockView: View {
 }
 
 
+/// A fenced block: its language over its code, the code coloured by kind of
+/// token as the shared view colours it. It draws what it has at once, plain
+/// until the first colours come back, and its task asks again while they
+/// are unsettled.
+private struct CodeBlock: View {
+    @Environment(\.design) private var design
+    @Environment(\.codeHighlighting) private var highlighting
+    let language: String?
+    let text: String
+    /// The block still being written: the open fence of text still
+    /// arriving.
+    let streaming: Bool
+    @State private var answer: HighlightedCode?
+
+    private var request: CodeHighlighting.Request {
+        .block(code: text, info: language ?? "", streaming: streaming)
+    }
+
+    var body: some View {
+        let request = request
+        let lines = CodeText.lines(text)
+        let runs = (highlighting.kept(request) ?? answer)?.runs(lines) ?? HighlightedCode.plain(lines)
+        VStack(alignment: .leading, spacing: 0) {
+            if let language, !language.isEmpty {
+                Text(language)
+                    .designFont(.sectionTitle, design)
+                    .foregroundStyle(design.inkFaint.color)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
+            ScrollView(.horizontal) {
+                Text(CodeText.attributed(lines: runs) { design.ink($0).color })
+                    .designFont(.mono, design)
+                    .foregroundStyle(design.ink.color)
+                    .textSelection(.enabled)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            let shape = RoundedRectangle(
+                cornerRadius: design.metrics.controlRadius, style: .continuous)
+            shape.fill(design.sunken.color)
+                .overlay(shape.strokeBorder(design.hairline.color, lineWidth: 1))
+        }
+        .task(id: request) { await highlighting.follow(request) { answer = $0 } }
+    }
+}
+
 /// A rule across the chat with what it marks written into it, the words
 /// starting where every row's text starts.
 private struct FeedRule: View {
@@ -1336,7 +1375,7 @@ private struct AskRowView: View {
         switch ask {
         case .questions(let questions, let answers, let skipped, let resolution, let reply):
             questionsRow(questions, answers, skipped: Int(skipped), resolution, reply)
-        case .plan(let body, let verdict, let mode, let modeName, _, let note, let title):
+        case .plan(let body, let verdict, let mode, let modeName, let writing, let note, let title):
             // An open plan reads whole under its heading while the decision
             // stands in the composer's place; once decided it folds to its
             // heading and opens on a tap.
@@ -1349,7 +1388,7 @@ private struct AskRowView: View {
                 meta: RowMeta(verdict == .approvedSwitching
                     ? String(localized: "switched to \(modeName.isEmpty ? mode : modeName)") : ""),
                 quote: sentBack ? ChatWords.firstLine(note ?? "") : nil,
-                below: open || expanded ? AnyView(planBody(title, body)) : nil,
+                below: open || expanded ? AnyView(planBody(title, body, writing: writing)) : nil,
                 opens: !open, open: expanded, toggle: toggle)
         case .form(let server, let message, let fields, let resolution):
             GridRow(
@@ -1493,8 +1532,8 @@ private struct AskRowView: View {
         }
     }
 
-    private func planBody(_ title: String?, _ body: String) -> some View {
-        Prose(markdown: body, title: title)
+    private func planBody(_ title: String?, _ body: String, writing: Bool) -> some View {
+        Prose(markdown: body, streaming: writing, title: title)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {

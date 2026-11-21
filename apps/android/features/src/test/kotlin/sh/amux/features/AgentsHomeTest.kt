@@ -55,6 +55,7 @@ class AgentsHomeTest {
     private fun host(index: Int, name: String, trusted: Boolean = true, candidate: Boolean = false, pairingOpen: Boolean = false): HostView =
         HostView(
             hostId = List(16) { index },
+            link = 0L,
             name = name,
             local = false,
             trusted = trusted,

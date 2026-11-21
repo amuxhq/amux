@@ -47,7 +47,6 @@ import sh.amux.design.Space
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.DeleteWarning
 import sh.amux.values.JobRow
-import sh.amux.values.WorkspaceGoes
 import sh.amux.words.ChatWords
 import sh.amux.words.DeleteWords
 
@@ -157,13 +156,13 @@ fun SettleAgentDialog(
 fun DeleteAgentDialog(
     agentName: String,
     descendants: Int,
-    workspaceGoes: WorkspaceGoes?,
     onPreviewDelete: (suspend () -> Result<DeleteWarning?>)?,
     onDismiss: () -> Unit,
     onConfirm: (discardingChanges: Boolean) -> Unit,
     tags: AgentDialogTags = AgentDialogTags.Chat,
 ) {
-    var warning by remember { mutableStateOf(DeleteWords.asking(workspaceGoes)) }
+    // Opens checking with the agent's host what the delete takes with it.
+    var warning by remember { mutableStateOf<DeleteWarning?>(DeleteWarning.Checking) }
     LaunchedEffect(Unit) {
         if (DeleteWords.awaitsAnswer(warning) && onPreviewDelete != null) {
             warning = DeleteWords.answered(warning, onPreviewDelete())

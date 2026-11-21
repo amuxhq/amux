@@ -225,12 +225,6 @@ fun Shell(
                                 router = router,
                                 dictation = dictation,
                             )
-                            is Route.Changes -> ChangesRoute(
-                                agent = route.agent,
-                                initialFile = route.initialFile,
-                                stores = stores,
-                                router = router,
-                            )
                             is Route.Host -> HostRoute(
                                 host = route.host,
                                 stores = stores,

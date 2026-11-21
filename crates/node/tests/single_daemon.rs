@@ -1461,7 +1461,7 @@ async fn retention_sweep() {
         .send_message(
             wire::Envelope {
                 from: None,
-                id: b"after-retention".to_vec(),
+                id: b"after-retention!".to_vec(),
                 to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),

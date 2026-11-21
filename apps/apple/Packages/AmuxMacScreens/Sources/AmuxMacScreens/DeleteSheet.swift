@@ -9,19 +9,21 @@ public typealias DeleteWarningAsk = @MainActor (AgentKey) async -> Result<Delete
 /// The confirmation before an agent is deleted, as a sheet on the window.
 ///
 /// It says what goes in the words the phone's confirmation uses. A system
-/// dialog would not do: what it says changes once the host has looked at
-/// the worktree, and a dialog's words are fixed when it opens. Until the
-/// answer comes the sheet says it is checking, with a spinner by the
-/// buttons, and Delete waits for it: deleting is a choice made on what the
-/// sheet says, so it is not offered before the sheet can say it. When the
-/// answer is that uncommitted work goes, Delete is drawn solid red.
+/// dialog would not do: what it says changes once the agent's host has said
+/// what the delete takes, and a dialog's words are fixed when it opens.
+/// Until the answer comes the sheet says it is checking, with a spinner by
+/// the buttons, and Delete waits for it: deleting is a choice made on what
+/// the sheet says, so it is not offered before the sheet can say it. When
+/// the answer is that uncommitted work goes, Delete is drawn solid red.
 public struct DeleteSheet: View {
     let card: FleetCard
     let ask: DeleteWarningAsk
     let cancel: @MainActor () -> Void
     let confirm: @MainActor (AgentAct) -> Void
 
-    @State private var warning: DeleteWarning?
+    /// Checking until the agent's host answers, then its answer: nil when
+    /// the workspace stays.
+    @State private var warning: DeleteWarning? = .checking
 
     public init(
         card: FleetCard,
@@ -33,7 +35,6 @@ public struct DeleteSheet: View {
         self.ask = ask
         self.cancel = cancel
         self.confirm = confirm
-        _warning = State(initialValue: DeleteWords.asking(card.workspaceGoes))
     }
 
     public var body: some View {
@@ -105,8 +106,8 @@ public struct DeleteSheet: View {
 
     private static func branch(_ warning: DeleteWarning?) -> String? {
         switch warning {
-        case .goes(let goes)?, .checking(let goes)?, .unknown(let goes)?: goes.branch
-        case nil: nil
+        case .goes(let goes)?: goes.branch
+        case .checking?, .unknown?, nil: nil
         }
     }
 }

@@ -22,8 +22,7 @@ pub use body::{
 };
 pub use fleet::{
     AgentKey, Attention, DeleteWarning, ExitCause, Families, FleetMsg, FleetState, HostId,
-    WorkspaceGoes, agent_key, attention, exit_cause, exit_words, has_process, parent_key,
-    shown_name,
+    WorkspaceGoes, agent_key, attention, exit_cause, exit_words, parent_key, shown_name,
 };
 pub use inputs::{
     InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, refusal,

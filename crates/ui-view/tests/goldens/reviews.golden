@@ -1,0 +1,360 @@
+## first look: drafts on an added line, a removed line and the whole file; flagged files folded; changed words
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 3 sent 0 discard true start-over true
+banners []
+empty None fetch []
+  file src/store.rs Modified +3 -1 flags [] comments 3 outline [impl Store 5-90 @3,   fn open 30-48 @3,   fn close 66-75 @15]
+      comment d3 Draft File scope [] "Split this file."
+  gap hidden 39 up 30-39 to fn open down -
+  hunk -40 +40 against b0 in impl Store › fn open
+      40   40 |    pub fn open(path: &Path) -> Store {
+  -   41      |        let file = [open](&path)?;   ◆
+      comment d2 Draft Lines { start: 41, end: 41 } scope [] "This read the path twice."
+  +        41 |        let file = [open_with_flags](&path[, flags])?;   ◆
+      comment d1 Draft Lines { start: 41, end: 41 } scope [] "Why the flags?"
+  +        42 |        log::debug!("opened");
+      42   43 |        Store { file }
+      43   44 |    }
+      44   45 |
+      45   46 |    /// Closes the store.
+  gap hidden 23 up 66-69 to fn close down 47-48 to fn open
+  hunk -68 +70 against b0 in impl Store › fn close
+      68   70 |    pub fn close(self) {
+  +        71 |        self.file.sync_all();
+      69   72 |        drop(self.file);
+      70   73 |    }
+      71   74 |
+  gap hidden ? up - down 75-75 to fn close
+  file src/new.rs Added +2 -0 flags [] comments 0
+  hunk -0 +1 against b0 in 
+  +         1 |//! New.
+  +         2 |pub fn new() {}
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## more context: the top filled to fn open's start, the end found, one ask waiting, a comment on lines read for context
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 1 sent 0 discard true start-over true
+banners []
+empty None fetch ["src/new.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 1 outline [impl Store 5-90 @13,   fn open 30-48 @13,   fn close 66-75 @23]
+  gap hidden 29 up 10-29 down -
+      30   30 |    // line 30   (more)
+      31   31 |    // line 31   (more)
+      32   32 |    // line 32   (more)
+      33   33 |    // line 33   ◆   (more)
+      34   34 |    // line 34   ◆   (more)
+      comment d4 Draft Lines { start: 33, end: 34 } scope [] "Say why."
+      35   35 |    // line 35   (more)
+      36   36 |    // line 36   (more)
+      37   37 |    // line 37   (more)
+      38   38 |    // line 38   (more)
+      39   39 |    // line 39   (more)
+  hunk -40 +40 against b0 in impl Store › fn open
+      40   40 |    pub fn open(path: &Path) -> Store {
+  -   41      |        let file = [open](&path)?;
+  +        41 |        let file = [open_with_flags](&path[, flags])?;
+  +        42 |        log::debug!("opened");
+      42   43 |        Store { file }
+      43   44 |    }
+      44   45 |
+      45   46 |    /// Closes the store.
+  gap hidden 23 up 66-69 to fn close down 47-48 to fn open loading
+  hunk -68 +70 against b0 in impl Store › fn close
+      68   70 |    pub fn close(self) {
+  +        71 |        self.file.sync_all();
+      69   72 |        drop(self.file);
+      70   73 |    }
+      71   74 |
+      72   75 |}   (more)
+  file src/new.rs Added +2 -0 flags [] comments 0
+  loading src/new.rs
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## a hunk that only removes: more context up to its compared-side definition, no gap past the file's end, a comment seated by its placed path
+header base main at b0 snapshot s2 view All against b0 views [All 1] rounds 0 files 1 +0 -3 drafts 1 sent 0 discard true start-over true
+banners []
+empty None fetch []
+  file src/gone.rs Renamed +0 -3 flags [] comments 1 outline [fn gone compared 47-53 @2]
+  gap hidden 39 up 37-39 to fn gone down -
+  hunk -50 +40 against b0 in fn gone
+      50   40 |    }
+  -   51      |    fn gone() {
+  -   52      |        todo!()
+  -   53      |    }
+      54   41 |}   ◆
+      comment d6 Draft Lines { start: 41, end: 41 } scope [] "Keep the closing brace's comment."
+
+## since your last review: placed, outdated, changed near, a file unchanged since, one outside the change
+header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
+banners []
+empty None fetch []
+  file README.md Modified +0 -0 flags [] comments 1
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
+  file src/store.rs Modified +1 -0 flags [] changed-since comments 3 outline [impl Store 5-90 @6,   fn close 66-75 @6]
+      comment r2 Sent { round: 1 } Outdated folded scope [] "Don't log the path."
+      snippet +        41 |        log::debug!("{path:?}");
+  gap hidden 69 up 66-69 to fn close down -
+      comment r3 Sent { round: 1 } Lines { start: 10, end: 10 } changed-near scope ["impl Store", "fn ready"] "Is ready still right?"
+      snippet      9    9 |    fn ready(&self) -> bool {
+      snippet -   10      |        self.open
+      snippet +        10 |        self.open [&& !self.closing]
+  hunk -70 +70 against s1 in impl Store › fn close
+      70   70 |    pub fn close(self) {
+  +        71 |        self.file.sync_all();
+      71   72 |        drop(self.file);   ◆
+      comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
+      72   73 |    }
+      73   74 |
+  gap hidden ? up - down 75-75 to fn close
+  file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
+      comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
+      snippet      1    1 |pub fn gone() {}
+
+## since your last review with the outdated comment opened
+header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
+banners []
+empty None fetch []
+  file README.md Modified +0 -0 flags [] comments 1
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
+  file src/store.rs Modified +1 -0 flags [] changed-since comments 3 outline [impl Store 5-90 @6,   fn close 66-75 @6]
+      comment r2 Sent { round: 1 } Outdated scope [] "Don't log the path."
+      snippet +        41 |        log::debug!("{path:?}");
+  gap hidden 69 up 66-69 to fn close down -
+      comment r3 Sent { round: 1 } Lines { start: 10, end: 10 } changed-near scope ["impl Store", "fn ready"] "Is ready still right?"
+      snippet      9    9 |    fn ready(&self) -> bool {
+      snippet -   10      |        self.open
+      snippet +        10 |        self.open [&& !self.closing]
+  hunk -70 +70 against s1 in impl Store › fn close
+      70   70 |    pub fn close(self) {
+  +        71 |        self.file.sync_all();
+      71   72 |        drop(self.file);   ◆
+      comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
+      72   73 |    }
+      73   74 |
+  gap hidden ? up - down 75-75 to fn close
+  file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
+      comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
+      snippet      1    1 |pub fn gone() {}
+
+## all changes, one switch away on the second look
+header base main at b0 snapshot s2 view All against b0 views [All 8, SinceLast 1] rounds 1 files 8 +957 -23 drafts 0 sent 5 discard false start-over true
+banners []
+empty None fetch ["README.md"]
+  file src/store.rs Modified +3 -1 flags [] changed-since comments 3 outline [impl Store 5-90 @4,   fn open 30-48 @4,   fn close 66-75 @14]
+      comment r2 Sent { round: 1 } Outdated folded scope [] "Don't log the path."
+      snippet +        41 |        log::debug!("{path:?}");
+  gap hidden 39 up 30-39 to fn open down -
+      comment r3 Sent { round: 1 } Lines { start: 10, end: 10 } changed-near scope ["impl Store", "fn ready"] "Is ready still right?"
+      snippet      9    9 |    fn ready(&self) -> bool {
+      snippet -   10      |        self.open
+      snippet +        10 |        self.open [&& !self.closing]
+  hunk -40 +40 against b0 in impl Store › fn open
+      40   40 |    pub fn open(path: &Path) -> Store {
+  -   41      |        let file = [open](&path)?;
+  +        41 |        let file = [open_with_flags](&path[, flags])?;
+  +        42 |        log::debug!("opened");
+      42   43 |        Store { file }
+      43   44 |    }
+      44   45 |
+      45   46 |    /// Closes the store.
+  gap hidden 23 up 66-69 to fn close down 47-48 to fn open
+  hunk -68 +70 against b0 in impl Store › fn close
+      68   70 |    pub fn close(self) {
+  +        71 |        self.file.sync_all();
+      69   72 |        drop(self.file);   ◆
+      comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
+      70   73 |    }
+      71   74 |
+  gap hidden ? up - down 75-75 to fn close
+  file src/new.rs Added +2 -0 flags [] comments 0
+  hunk -0 +1 against b0 in 
+  +         1 |//! New.
+  +         2 |pub fn new() {}
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+  file README.md Modified +2 -0 flags [] comments 1
+  loading README.md
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
+  file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
+      comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
+      snippet      1    1 |pub fn gone() {}
+
+## a round whose commits are gone: since your last review from the comments' snippets
+header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 1] rounds 1 files 1 +1 -0 drafts 0 sent 5 discard false start-over true
+banners [RoundGone]
+empty None fetch []
+  file README.md Modified +0 -0 flags [] comments 1
+      comment r4 Sent { round: 1 } Lines { start: 3, end: 3 } scope [] "Mention the flags."
+      snippet      3    3 |Opens a store.
+  file src/store.rs Modified +1 -0 flags [] changed-since comments 3
+      comment r2 Sent { round: 1 } Outdated folded scope [] "Don't log the path."
+      snippet +        41 |        log::debug!("{path:?}");
+      comment r3 Sent { round: 1 } Lines { start: 10, end: 10 } changed-near scope ["impl Store", "fn ready"] "Is ready still right?"
+      snippet      9    9 |    fn ready(&self) -> bool {
+      snippet -   10      |        self.open
+      snippet +        10 |        self.open [&& !self.closing]
+      comment r1 Sent { round: 1 } Lines { start: 72, end: 72 } scope [] "Sync before drop."
+  file old/gone.rs Modified +0 -0 flags [] outside-the-change comments 1
+      comment r5 Sent { round: 1 } Outdated folded scope [] "Is this used?"
+      snippet      1    1 |pub fn gone() {}
+
+## drafts on an old snapshot: changed since you started, refresh
+header base main at b0 snapshot s1 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 3 sent 0 discard true start-over true
+banners [ChangedSinceYouStarted]
+empty None fetch ["src/store.rs", "src/new.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 3
+      comment d3 Draft File scope [] "Split this file."
+  loading src/store.rs
+      comment d1 Draft Lines { start: 41, end: 41 } scope [] "Why the flags?"
+      comment d2 Draft Lines { start: 41, end: 41 } scope [] "This read the path twice."
+  file src/new.rs Added +2 -0 flags [] comments 0
+  loading src/new.rs
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## refreshed: two drafts moved, the edited one now on its file
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 4 sent 0 discard true start-over true
+banners [MovedDrafts { count: 2 }]
+empty None fetch ["src/store.rs", "src/new.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 4
+      comment d3 Draft File scope [] "Split this file."
+      comment d5 Draft File scope [] "Was on an edited line."
+      snippet +        41 |        let file = open(&path)?;
+  loading src/store.rs
+      comment d1 Draft Lines { start: 41, end: 41 } scope [] "Why the flags?"
+      comment d2 Draft Lines { start: 41, end: 41 } scope [] "This read the path twice."
+  file src/new.rs Added +2 -0 flags [] comments 0
+  loading src/new.rs
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## no drafts, the agent changed code since
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 0 sent 0 discard false start-over true
+banners [ChangedSince]
+empty None fetch ["src/store.rs", "src/new.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 0
+  loading src/store.rs
+  file src/new.rs Added +2 -0 flags [] comments 0
+  loading src/new.rs
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## a merge under way
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 0 sent 0 discard false start-over true
+banners [MergeUnderway]
+empty None fetch ["src/store.rs", "src/new.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 0
+  loading src/store.rs
+  file src/new.rs Added +2 -0 flags [] comments 0
+  loading src/new.rs
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## nothing left to review
+header base main at b0 snapshot s2 view All against b0 views [All 0] rounds 0 files 0 +0 -0 drafts 0 sent 0 discard false start-over true
+banners []
+empty Some(Nothing) fetch []
+
+## nothing changed since your last review
+header base main at b0 snapshot s2 view SinceLast against s1 views [All 8, SinceLast 0] rounds 1 files 0 +0 -0 drafts 0 sent 0 discard false start-over true
+banners []
+empty Some(NothingSince) fetch []
+
+## opening
+header none opening true
+banners []
+empty None fetch []
+
+## not offered on this host
+header none opening false
+banners [NotOffered]
+empty None fetch []
+
+## not a repository
+header none opening false
+banners [NotARepository]
+empty None fetch []
+
+## a snapshot that failed and a host gone: what was loaded still reads
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 3 sent 0 discard true start-over true
+banners [SnapshotFailed { message: "a file vanished while it was read" }, Unreachable]
+empty None fetch ["src/new.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 3 outline [impl Store 5-90 @3,   fn open 30-48 @3,   fn close 66-75 @15]
+      comment d3 Draft File scope [] "Split this file."
+  gap hidden 39 up 30-39 to fn open down -
+  hunk -40 +40 against b0 in impl Store › fn open
+      40   40 |    pub fn open(path: &Path) -> Store {
+  -   41      |        let file = [open](&path)?;   ◆
+      comment d2 Draft Lines { start: 41, end: 41 } scope [] "This read the path twice."
+  +        41 |        let file = [open_with_flags](&path[, flags])?;   ◆
+      comment d1 Draft Lines { start: 41, end: 41 } scope [] "Why the flags?"
+  +        42 |        log::debug!("opened");
+      42   43 |        Store { file }
+      43   44 |    }
+      44   45 |
+      45   46 |    /// Closes the store.
+  gap hidden 23 up 66-69 to fn close down 47-48 to fn open
+  hunk -68 +70 against b0 in impl Store › fn close
+      68   70 |    pub fn close(self) {
+  +        71 |        self.file.sync_all();
+      69   72 |        drop(self.file);
+      70   73 |    }
+      71   74 |
+  gap hidden ? up - down 75-75 to fn close
+  file src/new.rs Added +2 -0 flags [] comments 0
+  loading src/new.rs
+  file Cargo.lock Modified +40 -12 folded flags [Lockfile] comments 0
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 folded flags [Generated] comments 0
+  file data/big.json Modified +1 -1 folded flags [Large] comments 0
+
+## folds flipped: a lock file, a large and a generated file opened, an ordinary file folded
+header base main at b0 snapshot s2 view All against b0 views [All 7] rounds 0 files 7 +955 -23 drafts 0 sent 0 discard false start-over true
+banners []
+empty None fetch ["src/store.rs", "Cargo.lock", "src/schema.rs"]
+  file src/store.rs Modified +3 -1 flags [] comments 0
+  loading src/store.rs
+  file src/new.rs Added +2 -0 folded flags [] comments 0
+  file Cargo.lock Modified +40 -12 flags [Lockfile] comments 0
+  loading Cargo.lock
+  file assets/logo.png Modified +0 -0 binary flags [] comments 0
+  no lines assets/logo.png Binary
+  file vendor/zlib.c Modified +9 -9 folded flags [Vendored] comments 0
+  file src/schema.rs Modified +900 -0 flags [Generated] comments 0
+  loading src/schema.rs
+  file data/big.json Modified +1 -1 flags [Large] comments 0
+  no lines data/big.json TooLarge
+

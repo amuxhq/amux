@@ -12,7 +12,6 @@ import sh.amux.values.CommandOutcome
 import sh.amux.values.Comparison
 import sh.amux.values.Draft
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.KeysMoved
 import sh.amux.values.Overview
 import sh.amux.values.PageOutcome
@@ -52,7 +51,6 @@ interface ChatSource {
     fun blob(hash: List<Int>): ByteArray?
     fun blobFailed(hash: List<Int>): Boolean = false
     fun fetchBlob(hash: List<Int>) {}
-    suspend fun review(comparison: Comparison): Result<FrozenReview>
     suspend fun openOverview(comparison: Comparison): Result<Overview>
     suspend fun command(draft: Draft): CommandOutcome? = CommandOutcome.Send
     suspend fun switchBack(): ActOutcome? = ActOutcome.Done
@@ -201,11 +199,6 @@ class Chat internal constructor(
     override suspend fun resume(draft: Draft): ActOutcome? = valueAct(ChatAct.Resume(draft))
 
     override suspend fun pageOlder(rows: Int): PageOutcome? = valueAct(ChatAct.PageOlder(rows))
-
-    override suspend fun review(comparison: Comparison): Result<FrozenReview> {
-        val compJson = AmuxJson.json.encodeToString(comparison)
-        return act { live -> NativeBridge.sessionReview(live, compJson) }
-    }
 
     override suspend fun openOverview(comparison: Comparison): Result<Overview> {
         val compJson = AmuxJson.json.encodeToString(comparison)

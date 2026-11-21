@@ -202,29 +202,26 @@ so it counts only when every other member left in the workspace descends
 from the deleted agent; daemon-core finds them by walking the rows' parent
 links. It then holds until the workspace goes or gains a member, so a parent
 deleted with consent still discards when its child, sharing the folder,
-follows without it. Retention, the family rule and older clients never
-discard.
+follows without it. Retention and the family rule never discard.
 
-Clients warn before they consent. `ui-state`
-([`fleet.rs`](../crates/ui-state/src/fleet.rs)) works out whether a delete
-removes the row's workspace: its host made it, it is not a folder, and every
-other member on that host is the agent's descendant. An agent with a process
-keeps its row's git facts current, so the warning reads them; one without
-(suspended or exited) cannot, so the client asks the agent's host for a
-comparison against `HEAD`, through the same changed-files call the review
-page uses, before it warns. A confirmation captures what it showed when it opened
-and sends consent only when that warning named changes, so a fleet that
-changed meanwhile, or a check that failed, never discards work the person
-was not shown. The branch is named whenever the row has one, and what
-becomes of it is always the host's answer, for an agent with a process too:
-the same call's `Diff.own_commits` counts the commits on the checked-out
-branch that no other ref holds (its upstream and the stash aside), the
-predicate the removal applies, zero exactly when the branch goes. A row's
-totals cannot say it (a line committed and changed again uncommitted gives
-equal totals over a commit of its own), and a merge made anywhere else takes
-the commits away without the agent's row changing. Until the host answers,
-or when it cannot, the warning says the branch stays if anything was
-committed to it, which is true either way.
+Clients warn before they consent, with what the agent's host answers to
+`AgentService.PreviewDelete`: whether this delete removes the workspace (its
+host made it, the experiment is on there, and no member outside the deleted
+agent's family is left in it), the branch checked out there, how many
+commits only that branch holds (no other branch, tag or remote-tracking ref,
+its own upstream aside), counted by the same function the removal reads so
+zero is exactly when the branch goes, and the uncommitted totals against
+`HEAD`. The host decides because it is the host that removes: a row's totals
+cannot say what the branch holds (a line committed and changed again
+uncommitted gives equal totals over a commit of its own), and a merge made
+anywhere else takes the commits away without the agent's row changing. Every
+client shows that one answer, `ui_state::DeleteWarning`
+([`fleet.rs`](../crates/ui-state/src/fleet.rs)): checking while the host is
+asked, what goes once it answers, and unknown when it could not be asked, in
+which case the delete carries no consent and a workspace with changes stays.
+A confirmation captures what it showed when it opened and sends consent only
+when that warning named changes, so a fleet that changed meanwhile, or a
+check that failed, never discards work the person was not shown.
 
 ## Where it lives
 
@@ -237,7 +234,7 @@ committed to it, which is true either way.
 | The model, over the real core | `WorkspaceLifecycle` in [`crates/models/src/workspaces.rs`](../crates/models/src/workspaces.rs) |
 | The experiment's name and version | [`crates/settings/src/experiments.rs`](../crates/settings/src/experiments.rs) |
 | What a row says of its workspace | `amux.experimental.AgentWorkspace` (kind, id, `made_by_amux`, `creating`, `problem`) in `Agent.experimental["workspaces/1"]` |
-| Where that is kept | On the row, in the store's `experimental` column ([experiment tables](JOURNAL_AND_STORE.md#experiment-tables)). For own agents a cache of what the folder says, republished only when it changes; a replica's as its host wrote it, kept and passed on by every host whether it runs the experiment or not, so the phone warns of a delete's worktree though its node has no switch |
+| Where that is kept | On the row, in the store's `experimental` column ([experiment tables](JOURNAL_AND_STORE.md#experiment-tables)). For own agents a cache of what the folder says, republished only when it changes; a replica's as its host wrote it, kept and passed on by every host whether it runs the experiment or not, so the phone shows a desk's workspaces though its node has no switch |
 | Git worktrees on disk | `<installation>/worktrees/<repository>/<name>` |
 | wt trees on disk | Where wt's configuration places them, under wt's home (`$WT_HOME`, else `~/.wt`), so `wt ls`, `wt shell` and `wt rm` work on them |
 
@@ -266,8 +263,8 @@ could not be grouped.
 
 **Making the workspace before the row,** as the path without the experiment
 does. Only the creating client would know an agent was coming, wt's fetch
-can take tens of seconds, and a create forwarded to another host could
-outrun the forwarding host's patience for an answer.
+can take tens of seconds, and a create carried from another host could
+outrun the carrying host's patience for an answer.
 
 **A marker recording whether a tree is started.** It survives reboots and
 crashes and goes stale, so a start would be skipped exactly when it was

@@ -32,6 +32,7 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
 tokio = { workspace = true }
+ui-code = { workspace = true }
 wire = { workspace = true }
 
 [build-dependencies]

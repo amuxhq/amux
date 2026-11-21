@@ -15,12 +15,11 @@ import sh.amux.values.CommandView
 import sh.amux.values.FormField
 import sh.amux.values.FormProblem
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
+import sh.amux.values.HighlightedCode
 import sh.amux.values.NewAgentChoices
 import sh.amux.values.NewAgentPick
 import sh.amux.values.OnboardingState
-import sh.amux.values.ReviewComment
-import sh.amux.values.ReviewDoc
+import sh.amux.values.PatchHunk
 import sh.amux.values.SettingsView
 import sh.amux.values.SetupStep
 
@@ -118,11 +117,19 @@ object Bridge {
 
     fun pastesAsAttachment(text: String): Boolean = NativeBridge.pastesAsAttachment(text)
 
-    fun reviewDoc(review: FrozenReview, comments: List<ReviewComment>): ReviewDoc? {
-        val raw = NativeBridge.reviewDoc(
-            AmuxJson.json.encodeToString(review),
-            AmuxJson.json.encodeToString(comments),
-        ) ?: return null
+    /**
+     * A fenced code block coloured by kind of token. Null only when the
+     * library could not answer; a result not `settled` is asked for again
+     * soon.
+     */
+    fun highlightBlock(code: String, info: String?, streaming: Boolean): HighlightedCode? {
+        val raw = NativeBridge.highlightBlock(code, info, streaming) ?: return null
+        return decodeNullable(raw)
+    }
+
+    /** An edit's hunks coloured as the file at [path] is. */
+    fun highlightPatch(path: String, hunks: List<PatchHunk>): HighlightedCode? {
+        val raw = NativeBridge.highlightPatch(path, AmuxJson.json.encodeToString(hunks)) ?: return null
         return decodeNullable(raw)
     }
 

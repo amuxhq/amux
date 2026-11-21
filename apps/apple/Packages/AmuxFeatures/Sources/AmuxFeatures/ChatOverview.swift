@@ -218,7 +218,7 @@ public struct ChatOverview: View {
                     selection: Binding(get: { model.comparison }, set: { model.compare($0) })
                 ) {
                     ForEach(comparisons, id: \.self) { comparison in
-                        Text(ChatWords.comparison(comparison, base: model.base)).tag(comparison)
+                        Text(ChatWords.comparison(comparison, base: model.listedBase)).tag(comparison)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -262,7 +262,7 @@ public struct ChatOverview: View {
             }
             ForEach(folder.files, id: \.path) { file in
                 HStack(spacing: 10) {
-                    Text(verbatim: file.name)
+                    Text(verbatim: ChatWords.changedFile(file))
                         .designFont(.mono, design)
                         .foregroundStyle(file.status == .deleted ? design.inkFaint.color : design.ink.color)
                         .strikethrough(file.status == .deleted)
@@ -282,7 +282,7 @@ public struct ChatOverview: View {
                 .padding(.leading, folder.path.isEmpty ? 0 : 14)
                 .accessibilityElement(children: .combine)
                 .identified(
-                    "chat.overview.file.\(file.path)", label: file.path,
+                    "chat.overview.file.\(file.path)", label: ChatWords.changedPath(file),
                     value: ChatWords.counts(added: file.added, removed: file.removed))
             }
         }

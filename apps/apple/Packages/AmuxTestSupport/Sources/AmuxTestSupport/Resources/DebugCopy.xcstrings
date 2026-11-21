@@ -133,18 +133,6 @@
         }
       }
     },
-    "4f2a9c1" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "4f2a9c1"
-          }
-        }
-      }
-    },
     "<instructions>" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -697,6 +685,30 @@
         }
       }
     },
+    "Here is the loop:\n\n```python\nfor host in hosts:\n    if host.reachable:\n        pair(host, retries=3" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Here is the loop:\n\n```python\nfor host in hosts:\n    if host.reachable:\n        pair(host, retries=3"
+          }
+        }
+      }
+    },
+    "The guard now names the host:\n\n```swift\n// Refuse a pairing the host did not offer.\nfunc refuse(_ code: Int) throws -> String {\n    guard code > 0 else { throw PairingError.unknown }\n    return \"no such host: \\(code)\"\n}\n```\n\n```ts\nexport const retry = (tries: number): Promise<void> => wait(250 * tries)\n```\n\n```diff\n-      Code::NotFound => \"no such host\",\n+      _ => \"could not pair, check the code\",\n```" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The guard now names the host:\n\n```swift\n// Refuse a pairing the host did not offer.\nfunc refuse(_ code: Int) throws -> String {\n    guard code > 0 else { throw PairingError.unknown }\n    return \"no such host: \\(code)\"\n}\n```\n\n```ts\nexport const retry = (tries: number): Promise<void> => wait(250 * tries)\n```\n\n```diff\n-      Code::NotFound => \"no such host\",\n+      _ => \"could not pair, check the code\",\n```"
+          }
+        }
+      }
+    },
     "delete-worktree" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -729,6 +741,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "delete-worktree-unknown"
+          }
+        }
+      }
+    },
+    "prose-code" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prose-code"
+          }
+        }
+      }
+    },
+    "prose-code-streaming" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prose-code-streaming"
+          }
+        }
+      }
+    },
+    "s3" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s3"
+          }
+        }
+      }
+    },
+    "s4" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "s4"
           }
         }
       }
@@ -949,18 +1009,6 @@
         }
       }
     },
-    "Link the error table here." : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Link the error table here."
-          }
-        }
-      }
-    },
     "Local only." : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -1161,18 +1209,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Please"
-          }
-        }
-      }
-    },
-    "Please address these before the next run." : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please address these before the next run."
           }
         }
       }
@@ -1413,18 +1449,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Running under systemd now."
-          }
-        }
-      }
-    },
-    "Say what refused it, not only that it was refused." : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Say what refused it, not only that it was refused."
           }
         }
       }
@@ -4357,18 +4381,6 @@
         }
       }
     },
-    "review-token" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "review-token"
-          }
-        }
-      }
-    },
     "rm -rf target" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -4785,18 +4797,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "test result: ok. 42 passed"
-          }
-        }
-      }
-    },
-    "the machine could not be asked" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/ScriptedChat.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the machine could not be asked"
           }
         }
       }

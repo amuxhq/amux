@@ -356,7 +356,6 @@ internal fun ChatRoute(
             onToggleRun = { rowId -> model.toggleRun(rowId) },
             onToggleGroup = { rowId -> model.toggleGroup(rowId) },
             onOpenAgent = { target -> router.push(Route.Conversation(target)) },
-            onOpenReview = { filePath -> router.push(Route.Changes(agent = agent, initialFile = filePath)) },
             onOpenAttachment = { blob -> model.openAttachment(blob) },
             onOpenAttachmentExternally = { file -> ShellPlatform.openOrShareFile(context, file) },
             onShareAttachment = { file -> ShellPlatform.shareFile(context, file) },

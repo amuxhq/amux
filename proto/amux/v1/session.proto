@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/chat.proto";
+import "amux/v1/records.proto";
+
+// One agent's conversation as it is streamed and as it is driven: the
+// events of a session stream and the cursor a copy resumes one from, the
+// input an agent is sent and its interpreter's verdict, and the composer's
+// unsent draft. Shared by the services that stream, send and keep them,
+// and by the agent process, which carries input and verdicts on its own
+// sockets.
+
+// The delta if it is at most cap rows and the origin still runs the
+// generation the cursor was taken under; else Reset and a tail of cap. A
+// revision belongs to a generation: after an unclean reboot the origin
+// mints the same numbers again for different content.
+message After {
+  uint64 revision = 1;
+  uint32 cap = 2;
+  uint64 generation = 3;
+}
+
+message SessionEvent {
+  oneof of {
+    Snapshot snapshot = 1;
+    Item item = 2;
+    Append append = 3;
+    CaughtUp caught_up = 4;
+    Lagged lagged = 5;
+    Reset reset = 6;
+    Detached detached = 7;
+    Opening opening = 8;
+  }
+}
+
+// The first event of every stream: the origin generation its rows and
+// revisions belong to. A peer source stores it on the block it takes and
+// names it with its cursor when it resumes; a client that reopens a stream
+// under another generation than its last Opening or Reset named rebuilds as
+// at a Reset, which the gap may have carried.
+message Opening {
+  uint64 generation = 1;
+}
+
+// Forget the transcript; a fresh tail of the block under `generation`, the
+// origin generation its rows and revisions belong to, follows, then
+// CaughtUp. A replica sends one live when it takes a new block (its first,
+// or one replacing what it held); a client holds `generation` from here as
+// it would from an Opening.
+message Reset {
+  uint64 generation = 1;
+}
+
+// The origin is not being followed; rows may be stale.
+message Detached {}
+
+// An agent's unsent draft: its words and the attachments already stored.
+message Draft {
+  string text = 1;
+  repeated Attachment attachments = 2;
+}
+
+// A client-generated input id, the agent's kind, and that kind's input
+// message encoded. Daemons forward the bytes untouched; only the agent of
+// that kind decodes them, so an arm or field this daemon does not know
+// reaches a newer agent intact. The reply is the interpreter's verdict,
+// never a handover receipt. The daemon decodes a copy for its analytics and
+// tolerates a copy it cannot decode.
+message Input {
+  bytes input_id = 1;
+  Kind kind = 2;
+  // ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+  bytes body = 3;
+}
+
+// A prompt with its client-generated input id, where a whole Input would
+// admit arms that are not a prompt.
+message PromptSubmission {
+  bytes input_id = 1;
+  PromptInput prompt = 2;
+}
+
+// The interpreter's verdict.
+message SendInputResponse {
+  oneof of {
+    Accepted accepted = 1;
+    Rejected rejected = 2;
+  }
+}
+
+message Accepted {
+  bool queued = 1;
+}
+
+message Rejected {
+  Refusal refusal = 1;
+  // The provider's or interpreter's own words, when it has any: terminal
+  // Claude's sentence about a send-now it cannot do.
+  optional string detail = 2;
+}
+
+enum Refusal {
+  REFUSAL_UNSPECIFIED = 0;
+  // The answer's ask is not open.
+  REFUSAL_CLOSED_ASK = 1;
+  // The withdraw or send-now target is not waiting in the queue.
+  REFUSAL_NOT_QUEUED = 2;
+  // This agent version, kind or state cannot take the input.
+  REFUSAL_UNSUPPORTED = 3;
+  REFUSAL_DRAINING = 4;
+  REFUSAL_EXITING = 5;
+  REFUSAL_EXITED = 6;
+  REFUSAL_HOST_UNREACHABLE = 7;
+  // Terminal Claude's own view switched to another conversation; this
+  // agent's conversation is not the one on its screen.
+  REFUSAL_CONVERSATION_ELSEWHERE = 8;
+  // The prompt is longer than the agent takes; the detail names the limit.
+  REFUSAL_TOO_LONG = 9;
+  // The agent is closed: only the person or its own parent resume it.
+  REFUSAL_AGENT_CLOSED = 10;
+}

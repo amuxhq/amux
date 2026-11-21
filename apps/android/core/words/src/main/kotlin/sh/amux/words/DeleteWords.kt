@@ -7,6 +7,12 @@ import sh.amux.values.WorkspaceGoes
  * What deleting an agent says goes with it, in the words the delete
  * confirmation uses, and whether confirming agrees to lose uncommitted
  * changes.
+ *
+ * Only the agent's host knows whether its workspace goes with it, and what
+ * that holds now, so a confirmation opens checking and asks the runtime,
+ * which asks the host. It says it is checking until the answer comes, and
+ * confirming before then keeps a worktree with changes on disk, because
+ * nothing it drew named them.
  */
 object DeleteWords {
     data class Lines(
@@ -16,32 +22,27 @@ object DeleteWords {
         val settled: Boolean,
     )
 
-    /**
-     * What a confirmation draws on opening, from what the row says goes:
-     * checking, when a workspace goes at all.
-     */
-    fun asking(goes: WorkspaceGoes?): DeleteWarning? = goes?.let { DeleteWarning.Checking(it) }
-
     /** Whether a confirmation drawing [warning] is waiting on an answer. */
     fun awaitsAnswer(warning: DeleteWarning?): Boolean = warning is DeleteWarning.Checking
 
     /**
      * What a confirmation draws once its question is answered. Only one
      * still checking takes the answer; an answer that is a failure reads as
-     * a host that could not say.
+     * a host that could not be asked.
      */
     fun answered(drawn: DeleteWarning?, answer: Result<DeleteWarning?>): DeleteWarning? {
         if (drawn !is DeleteWarning.Checking) return drawn
         return answer.fold(
             onSuccess = { it },
-            onFailure = { DeleteWarning.Unknown(drawn.value) },
+            onFailure = { DeleteWarning.Unknown },
         )
     }
 
     /**
      * What a confirmation says of the workspace: its line, the branch's line
-     * when it names one and whether the branch stays, and whether what it says
-     * is settled rather than still being checked. Null when the workspace stays.
+     * when the host named one and whether the branch stays, and whether the
+     * host has said the worktree goes, which makes the line a loss rather
+     * than an open question. Null when the workspace stays.
      */
     fun lines(warning: DeleteWarning?): Lines? = when (warning) {
         null -> null
@@ -51,17 +52,17 @@ object DeleteWords {
             branchKept = branchKept(warning.value),
             settled = true,
         )
-        is DeleteWarning.Checking -> Lines(
-            workspace = "Checking its worktree for uncommitted changes\u2026",
-            branch = branch(warning.value),
-            branchKept = branchKept(warning.value),
+        DeleteWarning.Checking -> Lines(
+            workspace = "Checking whether its worktree is removed too\u2026",
+            branch = null,
+            branchKept = true,
             settled = false,
         )
-        is DeleteWarning.Unknown -> Lines(
-            workspace = "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn\u2019t be checked.",
-            branch = branch(warning.value),
-            branchKept = branchKept(warning.value),
-            settled = true,
+        DeleteWarning.Unknown -> Lines(
+            workspace = "Its worktree couldn\u2019t be checked. If it\u2019s removed too, it stays on disk while it has uncommitted changes.",
+            branch = null,
+            branchKept = true,
+            settled = false,
         )
     }
 
@@ -82,8 +83,9 @@ object DeleteWords {
     }
 
     /**
-     * What becomes of the branch the row names: the host deletes one with
-     * no commits of its own and keeps any other.
+     * What becomes of the workspace's branch: the host deletes one with no
+     * commits of its own and keeps any other; when the host could not count
+     * them, words true either way.
      */
     fun branch(goes: WorkspaceGoes): String? {
         val branch = goes.branch ?: return null
@@ -122,7 +124,7 @@ object DeleteWords {
 
     /**
      * Whether confirming agrees to lose uncommitted changes: only when the
-     * confirmation drew them from current facts. A delete without that
+     * confirmation drew them from the host's answer. A delete without that
      * consent keeps such a workspace on disk.
      */
     fun discards(warning: DeleteWarning?): Boolean =

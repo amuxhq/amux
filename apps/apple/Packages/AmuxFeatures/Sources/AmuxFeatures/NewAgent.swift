@@ -161,7 +161,7 @@ public struct NewAgent: View {
         }
     }
 
-    /// "macOS · via relay", or why the machine cannot be chosen.
+    /// "macOS · via relay", or why the computer cannot be chosen.
     private func reach(_ host: HostView) -> String {
         switch host.group {
         case .away: return String(localized: "Away")

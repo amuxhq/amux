@@ -40,9 +40,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use daemon_core::generation::{LastRun, at_start};
-use daemon_core::payload::{
-    CarrierKind, ClientRequest, JobResult, PeerRequest, PublicKey, Response,
-};
+use daemon_core::payload::{CarrierKind, ClientRequest, JobResult, PeerRead, PublicKey, Response};
 use daemon_core::trust::{TrustChange, TrustChanged, TrustStore};
 use daemon_core::{
     AgentId, CallId, Daemon, DumpReason, HostId, Input, Job, JobId, LinkId, Output, Route,
@@ -82,12 +80,13 @@ fn peer_key() -> PublicKey {
     PublicKey(key.to_vec())
 }
 
-/// The peer's early read: a page of the agent's rows.
-fn early_read() -> PeerRequest {
-    PeerRequest::ListItems(wire::ListItemsRequest {
+/// The peer's early read: a follow of the agent's session from its tail,
+/// one of the two calls that may go out before a link's handshake
+/// finishes.
+fn early_read() -> PeerRead {
+    PeerRead::FollowSession(wire::FollowSessionRequest {
         agent_id: AGENT.0.to_vec(),
-        before_order: None,
-        page_size: TAIL,
+        from: Some(wire::follow_session_request::From::Tail(TAIL)),
     })
 }
 
@@ -849,6 +848,9 @@ impl SingleDaemon {
         let answered = out
             .iter()
             .any(|output| matches!(output, Output::Answer { call: to, .. } if *to == call));
+        // The peer lets the follow go once it has read the opening, so the
+        // model's subscriber stays the one client's.
+        self.step(next, Input::CallCancelled { call }, false);
         if answered {
             next.early_answered = true;
             if !next.pinned && next.answered_unpinned.is_none() {

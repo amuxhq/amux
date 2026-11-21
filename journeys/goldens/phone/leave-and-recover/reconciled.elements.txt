@@ -1,19 +1,21 @@
 shell |  | agents | 0,62,402,778
 chat |  | keeper | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Remember this recovery turn. |  | 16,158,370,40
-chat.row.prose | The recovery state is safely stored. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
+chat.row.prompt | Remember this recovery turn. |  | 16,124,370,40
+chat.prose.render |  | rendered | 155,134,217,20
+chat.row.prose | The recovery state is safely stored. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Carry on. |  | 16,267,370,40
-chat.row.prose | A second turn arrived while you were away. | final | 16,319,370,20
-chat.prose.render |  | rendered | 16,319,370,20
+chat.row.prompt | Carry on. |  | 16,233,370,40
+chat.prose.render |  | rendered | 306,243,66,20
+chat.row.prose | A second turn arrived while you were away. | final | 16,285,370,20
+chat.prose.render |  | rendered | 16,285,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Pick up where we left off. |  | 16,377,370,40
-chat.row.prose | Back after the restart. | final | 16,428,370,20
-chat.prose.render |  | rendered | 16,428,370,20
+chat.row.prompt | Pick up where we left off. |  | 16,343,370,40
+chat.prose.render |  | rendered | 190,353,182,20
+chat.row.prose | Back after the restart. | final | 16,394,370,20
+chat.prose.render |  | rendered | 16,394,370,20
 chat.row.turn-end | <volatile>
-chat.field | Message keeper |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
@@ -25,16 +27,15 @@ chat.title | keeper | keeper | 76,66,165,36
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 16,124,370,34
- | Remember this recovery turn. |  | 16,158,370,40
- | The recovery state is safely stored. |  | 16,210,370,20
- | Worked <t> |  | 16,237,62,16
- | Carry on. |  | 16,267,370,40
- | A second turn arrived while you were away. |  | 16,319,370,20
- | Worked <t> |  | 16,347,62,16
- | Pick up where we left off. |  | 16,377,370,40
- | Back after the restart. |  | 16,428,370,20
- | Worked <t> |  | 16,456,62,16
+ | Remember this recovery turn. |  | 16,124,370,40
+ | The recovery state is safely stored. |  | 16,176,370,20
+ | Worked for <t> |  | 16,203,81,16
+ | Carry on. |  | 16,233,370,40
+ | A second turn arrived while you were away. |  | 16,285,370,20
+ | Worked for <t> |  | 16,313,81,16
+ | Pick up where we left off. |  | 16,343,370,40
+ | Back after the restart. |  | 16,394,370,20
+ | Worked for <t> |  | 16,422,81,16
 BackButton | Agents |  | 16,62,44,44
  | keeper, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

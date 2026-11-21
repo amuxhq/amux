@@ -37,6 +37,7 @@ class HostsStoreTest {
         lastDialError: String? = null,
     ): HostView = HostView(
         hostId = id.bytes,
+        link = 0L,
         name = name,
         local = local,
         trusted = trusted,

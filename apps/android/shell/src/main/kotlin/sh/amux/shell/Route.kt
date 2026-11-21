@@ -17,7 +17,6 @@ enum class Tab(val wireName: String) {
  */
 sealed interface Route {
     data class Conversation(val agent: AgentKey) : Route
-    data class Changes(val agent: AgentKey, val initialFile: String? = null) : Route
     data class Host(val host: HostId) : Route
     data object Settled : Route
     data object Settings : Route
@@ -27,7 +26,7 @@ sealed interface Route {
     /** Preferred owning tab when pushed from outside a tab context. */
     val preferredTab: Tab?
         get() = when (this) {
-            is Conversation, is Changes, Settled -> Tab.Agents
+            is Conversation, Settled -> Tab.Agents
             is Host -> Tab.Hosts
             is Paywall -> from
             Settings, NewAgent -> null
@@ -36,7 +35,6 @@ sealed interface Route {
     val routeName: String
         get() = when (this) {
             is Conversation -> "conversation"
-            is Changes -> "changes"
             is Host -> "host"
             Settled -> "settled"
             Settings -> "settings"

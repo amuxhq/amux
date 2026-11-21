@@ -4,10 +4,21 @@
 //! Frames are grouped by what they are (the discriminant: a message type,
 //! subtype, request kind, content kind…). A composed frame conforms when
 //! every path it has appears on some recorded frame of the same group, and
-//! it carries every field the newest recorded provider version always
-//! sends in that group, and the provider's protocol crate reads it with
-//! nothing unknown. A fake that invents a field, drops one, or composes a
-//! frame the provider never sends fails.
+//! it carries every field the newest recordings of that group always send,
+//! and the provider's protocol crate reads it with nothing unknown. A fake
+//! that invents a field, drops one, or composes a frame the provider never
+//! sends fails.
+//!
+//! "Always" needs more than one session to mean anything: every frame of a
+//! group in one recording shares that session's circumstances (a rate-limit
+//! warning's threshold, a permission prompt's suggestions), so its frames
+//! agree on fields that are only situational. What a group always sends is
+//! what every frame of it carries across its newest [`SAMPLES`] recordings
+//! (all of them, where fewer show it), taking whole provider versions newest
+//! first: a newer version shown by fewer recordings than that is read
+//! together with the versions before it. A field such a version added is
+//! required once enough of its recordings show it; one it stopped sending
+//! is never required.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -239,10 +250,43 @@ pub struct Corpus {
     groups: BTreeMap<String, Group>,
 }
 
+/// How many recordings a group's newest versions must add up to before
+/// what their frames share is taken as what the provider always sends.
+pub const SAMPLES: usize = 3;
+
 #[derive(Default)]
 struct Group {
     allowed: BTreeSet<String>,
-    newest: Option<(Vec<u64>, BTreeSet<String>)>,
+    /// Per provider version, oldest first.
+    versions: BTreeMap<Vec<u64>, Sample>,
+    /// What the newest recordings always send, once the corpus is loaded.
+    required: BTreeSet<String>,
+}
+
+/// What one provider version's recordings show of a group.
+struct Sample {
+    /// How many recordings show the group.
+    recordings: usize,
+    /// The fields every one of their frames of the group carries.
+    always: BTreeSet<String>,
+}
+
+impl Group {
+    fn required(&self) -> BTreeSet<String> {
+        let mut recordings = 0;
+        let mut required: Option<BTreeSet<String>> = None;
+        for sample in self.versions.values().rev() {
+            required = Some(match required {
+                None => sample.always.clone(),
+                Some(required) => &required & &sample.always,
+            });
+            recordings += sample.recordings;
+            if recordings >= SAMPLES {
+                break;
+            }
+        }
+        required.unwrap_or_default()
+    }
 }
 
 impl Corpus {
@@ -261,6 +305,9 @@ impl Corpus {
                 corpus.add(kind, &dir)?;
             }
         }
+        for group in corpus.groups.values_mut() {
+            group.required = group.required();
+        }
         Ok(corpus)
     }
 
@@ -273,6 +320,7 @@ impl Corpus {
             .split('.')
             .filter_map(|part| part.parse().ok())
             .collect();
+        let mut shown = BTreeSet::new();
         for process in playback::load(dir).map_err(|error| error.to_string())? {
             let mut classifier = Classifier::default();
             for event in &process.events {
@@ -298,7 +346,7 @@ impl Corpus {
                             classifier.provider(kind, &frame)
                         };
                         let signature = signature(kind, &frame);
-                        let entry = self.groups.entry(group).or_default();
+                        let entry = self.groups.entry(group.clone()).or_default();
                         entry.allowed.extend(signature.iter().cloned());
                         // What sits inside an array is only there when the
                         // array has members.
@@ -306,12 +354,19 @@ impl Corpus {
                             .into_iter()
                             .filter(|key| !key.contains("[]"))
                             .collect();
-                        match &mut entry.newest {
-                            Some((newest, required)) if *newest == version => {
-                                required.retain(|key| keys.contains(key));
+                        let first = shown.insert(group);
+                        match entry.versions.get_mut(&version) {
+                            Some(sample) => {
+                                sample.always.retain(|key| keys.contains(key));
+                                sample.recordings += usize::from(first);
                             }
-                            Some((newest, _)) if *newest > version => {}
-                            _ => entry.newest = Some((version.clone(), keys)),
+                            None => {
+                                let sample = Sample {
+                                    recordings: 1,
+                                    always: keys,
+                                };
+                                entry.versions.insert(version.clone(), sample);
+                            }
                         }
                     }
                 }
@@ -329,11 +384,7 @@ impl Corpus {
         let signature = signature(kind, frame);
         let invented: Vec<_> = signature.difference(&recorded.allowed).collect();
         let composed = keys(&signature);
-        let dropped: Vec<_> = recorded
-            .newest
-            .as_ref()
-            .map(|(_, required)| required.difference(&composed).collect())
-            .unwrap_or_default();
+        let dropped: Vec<_> = recorded.required.difference(&composed).collect();
         if invented.is_empty() && dropped.is_empty() {
             Ok(())
         } else {
@@ -392,6 +443,39 @@ mod tests {
             signature(Kind::Codex, &completed("paused"))
         );
         assert!(typed(Kind::Codex, &completed("paused")).is_err());
+    }
+
+    fn group(versions: &[(u64, usize, &[&str])]) -> Group {
+        Group {
+            versions: versions
+                .iter()
+                .map(|(minor, recordings, always)| {
+                    let always = always.iter().map(|key| (*key).to_owned()).collect();
+                    let sample = Sample {
+                        recordings: *recordings,
+                        always,
+                    };
+                    (vec![0, *minor, 0], sample)
+                })
+                .collect(),
+            ..Group::default()
+        }
+    }
+
+    fn names(keys: &[&str]) -> BTreeSet<String> {
+        keys.iter().map(|key| (*key).to_owned()).collect()
+    }
+
+    /// One session of a new version requires nothing it alone shows: its
+    /// situational fields would read as always sent.
+    #[test]
+    fn a_version_too_few_recordings_show_is_read_with_the_one_before() {
+        let one = group(&[(1, 8, &["type", "kept"]), (2, 1, &["type", "warning"])]);
+        assert_eq!(one.required(), names(&["type"]));
+        let enough = group(&[(1, 8, &["type", "kept"]), (2, SAMPLES, &["type", "added"])]);
+        assert_eq!(enough.required(), names(&["type", "added"]));
+        let few = group(&[(1, 1, &["type", "kept"])]);
+        assert_eq!(few.required(), names(&["type", "kept"]));
     }
 
     #[test]

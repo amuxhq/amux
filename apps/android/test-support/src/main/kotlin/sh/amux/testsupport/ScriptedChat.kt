@@ -30,7 +30,6 @@ import sh.amux.values.Draft
 import sh.amux.values.DraftPart
 import sh.amux.values.ExploreVerb
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.Git
 import sh.amux.values.GroupState
 import sh.amux.values.InputState
@@ -215,12 +214,6 @@ class ScriptedChat(
 
     /** Optional older rows that [pageOlder] automatically prepends when non-empty. */
     val earlier: MutableList<Row> = mutableListOf()
-
-    /** Working-tree (or fallback) frozen review returned by [review]. */
-    var working: FrozenReview? = null
-
-    /** Per-comparison frozen reviews overriding [working] when set. */
-    val reviewByComparison: MutableMap<Comparison, FrozenReview> = mutableMapOf()
 
     var initialKeptDraft: Draft? = keptDraft
     var commandHandler: (Draft) -> CommandOutcome? = { CommandOutcome.Send }
@@ -553,12 +546,6 @@ class ScriptedChat(
 
     override fun fetchBlob(hash: List<Int>) {
         lock.withLock { retried.add(hash) }
-    }
-
-    override suspend fun review(comparison: Comparison): Result<FrozenReview> = lock.withLock {
-        val chosen = reviewByComparison[comparison] ?: working
-            ?: return Result.failure(RuntimeFailure("the machine could not be asked"))
-        Result.success(chosen)
     }
 
     override suspend fun openOverview(comparison: Comparison): Result<Overview> = lock.withLock {

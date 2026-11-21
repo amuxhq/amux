@@ -159,6 +159,7 @@ class ServicesAndReportingTest {
         val view = sh.amux.values.FleetView(sections = emptyList(), needYou = 0, working = 0)
         val deskHost = sh.amux.values.HostView(
             hostId = hostId.bytes,
+            link = 0L,
             name = "desk",
             local = false,
             trusted = true,

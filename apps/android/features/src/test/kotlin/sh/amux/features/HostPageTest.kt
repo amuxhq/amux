@@ -39,6 +39,7 @@ class HostPageTest {
         lastDialError: String? = null,
     ): HostView = HostView(
         hostId = List(16) { 7 },
+        link = 0L,
         name = "desk",
         local = false,
         trusted = true,

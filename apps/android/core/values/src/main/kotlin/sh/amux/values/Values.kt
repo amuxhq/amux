@@ -296,7 +296,7 @@ sealed interface AgentAct {
     data object Delete : AgentAct
     /**
      * Deletes it, agreeing to lose the uncommitted changes of the workspace
-     * that goes with it, which its card's `workspace_goes` names. Sent only
+     * that goes with it, which its delete warning names. Sent only
      * after the person read those and confirmed.
      */
     data object DeleteDiscardingChanges : AgentAct
@@ -411,16 +411,17 @@ sealed interface AskBody {
         val description: String,
     ) : AskBody
     /**
-     * The patch's lines, and the new file's line its first change lands
-     * on when the patch says (a Claude edit's does not: it is only the
-     * text replaced and the text replacing it).
+     * The patch, file by file and each file as its hunks, and the new
+     * file's line its first change lands on when the patch says (a Claude
+     * edit's does not: it is only the text replaced and the text
+     * replacing it).
      */
     data class Edit(
         val path: String,
         val files: Int,
         val added: Int,
         val removed: Int,
-        val lines: List<EditLine>,
+        val patch: List<FilePatch>,
         val reason: String,
         val created: Boolean? = null,
         val line: Int? = null,
@@ -527,9 +528,9 @@ object AskBodySerializer : KSerializer<AskBody> {
                         serializer<Int>(),
                         fields["removed"] ?: throw SerializationException("AskBody.Edit missing field removed"),
                     ),
-                    lines = json.decodeFromJsonElement(
-                        serializer<List<EditLine>>(),
-                        fields["lines"] ?: throw SerializationException("AskBody.Edit missing field lines"),
+                    patch = json.decodeFromJsonElement(
+                        serializer<List<FilePatch>>(),
+                        fields["patch"] ?: throw SerializationException("AskBody.Edit missing field patch"),
                     ),
                     reason = json.decodeFromJsonElement(
                         serializer<String>(),
@@ -677,7 +678,7 @@ object AskBodySerializer : KSerializer<AskBody> {
                         put("files", json.encodeToJsonElement(serializer<Int>(), value.files))
                         put("added", json.encodeToJsonElement(serializer<Int>(), value.added))
                         put("removed", json.encodeToJsonElement(serializer<Int>(), value.removed))
-                        put("lines", json.encodeToJsonElement(serializer<List<EditLine>>(), value.lines))
+                        put("patch", json.encodeToJsonElement(serializer<List<FilePatch>>(), value.patch))
                         put("reason", json.encodeToJsonElement(serializer<String>(), value.reason))
                         value.created?.let {
                             put("created", json.encodeToJsonElement(serializer<Boolean>(), it))
@@ -1152,9 +1153,16 @@ sealed interface AttachmentView {
         val lines: Int,
         val text: String,
     ) : AttachmentView
-    data class Review(
+    /**
+     * A review sent into the chat: the comments it sent, the review and
+     * the input it was sent in, and the text the agent read, which is what
+     * opening it shows when no round of the review was closed by that
+     * input, or the agent's host no longer has it.
+     */
+    data class SentReview(
         val comments: Int,
-        val patch: BlobRef? = null,
+        val review: SentReviewRef,
+        val text: String,
     ) : AttachmentView
     /**
      * Comments on a web page: the page's title, or its address when it
@@ -1210,17 +1218,22 @@ object AttachmentViewSerializer : KSerializer<AttachmentView> {
                     ),
                 )
             }
-            "Review" -> {
+            "SentReview" -> {
                 val fields = payload as? JsonObject
-                    ?: throw SerializationException("AttachmentView.Review payload must be an object")
-                AttachmentView.Review(
+                    ?: throw SerializationException("AttachmentView.SentReview payload must be an object")
+                AttachmentView.SentReview(
                     comments = json.decodeFromJsonElement(
                         serializer<Int>(),
-                        fields["comments"] ?: throw SerializationException("AttachmentView.Review missing field comments"),
+                        fields["comments"] ?: throw SerializationException("AttachmentView.SentReview missing field comments"),
                     ),
-                    patch = fields["patch"]?.takeUnless { it is JsonNull }?.let {
-                        json.decodeFromJsonElement(serializer<BlobRef>(), it)
-                    },
+                    review = json.decodeFromJsonElement(
+                        serializer<SentReviewRef>(),
+                        fields["review"] ?: throw SerializationException("AttachmentView.SentReview missing field review"),
+                    ),
+                    text = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["text"] ?: throw SerializationException("AttachmentView.SentReview missing field text"),
+                    ),
                 )
             }
             "Page" -> {
@@ -1266,13 +1279,12 @@ object AttachmentViewSerializer : KSerializer<AttachmentView> {
                     },
                 ),
             )
-            is AttachmentView.Review -> JsonObject(
+            is AttachmentView.SentReview -> JsonObject(
                 mapOf(
-                    "Review" to buildJsonObject {
+                    "SentReview" to buildJsonObject {
                         put("comments", json.encodeToJsonElement(serializer<Int>(), value.comments))
-                        value.patch?.let {
-                            put("patch", json.encodeToJsonElement(serializer<BlobRef>(), it))
-                        }
+                        put("review", json.encodeToJsonElement(serializer<SentReviewRef>(), value.review))
+                        put("text", json.encodeToJsonElement(serializer<String>(), value.text))
                     },
                 ),
             )
@@ -1325,51 +1337,6 @@ enum class BackgroundKind {
     /** A kind the provider names that amux has no word for. */
     @SerialName("Other")
     Other,
-}
-
-@Serializable(with = BaseSerializer::class)
-sealed interface Base {
-    /** From the folder's HEAD commit. */
-    data class Head(val value: Empty) : Base
-    data class Branch(val value: String) : Base
-}
-
-object BaseSerializer : KSerializer<Base> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("sh.amux.values.Base")
-
-    override fun deserialize(decoder: Decoder): Base {
-        val jsonDecoder = decoder as? JsonDecoder
-            ?: throw SerializationException("Base requires Json")
-        val element = jsonDecoder.decodeJsonElement()
-        val obj = element as? JsonObject
-            ?: throw SerializationException("Base must be an object")
-        if (obj.size != 1) {
-            throw SerializationException("Base names exactly one variant")
-        }
-        val (tag, payload) = obj.entries.first()
-        val json = jsonDecoder.json
-        return when (tag) {
-            "Head" -> Base.Head(json.decodeFromJsonElement(serializer<Empty>(), payload))
-            "Branch" -> Base.Branch(json.decodeFromJsonElement(serializer<String>(), payload))
-            else -> throw SerializationException("unknown Base variant $tag")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: Base) {
-        val jsonEncoder = encoder as? JsonEncoder
-            ?: throw SerializationException("Base requires Json")
-        val json = jsonEncoder.json
-        val element: JsonElement = when (value) {
-            is Base.Head -> JsonObject(
-                mapOf("Head" to json.encodeToJsonElement(serializer<Empty>(), value.value)),
-            )
-            is Base.Branch -> JsonObject(
-                mapOf("Branch" to json.encodeToJsonElement(serializer<String>(), value.value)),
-            )
-        }
-        jsonEncoder.encodeJsonElement(element)
-    }
 }
 
 /**
@@ -1688,6 +1655,13 @@ data class ChangedFile(
     @SerialName("removed") val removed: Int,
     @SerialName("status") val status: FileStatus,
     @SerialName("binary") val binary: Boolean,
+    /**
+     * The language its code is highlighted as, as the agent's host named
+     * it ("rust", "tsx"); empty when none is known for it.
+     */
+    @SerialName("language") val language: String,
+    /** Where a renamed file was at the base, from the repository's root. */
+    @SerialName("old_path") val oldPath: String? = null,
 )
 
 /** The changed files of one comparison, by folder. */
@@ -1699,17 +1673,34 @@ data class Changes(
      * path.
      */
     @SerialName("folders") val folders: List<Folder>,
+    /**
+     * The branch the agent's host compared against, as it reported it:
+     * none for the uncommitted work alone, or when it found no base
+     * branch. It can differ from the base the agent's row names, as when
+     * an agent works on its base branch and the host counts from its
+     * upstream.
+     */
+    @SerialName("base") val base: String? = null,
 )
 
 /**
- * An act on an open chat. Its answer is a `SendOutcome` for `Send` (as
- * `{"Ok": SendOutcome}`), a `CommandOutcome` for `Command`, a `SendOutcome`
+ * An act on an open chat. Its answer is a `SendOutcome` for `Send` and
+ * `SendWithReview` (as `{"Ok": SendOutcome}`), a `CommandOutcome` for
+ * `Command`, a `SendOutcome`
  * or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
  * `ActOutcome` for every other.
  */
 @Serializable(with = ChatActSerializer::class)
 sealed interface ChatAct {
     data class Send(val value: Draft) : ChatAct
+    /**
+     * Sends the draft with the review's drafts after its words, as the
+     * review's text attachment naming exactly those comments: the round
+     * closes when the agent's host accepts the message. Answers
+     * `{"Ok": SendOutcome}`, or `{"Err": ..}` without sending when the
+     * review cannot be read or holds no drafts.
+     */
+    data class SendWithReview(val value: Draft) : ChatAct
     /**
      * A draft that names a command the client handles itself (`/model`,
      * `/effort`, `/rename`) or one the agent does not run; the outcome's
@@ -1805,6 +1796,7 @@ object ChatActSerializer : KSerializer<ChatAct> {
         val json = jsonDecoder.json
         return when (tag) {
             "Send" -> ChatAct.Send(json.decodeFromJsonElement(serializer<Draft>(), payload))
+            "SendWithReview" -> ChatAct.SendWithReview(json.decodeFromJsonElement(serializer<Draft>(), payload))
             "Command" -> ChatAct.Command(json.decodeFromJsonElement(serializer<Draft>(), payload))
             "Answer" -> {
                 val fields = payload as? JsonObject
@@ -1888,6 +1880,9 @@ object ChatActSerializer : KSerializer<ChatAct> {
         val element: JsonElement = when (value) {
             is ChatAct.Send -> JsonObject(
                 mapOf("Send" to json.encodeToJsonElement(serializer<Draft>(), value.value)),
+            )
+            is ChatAct.SendWithReview -> JsonObject(
+                mapOf("SendWithReview" to json.encodeToJsonElement(serializer<Draft>(), value.value)),
             )
             is ChatAct.Command -> JsonObject(
                 mapOf("Command" to json.encodeToJsonElement(serializer<Draft>(), value.value)),
@@ -2002,6 +1997,11 @@ data class ChatDelta(
     @SerialName("frame") val frame: ChatFrame? = null,
     @SerialName("keys") val keys: KeysMoved? = null,
     @SerialName("overview") val overview: Overview? = null,
+    /**
+     * The review page open on the chat, whole, when it moved: the rows an
+     * anchor's indices count are those of the page handed over last.
+     */
+    @SerialName("review") val review: ReviewPage? = null,
     @SerialName("settings") val settings: SettingsView? = null,
 )
 
@@ -2052,6 +2052,11 @@ data class ChatFrame(
      * outside a repository.
      */
     @SerialName("git") val git: Git? = null,
+    /**
+     * The chip the composer shows while the agent's review holds drafts,
+     * from the review's entry on the agent's row.
+     */
+    @SerialName("review_chip") val reviewChip: ReviewChip? = null,
     /** Only a problem; a notice above the composer, which still sends. */
     @SerialName("sign_in") val signIn: SignInView? = null,
 )
@@ -2292,6 +2297,13 @@ enum class ClientCommand {
     @SerialName("Rename")
     Rename,
 }
+
+/** A stretch of one line's text that is all one kind. */
+@Serializable
+data class CodeRun(
+    @SerialName("text") val text: String,
+    @SerialName("kind") val kind: TokenKind,
+)
 
 /** One of the agent's commands matching the word a draft ends in. */
 @Serializable
@@ -2646,27 +2658,68 @@ enum class DecisionView {
     Dismissed,
 }
 
+/** What a definition is, across languages, for a client to mark it by. */
+@Serializable
+enum class DefinitionKind {
+    @SerialName("Module")
+    Module,
+    @SerialName("Struct")
+    Struct,
+    @SerialName("Enum")
+    Enum,
+    @SerialName("Union")
+    Union,
+    @SerialName("TypeAlias")
+    TypeAlias,
+    @SerialName("Function")
+    Function,
+    @SerialName("Method")
+    Method,
+    @SerialName("Constructor")
+    Constructor,
+    @SerialName("Constant")
+    Constant,
+    @SerialName("Static")
+    Static,
+    @SerialName("Macro")
+    Macro,
+    /** A class, and its relatives: Swift's actor, Java's record. */
+    @SerialName("Class")
+    Class,
+    /** An interface, Rust's trait, Swift's protocol. */
+    @SerialName("Interface")
+    Interface,
+    /**
+     * Methods given to a type declared elsewhere: Rust's impl, Swift's
+     * extension.
+     */
+    @SerialName("Impl")
+    Impl,
+    /** A kind this build has no name for. */
+    @SerialName("Other")
+    Other,
+}
+
 /**
- * What a delete's confirmation says about the workspace that goes with the
- * agent, and so what confirming it agrees to. The row's git facts are kept
- * current only by the agent's process: for an agent without one,
- * suspended or exited, the confirmation asks the agent's host for the
- * workspace's changes against HEAD and says so until it answers. Whether
- * the branch has commits of its own the host is always asked, since a
- * merge made anywhere else can take them away
- * ([`DeleteWarning::asks_host`]).
+ * What a delete's confirmation says about the agent's workspace, and so
+ * what confirming it agrees to. Only the agent's host knows whether its
+ * workspace goes, which other agents work there, and what it holds now,
+ * so the confirmation asks it and says it is checking until it answers.
+ * A confirmation whose answer is that the workspace stays holds no
+ * warning at all.
  */
 @Serializable(with = DeleteWarningSerializer::class)
 sealed interface DeleteWarning {
-    /**
-     * What goes, from facts that are current: the row's while a process
-     * keeps them so, else the host's answer.
-     */
+    /** Asking the agent's host what the delete takes with it. */
+    data object Checking : DeleteWarning
+    /** The host answered: the workspace goes, with this. */
     data class Goes(val value: WorkspaceGoes) : DeleteWarning
-    /** Asking the host what is uncommitted; the branch is the row's. */
-    data class Checking(val value: WorkspaceGoes) : DeleteWarning
-    /** The host could not say: a worktree with changes stays on disk. */
-    data class Unknown(val value: WorkspaceGoes) : DeleteWarning
+    /**
+     * The host could not be asked: a worktree that goes with the agent
+     * still stays on disk while it has uncommitted changes, since the
+     * delete carries no consent to lose them.
+     */
+    data object Unknown : DeleteWarning
 }
 
 object DeleteWarningSerializer : KSerializer<DeleteWarning> {
@@ -2677,8 +2730,15 @@ object DeleteWarningSerializer : KSerializer<DeleteWarning> {
         val jsonDecoder = decoder as? JsonDecoder
             ?: throw SerializationException("DeleteWarning requires Json")
         val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "Checking" -> DeleteWarning.Checking
+                "Unknown" -> DeleteWarning.Unknown
+                else -> throw SerializationException("no DeleteWarning is named ${element.content}")
+            }
+        }
         val obj = element as? JsonObject
-            ?: throw SerializationException("DeleteWarning must be an object")
+            ?: throw SerializationException("DeleteWarning must be a string or object")
         if (obj.size != 1) {
             throw SerializationException("DeleteWarning names exactly one variant")
         }
@@ -2686,8 +2746,6 @@ object DeleteWarningSerializer : KSerializer<DeleteWarning> {
         val json = jsonDecoder.json
         return when (tag) {
             "Goes" -> DeleteWarning.Goes(json.decodeFromJsonElement(serializer<WorkspaceGoes>(), payload))
-            "Checking" -> DeleteWarning.Checking(json.decodeFromJsonElement(serializer<WorkspaceGoes>(), payload))
-            "Unknown" -> DeleteWarning.Unknown(json.decodeFromJsonElement(serializer<WorkspaceGoes>(), payload))
             else -> throw SerializationException("unknown DeleteWarning variant $tag")
         }
     }
@@ -2697,68 +2755,15 @@ object DeleteWarningSerializer : KSerializer<DeleteWarning> {
             ?: throw SerializationException("DeleteWarning requires Json")
         val json = jsonEncoder.json
         val element: JsonElement = when (value) {
+            DeleteWarning.Checking -> JsonPrimitive("Checking")
             is DeleteWarning.Goes -> JsonObject(
                 mapOf("Goes" to json.encodeToJsonElement(serializer<WorkspaceGoes>(), value.value)),
             )
-            is DeleteWarning.Checking -> JsonObject(
-                mapOf("Checking" to json.encodeToJsonElement(serializer<WorkspaceGoes>(), value.value)),
-            )
-            is DeleteWarning.Unknown -> JsonObject(
-                mapOf("Unknown" to json.encodeToJsonElement(serializer<WorkspaceGoes>(), value.value)),
-            )
+            DeleteWarning.Unknown -> JsonPrimitive("Unknown")
         }
         jsonEncoder.encodeJsonElement(element)
     }
 }
-
-/**
- * A comparison of an agent's working tree, made on the agent's host. It
- * runs to the working tree, untracked files included, from HEAD or from
- * where the branch left the named base. The patch is a text/x-diff blob of
- * the agent, built only when asked for; its index lines carry each file's
- * full object ids.
- */
-@Serializable
-data class Diff(
-    /** Empty before the first commit. */
-    @SerialName("head") val head: String,
-    @SerialName("files") val files: List<DiffFile>,
-    @SerialName("base") val base: DiffBase? = null,
-    @SerialName("merge_base") val mergeBase: String? = null,
-    /**
-     * Commits on the branch HEAD has checked out that no other branch, tag or
-     * remote-tracking ref holds, the branch's own upstream aside: what
-     * deleting the branch would lose, so a branch with none goes with an
-     * agent's workspace. Absent on a detached head, when it could not be
-     * counted, and from hosts before it, which a reader takes as not known.
-     */
-    @SerialName("own_commits") val ownCommits: Int? = null,
-    @SerialName("patch") val patch: BlobRef? = null,
-)
-
-@Serializable
-data class DiffBase(
-    @SerialName("base") val base: Base? = null,
-)
-
-@Serializable
-data class DiffFile(
-    @SerialName("path") val path: String,
-    /** Lines; none for a binary file. */
-    @SerialName("added") val added: Int,
-    @SerialName("removed") val removed: Int,
-    @SerialName("change") val change: Int,
-    @SerialName("binary") val binary: Boolean,
-)
-
-@Serializable
-data class DiffLine(
-    @SerialName("kind") val kind: LineKind,
-    @SerialName("text") val text: String,
-    @SerialName("comments") val comments: List<String>,
-    @SerialName("new_line") val newLine: Int? = null,
-    @SerialName("old_line") val oldLine: Int? = null,
-)
 
 /**
  * What a host offers to start an agent in: where agents ran lately and the
@@ -2809,11 +2814,6 @@ sealed interface DraftAttachment {
         val name: String,
         val text: String,
     ) : DraftAttachment
-    /** Comments on a frozen diff, sent with the diff that names its patch. */
-    data class Review(
-        val diff: Diff,
-        val comments: List<ReviewComment>,
-    ) : DraftAttachment
     /**
      * Comments on a web page, whose screenshots were stored with put_blob
      * first.
@@ -2853,20 +2853,6 @@ object DraftAttachmentSerializer : KSerializer<DraftAttachment> {
                     ),
                 )
             }
-            "Review" -> {
-                val fields = payload as? JsonObject
-                    ?: throw SerializationException("DraftAttachment.Review payload must be an object")
-                DraftAttachment.Review(
-                    diff = json.decodeFromJsonElement(
-                        serializer<Diff>(),
-                        fields["diff"] ?: throw SerializationException("DraftAttachment.Review missing field diff"),
-                    ),
-                    comments = json.decodeFromJsonElement(
-                        serializer<List<ReviewComment>>(),
-                        fields["comments"] ?: throw SerializationException("DraftAttachment.Review missing field comments"),
-                    ),
-                )
-            }
             "Page" -> DraftAttachment.Page(json.decodeFromJsonElement(serializer<PageReview>(), payload))
             else -> throw SerializationException("unknown DraftAttachment variant $tag")
         }
@@ -2888,14 +2874,6 @@ object DraftAttachmentSerializer : KSerializer<DraftAttachment> {
                     "Text" to buildJsonObject {
                         put("name", json.encodeToJsonElement(serializer<String>(), value.name))
                         put("text", json.encodeToJsonElement(serializer<String>(), value.text))
-                    },
-                ),
-            )
-            is DraftAttachment.Review -> JsonObject(
-                mapOf(
-                    "Review" to buildJsonObject {
-                        put("diff", json.encodeToJsonElement(serializer<Diff>(), value.diff))
-                        put("comments", json.encodeToJsonElement(serializer<List<ReviewComment>>(), value.comments))
                     },
                 ),
             )
@@ -2952,87 +2930,6 @@ object DraftPartSerializer : KSerializer<DraftPart> {
     }
 }
 
-/**
- * One line of an edit's patch as an ask carries it: where a file starts,
- * where a hunk starts, by its first line in the old file and the new, or a
- * line of the patch. A file's own header lines are not carried. Each
- * client decides whether to draw a hunk's start.
- */
-@Serializable(with = EditLineSerializer::class)
-sealed interface EditLine {
-    /**
-     * In a patch of several files, where each file's lines start: the
-     * file, named from the agent's folder, and what happens to it (added,
-     * deleted, moved or edited), with its counts.
-     */
-    data class File(val value: FileRow) : EditLine
-    data class Hunk(
-        val oldStart: Int,
-        val newStart: Int,
-    ) : EditLine
-    data class Line(val value: PatchLine) : EditLine
-}
-
-object EditLineSerializer : KSerializer<EditLine> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("sh.amux.values.EditLine")
-
-    override fun deserialize(decoder: Decoder): EditLine {
-        val jsonDecoder = decoder as? JsonDecoder
-            ?: throw SerializationException("EditLine requires Json")
-        val element = jsonDecoder.decodeJsonElement()
-        val obj = element as? JsonObject
-            ?: throw SerializationException("EditLine must be an object")
-        if (obj.size != 1) {
-            throw SerializationException("EditLine names exactly one variant")
-        }
-        val (tag, payload) = obj.entries.first()
-        val json = jsonDecoder.json
-        return when (tag) {
-            "File" -> EditLine.File(json.decodeFromJsonElement(serializer<FileRow>(), payload))
-            "Hunk" -> {
-                val fields = payload as? JsonObject
-                    ?: throw SerializationException("EditLine.Hunk payload must be an object")
-                EditLine.Hunk(
-                    oldStart = json.decodeFromJsonElement(
-                        serializer<Int>(),
-                        fields["old_start"] ?: throw SerializationException("EditLine.Hunk missing field old_start"),
-                    ),
-                    newStart = json.decodeFromJsonElement(
-                        serializer<Int>(),
-                        fields["new_start"] ?: throw SerializationException("EditLine.Hunk missing field new_start"),
-                    ),
-                )
-            }
-            "Line" -> EditLine.Line(json.decodeFromJsonElement(serializer<PatchLine>(), payload))
-            else -> throw SerializationException("unknown EditLine variant $tag")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: EditLine) {
-        val jsonEncoder = encoder as? JsonEncoder
-            ?: throw SerializationException("EditLine requires Json")
-        val json = jsonEncoder.json
-        val element: JsonElement = when (value) {
-            is EditLine.File -> JsonObject(
-                mapOf("File" to json.encodeToJsonElement(serializer<FileRow>(), value.value)),
-            )
-            is EditLine.Hunk -> JsonObject(
-                mapOf(
-                    "Hunk" to buildJsonObject {
-                        put("old_start", json.encodeToJsonElement(serializer<Int>(), value.oldStart))
-                        put("new_start", json.encodeToJsonElement(serializer<Int>(), value.newStart))
-                    },
-                ),
-            )
-            is EditLine.Line -> JsonObject(
-                mapOf("Line" to json.encodeToJsonElement(serializer<PatchLine>(), value.value)),
-            )
-        }
-        jsonEncoder.encodeJsonElement(element)
-    }
-}
-
 @Serializable
 data class EffortChoice(
     @SerialName("value") val value: String,
@@ -3041,15 +2938,6 @@ data class EffortChoice(
     @SerialName("default") val default: Boolean,
     @SerialName("unlisted") val unlisted: Boolean,
 )
-
-@Serializable
-class Empty {
-    override fun equals(other: Any?): Boolean = other is Empty
-
-    override fun hashCode(): Int = 0
-
-    override fun toString(): String = "Empty()"
-}
 
 /**
  * What a received agent message was, from its envelope's body: a message,
@@ -3458,6 +3346,24 @@ object FileChangeViewSerializer : KSerializer<FileChangeView> {
     }
 }
 
+/**
+ * One file's part of an edit ask's patch, as hunks. A file's own header
+ * lines are not carried. Each client decides whether to draw a hunk's
+ * start.
+ */
+@Serializable
+data class FilePatch(
+    @SerialName("hunks") val hunks: List<PatchHunk>,
+    /**
+     * In a patch of several files, the file these hunks are in, named
+     * from the agent's folder, and what happens to it (added, deleted,
+     * moved or edited), with its counts, for the client to draw where its
+     * lines start. None in an edit of one file, which the card names
+     * already.
+     */
+    @SerialName("file") val file: FileRow? = null,
+)
+
 @Serializable
 data class FileRow(
     @SerialName("path") val path: String,
@@ -3476,6 +3382,7 @@ enum class FileStatus {
     Added,
     @SerialName("Deleted")
     Deleted,
+    /** Moved from its old path, with or without changes. */
     @SerialName("Renamed")
     Renamed,
 }
@@ -3552,11 +3459,6 @@ data class FleetCard(
     @SerialName("exit_cause") val exitCause: ExitCause? = null,
     /** The repository it works in, by its remote, else its folder. */
     @SerialName("repository") val repository: Repository? = null,
-    /**
-     * Deleting it removes its workspace, and what goes with that: a
-     * delete's confirmation says so. None when the workspace stays.
-     */
-    @SerialName("workspace_goes") val workspaceGoes: WorkspaceGoes? = null,
 )
 
 /**
@@ -3977,16 +3879,6 @@ data class Found(
     @SerialName("pairing_open") val pairingOpen: Boolean? = null,
 )
 
-/**
- * An agent's working-tree diff as its host froze it for a review page, and
- * the patch it names.
- */
-@Serializable
-data class FrozenReview(
-    @SerialName("diff") val diff: Diff,
-    @SerialName("patch") val patch: String,
-)
-
 /** What a row says about the git repository an agent works in. */
 @Serializable
 data class Git(
@@ -4044,6 +3936,22 @@ data class GroupView(
     @SerialName("state") val state: GroupState,
 )
 
+/**
+ * Code as lines of runs, without their line endings. Neighbouring runs on
+ * a line differ in kind; an empty line has none.
+ */
+@Serializable
+data class HighlightedCode(
+    @SerialName("lines") val lines: List<List<CodeRun>>,
+    /**
+     * False while work under way would colour more of it: a grammar being
+     * built, or a block still streaming that has lines not yet passed
+     * over. A client that draws an unsettled result draws it again soon
+     * (within a tenth of a second), asking afresh.
+     */
+    @SerialName("settled") val settled: Boolean,
+)
+
 /** A host in the fleet as a screen lists it. */
 @Serializable
 data class HostView(
@@ -4056,6 +3964,13 @@ data class HostView(
     @SerialName("candidate") val candidate: Boolean,
     /** How this device reaches it now, and over which route. */
     @SerialName("reach") val reach: Reach,
+    /**
+     * How many links to it this device has read come up: one more each
+     * time it reads the host linked after reading it otherwise. Two
+     * listings that read it linked with the same count read the same
+     * link, however many listings went by unread in between.
+     */
+    @SerialName("link") val link: Long,
     /** Where discovery found it; what pairing dials. */
     @SerialName("addrs") val addrs: List<String>,
     /**
@@ -4101,19 +4016,11 @@ data class HostView(
     @SerialName("version") val version: String? = null,
 )
 
+/** A hunk's first line in the old file and in the new. */
 @Serializable
-data class Hunk(
-    /**
-     * Lines the patch leaves out come before this one: every hunk but a
-     * file's first when that starts at the top.
-     */
-    @SerialName("skips") val skips: Boolean,
-    /**
-     * The line git names after the header's second `@@`, its guess at the
-     * enclosing function or type; empty when it names none.
-     */
-    @SerialName("scope") val scope: String,
-    @SerialName("lines") val lines: List<DiffLine>,
+data class HunkStart(
+    @SerialName("old") val old: Int,
+    @SerialName("new") val new: Int,
 )
 
 /** This device as the machines it pairs with know it. */
@@ -4493,6 +4400,7 @@ enum class Lands {
     Queue,
 }
 
+/** Which side of a change a line of a diff is on. */
 @Serializable
 enum class LineKind {
     @SerialName("Context")
@@ -5191,6 +5099,27 @@ data class PairingWindowView(
 )
 
 /**
+ * A stretch of a patch whose lines are neighbours in the file: one
+ * hunk of a diff, or one of the places a Claude edit replaces text.
+ *
+ * A file's change is always carried as its hunks, by an edit ask's card
+ * and by a landed edit's head alike, because the lines of two hunks are
+ * not neighbours. Kept apart in the data itself, nothing that reads the
+ * lines as code (the highlighting, which a comment or string one hunk
+ * leaves open would otherwise run into the next) can join them, whether
+ * or not a client draws where each starts.
+ */
+@Serializable
+data class PatchHunk(
+    @SerialName("lines") val lines: List<PatchLine>,
+    /**
+     * Where the hunk starts, when the provider said: a diff's hunk header
+     * does, a Claude edit's replacement is only text and does not.
+     */
+    @SerialName("start") val start: HunkStart? = null,
+)
+
+/**
  * One line of a patch, numbered on the side it belongs to (the new file
  * for context and added lines, the old for removed ones) when the provider
  * said where its hunk starts.
@@ -5783,37 +5712,937 @@ enum class Resolution {
     Dismissed,
 }
 
+/**
+ * Where a new comment goes: the commit holding its lines, the file and
+ * the lines, both ends included; zero to zero for the whole file.
+ */
 @Serializable
-data class ReviewComment(
+data class ReviewAnchor(
+    @SerialName("commit") val commit: String,
     @SerialName("path") val path: String,
-    /** New-side line; zero comments on the file as a whole. */
-    @SerialName("line") val line: Int,
-    /** Old-side line for a comment on a removed line. */
-    @SerialName("old_line") val oldLine: Int,
+    @SerialName("start") val start: Int,
+    @SerialName("end") val end: Int,
+)
+
+/** Something said above the files. */
+@Serializable(with = ReviewBannerSerializer::class)
+sealed interface ReviewBanner {
+    data object NotOffered : ReviewBanner
+    data object NotARepository : ReviewBanner
+    data object Unreachable : ReviewBanner
+    /**
+     * Drafts hold the page on the snapshot they were written on, and the
+     * tree has changed since: refreshing moves them onto a new snapshot.
+     */
+    data object ChangedSinceYouStarted : ReviewBanner
+    /** The agent changed code since this snapshot: refreshing shows it. */
+    data object ChangedSince : ReviewBanner
+    /**
+     * The refresh that took this snapshot moved this many drafts onto it;
+     * those whose lines were edited are now comments on their files.
+     */
+    data class MovedDrafts(
+        val count: Int,
+    ) : ReviewBanner
+    /**
+     * A merge or rebase was under way when the snapshot was taken, so
+     * conflicted files hold their markers as content.
+     */
+    data object MergeUnderway : ReviewBanner
+    /**
+     * The round's snapshot is gone from the agent's host: its comments
+     * show with the code stored with them.
+     */
+    data object RoundGone : ReviewBanner
+    data class SnapshotFailed(
+        val message: String,
+    ) : ReviewBanner
+}
+
+object ReviewBannerSerializer : KSerializer<ReviewBanner> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewBanner")
+
+    override fun deserialize(decoder: Decoder): ReviewBanner {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewBanner requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "NotOffered" -> ReviewBanner.NotOffered
+                "NotARepository" -> ReviewBanner.NotARepository
+                "Unreachable" -> ReviewBanner.Unreachable
+                "ChangedSinceYouStarted" -> ReviewBanner.ChangedSinceYouStarted
+                "ChangedSince" -> ReviewBanner.ChangedSince
+                "MergeUnderway" -> ReviewBanner.MergeUnderway
+                "RoundGone" -> ReviewBanner.RoundGone
+                else -> throw SerializationException("no ReviewBanner is named ${element.content}")
+            }
+        }
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewBanner must be a string or object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewBanner names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "MovedDrafts" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewBanner.MovedDrafts payload must be an object")
+                ReviewBanner.MovedDrafts(
+                    count = json.decodeFromJsonElement(
+                        serializer<Int>(),
+                        fields["count"] ?: throw SerializationException("ReviewBanner.MovedDrafts missing field count"),
+                    ),
+                )
+            }
+            "SnapshotFailed" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewBanner.SnapshotFailed payload must be an object")
+                ReviewBanner.SnapshotFailed(
+                    message = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["message"] ?: throw SerializationException("ReviewBanner.SnapshotFailed missing field message"),
+                    ),
+                )
+            }
+            else -> throw SerializationException("unknown ReviewBanner variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewBanner) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewBanner requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            ReviewBanner.NotOffered -> JsonPrimitive("NotOffered")
+            ReviewBanner.NotARepository -> JsonPrimitive("NotARepository")
+            ReviewBanner.Unreachable -> JsonPrimitive("Unreachable")
+            ReviewBanner.ChangedSinceYouStarted -> JsonPrimitive("ChangedSinceYouStarted")
+            ReviewBanner.ChangedSince -> JsonPrimitive("ChangedSince")
+            is ReviewBanner.MovedDrafts -> JsonObject(
+                mapOf(
+                    "MovedDrafts" to buildJsonObject {
+                        put("count", json.encodeToJsonElement(serializer<Int>(), value.count))
+                    },
+                ),
+            )
+            ReviewBanner.MergeUnderway -> JsonPrimitive("MergeUnderway")
+            ReviewBanner.RoundGone -> JsonPrimitive("RoundGone")
+            is ReviewBanner.SnapshotFailed -> JsonObject(
+                mapOf(
+                    "SnapshotFailed" to buildJsonObject {
+                        put("message", json.encodeToJsonElement(serializer<String>(), value.message))
+                    },
+                ),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/**
+ * A change to the review open on a chat, made at the agent's host, all of
+ * a call's changes or none.
+ */
+@Serializable(with = ReviewChangeSerializer::class)
+sealed interface ReviewChange {
+    /**
+     * A new draft on the lines `anchor` names, as `amux_review_anchor`
+     * gives them for a selection of the page's rows.
+     */
+    data class Comment(
+        val anchor: ReviewAnchor,
+        val text: String,
+    ) : ReviewChange
+    /**
+     * New words for a comment, draft or sent, by its id; it stays where
+     * it was written.
+     */
+    data class Reword(
+        val id: List<Int>,
+        val text: String,
+    ) : ReviewChange
+    /**
+     * Deletes a comment, draft or sent, by its id; the chat keeps a sent
+     * one.
+     */
+    data class Delete(val value: List<Int>) : ReviewChange
+    /**
+     * Deletes every draft, leaving sent comments: the chip's ✕, once the
+     * person confirmed it.
+     */
+    data object DiscardDrafts : ReviewChange
+    /** Deletes the review: the next look is a first look. */
+    data object StartOver : ReviewChange
+}
+
+object ReviewChangeSerializer : KSerializer<ReviewChange> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewChange")
+
+    override fun deserialize(decoder: Decoder): ReviewChange {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewChange requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "DiscardDrafts" -> ReviewChange.DiscardDrafts
+                "StartOver" -> ReviewChange.StartOver
+                else -> throw SerializationException("no ReviewChange is named ${element.content}")
+            }
+        }
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewChange must be a string or object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewChange names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "Comment" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewChange.Comment payload must be an object")
+                ReviewChange.Comment(
+                    anchor = json.decodeFromJsonElement(
+                        serializer<ReviewAnchor>(),
+                        fields["anchor"] ?: throw SerializationException("ReviewChange.Comment missing field anchor"),
+                    ),
+                    text = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["text"] ?: throw SerializationException("ReviewChange.Comment missing field text"),
+                    ),
+                )
+            }
+            "Reword" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewChange.Reword payload must be an object")
+                ReviewChange.Reword(
+                    id = json.decodeFromJsonElement(
+                        serializer<List<Int>>(),
+                        fields["id"] ?: throw SerializationException("ReviewChange.Reword missing field id"),
+                    ),
+                    text = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["text"] ?: throw SerializationException("ReviewChange.Reword missing field text"),
+                    ),
+                )
+            }
+            "Delete" -> ReviewChange.Delete(json.decodeFromJsonElement(serializer<List<Int>>(), payload))
+            else -> throw SerializationException("unknown ReviewChange variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewChange) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewChange requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            is ReviewChange.Comment -> JsonObject(
+                mapOf(
+                    "Comment" to buildJsonObject {
+                        put("anchor", json.encodeToJsonElement(serializer<ReviewAnchor>(), value.anchor))
+                        put("text", json.encodeToJsonElement(serializer<String>(), value.text))
+                    },
+                ),
+            )
+            is ReviewChange.Reword -> JsonObject(
+                mapOf(
+                    "Reword" to buildJsonObject {
+                        put("id", json.encodeToJsonElement(serializer<List<Int>>(), value.id))
+                        put("text", json.encodeToJsonElement(serializer<String>(), value.text))
+                    },
+                ),
+            )
+            is ReviewChange.Delete -> JsonObject(
+                mapOf("Delete" to json.encodeToJsonElement(serializer<List<Int>>(), value.value)),
+            )
+            ReviewChange.DiscardDrafts -> JsonPrimitive("DiscardDrafts")
+            ReviewChange.StartOver -> JsonPrimitive("StartOver")
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/**
+ * The review chip an agent's composer shows while its review holds
+ * drafts: "Review · 3 comments".
+ */
+@Serializable
+data class ReviewChip(
+    /** Drafts it would send. */
+    @SerialName("comments") val comments: Int,
+    /** The tree has changed since the drafts' snapshot. */
+    @SerialName("moved") val moved: Boolean,
+)
+
+/**
+ * A choice the person makes on the review page, kept by the chat and
+ * drawn at once.
+ */
+@Serializable(with = ReviewChoiceSerializer::class)
+sealed interface ReviewChoice {
+    /** Switches to a view the page's header offers. */
+    data class View(val value: ReviewView) : ReviewChoice
+    /** Folds an open file or opens a folded one, by path. */
+    data class ToggleFile(val value: String) : ReviewChoice
+    /** Opens a folded outdated comment or folds it again, by id. */
+    data class ToggleComment(val value: List<Int>) : ReviewChoice
+}
+
+object ReviewChoiceSerializer : KSerializer<ReviewChoice> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewChoice")
+
+    override fun deserialize(decoder: Decoder): ReviewChoice {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewChoice requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewChoice must be an object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewChoice names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "View" -> ReviewChoice.View(json.decodeFromJsonElement(serializer<ReviewView>(), payload))
+            "ToggleFile" -> ReviewChoice.ToggleFile(json.decodeFromJsonElement(serializer<String>(), payload))
+            "ToggleComment" -> ReviewChoice.ToggleComment(json.decodeFromJsonElement(serializer<List<Int>>(), payload))
+            else -> throw SerializationException("unknown ReviewChoice variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewChoice) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewChoice requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            is ReviewChoice.View -> JsonObject(
+                mapOf("View" to json.encodeToJsonElement(serializer<ReviewView>(), value.value)),
+            )
+            is ReviewChoice.ToggleFile -> JsonObject(
+                mapOf("ToggleFile" to json.encodeToJsonElement(serializer<String>(), value.value)),
+            )
+            is ReviewChoice.ToggleComment -> JsonObject(
+                mapOf("ToggleComment" to json.encodeToJsonElement(serializer<List<Int>>(), value.value)),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/** One line of code. */
+@Serializable
+data class ReviewCodeLine(
+    @SerialName("path") val path: String,
+    @SerialName("kind") val kind: LineKind,
+    /** Without its line ending. */
     @SerialName("text") val text: String,
+    /**
+     * The text in order, each run one token kind and either changed or
+     * not: on a line edited rather than written anew, the words that
+     * differ from its partner on the other side are changed.
+     */
+    @SerialName("runs") val runs: List<ReviewRun>,
+    /** A comment placed on the page covers this line. */
+    @SerialName("commented") val commented: Boolean,
+    /** Read for more context, outside the change's hunks. */
+    @SerialName("extra") val extra: Boolean,
+    /** Its number in the snapshot, for an added or context line. */
+    @SerialName("new_line") val newLine: Int? = null,
+    /** Its number in the compared commit, for a removed or context line. */
+    @SerialName("old_line") val oldLine: Int? = null,
 )
 
+@Serializable(with = ReviewCommentAtSerializer::class)
+sealed interface ReviewCommentAt {
+    /**
+     * On these lines: the snapshot's numbers, or the compared commit's for
+     * a comment on removed lines.
+     */
+    data class Lines(
+        val start: Int,
+        val end: Int,
+    ) : ReviewCommentAt
+    /** On the whole file: written so, or a draft whose lines were edited. */
+    data object File : ReviewCommentAt
+    /** A sent comment whose lines were edited or deleted since. */
+    data object Outdated : ReviewCommentAt
+}
+
+object ReviewCommentAtSerializer : KSerializer<ReviewCommentAt> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewCommentAt")
+
+    override fun deserialize(decoder: Decoder): ReviewCommentAt {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewCommentAt requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "File" -> ReviewCommentAt.File
+                "Outdated" -> ReviewCommentAt.Outdated
+                else -> throw SerializationException("no ReviewCommentAt is named ${element.content}")
+            }
+        }
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewCommentAt must be a string or object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewCommentAt names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "Lines" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewCommentAt.Lines payload must be an object")
+                ReviewCommentAt.Lines(
+                    start = json.decodeFromJsonElement(
+                        serializer<Int>(),
+                        fields["start"] ?: throw SerializationException("ReviewCommentAt.Lines missing field start"),
+                    ),
+                    end = json.decodeFromJsonElement(
+                        serializer<Int>(),
+                        fields["end"] ?: throw SerializationException("ReviewCommentAt.Lines missing field end"),
+                    ),
+                )
+            }
+            else -> throw SerializationException("unknown ReviewCommentAt variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewCommentAt) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewCommentAt requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            is ReviewCommentAt.Lines -> JsonObject(
+                mapOf(
+                    "Lines" to buildJsonObject {
+                        put("start", json.encodeToJsonElement(serializer<Int>(), value.start))
+                        put("end", json.encodeToJsonElement(serializer<Int>(), value.end))
+                    },
+                ),
+            )
+            ReviewCommentAt.File -> JsonPrimitive("File")
+            ReviewCommentAt.Outdated -> JsonPrimitive("Outdated")
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/** A comment, where the page places it. */
 @Serializable
-data class ReviewDoc(
-    @SerialName("base") val base: String,
-    @SerialName("head") val head: String,
-    @SerialName("files") val files: List<ReviewFile>,
-    @SerialName("added") val added: Int,
-    @SerialName("removed") val removed: Int,
+data class ReviewCommentRow(
+    @SerialName("id") val id: List<Int>,
+    /** The file it is on in the snapshot. */
+    @SerialName("path") val path: String,
+    @SerialName("text") val text: String,
+    @SerialName("state") val state: ReviewCommentState,
+    @SerialName("at") val at: ReviewCommentAt,
+    /**
+     * A sent comment whose code nearby changed since the round it was
+     * sent in.
+     */
+    @SerialName("changed_near") val changedNear: Boolean,
+    /** Where its lines sat in the code, outermost first. */
+    @SerialName("scope") val scope: List<String>,
+    /**
+     * The code it was written on, as stored when it was saved, when it is
+     * not drawn under its lines: outdated, moved to its file, on lines the
+     * view shown does not reach, or on a file not yet fetched. Empty for a
+     * comment drawn under its lines and for one written on a whole file.
+     */
+    @SerialName("snippet") val snippet: List<ReviewCodeLine>,
+    /** Folded to one line: an outdated comment until the person opens it. */
+    @SerialName("folded") val folded: Boolean,
 )
 
+@Serializable(with = ReviewCommentStateSerializer::class)
+sealed interface ReviewCommentState {
+    data object Draft : ReviewCommentState
+    /** Sent in the round numbered, from 1. */
+    data class Sent(
+        val round: Int,
+    ) : ReviewCommentState
+}
+
+object ReviewCommentStateSerializer : KSerializer<ReviewCommentState> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewCommentState")
+
+    override fun deserialize(decoder: Decoder): ReviewCommentState {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewCommentState requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "Draft" -> ReviewCommentState.Draft
+                else -> throw SerializationException("no ReviewCommentState is named ${element.content}")
+            }
+        }
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewCommentState must be a string or object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewCommentState names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "Sent" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewCommentState.Sent payload must be an object")
+                ReviewCommentState.Sent(
+                    round = json.decodeFromJsonElement(
+                        serializer<Int>(),
+                        fields["round"] ?: throw SerializationException("ReviewCommentState.Sent missing field round"),
+                    ),
+                )
+            }
+            else -> throw SerializationException("unknown ReviewCommentState variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewCommentState) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewCommentState requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            ReviewCommentState.Draft -> JsonPrimitive("Draft")
+            is ReviewCommentState.Sent -> JsonObject(
+                mapOf(
+                    "Sent" to buildJsonObject {
+                        put("round", json.encodeToJsonElement(serializer<Int>(), value.round))
+                    },
+                ),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/**
+ * Lines to read for more context: a client asks the review for them and
+ * keeps the ask in [`ReviewPageState::asked`].
+ */
 @Serializable
-data class ReviewFile(
+data class ReviewContextAsk(
+    @SerialName("path") val path: String,
+    /** The commit to read: the snapshot. */
+    @SerialName("commit") val commit: String,
+    /** Both ends included, from 1. */
+    @SerialName("start") val start: Int,
+    @SerialName("end") val end: Int,
+    /**
+     * The label of the definition whose edge it reaches; none for a step
+     * or a whole gap.
+     */
+    @SerialName("definition") val definition: String? = null,
+)
+
+/** Why the view shown has nothing in it. */
+@Serializable
+enum class ReviewEmpty {
+    /** Nothing is left to review: no change and no comment. */
+    @SerialName("Nothing")
+    Nothing,
+    /**
+     * Nothing changed since the last round; all changes still has the
+     * change.
+     */
+    @SerialName("NothingSince")
+    NothingSince,
+}
+
+/** What a reader may want to pass over; a flagged file starts folded. */
+@Serializable
+enum class ReviewFileFlag {
+    @SerialName("Generated")
+    Generated,
+    @SerialName("Lockfile")
+    Lockfile,
+    @SerialName("Vendored")
+    Vendored,
+    @SerialName("Large")
+    Large,
+}
+
+@Serializable
+data class ReviewFileHead(
+    /** From the repository's top. */
     @SerialName("path") val path: String,
     @SerialName("status") val status: FileStatus,
+    /** Its lines added and removed in the view shown. */
     @SerialName("added") val added: Int,
     @SerialName("removed") val removed: Int,
     @SerialName("binary") val binary: Boolean,
-    @SerialName("hunks") val hunks: List<Hunk>,
-    /** Comments on the file as a whole. */
-    @SerialName("comments") val comments: List<String>,
-    /** Set for a rename or copy. */
+    /**
+     * The language its code is highlighted as ("rust", "tsx"); empty when
+     * none is known for it.
+     */
+    @SerialName("language") val language: String,
+    @SerialName("flags") val flags: List<ReviewFileFlag>,
+    /** Its body is folded away; its head still counts its comments. */
+    @SerialName("folded") val folded: Boolean,
+    /** It changed since the last round's snapshot; false before the first. */
+    @SerialName("changed_since_last") val changedSinceLast: Boolean,
+    /**
+     * False for a file no longer part of the change, listed only for the
+     * comments on it.
+     */
+    @SerialName("in_change") val inChange: Boolean,
+    /** Comments on the file, on its lines or on it whole. */
+    @SerialName("comments") val comments: Int,
+    /**
+     * The definitions its change touches, on either side, so a deleted one
+     * still shows; empty until its body is fetched.
+     */
+    @SerialName("outline") val outline: List<ReviewOutlineEntry>,
+    /** Where a renamed file was before. */
     @SerialName("old_path") val oldPath: String? = null,
+)
+
+/** Lines of the snapshot between what is shown, folded away. */
+@Serializable
+data class ReviewGap(
+    @SerialName("path") val path: String,
+    /** An ask in it is waiting for its answer. */
+    @SerialName("loading") val loading: Boolean,
+    /**
+     * Loads lines downward from the code above it: to the end of that
+     * code's definition when it ends in the gap, else a step. None at the
+     * top of the file and for a gap loaded whole by `up`.
+     */
+    @SerialName("down") val down: ReviewContextAsk? = null,
+    /**
+     * How many lines it holds; none after the file's last hunk, where the
+     * file's length is not known until the lines are asked for.
+     */
+    @SerialName("hidden") val hidden: Int? = null,
+    /**
+     * Loads lines upward from the code below it: up to the start of that
+     * code's definition when it starts in the gap, else a step; or the
+     * whole gap when it is short. None after the last hunk.
+     */
+    @SerialName("up") val up: ReviewContextAsk? = null,
+)
+
+/** What the page is of, and what can be done to it as a whole. */
+@Serializable
+data class ReviewHeader(
+    /**
+     * The branch the change is counted against; empty when none was found
+     * and the change is the uncommitted work alone.
+     */
+    @SerialName("base_branch") val baseBranch: String,
+    /** The commit all changes are compared against. */
+    @SerialName("base_commit") val baseCommit: String,
+    /**
+     * The snapshot the page shows: every line number on it is the
+     * snapshot's, but a removed line's, which is the compared commit's.
+     */
+    @SerialName("snapshot") val snapshot: String,
+    @SerialName("view") val view: ReviewView,
+    /**
+     * The commit the view shown compares the snapshot against: the base
+     * commit, or the last round's snapshot.
+     */
+    @SerialName("compared_with") val comparedWith: String,
+    /**
+     * For since your last review, the base commit the last round's
+     * snapshot was shown against, which with `base_commit` decides what of
+     * the change since is the agent's; empty for all changes.
+     */
+    @SerialName("compared_base") val comparedBase: String,
+    /**
+     * The views the person can switch between, in order: since your last
+     * review is offered once a round has been sent.
+     */
+    @SerialName("views") val views: List<ReviewViewTab>,
+    /** Rounds sent so far. */
+    @SerialName("rounds") val rounds: Int,
+    /** The files the view shown lists as changed, and their lines. */
+    @SerialName("files") val files: Int,
+    @SerialName("added") val added: Int,
+    @SerialName("removed") val removed: Int,
+    /** Comments not yet sent. */
+    @SerialName("drafts") val drafts: Int,
+    /** Sent comments still on the review. */
+    @SerialName("sent") val sent: Int,
+    /** Discarding drafts is offered: there are some. */
+    @SerialName("discard_drafts") val discardDrafts: Boolean,
+    /** Starting over, which deletes the review, is offered. */
+    @SerialName("start_over") val startOver: Boolean,
+)
+
+@Serializable
+data class ReviewHunkHead(
+    @SerialName("path") val path: String,
+    /** The commit its removed lines belong to. */
+    @SerialName("old_commit") val oldCommit: String,
+    @SerialName("old_start") val oldStart: Int,
+    @SerialName("new_start") val newStart: Int,
+    /**
+     * Where its changed lines sit, outermost first: `impl Store`, `fn
+     * open`. Empty where no definition encloses them.
+     */
+    @SerialName("scope") val scope: List<String>,
+)
+
+@Serializable
+enum class ReviewNoLines {
+    @SerialName("Binary")
+    Binary,
+    /** Over the size the host shows without asking. */
+    @SerialName("TooLarge")
+    TooLarge,
+}
+
+/**
+ * What a call on the review came to. The page says what it learned too:
+ * a host it could not reach, or why there is no review.
+ */
+@Serializable(with = ReviewOutcomeSerializer::class)
+sealed interface ReviewOutcome {
+    data object Done : ReviewOutcome
+    /** The agent's host could not be reached: nothing changed there. */
+    data object Unreachable : ReviewOutcome
+    /**
+     * The connection dropped before the host answered: a change may have
+     * been made, and the page shows the review as the host says next.
+     */
+    data object NotConfirmed : ReviewOutcome
+    /**
+     * The agent has no review to be had: its host does not offer reviews,
+     * or its folder is not a repository.
+     */
+    data object Unavailable : ReviewOutcome
+    data class Failed(val value: String) : ReviewOutcome
+}
+
+object ReviewOutcomeSerializer : KSerializer<ReviewOutcome> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewOutcome")
+
+    override fun deserialize(decoder: Decoder): ReviewOutcome {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewOutcome requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "Done" -> ReviewOutcome.Done
+                "Unreachable" -> ReviewOutcome.Unreachable
+                "NotConfirmed" -> ReviewOutcome.NotConfirmed
+                "Unavailable" -> ReviewOutcome.Unavailable
+                else -> throw SerializationException("no ReviewOutcome is named ${element.content}")
+            }
+        }
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewOutcome must be a string or object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewOutcome names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "Failed" -> ReviewOutcome.Failed(json.decodeFromJsonElement(serializer<String>(), payload))
+            else -> throw SerializationException("unknown ReviewOutcome variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewOutcome) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewOutcome requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            ReviewOutcome.Done -> JsonPrimitive("Done")
+            ReviewOutcome.Unreachable -> JsonPrimitive("Unreachable")
+            ReviewOutcome.NotConfirmed -> JsonPrimitive("NotConfirmed")
+            ReviewOutcome.Unavailable -> JsonPrimitive("Unavailable")
+            is ReviewOutcome.Failed -> JsonObject(
+                mapOf("Failed" to json.encodeToJsonElement(serializer<String>(), value.value)),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/** One definition of a file's outline. */
+@Serializable
+data class ReviewOutlineEntry(
+    @SerialName("kind") val kind: DefinitionKind,
+    /** "impl Display for Store", "fn open". */
+    @SerialName("label") val label: String,
+    /** How many definitions it sits in. */
+    @SerialName("depth") val depth: Int,
+    /**
+     * Its lines, numbered in the snapshot, or in the compared commit when
+     * `compared`.
+     */
+    @SerialName("start_line") val startLine: Int,
+    @SerialName("end_line") val endLine: Int,
+    /**
+     * Its lines are the compared commit's: a definition only removed lines
+     * reach, as one deleted.
+     */
+    @SerialName("compared") val compared: Boolean,
+    /**
+     * The row of the first hunk whose changes it encloses, for jumping to
+     * it; none for one only a hunk's context reaches.
+     */
+    @SerialName("row") val row: Int? = null,
+)
+
+/** The review page, in reading order. */
+@Serializable
+data class ReviewPage(
+    /** Said above the files, in order. */
+    @SerialName("banners") val banners: List<ReviewBanner>,
+    @SerialName("rows") val rows: List<ReviewRow>,
+    /**
+     * The files whose bodies the page still needs for its view, in page
+     * order: shown open and not yet fetched. A client asks for them in
+     * batches and composes the page again as each answer arrives.
+     */
+    @SerialName("to_fetch") val toFetch: List<String>,
+    /**
+     * The review is still being opened: there is no summary yet and
+     * nothing went wrong.
+     */
+    @SerialName("opening") val opening: Boolean,
+    /**
+     * Set when the view shown has nothing to review. Since your last
+     * review can be empty of changes and still list earlier comments.
+     */
+    @SerialName("empty") val empty: ReviewEmpty? = null,
+    /** None until the review has opened, and where there is none. */
+    @SerialName("header") val header: ReviewHeader? = null,
+)
+
+/** One row of the page, with a key that names it across compositions. */
+@Serializable
+data class ReviewRow(
+    @SerialName("key") val key: String,
+    @SerialName("of") val of: ReviewRowOf,
+)
+
+@Serializable(with = ReviewRowOfSerializer::class)
+sealed interface ReviewRowOf {
+    /** A file's head; its rows follow until the next head. */
+    data class File(val value: ReviewFileHead) : ReviewRowOf
+    data class Comment(val value: ReviewCommentRow) : ReviewRowOf
+    /** Where a hunk sits in the code; its lines follow. */
+    data class Hunk(val value: ReviewHunkHead) : ReviewRowOf
+    data class Line(val value: ReviewCodeLine) : ReviewRowOf
+    /** Lines of the snapshot not shown, with the asks that load more. */
+    data class Gap(val value: ReviewGap) : ReviewRowOf
+    /** The file's body is still being fetched. */
+    data class Loading(
+        val path: String,
+    ) : ReviewRowOf
+    /** The file's change has no lines to show. */
+    data class NoLines(
+        val path: String,
+        val why: ReviewNoLines,
+    ) : ReviewRowOf
+}
+
+object ReviewRowOfSerializer : KSerializer<ReviewRowOf> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ReviewRowOf")
+
+    override fun deserialize(decoder: Decoder): ReviewRowOf {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ReviewRowOf requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ReviewRowOf must be an object")
+        if (obj.size != 1) {
+            throw SerializationException("ReviewRowOf names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "File" -> ReviewRowOf.File(json.decodeFromJsonElement(serializer<ReviewFileHead>(), payload))
+            "Comment" -> ReviewRowOf.Comment(json.decodeFromJsonElement(serializer<ReviewCommentRow>(), payload))
+            "Hunk" -> ReviewRowOf.Hunk(json.decodeFromJsonElement(serializer<ReviewHunkHead>(), payload))
+            "Line" -> ReviewRowOf.Line(json.decodeFromJsonElement(serializer<ReviewCodeLine>(), payload))
+            "Gap" -> ReviewRowOf.Gap(json.decodeFromJsonElement(serializer<ReviewGap>(), payload))
+            "Loading" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewRowOf.Loading payload must be an object")
+                ReviewRowOf.Loading(
+                    path = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["path"] ?: throw SerializationException("ReviewRowOf.Loading missing field path"),
+                    ),
+                )
+            }
+            "NoLines" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ReviewRowOf.NoLines payload must be an object")
+                ReviewRowOf.NoLines(
+                    path = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["path"] ?: throw SerializationException("ReviewRowOf.NoLines missing field path"),
+                    ),
+                    why = json.decodeFromJsonElement(
+                        serializer<ReviewNoLines>(),
+                        fields["why"] ?: throw SerializationException("ReviewRowOf.NoLines missing field why"),
+                    ),
+                )
+            }
+            else -> throw SerializationException("unknown ReviewRowOf variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ReviewRowOf) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ReviewRowOf requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            is ReviewRowOf.File -> JsonObject(
+                mapOf("File" to json.encodeToJsonElement(serializer<ReviewFileHead>(), value.value)),
+            )
+            is ReviewRowOf.Comment -> JsonObject(
+                mapOf("Comment" to json.encodeToJsonElement(serializer<ReviewCommentRow>(), value.value)),
+            )
+            is ReviewRowOf.Hunk -> JsonObject(
+                mapOf("Hunk" to json.encodeToJsonElement(serializer<ReviewHunkHead>(), value.value)),
+            )
+            is ReviewRowOf.Line -> JsonObject(
+                mapOf("Line" to json.encodeToJsonElement(serializer<ReviewCodeLine>(), value.value)),
+            )
+            is ReviewRowOf.Gap -> JsonObject(
+                mapOf("Gap" to json.encodeToJsonElement(serializer<ReviewGap>(), value.value)),
+            )
+            is ReviewRowOf.Loading -> JsonObject(
+                mapOf(
+                    "Loading" to buildJsonObject {
+                        put("path", json.encodeToJsonElement(serializer<String>(), value.path))
+                    },
+                ),
+            )
+            is ReviewRowOf.NoLines -> JsonObject(
+                mapOf(
+                    "NoLines" to buildJsonObject {
+                        put("path", json.encodeToJsonElement(serializer<String>(), value.path))
+                        put("why", json.encodeToJsonElement(serializer<ReviewNoLines>(), value.why))
+                    },
+                ),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+@Serializable
+data class ReviewRun(
+    @SerialName("text") val text: String,
+    @SerialName("kind") val kind: TokenKind,
+    @SerialName("changed") val changed: Boolean,
 )
 
 @Serializable
@@ -5831,6 +6660,28 @@ enum class ReviewStatus {
     @SerialName("Abort")
     Abort,
 }
+
+/** Which comparison the page shows. */
+@Serializable
+enum class ReviewView {
+    /** Everything on the branch: from the base commit to the snapshot. */
+    @SerialName("All")
+    All,
+    /**
+     * From the last round's snapshot to this one, limited to what is
+     * still part of the agent's change.
+     */
+    @SerialName("SinceLast")
+    SinceLast,
+}
+
+/** One of the views, as the switch between them shows it. */
+@Serializable
+data class ReviewViewTab(
+    @SerialName("view") val view: ReviewView,
+    /** The changed files it lists. */
+    @SerialName("files") val files: Int,
+)
 
 /** This device and the machines it trusts, by name. */
 @Serializable
@@ -7023,6 +7874,24 @@ data class SentPrompt(
     @SerialName("underway") val underway: Underway,
 )
 
+/** The review a sent review's attachment names, for opening its round. */
+@Serializable
+data class SentReviewRef(
+    @SerialName("review_id") val reviewId: List<Int>,
+    /**
+     * The round the sending client expected it to be, shown while the
+     * round is read; the agent's host numbers rounds as the agent takes
+     * the messages.
+     */
+    @SerialName("round") val round: Int,
+    /**
+     * The input the message holding it was: the round this message closed
+     * is the one the host recorded with this input, and a message that
+     * closed none names none.
+     */
+    @SerialName("input_id") val inputId: List<Int>,
+)
+
 @Serializable
 data class ServerView(
     @SerialName("name") val name: String,
@@ -7376,6 +8245,32 @@ data class TasksView(
     /** Every task in the agent's order. */
     @SerialName("entries") val entries: List<TaskLine>,
 )
+
+/** What a run of code is, as far as colouring it goes. */
+@Serializable
+enum class TokenKind {
+    @SerialName("Keyword")
+    Keyword,
+    @SerialName("String")
+    String,
+    @SerialName("Type")
+    Type,
+    @SerialName("Function")
+    Function,
+    @SerialName("Comment")
+    Comment,
+    @SerialName("Deleted")
+    Deleted,
+    /** Names, operators and punctuation: the reading ink. */
+    @SerialName("Plain")
+    Plain,
+    /** Numbers and other literal constants. */
+    @SerialName("Number")
+    Number,
+    /** A diff's added and removed lines, in a block written as a diff. */
+    @SerialName("Inserted")
+    Inserted,
+}
 
 @Serializable(with = TurnPartSerializer::class)
 sealed interface TurnPart {
@@ -7820,22 +8715,18 @@ data class Worked(
 )
 
 /**
- * What a delete removes with the agent: its workspace, and with it the
- * uncommitted changes the row last reported. A client says so before
- * confirming, and sends the delete with consent to discard them.
+ * What a delete removes with the agent when its workspace goes too, as the
+ * agent's host answered: a client says so before confirming, and sends the
+ * delete with consent to discard the uncommitted changes it named.
  */
 @Serializable
 data class WorkspaceGoes(
-    /**
-     * The workspace's branch; none on a detached head or before the row's
-     * git facts were read.
-     */
+    /** The workspace's branch; none on a detached head. */
     @SerialName("branch") val branch: String? = null,
     /**
-     * The commits on the branch that no other branch, tag or remote holds,
-     * as the host counted them when asked: the branch keeps them, and with
-     * none it goes with the workspace. None until the host answers, or
-     * when it could not say.
+     * The commits on the branch that no other branch, tag or remote holds:
+     * the branch keeps them, and with none it goes with the workspace.
+     * None when the host could not count them.
      */
     @SerialName("branch_commits") val branchCommits: Int? = null,
     /** Its uncommitted changes, when it has any. */

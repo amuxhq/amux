@@ -100,8 +100,9 @@ judged. The properties are in `src/presence.rs`.
 
 `FamilyDeliveries` runs two hosts' real daemon cores, each over its own
 in-memory store and its agents' journals laid out as files: a parent agent
-on one host and, once a client spawns it, its child on the other, which
-follows the parent's host's inventory. The child's host starts following
+on one host and, once the parent's create reaches the other host as a call
+on it with the parent as its caller, its child there, whose host follows the
+parent's host's inventory. The child's host starts following
 before the parent is made, so its first listing predates the parent and a
 child spawned before that listing catches up is one it must not judge. A
 spawn the child's host refuses makes no child and may be tried again. The world spawns, stops and deletes

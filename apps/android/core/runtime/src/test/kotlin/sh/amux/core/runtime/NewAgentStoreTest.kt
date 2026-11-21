@@ -153,6 +153,7 @@ class NewAgentStoreTest {
         claudeKind: Kind? = null,
     ): HostView = HostView(
         hostId = id.bytes,
+        link = 0L,
         name = name,
         local = false,
         trusted = true,

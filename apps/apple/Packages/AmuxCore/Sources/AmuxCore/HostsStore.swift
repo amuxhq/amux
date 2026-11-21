@@ -42,9 +42,16 @@ public final class HostsStore {
 
     /// What `connecting` is drawn from: the machines not yet linked, failed
     /// or known for some other reason to be out of reach since the app came
-    /// forward. Nil until the first listing after it does, which fills it
-    /// with every trusted machine.
+    /// forward. Nil until a listing fills it with every trusted machine:
+    /// the last one, as the app comes forward, or the first one there is.
     @ObservationIgnored private var unsettled: Set<HostId>?
+    /// The machines read linked as the app came forward, with the link each
+    /// was read on. Those links went while the app was away, but a listing
+    /// can still say they are up until the runtime has heard them go, so a
+    /// machine is settled by being read linked only on a newer link. The
+    /// listings in between are not all seen, so one saying the old link
+    /// went may never be read.
+    @ObservationIgnored private var linkedBefore: [HostId: UInt64] = [:]
     @ObservationIgnored private var patience: Task<Void, Never>?
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
@@ -62,8 +69,19 @@ public final class HostsStore {
     /// The app came forward: its links were dropped while it was away, so
     /// every machine is dialled afresh. A machine whose last dial failed
     /// before then still has that failure, and is out of reach at once.
+    /// The machines listed last are settled again at once, so what is drawn
+    /// as connecting never waits on the next listing: a machine stopped
+    /// while the app was away changes nothing the phone hears until its
+    /// dial fails, and nothing else may be listed before then. Whether a
+    /// machine stopped then reads connecting or away so depends on neither
+    /// the order the app heard its link go and came forward in, nor whether
+    /// anything is listed after.
     public func cameForward() {
         unsettled = nil
+        linkedBefore = Dictionary(
+            hosts.filter(\.online).compactMap { host in host.id.map { ($0, host.link) } },
+            uniquingKeysWith: { _, last in last })
+        if !hosts.isEmpty { settle(hosts) }
         patience?.cancel()
         patience = Task { [weak self] in
             try? await Task.sleep(for: Self.connectingPatience)
@@ -76,6 +94,7 @@ public final class HostsStore {
     public func stopWaiting() {
         patience?.cancel()
         unsettled = []
+        linkedBefore = [:]
         connecting = []
     }
 
@@ -93,12 +112,18 @@ public final class HostsStore {
         var unsettled = self.unsettled ?? Set(ids)
         for host in trusted {
             guard let id = host.id else { continue }
+            if host.online, let before = linkedBefore[id], host.link <= before { continue }
+            linkedBefore[id] = nil
             let waiting = host.reach == .offline(.plain) && host.lastDialError == nil
             if !waiting { unsettled.remove(id) }
         }
         unsettled.formIntersection(ids)
+        let listed = Set(ids)
+        linkedBefore = linkedBefore.filter { listed.contains($0.key) }
         self.unsettled = unsettled
-        if connecting != unsettled { connecting = unsettled }
+        // One still read linked is drawn linked, whatever settles it.
+        let shown = unsettled.subtracting(linkedBefore.keys)
+        if connecting != shown { connecting = shown }
     }
 
     public var now: Date { clock() }

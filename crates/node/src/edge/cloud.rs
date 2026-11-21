@@ -150,9 +150,18 @@ impl CloudLink {
     }
 
     pub(crate) async fn stop(self) {
+        /// How long a clean stop waits for the relay link task to flush
+        /// `LinkClose(UserShutdown)` and tear down before aborting it.
+        const STOP_LINGER: Duration = Duration::from_secs(3);
+
         self.request_stop();
         let attempt = self.attempt.lock().unwrap().take();
-        if let Some(attempt) = attempt {
+        if let Some(mut attempt) = attempt
+            && tokio::time::timeout(STOP_LINGER, &mut attempt)
+                .await
+                .is_err()
+        {
+            attempt.abort();
             let _ = attempt.await;
         }
     }
@@ -602,21 +611,26 @@ async fn run_cloud_connection_with_details(
         .map(Arc::new)
         .map_err(|error| error.to_string())
     };
-    let (carrier, relay_carrier) = tokio::time::timeout(
-        CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
-        select_cloud_carrier(
-            carriers,
-            UdpFacts {
-                core: ctx.core.clone(),
-                host: details.host.clone(),
-            },
-            quic,
-            tcp,
-        ),
-    )
-    .await
-    .map_err(|_| RelayOutcome::Lost("cloud routing transport dial timed out".to_string()))?
-    .map_err(|error| RelayOutcome::Lost(format!("Connection failed: {error}")))?;
+    let mut stop_rx = stop_rx;
+    let selected = tokio::select! {
+        biased;
+        _ = wait_for_stop(&mut stop_rx) => return Ok(()),
+        selected = tokio::time::timeout(
+            CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
+            select_cloud_carrier(
+                carriers,
+                UdpFacts {
+                    core: ctx.core.clone(),
+                    host: details.host.clone(),
+                },
+                quic,
+                tcp,
+            ),
+        ) => selected,
+    };
+    let (carrier, relay_carrier) = selected
+        .map_err(|_| RelayOutcome::Lost("cloud routing transport dial timed out".to_string()))?
+        .map_err(|error| RelayOutcome::Lost(format!("Connection failed: {error}")))?;
     {
         let mut settled = settled.lock().unwrap_or_else(|e| e.into_inner());
         *settled = true;
@@ -649,19 +663,22 @@ async fn run_cloud_connection_with_details(
         ctx.connector
             .clone()
             .with_connector_auth(connector_auth, Some(ctx.refresh_rx.clone()))
-            .with_shutdown(stop_rx),
+            .with_shutdown(stop_rx.clone()),
         carrier,
     );
     let _abort_connector_on_drop = AbortTaskOnDrop(connector_task.abort_handle());
-    let established = await_cloud_establishment(
-        &ctx.status,
-        established_rx,
-        CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
-        tier,
-        relay_carrier,
-        kept,
-    )
-    .await;
+    let established = tokio::select! {
+        biased;
+        _ = wait_for_stop(&mut stop_rx) => return Ok(()),
+        established = await_cloud_establishment(
+            &ctx.status,
+            established_rx,
+            CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,
+            tier,
+            relay_carrier,
+            kept,
+        ) => established,
+    };
     if matches!(established, Err(RelayOutcome::KeptTokenRefused)) {
         forget_kept(ctx);
     }

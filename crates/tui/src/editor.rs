@@ -185,6 +185,7 @@ impl Editor {
                     name: format!("pasted-{}", self.pasted),
                     text: text.to_owned(),
                 })),
+                ..Default::default()
             });
         } else {
             self.insert_str(text);
@@ -445,6 +446,7 @@ mod tests {
                 mime: "image/png".into(),
                 size: 10,
             })),
+            ..Default::default()
         }
     }
 

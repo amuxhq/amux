@@ -262,6 +262,7 @@ async fn headless_claude_gets_a_persons_image_as_an_image_block() {
             mime: "image/png".into(),
             size: bytes.len() as u64,
         })),
+        ..Default::default()
     };
     let input = wire::Input::new(
         b"p1".to_vec(),
@@ -1494,6 +1495,7 @@ async fn headless_claude_gets_an_image_block_typed_by_its_bytes_and_anything_els
                 mime: mime.into(),
                 size: bytes.len() as u64,
             })),
+            ..Default::default()
         }
     };
     // A PNG the phone labelled JPEG, and an SVG labelled an image.

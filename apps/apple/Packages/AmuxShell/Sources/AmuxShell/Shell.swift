@@ -408,55 +408,31 @@ private extension View {
     }
 }
 
-/// An agent's changes for the comparison its chat has chosen, pushed over
-/// the chat from the changes chip or the overview. It reviews the diff the
-/// host froze as the page opened, and keeps its comments on the chat so
-/// leaving and coming back loses none.
+/// An agent's review, pushed over the chat from the changes chip, the
+/// overview or the composer's review chip. It is the agent's review on its
+/// computer, read and written there; a computer that runs no reviews has the
+/// page say so.
 private struct ChangesPage: View {
     let agent: AgentKey
     let router: Router
     let stores: StoreBundle
     @State private var chat: ChatModel?
-    @State private var review: ReviewModel?
-    /// What the review was frozen against, fixed as it opened.
-    @State private var against: String?
-    /// Why there is no review: nothing changed, or the host was not asked.
-    @State private var missing: PagePlaceholder.Showing?
+    @State private var session: ReviewSession?
 
     var body: some View {
         Group {
-            if let chat, let review {
-                ReviewPage(model: review, against: against) { action in
-                    switch action {
-                    case .back: router.pop()
-                    case .attach:
-                        chat.attach(review)
-                        router.pop()
-                    }
-                }
+            if let session {
+                ReviewScreen(session: session) { router.pop() }
             } else {
-                PagePlaceholder(
-                    missing ?? .waiting(String(localized: "Reading the changes")),
-                    identifier: "review")
+                PagePlaceholder(.waiting(String(localized: "Reading the changes")), identifier: "review")
             }
         }
         .task {
             guard chat == nil, let model = try? stores.chat(agent) else { return }
             chat = model
-            against = ChatWords.comparison(model.comparison, base: model.base)
-            switch await model.openReview() {
-            case .success(let opened?): review = opened
-            case .success(nil):
-                missing = .empty(
-                    title: String(localized: "No changes"),
-                    detail: model.comparison == .onBranch
-                        ? String(localized: "This agent has no changes on its branch.")
-                        : String(localized: "This agent has no uncommitted changes."))
-            case .failure(let failure):
-                missing = .failed(
-                    title: String(localized: "Couldn’t read the changes"), reason: failure.description)
-            }
+            session = model.openReviewPage()
         }
+        .onDisappear { if session != nil { chat?.closeReviewPage() } }
     }
 }
 
@@ -589,7 +565,6 @@ private struct ChatPage: View {
             closeHeld: card?.closeHeld ?? false,
             filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true,
-            workspaceGoes: card?.workspaceGoes,
             native: card?.native ?? false)
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }

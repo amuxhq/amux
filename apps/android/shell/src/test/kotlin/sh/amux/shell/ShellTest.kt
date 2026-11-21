@@ -86,7 +86,6 @@ import sh.amux.values.AskBody
 import sh.amux.values.AskCard
 import sh.amux.values.AskMoved
 import sh.amux.values.Attention
-import sh.amux.values.Base
 import sh.amux.values.BlobRef
 import sh.amux.values.Catalogue
 import sh.amux.values.ChangeTotals
@@ -104,15 +103,10 @@ import sh.amux.values.Composer
 import sh.amux.values.ComposerView
 import sh.amux.values.Connection
 import sh.amux.values.ControlsSummary
-import sh.amux.values.Diff
-import sh.amux.values.DiffBase
-import sh.amux.values.DiffLine
 import sh.amux.values.Directories
 import sh.amux.values.Directory
 import sh.amux.values.Draft
 import sh.amux.values.DraftAttachment
-import sh.amux.values.Empty
-import sh.amux.values.FileStatus
 import sh.amux.values.Filing
 import sh.amux.values.FleetCard
 import sh.amux.values.FleetRow
@@ -121,15 +115,12 @@ import sh.amux.values.FleetView
 import sh.amux.values.FormField
 import sh.amux.values.FormProblem
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.Git
 import sh.amux.values.HostView
-import sh.amux.values.Hunk
 import sh.amux.values.Identity
 import sh.amux.values.InputState
 import sh.amux.values.KeysMoved
 import sh.amux.values.Kind
-import sh.amux.values.LineKind
 import sh.amux.values.ModelChoice
 import sh.amux.values.NewAgent
 import sh.amux.values.NewAgentChoices
@@ -144,9 +135,6 @@ import sh.amux.values.Provider
 import sh.amux.values.QuestionResponse
 import sh.amux.values.Reach
 import sh.amux.values.RelayLink
-import sh.amux.values.ReviewComment
-import sh.amux.values.ReviewDoc
-import sh.amux.values.ReviewFile
 import sh.amux.values.Roster
 import sh.amux.values.RouteKind
 import sh.amux.values.Row
@@ -221,6 +209,7 @@ class ShellTest {
         val laptopId = HostId(UUID.fromString("44444444-4444-4444-4444-444444444444"))
         val laptop = HostView(
             hostId = laptopId.bytes,
+            link = 0L,
             name = "laptop",
             local = false,
             trusted = false,
@@ -283,6 +272,7 @@ class ShellTest {
         // Once local discovery finds that host (e.g. IPv6-only LAN), no account is needed.
         val discoveredHost = HostView(
             hostId = hostId.bytes,
+            link = 0L,
             name = "ipv6-desk",
             local = false,
             trusted = false,
@@ -324,6 +314,7 @@ class ShellTest {
         val hostId = HostId(UUID.fromString("66666666-6666-6666-6666-666666666666"))
         val desk = HostView(
             hostId = hostId.bytes,
+            link = 0L,
             name = "desk",
             local = false,
             trusted = false,
@@ -375,6 +366,7 @@ class ShellTest {
         val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 9 })
         val desk = HostView(
             hostId = hostId.bytes,
+            link = 0L,
             name = "desk",
             local = false,
             trusted = true,
@@ -480,23 +472,6 @@ class ShellTest {
         composeRule.onNodeWithTag(AskReviewTags.CHAT_SETTINGS_CLOSE).performClick()
         composeRule.waitForIdle()
 
-        // Navigate to ReviewPage via header changes chip, add a comment, and Send Review
-        composeRule.onNodeWithTag(ChatScreenTags.CHANGES).performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
-        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 1)).performClick()
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_INPUT).performSemanticsAction(SemanticsActions.SetText) {
-            it(AnnotatedString("Tighten error handling"))
-        }
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_ADD).performClick()
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SEND).assertIsDisplayed().performClick()
-        composeRule.waitForIdle()
-
-        // Back on ChatScreen with Review attached in composer (without calling stores.chat!)
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
-        assertFalse(fakeChat.closed)
-        composeRule.onNodeWithTag(ChatComposerTags.ATTACHMENTS_ROW).assertIsDisplayed()
-
         // Deliver an AskCard via runtime event stream and answer it
         val ask = AskCard(
             kind = Kind.ClaudeSdk,
@@ -542,6 +517,7 @@ class ShellTest {
         val hostId = HostId(UUID.fromString(uuid))
         val desk = HostView(
             hostId = hostId.bytes,
+            link = 0L,
             name = "desk",
             local = false,
             trusted = true,
@@ -582,98 +558,6 @@ class ShellTest {
         expanded = false,
         secondLine = SecondLine.LastSaid("Ready for the next step."),
     )
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test
-    fun conversationToChangesTransitionKeepsSessionAlivePastRetention() {
-        val router = Router()
-        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
-        val (hostId, desk) = sampleDeskHost("88888888-8888-8888-8888-888888888888")
-        val agentKey = AgentKey(
-            host = hostId.bytes,
-            agent = List(16) { 8 },
-        )
-        val agentRow = sampleFleetRow(agentKey, "desk-review")
-
-        var nowMs = 1_000L
-        var openCount = 0
-        val dispatcher = StandardTestDispatcher()
-        val testScope = TestScope(dispatcher)
-        val fakeChat = FakeShellChat(agentKey)
-        val stores = StoreBundle(
-            account = AccountId("signed-out"),
-            scope = testScope,
-            clock = { nowMs },
-            sessionRetentionMs = 5_000L,
-            chatBridge = FakeShellChatBridge(),
-            opener = {
-                openCount += 1
-                fakeChat
-            },
-        )
-        stores.hosts.show(listOf(desk))
-        stores.fleet.show(
-            FleetView(
-                sections = listOf(
-                    FleetSection(
-                        kind = SectionKind.Live,
-                        families = 1,
-                        foldedByDefault = false,
-                        rows = listOf(agentRow),
-                    ),
-                ),
-                needYou = 0,
-                working = 0,
-            ),
-            hosts = listOf(desk),
-        )
-
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                Shell(
-                    router = router,
-                    accounts = accounts,
-                    stores = stores,
-                    deviceName = "Pixel 9",
-                )
-            }
-        }
-
-        // Open Conversation
-        composeRule.onNodeWithTag(TestTags.homeRow("desk-review")).performClick()
-        composeRule.waitForIdle()
-        assertEquals(1, openCount)
-        assertFalse(fakeChat.closed)
-
-        // Transition Conversation -> Changes: session stays active past retention window
-        composeRule.onNodeWithTag(ChatScreenTags.CHANGES).performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
-        nowMs += 10_000L
-        testScope.advanceTimeBy(10_000L)
-        testScope.runCurrent()
-        assertFalse("Session must not close while viewing Changes", fakeChat.closed)
-        assertEquals(1, openCount)
-
-        // Transition Changes -> Conversation: session still active past retention window
-        composeRule.runOnIdle { router.pop() }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
-        nowMs += 10_000L
-        testScope.advanceTimeBy(10_000L)
-        testScope.runCurrent()
-        assertFalse("Session must not close after returning to Conversation", fakeChat.closed)
-        assertEquals(1, openCount)
-
-        // Leave Conversation -> AgentsHome: lease drops to 0 and expires after retention
-        composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
-        composeRule.waitForIdle()
-        nowMs += 6_000L
-        testScope.advanceTimeBy(6_000L)
-        testScope.runCurrent()
-        assertTrue("Session should close after retention once no route shows it", fakeChat.closed)
-        assertNull("an evicted chat is not held", stores.leaseCached(agentKey))
-    }
 
     @Test
     fun conversationReopensAutomaticallyWhenProfileVersionAdvances() {
@@ -878,52 +762,6 @@ class ShellTest {
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
         composeRule.waitForIdle()
         assertEquals(listOf("ask-two" to 0), fakeChat.answeredChoices)
-    }
-
-    @Test
-    fun changesRouteRetryReacquiresChatLeaseAfterInitialFailure() {
-        val router = Router()
-        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
-        val (hostId, _) = sampleDeskHost("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-        val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 11 })
-        var ready = false
-        var openAttempts = 0
-        val fakeChat = FakeShellChat(agentKey)
-        val stores = StoreBundle(
-            account = AccountId("signed-out"),
-            scope = shellScope,
-            chatBridge = FakeShellChatBridge(),
-            opener = {
-                openAttempts += 1
-                if (!ready) {
-                    throw RuntimeFailure("host unreachable")
-                }
-                fakeChat
-            },
-        )
-        router.push(Route.Changes(agent = agentKey, initialFile = null))
-
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                Shell(
-                    router = router,
-                    accounts = accounts,
-                    stores = stores,
-                    deviceName = "Pixel 9",
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_ERROR).assertIsDisplayed()
-        composeRule.onNodeWithText("host unreachable").assertIsDisplayed()
-        assertEquals(1, openAttempts)
-
-        ready = true
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_RETRY).performClick()
-        composeRule.waitForIdle()
-        assertEquals(2, openAttempts)
-        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
-        composeRule.onNodeWithText("lib.rs").assertIsDisplayed()
     }
 
     @Test
@@ -1460,32 +1298,6 @@ class ShellTest {
         override fun commandMatches(commands: List<CommandView>, draft: String): List<CommandMatch> = emptyList()
         override fun pastesAsAttachment(text: String): Boolean = false
         override fun formProblems(fields: List<FormField>, values: List<FormValue>): List<FormProblem> = emptyList()
-        override fun reviewDoc(review: FrozenReview, comments: List<ReviewComment>): ReviewDoc = ReviewDoc(
-            base = "main",
-            head = review.diff.head,
-            added = 1,
-            removed = 1,
-            files = listOf(
-                ReviewFile(
-                    path = "src/lib.rs",
-                    status = FileStatus.Modified,
-                    added = 1,
-                    removed = 1,
-                    binary = false,
-                    comments = emptyList(),
-                    hunks = listOf(
-                        Hunk(
-                            skips = false,
-                            scope = "",
-                            lines = listOf(
-                                DiffLine(LineKind.Removed, "old()", emptyList(), newLine = null, oldLine = 1),
-                                DiffLine(LineKind.Added, "new()", emptyList(), newLine = 1, oldLine = null),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
     }
 
     private class FakeShellChat(private val agent: AgentKey) : OpenChat {
@@ -1590,17 +1402,6 @@ class ShellTest {
         override suspend fun putBlob(data: ByteArray, name: String, mime: String): Result<BlobRef> =
             Result.success(BlobRef(listOf(1), name, mime, data.size.toLong()))
         override fun blob(hash: List<Int>): ByteArray? = null
-        override suspend fun review(comparison: Comparison): Result<FrozenReview> = Result.success(
-            FrozenReview(
-                diff = Diff(
-                    head = "abc1234",
-                    files = emptyList(),
-                    base = DiffBase(Base.Head(Empty())),
-                    patch = BlobRef(listOf(1, 2, 3), "patch", "text/x-diff", 10L),
-                ),
-                patch = "",
-            ),
-        )
         override suspend fun openOverview(comparison: Comparison): Result<Overview> =
             Result.success(Overview(emptyList(), emptyList(), null, null, null))
     }

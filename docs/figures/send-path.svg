@@ -49,5 +49,5 @@
   <rect x="720" y="220" width="110" height="40" class="pin"/><text x="775" y="245" text-anchor="middle">agent process</text>
   <path d="M460,240 L520,240" class="arrow" marker-end="url(#ah)"/><text x="490" y="230" text-anchor="middle" class="s">peer link</text>
   <path d="M650,240 L720,240" class="arrow" marker-end="url(#ah)"/><text x="685" y="230" text-anchor="middle" class="s">ctl.sock</text>
-  <text x="490" y="285" text-anchor="middle" class="s">same SendMessage, forwarded with the daemon-set envelope</text>
+  <text x="490" y="285" text-anchor="middle" class="s">same SendMessage, carried unread; the peer daemon fills from</text>
 </svg>

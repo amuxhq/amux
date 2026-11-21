@@ -193,16 +193,9 @@ fn a_clean_worktree_goes_with_its_empty_branch_and_a_dirty_one_stays_nobodys() {
     };
     let branches = || run_git(&place.repo(), &["branch", "--format=%(refname:short)"]);
 
-    // What a delete's warning says of the branch, from the host's count,
-    // is what the removal does with it.
-    let own_commits = |workspace: &Key| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(git_facts::own_commits(Path::new(&workspace.id)))
-            .unwrap()
-    };
+    // What a delete's warning says of the branch and what the removal does
+    // with it read one count: the branch goes exactly when it is zero.
+    let own_commits = |name: &str| git_facts::branch_own_commits(&place.repo(), name).unwrap();
 
     // Clean, nothing committed: the worktree and its branch go.
     let empty = make("empty");
@@ -210,20 +203,28 @@ fn a_clean_worktree_goes_with_its_empty_branch_and_a_dirty_one_stays_nobodys() {
     std::fs::write(Path::new(&empty.id).join(".gitignore"), "target\n").unwrap();
     run_git(Path::new(&empty.id), &["add", ".gitignore"]);
     run_git(Path::new(&empty.id), &["stash", "-q"]);
-    assert_eq!(own_commits(&empty), Some(0));
+    assert_eq!(own_commits("empty"), Some(0));
+    assert!(git_facts::branch_goes(own_commits("empty")));
     assert_eq!(backends.delete(&empty, false), Removal::Removed);
     assert!(!Path::new(&empty.id).exists());
     assert!(!branches().contains("empty"), "{}", branches());
+    assert_eq!(own_commits("empty"), None, "no branch left to count");
 
     // Clean with commits of its own: the branch keeps them.
     let worked = make("worked");
     std::fs::write(Path::new(&worked.id).join("work.txt"), "work\n").unwrap();
     run_git(Path::new(&worked.id), &["add", "work.txt"]);
     run_git(Path::new(&worked.id), &["commit", "-q", "-m", "work"]);
-    assert_eq!(own_commits(&worked), Some(1));
+    assert_eq!(own_commits("worked"), Some(1));
+    assert!(!git_facts::branch_goes(own_commits("worked")));
     assert_eq!(backends.delete(&worked, false), Removal::Removed);
     assert!(!Path::new(&worked.id).exists());
     assert!(branches().contains("worked"));
+    assert_eq!(
+        own_commits("worked"),
+        Some(1),
+        "its commits are still its own"
+    );
 
     // Uncommitted work: kept, and no longer this host's.
     let dirty = make("dirty");
@@ -449,8 +450,14 @@ stop = "echo stopped >> .wt/ran"
             let (backends, tree) = (backends.clone(), tree.clone());
             std::thread::spawn(move || backends.stop_when_unheld(&tree))
         };
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        assert!(!ran(&tree).contains("stopped"), "a claim keeps it running");
+        // A held tree blocks the stopper's flock; wait briefly and confirm
+        // neither the stopper finishes nor the stop hook runs while claimed.
+        let held_until = std::time::Instant::now() + std::time::Duration::from_millis(150);
+        while std::time::Instant::now() < held_until {
+            assert!(!stopper.is_finished(), "a claim keeps the stopper waiting");
+            assert!(!ran(&tree).contains("stopped"), "a claim keeps it running");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         backends.release(&tree);
         stopper.join().unwrap().unwrap();
         assert!(ran(&tree).contains("stopped"));
@@ -496,14 +503,28 @@ stop = "echo stopped >> .wt/ran"
             planned.workspace
         };
 
+        let branches = || run_git(&place.repo(), &["branch", "--format=%(refname:short)"]);
+        let own_commits = |name: &str| git_facts::branch_own_commits(&place.repo(), name).unwrap();
+
         let clean = make("clean");
+        assert_eq!(own_commits("clean"), Some(0));
         assert_eq!(backends.delete(&clean, false), Removal::Removed);
         assert!(!Path::new(&clean.id).exists());
-        let branches = run_git(&place.repo(), &["branch", "--format=%(refname:short)"]);
         assert!(
-            !branches.contains("clean"),
-            "its empty branch goes: {branches}"
+            !branches().contains("clean"),
+            "its empty branch goes: {}",
+            branches()
         );
+
+        // Commits of its own keep the branch, by the same count.
+        let worked = make("worked");
+        std::fs::write(Path::new(&worked.id).join("work.txt"), "work\n").unwrap();
+        run_git(Path::new(&worked.id), &["add", "work.txt"]);
+        run_git(Path::new(&worked.id), &["commit", "-q", "-m", "work"]);
+        assert_eq!(own_commits("worked"), Some(1));
+        assert_eq!(backends.delete(&worked, false), Removal::Removed);
+        assert!(!Path::new(&worked.id).exists());
+        assert!(branches().contains("worked"), "{}", branches());
 
         let dirty = make("dirty");
         std::fs::write(Path::new(&dirty.id).join("draft.txt"), "draft\n").unwrap();

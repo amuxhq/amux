@@ -20,7 +20,11 @@ public enum MarkdownBlock: Equatable, Sendable {
     case list(ordered: Bool, items: [Item])
     /// Fenced code, with whatever the fence named as its language. Never
     /// wrapped: code that wraps stops being code, so it scrolls sideways.
-    case code(language: String?, text: String)
+    /// `closed` is false for a fence the source ends inside, which in a
+    /// message still streaming is the block still being written: only
+    /// that one is coloured as it streams (``CodeHighlighting``), since
+    /// any other is finished.
+    case code(language: String?, text: String, closed: Bool)
     case quote([AttributedString])
     case table(header: [AttributedString], rows: [[AttributedString]])
     case rule
@@ -55,9 +59,21 @@ public struct MarkdownDocument: Equatable, Sendable {
         self.blocks = blocks
     }
 
+    /// The source's lines, ending at `\n`, `\r\n` or a lone `\r`, as
+    /// markdown reads them. Past here the three are alike, so a Windows
+    /// line's `\r` is never part of a heading, a table row or a
+    /// fenced block's code, and a code block's text has only `\n` between
+    /// its lines, which is how ``CodeText/lines(_:)`` and the shared view's
+    /// highlighting both split it.
+    nonisolated static func lines(_ source: String) -> [String] {
+        source.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+    }
+
     public nonisolated static func parse(_ source: String) -> MarkdownDocument {
         var blocks: [MarkdownBlock] = []
-        var lines = ArraySlice(source.components(separatedBy: "\n"))
+        var lines = ArraySlice(Self.lines(source))
         var counter = 0
 
         func next() -> Int { counter += 1; return counter }
@@ -77,10 +93,12 @@ public struct MarkdownDocument: Equatable, Sendable {
                     body.append(line)
                     lines = lines.dropFirst()
                 }
-                if !lines.isEmpty { lines = lines.dropFirst() }
+                // Only a closing fence stops the body short of the end.
+                let closed = !lines.isEmpty
+                if closed { lines = lines.dropFirst() }
                 blocks.append(.code(
                     language: fence.isEmpty ? nil : fence,
-                    text: body.joined(separator: "\n")))
+                    text: body.joined(separator: "\n"), closed: closed))
                 continue
             }
 

@@ -515,19 +515,19 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 } else if let (Some(pin), Some(ttl)) = (pin, r#for) {
                     pairing::demo(admin, pin, ttl).await
                 } else if let Some(target) = target {
-                    let mut client = connect::client_of(&selected).await?;
+                    let client = connect::client_of(&selected).await?;
                     let target = pairing::Target::parse(&target)?;
-                    pairing::pair(admin, &mut client, target, pairing::on_free(&selected)).await
+                    pairing::pair(admin, &client, target, pairing::on_free(&selected)).await
                 } else {
                     pairing::wait(admin, qr, print_link).await
                 }
             }
             Command::Hosts => {
                 let selected = connect::profile(&config, profile).await?;
-                let mut client = connect::client_of(&selected).await?;
+                let client = connect::client_of(&selected).await?;
                 pairing::hosts(
                     connect::admin_of(&selected).await?,
-                    &mut client,
+                    &client,
                     pairing::on_free(&selected),
                 )
                 .await
@@ -576,9 +576,9 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 anyhow::bail!("pairing over SSH needs a Unix host")
             }
             command => {
-                let mut client = connect::client(&config, profile).await?;
+                let client = connect::client(&config, profile).await?;
                 match command {
-                    Command::Ls => verbs::ls(&mut client).await,
+                    Command::Ls => verbs::ls(&client).await,
                     Command::New {
                         agent,
                         name,
@@ -593,7 +593,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     } => {
                         let selected = connect::profile(&config, profile).await?;
                         verbs::create(
-                            &mut client,
+                            &client,
                             &selected.id,
                             verbs::Create {
                                 agent,
@@ -611,21 +611,19 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                         .await
                     }
                     Command::Send { agent, text } => {
-                        verbs::send(&mut client, &agent, &text.join(" ")).await
+                        verbs::send(&client, &agent, &text.join(" ")).await
                     }
-                    Command::Settle { agent } => verbs::settle(&mut client, &agent).await,
+                    Command::Settle { agent } => verbs::settle(&client, &agent).await,
                     Command::Resume { agent, text } => {
                         let text = text.join(" ");
                         let text = Some(text.as_str()).filter(|text| !text.is_empty());
-                        verbs::resume(&mut client, &agent, text).await
+                        verbs::resume(&client, &agent, text).await
                     }
-                    Command::Rename { agent, name } => {
-                        verbs::rename(&mut client, &agent, &name).await
-                    }
+                    Command::Rename { agent, name } => verbs::rename(&client, &agent, &name).await,
                     Command::Rm {
                         agent,
                         discard_changes,
-                    } => verbs::delete(&mut client, &agent, discard_changes).await,
+                    } => verbs::delete(&client, &agent, discard_changes).await,
                     Command::Dump { reason, send } => {
                         let selected = connect::profile(&config, profile).await?;
                         let mut admin = connect::admin_of(&selected).await?;
@@ -650,6 +648,22 @@ pub(crate) fn plain(status: tonic::Status) -> anyhow::Error {
         Code::Unavailable => anyhow::anyhow!("the amux daemon went away: {}", status.message()),
         _ if status.message().is_empty() => anyhow::anyhow!("{}", status.code().description()),
         _ => anyhow::anyhow!("{}", status.message()),
+    }
+}
+
+/// A refusal from the node, or from the host it carried the call to, as a
+/// person reads it: the refusal's own words, or what a lost connection
+/// means.
+pub(crate) fn refused(error: client::RpcError) -> anyhow::Error {
+    match error {
+        client::RpcError::Transport(words) if words.is_empty() => {
+            anyhow::anyhow!("the amux daemon went away")
+        }
+        client::RpcError::Transport(words) => anyhow::anyhow!("the amux daemon went away: {words}"),
+        client::RpcError::Refused(error) if error.message.is_empty() => {
+            anyhow::anyhow!("{}", Code::from_i32(error.code).description())
+        }
+        client::RpcError::Refused(error) => anyhow::anyhow!("{}", error.message),
     }
 }
 

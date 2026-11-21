@@ -97,6 +97,8 @@ data class ChatOverviewState(
     val comparison: Comparison = Comparison.Uncommitted,
     val baseBranch: String? = null,
     val changeTotals: ChangeTotals? = null,
+    /** Whether the changed files open for review; without, they are only listed. */
+    val canReview: Boolean = false,
     val nowMs: Long = 0L,
 )
 
@@ -186,7 +188,11 @@ fun ChatOverviewSheetContent(
             baseBranch = state.baseBranch,
             onSelectComparison = { onAction(ChatOverviewAction.SelectComparison(it)) },
             onRetryChanges = { onAction(ChatOverviewAction.RetryChanges) },
-            onOpenReview = { path -> onAction(ChatOverviewAction.OpenReview(path)) },
+            onOpenReview = if (state.canReview) {
+                { path: String? -> onAction(ChatOverviewAction.OpenReview(path)) }
+            } else {
+                null
+            },
         )
 
         if (overview != null && overview.failedServers.isNotEmpty()) {
@@ -603,7 +609,7 @@ private fun OverviewChangesSection(
     baseBranch: String?,
     onSelectComparison: (Comparison) -> Unit,
     onRetryChanges: () -> Unit,
-    onOpenReview: (String?) -> Unit,
+    onOpenReview: ((String?) -> Unit)?,
 ) {
     val colors = AmuxTheme.colors
     val comparisonMatches = changesComparison == null || changesComparison == comparison
@@ -674,24 +680,26 @@ private fun OverviewChangesSection(
                 matchedChanges.folders.forEach { folder ->
                     OverviewFolderGroup(
                         folder = folder,
-                        onSelectFile = { onOpenReview(it) },
+                        onSelectFile = onOpenReview?.let { open -> { path -> open(path) } },
                     )
                 }
             }
-            val reviewLabel = stringResource(R.string.overview_review_changes)
-            Text(
-                text = reviewLabel,
-                style = AmuxTheme.typography.bodyEmphasis,
-                color = colors.accent,
-                modifier = Modifier
-                    .padding(horizontal = Space.margin - Space.s)
-                    .clip(RoundedCornerShape(Space.s))
-                    .clickable(role = Role.Button) { onOpenReview(null) }
-                    .heightIn(min = ThumbTarget.MinSize)
-                    .wrapContentHeight(Alignment.CenterVertically)
-                    .padding(horizontal = Space.s)
-                    .testTag(AskReviewTags.OVERVIEW_REVIEW),
-            )
+            if (onOpenReview != null) {
+                val reviewLabel = stringResource(R.string.overview_review_changes)
+                Text(
+                    text = reviewLabel,
+                    style = AmuxTheme.typography.bodyEmphasis,
+                    color = colors.accent,
+                    modifier = Modifier
+                        .padding(horizontal = Space.margin - Space.s)
+                        .clip(RoundedCornerShape(Space.s))
+                        .clickable(role = Role.Button) { onOpenReview(null) }
+                        .heightIn(min = ThumbTarget.MinSize)
+                        .wrapContentHeight(Alignment.CenterVertically)
+                        .padding(horizontal = Space.s)
+                        .testTag(AskReviewTags.OVERVIEW_REVIEW),
+                )
+            }
         } else {
             val emptyMessage = if (matchedChanges == null && totals != null) {
                 stringResource(R.string.overview_changes_listing)
@@ -714,7 +722,7 @@ private fun OverviewChangesSection(
 @Composable
 private fun OverviewFolderGroup(
     folder: Folder,
-    onSelectFile: (String) -> Unit,
+    onSelectFile: ((String) -> Unit)?,
 ) {
     val colors = AmuxTheme.colors
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -739,7 +747,13 @@ private fun OverviewFolderGroup(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(role = Role.Button) { onSelectFile(file.path) }
+                    .then(
+                        if (onSelectFile != null) {
+                            Modifier.clickable(role = Role.Button) { onSelectFile(file.path) }
+                        } else {
+                            Modifier
+                        },
+                    )
                     .semantics(mergeDescendants = true) {
                         contentDescription = spokenFile
                     }

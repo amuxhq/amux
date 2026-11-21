@@ -137,12 +137,6 @@ pub enum ClientRequest {
     /// Opens a stream of the fleet: hosts and agent rows, CaughtUp, then
     /// every change.
     SubscribeInventory,
-    /// A call on an agent of another host, made on that host's daemon and
-    /// answered with what it answered.
-    Forward {
-        host: HostId,
-        request: Box<PeerRequest>,
-    },
     /// Creates one of this host's agents and starts its process; answered
     /// with its row once the process said Hello, or ended. With the
     /// workspaces experiment, one in a new workspace is answered as soon as
@@ -153,7 +147,7 @@ pub enum ClientRequest {
     /// Files the agent as the person asked; answered with its row. A
     /// settle of a live agent stops its process first and answers once it
     /// ended.
-    FileAgent {
+    SetFiling {
         agent: AgentId,
         filing: crate::Filing,
     },
@@ -194,8 +188,9 @@ pub enum ClientRequest {
         bytes: Vec<u8>,
     },
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
-    /// How one of this host's agents' working tree differs from a base.
-    GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
+    /// A write to one of this host's agents' reviews, under the reviews
+    /// experiment.
+    Review(Box<crate::reviews::Write>),
     /// Keep this machine's client's unsent draft of the agent.
     UpdateDraft {
         agent_id: Vec<u8>,
@@ -206,11 +201,13 @@ pub enum ClientRequest {
         agent_id: Vec<u8>,
     },
     /// A message for one of this host's agents, answered once the
-    /// recipient accepted it. Its envelope id is set.
+    /// recipient accepted it. Its envelope id is set, and its sender is the
+    /// caller as the host that took the call built it: a person, one of
+    /// this host's agents, or a paired host's agent, a child's report
+    /// included, which comes from the link's peer.
     SendMessage {
         #[serde(with = "codec::boxed")]
         envelope: Box<wire::Envelope>,
-        from: MessageFrom,
     },
     /// A change of the trust store, answered once it is on the drive.
     ChangeTrust(crate::trust::TrustChange),
@@ -240,19 +237,6 @@ pub enum ClientRequest {
     },
 }
 
-/// Who sent a message, as the call it came on says.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum MessageFrom {
-    /// A person, on the profile socket.
-    Person,
-    /// One of this host's agents, on its tools socket.
-    Agent(AgentId),
-    /// A paired host's agent, as that host stamped it.
-    Peer(#[serde(with = "codec::message")] wire::AgentSender),
-    /// The person, through a paired host.
-    PeerPerson,
-}
-
 /// Why a message was not accepted.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MessageRefusal {
@@ -275,51 +259,91 @@ pub enum MessageRefusal {
     Store(String),
 }
 
-/// A request on a peer's services, decoded: one a paired host makes of
-/// this one, or one this host makes of a paired host.
+/// What a daemon asks a paired daemon for itself, on its PeerService,
+/// decoded, as this host makes it of a paired host. A call a client makes
+/// of another host's services is carried there unread and never passes
+/// through the core.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerRequest {
-    /// A stream of one of this host's agents' session events: from what
-    /// came after the revision the peer's replica holds, or a tail.
-    SubscribeSession(#[serde(with = "codec::message")] wire::SubscribeSessionRequest),
-    /// A stream of this host's entry and its own agents.
-    SubscribeInventory,
+    /// PeerService.FollowAgents: a stream of this host's entry and its own
+    /// agents, then every change.
+    FollowAgents,
+    /// PeerService.FollowSession: a stream of one of this host's agents'
+    /// session events, from what came after the revision the peer's copy
+    /// holds, or a tail.
+    FollowSession(#[serde(with = "codec::message")] wire::FollowSessionRequest),
+    /// PeerService.DeliverReport: a child's report to its parent on the
+    /// called host. The host it reaches hands it on as a message from the
+    /// child, as [`report_envelope`] spells it.
+    DeliverReport(#[serde(with = "codec::message")] wire::DeliverReportRequest),
+    /// PeerService.ListItems: a page of one of this host's agents' older
+    /// items, whose request is this one field for field.
     ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
-    GetItem(#[serde(with = "codec::message")] wire::GetItemRequest),
-    SendInput(#[serde(with = "codec::message")] wire::SendInputRequest),
-    CreateAgent(#[serde(with = "codec::message")] wire::CreateAgentRequest),
-    RenameAgent(#[serde(with = "codec::message")] wire::RenameAgentRequest),
-    FileAgent(#[serde(with = "codec::message")] wire::FileAgentRequest),
-    ResumeAgent(#[serde(with = "codec::message")] wire::ResumeAgentRequest),
-    DeleteAgent(#[serde(with = "codec::message")] wire::DeleteAgentRequest),
-    SendMessage(#[serde(with = "codec::message")] wire::Envelope),
-    PutBlob(#[serde(with = "codec::message")] wire::PutBlobRequest),
-    GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
-    GetDiff(#[serde(with = "codec::message")] wire::GetDiffRequest),
-    GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
-    PinFolder(#[serde(with = "codec::message")] wire::PinFolderRequest),
+}
+
+/// A paired host's call as it reaches this host's core: only its reads.
+/// A report it delivers reaches the core as a message from the child
+/// ([`report_envelope`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PeerRead {
+    /// PeerService.FollowAgents.
+    FollowAgents,
+    /// PeerService.FollowSession.
+    FollowSession(#[serde(with = "codec::message")] wire::FollowSessionRequest),
+    /// PeerService.ListItems.
+    ListItems(#[serde(with = "codec::message")] wire::ListItemsRequest),
+}
+
+impl PeerRequest {
+    /// The request as the called host's core reads it, or the report it
+    /// hands on as a message instead.
+    pub fn read(self) -> Result<PeerRead, Box<wire::DeliverReportRequest>> {
+        match self {
+            PeerRequest::FollowAgents => Ok(PeerRead::FollowAgents),
+            PeerRequest::FollowSession(request) => Ok(PeerRead::FollowSession(request)),
+            PeerRequest::ListItems(request) => Ok(PeerRead::ListItems(request)),
+            PeerRequest::DeliverReport(report) => Err(Box::new(report)),
+        }
+    }
+}
+
+/// A child's report as the parent's host hands it on to the parent: a
+/// message from the child, one of the agents of `from`, the host whose
+/// daemon delivered it, to the parent, one of `here`'s. The sender is the
+/// calling host's, whoever its link authenticated, so a daemon reports only
+/// for its own agents.
+pub fn report_envelope(
+    from: &[u8],
+    here: &[u8],
+    report: wire::DeliverReportRequest,
+) -> wire::Envelope {
+    wire::Envelope {
+        id: report.id,
+        context: None,
+        from: Some(wire::Sender {
+            value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                agent: Some(wire::AgentRef {
+                    host_id: from.to_vec(),
+                    agent_id: report.child_agent_id,
+                }),
+                name: report.child_name,
+            })),
+        }),
+        to: Some(wire::AgentRef {
+            host_id: here.to_vec(),
+            agent_id: report.parent_agent_id,
+        }),
+        body: report.report.map(wire::envelope::Body::Report),
+    }
 }
 
 /// A peer's whole reply to one of its unary calls.
-// An agent row is the largest variant by far, but a reply only ever travels
-// boxed (`Answer::Reply(Box<PeerReply>)`), so its size is paid once per
-// reply and boxing the row inside it would add a second allocation.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PeerReply {
+    /// A page, for ListItems.
     Fetched(#[serde(with = "codec::message")] wire::ListItemsResponse),
-    Item(#[serde(with = "codec::message")] wire::Item),
-    SendInput(#[serde(with = "codec::message")] wire::SendInputResponse),
-    /// CreateAgent, RenameAgent, FileAgent and ResumeAgent answer with the
-    /// agent.
-    Agent(#[serde(with = "codec::message")] wire::Agent),
-    /// DeleteAgent and PinFolder answer with nothing.
+    /// DeliverReport answers with nothing.
     Done,
-    SendMessage(#[serde(with = "codec::message")] wire::SendMessageResponse),
-    Blob(#[serde(with = "codec::message")] wire::BlobRef),
-    GetBlob(#[serde(with = "codec::message")] wire::GetBlobResponse),
-    Diff(#[serde(with = "codec::message")] wire::Diff),
-    Catalogue(#[serde(with = "codec::message")] wire::GetCatalogueResponse),
 }
 
 /// How a call this host made of a peer came back: its whole reply, one
@@ -360,15 +384,6 @@ pub enum PeerFailure {
     Refused(#[serde(with = "codec::message")] wire::Error),
 }
 
-/// A diff's patch, as a blob to write.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Patch {
-    #[serde(with = "codec::hash")]
-    pub hash: Vec<u8>,
-    #[serde(with = "codec::content")]
-    pub bytes: Vec<u8>,
-}
-
 /// One reply, or one item of a streamed reply, to a call. Stream items are
 /// shared, since the same event goes to every subscriber.
 #[derive(Clone, Debug, PartialEq)]
@@ -377,8 +392,10 @@ pub enum Response {
     Inventory(Arc<wire::InventoryEvent>),
     Fetched(wire::ListItemsResponse),
     Item(wire::Item),
-    /// A forwarded call's reply, from the host it went to.
-    Peer(Box<PeerReply>),
+    /// A blob written, for PutBlob.
+    Written(wire::BlobRef),
+    /// A blob's bytes, for GetBlob: the shell reads them off the drive.
+    Bytes(Vec<u8>),
     /// One of this host's agents' rows, as a registry call left it.
     Agent(Box<wire::Agent>),
     Draft(wire::Draft),
@@ -395,6 +412,8 @@ pub enum Response {
     Paired {
         host: HostId,
     },
+    /// What a write to a review left.
+    Review(Box<crate::reviews::Written>),
 }
 
 /// How a call ended.
@@ -416,11 +435,6 @@ pub enum CallError {
     OriginUnreachable,
     /// The store failed, in its own words.
     Store(String),
-    /// A forwarded call got no reply from the host it went to.
-    Peer(PeerFailure),
-    /// A paired host asked for what this host answers only to its own
-    /// clients.
-    NotServed,
     /// The registry refused the call or could not finish it.
     Registry(Refusal),
     /// The agent holds no blob with this hash, in hex.
@@ -435,6 +449,8 @@ pub enum CallError {
     Window(crate::pairing::WindowRefusal),
     /// A pairing did not finish.
     Pairing(crate::pairing::PairFailure),
+    /// A write to a review was refused.
+    Review(crate::reviews::Refusal),
 }
 
 /// Why a blob call failed.
@@ -450,20 +466,6 @@ pub enum BlobRefusal {
     Write { full: bool, words: String },
     /// Reading it failed.
     Read(String),
-    /// A diff names no base.
-    NoBase,
-    /// Git could not compare the working tree.
-    Git(GitRefusal),
-}
-
-/// Why git could not compare a working tree.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum GitRefusal {
-    NotARepository,
-    /// The branch shares no history with this base.
-    NoForkPoint(String),
-    /// Anything else, in git's words.
-    Failed(String),
 }
 
 impl From<store::StoreError> for CallError {
@@ -484,17 +486,10 @@ pub enum JobResult {
     Worktree { path: String, base_branch: String },
     /// It was refused, as the driver said it to the caller.
     Refused(#[serde(with = "codec::message")] wire::Error),
-    /// A working tree compared: the diff without its patch, and the patch
-    /// with its hash when one was asked for and there is one.
-    Compared {
-        #[serde(with = "codec::message")]
-        diff: wire::Diff,
-        patch: Option<Patch>,
-    },
-    /// Git could not compare the working tree.
-    CompareFailed(GitRefusal),
     /// The next spec a resume starts from; none when the agent has none.
     Spec(#[serde(with = "codec::optional_boxed")] Option<Box<wire::AgentSpec>>),
     /// What a workspace job came to.
     Workspace(crate::workspaces::WorkspaceDone),
+    /// What a reviews job came to.
+    Review(crate::reviews::Done),
 }

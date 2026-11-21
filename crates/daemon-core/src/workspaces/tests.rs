@@ -11,7 +11,7 @@ use wire::{AgentSpec, Envelope, ExitCause, Lifecycle};
 use super::*;
 use crate::families::{Create, Ended};
 use crate::ids::CallId;
-use crate::payload::{CallError, ClientRequest, MessageFrom, Response, Status};
+use crate::payload::{CallError, ClientRequest, Response, Status};
 use crate::{Input, StartOptions, TimerId};
 
 const OWN: [u8; 16] = *b"own-host-0000000";
@@ -285,7 +285,6 @@ fn a_create_in_a_new_workspace_answers_with_its_row_and_starts_once_made_and_cla
                 }),
                 ..Envelope::default()
             }),
-            from: MessageFrom::Person,
         },
     });
     assert!(

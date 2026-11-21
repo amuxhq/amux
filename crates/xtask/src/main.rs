@@ -26,10 +26,6 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.Catalogue",
     "amux.v1.ChangeTotals",
     "amux.v1.Checkout",
-    "amux.v1.Diff",
-    "amux.v1.DiffBase",
-    "amux.v1.DiffBase.base",
-    "amux.v1.DiffFile",
     "amux.v1.Empty",
     "amux.v1.EnvelopeKind",
     "amux.v1.Filing",
@@ -49,7 +45,6 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.Platform",
     "amux.v1.Provider",
     "amux.v1.Refusal",
-    "amux.v1.ReviewComment",
     "amux.v1.ReviewStatus",
     "amux.v1.RouteKind",
     "amux.v1.SendState",
@@ -66,8 +61,15 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/chat.proto",
     "amux/v1/inventory.proto",
     "amux/v1/dump.proto",
-    "amux/v1/agent_service.proto",
+    "amux/v1/session.proto",
+    "amux/v1/caller.proto",
+    "amux/v1/inventory_service.proto",
     "amux/v1/session_service.proto",
+    "amux/v1/draft_service.proto",
+    "amux/v1/agent_service.proto",
+    "amux/v1/host_service.proto",
+    "amux/v1/review_service.proto",
+    "amux/v1/peer_service.proto",
     "amux/v1/installation_service.proto",
     "amux/v1/profile_admin_service.proto",
     "amux/v1/pairing_service.proto",
@@ -85,6 +87,7 @@ const PROTO_FILES: &[&str] = &[
 /// any release.
 const INTERNAL_PROTO_FILES: &[&str] = &[
     "amux/dump/session.proto",
+    "amux/experimental/reviews.proto",
     "amux/experimental/suspension.proto",
     "amux/experimental/workspaces.proto",
 ];
@@ -145,14 +148,12 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
         "amux.v1.Refusal",
         "#[cfg_attr(feature = \"schema\", schemars(rename = \"RefusalReason\"))]",
     );
-    // prost never derives Eq for a message with a repeated message field,
-    // though every field here is Eq; the views that hold a Diff compare it.
-    config.type_attribute("amux.v1.Diff", "#[derive(Eq)]");
-    // An experimental map encodes in key order, so a row or a spec encodes
-    // to the same bytes every time.
+    // An experimental map encodes in key order, so a row, a spec or an
+    // attachment encodes to the same bytes every time.
     config.btree_map([
         ".amux.v1.Agent.experimental",
         ".amux.v1.AgentSpec.experimental",
+        ".amux.v1.Attachment.experimental",
     ]);
     // prost derives neither for a message with a map, though a BTreeMap of
     // strings and bytes is both; rows are compared and hashed.

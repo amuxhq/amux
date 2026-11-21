@@ -68,8 +68,6 @@ import sh.amux.features.ReportDeliveryUi
 import sh.amux.features.ReportMarkUi
 import sh.amux.features.ReportOverlayContent
 import sh.amux.features.ReportUiState
-import sh.amux.features.ReviewPage
-import sh.amux.features.ReviewPageState
 import sh.amux.features.SettingsAccountItem
 import sh.amux.features.SettingsAppearance
 import sh.amux.features.SettingsEntitlementBadge
@@ -87,13 +85,11 @@ import sh.amux.values.Choice
 import sh.amux.values.ChoiceOutcome
 import sh.amux.values.Comparison
 import sh.amux.values.Composer
-import sh.amux.values.DiffLine
 import sh.amux.values.ExitCause
 import sh.amux.values.FamilyHeader
 import sh.amux.values.FileStatus
 import sh.amux.values.Filing
 import sh.amux.values.GroupState
-import sh.amux.values.Hunk
 import sh.amux.values.JobStop
 import sh.amux.values.Kind
 import sh.amux.values.LineKind
@@ -101,9 +97,6 @@ import sh.amux.values.OpenedAgent
 import sh.amux.values.PhaseView
 import sh.amux.values.Provider
 import sh.amux.values.Reach
-import sh.amux.values.ReviewComment
-import sh.amux.values.ReviewDoc
-import sh.amux.values.ReviewFile
 import sh.amux.values.RouteKind
 import sh.amux.values.Row
 import sh.amux.values.Scope
@@ -157,6 +150,12 @@ object Stories {
      */
     val IOS_ONLY_STORIES: Map<String, String> = mapOf(
         "hosts.network-refused" to "Android asks no permission to look on the network; a phone that cannot look says so on the first run (fleet.first-run-refused).",
+        "review.page" to "Android draws no review page until it is rebuilt on the host's review page.",
+        "review.since-last" to "Android draws no review page until it is rebuilt on the host's review page.",
+        "review.drafts-stale" to "Android draws no review page until it is rebuilt on the host's review page.",
+        "review.empty" to "Android draws no review page until it is rebuilt on the host's review page.",
+        "review.not-offered" to "Android draws no review page until it is rebuilt on the host's review page.",
+        "review.round" to "Android draws no review page until it is rebuilt on the host's review page.",
     )
 
     private val F = CatalogFixtures
@@ -639,7 +638,7 @@ object Stories {
                     files = 1,
                     added = 1,
                     removed = 2,
-                    lines = F.diff,
+                    patch = F.diff,
                     reason = "",
                     created = false,
                     line = 13,
@@ -661,7 +660,7 @@ object Stories {
                     files = 1,
                     added = 2,
                     removed = 0,
-                    lines = F.created,
+                    patch = F.created,
                     reason = "",
                     created = true,
                     line = 1,
@@ -853,29 +852,6 @@ object Stories {
             F.card(Kind.ClaudeSdk, F.bareSpecSuite, F.sdkPermissionChoices, state = CardState.NotConfirmed),
             fontScale = LARGEST_FONT_SCALE,
         ),
-
-        // --- Review --------------------------------------------------------
-        Story(
-            id = "review.page",
-            area = "Review",
-            title = "Diff review page",
-            description = "Full-screen working-tree diff review over three files, with two comments written.",
-        ) {
-            ReviewPage(state = reviewPageState(), onAction = {})
-        },
-        Story(
-            id = "review.no-changes",
-            area = "Review",
-            title = "Review (no changes)",
-            description = "Diff review empty state when the selected comparison has no changes.",
-        ) {
-            ReviewPage(
-                state = ReviewPageState(
-                    doc = null,
-                ),
-                onAction = {},
-            )
-        },
 
         // --- Hosts ---------------------------------------------------------
         Story(
@@ -1498,104 +1474,6 @@ object Stories {
         appVersion = "0.11.0",
         showContactSupport = true,
     )
-
-    /**
-     * The iOS catalogue's review: a changed file, a test that gained an
-     * import and a new page, with a comment on a changed line and one on the
-     * new page.
-     */
-    private fun reviewPageState(): ReviewPageState {
-        fun ctx(text: String, old: Int, new: Int) = DiffLine(LineKind.Context, text, emptyList(), newLine = new, oldLine = old)
-        fun del(text: String, old: Int) = DiffLine(LineKind.Removed, text, emptyList(), newLine = null, oldLine = old)
-        fun add(text: String, new: Int) = DiffLine(LineKind.Added, text, emptyList(), newLine = new, oldLine = null)
-        val errors = "crates/amux-ui/src/pairing/errors.rs"
-        val pairingDoc = "docs/PAIRING.md"
-        return ReviewPageState(
-            doc = ReviewDoc(
-                base = "main",
-                head = "4f2a9c1",
-                added = 7,
-                removed = 4,
-                files = listOf(
-                    ReviewFile(
-                        path = errors,
-                        status = FileStatus.Modified,
-                        added = 3,
-                        removed = 4,
-                        binary = false,
-                        comments = emptyList(),
-                        hunks = listOf(
-                            Hunk(
-                                skips = true,
-                                scope = "use crate::codes::Code;",
-                                lines = listOf(
-                                    ctx("/// Why a pairing did not happen.", 8, 8),
-                                    ctx("pub enum PairError {", 9, 9),
-                                    ctx("    Expired,", 10, 10),
-                                    del("    Refused,", 11),
-                                    del("    Unknown,", 12),
-                                    del("    Busy,", 13),
-                                    add("    Refused(String),", 11),
-                                    add("    Busy { retry_after_ms: u64 },", 12),
-                                    ctx("}", 14, 13),
-                                    ctx("", 15, 14),
-                                    ctx("impl PairError {", 16, 15),
-                                    del("    pub fn message(&self) -> &str {", 17),
-                                    add("    pub fn message(&self) -> String {", 16),
-                                    ctx("        match self {", 18, 17),
-                                ),
-                            ),
-                        ),
-                    ),
-                    ReviewFile(
-                        path = "crates/amux-ui/tests/errors.rs",
-                        status = FileStatus.Modified,
-                        added = 1,
-                        removed = 0,
-                        binary = false,
-                        comments = emptyList(),
-                        hunks = listOf(
-                            Hunk(
-                                skips = false,
-                                scope = "",
-                                lines = listOf(
-                                    ctx("use amux_ui::pairing::PairError;", 1, 1),
-                                    add("use amux_ui::pairing::describe;", 2),
-                                    ctx("", 2, 3),
-                                    ctx("#[test]", 3, 4),
-                                    ctx("fn every_error_has_one_string() {", 4, 5),
-                                ),
-                            ),
-                        ),
-                    ),
-                    ReviewFile(
-                        path = pairingDoc,
-                        status = FileStatus.Added,
-                        added = 3,
-                        removed = 0,
-                        binary = false,
-                        comments = emptyList(),
-                        hunks = listOf(
-                            Hunk(
-                                skips = false,
-                                scope = "",
-                                lines = listOf(
-                                    add("# Pairing", 1),
-                                    add("", 2),
-                                    add("A refused pairing now says why.", 3),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            comments = listOf(
-                ReviewComment(path = errors, line = 11, oldLine = 0, text = "Say what refused it, not only that it was refused."),
-                ReviewComment(path = pairingDoc, line = 3, oldLine = 0, text = "Link the error table here."),
-            ),
-            selectedFileIndex = 0,
-        )
-    }
 
     private fun sampleReportPngBytes(): ByteArray? = runCatching {
         val width = 180

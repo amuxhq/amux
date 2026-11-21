@@ -29,6 +29,7 @@ class PairingSheetTest {
 
     private val laptop = HostView(
         hostId = List(16) { 4 },
+        link = 0L,
         name = "laptop",
         local = false,
         trusted = false,

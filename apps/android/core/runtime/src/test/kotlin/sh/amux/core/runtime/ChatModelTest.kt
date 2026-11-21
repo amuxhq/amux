@@ -43,7 +43,6 @@ import sh.amux.values.Composer
 import sh.amux.values.ComposerView
 import sh.amux.values.Connection
 import sh.amux.values.ControlsSummary
-import sh.amux.values.Diff
 import sh.amux.values.Draft
 import sh.amux.values.DraftAttachment
 import sh.amux.values.DraftPart
@@ -54,7 +53,6 @@ import sh.amux.values.Folder
 import sh.amux.values.FormField
 import sh.amux.values.FormFieldKind
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.Git
 import sh.amux.values.GroupState
 import sh.amux.values.GroupView
@@ -73,7 +71,6 @@ import sh.amux.values.QueuedRow
 import sh.amux.values.Refusal
 import sh.amux.values.RefusalReason
 import sh.amux.values.RefusedPrompt
-import sh.amux.values.ReviewComment
 import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Run
@@ -136,8 +133,6 @@ class ChatModelTest {
         var facts: Overview? = null
         var offered: SettingsView? = null
         val changed = mutableListOf<SettingChange>()
-        var working: FrozenReview? = null
-        var reviews = 0
         val listings = mutableListOf<Comparison>()
         var files: Changes? = null
         var overviewGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
@@ -417,12 +412,6 @@ class ChatModelTest {
         override fun blob(hash: List<Int>): ByteArray? = landed[hash]
         override fun blobFailed(hash: List<Int>): Boolean = hash in failedFetches
         override fun fetchBlob(hash: List<Int>) { fetchedAgain.add(hash) }
-
-        override suspend fun review(comparison: Comparison): Result<FrozenReview> {
-            reviews += 1
-            val currentWorking = working ?: return Result.failure(RuntimeFailure("no machine"))
-            return Result.success(currentWorking)
-        }
 
         override suspend fun openOverview(comparison: Comparison): Result<Overview> {
             listings.add(comparison)
@@ -1169,7 +1158,7 @@ class ChatModelTest {
             val source = FakeChat(listOf(imageRow), chatFrame().copy(git = git))
             source.files = Changes(
                 totals = ChangeTotals(1, 2, 0),
-                folders = listOf(Folder("", listOf(ChangedFile("README.md", "README.md", 2, 0, FileStatus.Modified, false)))),
+                folders = listOf(Folder("", listOf(ChangedFile("README.md", "README.md", 2, 0, FileStatus.Modified, false, language = "")))),
             )
             val model = ChatModel(
                 source = source,
@@ -1349,7 +1338,7 @@ class ChatModelTest {
             val source = FakeChat(emptyList(), chatFrame().copy(git = git))
             source.files = Changes(
                 totals = ChangeTotals(1, 2, 0),
-                folders = listOf(Folder("", listOf(ChangedFile("a.kt", "a.kt", 2, 0, FileStatus.Modified, false)))),
+                folders = listOf(Folder("", listOf(ChangedFile("a.kt", "a.kt", 2, 0, FileStatus.Modified, false, language = "")))),
             )
             source.overviewGate = kotlinx.coroutines.CompletableDeferred()
             val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
@@ -1523,11 +1512,11 @@ class ChatModelTest {
             )
             val uncommittedChanges = Changes(
                 totals = ChangeTotals(1, 2, 0),
-                folders = listOf(Folder("", listOf(ChangedFile("dirty.kt", "dirty.kt", 2, 0, FileStatus.Modified, false)))),
+                folders = listOf(Folder("", listOf(ChangedFile("dirty.kt", "dirty.kt", 2, 0, FileStatus.Modified, false, language = "")))),
             )
             val onBranchChanges = Changes(
                 totals = ChangeTotals(2, 9, 1),
-                folders = listOf(Folder("", listOf(ChangedFile("branch.kt", "branch.kt", 9, 1, FileStatus.Modified, false)))),
+                folders = listOf(Folder("", listOf(ChangedFile("branch.kt", "branch.kt", 9, 1, FileStatus.Modified, false, language = "")))),
             )
             val source = FakeChat(emptyList(), chatFrame().copy(git = git))
             source.files = uncommittedChanges

@@ -80,7 +80,6 @@ import sh.amux.values.SentPrompt
 import sh.amux.values.SettingChange
 import sh.amux.values.SettingsView
 import sh.amux.values.Waiting
-import sh.amux.values.WorkspaceGoes
 import sh.amux.words.ChatWords
 import sh.amux.words.EMPTY_GROUP_STATE
 import sh.amux.words.OpenableLink
@@ -151,7 +150,6 @@ data class ChatSubject(
     val closeHeld: Boolean = false,
     val filing: Filing = Filing.Open,
     val topLevel: Boolean = true,
-    val workspaceGoes: WorkspaceGoes? = null,
     val native: Boolean = false,
     val key: AgentKey? = null,
 ) {
@@ -279,7 +277,12 @@ data class ChatScreenCallbacks(
     val onToggleRun: (rowId: String) -> Unit = {},
     val onToggleGroup: (rowId: String) -> Unit = {},
     val onOpenAgent: (AgentKey) -> Unit = {},
-    val onOpenReview: (filePath: String?) -> Unit = {},
+    /**
+     * Opens the agent's changes for review, at a file when one is named;
+     * null hides every way into review: the changes capsule, its menu
+     * item, the overview's changed files and the file rows of landed edits.
+     */
+    val onOpenReview: ((filePath: String?) -> Unit)? = null,
     val onOpenAttachment: (BlobRef) -> Unit = {},
     val onOpenAttachmentExternally: (File) -> Unit = {},
     val onShareAttachment: (File) -> Unit = {},
@@ -609,7 +612,7 @@ private fun ChatScreenContent(
             onToggleRun = callbacks.onToggleRun,
             onToggleGroup = callbacks.onToggleGroup,
             onOpenAgent = callbacks.onOpenAgent,
-            onOpenFileChange = { fileRow -> callbacks.onOpenReview(fileRow.path) },
+            onOpenFileChange = callbacks.onOpenReview?.let { open -> { fileRow -> open(fileRow.path) } },
             onOpenImage = { hash, label ->
                 val blob = BlobRef(hash = hash, name = label, mime = "image/png", size = 0L)
                 val bytes = if (hash.isNotEmpty()) rowSource.imageBytes(blob) else null
@@ -663,13 +666,13 @@ private fun ChatScreenContent(
                     subject = state.subject,
                     placeLine = placeLine,
                     unconfirmed = detached || !state.subject.reachable,
-                    changes = state.changes,
+                    changes = state.changes.takeIf { callbacks.onOpenReview != null },
                     hasOverviewHighlights = state.hasOverviewHighlights,
                     settingsAvailable = state.settings != null,
                     onBack = callbacks.onBack,
                     onOpenOverview = { overviewOpen = true },
                     onOpenSettings = { settingsOpen = true },
-                    onOpenReview = { callbacks.onOpenReview(null) },
+                    onOpenReview = { callbacks.onOpenReview?.invoke(null) },
                     onPin = callbacks.onPin,
                     onUnpin = callbacks.onUnpin,
                     onOpenRename = { renameOpen = true },
@@ -768,6 +771,7 @@ private fun ChatScreenContent(
                 comparison = state.comparison,
                 baseBranch = state.frame?.git?.baseBranch,
                 changeTotals = state.changes,
+                canReview = callbacks.onOpenReview != null,
             ),
             onAction = { action ->
                 when (action) {
@@ -776,7 +780,7 @@ private fun ChatScreenContent(
                     ChatOverviewAction.RetryChanges -> callbacks.onRetryChangedFiles()
                     is ChatOverviewAction.OpenReview -> {
                         overviewOpen = false
-                        callbacks.onOpenReview(action.filePath)
+                        callbacks.onOpenReview?.invoke(action.filePath)
                     }
                     ChatOverviewAction.Dismiss -> overviewOpen = false
                 }
@@ -888,7 +892,6 @@ private fun ChatScreenContent(
         DeleteAgentDialog(
             agentName = state.subject.name,
             descendants = descendants,
-            workspaceGoes = state.subject.workspaceGoes,
             onPreviewDelete = callbacks.onPreviewDelete,
             onDismiss = { deleteOpen = false },
             onConfirm = { discardingChanges ->

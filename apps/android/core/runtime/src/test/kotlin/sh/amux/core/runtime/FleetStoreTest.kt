@@ -42,6 +42,7 @@ class FleetStoreTest {
         reach: Reach = Reach.Online(RouteKind.Direct),
     ): HostView = HostView(
         hostId = id.bytes,
+        link = 0L,
         name = name,
         local = local,
         trusted = trusted,
@@ -165,7 +166,7 @@ class FleetStoreTest {
     @Test
     fun relayTroubleAndStoreBundleActionsForwardCleanly() = runTest {
         val recordedActs = mutableListOf<Pair<AgentAct, AgentKey>>()
-        val warningResult = DeleteWarning.Unknown(
+        val warningResult: DeleteWarning = DeleteWarning.Goes(
             WorkspaceGoes(
                 branch = "feat",
                 uncommitted = ChangeTotals(files = 2, added = 10, removed = 3),

@@ -30,7 +30,7 @@ use serde::Deserialize;
 use settings::ChatInSetting;
 use tui::Theme;
 use tui::chat::ChatView;
-use tui::chat::review::ReviewPage;
+use tui::chat::review::Page as ReviewPage;
 use tui::report::Report;
 use tui::sessions::{agent, caught_up};
 use tui::setup_scenes::{SettingsScene, SetupScene};
@@ -268,7 +268,22 @@ pub fn all() -> Vec<Story> {
         }),
         // Review.
         story("review.page", || {
-            Scene::Review(Box::new(tui::vocabulary::commented_review()))
+            Scene::Review(Box::new(tui::vocabulary::review_first_look()))
+        }),
+        story("review.since-last", || {
+            Scene::Review(Box::new(tui::vocabulary::review_since_last()))
+        }),
+        story("review.drafts-stale", || {
+            Scene::Review(Box::new(tui::vocabulary::review_drafts_stale()))
+        }),
+        story("review.empty", || {
+            Scene::Review(Box::new(tui::vocabulary::review_empty()))
+        }),
+        story("review.not-offered", || {
+            Scene::Review(Box::new(tui::vocabulary::review_not_offered()))
+        }),
+        story("review.round", || {
+            Scene::Review(Box::new(tui::vocabulary::review_round()))
         }),
         // Settings.
         story("settings.machine", || {

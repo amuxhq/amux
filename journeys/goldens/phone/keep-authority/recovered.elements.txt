@@ -15,7 +15,7 @@ chat.prose.render |  | rendered | 294,353,78,20
 chat.row.prose | The relay carries us again. | final | 16,394,370,20
 chat.prose.render |  | rendered | 16,394,370,20
 chat.row.turn-end | <volatile>
-chat.field | Message guarded |  | 28,750,346,24
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
@@ -29,13 +29,13 @@ chat.title | guarded | guarded | 76,66,165,36
  | Send |  | 335,779,44,44 (disabled)
  | hello |  | 16,124,370,40
  | Ready. |  | 16,176,370,20
- | Worked <t> |  | 16,203,62,16
+ | Worked for <t> |  | 16,203,81,16
  | Are you there? |  | 16,233,370,40
  | Only this account reaches me. |  | 16,285,370,20
- | Worked <t> |  | 16,313,62,16
+ | Worked for <t> |  | 16,313,81,16
  | Still there? |  | 16,343,370,40
  | The relay carries us again. |  | 16,394,370,20
- | Worked <t> |  | 16,422,62,16
+ | Worked for <t> |  | 16,422,81,16
 BackButton | Agents |  | 16,62,44,44
  | guarded, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

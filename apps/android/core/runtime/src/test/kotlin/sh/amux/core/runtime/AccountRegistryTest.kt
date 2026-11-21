@@ -171,6 +171,7 @@ class AccountRegistryTest {
         val deskId = HostId(UUID.fromString("12345678-1234-1234-1234-123456789abc"))
         val host = HostView(
             hostId = deskId.bytes,
+            link = 0L,
             name = "desk",
             local = false,
             trusted = true,

@@ -2,7 +2,7 @@ shell |  | agents | 0,62,402,778
 chat |  | reviewer | 0,116,402,724
 chat.attachment | Pasted text · 12 lines |  | 28,714,172,26
 chat.attachment.remove | Remove |  | 164,705,44,44
-chat.field | Message reviewer | Please check against | 28,750,346,24
+chat.field | Reply | Please check against | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
@@ -11,27 +11,30 @@ chat.changes | +2 −1 | Uncommitted | 277,4,51,36
 chat.more | More |  | 344,4,38,36
 chat.header | <volatile>
 chat.title | <volatile>
-review |  | 0 | 0,116,402,724
-review.line.0.0.0 | #!/bin/sh |  | 0,157,402,19
-review.line.0.0.1 | echo deploying |  | 0,176,402,19
-review.line.0.0.2 | rsync build/ prod:/srv |  | 0,195,402,19
-review.line.0.0.3 | rsync --delete build/ prod:/srv | selected | 0,214,402,19
-review.line.0.0.4 | echo done |  | 0,233,402,19
-review.file.0 | deploy.sh | open | 0,116,402,41
+review |  | 0 drafts | 0,116,402,724
+review.hunk | Line 1 |  | 0,176,402,27
+review.line.l/deploy.sh/1/1 | #!/bin/sh |  | 0,203,402,19
+review.line.l/deploy.sh/2/2 | echo deploying |  | 0,222,402,19
+review.line.l/deploy.sh/3/0 | rsync build/ prod:/srv |  | 0,241,402,19
+review.line.l/deploy.sh/0/3 | rsync --delete build/ prod:/srv | selected | 0,260,402,19
+review.line.l/deploy.sh/0/4 | echo done |  | 0,279,402,19
+review.file | deploy.sh | open | 0,132,402,44
 review.deselect | Cancel |  | 28,780,83,44
-review.comment | Comment on 1 line |  | 199,780,175,44
-review.files | Files |  | 346,66,36,36
-review.summary | 1 file, 2 added, 1 removed |  | 76,66,165,36
-review.against | Uncommitted |  | 139,86,84,16
+review.commentOn | Comment on 1 line |  | 199,780,175,44
+review.summary | Since main, 1 file · +2 −1 |  | 76,66,141,36
+review.files | Files |  | 292,66,36,36
+review.more | More |  | 344,66,38,36
  | Cancel |  | 44,792,51,20
  | Comment on 1 line |  | 199,780,175,44
- | deploy.sh | Open | 0,116,402,41
- | Line 1, #!/bin/sh |  | 0,157,402,19
- | Line 2, echo deploying |  | 0,176,402,19
- | Removed line 3, rsync build/ prod:/srv |  | 0,195,402,19
- | Added line 3, rsync --delete build/ prod:/srv |  | 0,214,402,19
- | Added line 4, echo done |  | 0,233,402,19
+ | deploy.sh | Open | 0,132,402,44
+ | Line 1 |  | 0,176,402,27
+ | Line 1: #!/bin/sh |  | 0,203,402,19
+ | Line 2: echo deploying |  | 0,222,402,19
+ | Line 3, removed: rsync build/ prod:/srv |  | 0,241,402,19
+ | Line 3, added: rsync --delete build/ prod:/srv |  | 0,260,402,19
+ | Line 4, added: echo done |  | 0,279,402,19
 BackButton | Back |  | 16,62,44,44
- | 1 file, 2 added, 1 removed |  | 76,66,165,36
- | Files |  | 346,66,36,36
+ | Since main, 1 file · +2 −1 |  | 76,66,141,36
+ | Files |  | 292,66,36,36
+ | More |  | 344,66,38,36
  | Back |  | 16,73,44,23

@@ -435,6 +435,9 @@ pub(crate) struct Rows<'a> {
     /// The `suspension/1` experiment's table is there: a row removed takes
     /// its run with it.
     pub(crate) suspension_1: bool,
+    /// The `reviews/1` experiment's tables are there: a row removed takes
+    /// its review with it.
+    pub(crate) reviews_1: bool,
 }
 
 impl Rows<'_> {
@@ -609,6 +612,9 @@ impl Rows<'_> {
         )?;
         if self.suspension_1 && self.is_own(agent) {
             self.put_run_start(&agent.agent, None)?;
+        }
+        if self.reviews_1 && self.is_own(agent) {
+            crate::reviews::remove_agent(self, &agent.agent)?;
         }
         self.remove_notifications(&agent.agent)
     }

@@ -54,9 +54,8 @@ use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{
-    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, Item, Kind, Phase, SendInputRequest, Snapshot,
-    SubscribeSessionRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
+    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput, Input, Item, Kind,
+    Phase, Snapshot, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
     permission_answer, send_input_response, session_event,
 };
 
@@ -117,6 +116,7 @@ pub enum Scenario {
     Image,
     SignInProblem,
     SteerFolded,
+    ReviewAttachment,
     ApprovalDeny,
     InjectIdle,
     InjectDrain,
@@ -170,7 +170,7 @@ pub enum Scenario {
 }
 
 /// Every scenario, in the order a run takes them.
-pub const SCENARIOS: [Scenario; 85] = [
+pub const SCENARIOS: [Scenario; 86] = [
     Scenario::Initialize,
     Scenario::Respond,
     Scenario::Decide,
@@ -206,6 +206,7 @@ pub const SCENARIOS: [Scenario; 85] = [
     Scenario::Image,
     Scenario::SignInProblem,
     Scenario::SteerFolded,
+    Scenario::ReviewAttachment,
     Scenario::ApprovalDeny,
     Scenario::InjectIdle,
     Scenario::InjectDrain,
@@ -296,6 +297,7 @@ impl Scenario {
             Scenario::Image => "image",
             Scenario::SignInProblem => "sign_in_problem",
             Scenario::SteerFolded => "steer_folded",
+            Scenario::ReviewAttachment => "review_attachment",
             Scenario::ApprovalDeny => "approval_deny",
             Scenario::InjectIdle => "inject_idle",
             Scenario::InjectDrain => "inject_drain",
@@ -363,7 +365,9 @@ impl Scenario {
     /// its own to attach; the rest record each kind's corpus (corpus.rs for
     /// both Claude kinds, pty.rs and terminal.rs for terminal Claude alone,
     /// codex_corpus.rs for Codex), a failing command, an image and a
-    /// message sent into the running turn on every kind.
+    /// message sent into the running turn on every kind. A sent review is
+    /// recorded where the corpora that the strict decode tests read are
+    /// taken, headless Claude and Codex.
     fn applies(self, kind: Kind) -> bool {
         match self {
             Scenario::Initialize
@@ -378,7 +382,7 @@ impl Scenario {
             | Scenario::FailingCommand
             | Scenario::Image
             | Scenario::SteerFolded => true,
-            Scenario::Usage => kind != Kind::ClaudePty,
+            Scenario::Usage | Scenario::ReviewAttachment => kind != Kind::ClaudePty,
             Scenario::Controls
             | Scenario::Effort
             | Scenario::ElicitationAccepted
@@ -791,7 +795,11 @@ struct Install {
     amux: PathBuf,
     env: Vec<(String, OsString)>,
     daemon: tokio::sync::Mutex<Child>,
-    client: wire::ClientStubs,
+    /// A person's client of the installation's profile, as the apps reach
+    /// it over its socket.
+    client: client::Client,
+    /// The profile's host id: every act on its agents is addressed to it.
+    host_id: Vec<u8>,
     driver_fixture: Box<dyn Fn(Scenario) -> Option<PathBuf> + Send + Sync>,
     replay: fn(&Path) -> Result<Vec<Replayed>, String>,
     model: Mutex<Option<String>>,
@@ -889,11 +897,16 @@ impl Install {
         })
         .await
         .map_err(|status| status.to_string())?;
-        let client = wire::client_stubs(
-            channel(Path::new(&profile.socket_path))
+        let client =
+            client::Client::connect(Path::new(&profile.socket_path), client::Surface::Terminal)
                 .await
-                .map_err(|error| error.to_string())?,
-        );
+                .map_err(|error| error.to_string())?;
+        let host_id = client
+            .admin()
+            .get_device_identity()
+            .await
+            .map_err(|error| error.to_string())?
+            .host_id;
         let fixtures: Vec<(Scenario, Option<PathBuf>)> = driver
             .scenarios()
             .into_iter()
@@ -906,6 +919,7 @@ impl Install {
             env,
             daemon: tokio::sync::Mutex::new(daemon),
             client,
+            host_id,
             driver_fixture: Box::new(move |scenario| {
                 fixtures
                     .iter()
@@ -1071,8 +1085,8 @@ impl Install {
 
     /// Codex asks before a command only under an asking approval policy,
     /// here on-request in a read-only sandbox as its decision recording ran.
-    /// The CLI has no verb for either, so this create goes through the
-    /// client service, as the apps issue it.
+    /// The CLI has no verb for either, so this create is AgentService's
+    /// CreateAgent addressed to the host, as the apps issue it.
     async fn create_asking_codex(&self, scenario: Scenario) -> Result<Vec<u8>, String> {
         self.create_codex(
             scenario,
@@ -1093,20 +1107,17 @@ impl Install {
     ) -> Result<Vec<u8>, String> {
         let agent = self
             .client
-            .agents
-            .clone()
-            .create_agent(CreateAgentRequest {
+            .host(&self.host_id)
+            .agents()
+            .create(wire::CreateAgentRequest {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(scenario.agent()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
                 agent: Some(wire::create_agent_request::Agent::Codex(config)),
-                ..CreateAgentRequest::default()
+                ..wire::CreateAgentRequest::default()
             })
             .await
-            .map_err(|status| status.to_string())?
-            .into_inner()
-            .agent
-            .unwrap();
+            .map_err(|error| error.to_string())?;
         self.created(scenario, &agent.agent_id);
         Ok(agent.agent_id)
     }
@@ -1117,21 +1128,15 @@ impl Install {
         let log = Arc::new(Mutex::new(Log::default()));
         let task = tokio::spawn({
             let log = log.clone();
-            let mut client = self.client.sessions.clone();
+            let sessions = self.client.sessions();
             let agent = agent.to_vec();
             async move {
+                use futures_util::StreamExt as _;
                 loop {
-                    let stream = client
-                        .subscribe_session(SubscribeSessionRequest {
-                            agent_id: agent.clone(),
-                            from: Some(wire::subscribe_session_request::From::Tail(1000)),
-                        })
-                        .await;
-                    if let Ok(stream) = stream {
-                        let mut stream = stream.into_inner();
-                        while let Ok(Some(event)) = stream.message().await {
+                    if let Ok(mut stream) = sessions.subscribe(&agent, 1000).await {
+                        while let Some(Ok(event)) = stream.next().await {
                             let mut log = log.lock().unwrap();
-                            match event.event.and_then(|event| event.of) {
+                            match event.of {
                                 Some(session_event::Of::Item(item)) => log.item(item),
                                 Some(session_event::Of::Snapshot(snapshot)) => {
                                     log.snapshots.push(snapshot)
@@ -1195,16 +1200,10 @@ impl Install {
     /// Sends an input the CLI has no verb for, as the apps send it.
     async fn input(&self, agent: &[u8], of: wire::KindInput) -> Result<(), String> {
         let response = self
-            .client
-            .sessions
-            .clone()
-            .send_input(SendInputRequest {
-                agent_id: agent.to_vec(),
-                input: Some(Input::new(uuid::Uuid::new_v4().as_bytes().to_vec(), of)),
-            })
+            .agent(agent)
+            .send_input(Input::new(uuid::Uuid::new_v4().as_bytes().to_vec(), of))
             .await
-            .map_err(|status| status.to_string())?
-            .into_inner();
+            .map_err(|error| error.to_string())?;
         match response.of {
             Some(send_input_response::Of::Accepted(_)) => Ok(()),
             Some(send_input_response::Of::Rejected(rejected)) => Err(format!(
@@ -1214,6 +1213,14 @@ impl Install {
             )),
             None => Err("the daemon gave no verdict".into()),
         }
+    }
+
+    /// The host services for one of the installation's agents.
+    fn agent(&self, agent: &[u8]) -> client::Agent {
+        self.client.agent(&wire::AgentRef {
+            host_id: self.host_id.clone(),
+            agent_id: agent.to_vec(),
+        })
     }
 
     fn interrupt(&self) -> wire::KindInput {
@@ -1321,6 +1328,10 @@ impl Install {
             Scenario::SignInProblem => self.sign_in_problem().await,
             Scenario::SteerFolded if self.kind == Kind::Codex => self.codex_steer_folded().await,
             Scenario::SteerFolded => self.steer_folded().await,
+            Scenario::ReviewAttachment if self.kind == Kind::Codex => {
+                self.codex_review_attachment().await
+            }
+            Scenario::ReviewAttachment => self.review_attachment().await,
             Scenario::ApprovalDeny => self.approval_deny().await,
             Scenario::InjectIdle => self.inject_idle().await,
             Scenario::InjectDrain => self.inject_drain().await,

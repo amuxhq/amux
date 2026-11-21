@@ -56,7 +56,6 @@ object ChatMappers {
                 closeHeld = card.closeHeld,
                 filing = card.filing,
                 topLevel = card.topLevel,
-                workspaceGoes = card.workspaceGoes,
                 native = card.native,
                 key = agent,
             )
@@ -100,13 +99,6 @@ object ChatMappers {
                         name = attachment.name,
                         lines = ChatModel.lines(attachment.text),
                         text = attachment.text,
-                    ),
-                )
-                is DraftAttachment.Review -> ComposerAttachmentUi(
-                    id = "review:$index:${attachment.comments.size}",
-                    view = AttachmentView.Review(
-                        comments = attachment.comments.size,
-                        patch = attachment.diff.patch,
                     ),
                 )
                 is DraftAttachment.Page -> ComposerAttachmentUi(

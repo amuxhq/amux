@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -46,6 +47,7 @@ class ChatOverviewSheetTest {
     private val nowMs = 1_750_000_000_000L
 
     private fun sampleState(): ChatOverviewState = ChatOverviewState(
+        canReview = true,
         subject = ChatSubjectUi(
             name = "refactor-auth",
             host = "studio",
@@ -99,13 +101,13 @@ class ChatOverviewSheetTest {
                     Folder(
                         path = "",
                         files = listOf(
-                            ChangedFile("README.md", "README.md", added = 5, removed = 1, status = FileStatus.Modified, binary = false),
+                            ChangedFile("README.md", "README.md", added = 5, removed = 1, status = FileStatus.Modified, binary = false, language = ""),
                         ),
                     ),
                     Folder(
                         path = "src/auth/",
                         files = listOf(
-                            ChangedFile("src/auth/token.rs", "token.rs", added = 20, removed = 7, status = FileStatus.Modified, binary = false),
+                            ChangedFile("src/auth/token.rs", "token.rs", added = 20, removed = 7, status = FileStatus.Modified, binary = false, language = ""),
                         ),
                     ),
                 ),
@@ -161,6 +163,26 @@ class ChatOverviewSheetTest {
         // Changed files tap opens review
         composeRule.onNodeWithTag(AskReviewTags.overviewFile("src/auth/token.rs")).performScrollTo().performClick()
         assertEquals(ChatOverviewAction.OpenReview("src/auth/token.rs"), actions.last())
+    }
+
+    @Test
+    fun changedFilesWithNoWayToReviewAreOnlyListed() {
+        val actions = mutableListOf<ChatOverviewAction>()
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatOverviewSheetContent(
+                    state = sampleState().copy(canReview = false),
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.overviewFile("src/auth/token.rs"))
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertHasNoClickAction()
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_REVIEW).assertDoesNotExist()
+        assertTrue(actions.none { it is ChatOverviewAction.OpenReview })
     }
 
     @Test

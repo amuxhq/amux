@@ -20,7 +20,7 @@ final class MarkdownTests: XCTestCase {
     }
 
     func testFencedCodeKeepsItsLinesAndItsLanguage() {
-        guard case .code(let language, let text) = blocks("""
+        guard case .code(let language, let text, let closed) = blocks("""
             ```rust
             let x = 1;
                 let y = 2;
@@ -28,10 +28,57 @@ final class MarkdownTests: XCTestCase {
             """)[0] else { return XCTFail("expected code") }
         XCTAssertEqual(language, "rust")
         XCTAssertEqual(text, "let x = 1;\n    let y = 2;")
+        XCTAssertTrue(closed)
+    }
+
+    /// An agent on Windows writes `\r\n`, and an old Mac file a lone `\r`.
+    /// Both end a line as `\n` does: nothing keeps the `\r`, so a heading
+    /// reads as written and a code block's lines are the ones the shared
+    /// view colours (`CodeHighlightingTests`).
+    func testWindowsAndOldMacLineEndingsEndALine() {
+        let parsed = blocks("## Why\r\n\r\n```rust\r\nlet x = 1;\r\nlet y = 2;\r\n```\r\nDone.\rAgain.")
+        guard parsed.count == 3,
+              case .heading(_, let heading) = parsed[0],
+              case .code(let language, let text, let closed) = parsed[1],
+              case .paragraph(let paragraph) = parsed[2]
+        else { return XCTFail("expected a heading, code and a paragraph: \(parsed)") }
+        XCTAssertEqual(String(heading.characters), "Why")
+        XCTAssertFalse(String(paragraph.characters).contains("\r"), "\(paragraph)")
+        XCTAssertEqual(language, "rust")
+        XCTAssertEqual(text, "let x = 1;\nlet y = 2;")
+        XCTAssertTrue(closed)
+    }
+
+    /// The block a streaming message is still writing is the one whose fence
+    /// has not closed; it is coloured as it streams, and every other block
+    /// is finished. Only the last block can be open: an unclosed fence runs
+    /// to the end of the source.
+    func testOnlyAFenceTheSourceEndsInsideIsOpen() {
+        for (source, open) in [
+            ("Here:\n\n```rust\nfn a() {}\nfn b", [true]),
+            ("```rust\nfn a() {}\n", [true]),
+            ("```rust\n", [true]),
+            ("```rust\nfn a() {}\n```", [false]),
+            ("```rust\nfn a() {}\n```\n\n", [false]),
+            ("~~~\nx\n~~~", [false]),
+            ("```a\nx\n```\n\nThen:\n\n```b\ny", [false, true]),
+        ] {
+            let found = blocks(source).compactMap { block -> Bool? in
+                guard case .code(_, _, let closed) = block else { return nil }
+                return !closed
+            }
+            XCTAssertEqual(found, open, source)
+        }
+        guard case .code(_, let text, _) = blocks("```rust\nfn a() {}\n")[0] else {
+            return XCTFail("expected code")
+        }
+        // The empty line after the last newline stays: it says the line
+        // before it is complete, which a streaming block colours.
+        XCTAssertEqual(text, "fn a() {}\n")
     }
 
     func testAFenceWithNoLanguageSaysSoRatherThanGuessing() {
-        guard case .code(let language, _) = blocks("```\nplain\n```")[0] else {
+        guard case .code(let language, _, _) = blocks("```\nplain\n```")[0] else {
             return XCTFail("expected code")
         }
         XCTAssertNil(language)

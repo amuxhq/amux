@@ -7,10 +7,9 @@
 //! caller brings the store's [`Redactor`]. The values are walked by
 //! serialization: a protocol message is written by `codec` as its encoding
 //! in hex, and says so on its way through, so the redactor sees it whole
-//! and by name; content bytes, such as a kept blob or a diff's patch, are
-//! written as hex and handed over as bytes; every other string is handed
-//! over with the name of the field and the type that hold it, so the
-//! redactor decides by name what each one is.
+//! and by name; a blob's hash is written as hex and handed over as bytes;
+//! every other string is handed over with the name of the field and the
+//! type that hold it, so the redactor decides by name what each one is.
 
 use std::cell::Cell;
 
@@ -30,8 +29,6 @@ pub(crate) enum Opaque {
     Message(&'static str, &'static str),
     /// Hex of an id: kept as it is.
     Verbatim,
-    /// Hex of content bytes, such as a blob or a patch.
-    Content,
     /// Hex of a blob's hash.
     Hash,
 }
@@ -197,13 +194,6 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
                 self.inner.serialize_str(&hex(&redacted))
             }
             Some(Opaque::Verbatim) => self.inner.serialize_str(text),
-            Some(Opaque::Content) => {
-                let Some(bytes) = unhex(text) else {
-                    return Err(ser::Error::custom("content that is not hex"));
-                };
-                self.inner
-                    .serialize_str(&hex(&self.at.redactor.content(&bytes)))
-            }
             Some(Opaque::Hash) => {
                 let Some(bytes) = unhex(text) else {
                     return Err(ser::Error::custom("a hash that is not hex"));
@@ -524,9 +514,6 @@ mod tests {
             self.fields.borrow_mut().insert(format!("{holder}.{field}"));
             String::from_utf8(swap(text.as_bytes())).expect("still text")
         }
-        fn content(&self, bytes: &[u8]) -> Vec<u8> {
-            swap(bytes)
-        }
         fn hash(&self, bytes: &[u8]) -> Vec<u8> {
             bytes.iter().map(|byte| !byte).collect()
         }
@@ -634,6 +621,59 @@ mod tests {
     }
 
     #[test]
+    fn a_review_write_keeps_no_comment_words_snippet_or_path() {
+        use crate::payload::ClientRequest;
+        use crate::reviews::{Anchor, Change, Put, Write};
+
+        let redactor = Swap::default();
+        let write = |word: &str| Input::ClientCall {
+            call: crate::CallId(5),
+            request: ClientRequest::Review(Box::new(Write {
+                agent: AgentId([1; 16]),
+                changes: vec![Change::Put(Box::new(Put {
+                    comment: vec![2; 16],
+                    anchor: Anchor {
+                        commit: "c0ffee".into(),
+                        path: format!("src/{word}.rs"),
+                        start: 3,
+                        end: 4,
+                    },
+                    text: format!("rename the {word} key"),
+                    snippet: vec![wire::experimental::ReviewLine {
+                        text: format!("let key = \"{word}\";"),
+                        new_line: 3,
+                        ..Default::default()
+                    }],
+                    scope: vec![wire::experimental::ReviewDefinition {
+                        label: format!("fn {word}"),
+                        ..Default::default()
+                    }],
+                }))],
+            })),
+        };
+        let planted = write("PLANTED");
+        let carries = |input: &Input| {
+            let line = serde_json::to_string(&Recorded::input(input)).unwrap();
+            line.contains("PLANTED") || line.contains(&hex(PLANTED))
+        };
+        assert!(carries(&planted), "the line carries the words");
+        let redacted = planted.redacted(&redactor);
+        assert!(!carries(&redacted), "the planted words are gone");
+        assert_eq!(redacted, write("REMOVED"), "every id and number is kept");
+        let names = redactor.names.borrow();
+        assert!(
+            names.contains("amux.experimental.ReviewLine")
+                && names.contains("amux.experimental.ReviewDefinition"),
+            "the snippet and the scope went through as their messages: {names:?}"
+        );
+        let fields = redactor.fields.borrow();
+        assert!(
+            fields.contains("Put.text") && fields.contains("Anchor.path"),
+            "the words and the path went through by name: {fields:?}"
+        );
+    }
+
+    #[test]
     fn a_typed_value_written_as_text_is_kept() {
         // A redactor that empties every text it is handed, the worst it can
         // do: what reads back only as itself still reads back.
@@ -643,9 +683,6 @@ mod tests {
                 String::new()
             }
             fn message(&self, _: &str, bytes: &[u8]) -> Vec<u8> {
-                bytes.to_vec()
-            }
-            fn content(&self, bytes: &[u8]) -> Vec<u8> {
                 bytes.to_vec()
             }
             fn hash(&self, bytes: &[u8]) -> Vec<u8> {
@@ -663,41 +700,31 @@ mod tests {
     }
 
     #[test]
-    fn a_kept_blob_a_patch_and_its_hash_go_to_the_redactor_as_bytes() {
-        use crate::JobId;
-        use crate::payload::{JobResult, Patch};
+    fn a_kept_blobs_hash_goes_to_the_redactor_as_bytes_and_its_bytes_as_their_length() {
+        use crate::CallId;
+        use crate::payload::ClientRequest;
 
         let redactor = Swap::default();
-        let compared = |bytes: &[u8], hash: u8| {
-            Recorded::Input(Box::new(Input::JobDone {
-                job: JobId(4),
-                result: JobResult::Compared {
-                    diff: wire::Diff::default(),
-                    patch: Some(Patch {
-                        hash: vec![hash; 32],
-                        bytes: bytes.to_vec(),
-                    }),
+        let kept = |hash: u8, bytes: &[u8]| {
+            Recorded::Input(Box::new(Input::ClientCall {
+                call: CallId(4),
+                request: ClientRequest::KeepBlob {
+                    agent_id: vec![1; 16],
+                    hash: vec![hash; 32],
+                    bytes: bytes.to_vec(),
                 },
             }))
         };
-        let planted = compared(b"+token = PLANTED\n", 8);
-        let in_hex = hex(PLANTED);
-        let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
-        assert!(carries(&planted), "the line carries the content in hex");
-        let redacted = planted.redacted(&redactor);
-        assert!(!carries(&redacted), "the planted word is gone");
-        assert_eq!(
-            redacted,
-            compared(b"+token = REMOVED\n", !8),
-            "only the content and the hash changed"
+        let planted = kept(8, b"+token = PLANTED\n");
+        let line = serde_json::to_string(&planted).unwrap();
+        assert!(
+            !line.contains("PLANTED") && !line.contains(&hex(PLANTED)),
+            "the line carries no byte of the blob: {line}"
         );
-
-        let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
-        let swapped = [0xff, 0xfe, b'R', b'E', b'M', b'O', b'V', b'E', b'D'];
         assert_eq!(
-            compared(&binary, 8).redacted(&redactor),
-            compared(&swapped, !8),
-            "content that is not text goes the same way"
+            planted.redacted(&redactor),
+            kept(!8, &[0; 17]),
+            "the hash went through the redactor and the bytes read back as their length"
         );
     }
 }

@@ -173,14 +173,32 @@ panel, repository tiles, rows, tabs, chips, cards).
   each is for, searchable once there are many; and the chosen model's
   efforts and the agent's modes on the right. A pick applies at once and
   the panel stays, so a model and its effort are chosen in one visit.
-- **Review**, the tool window's first tool, shows the changes as the host
-  freezes them, uncommitted or against the branch's base (a menu in its
-  toolbar), a file at a time under sticky file headers, with their counts
-  and reload. Long lines wrap rather than being cut, hanging under their
-  own indent; an added or removed line takes its tint across the numbers,
-  with a bar of its colour down the edge. A click picks a line to comment
-  on and Shift-click takes in more, and the written comments go into the
-  draft for the next message. In a window too narrow for all three columns
+- **Review**, the tool window's first tool, draws the shared review page
+  (`ReviewPagePane`, [reviews](REVIEWS.md)): one snapshot of the agent's working tree, taken on its
+  host, with the person's comments placed on their lines. Its bar switches
+  between All changes and Since your last review once a round has been sent
+  (with one view, it names what is compared, "Since main"), shows the
+  counts, and its ⋯ menu refreshes, discards the drafts or starts the
+  review over, the last two after asking. The page's banners sit above the
+  files; each file follows under a sticky head that folds it, its hunks
+  under the definitions they sit in, gaps that load more lines, and the
+  comments where they are placed, a draft in the accent, a sent one with
+  its round, an outdated one folded. Long lines wrap rather than being cut,
+  hanging under their own indent; an added or removed line takes its tint
+  across the numbers, with a bar of its colour down the edge, and the words
+  an edited line changed are marked more strongly. A click picks a line and
+  Shift-click or a drag takes in more, within one file, the list running
+  under a pointer held at its top or bottom edge; the arrow keys move and
+  Shift with them takes in more, and Return opens a comment on what is
+  picked. Comments are saved on the agent's host as they are written, and
+  the composer shows a review chip while drafts wait: the next send carries
+  them, the chip opens the tool window, and its ✕ discards them after
+  asking. A review sent into the chat is a chip that opens that round as a
+  sheet: its whole diff, from the round's base to its snapshot, every file
+  open (a lockfile or generated file too), with the comments it sent on
+  their lines; a message whose comments were edited before the agent took
+  it closed no round, and its chip shows the text it sent. Where the agent's host does not run the
+  reviews experiment, the page says reviews are not offered there. In a window too narrow for all three columns
   the tool window gives way to its narrowest, then the sidebar steps aside
   while it is open. The window's least width fits the rail, a readable chat
   and the narrowest tool window.
@@ -250,10 +268,10 @@ sidebar shows the settled agents, whether the tool window is open, and the
 agents opened before and after the one in view. The storybook
 puts a story anywhere by handing one in.
 
-The screens read a chat through `ChatSurface` and a review through
-`ReviewSurface`, protocols the app's `MacChat` and `MacReview` answer by
-reading the shared `ChatModel` and `ReviewModel` directly, so a view that
-reads one row redraws when that row moves. New Agent reads the shared
+The screens read a chat through `ChatSurface` and its review page through
+`ReviewPageSurface`, protocols the app's `MacChat` and `MacReviewPage`
+answer by reading the shared `ChatModel` and `ReviewSession` directly, so a
+view that reads one row redraws when that row moves. New Agent reads the shared
 `NewAgentStore` through `NewAgentSurface` in the same way, with what leaves
 the Mac — listing a host's directories, asking what it offers, starting the
 agent — sent through the `StoreBundle`. The storybook answers each of them
@@ -323,6 +341,14 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
   web sign-in link (`crates/app-ffi/README.md`). An attached runtime names
   itself `mac` to the daemon, which counts the app opening and each step as
   the Mac's.
+
+- Code colouring: chat code blocks and edit cards take their runs from the
+  shared view through the bridge, as the phone's do (`CodeHighlighting` in
+  `AmuxWords`), drawn in the palette's `syntax` colours. The app puts the
+  bridge's into the window's environment; the storybook, which links no
+  bridge, draws code plain. `just mac test` holds every syntax colour to
+  4.5:1 on the code well and under an edit's green and red, in light and
+  dark, with the phone's checking code (`SyntaxContrast`).
 
 Screens, navigation and layout are the desktop's own; nothing from
 `AmuxFeatures` or `AmuxShell` is linked. The words are shared: rows and chats

@@ -45,7 +45,15 @@ object NativeBridge {
 
     @JvmStatic external fun attachmentLimit(): Long
 
-    @JvmStatic external fun reviewDoc(reviewJson: String, commentsJson: String): String?
+    /**
+     * A fenced code block coloured as the shared view colours it: a
+     * `HighlightedCode` as JSON. One not `settled` is drawn as it is and
+     * asked for again within a tenth of a second.
+     */
+    @JvmStatic external fun highlightBlock(code: String, info: String?, streaming: Boolean): String?
+
+    /** An edit's hunks (`[PatchHunk]` as JSON) coloured as the file at `path` is. */
+    @JvmStatic external fun highlightPatch(path: String, hunksJson: String): String?
 
     // --- runtime lifecycle & stepping --------------------------------------
 
@@ -241,7 +249,34 @@ object NativeBridge {
 
     @JvmStatic external fun sessionOpenOverview(handle: Long, comparisonJson: String): Long
 
-    @JvmStatic external fun sessionReview(handle: Long, comparisonJson: String): Long
+    // --- the review page open on a chat -------------------------------------
+
+    /** Opens the agent's review page on the chat; the ticket answers a `ReviewOutcome`. */
+    @JvmStatic external fun reviewOpen(handle: Long, baseBranch: String?, refresh: Boolean): Long
+
+    /** Opens a sent review's round by its `SentReviewRef`; the ticket answers a `ReviewPage` or null. */
+    @JvmStatic external fun reviewRound(handle: Long, sentJson: String): Long
+
+    /** Fetches file bodies (`[String]` as JSON, or null for every file in `to_fetch`). */
+    @JvmStatic external fun reviewFiles(handle: Long, pathsJson: String?): Long
+
+    /** Loads more context for a gap's `ReviewContextAsk`. */
+    @JvmStatic external fun reviewContext(handle: Long, askJson: String): Long
+
+    /** Changes the review at the agent's host: `[ReviewChange]`, all or none. */
+    @JvmStatic external fun reviewEdit(handle: Long, changesJson: String): Long
+
+    /** Takes a `ReviewChoice`; the next step hands over the page drawn so. */
+    @JvmStatic external fun reviewChoose(handle: Long, choiceJson: String)
+
+    /** The open review page as a `ReviewPage`, or JSON null with none open. */
+    @JvmStatic external fun reviewPage(handle: Long): String?
+
+    /** The `ReviewAnchor` a selection of the last page's rows comments on, or JSON null. */
+    @JvmStatic external fun reviewAnchor(handle: Long, from: Int, to: Int): String?
+
+    /** Closes the review page open on the chat. */
+    @JvmStatic external fun reviewClose(handle: Long)
 
     @JvmStatic external fun sessionPutBlob(
         handle: Long,

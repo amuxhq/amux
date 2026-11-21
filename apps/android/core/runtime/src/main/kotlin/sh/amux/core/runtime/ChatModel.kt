@@ -37,7 +37,6 @@ import sh.amux.values.DraftAttachment
 import sh.amux.values.FormField
 import sh.amux.values.FormProblem
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.GroupState
 import sh.amux.values.KeysMoved
 import sh.amux.values.Kind
@@ -48,8 +47,6 @@ import sh.amux.values.PageOutcome
 import sh.amux.values.QuestionResponse
 import sh.amux.values.QueuedRow
 import sh.amux.values.RefusedPrompt
-import sh.amux.values.ReviewComment
-import sh.amux.values.ReviewDoc
 import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Run
@@ -65,7 +62,7 @@ import sh.amux.words.ChatNotices
 import sh.amux.words.EMPTY_GROUP_STATE
 
 /**
- * Stateless view-helper bridge used by [ChatModel] and [ReviewModel].
+ * Stateless view-helper bridge used by [ChatModel].
  *
  * Defaults to [NativeChatBridge] (the real Rust library via JNI); tests or
  * host previews without JNI loaded may pass a lightweight stand-in.
@@ -75,7 +72,6 @@ interface ChatBridge {
     fun commandMatches(commands: List<CommandView>, draft: String): List<CommandMatch>
     fun pastesAsAttachment(text: String): Boolean
     fun formProblems(fields: List<FormField>, values: List<FormValue>): List<FormProblem>?
-    fun reviewDoc(review: FrozenReview, comments: List<ReviewComment>): ReviewDoc?
 }
 
 /** Production [ChatBridge] backed by [Bridge] / Rust JNI. */
@@ -90,9 +86,6 @@ object NativeChatBridge : ChatBridge {
 
     override fun formProblems(fields: List<FormField>, values: List<FormValue>): List<FormProblem>? =
         Bridge.formProblems(fields, values)
-
-    override fun reviewDoc(review: FrozenReview, comments: List<ReviewComment>): ReviewDoc? =
-        Bridge.reviewDoc(review, comments)
 }
 
 /** What a client command asked the chat screen to open. */
@@ -367,9 +360,6 @@ class ChatModel(
     private var listed: Listed? = null
     private var listingGeneration: Long = 0L
     var listingJob: Job? = null
-        private set
-
-    var reviewing: ReviewModel? = null
         private set
 
     private data class PastedRun(val at: Int, val text: String)
@@ -1399,56 +1389,6 @@ class ChatModel(
     fun removeAttachment(index: Int) {
         if (index !in positionedAttachments.indices) return
         positionedAttachments.removeAt(index)
-        keepDraft()
-        publish()
-    }
-
-    // --- Review ------------------------------------------------------------
-
-    /**
-     * Opens (or reuses) the [ReviewModel] for the active [comparison].
-     *
-     * Returns `Result.success(null)` when there are no changes; returns
-     * `Result.failure` when the host failed or the patch could not be parsed.
-     */
-    fun openReview(): Deferred<Result<ReviewModel?>> = scope.async { loadReview() }
-
-    suspend fun loadReview(): Result<ReviewModel?> {
-        val frozen = source.review(comparison).getOrElse { return Result.failure(it) }
-        val existing = reviewing
-        val existingHash = existing?.review?.diff?.patch?.hash
-        val incomingHash = frozen.diff.patch?.hash
-        if (existing != null && existingHash != null && existingHash == incomingHash) {
-            return Result.success(existing)
-        }
-        val doc = ReviewModel.document(frozen, emptyList(), bridge::reviewDoc)
-            ?: return Result.failure(RuntimeFailure(ReviewModel.COULD_NOT_READ_DIFF))
-        if (doc.files.isEmpty()) {
-            return if (frozen.diff.files.isEmpty()) {
-                reviewing = null
-                Result.success(null)
-            } else {
-                Result.failure(RuntimeFailure(ReviewModel.MISSING_LISTED_FILES))
-            }
-        }
-        val created = ReviewModel(
-            review = frozen,
-            comparison = comparison,
-            renderDoc = bridge::reviewDoc,
-            initialDoc = doc,
-        )
-        reviewing = created
-        return Result.success(created)
-    }
-
-    /** Attaches a written [ReviewModel] to the draft, replacing any earlier review of the same patch. */
-    fun attach(review: ReviewModel) {
-        val patchHash = review.review.diff.patch?.hash
-        positionedAttachments.removeAll { existing ->
-            existing.attachment is DraftAttachment.Review &&
-                existing.attachment.diff.patch?.hash == patchHash
-        }
-        positionedAttachments.add(PositionedAttachment(review.attachment, offset = null))
         keepDraft()
         publish()
     }

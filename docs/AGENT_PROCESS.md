@@ -210,7 +210,7 @@ one someone wants to look at.
 
 Nothing a person does in a chat stops the process. A chat's interrupt is the
 interrupt input, which cancels the turn and leaves the agent live and idle.
-Process stops come from the daemon: a close (`FileAgent`, `amux settle`, an
+Process stops come from the daemon: a close (`SetFiling`, `amux settle`, an
 agent's stop tool), the family rule, and the first step of a delete each send
 `Stop` on the control socket, and the agent cancels its turn the provider's own way and exits. There is no "stop when
 done": the agent's own drain, finishing its turn, happens only when its daemon
@@ -347,21 +347,23 @@ suspensions:
   resumes an exited agent. A report the agent refuses as exiting waits for
   the exit and begins again against the row;
 - a person's input wakes it the same way, whichever client sent it and
-  whether its own host or another forwarded it: the host finds no process
+  whether it was made on its own host or carried from another: the host finds no process
   to relay the input to, and asks the core for a resume that goes ahead
   only if the row is still suspended when its turn comes, after any exit it
-  waits out. The row reads suspended from the journal's last step, while
-  the process is still finishing and may already have stopped reading
-  input, so a process whose row carries its exit's cause is one the
-  resume waits out rather than refusing as running. A prompt is the new
-  incarnation's first input and is answered as taken; any other input
-  goes to the new process once it connects. Input typed to an agent
-  stopped in the meantime starts nothing and is refused as exited. Input
-  the agent refuses as exiting waits for the exit when the agent is
-  leaving of its own accord, as it does when it suspends, and then wakes
-  it if the exit left it suspended or is refused as exited; input to an
-  agent the daemon is stopping is answered as exiting at once, not after
-  the stop's deadline;
+  waits out. The row reads suspended from the commit of the step that ends
+  the incarnation, while the process is still finishing and may already
+  have stopped reading input, so a process whose row carries its exit's
+  cause is one the resume waits out rather than refusing as running. The
+  row is what the person read, so the wake decides from the same fact,
+  and a daemon restarted in that window finds the cause there too. A
+  prompt is the new incarnation's first input and is answered as taken;
+  any other input goes to the new process once it connects. Input typed
+  to an agent stopped in the meantime starts nothing and is refused as
+  exited. Input the agent refuses as exiting waits for the exit when the
+  agent is leaving of its own accord, as it does when it suspends, and
+  then wakes it if the exit left it suspended or is refused as exited;
+  input to an agent the daemon is stopping is answered as exiting at once,
+  not after the stop's deadline;
 - stopping or closing it marks it exited with cause `STOPPED` (closed, for a
   close), and its children follow as for any exit; deleting it removes it;
 - it is no awake member of its workspace while it has no process, and a
@@ -742,16 +744,17 @@ other agent's row counts. The daemon therefore sends `read_git` to every
 other agent of its host with a live process whose folder is the same as, or
 inside or around, the folder of an agent whose turn just ended; judging the
 checkout by path costs no git, and a folder it wrongly includes costs only
-a read that finds nothing new. When the daemon answers a `GetDiff` against
-HEAD, or against the row's base branch, and the diff's totals differ from
-the row's `uncommitted` or `on_branch`, it writes the diff's totals onto the
-row at once and sends the agent `read_git`, so the agent's next snapshot
-does not put the old totals back. An agent without a live process, such as
-a stopped or suspended one, is corrected only by a diff. A folder outside a repository, or a machine without git, has none.
+a read that finds nothing new. Only the agent's own reads write its row's
+totals: `GetChanges` compares the folder for whoever asks and stores
+nothing, so an agent without a live process, such as a stopped or suspended
+one, keeps the totals of its last read. A folder outside a repository, or a
+machine without git, has none.
 The base is the branch the agent's worktree was made from when its host
 made one (the spec's `base_branch`), else the repository's default branch:
 what `origin/HEAD` names, else the configured default, else `main` or
-`master`.
+`master`. On the base branch itself the counts on the branch run from where
+it left its upstream, so commits not yet pushed count; with no upstream they
+are the uncommitted work.
 
 ## The facts ring
 
@@ -979,13 +982,19 @@ of its agent process: each connection carries one `AgentAsk` and its
 `AgentAnswer`, framed as control frames are, and each says which kind it
 is, so a later build can add an ask. A process that reads an ask it does
 not know refuses it in words. A spawn's ask is the `CreateAgentRequest` the
-daemon takes, with the child's agent id the tool server chose, and its
-answer the daemon's `CreateAgentResponse` or the words of a refusal. For
+child's host takes, with the child's agent id the tool server chose, in the
+`spawn` arm (field 2), and that host's id in `host_id` (empty for the agent's
+own host): the tool server resolves a host the model named to its id before
+it asks, so a name never reaches the process. The answer is the host's
+`CreateAgentResponse` or the words of a refusal. The arm took a new number
+when the create stopped naming its host, with the old one reserved, so a
+tool server and an agent process built on either side of that change read
+each other's spawn as an ask they do not know and refuse it in words. For
 each spawn the process
 ([`spawns.rs`](../crates/agent/src/spawns.rs)) tells its core the child was
-asked for and waits until the core has it; makes the create on `tools.sock`
-as the tool server used to, redialling for five seconds and making the call
-itself at most once; tells its core how the daemon answered and waits
+asked for and waits until the core has it; makes the create on `tools.sock`,
+addressed to that host by its id, so the daemon carries it there when it is
+another, redialling for five seconds and making the call itself at most once; tells its core how the daemon answered and waits
 again; and only then answers the tool server. The provider cannot go on
 with its turn, let alone end it, before the core knows what became of the
 spawn. A request that arrives once the core is gone, the process exiting, is

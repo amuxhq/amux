@@ -183,6 +183,7 @@ fn an_attachment_element_in_a_reply_becomes_an_item_attachment() {
             mime: "image/png".into(),
             size: 42,
         })),
+        ..Default::default()
     };
     let path = Path::new("/home/me/agents/a/blobs").join("ab".repeat(32));
     let element = attachments::element(&attachment, Some(&path));
@@ -741,6 +742,7 @@ fn a_prompt_typed_with_attachments_holds_them_not_their_elements() {
             mime: "text/plain".into(),
             size: 100,
         })),
+        ..Default::default()
     };
     let path = Path::new("/home/me/agents/a/blobs").join("b8".repeat(32));
     let element = attachments::element(&attachment, Some(&path));
@@ -921,7 +923,10 @@ fn a_prompt_with_an_attachment_this_build_cannot_read_is_refused() {
         wire::ClaudePtyInput {
             of: Some(wire::claude_pty_input::Of::Prompt(wire::PromptInput {
                 text: "see this".into(),
-                attachments: vec![wire::Attachment { of: None }],
+                attachments: vec![wire::Attachment {
+                    of: None,
+                    ..Default::default()
+                }],
             })),
         },
     );

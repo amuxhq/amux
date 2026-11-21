@@ -1084,12 +1084,20 @@ mod tests {
         let main_kt = generate(&defs).unwrap();
         let push_kt = generate_push(&defs).unwrap();
 
-        // Empty struct is a regular @Serializable class (not invalid `data class Empty()`).
-        assert!(
-            main_kt.contains("@Serializable\nclass Empty {"),
-            "{main_kt}"
+        // An empty struct is a regular @Serializable class (not the invalid
+        // `data class Empty()`). No value the bridge hands over is empty now,
+        // so the struct is one of its own.
+        let mut lone = Map::new();
+        lone.insert(
+            "Empty".to_owned(),
+            json!({"type": "object", "properties": {}}),
         );
-        assert!(!main_kt.contains("data class Empty("));
+        let empty_kt = generate(&lone).unwrap();
+        assert!(
+            empty_kt.contains("@Serializable\nclass Empty {"),
+            "{empty_kt}"
+        );
+        assert!(!empty_kt.contains("data class Empty("));
 
         // Self-named variant qualifies supertype on every variant of the
         // enclosing sealed interface so the nested class never shadows it.

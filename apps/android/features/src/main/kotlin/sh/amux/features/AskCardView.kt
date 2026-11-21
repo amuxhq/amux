@@ -497,12 +497,13 @@ private fun AskCardBody(
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,
                 )
-                if (body.lines.isNotEmpty()) {
+                val lines = remember(body.patch) { editLines(body.patch) }
+                if (lines.isNotEmpty()) {
                     EditDiffPreview(
-                        lines = body.lines,
+                        lines = lines,
                         showWhole = showWholeDiff,
                     )
-                    if (body.lines.size > DIFF_PREVIEW_LIMIT) {
+                    if (lines.size > DIFF_PREVIEW_LIMIT) {
                         val toggleLabel = stringResource(
                             if (showWholeDiff) R.string.ask_diff_show_less else R.string.ask_diff_show_whole,
                         )

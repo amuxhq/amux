@@ -37,17 +37,19 @@ use std::sync::{Arc, Mutex, Weak};
 pub use app_embedded::{EdgeOverrides, EmbeddedRuntime, ProfileId, StartConfig};
 use app_embedded::{PairRequest, Phone, ProfileView, UsageEvent};
 use app_runtime::values::{
-    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, FrozenReview, MachineSettings,
-    NewAgent, OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView,
-    RepositorySuggestion, SettingsChange, SignInAnswer, SignInOfferOutcome, SignInOfferView,
+    AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, MachineSettings, NewAgent,
+    OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView, RepositorySuggestion,
+    ReviewChange, ReviewChoice, ReviewOutcome, SettingsChange, SignInAnswer, SignInOfferOutcome,
+    SignInOfferView,
 };
-use app_runtime::{AppRuntime, Chat, Wake};
+use app_runtime::{AppRuntime, Chat, ReviewSession, Wake};
+pub use client::Surface;
 use node::SourcePolicy;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use ui_state::{AgentKey, Key};
-use ui_view::Comparison;
+use ui_view::{Comparison, ReviewContextAsk};
 
 /// The embedded installation and every profile it hosts.
 pub struct AmuxRuntime {
@@ -61,7 +63,7 @@ struct Shared {
     phone: Phone,
     /// The profiles, managed the same way whether the installation is
     /// hosted here or is a daemon this app attached to.
-    installation: Arc<dyn client::Installation>,
+    installation: client::Installation,
     outbox: Arc<Outbox>,
 }
 
@@ -160,7 +162,7 @@ impl Shared {
         let outbox = self.outbox.clone();
         self.act(async move {
             let answer = act.await;
-            outbox.post_profiles(installation.as_ref()).await;
+            outbox.post_profiles(&installation).await;
             answer
         })
     }
@@ -264,7 +266,7 @@ impl Outbox {
 
     /// Posts the profile list as it stands now; a list that cannot be read
     /// is left for the profile stream to post.
-    async fn post_profiles(&self, installation: &dyn client::Installation) {
+    async fn post_profiles(&self, installation: &client::Installation) {
         if let Ok(profiles) = installation.list_profiles().await {
             self.post_listed(&profiles);
         }
@@ -534,23 +536,54 @@ pub fn attachment_limit() -> u64 {
     ui_view::ATTACHMENT_SIZE_LIMIT as u64
 }
 
-/// The review page's document: a `FrozenReview`'s patch parsed into files
-/// and hunks, with `comments` (a JSON array of `ReviewComment`) placed on
-/// their lines. `None` when either argument does not parse.
-pub fn review_doc(review: Option<&str>, comments: Option<&str>) -> Option<String> {
-    let review: FrozenReview = parse(review)?;
-    let comments: Vec<_> = parse(comments)?;
-    json(&review.doc(&comments))
+/// A fenced code block coloured by kind of token, as the shared view
+/// colours it for every client: the code, the fence's info string (its
+/// first word names the language) and whether this is the block still
+/// being written, the last of a message still streaming whose closing
+/// fence has not arrived. Answers a `HighlightedCode` as JSON, one line
+/// for each of the code's lines.
+///
+/// A result that is not `settled` is drawn as it is and asked for again
+/// soon (within a tenth of a second): a grammar is being built, or a
+/// streaming block's completed lines are being passed over, in the
+/// background. Callable from any thread; finished code is kept by content,
+/// so asking again for the same block costs a lookup.
+pub fn highlight_block(code: &str, info: &str, streaming: bool) -> Option<String> {
+    json(&ui_code::highlight_block(
+        ui_code::Highlighter::shared(),
+        code,
+        info,
+        streaming,
+    ))
+}
+
+/// A file's change coloured as the file at `path` is, from its hunks as an
+/// edit ask's card carries them (a `FilePatch`'s `[PatchHunk]` as JSON),
+/// each hunk coloured as a fragment of its own. Answers a `HighlightedCode`
+/// as JSON with one line for each of the hunks' lines, hunk after hunk;
+/// `None` when the hunks do not parse. Settles as [`highlight_block`] does.
+pub fn highlight_patch(path: &str, hunks: Option<&str>) -> Option<String> {
+    let hunks: Vec<ui_view::PatchHunk> = parse(hunks)?;
+    json(&ui_code::highlight_patch(
+        ui_code::Highlighter::shared(),
+        path,
+        &hunks,
+    ))
 }
 
 /// Starts the installation with its transport on a thread of its own and
 /// its cores on the calling thread's queue; blocks, stepping them, until
 /// every profile's store is open. The apps start from JSON
 /// ([`start_from_json`]); this form lets a test choose the overrides, such
-/// as serving links on loopback.
+/// as serving links on loopback. `surface` is the app hosting it, which
+/// every call it makes names to the installation.
 #[doc(hidden)]
-pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<AmuxRuntime, String> {
-    let phone = Phone::start(config, overrides, Arc::new(client::SystemClock))
+pub fn start(
+    config: &StartConfig,
+    overrides: EdgeOverrides,
+    surface: Surface,
+) -> Result<AmuxRuntime, String> {
+    let phone = Phone::start(config, overrides, Arc::new(client::SystemClock), surface)
         .map_err(|error| error.to_string())?;
     let installation = phone
         .embedded()
@@ -559,11 +592,12 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<AmuxRunti
     serve(phone, installation, config.tail)
 }
 
-/// Starts the installation from a `StartConfig` as JSON.
-pub fn start_from_json(config: Option<&str>) -> Result<AmuxRuntime, String> {
+/// Starts the installation from a `StartConfig` as JSON, hosted by the app
+/// `surface` names.
+pub fn start_from_json(config: Option<&str>, surface: Surface) -> Result<AmuxRuntime, String> {
     let config: StartConfig =
         parse(config).ok_or_else(|| "the start configuration is not a StartConfig".to_owned())?;
-    start(&config, overrides(&config))
+    start(&config, overrides(&config), surface)
 }
 
 /// Attaches to the daemon answering on `front_door` (`<root>/amux.sock`):
@@ -577,11 +611,10 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<AmuxRuntime, St
     let phone = Phone::attached().map_err(|error| error.to_string())?;
     let door = front_door.to_owned();
     let installation = phone
-        .wait(async move { client::GrpcInstallation::connect(&door).await })
+        .wait(async move { client::Installation::connect(&door, Surface::Mac).await })
         .ok_or("the runtime has stopped")?
-        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?
-        .naming("mac");
-    serve(phone, Arc::new(installation), tail)
+        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?;
+    serve(phone, installation, tail)
 }
 
 /// Attaches to amux on this machine from an `AttachConfig` as JSON.
@@ -680,7 +713,7 @@ where
 /// again whenever the installation's profile stream says it moved.
 fn serve(
     phone: Phone,
-    installation: Arc<dyn client::Installation>,
+    installation: client::Installation,
     tail: u32,
 ) -> Result<AmuxRuntime, String> {
     let outbox = Arc::new(Outbox {
@@ -769,11 +802,14 @@ fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<AmuxProfile
                 .iter()
                 .find(|listed| listed.id == profile.as_bytes())
                 .ok_or_else(|| format!("the installation hosts no profile {profile}"))?;
+            // The phone's installation opens its hosted node in memory; the
+            // Mac's dials the profile's socket, as the Mac app.
             let client = installation
                 .open_profile(described)
                 .await
                 .map_err(|error| error.to_string())?;
             let host = client
+                .admin()
                 .get_device_identity()
                 .await
                 .map_err(|error| error.to_string())?
@@ -787,7 +823,7 @@ fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<AmuxProfile
     shared
         .outbox
         .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
-    let (watching, posting) = (app.client().clone(), shared.outbox.clone());
+    let (watching, posting) = (app.client().admin(), shared.outbox.clone());
     let offers = shared.phone.handle().spawn(async move {
         follow(
             || watching.subscribe_sign_in_offers(),
@@ -895,7 +931,7 @@ impl AmuxRuntime {
     fn profile_act_on_profiles<T, F, Fut>(&self, profile: Option<&str>, act: F) -> u64
     where
         T: Serialize + Send + 'static,
-        F: FnOnce(Arc<dyn client::Installation>, ProfileId) -> Fut,
+        F: FnOnce(client::Installation, ProfileId) -> Fut,
         Fut: Future<Output = Answered<T>> + Send + 'static,
     {
         match profile_id(profile) {
@@ -1088,6 +1124,7 @@ impl AmuxRuntime {
                 installation
                     .open_profile(described)
                     .await?
+                    .admin()
                     .sign_out()
                     .await?;
                 let listed = installation.list_profiles().await?;
@@ -1372,12 +1409,12 @@ impl AmuxProfile {
     /// array, this profile's account.
     pub fn offer_sign_in(&self, host_id: Option<&str>) -> u64 {
         let host_id: Option<Vec<u8>> = parse(host_id);
-        let client = self.app.client().clone();
+        let admin = self.app.client().admin();
         self.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
-            Answered::from(client.offer_sign_in(host_id).await)
+            Answered::from(admin.offer_sign_in(host_id).await)
         })
     }
 
@@ -1385,12 +1422,12 @@ impl AmuxProfile {
     /// JSON.
     pub fn answer_sign_in_offer(&self, answer: Option<&str>) -> u64 {
         let answer: Option<SignInAnswer> = parse(answer);
-        let client = self.app.client().clone();
+        let admin = self.app.client().admin();
         self.act(async move {
             let Some(answer) = answer else {
                 return Answered::Err("the answer is not a SignInAnswer".into());
             };
-            let answered = client
+            let answered = admin
                 .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
                     host_id: answer.host_id,
                     accept: answer.accept,
@@ -1460,12 +1497,12 @@ impl AmuxProfile {
     /// Opens a pairing window on the profile and follows its status until
     /// [`Self::close_pairing`].
     pub fn open_pairing(&self, ttl_seconds: u64) -> u64 {
-        let client = self.app.client().clone();
+        let admin = self.app.client().admin();
         {
             let mut watch = self.pairing.lock().unwrap_or_else(|p| p.into_inner());
             if watch.is_none() {
                 let (watching, outbox, fleet) =
-                    (client.clone(), self.shared.outbox.clone(), self.fleet);
+                    (admin.clone(), self.shared.outbox.clone(), self.fleet);
                 *watch = Some(self.shared.handle().spawn(async move {
                     follow(
                         || watching.subscribe_pairing(),
@@ -1480,9 +1517,9 @@ impl AmuxProfile {
         self.act(async move {
             // One window is open at a time: a renewal replaces the one
             // before, which may already have ended.
-            let _ = client.cancel_pairing().await;
+            let _ = admin.cancel_pairing().await;
             Answered::from(
-                client
+                admin
                     .start_pairing(wire::StartPairingRequest {
                         method: Some(wire::start_pairing_request::Method::PinOrQr(wire::Empty {})),
                         ttl_seconds: (ttl_seconds > 0).then_some(ttl_seconds),
@@ -1503,8 +1540,8 @@ impl AmuxProfile {
         {
             watch.abort();
         }
-        let client = self.app.client().clone();
-        self.act(async move { Answered::from(client.cancel_pairing().await) })
+        let admin = self.app.client().admin();
+        self.act(async move { Answered::from(admin.cancel_pairing().await) })
     }
 
     /// Trusts the machine a pending pairing reached, named by its token as a
@@ -1615,7 +1652,9 @@ impl AmuxProfile {
         })
     }
 
-    /// What deleting an agent does to its workspace, once current.
+    /// What deleting an agent does to its workspace, as the agent's host
+    /// previews it: `Unknown` when the host could not be asked, `null` when
+    /// the workspace stays.
     pub fn delete_warning(&self, agent: Option<&str>) -> u64 {
         let agent: Option<AgentKey> = parse(agent);
         let app = self.app.clone();
@@ -1825,19 +1864,13 @@ impl AmuxChat {
         self.read(|chat| chat.discard(&id));
     }
 
-    /// Fetches the files changed for `comparison` (a JSON `Comparison`), with
-    /// no patch, as the overview opens.
+    /// Asks the agent's host which files changed for `comparison` (a JSON
+    /// `Comparison`), as the overview opens.
     pub fn open_overview(&self, comparison: Option<&str>) -> u64 {
         let comparison: Comparison = parse(comparison).unwrap_or_default();
         self.start_act(
             move |chat| async move { Answered::from(chat.open_overview(comparison).await) },
         )
-    }
-
-    /// Asks the agent's host for its diff for `comparison` and its patch.
-    pub fn review(&self, comparison: Option<&str>) -> u64 {
-        let comparison: Comparison = parse(comparison).unwrap_or_default();
-        self.start_act(move |chat| async move { Answered::from(chat.review(comparison).await) })
     }
 
     /// Stores bytes to attach to a prompt.
@@ -1867,12 +1900,162 @@ impl AmuxChat {
         let hash: Vec<u8> = parse(hash).unwrap_or_default();
         self.read(|chat| chat.fetch_blob(&hash));
     }
+
+    // --- the review page -----------------------------------------------------
+    //
+    // The agent's review page open on the chat: from `review_open` the
+    // chat's deltas carry the page whole whenever it moved (`review`), until
+    // `review_close`. The app draws the page as handed: it asks for the
+    // bodies the page lists in `to_fetch`, for more context from a gap's
+    // asks, and turns a selection of rows into an anchor here. Acts answer
+    // by ticket with a `ReviewOutcome`, after the step that hands over what
+    // they moved. The chip comes with the chat's frame (`review_chip`), and
+    // a send with the review is the chat's `SendWithReview` act. A review
+    // sent into the chat opens its round by `review_round`, apart from the
+    // page.
+
+    /// Starts an act on the chat's open review page.
+    fn page_act<F, Fut>(&self, act: F) -> u64
+    where
+        F: FnOnce(Arc<ReviewSession>) -> Fut + Send + 'static,
+        Fut: Future<Output = ReviewOutcome> + Send + 'static,
+    {
+        self.start_act(move |chat| async move {
+            match chat.review_page() {
+                Some(page) => act(page).await,
+                None => ReviewOutcome::Failed("no review page is open on the chat".into()),
+            }
+        })
+    }
+
+    /// Opens the agent's review page on the chat, or opens the open page's
+    /// review again. `base_branch` (`None` to keep the review's) picks its
+    /// base anew; `refresh` takes a snapshot even with drafts, moving them
+    /// onto it. The ticket answers a `ReviewOutcome`; the page itself comes
+    /// with the chat's deltas, and says too what the open learned.
+    pub fn review_open(&self, base_branch: Option<&str>, refresh: bool) -> u64 {
+        let base_branch = base_branch.map(str::to_owned);
+        self.start_act(move |chat| async move { chat.open_review(base_branch, refresh).await })
+    }
+
+    /// Opens the round a review sent into the chat closed: `sent` is the
+    /// `SentReviewRef` its attachment draws with, as JSON. The ticket
+    /// answers the round's `ReviewPage`, its whole diff and the comments it
+    /// sent, read from the agent's host (or with the host out of reach, from
+    /// what was loaded, saying so: with none of it loaded, a page with no
+    /// header and only that banner), or JSON null when the message closed no
+    /// round or the host no longer holds it, and the chip shows its text
+    /// instead. It opens no page on the chat and moves none open there.
+    pub fn review_round(&self, sent: Option<&str>) -> u64 {
+        let sent: Option<SentRound> = parse(sent);
+        self.start_act(move |chat| async move {
+            let sent = sent?;
+            chat.review_round(&sent.review_id, &sent.input_id).await
+        })
+    }
+
+    /// Fetches file bodies for the view the page shows: `paths` as a JSON
+    /// array of strings, those on screen first, or `None` for every file the
+    /// page lists in `to_fetch`. The page moves as each batch lands; the
+    /// ticket answers a `ReviewOutcome` once all have.
+    pub fn review_files(&self, paths: Option<&str>) -> u64 {
+        let paths: Option<Vec<String>> = match paths {
+            None => Some(Vec::new()),
+            paths => parse(paths),
+        };
+        self.page_act(move |page| async move {
+            match paths {
+                Some(paths) => page.files(paths).await,
+                None => ReviewOutcome::Failed("the paths are not a JSON array of strings".into()),
+            }
+        })
+    }
+
+    /// Loads more context: a `ReviewContextAsk` as JSON, one of a gap's
+    /// asks. The gap draws as loading until the lines arrive; the ticket
+    /// answers a `ReviewOutcome`.
+    pub fn review_context(&self, ask: Option<&str>) -> u64 {
+        let ask: Option<ReviewContextAsk> = parse(ask);
+        self.page_act(move |page| async move {
+            match ask {
+                Some(ask) => page.context(ask).await,
+                None => ReviewOutcome::Failed("the ask is not a ReviewContextAsk".into()),
+            }
+        })
+    }
+
+    /// Changes the review at the agent's host: a JSON array of
+    /// `ReviewChange`, made all or none. Works with no page open too, as the
+    /// chip's discard does. The ticket answers a `ReviewOutcome`.
+    pub fn review_edit(&self, changes: Option<&str>) -> u64 {
+        let changes: Option<Vec<ReviewChange>> = parse(changes);
+        self.start_act(move |chat| async move {
+            match changes {
+                Some(changes) => chat.edit_review(changes).await,
+                None => ReviewOutcome::Failed("the changes are not ReviewChanges".into()),
+            }
+        })
+    }
+
+    /// Takes a `ReviewChoice`, as JSON: a view switched to, a file folded or
+    /// opened, an outdated comment opened or folded. The next step hands
+    /// over the page drawn so. Nothing happens with no page open or a
+    /// choice that does not parse.
+    pub fn review_choose(&self, choice: Option<&str>) {
+        let Some(choice) = parse::<ReviewChoice>(choice) else {
+            return;
+        };
+        self.read(|chat| {
+            if let Some(page) = chat.review_page() {
+                page.choose(choice);
+            }
+        });
+    }
+
+    /// The open review page as a `ReviewPage`, or JSON null with none open:
+    /// for a model opening on a page already open. It is the page handed
+    /// over from then, which anchors count rows of.
+    pub fn review_page(&self) -> Option<String> {
+        self.read(|chat| json(&chat.review_page().map(|page| page.read())))
+    }
+
+    /// Where a comment on a selection of the page's rows goes: the rows from
+    /// index `from` to `to`, in either order, of the page handed over last,
+    /// as a `ReviewAnchor` for a `Comment` change; JSON null for a selection
+    /// with no line, across files, or with no page open.
+    pub fn review_anchor(&self, from: u32, to: u32) -> Option<String> {
+        self.read(|chat| {
+            json(
+                &chat
+                    .review_page()
+                    .and_then(|page| page.anchor(from as usize, to as usize)),
+            )
+        })
+    }
+
+    /// Closes the review page open on the chat: it stops following the
+    /// agent's row, and no delta carries it again. Its acts in flight are
+    /// answered all the same.
+    pub fn review_close(&self) {
+        self.read(|chat| chat.close_review());
+    }
+}
+
+/// What a sent review's attachment names of its round, as the chat's rows
+/// carry it (`SentReviewRef`).
+#[derive(Deserialize)]
+struct SentRound {
+    review_id: Vec<u8>,
+    input_id: Vec<u8>,
 }
 
 /// Runs an act on the chat and answers it as JSON.
 async fn acted(chat: &Chat, act: ChatAct) -> serde_json::Value {
     match act {
         ChatAct::Send(draft) => answer(Answered::Ok(chat.send(&draft).await)),
+        ChatAct::SendWithReview(draft) => {
+            answer(Answered::from(chat.send_with_review(&draft).await))
+        }
         ChatAct::Command(draft) => answer(chat.command(&draft).await),
         ChatAct::Answer { ask, choice, note } => {
             answer(chat.answer_choice(&ask, choice as usize, &note).await)

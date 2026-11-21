@@ -131,6 +131,7 @@ fn an_attachment_is_a_placeholder_until_its_bytes_arrive() {
         let mut with_image = prompt(kind, 2, 11, "see \u{FFFC}", b"p1");
         with_image.attachments = vec![wire::Attachment {
             of: Some(wire::attachment::Of::Image(blob.clone())),
+            ..Default::default()
         }];
         apply_checked(&mut state, ev_item(with_image));
         assert_eq!(

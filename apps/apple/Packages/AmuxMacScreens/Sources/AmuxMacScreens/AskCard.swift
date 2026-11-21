@@ -79,7 +79,7 @@ struct AskCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Mono(text: command, folder: cwd.isEmpty ? nil : PlaceNames.path(cwd))
-        case .edit(let path, _, let added, let removed, let lines, let reason, _, _):
+        case .edit(let path, _, let added, let removed, let patch, let reason, _, _):
             if !reason.isEmpty { Text(reason).foregroundStyle(Palette.textSecondary) }
             HStack(spacing: 6) {
                 Text(path).font(.mono(.meta)).lineLimit(1).truncationMode(.head)
@@ -87,7 +87,7 @@ struct AskCardView: View {
                 Text("−\(removed)").foregroundStyle(Palette.removed)
             }
             .font(.ui(.meta))
-            Patch(lines: lines)
+            Patch(path: path, patch: patch)
         case .tool(_, _, let arguments):
             if !arguments.isEmpty { Mono(text: arguments, lines: 12) }
         case .question(let questions):
@@ -440,22 +440,20 @@ private struct ChoiceKey: ViewModifier {
     }
 }
 
-/// An edit's lines, added and removed in their colours.
+/// An edit's patch, file by file: each file's lines added and removed in
+/// their colours, their code coloured as that file reads, hunk by hunk and
+/// each side of a change read apart, as the shared view colours it.
 private struct Patch: View {
-    let lines: [EditLine]
+    /// The edit's file, which names the language of the patch of a
+    /// one-file edit, whose part carries no file of its own.
+    let path: String
+    let patch: [FilePatch]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    switch line {
-                    case .file(let file):
-                        Text(file.path).font(.ui(.caption, weight: .semibold)).padding(.vertical, 4)
-                    case .hunk:
-                        Rectangle().fill(Palette.line).frame(height: 1).padding(.vertical, 4)
-                    case .line(let patch):
-                        PatchText(kind: patch.kind, text: patch.text)
-                    }
+                ForEach(Array(patch.enumerated()), id: \.offset) { _, file in
+                    FilePatchLines(path: file.file?.path ?? path, file: file)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -465,10 +463,53 @@ private struct Patch: View {
     }
 }
 
+/// One file's part of a ``Patch``: its name in a patch of several files,
+/// then its hunks exactly as the shared view handed them, a rule between
+/// each and the next, since they are separate places in the file.
+private struct FilePatchLines: View {
+    @Environment(\.codeHighlighting) private var highlighting
+    let path: String
+    let file: FilePatch
+    @State private var answer: HighlightedCode?
+
+    var body: some View {
+        let request = CodeHighlighting.Request.patch(path: path, hunks: file.hunks)
+        let texts = file.hunks.flatMap { $0.lines.map(\.text) }
+        let runs = (highlighting.kept(request) ?? answer)?.runs(texts) ?? HighlightedCode.plain(texts)
+        let firsts = Self.firsts(file.hunks)
+        VStack(alignment: .leading, spacing: 0) {
+            if let header = file.file {
+                Text(header.path).font(.ui(.caption, weight: .semibold)).padding(.vertical, 4)
+            }
+            ForEach(Array(file.hunks.enumerated()), id: \.offset) { number, hunk in
+                if number > 0 {
+                    Rectangle().fill(Palette.line).frame(height: 1).padding(.vertical, 4)
+                }
+                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
+                    PatchText(kind: line.kind, text: line.text, runs: runs[firsts[number] + index])
+                }
+            }
+        }
+        .task(id: request) { await highlighting.follow(request) { answer = $0 } }
+    }
+
+    /// Where each hunk's lines start among the file's, as the answer
+    /// holds them: hunk after hunk.
+    private static func firsts(_ hunks: [PatchHunk]) -> [Int] {
+        var at = 0
+        return hunks.map { hunk in
+            defer { at += hunk.lines.count }
+            return at
+        }
+    }
+}
+
 /// One line of a diff: its sign, its text, and its colour behind it.
 struct PatchText: View {
     let kind: LineKind
     let text: String
+    /// The text's code coloured, when it has been; plain otherwise.
+    var runs: [CodeRun]?
 
     var body: some View {
         // Wrapped, never cut: a review that hides the end of a line hides
@@ -478,7 +519,14 @@ struct PatchText: View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(sign).frame(width: 16).foregroundStyle(signTint)
             if !indent.isEmpty { Text(indent).fixedSize() }
-            Text(code).fixedSize(horizontal: false, vertical: true)
+            Group {
+                if let runs {
+                    Text(CodeText.attributed(Self.dropping(text.count - code.count, from: runs), Palette.syntax))
+                } else {
+                    Text(code)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .font(.mono(.small))
@@ -502,10 +550,27 @@ struct PatchText: View {
         return (String(repeating: "\u{00A0}", count: width), String(text.dropFirst(indent.count)))
     }
 
+    /// `runs` without their first `count` characters: the coloured code
+    /// after an indent drawn as a column of its own.
+    static func dropping(_ count: Int, from runs: [CodeRun]) -> [CodeRun] {
+        var left = count
+        return runs.compactMap { run in
+            guard left > 0 else { return run }
+            let cut = min(left, run.text.count)
+            left -= cut
+            let rest = String(run.text.dropFirst(cut))
+            return rest.isEmpty ? nil : CodeRun(text: rest, kind: run.kind)
+        }
+    }
+
+    /// How strongly a changed line's green or red lies under it: enough to
+    /// read as a change, light enough that its code's colours still read.
+    static let wash = 0.1
+
     var tint: Color {
         switch kind {
-        case .added: Palette.added.opacity(0.1)
-        case .removed: Palette.removed.opacity(0.1)
+        case .added: Palette.added.opacity(Self.wash)
+        case .removed: Palette.removed.opacity(Self.wash)
         case .context: .clear
         }
     }

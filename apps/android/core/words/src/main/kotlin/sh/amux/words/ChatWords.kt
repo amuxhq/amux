@@ -21,7 +21,6 @@ import sh.amux.values.ContextView
 import sh.amux.values.ControlsSummary
 import sh.amux.values.Decision
 import sh.amux.values.DecisionView
-import sh.amux.values.DiffLine
 import sh.amux.values.ExitCause
 import sh.amux.values.ExploreVerb
 import sh.amux.values.FieldProblem
@@ -438,7 +437,7 @@ object ChatWords {
         is AttachmentView.File -> ChipParts(view.value.name, bytes(view.value.size))
         is AttachmentView.Text ->
             ChipParts(view.name, if (view.lines == 1) "1 line" else "${view.lines} lines")
-        is AttachmentView.Review ->
+        is AttachmentView.SentReview ->
             ChipParts("Review", if (view.comments == 1) "1 comment" else "${view.comments} comments")
         is AttachmentView.Page ->
             ChipParts(view.title, if (view.comments == 1) "1 comment" else "${view.comments} comments")
@@ -449,7 +448,7 @@ object ChatWords {
         is AttachmentView.Image -> AttachmentKind.Image
         is AttachmentView.File -> AttachmentKind.File
         is AttachmentView.Text -> AttachmentKind.Text
-        is AttachmentView.Review -> AttachmentKind.Review
+        is AttachmentView.SentReview -> AttachmentKind.Review
         is AttachmentView.Page -> AttachmentKind.Page
         AttachmentView.Empty -> AttachmentKind.Empty
     }
@@ -643,16 +642,6 @@ object ChatWords {
 
     fun attachReview(count: Int): String =
         if (count == 1) "Attach Review · 1 comment" else "Attach Review · $count comments"
-
-    /** `"Added line 12, Refused(String),"`: a diff line as TalkBack reads it. */
-    fun spoken(line: DiffLine): String {
-        val text = line.text.trim { it == ' ' || it == '\t' }
-        return when (line.kind) {
-            LineKind.Added -> "Added line ${line.newLine ?: 0}, $text"
-            LineKind.Removed -> "Removed line ${line.oldLine ?: 0}, $text"
-            LineKind.Context -> "Line ${line.newLine ?: line.oldLine ?: 0}, $text"
-        }
-    }
 
     /** `"1 line"`, `"12 lines"`. */
     fun lines(count: Int): String = if (count == 1) "1 line" else "$count lines"

@@ -65,12 +65,15 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::FleetCard,
         ui_view::FamilyHeader,
         ui_view::Offline,
-        ui_view::ReviewDoc,
+        ui_view::ReviewPage,
+        ui_view::ReviewChip,
+        ui_view::ReviewAnchor,
         ui_view::SettingsView,
         ui_view::SettingChange,
         ui_view::NewAgentChoices,
         ui_view::NewAgentPick,
         ui_view::Segment,
+        ui_view::HighlightedCode,
         app_runtime::values::StartConfig,
         app_runtime::values::AttachConfig,
         app_runtime::values::InstallOptions,
@@ -80,7 +83,9 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::ChatDelta,
         app_runtime::values::ChatFrame,
         app_runtime::values::Draft,
-        app_runtime::values::FrozenReview,
+        app_runtime::values::ReviewChange,
+        app_runtime::values::ReviewChoice,
+        app_runtime::values::ReviewOutcome,
         app_runtime::values::SendOutcome,
         app_runtime::values::ActOutcome,
         app_runtime::values::CommandOutcome,
@@ -843,6 +848,11 @@ pub(crate) fn missing_public_view_values(definitions: &Map<String, Value>) -> Ve
         // What a typed draft is to the terminal; the phone asks the
         // bridge's command call, which answers a CommandOutcome.
         "Slash",
+        // What a review page is composed with: app-runtime keeps it and
+        // hands the apps the page it composes, with its notices drawn
+        // as banners.
+        "ReviewPageState",
+        "ReviewNotice",
     ];
     let root = repository();
     let mut missing = Vec::new();

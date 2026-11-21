@@ -140,6 +140,7 @@ class JourneyTagsTest {
     fun pairingConfirmTagsStandInTheMergedTree() {
         val desk = HostView(
             hostId = List(16) { 4 },
+            link = 0L,
             name = "desk",
             local = false,
             trusted = false,

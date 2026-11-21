@@ -55,6 +55,7 @@ class NewAgentScreenTest {
         ),
     ): HostView = HostView(
         hostId = List(16) { index },
+        link = 0L,
         name = name,
         local = false,
         trusted = true,

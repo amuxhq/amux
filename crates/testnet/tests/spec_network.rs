@@ -18,9 +18,7 @@ use node::RelayCarrier;
 use node::harness::{Advertisement, LiveRoute};
 use support::*;
 use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
-use wire::agent_service_server::AgentService as _;
 use wire::begin_pair_request;
-use wire::session_service_server::SessionService as _;
 
 use crate::support;
 
@@ -682,14 +680,19 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
         "the laptop to dial the claimed address and meet the wrong key",
         || async {
             let error = edge(&net, "laptop").last_dial_error(desk).await;
-            error
-                .clone()
-                .filter(|error| {
-                    error.contains(&impostor_addr.to_string())
-                        && error.contains("QUIC handshake failed")
-                        && error.contains("invalid peer certificate")
-                })
-                .ok_or_else(|| format!("last dial error: {error:?}"))
+            if let Some(refused) = error.clone().filter(|error| {
+                error.contains(&impostor_addr.to_string())
+                    && error.contains("QUIC handshake failed")
+                    && error.contains("invalid peer certificate")
+            }) {
+                return Ok(refused);
+            }
+            // A transient timeout under load puts reach's redial behind the
+            // policy clock; step it so the next dial attempt runs.
+            if error.is_some() {
+                net.advance(Duration::from_secs(1)).unwrap();
+            }
+            Err(format!("last dial error: {error:?}"))
         },
     )
     .await
@@ -1148,8 +1151,8 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
             .peer(desk)
             .await
             .unwrap()
-            .agents
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+            .peer
+            .follow_agents(wire::FollowAgentsRequest {})
             .await
             .unwrap()
             .into_inner();
@@ -1478,16 +1481,14 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let work_socket = node::profile_dir(&net.host("desk").unwrap().data_dir, work_profile)
         .join(node::PROFILE_SOCKET);
     for (socket, own) in [(&socket, desk), (&work_socket, work_edge.host_id())] {
-        let mut client = wire::client_stubs(testnet::local_channel(socket).await.unwrap());
-        let mut events = client
-            .agents
-            .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        use futures_util::StreamExt as _;
+        let client = client::Client::connect(socket, client::Surface::Terminal)
             .await
-            .unwrap()
-            .into_inner();
+            .unwrap();
+        let mut events = client.inventory().subscribe().await.unwrap();
         let first = loop {
-            let response = events.message().await.unwrap().unwrap();
-            match response.event.and_then(|event| event.of) {
+            let event = events.next().await.unwrap().unwrap();
+            match event.of {
                 Some(wire::inventory_event::Of::Host(host)) if host.host_id() == own.as_bytes() => {
                     break host;
                 }
@@ -1663,8 +1664,8 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         .peer(desk)
         .await
         .unwrap()
-        .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .peer
+        .follow_agents(wire::FollowAgentsRequest {})
         .await
         .unwrap()
         .into_inner();
@@ -1753,29 +1754,29 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     let unknown = uuid::Uuid::new_v4().as_bytes().to_vec();
     let mut answers = Vec::new();
     answers.push((
-        "Subscribe with a three-byte agent id",
-        peer.sessions
-            .subscribe_session(wire::SubscribeSessionRequest {
+        "FollowSession with a three-byte agent id",
+        peer.peer
+            .follow_session(wire::FollowSessionRequest {
                 agent_id: short.clone(),
-                from: Some(wire::subscribe_session_request::From::Tail(5)),
+                from: Some(wire::follow_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
     ));
     answers.push((
-        "Subscribe to an agent the desk never had",
-        peer.sessions
-            .subscribe_session(wire::SubscribeSessionRequest {
+        "FollowSession of an agent the desk never had",
+        peer.peer
+            .follow_session(wire::FollowSessionRequest {
                 agent_id: unknown.clone(),
-                from: Some(wire::subscribe_session_request::From::Tail(5)),
+                from: Some(wire::follow_session_request::From::Tail(5)),
             })
             .await
             .map(|_| ()),
     ));
     answers.push((
-        "Fetch with a three-byte agent id",
-        peer.sessions
-            .list_items(wire::ListItemsRequest {
+        "ListItems with a three-byte agent id",
+        peer.peer
+            .list_items(wire::PeerServiceListItemsRequest {
                 agent_id: short.clone(),
                 before_order: None,
                 page_size: 10,
@@ -1784,43 +1785,9 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
             .map(|_| ()),
     ));
     answers.push((
-        "Get with an empty key",
-        peer.sessions
-            .get_item(wire::GetItemRequest {
-                agent_id: worker.clone(),
-                key: String::new(),
-            })
-            .await
-            .map(|_| ()),
-    ));
-    answers.push((
-        "SendInput with no input",
-        peer.sessions
-            .send_input(wire::SendInputRequest {
-                agent_id: worker.clone(),
-                input: None,
-            })
-            .await
-            .map(|_| ()),
-    ));
-    answers.push((
-        "CreateAgent with no configuration",
-        peer.agents
-            .create_agent(wire::CreateAgentRequest::default())
-            .await
-            .map(|_| ()),
-    ));
-    answers.push((
-        "SendMessage with no sender or recipient",
-        peer.agents
-            .send_message(wire::SendMessageRequest::default())
-            .await
-            .map(|_| ()),
-    ));
-    answers.push((
         "GetBlob with a malformed hash",
-        peer.agents
-            .get_blob(wire::GetBlobRequest {
+        peer.peer
+            .get_blob(wire::PeerServiceGetBlobRequest {
                 agent_id: worker.clone(),
                 hash: vec![0; 3],
             })
@@ -1828,14 +1795,38 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
             .map(|_| ()),
     ));
     answers.push((
-        "FileAgent with a three-byte agent id",
-        peer.agents
-            .file_agent(wire::FileAgentRequest {
-                agent_id: short.clone(),
-                filing: wire::Filing::Closed as i32,
-            })
+        "DeliverReport with no id, child, parent or report",
+        peer.peer
+            .deliver_report(wire::DeliverReportRequest::default())
             .await
             .map(|_| ()),
+    ));
+    // The daemon asks the host services for no one: only a call carried
+    // for a person or an agent, with its caller, is answered there.
+    let mut acts = wire::agent_service_client(edge(&net, "laptop").channel(desk).await.unwrap());
+    answers.push((
+        "SendInput carried for no one",
+        acts.send_input(wire::SendInputRequest {
+            agent_id: worker.clone(),
+            input: None,
+        })
+        .await
+        .map(|_| ()),
+    ));
+    answers.push((
+        "CreateAgent carried for no one, with no configuration",
+        acts.create_agent(wire::CreateAgentRequest::default())
+            .await
+            .map(|_| ()),
+    ));
+    answers.push((
+        "SetFiling carried for no one, with a three-byte agent id",
+        acts.set_filing(wire::SetFilingRequest {
+            agent_id: short.clone(),
+            filing: wire::Filing::Closed as i32,
+        })
+        .await
+        .map(|_| ()),
     ));
     for (what, answer) in &answers {
         let status = answer.as_ref().expect_err(&format!("{what} is refused"));
@@ -1990,7 +1981,7 @@ async fn a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its
     };
     let lagged = seen
         .iter()
-        .position(|response: &wire::SubscribeSessionResponse| {
+        .position(|response: &wire::FollowSessionResponse| {
             matches!(
                 response.event.as_ref().and_then(|event| event.of.as_ref()),
                 Some(wire::session_event::Of::Lagged(_))
@@ -2104,14 +2095,18 @@ async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
         .work
         .to_string_lossy()
         .into_owned();
-    net.client("phone")
+    net.person("phone")
+        .await
         .unwrap()
-        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
-            host: Some(wire::HostRef::named("desk")),
+        .host(host_id(&net, "desk").as_bytes())
+        .agents()
+        .create(wire::CreateAgentRequest {
             cwd: work,
-            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
+                Default::default(),
+            )),
             ..wire::CreateAgentRequest::default()
-        }))
+        })
         .await
         .expect("the desk starts the phone's agent");
     let moved = tokio::time::timeout(testnet::PATIENCE, steps.message())
@@ -2641,7 +2636,6 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a_poor_network() {
     use provider_fakes::script::Step;
-    use wire::agent_service_server::AgentService as _;
 
     let say = |text: &str| Step::Text {
         chunks: vec![text.to_owned()],
@@ -2703,18 +2697,12 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a
     // A blob fetch brings exactly the bytes that were stored.
     let bytes: Vec<u8> = (0..3 * 1024 * 1024_u32).map(|n| (n % 251) as u8).collect();
     let stored = net
-        .client("desk")
-        .unwrap()
-        .put_blob(tonic::Request::new(wire::PutBlobRequest {
-            agent_id: worker.as_bytes().to_vec(),
-            name: "build.log".to_owned(),
-            mime: "text/plain".to_owned(),
-            bytes: bytes.clone(),
-        }))
+        .person("desk")
         .await
         .unwrap()
-        .into_inner()
-        .blob
+        .agent(net.agent("worker").unwrap())
+        .put_blob("build.log", "text/plain", bytes.clone())
+        .await
         .unwrap();
     let fetched = tokio::time::timeout(
         testnet::PATIENCE,
@@ -2722,8 +2710,8 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a
             .peer(desk)
             .await
             .unwrap()
-            .agents
-            .get_blob(wire::GetBlobRequest {
+            .peer
+            .get_blob(wire::PeerServiceGetBlobRequest {
                 agent_id: worker.as_bytes().to_vec(),
                 hash: stored.hash.clone(),
             }),
@@ -3082,43 +3070,33 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
     )
     .await;
 
-    let request = wire::SendInputRequest {
-        agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
-        input: Some(sdk_prompt("Are you there?")),
-    };
+    let w = net
+        .person("desk")
+        .await
+        .unwrap()
+        .agent(net.agent("w").unwrap());
     let started = std::time::Instant::now();
     let answer = tokio::time::timeout(
         Duration::from_secs(5),
-        net.client("desk")
-            .unwrap()
-            .send_input(tonic::Request::new(request)),
+        w.send_input(sdk_prompt("Are you there?")),
     )
     .await;
     let took = started.elapsed();
-    // A stop never leaves either: it is answered as unreachable, so a
-    // client holds it as it holds the send, in words that name the lapse.
-    let stop = tokio::time::timeout(
-        Duration::from_secs(5),
-        net.client("desk")
-            .unwrap()
-            .file_agent(tonic::Request::new(wire::FileAgentRequest {
-                agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
-                filing: wire::Filing::Closed as i32,
-            })),
-    )
-    .await
-    .expect("the stop is answered at once, not after a deadline");
+    // A stop never leaves either: it is answered as a lapsed plan, which a
+    // client holds as it holds the send, in words that name the lapse.
+    let stop = tokio::time::timeout(Duration::from_secs(5), w.set_filing(wire::Filing::Closed))
+        .await
+        .expect("the stop is answered at once, not after a deadline");
     net.shutdown().await.unwrap();
     println!("the desk's stop of w: {stop:?}");
     let stop = stop.expect_err("a stop to a host out of reach is not done");
-    let stop_error = {
-        use prost::Message as _;
-        wire::Error::decode(stop.details()).expect("a typed error")
+    let client::RpcError::Refused(stop_error) = stop else {
+        panic!("a stop that never left is answered, not lost: {stop:?}");
     };
     assert_eq!(
         stop_error.reason(),
-        Some(wire::ErrorReason::HostUnreachable),
-        "a stop that never left is held like an unreachable one: {stop_error:?}"
+        Some(wire::ErrorReason::PaymentRequired),
+        "a stop that never left names the lapse it is held for: {stop_error:?}"
     );
     assert!(
         ["lapse", "subscription", "free plan"]
@@ -3131,14 +3109,8 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
     // The reason may come as a typed error (payment required) or as a
     // refusal whose words or kind name the lapse; either names it.
     let words = match &answer {
-        Err(status) => {
-            use prost::Message as _;
-            let code = wire::Error::decode(status.details())
-                .ok()
-                .map(|error| error.code());
-            format!("{code:?} {}", status.message())
-        }
-        Ok(response) => format!("{:?}", response.get_ref()),
+        Err(error) => format!("{:?} {error}", error.code()),
+        Ok(response) => format!("{response:?}"),
     }
     .to_lowercase();
     assert!(
@@ -3176,23 +3148,17 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
         net.host("desk").unwrap().profile,
     )
     .join(node::PROFILE_SOCKET);
-    let mut client = wire::client_stubs(testnet::local_channel(&socket).await.unwrap());
+    let client = client::Client::connect(&socket, client::Surface::Terminal)
+        .await
+        .unwrap();
     const LIMIT: usize = 64 * 1024 * 1024;
-    let put = |size: usize| wire::PutBlobRequest {
-        agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
-        name: "big.bin".into(),
-        mime: "application/octet-stream".into(),
-        bytes: vec![7; size],
-    };
-    let at_limit = client.agents.put_blob(put(LIMIT)).await;
-    let over = client.agents.put_blob(put(LIMIT + 1)).await;
-    drop(client);
+    let w = client.agent(net.agent("w").unwrap());
+    let put = |size: usize| w.put_blob("big.bin", "application/octet-stream", vec![7; size]);
+    let at_limit = put(LIMIT).await;
+    let over = put(LIMIT + 1).await;
+    drop((w, client));
     net.shutdown().await.unwrap();
-    println!(
-        "at the limit: {:?}; over it: {:?}",
-        at_limit.as_ref().map(|answer| &answer.get_ref().blob),
-        over.as_ref().map(|answer| &answer.get_ref().blob)
-    );
+    println!("at the limit: {at_limit:?}; over it: {over:?}");
     assert!(
         at_limit.is_ok(),
         "an attachment of exactly 64 MB did not store: {:?}",
@@ -3200,7 +3166,7 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
     );
     let refusal = over.expect_err("an attachment over 64 MB is refused");
     assert!(
-        refusal.message().contains("64 MB"),
+        refusal.to_string().contains("64 MB"),
         "the refusal does not name the limit: {refusal:?}"
     );
 }
@@ -3399,8 +3365,23 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
         .await
         .unwrap();
         let phone = edge(&net, "phone");
-        // Long enough for the phone's dial to have left it a ticket.
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let phone_info = net.host("phone").unwrap();
+        let desk_tickets = node::profile_dir(&phone_info.data_dir, phone_info.profile)
+            .join(node::CLIENT_TICKETS_DIR)
+            .join(desk.to_string());
+        until(
+            &format!("{shape}: the phone's dial left a resumption ticket"),
+            || {
+                let count = tickets_beneath(&desk_tickets);
+                async move {
+                    (count > 0)
+                        .then_some(())
+                        .ok_or_else(|| "no ticket saved yet".to_owned())
+                }
+            },
+        )
+        .await
+        .unwrap();
         phone.suspend().await;
         tokio::time::sleep(Duration::from_millis(
             daemon_core::reach::ATTEMPT_DEADLINE_MS + 2_000,
@@ -3410,23 +3391,6 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
             net.link_log("phone").unwrap().len(),
             net.link_log("desk").unwrap().len(),
         );
-        phone.resume().await;
-        until(&format!("{shape}: the phone linked again"), || async {
-            match (
-                phone.via(desk).await,
-                edge(&net, "desk").via(phone_id).await,
-            ) {
-                (LiveRoute::Offline, _) | (_, LiveRoute::Offline) => Err("offline"),
-                _ => Ok(()),
-            }
-        })
-        .await
-        .unwrap();
-        peer_inventory_hosts(&phone, desk)
-            .await
-            .expect("the phone's calls reach the desk");
-        // Long enough for a crossed dial from the desk to have come up.
-        tokio::time::sleep(Duration::from_secs(1)).await;
         let ups = |host: &str, peer, mark| {
             net.link_log(host)
                 .unwrap()
@@ -3438,6 +3402,23 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
                 .copied()
                 .collect::<Vec<_>>()
         };
+        phone.resume().await;
+        until(&format!("{shape}: the phone linked again"), || async {
+            let phone_up = !ups("phone", desk, marks.0).is_empty();
+            let desk_up = !ups("desk", phone_id, marks.1).is_empty();
+            if phone_up && desk_up {
+                Ok(())
+            } else {
+                Err(format!("phone_up={phone_up} desk_up={desk_up}"))
+            }
+        })
+        .await
+        .unwrap();
+        peer_inventory_hosts(&phone, desk)
+            .await
+            .expect("the phone's calls reach the desk");
+        // Long enough for a crossed dial from the desk to have come up.
+        tokio::time::sleep(Duration::from_secs(1)).await;
         let (phone_ups, desk_ups) = (ups("phone", desk, marks.0), ups("desk", phone_id, marks.1));
         println!("{shape}: the phone saw {phone_ups:?}, the desk {desk_ups:?}");
         assert_eq!(phone_ups.len(), 1, "{shape}: one link, not two crossed");
@@ -3448,6 +3429,24 @@ async fn a_phone_back_after_a_long_sleep_is_linked_once_by_its_own_dial() {
         );
         net.shutdown().await.unwrap();
     }
+}
+
+/// How many `.ticket` files exist anywhere beneath `dir`.
+fn tickets_beneath(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                tickets_beneath(&path)
+            } else {
+                usize::from(path.extension().is_some_and(|ext| ext == "ticket"))
+            }
+        })
+        .sum()
 }
 
 /// A phone about to be suspended says goodbye on every link, closes them

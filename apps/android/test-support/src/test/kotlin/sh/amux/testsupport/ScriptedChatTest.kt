@@ -21,11 +21,8 @@ import sh.amux.values.ExploreVerb
 import sh.amux.values.FormField
 import sh.amux.values.FormProblem
 import sh.amux.values.FormValue
-import sh.amux.values.FrozenReview
 import sh.amux.values.Kind
 import sh.amux.values.PageOutcome
-import sh.amux.values.ReviewComment
-import sh.amux.values.ReviewDoc
 import sh.amux.values.RowKind
 import sh.amux.values.Segment
 import sh.amux.values.SettingChange
@@ -36,7 +33,6 @@ class ScriptedChatTest {
         override fun commandMatches(commands: List<CommandView>, draft: String): List<CommandMatch> = emptyList()
         override fun pastesAsAttachment(text: String): Boolean = text.lines().size >= 8
         override fun formProblems(fields: List<FormField>, values: List<FormValue>): List<FormProblem> = emptyList()
-        override fun reviewDoc(review: FrozenReview, comments: List<ReviewComment>): ReviewDoc? = null
     }
 
     @Test

@@ -25,13 +25,13 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func opening() -> ChatDelta {
         ChatDelta(
             chat: id, rows: [], agents: nil, ask: AskMoved(card: nil), frame: frame(), keys: .reload(["a"]),
-            overview: nil, settings: nil)
+            overview: nil, review: nil, settings: nil)
     }
 
     /// The frame as it now stands, as the delta that hands it over.
     func moved() -> ChatDelta {
         ChatDelta(
-            chat: id, rows: [], agents: nil, ask: nil, frame: frame(), keys: nil, overview: nil, settings: nil)
+            chat: id, rows: [], agents: nil, ask: nil, frame: frame(), keys: nil, overview: nil, review: nil, settings: nil)
     }
 
     func follow(_ following: Bool) {}
@@ -41,7 +41,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
             agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
             hasOlder: false, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
-            signIn: nil)
+            reviewChip: nil, signIn: nil)
     }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
@@ -66,7 +66,6 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
         .failure(RuntimeFailure("no"))
     }
     func blob(_ hash: [UInt8]) -> Data? { nil }
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
     func keptDraft() -> Draft? { kept }
     func keep(_ draft: Draft) { MainActor.assumeIsolated { keeps?(draft) } }

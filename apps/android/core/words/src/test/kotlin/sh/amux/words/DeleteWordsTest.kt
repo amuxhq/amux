@@ -2,7 +2,6 @@ package sh.amux.words
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -128,28 +127,29 @@ class DeleteWordsTest {
             DeleteWords.message(descendants = 1, warning = null),
         )
         assertNull(DeleteWords.lines(null))
-        assertNull(DeleteWords.asking(null))
     }
 
     @Test
     fun checkingAndUnknownWarningsBehaveSafely() {
-        val clean = WorkspaceGoes(branch = "fix-scroll", branchCommits = null, uncommitted = null)
-        val checking = DeleteWords.asking(clean)
-        assertNotNull(checking)
+        val checking: DeleteWarning = DeleteWarning.Checking
         assertTrue(DeleteWords.awaitsAnswer(checking))
         assertFalse(DeleteWords.discards(checking))
         val checkingLines = DeleteWords.lines(checking)
-        assertEquals("Checking its worktree for uncommitted changes\u2026", checkingLines?.workspace)
+        assertEquals("Checking whether its worktree is removed too\u2026", checkingLines?.workspace)
+        assertNull(checkingLines?.branch)
         assertEquals(false, checkingLines?.settled)
 
         val unknown = DeleteWords.answered(checking, Result.failure(IllegalStateException("offline")))
-        assertEquals(DeleteWarning.Unknown(clean), unknown)
+        assertEquals(DeleteWarning.Unknown, unknown)
         assertFalse(DeleteWords.awaitsAnswer(unknown))
         assertFalse(DeleteWords.discards(unknown))
+        val unknownLines = DeleteWords.lines(unknown)
         assertEquals(
-            "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn\u2019t be checked.",
-            DeleteWords.lines(unknown)?.workspace,
+            "Its worktree couldn\u2019t be checked. If it\u2019s removed too, it stays on disk while it has uncommitted changes.",
+            unknownLines?.workspace,
         )
+        // Nothing is said to go, so the line is not drawn as a loss.
+        assertEquals(false, unknownLines?.settled)
 
         // An answer replaces only a checking warning.
         assertEquals(unknown, DeleteWords.answered(unknown, Result.success(DeleteWarning.Goes(dirty))))
@@ -162,8 +162,8 @@ class DeleteWordsTest {
         val clean = WorkspaceGoes(branch = "fix-scroll", branchCommits = null, uncommitted = null)
         assertTrue(DeleteWords.discards(DeleteWarning.Goes(dirty)))
         assertFalse(DeleteWords.discards(DeleteWarning.Goes(clean)))
-        assertFalse(DeleteWords.discards(DeleteWarning.Checking(dirty)))
-        assertFalse(DeleteWords.discards(DeleteWarning.Unknown(dirty)))
+        assertFalse(DeleteWords.discards(DeleteWarning.Checking))
+        assertFalse(DeleteWords.discards(DeleteWarning.Unknown))
         assertFalse(DeleteWords.discards(null))
     }
 }

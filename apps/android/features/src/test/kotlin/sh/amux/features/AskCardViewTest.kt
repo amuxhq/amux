@@ -40,7 +40,9 @@ import sh.amux.values.AskCard
 import sh.amux.values.CardState
 import sh.amux.values.Choice
 import sh.amux.values.ChoiceOutcome
-import sh.amux.values.EditLine
+import sh.amux.values.FilePatch
+import sh.amux.values.HunkStart
+import sh.amux.values.PatchHunk
 import sh.amux.values.FieldProblem
 import sh.amux.values.FormField
 import sh.amux.values.FormFieldKind
@@ -164,11 +166,19 @@ class AskCardViewTest {
                 files = 1,
                 added = 2,
                 removed = 1,
-                lines = listOf(
-                    EditLine.Hunk(oldStart = 10, newStart = 10),
-                    EditLine.Line(PatchLine(LineKind.Removed, "let old = 1;", number = 10)),
-                    EditLine.Line(PatchLine(LineKind.Added, "let next = 2;", number = 10)),
-                    EditLine.Line(PatchLine(LineKind.Added, "let more = 3;", number = 11)),
+                patch = listOf(
+                    FilePatch(
+                        hunks = listOf(
+                            PatchHunk(
+                                start = HunkStart(old = 10, new = 10),
+                                lines = listOf(
+                                    PatchLine(LineKind.Removed, "let old = 1;", number = 10),
+                                    PatchLine(LineKind.Added, "let next = 2;", number = 10),
+                                    PatchLine(LineKind.Added, "let more = 3;", number = 11),
+                                ),
+                            ),
+                        ),
+                    ),
                 ),
                 reason = "Update value",
             ),

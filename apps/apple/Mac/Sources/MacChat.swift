@@ -8,18 +8,13 @@ import UniformTypeIdentifiers
 /// The shared chat model as the Mac's screens read it.
 ///
 /// Every read goes straight to the model, so the screens observe exactly
-/// what they read: one row's cell, the frame, the draft. What the Mac adds
-/// is the review's loading, which the phone keeps on its review page.
+/// what they read: one row's cell, the frame, the draft.
 @MainActor
 @Observable
 final class MacChat: ChatSurface {
     @ObservationIgnored let model: ChatModel
     /// The host's name, for what the chat says about reaching it.
     @ObservationIgnored let host: String
-    private(set) var review: ReviewState = .idle
-    @ObservationIgnored private var loading: Task<Void, Never>?
-    /// The comparison the review on show was read for.
-    @ObservationIgnored private var loadedFor: Comparison?
 
     init(model: ChatModel, host: String) {
         self.model = model
@@ -85,6 +80,7 @@ final class MacChat: ChatSurface {
     var attachments: [DraftAttachment] { model.attachments }
     func removeAttachment(at index: Int) { model.removeAttachment(at: index) }
     var canSend: Bool { model.canSend }
+    var hasMessage: Bool { model.hasMessage }
     var canResume: Bool { model.canResume }
     var sending: Bool { model.sending }
     var slashMatches: [CommandMatch] { model.slashMatches }
@@ -110,35 +106,24 @@ final class MacChat: ChatSurface {
     var comparisons: [Comparison] { model.comparisons }
     func compare(_ comparison: Comparison) { model.compare(comparison) }
 
-    /// Freezes the changes as they stand on the host. A review already being
-    /// written on the same patch is kept, comments and all.
-    func loadReview(keepingComments: Bool) {
-        // Held here rather than in the pane, so switching tabs or closing
-        // the pane does not forget there are comments to keep.
-        if keepingComments, loadedFor == model.comparison, case .ready(let open) = review,
-            open.count > 0 || open.selecting
-        {
-            return
-        }
-        loadedFor = model.comparison
-        loading?.cancel()
-        if case .ready = review {} else { review = .loading }
-        loading = Task { [weak self] in
-            guard let self else { return }
-            let opened = await model.openReview()
-            guard !Task.isCancelled else { return }
-            switch opened {
-            case .success(let model?): review = .ready(MacReview(model: model))
-            case .success(nil): review = .nothing
-            case .failure(let failure): review = .failed(failure.description)
-            }
-        }
+    // MARK: The agent's review
+
+    /// The page drawn for the review open on the chat, kept for as long as
+    /// that review is: what the person is writing on it lives here.
+    @ObservationIgnored private var shown: MacReviewPage?
+
+    /// A host without reviews has the page say so.
+    var reviewPage: (any ReviewPageSurface)? {
+        guard let session = model.reviewPage else { return nil }
+        if shown?.session !== session { shown = MacReviewPage(session: session) }
+        return shown
     }
 
-    func attachReview() {
-        guard case .ready(let surface) = review, let open = surface as? MacReview else { return }
-        model.attach(open.model)
-    }
+    func openReviewPage() { model.openReviewPage() }
+    func closeReviewPage() { model.closeReviewPage() }
+    var reviewChip: ReviewChip? { model.reviewChip }
+    func discardReviewDrafts() { model.discardReviewDrafts() }
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? { await model.reviewRound(sent) }
 
     // MARK: Attaching and settings
 
@@ -158,26 +143,50 @@ final class MacChat: ChatSurface {
     func change(_ setting: SettingChange) { model.change(setting) }
 }
 
-/// The shared review model as the Mac's screens read it.
+/// The shared review page as the Mac's screens read it, and the comment
+/// being written on it.
 @MainActor
-final class MacReview: ReviewSurface {
-    let model: ReviewModel
+@Observable
+final class MacReviewPage: ReviewPageSurface {
+    @ObservationIgnored let session: ReviewSession
+    var writing = false
+    var words = ""
 
-    init(model: ReviewModel) { self.model = model }
+    init(session: ReviewSession) { self.session = session }
 
-    var doc: ReviewDoc { model.doc }
-    var count: Int { model.count }
-    func folded(_ file: Int) -> Bool { model.folded.contains(file) }
-    func toggle(file: Int) { model.toggle(file: file) }
-    func isSelected(_ spot: ReviewSpot) -> Bool { model.isSelected(line(spot)) }
-    var selecting: Bool { model.selection != nil }
-    func begin(at spot: ReviewSpot) { model.begin(at: line(spot)) }
-    func extend(to spot: ReviewSpot) { model.extend(to: line(spot)) }
-    func clearSelection() { model.clearSelection() }
-    func comment(_ text: String) -> Bool { model.comment(text) }
-    var canAttach: Bool { model.canAttach }
+    var page: ReviewPage { session.page }
+    var selected: ClosedRange<Int>? { session.selected }
+    var anchor: ReviewAnchor? { session.anchor }
+    var waiting: Int { session.waiting }
+    var notice: String? { session.notice }
 
-    private func line(_ spot: ReviewSpot) -> ReviewLine {
-        ReviewLine(file: spot.file, hunk: spot.hunk, line: spot.line)
+    func refresh() { session.refresh() }
+    func moreContext(_ ask: ReviewContextAsk) { session.moreContext(ask) }
+    func show(_ view: ReviewView) { session.show(view) }
+    func toggleFile(_ path: String) { session.toggleFile(path) }
+    func toggleComment(_ id: [UInt8]) { session.toggleComment(id) }
+    func select(_ row: Int) { session.select(row) }
+    func extend(to row: Int) { session.extend(to: row) }
+
+    func clearSelection() {
+        session.clearSelection()
+        writing = false
+        words = ""
     }
+
+    func comment(_ text: String) {
+        guard let task = session.comment(text) else { return }
+        Task { [weak self] in
+            // Written: the field closes with the selection. Not: the words
+            // stay to try again, with the page's notice saying why.
+            guard await task.value == .done, let self, self.session.selected == nil else { return }
+            self.writing = false
+            self.words = ""
+        }
+    }
+
+    func reword(_ id: [UInt8], as text: String) { session.reword(id, as: text) }
+    func delete(_ id: [UInt8]) { session.delete(id) }
+    func discardDrafts() { session.discardDrafts() }
+    func startOver() { session.startOver() }
 }

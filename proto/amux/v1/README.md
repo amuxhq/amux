@@ -10,8 +10,15 @@ application channels on separate native streams.
 
 | File | Holds |
 | --- | --- |
-| `agent_service.proto` | `AgentService`: the fleet, agents' lifecycle and messages, blobs, diffs, catalogues, repositories; served to clients and to paired daemons |
-| `session_service.proto` | `SessionService`: one agent's conversation, its input, the composer's draft |
+| `inventory_service.proto` | `InventoryService`, a local service: the hosts and agent rows the node holds, and names resolved against them |
+| `session_service.proto` | `SessionService`, a local service: the conversations the node holds and the files they reference |
+| `draft_service.proto` | `DraftService`, a local service: what this machine's person has typed and not sent |
+| `agent_service.proto` | `AgentService`, a host service: one host's own agents, their lifecycle, input, messages and files |
+| `host_service.proto` | `HostService`, a host service: what a host offers before any agent exists, and pinning its folders |
+| `review_service.proto` | `ReviewService`, a host service: what changed in one of a host's agents' working trees |
+| `peer_service.proto` | `PeerService`, served on links only: what a paired daemon asks for itself to keep its copy of this host, and a child's report |
+| `caller.proto` | `Caller`: who a call carried to another host is for, in the `amux-caller-bin` header |
+| `session.proto` | What a conversation is streamed and driven with: session events, input and its verdict, the composer's draft |
 | `installation_service.proto` | `InstallationService`: the installation and its profiles |
 | `profile_admin_service.proto` | `ProfileAdminService`: one profile's account, pairing, peers and dump |
 | `pairing_service.proto` | `PairingService`: two hosts coming to trust each other |
@@ -19,14 +26,21 @@ application channels on separate native streams.
 | `records.proto` | The kind-neutral session records |
 | `chat.proto` | What the kinds share inside a body |
 | `claude.proto`, `codex.proto` | The per-kind bodies |
-| `agent_process.proto` | The agent process's spec and its `ctl.sock` and `pty.sock` frames |
+| `agent_process.proto` | The agent process's spec, its `ctl.sock` and `pty.sock` frames, and what its tool server asks it on `private/agent.sock` |
 | `link.proto` | Host-to-host link control |
 | `dump.proto` | The diagnostic dump |
 | `error.proto` | `ErrorReason`, the amux reasons a `google.rpc.ErrorInfo` names |
 
+A local service is answered by the node a client is attached to, from what it
+holds, and is never served on a link. A host service is answered by the host
+a call is addressed to, for what that host owns; a call's address is its
+authority, the host's id, and the node passes a call addressed to another
+host on to it unread. [The wire](../../../docs/WIRE.md#where-clients-call)
+says who calls what, and where.
+
 ## Compatibility
 
-`amux.v1` is the released protocol. From amux 0.9.0 on, builds of different
+`amux.v1` is the released protocol. From amux 0.11.0 on, builds of different
 versions meet: paired hosts, third-party clients, agent processes that
 outlive a daemon upgrade, and the stores and journals an earlier build left
 on disk. So every change only adds, and keeps what a released build wrote
@@ -58,8 +72,28 @@ A change that cannot be made this way, or a sweeping clean-up, is the next
 protocol: a new ALPN, `amux/2`, served beside `amux/1`, which TLS settles
 before any amux message. There is no version number to move.
 
+Two things a call carries outside any message are promised the same way,
+since a client in any language builds them:
+
+- **The address.** A host service is addressed to a host by the call's
+  authority: the host's id as a UUID in its lowercase hyphenated form
+  (`0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80`), with no braces, suffix or port.
+  Only that form addresses a host; any other authority, `localhost` or a
+  name included, is answered by the node the call reached
+  (`wire::authority`).
+- **The caller header.** A node that carries a call to another host writes
+  who it is for in `amux-caller-bin`, a `Caller` (`caller.proto`) encoded as
+  gRPC encodes a binary header. A client never sends it: the node it is
+  attached to replaces it.
+
+The services took their present shape in 0.11.0. Builds before it served an
+earlier `AgentService` and `SessionService` at the same paths, and do not
+work with later builds: hosts, clients and apps on either side of that
+release are updated together.
+
 `just proto-compat`, which CI runs, lints these files with buf and checks them
-against the latest release.
+against the newest release from 0.11.0 on; until that release is tagged there
+is nothing to check against.
 
 What a client writes into a dump is `amux.dump` (`crates/wire/proto/amux/dump/session.proto`),
 read only by the build that wrote it and outside these promises.
@@ -68,5 +102,7 @@ The shapes of experiments, features shipped while their shape still moves,
 are `amux.experimental` (`crates/wire/proto/amux/experimental/`), outside
 these promises too. They travel as bytes in the `experimental` maps that
 amux.v1 messages carry at field 1000, each entry keyed by the experiment's
-version (`workspaces/1`); the maps are promised, their entries are not. See
-[the wire](../../../docs/WIRE.md#experiments).
+version (`workspaces/1`); the maps are promised, their entries are not. An
+experiment's service is a host service in `amux.experimental` with the
+experiment's version in its name, served only by a host that runs the
+experiment. See [the wire](../../../docs/WIRE.md#experiments).

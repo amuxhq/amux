@@ -11,7 +11,7 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use client::{Client, Clock, EventStream, RpcError};
+use client::{Client, Clock, EventStream, NotSent, RpcError};
 use futures_util::{FutureExt as _, StreamExt as _};
 use prost::Message as _;
 use tokio::sync::{Notify, watch};
@@ -22,9 +22,8 @@ use ui_state::{
 use ui_view::SessionLine;
 use wire::dump::{ClientSessionEvents, ClientSessionHistory, ClientTraced, client_traced};
 use wire::{
-    Agent, BlobRef, DumpRequest, ErrorCode, GetBlobRequest, GetItemRequest, HostEntry, Input,
-    ListItemsRequest, PromptSubmission, PutBlobRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SessionEvent, SubscribeSessionRequest, send_input_response, session_event,
+    Agent, BlobRef, DumpRequest, GetChangesResponse, HostEntry, Input, PromptSubmission,
+    SendInputResponse, SessionEvent, get_changes_request, send_input_response, session_event,
 };
 
 use crate::trace::{DriverError, DriverEvent, DriverTrace, Ring, TraceEvent};
@@ -134,7 +133,9 @@ impl Catalogues {
 }
 
 pub(crate) struct Inner {
-    client: Arc<dyn Client>,
+    client: Client,
+    /// The agent's host services, at its host.
+    agent: client::Agent,
     agent_id: Vec<u8>,
     /// The rows a (re)opened stream starts with.
     tail: AtomicU32,
@@ -258,13 +259,9 @@ impl Inner {
         trace.record(state, at_ms, TraceEvent::Driver(event));
     }
 
-    fn subscribe_request(&self) -> SubscribeSessionRequest {
-        SubscribeSessionRequest {
-            agent_id: self.agent_id.clone(),
-            from: Some(wire::subscribe_session_request::From::Tail(
-                self.tail.load(Ordering::Acquire),
-            )),
-        }
+    async fn subscribe(&self) -> Result<EventStream<SessionEvent>, RpcError> {
+        let tail = self.tail.load(Ordering::Acquire);
+        self.client.sessions().subscribe(&self.agent_id, tail).await
     }
 
     /// Applies one stream event, answering an Append whose base is not
@@ -285,11 +282,7 @@ impl Inner {
         }
         if let Some(key) = &outcome.need_get {
             self.note(DriverEvent::Get { key: key.clone() });
-            let request = GetItemRequest {
-                agent_id: self.agent_id.clone(),
-                key: key.clone(),
-            };
-            match self.client.get_item(request).await {
+            match self.client.sessions().get_item(&self.agent_id, key).await {
                 Ok(item) => {
                     self.apply(Msg::Event(SessionEvent {
                         of: Some(session_event::Of::Item(item)),
@@ -328,7 +321,7 @@ impl Inner {
         };
         let inner = self.clone();
         tokio::spawn(async move {
-            if let Err(error) = inner.client.dump(request).await {
+            if let Err(error) = inner.client.admin().dump(request).await {
                 inner.note(DriverEvent::DumpFailed {
                     error: DriverError::from(&error),
                 });
@@ -397,13 +390,15 @@ impl Inner {
         self.note(DriverEvent::Catalogue {
             hash: wanted.clone(),
         });
-        let request = GetBlobRequest {
-            agent_id: self.agent_id.clone(),
-            hash: wanted.clone(),
-        };
-        let fetched = match self.client.get_blob(request).await {
-            Ok(fetched) => wire::Catalogue::decode(fetched.bytes.as_slice())
-                .map_err(|_| DriverError::Undecodable),
+        let fetched = match self
+            .client
+            .sessions()
+            .get_blob(&self.agent_id, &wanted)
+            .await
+        {
+            Ok(bytes) => {
+                wire::Catalogue::decode(bytes.as_slice()).map_err(|_| DriverError::Undecodable)
+            }
             Err(error) => Err(DriverError::from(&error)),
         };
         let again = {
@@ -445,19 +440,15 @@ impl Inner {
         }
         let id = input.input_id.clone();
         self.apply(Msg::Send(input.clone()));
-        let request = SendInputRequest {
-            agent_id: self.agent_id.clone(),
-            input: Some(input),
-        };
-        let outcome = match self.client.send_input(request).await {
+        let outcome = match self.agent.send_input(input).await {
             Ok(reply) => InputOutcome::Reply(reply),
-            Err(RpcError::Transport(_)) => InputOutcome::Lost,
-            // The runtime handed the input on and lost the agent's answer:
-            // it may or may not have arrived.
-            Err(error) if error.code() == Some(ErrorCode::Aborted) => InputOutcome::Lost,
+            // The connection failed, or the node carried the input to the
+            // agent's host and lost the answer: it may or may not have
+            // arrived.
+            Err(error) if error.uncertain() => InputOutcome::Lost,
             // Any other refusal never reached the agent, which is a
             // rejection, never uncertain.
-            Err(RpcError::Refused(error)) => InputOutcome::Reply(refused(error)),
+            Err(error) => InputOutcome::Reply(refused(error)),
         };
         self.apply(Msg::Sent(id.clone(), outcome.clone()));
         Sent { id, outcome }
@@ -469,15 +460,12 @@ impl Inner {
             hash: hash.clone(),
             status: BlobStatus::Fetching,
         });
-        let request = GetBlobRequest {
-            agent_id: self.agent_id.clone(),
-            hash: hash.clone(),
-        };
         let fetched = self
             .client
-            .get_blob(request)
+            .sessions()
+            .get_blob(&self.agent_id, &hash)
             .await
-            .map(|blob| Arc::<[u8]>::from(blob.bytes));
+            .map(Arc::<[u8]>::from);
         let status = match &fetched {
             Ok(bytes) => {
                 self.model().blobs.insert(hash.clone(), bytes.clone());
@@ -496,17 +484,27 @@ fn rejected(refusal: wire::Rejected) -> SendInputResponse {
     }
 }
 
-/// A call the daemon refused before the agent had it: a host it cannot
-/// reach, or the daemon's own words for anything else.
-fn refused(error: wire::Error) -> SendInputResponse {
-    rejected(match error.code() {
-        ErrorCode::Unavailable => wire::Rejected {
+/// An input refused before the agent had it. One that never left for the
+/// agent's host, because no link reached it or because only the relay does
+/// and the plan lapsed, is the host's being away: the composer holds it,
+/// the lapse saying its own reason. Anything else is refused in the words
+/// it came with.
+fn refused(error: RpcError) -> SendInputResponse {
+    let never_left = match error.not_sent() {
+        Some(NotSent::Unreachable) => Some(None),
+        Some(NotSent::Lapsed) => Some(Some(error.to_string())),
+        Some(NotSent::Revoked) | None => {
+            (error.code() == Some(wire::ErrorCode::Unavailable)).then_some(None)
+        }
+    };
+    rejected(match never_left {
+        Some(detail) => wire::Rejected {
             refusal: wire::Refusal::HostUnreachable as i32,
-            detail: None,
+            detail,
         },
-        _ => wire::Rejected {
+        None => wire::Rejected {
             refusal: wire::Refusal::Unspecified as i32,
-            detail: Some(error.message),
+            detail: Some(error.to_string()),
         },
     })
 }
@@ -561,7 +559,7 @@ impl Session {
     /// While the reader follows, the window keeps at most `cap` rows, never
     /// fewer than the tail.
     pub async fn open(
-        client: Arc<dyn Client>,
+        client: Client,
         agent: Agent,
         tail: u32,
         cap: u32,
@@ -573,7 +571,7 @@ impl Session {
     /// Opens on screen, fetching the catalogue, or off screen, where
     /// nothing is fetched until a chat shows it.
     pub(crate) async fn start(
-        client: Arc<dyn Client>,
+        client: Client,
         agent: Agent,
         tail: u32,
         cap: u32,
@@ -584,6 +582,7 @@ impl Session {
         let state = SessionState::new(agent.clone(), cap.max(tail) as usize);
         let (changed, _) = watch::channel(());
         let inner = Arc::new(Inner {
+            agent: client.agent(&agent),
             client,
             agent_id: agent.agent_id,
             tail: AtomicU32::new(tail),
@@ -607,10 +606,7 @@ impl Session {
             catalogues,
             asked: Mutex::default(),
         });
-        let mut stream = inner
-            .client
-            .subscribe_session(inner.subscribe_request())
-            .await?;
+        let mut stream = inner.subscribe().await?;
         inner.note(DriverEvent::Subscribed { tail });
         inner.apply(Msg::Connection(Connection::Live));
         let mut ended = None;
@@ -750,6 +746,11 @@ impl Session {
         &self.inner.agent_id
     }
 
+    /// The agent's host services, at its host.
+    pub(crate) fn host_services(&self) -> &client::Agent {
+        &self.inner.agent
+    }
+
     pub fn state(&self) -> StateGuard<'_> {
         StateGuard(self.inner.model())
     }
@@ -807,12 +808,13 @@ impl Session {
             return Ok(0);
         }
         self.inner.note(DriverEvent::Page { before, limit: n });
-        let request = ListItemsRequest {
-            agent_id: self.inner.agent_id.clone(),
-            before_order: before,
-            page_size: n,
-        };
-        match self.inner.client.list_items(request).await {
+        let page = self
+            .inner
+            .client
+            .sessions()
+            .list_items(&self.inner.agent_id, before, n)
+            .await;
+        match page {
             Ok(page) => {
                 let count = page.items.len();
                 self.inner.apply(Msg::Page {
@@ -859,12 +861,7 @@ impl Session {
 
     /// Resumes an exited agent with no first message.
     pub async fn resume(&self) -> Result<Agent, RpcError> {
-        let request = ResumeAgentRequest {
-            agent_id: self.inner.agent_id.clone(),
-            initial_prompt: None,
-            if_suspended: false,
-        };
-        let agent = self.inner.client.resume_agent(request).await?;
+        let agent = self.inner.agent.resume(None, false).await?;
         self.inner.apply(Msg::Entry(agent.clone()));
         Ok(agent)
     }
@@ -881,12 +878,7 @@ impl Session {
         if let Some(sending) = inputs::submitted(self.kind(), &draft) {
             self.inner.apply(Msg::Send(sending));
         }
-        let request = ResumeAgentRequest {
-            agent_id: self.inner.agent_id.clone(),
-            initial_prompt: Some(draft),
-            if_suspended: false,
-        };
-        match self.inner.client.resume_agent(request).await {
+        match self.inner.agent.resume(Some(draft), false).await {
             Ok(agent) => {
                 self.inner.apply(Msg::Entry(agent.clone()));
                 let accepted = SendInputResponse {
@@ -908,11 +900,7 @@ impl Session {
     /// amux's rename of this agent. Never held: a host that cannot be
     /// reached fails it at once, with the reason.
     pub async fn rename(&self, name: &str) -> Result<Agent, RpcError> {
-        let request = wire::RenameAgentRequest {
-            agent_id: self.inner.agent_id.clone(),
-            name: name.to_owned(),
-        };
-        let agent = self.inner.client.rename_agent(request).await?;
+        let agent = self.inner.agent.rename(name).await?;
         self.inner.apply(Msg::Entry(agent.clone()));
         Ok(agent)
     }
@@ -1043,14 +1031,14 @@ impl Session {
         }
     }
 
-    /// The files changed against `base`, without a patch, for an overview.
-    pub async fn changed_files(&self, base: wire::DiffBase) -> Result<wire::Diff, RpcError> {
-        crate::review::changed_files(self.inner.client.as_ref(), &self.inner.agent_id, base).await
-    }
-
-    /// The agent's diff against `base` and its patch, for a review page.
-    pub async fn review(&self, base: wire::DiffBase) -> Result<(wire::Diff, String), RpcError> {
-        crate::review::review(self.inner.client.as_ref(), &self.inner.agent_id, base).await
+    /// What changed in the agent's working tree, as its host compares it
+    /// with `base`: HEAD, a branch, or none for the host's own rule. For an
+    /// overview's list of changed files.
+    pub async fn changes(
+        &self,
+        base: Option<get_changes_request::Base>,
+    ) -> Result<GetChangesResponse, RpcError> {
+        self.inner.agent.changes(base).await
     }
 
     /// Stores bytes to attach to a prompt.
@@ -1060,13 +1048,7 @@ impl Session {
         mime: &str,
         bytes: Vec<u8>,
     ) -> Result<BlobRef, RpcError> {
-        let request = PutBlobRequest {
-            agent_id: self.inner.agent_id.clone(),
-            name: name.to_owned(),
-            mime: mime.to_owned(),
-            bytes,
-        };
-        self.inner.client.put_blob(request).await
+        self.inner.agent.put_blob(name, mime, bytes).await
     }
 
     /// This session's whole history: the state its trace began from and
@@ -1219,11 +1201,7 @@ async fn pump(inner: Arc<Inner>, stream: Option<EventStream<SessionEvent>>, ende
                 inner.note(DriverEvent::Backoff { until_ms });
                 inner.clock.sleep_until(until_ms).await;
             }
-            match inner
-                .client
-                .subscribe_session(inner.subscribe_request())
-                .await
-            {
+            match inner.subscribe().await {
                 Ok(opened) => {
                     inner.note(DriverEvent::Subscribed {
                         tail: inner.tail.load(Ordering::Acquire),

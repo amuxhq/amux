@@ -55,6 +55,9 @@ pub struct Sqlite {
     /// The `suspension/1` experiment's table is there: each own agent's
     /// run is kept in it.
     pub(crate) suspension_1: bool,
+    /// The `reviews/1` experiment's tables are there: each own agent's
+    /// review is kept in them.
+    pub(crate) reviews_1: bool,
     /// How many resets each replica row has absorbed since the store
     /// opened: what a replica that was told to forget its block went
     /// through, for the checks that judge it.
@@ -108,6 +111,7 @@ impl Sqlite {
     pub fn settle_experiments(&mut self, experiments: &[&str]) -> Result<(), OpenError> {
         crate::experiments::settle(&mut self.conn, &self.own_host, experiments)?;
         self.suspension_1 = experiments.contains(&crate::experiments::SUSPENSION_1.version);
+        self.reviews_1 = experiments.contains(&crate::experiments::REVIEWS_1.version);
         Ok(())
     }
 
@@ -180,6 +184,7 @@ impl Sqlite {
             own_host,
             markers: HashMap::new(),
             suspension_1: false,
+            reviews_1: false,
             #[cfg(feature = "explore")]
             resets: HashMap::new(),
         })
@@ -397,6 +402,7 @@ impl Sqlite {
             conn: &tx,
             own_host: &self.own_host,
             suspension_1: self.suspension_1,
+            reviews_1: self.reviews_1,
         });
         tx.finish()?;
         result
@@ -441,6 +447,7 @@ impl Sqlite {
             conn: &tx,
             own_host: &self.own_host,
             suspension_1: self.suspension_1,
+            reviews_1: self.reviews_1,
         })?;
         tx.commit()?;
         Ok(result)
@@ -711,6 +718,43 @@ impl Sqlite {
             return Err(StoreError::NotOwn);
         }
         self.write(|rows| commit(rows, agent, frames, clock))
+    }
+
+    /// [`Sqlite::commit`], and then `then` on the agent's review inside the
+    /// same transaction: what the committed records ask of the review lands
+    /// with them and with the cursor past them, or none of it does. An
+    /// error from `then` rolls the whole commit back, so the frames are read
+    /// again. With the reviews experiment off, `then` is not run.
+    pub fn commit_reviewed<T, E: From<StoreError>>(
+        &mut self,
+        agent: &AgentKey,
+        frames: &[(u64, Step)],
+        clock: CommitClock,
+        then: impl FnOnce(&Committed, &crate::reviews::ReviewWriter<'_>) -> Result<T, E>,
+    ) -> Result<(Committed, Option<T>), E> {
+        if !self.is_own(agent) {
+            return Err(StoreError::NotOwn.into());
+        }
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::from)?;
+        let rows = Rows {
+            conn: &tx,
+            own_host: &self.own_host,
+            suspension_1: self.suspension_1,
+            reviews_1: self.reviews_1,
+        };
+        let committed = commit(&rows, agent, frames, clock)?;
+        let then = match self.reviews_1 {
+            true => Some(then(
+                &committed,
+                &crate::reviews::ReviewWriter::new(&rows, agent),
+            )?),
+            false => None,
+        };
+        tx.commit().map_err(StoreError::from)?;
+        Ok((committed, then))
     }
 
     /// Moves an own row's ingest cursor back to where its journal now

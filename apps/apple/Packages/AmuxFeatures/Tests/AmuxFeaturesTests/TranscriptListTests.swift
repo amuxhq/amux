@@ -265,7 +265,7 @@ private func environment(
     CellEnvironment(
         design: .app, photographed: photographed, reducesMotion: reducesMotion, reducesTransparency: true,
         reportsElements: false, reportedPrefix: nil,
-        reportsGeometry: false, dynamicTypeSize: typeSize)
+        reportsGeometry: false, dynamicTypeSize: typeSize, codeHighlighting: .plain)
 }
 
 private func row(_ id: String, _ order: UInt64, collapsed: Bool = false) -> Row {
@@ -304,13 +304,13 @@ private final class StubChat: ChatSource, @unchecked Sendable {
         ordered.append(row)
         return ChatDelta(
             chat: 0, rows: [row], agents: nil, ask: nil, frame: nil, keys: .edges(above: [row.id], below: [], dropped: 0),
-            overview: nil, settings: nil)
+            overview: nil, review: nil, settings: nil)
     }
 
     func opening() -> ChatDelta {
         ChatDelta(
             chat: 0, rows: [], agents: nil, ask: AskMoved(card: nil), frame: frame(), keys: .reload(ordered.map(\.id)),
-            overview: nil, settings: nil)
+            overview: nil, review: nil, settings: nil)
     }
 
     func follow(_ following: Bool) {}
@@ -323,7 +323,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
             agent: AgentKey(host: [1], agent: [2]), name: "a", kind: .claudeSdk, phase: .idle,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: true,
             hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil,
-            context: nil, ended: nil, git: nil, signIn: nil)
+            context: nil, ended: nil, git: nil, reviewChip: nil, signIn: nil)
     }
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> { .failure(RuntimeFailure("stub")) }
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { nil }
@@ -348,6 +348,5 @@ private final class StubChat: ChatSource, @unchecked Sendable {
         .failure(RuntimeFailure("stub"))
     }
     func blob(_ hash: [UInt8]) -> Data? { nil }
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure> { .failure(RuntimeFailure("stub")) }
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> { .failure(RuntimeFailure("no")) }
 }

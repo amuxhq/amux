@@ -163,17 +163,20 @@ another device does not flash from a cached snapshot.
 ### Permissions
 
 The body is `Command` (command, working directory, reason, description), `Edit` (path, file count, counts, the
-patch as parsed lines and the new file's line its first change lands on) or `Tool` (server, tool and
+patch and the new file's line its first change lands on) or `Tool` (server, tool and
 pretty-printed arguments; for Claude's web fetch and web search, the address or the words, as Claude's own dialog
-shows them). The edit's lines are `EditLine`s: in a patch of several files a `File` marker where each file's lines
-start, with its path and what happens to it (added, deleted, moved, edited); a `Hunk` marker with where the hunk
-starts in the old and new file; or a `PatchLine` (added, removed or context, numbered where the patch says). A
+shows them). The edit's patch is a `FilePatch` for each file: in a patch of several files, the file its part is
+in, with its path and what happens to it (added, deleted, moved, edited); then its `PatchHunk`s, each with where
+it starts in the old and new file when the patch says, and its `PatchLine`s (added, removed or context, numbered
+where the patch says). A landed edit's head under its row carries its first file's hunks the same way. The hunks
+are kept apart in the data because their lines are not neighbours in the file: each is coloured as code of its
+own, so a comment or string one leaves open does not colour the next, and no client joins or splits them. A
 notebook edit's lines are the cell's new source. A file's header
 lines are dropped and only outside a hunk, so a removed `-- comment` or an added `++i` stays a line of the patch;
 a file Codex adds or deletes whole reads as added or removed lines. Each client decides whether to draw a
 hunk's start: the terminal names the first change's line beside the path, the phone draws each hunk's start
-as its line in the new file. A Claude edit is only the text replaced and the text replacing it, so its lines
-carry no numbers and no line.
+as its line in the new file, the Mac a rule between hunks. A Claude edit is only the text replaced and the text
+replacing it, so its lines carry no numbers and no line; each of its replacements is a hunk of its own.
 
 | Outcome | Offered by |
 |---|---|
@@ -254,7 +257,7 @@ row or the row failed.
 
 ## Session facts
 
-`overview(state, diff)` returns the `Overview`, what is still in flight around the chat; each part is empty or
+`overview(state, changed)` returns the `Overview`, what is still in flight around the chat; each part is empty or
 `None` when there is nothing to show. The composer's edge reads it folded and the overview reads it whole:
 
 | Field | Shown | claude_pty | claude_sdk | codex |
@@ -263,7 +266,7 @@ row or the row failed.
 | `jobs` | Each background job still running: its command, when it started, the step that started it, and its own stop where the kind has one (behind a confirm; `Stopping…`; the provider's refusal). A provider subagent's own job is left out: its composer stops it. | partial | partial | partial |
 | `failed_servers` | Only tool servers that failed to start or need signing in | none | full | full |
 | `usage_near_limit` | Nothing while fine; a warning near a limit; a foot card when blocked | none | full | full |
-| `changes` | The changed files by folder, root files first, once fetched with `GetDiff` and no patch (`changes(diff)`) | full | full | full |
+| `changes` | The changed files by folder, root files first, renames with their old path, once the agent's host answers `GetChanges` (`changes(answer)`), with the base branch the host compared against | full | full | full |
 
 Beside it, read from the same state:
 
@@ -273,8 +276,11 @@ Beside it, read from the same state:
 | `controls(state)`: the model's name, the effort in force, a permission or mode other than the normal one | Composer facts and the settings view | partial | full | full |
 | `sign_in(state)` | A notice above the composer when there is a problem; the composer still sends, which is how to try again | partial: as an API error | full | full |
 
-`diff_base(state, comparison)` names what the changed files are counted against: the uncommitted work, or
-everything on the branch since it left its base branch.
+`Comparison::base()` names what the changed files are counted against: the uncommitted work against HEAD, or
+nothing, so the agent's host picks the base for everything on the branch by its own rule.
+`Comparison::offered(state)` offers the branch once the row names a base branch. The review page takes no
+comparison from the overview: a review keeps the base branch it began with, picked by the default rule `GetChanges`
+uses unless the page names another.
 
 `settings(state)` is the settings view, read from the agent's catalogue: the offered models with their efforts,
 the permissions (how much the agent may do without asking), the modes (how it works: Codex's default and plan;

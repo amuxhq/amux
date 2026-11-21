@@ -147,7 +147,7 @@ fn insert_runtime(runtime: AmuxRuntime, #[cfg(unix)] stop: StopLatch) -> i64 {
 fn start_runtime_from_json(config: &str) -> Result<i64, String> {
     #[cfg(unix)]
     let stop = StopLatch::new()?;
-    let runtime = app_bridge::start_from_json(Some(config))?;
+    let runtime = app_bridge::start_from_json(Some(config), app_bridge::Surface::Android)?;
     Ok(insert_runtime(
         runtime,
         #[cfg(unix)]
@@ -579,19 +579,36 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_attachmentLimit(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewDoc(
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_highlightBlock(
     mut env: JNIEnv,
     _class: JClass,
-    review_json: JString,
-    comments_json: JString,
+    code: JString,
+    info: JString,
+    streaming: jboolean,
 ) -> jstring {
     guard_jni(&mut env, std::ptr::null_mut(), |env| {
-        let review = opt_string(env, review_json)?;
-        let comments = opt_string(env, comments_json)?;
+        let Some(code) = opt_string(env, code)? else {
+            return Ok(std::ptr::null_mut());
+        };
+        let info = opt_string(env, info)?.unwrap_or_default();
         into_jstring(
             env,
-            app_bridge::review_doc(review.as_deref(), comments.as_deref()),
+            app_bridge::highlight_block(&code, &info, streaming == JNI_TRUE),
         )
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_highlightPatch(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+    hunks_json: JString,
+) -> jstring {
+    guard_jni(&mut env, std::ptr::null_mut(), |env| {
+        let path = opt_string(env, path)?.unwrap_or_default();
+        let hunks = opt_string(env, hunks_json)?;
+        into_jstring(env, app_bridge::highlight_patch(&path, hunks.as_deref()))
     })
 }
 
@@ -1625,19 +1642,135 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionOpenOvervie
     })
 }
 
+// --- the review page ---------------------------------------------------------
+
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionReview(
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewOpen(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
-    comparison_json: JString,
+    base_branch: JString,
+    refresh: jboolean,
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
-        let comparison = opt_string(env, comparison_json)?;
+        let base_branch = opt_string(env, base_branch)?;
         Ok(ticket_on_chat(handle, |chat| {
-            chat.review(comparison.as_deref())
+            chat.review_open(base_branch.as_deref(), refresh == JNI_TRUE)
         }))
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewRound(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    sent_json: JString,
+) -> jlong {
+    guard_jni(&mut env, 0, |env| {
+        let sent = opt_string(env, sent_json)?;
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.review_round(sent.as_deref())
+        }))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewFiles(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    paths_json: JString,
+) -> jlong {
+    guard_jni(&mut env, 0, |env| {
+        let paths = opt_string(env, paths_json)?;
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.review_files(paths.as_deref())
+        }))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewContext(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    ask_json: JString,
+) -> jlong {
+    guard_jni(&mut env, 0, |env| {
+        let ask = opt_string(env, ask_json)?;
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.review_context(ask.as_deref())
+        }))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewEdit(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    changes_json: JString,
+) -> jlong {
+    guard_jni(&mut env, 0, |env| {
+        let changes = opt_string(env, changes_json)?;
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.review_edit(changes.as_deref())
+        }))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewChoose(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    choice_json: JString,
+) {
+    guard_jni(&mut env, (), |env| {
+        let choice = opt_string(env, choice_json)?;
+        let _ = with_chat(handle, |chat| chat.review_choose(choice.as_deref()));
+        Ok(())
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewPage(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jstring {
+    guard_jni(&mut env, std::ptr::null_mut(), |env| {
+        let page = with_chat(handle, AmuxChat::review_page).flatten();
+        into_jstring(env, page)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewAnchor(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    from: jint,
+    to: jint,
+) -> jstring {
+    guard_jni(&mut env, std::ptr::null_mut(), |env| {
+        let (from, to) = (from.max(0) as u32, to.max(0) as u32);
+        let anchor = with_chat(handle, |chat| chat.review_anchor(from, to)).flatten();
+        into_jstring(env, anchor)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_reviewClose(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    guard_jni(&mut env, (), |_| {
+        let _ = with_chat(handle, AmuxChat::review_close);
+        Ok(())
+    });
 }
 
 #[unsafe(no_mangle)]

@@ -52,7 +52,7 @@ BRIDGE_SYMBOL = "amux_runtime_"
 # Where the app keeps push keys and the extension reads them. Named as the
 # entitlements files spell it, since the team's prefix is not committed.
 PUSH_KEY_GROUP = "$(AppIdentifierPrefix)sh.amux.push"
-LOCAL_NETWORK_PURPOSE = ("amux finds hosts on your network so this phone can "
+LOCAL_NETWORK_PURPOSE = ("amux finds computers on your network so this phone can "
                          "pair and connect to them directly.")
 # Resources that only the driving and capture tools need. Code that reads them
 # is caught by the symbol list above, but a resource can be carried into the

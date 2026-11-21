@@ -27,7 +27,6 @@ import sh.amux.values.ContextView
 import sh.amux.values.ControlsSummary
 import sh.amux.values.Decision
 import sh.amux.values.DecisionView
-import sh.amux.values.DiffLine
 import sh.amux.values.ExitCause
 import sh.amux.values.ExploreVerb
 import sh.amux.values.FieldProblem
@@ -57,6 +56,7 @@ import sh.amux.values.Run
 import sh.amux.values.RunCounts
 import sh.amux.values.Scope
 import sh.amux.values.Segment
+import sh.amux.values.SentReviewRef
 import sh.amux.values.ServerView
 import sh.amux.values.SettingsView
 import sh.amux.values.SignInState
@@ -752,14 +752,15 @@ class ChatWordsTest {
         assertEquals("Attach Review · 3 comments", ChatWords.attachReview(3))
         assertEquals("Comment on 1 line", ChatWords.commentOn(1))
         assertEquals("Comment on 5 lines", ChatWords.commentOn(5))
-        assertEquals("Review · 2 comments", ChatWords.chip(AttachmentView.Review(comments = 2, patch = null)))
         assertEquals(
-            "Added line 11, Refused(String),",
-            ChatWords.spoken(DiffLine(LineKind.Added, "    Refused(String),", emptyList(), newLine = 11, oldLine = null)),
-        )
-        assertEquals(
-            "Removed line 13, Busy,",
-            ChatWords.spoken(DiffLine(LineKind.Removed, "    Busy,", emptyList(), newLine = null, oldLine = 13)),
+            "Review · 2 comments",
+            ChatWords.chip(
+                AttachmentView.SentReview(
+                    comments = 2,
+                    review = SentReviewRef(reviewId = listOf(1), round = 1, inputId = listOf(2)),
+                    text = "see the review",
+                ),
+            ),
         )
     }
 
@@ -839,7 +840,7 @@ class ChatWordsTest {
                 files = files,
                 added = 1,
                 removed = 0,
-                lines = emptyList(),
+                patch = emptyList(),
                 reason = "",
                 created = created,
                 line = 1,

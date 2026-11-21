@@ -26,7 +26,6 @@ import sh.amux.values.Composer
 import sh.amux.values.Decision
 import sh.amux.values.DecisionView
 import sh.amux.values.Directory
-import sh.amux.values.EditLine
 import sh.amux.values.EffortChoice
 import sh.amux.values.ExitCause
 import sh.amux.values.ExploreVerb
@@ -34,6 +33,9 @@ import sh.amux.values.FamilyHeader
 import sh.amux.values.FileChangeView
 import sh.amux.values.FileRow
 import sh.amux.values.FileStatus
+import sh.amux.values.PatchHunk
+import sh.amux.values.HunkStart
+import sh.amux.values.FilePatch
 import sh.amux.values.Filing
 import sh.amux.values.FleetCard
 import sh.amux.values.Folder
@@ -125,21 +127,21 @@ internal object CatalogFixtures {
             Folder(
                 path = "",
                 files = listOf(
-                    ChangedFile("README.md", "README.md", added = 2, removed = 0, status = FileStatus.Modified, binary = false),
+                    ChangedFile("README.md", "README.md", added = 2, removed = 0, status = FileStatus.Modified, binary = false, language = "markdown"),
                 ),
             ),
             Folder(
                 path = "crates/amux-ui/src/",
                 files = listOf(
-                    ChangedFile("crates/amux-ui/src/errors.rs", "errors.rs", added = 20, removed = 0, status = FileStatus.Added, binary = false),
-                    ChangedFile("crates/amux-ui/src/pairing.rs", "pairing.rs", added = 25, removed = 8, status = FileStatus.Modified, binary = false),
-                    ChangedFile("crates/amux-ui/src/strip.rs", "strip.rs", added = 0, removed = 12, status = FileStatus.Deleted, binary = false),
+                    ChangedFile("crates/amux-ui/src/errors.rs", "errors.rs", added = 20, removed = 0, status = FileStatus.Added, binary = false, language = "rust"),
+                    ChangedFile("crates/amux-ui/src/pairing.rs", "pairing.rs", added = 25, removed = 8, status = FileStatus.Modified, binary = false, language = "rust"),
+                    ChangedFile("crates/amux-ui/src/strip.rs", "strip.rs", added = 0, removed = 12, status = FileStatus.Deleted, binary = false, language = "rust"),
                 ),
             ),
             Folder(
                 path = "docs/",
                 files = listOf(
-                    ChangedFile("docs/PAIRING.md", "PAIRING.md", added = 9, removed = 0, status = FileStatus.Added, binary = false),
+                    ChangedFile("docs/PAIRING.md", "PAIRING.md", added = 9, removed = 0, status = FileStatus.Added, binary = false, language = "markdown"),
                 ),
             ),
         ),
@@ -649,21 +651,37 @@ internal object CatalogFixtures {
 
     val plan = AskBody.Plan(body = PLAN_BODY, title = PLAN_TITLE)
 
-    /** An edit's patch as the shared view hands it: where its hunk starts, then its lines. */
-    val diff: List<EditLine> = listOf(
-        EditLine.Hunk(oldStart = 12, newStart = 12),
-        EditLine.Line(PatchLine(LineKind.Context, "  match status {", number = 12)),
-        EditLine.Line(PatchLine(LineKind.Removed, "      Code::NotFound => \"no such host\",", number = 13)),
-        EditLine.Line(PatchLine(LineKind.Removed, "      Code::InvalidPin => \"wrong PIN\",", number = 14)),
-        EditLine.Line(PatchLine(LineKind.Added, "      _ => \"could not pair, check the code\",", number = 13)),
-        EditLine.Line(PatchLine(LineKind.Context, "  }", number = 14)),
+    /** An edit's patch as the shared view hands it: one hunk, where it starts, then its lines. */
+    val diff: List<FilePatch> = listOf(
+        FilePatch(
+            hunks = listOf(
+                PatchHunk(
+                    start = HunkStart(old = 12, new = 12),
+                    lines = listOf(
+                        PatchLine(LineKind.Context, "  match status {", number = 12),
+                        PatchLine(LineKind.Removed, "      Code::NotFound => \"no such host\",", number = 13),
+                        PatchLine(LineKind.Removed, "      Code::InvalidPin => \"wrong PIN\",", number = 14),
+                        PatchLine(LineKind.Added, "      _ => \"could not pair, check the code\",", number = 13),
+                        PatchLine(LineKind.Context, "  }", number = 14),
+                    ),
+                ),
+            ),
+        ),
     )
 
     /** A new file's whole body, every line added. */
-    val created: List<EditLine> = listOf(
-        EditLine.Hunk(oldStart = 0, newStart = 1),
-        EditLine.Line(PatchLine(LineKind.Added, "//! Every reason a pairing is refused.", number = 1)),
-        EditLine.Line(PatchLine(LineKind.Added, "pub use super::Code;", number = 2)),
+    val created: List<FilePatch> = listOf(
+        FilePatch(
+            hunks = listOf(
+                PatchHunk(
+                    start = HunkStart(old = 0, new = 1),
+                    lines = listOf(
+                        PatchLine(LineKind.Added, "//! Every reason a pairing is refused.", number = 1),
+                        PatchLine(LineKind.Added, "pub use super::Code;", number = 2),
+                    ),
+                ),
+            ),
+        ),
     )
 
     /** A schema with a defaulted repository, a choice of labels and a defaulted toggle. */
@@ -812,6 +830,7 @@ internal object CatalogFixtures {
         ),
     ): HostView = HostView(
         hostId = List(16) { index },
+        link = 0L,
         name = name,
         local = false,
         trusted = trusted,
@@ -882,6 +901,7 @@ internal object CatalogFixtures {
     val newAgentHosts: List<HostView> = listOf(
         HostView(
             hostId = List(16) { 7 },
+            link = 0L,
             name = "desk",
             local = false,
             trusted = true,
@@ -899,6 +919,7 @@ internal object CatalogFixtures {
         ),
         HostView(
             hostId = List(16) { 8 },
+            link = 0L,
             name = "laptop",
             local = false,
             trusted = true,

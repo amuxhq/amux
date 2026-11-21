@@ -525,7 +525,7 @@ mod tests {
 
     use super::*;
     use crate::families::Ended;
-    use crate::payload::{CallError, ClientRequest, MessageFrom, MessageRefusal, Response, Status};
+    use crate::payload::{CallError, ClientRequest, MessageRefusal, Response, Status};
     use crate::{CallId, Create, Input, Resume, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
@@ -1166,7 +1166,7 @@ mod tests {
     }
 
     fn close(agent: AgentId) -> ClientRequest {
-        ClientRequest::FileAgent {
+        ClientRequest::SetFiling {
             agent,
             filing: Filing::Closed,
         }
@@ -1262,7 +1262,7 @@ mod tests {
                 Refusal::Subagent(NO_KILL.into()),
             ),
             (
-                ClientRequest::FileAgent {
+                ClientRequest::SetFiling {
                     agent: SUB,
                     filing: Filing::Pinned,
                 },
@@ -1312,7 +1312,6 @@ mod tests {
                 }),
                 ..wire::Envelope::default()
             }),
-            from: MessageFrom::Person,
         });
         let refused = out.iter().find_map(|output| match output {
             Output::EndCall {

@@ -17,7 +17,7 @@ you.report | Report a Problem |  | 16,739,370,46
 you.dump | Export Diagnostics |  | 16,785,370,46
 you.help.caption |  |  | 16,839,310,32
 you.close | Close |  | 342,82,40,36
- | Pair your first host |  | 16,204,214,32
+ | Pair your first computer |  | 16,204,279,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | Looking on this network… |  | 36,305,174,18
  | 1 |  | 25,351,5,16
@@ -29,17 +29,17 @@ you.close | Close |  | 342,82,40,36
  | Sign In |  | 184,492,48,44
  | Agents |  | 16,127,116,42
  | Switch account |  | 24,66,29,36
- | Agents |  | 111,795,94,54
+ | Agents |  | 110,795,95,54
  | Agents |  | 140,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 229,830,29,12
- | Agents |  | 111,795,94,54
- | Agents |  | 141,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 230,830,29,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 216,830,56,12
+ | Agents |  | 110,795,95,54
+ | Agents |  | 140,830,35,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 217,830,55,12
  | ACCOUNTS |  | 18,132,74,16
  | Sign In |  | 16,156,370,47
- | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 30,211,335,48
+ | An account lets this phone reach your computers from anywhere, and a subscription bought on amux.sh carries over. |  | 30,211,335,48
  | THIS PHONE |  | 18,276,78,16
  | Appearance |  | 30,316,90,20
  | Light |  | 205,302,51,46
@@ -65,5 +65,5 @@ you.close | Close |  | 342,82,40,36
  | Cancel |  | 57,473,140,48
  | Cancel |  | 57,473,140,48
  | Cancel |  | 100,487,54,20
- | Agents | selected | 111,795,94,54
- | Hosts |  | 197,795,94,54
+ | Agents | selected | 110,795,95,54
+ | Computers |  | 197,795,95,54

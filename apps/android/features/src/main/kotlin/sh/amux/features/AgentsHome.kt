@@ -415,7 +415,6 @@ fun AgentsHome(
                 DeleteAgentDialog(
                     agentName = dialog.row.name,
                     descendants = dialog.row.card.descendants,
-                    workspaceGoes = dialog.row.card.workspaceGoes,
                     onPreviewDelete = onPreviewDelete?.let { preview -> { preview(dialog.row.id) } },
                     onDismiss = { confirming = null },
                     onConfirm = { discardingChanges ->

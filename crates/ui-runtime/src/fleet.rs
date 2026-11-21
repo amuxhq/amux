@@ -13,14 +13,13 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use client::{Client, Clock, EventStream, RpcError};
+use client::{AgentAddress, Client, Clock, EventStream, NotSent, RpcError};
 use futures_util::StreamExt as _;
 use tokio::sync::{OnceCell, watch};
 use tokio::task::JoinHandle;
 use ui_state::{AgentKey, Connection, FleetMsg, FleetState};
 use wire::{
-    Agent, DumpFile, DumpPart, ErrorCode, FileAgentRequest, Filing, InventoryEvent, Lifecycle,
-    inventory_event,
+    Agent, DumpFile, DumpPart, ErrorCode, Filing, InventoryEvent, Lifecycle, inventory_event,
 };
 
 use crate::Backoff;
@@ -50,11 +49,30 @@ pub enum Close {
     Held,
 }
 
-/// Whether a lifecycle call's error says it never reached the agent's
-/// host: the daemon could not reach it and wrote nothing.
+/// Whether a close's error says it never reached the agent's host, so
+/// nothing happened there and it may go again when the host is back: no
+/// link reached the host, or only the relay does and the plan lapsed. A
+/// host that no longer trusts this one will not be back, and a close that
+/// left and was lost may have landed, so neither is held.
 fn never_left(error: &RpcError) -> bool {
-    error.code() == Some(ErrorCode::Unavailable)
-        || error.reason() == Some(wire::ErrorReason::HostUnreachable)
+    matches!(
+        error.not_sent(),
+        Some(NotSent::Unreachable | NotSent::Lapsed)
+    ) || error.code() == Some(ErrorCode::Unavailable)
+}
+
+/// An agent's key as the address of its host's services: its host and its
+/// id, held together.
+struct Keyed<'a>(&'a AgentKey);
+
+impl AgentAddress for Keyed<'_> {
+    fn host_id(&self) -> &[u8] {
+        &self.0.host
+    }
+
+    fn agent_id(&self) -> &[u8] {
+        &self.0.agent
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -101,7 +119,7 @@ struct Model {
 }
 
 struct Inner {
-    client: Arc<dyn Client>,
+    client: Client,
     clock: Arc<dyn Clock>,
     model: Mutex<Model>,
     changed: watch::Sender<()>,
@@ -126,12 +144,13 @@ impl Inner {
     /// Closes the agent, stopping it when live; a close that never left,
     /// its host out of reach, is held and goes again when the host is back.
     async fn close_agent(self: &Arc<Self>, agent: AgentKey) -> Result<Close, RpcError> {
-        let request = FileAgentRequest {
-            agent_id: agent.agent.clone(),
-            filing: Filing::Closed as i32,
-        };
         let listing = self.model().state.listings();
-        match self.client.file_agent(request).await {
+        let closed = self
+            .client
+            .agent(&Keyed(&agent))
+            .set_filing(Filing::Closed)
+            .await;
+        match closed {
             Ok(_) => {
                 self.apply(FleetMsg::DropClose(agent));
                 Ok(Close::Closed)
@@ -379,7 +398,7 @@ pub struct Fleet {
 impl Fleet {
     /// Subscribes to the inventory and resolves once it has caught up, or
     /// once its stream ended first, in which case the pump reconnects.
-    pub async fn connect(client: Arc<dyn Client>, clock: impl Clock) -> Result<Fleet, RpcError> {
+    pub async fn connect(client: Client, clock: impl Clock) -> Result<Fleet, RpcError> {
         let state = FleetState::new();
         let (changed, _) = watch::channel(());
         let inner = Arc::new_cyclic(|me| Inner {
@@ -400,7 +419,7 @@ impl Fleet {
             drafts: Drafts::default(),
             me: me.clone(),
         });
-        let mut stream = inner.client.subscribe_inventory().await?;
+        let mut stream = inner.client.inventory().subscribe().await?;
         inner.note(DriverEvent::Subscribed { tail: 0 });
         inner.apply(FleetMsg::Connection(Connection::Live));
         let mut ended = None;
@@ -448,11 +467,11 @@ impl Fleet {
     /// reopened without resuming it). Never held: a host that cannot be
     /// reached fails it at once, with the reason.
     pub async fn file(&self, agent: &AgentKey, filing: Filing) -> Result<Agent, RpcError> {
-        let request = FileAgentRequest {
-            agent_id: agent.agent.clone(),
-            filing: filing as i32,
-        };
-        self.inner.client.file_agent(request).await
+        self.inner
+            .client
+            .agent(&Keyed(agent))
+            .set_filing(filing)
+            .await
     }
 
     /// Takes back a held close before it goes.
@@ -563,7 +582,7 @@ impl Fleet {
         if self.native(agent) {
             return None;
         }
-        self.inner.drafts.kept(&*self.inner.client, agent).await
+        self.inner.drafts.kept(&self.inner.client, agent).await
     }
 
     /// A subagent its parent's provider runs, which takes no messages, so
@@ -577,7 +596,7 @@ impl Fleet {
     /// Resolves once every draft save asked for before has been handed to
     /// the daemon: what a client waits on as it quits.
     pub async fn drafts_kept(&self) {
-        self.inner.drafts.flushed(&*self.inner.client).await;
+        self.inner.drafts.flushed(&self.inner.client).await;
     }
 
     /// A chat on the agent closed: the last one to close narrows its
@@ -769,7 +788,7 @@ async fn pump(inner: Arc<Inner>, stream: EventStream<InventoryEvent>, ended: Opt
                 inner.note(DriverEvent::Backoff { until_ms });
                 inner.clock.sleep_until(until_ms).await;
             }
-            match inner.client.subscribe_inventory().await {
+            match inner.client.inventory().subscribe().await {
                 Ok(opened) => {
                     inner.note(DriverEvent::Subscribed { tail: 0 });
                     inner.apply(FleetMsg::Connection(Connection::Live));

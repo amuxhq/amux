@@ -38,8 +38,8 @@ pub enum FramedKind {
     RelayTcp,
     /// An SSH session's stdio into the far host's `link.sock`.
     Ssh,
-    /// The duplex the testnet links two in-process hosts with.
-    InProcess,
+    /// The in-memory duplex the testnet links two hosts in one process with.
+    Loopback,
 }
 
 /// How long a closed connection may take to put its close on the stream
@@ -559,7 +559,7 @@ mod tests {
         for (kind, carrier_kind, path) in [
             (FramedKind::RelayTcp, CarrierKind::Relay, PathKind::RelayTcp),
             (FramedKind::Ssh, CarrierKind::Ssh, PathKind::Ssh),
-            (FramedKind::InProcess, CarrierKind::Direct, PathKind::Lan),
+            (FramedKind::Loopback, CarrierKind::Direct, PathKind::Lan),
         ] {
             let (connector, acceptor) = crate::link::quic::stream_pair(kind).await;
             assert_eq!(connector.kind(), carrier_kind);

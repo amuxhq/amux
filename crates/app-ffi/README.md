@@ -208,6 +208,20 @@ already holds: `amux_agent_name_problem` (why a name cannot name an agent),
 from a host's catalogue), and `amux_form_problems` (each field's
 `FieldProblem` for a form's `FormField`s and the `FormValue`s entered).
 
+Code is coloured the same way, by the shared view's highlighting
+(`ui-code`, beside `ui-view`):
+`amux_highlight_block(code, info, streaming)` for a fenced block of an
+agent's markdown, which the app parses itself, and
+`amux_highlight_patch(path, hunks)` for one file's `[PatchHunk]` in an edit
+ask, each hunk coloured apart from the others. Each
+answers a `HighlightedCode`, lines of `CodeRun`s tagged with a `TokenKind`
+that the app maps to its own palette. Either can be called from any thread.
+A language's grammar is built in the background on first use, and a block
+still streaming is passed over at a bounded rate, so an answer can come back
+not `settled`: the app draws it and asks again within a tenth of a second.
+`streaming` is for the open fence of a message still streaming; every other
+block is finished, and finished code is kept by content in Rust.
+
 ## Acts
 
 Acts that wait on the agent return a ticket at once (0 when the handle is
@@ -219,9 +233,8 @@ instead, a pick from the settings view, withdrawing, steering or resending a
 prompt, interrupting, stopping a job, switching back, resuming with the
 exited composer's draft and paging older rows; `ChatAct` says what each
 answers), `amux_session_put_blob`, `amux_session_open_overview` (the changed files for
-a `Comparison`, fetched without a patch as the overview opens),
-`amux_session_review` (the diff for a `Comparison` and its patch, frozen for
-the review page), `amux_profile_host_catalogue` (what a provider offers on a
+a `Comparison`, as the agent's host lists them when the overview opens),
+`amux_profile_host_catalogue` (what a provider offers on a
 host with no agent running, for the new-agent screen),
 `amux_profile_begin_pair` (a PIN or a pairing
 link: reaches and authenticates the machine, answering its name and
@@ -237,12 +250,35 @@ device's identity in the profile and the machines it trusts),
 `amux_profile_create_agent`, `amux_profile_directories`,
 `amux_profile_agent_act` (rename, stop, delete),
 `amux_profile_delete_warning` (what a delete does to the agent's workspace,
-asking its host when the agent has no process), `amux_profile_dump` (the one dump, saved or sent) and
+as its host previews it), `amux_profile_dump` (the one dump, saved or sent) and
 `amux_profile_submit_report` (writes the report around that dump and sends
 it, answering a `ReportSent`).
 `amux_session_discard` forgets a not-confirmed input at once, and
 `amux_profile_set_foreground(profile, foreground)` closes every agent's
 stream as the app leaves the foreground and reopens them on its return.
+
+## The review page
+
+`amux_review_*` act on the review page open on an `AmuxChat`, which needs
+the reviews experiment on the agent's host. `amux_review_open(chat,
+base_branch, refresh)` opens it, or opens it again (`base_branch` picks the
+base anew, `refresh` takes a snapshot even with drafts); from then the
+chat's deltas carry the page whole (`review`) whenever it moved, until
+`amux_review_close`. The app draws it as handed: `amux_review_files(chat,
+paths)` fetches the bodies the page lists in `to_fetch` (null for all of
+them), `amux_review_context(chat, ask)` loads a gap's `ReviewContextAsk`,
+and `amux_review_edit(chat, changes)` makes a JSON array of
+`ReviewChange`s all or none, with no page open too, as the chip's ✕ does.
+Those return tickets answered with a `ReviewOutcome`; `amux_review_round(
+chat, sent)` returns one answered with the `ReviewPage` of the round a sent
+review closed, or null once the host no longer holds it. Three return at
+once: `amux_review_choose(chat, choice)` takes a `ReviewChoice` (a view, a
+file folded or opened, an outdated comment opened or folded),
+`amux_review_page(chat)` answers the open page, and
+`amux_review_anchor(chat, from, to)` the `ReviewAnchor` a selection of the
+last page's rows comments on, or null for one with no line or across
+files. The composer's chip comes with the chat's frame (`review_chip`), and
+a send with it is the `SendWithReview` act.
 
 ## Ownership
 

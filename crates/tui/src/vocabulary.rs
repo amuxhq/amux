@@ -16,15 +16,15 @@ use ratatui::widgets::Paragraph;
 use ui_state::{Composer, Waiting};
 use ui_view::{
     AnswerView, AskBody, AskCard, AskRow, AttachmentView, CallPhase, CardState, Choice,
-    ChoiceOutcome, Decision, DecisionView, EditLine, ExploreVerb, FileChangeView, FileRow, Granted,
-    LineKind, Offline, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict,
-    QuestionView, QueuedRow, Reach, Refusal, Resolution, Row, RowKind, Scope, Segment,
+    ChoiceOutcome, Decision, DecisionView, ExploreVerb, FileChangeView, FilePatch, FileRow,
+    Granted, HunkStart, LineKind, Offline, OptionView, PatchHead, PatchHunk, PatchLine,
+    PermissionGrant, PlanVerdict, QuestionView, QueuedRow, Reach, Refusal, Resolution, Row,
+    RowKind, Scope, Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
 use crate::chat::ask::AskUi;
 use crate::chat::composer::{QueueEntry, edge_row};
-use crate::chat::review::ReviewPage;
 use crate::chat::rows::{RowFacts, RowState, row_lines};
 use crate::chat::{composer_lines, feed, native_composer_lines, sign_in_composer_lines};
 use crate::editor::Editor;
@@ -90,9 +90,9 @@ for the measurements."#;
 /// Every component, in catalogue order.
 pub fn components(theme: Theme) -> Vec<Component> {
     TIMES_IN_UTC.store(true, std::sync::atomic::Ordering::Relaxed);
-    // A fenced block is drawn plain until the grammars finish loading in the
-    // background, so a reference waits for them.
-    crate::highlight::preload();
+    // A fenced block is drawn plain until its grammar is built in the
+    // background, so a reference waits for every grammar.
+    crate::code::highlighter().preload();
     let w = usize::from(WIDTH);
     let mut out = Vec::new();
     let mut add = |name, shows, lines: Vec<Line<'static>>| {
@@ -194,12 +194,595 @@ pub fn components(theme: Theme) -> Vec<Component> {
         shows: "Home with a row in every state, each with its name (word pairs where amux named the agent), its branch where it works in a repository, and its second line: a family placed under Needs you by its child's question, a command asked for with another ask behind it; under Live a step being run, what an idle agent last said, a signed-out and a usage-limited agent, a starting agent with nothing to say yet, and an agent that failed with its cause, and an agent on a host that is away; under Settled, unfolded, one that finished and one that was stopped, whose heading says all there is to say.",
         buffer: home_rows(theme),
     });
-    out.push(Component {
-        name: "review_page",
-        shows: "The full-screen review page over a working-tree diff: the file list beside one stream of files and hunks, added and removed lines tinted, a saved comment under its line and the comment editor open on another.",
-        buffer: review_page(theme),
-    });
+    for (name, shows, mut page) in review_pages() {
+        let mut terminal =
+            Terminal::new(TestBackend::new(WIDTH, PAGE_HEIGHT)).expect("test terminal");
+        terminal
+            .draw(|frame| page.draw(frame, frame.area(), None, theme))
+            .expect("draw");
+        out.push(Component {
+            name,
+            shows,
+            buffer: terminal.backend().buffer().clone(),
+        });
+    }
+    {
+        let mut scene = chat_review_chip();
+        let (width, height) = CHAT_SIZE;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
+        terminal
+            .draw(|frame| scene.draw(frame, frame.area(), theme))
+            .expect("draw");
+        out.push(Component {
+            name: "composer_review_chip",
+            shows: "A chat whose agent's review holds three drafts: the review chip on the composer's top edge, read from the agent's row alone, with its ✕ and the words saying the drafts were written on older code.",
+            buffer: terminal.backend().buffer().clone(),
+        });
+    }
     out
+}
+
+/// The review page in each state a story shows, by component name.
+fn review_pages() -> Vec<(&'static str, &'static str, crate::chat::review::Page)> {
+    vec![
+        (
+            "review_first_look",
+            "The review page on a first look: three files of all changes, the lock file folded, a hunk under the definitions it sits in with highlighted code and the words that changed, a draft under its line and the comment editor open on another.",
+            review_first_look(),
+        ),
+        (
+            "review_since_last",
+            "The review page's next look, on Since your last review: the switch between the two views, the one file changed since, a sent comment off the lines shown with its saved code, an outdated one folded, and a draft on the new line.",
+            review_since_last(),
+        ),
+        (
+            "review_drafts_stale",
+            "The review page held on its drafts' snapshot after the agent changed code: the banner offering to refresh, which moves the drafts.",
+            review_drafts_stale(),
+        ),
+        (
+            "review_empty",
+            "The review page with nothing left to review.",
+            review_empty(),
+        ),
+        (
+            "review_not_offered",
+            "The review page for an agent whose computer does not run reviews.",
+            review_not_offered(),
+        ),
+    ]
+}
+
+// --- the review page --------------------------------------------------------
+
+const REVIEW_BASE: &str = "b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9";
+const REVIEW_ROUND: &str = "4f2a9c1e7b3d5f6a8c0e2b4d6f8a0c2e4b6d8f0a";
+const REVIEW_SNAPSHOT: &str = "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d";
+/// The prompt whose taking closed the review's one round.
+const REVIEW_ROUND_INPUT: &[u8] = b"the round's prompt";
+
+/// Rust's runs, roughly as the host's highlighter colours them: keywords,
+/// the name before a call, types and strings.
+fn rust_runs(text: &str) -> Vec<wire::experimental::ReviewRun> {
+    use wire::experimental::{ReviewRun, ReviewTokenKind as T};
+    const KEYWORDS: &[&str] = &[
+        "let", "fn", "pub", "self", "mut", "impl", "struct", "use", "return", "if", "Self",
+    ];
+    let mut out: Vec<ReviewRun> = Vec::new();
+    let mut push = |kind: T, len: usize| match out.last_mut() {
+        Some(last) if last.kind == kind as i32 => last.len += len as u32,
+        _ => out.push(ReviewRun {
+            kind: kind as i32,
+            len: len as u32,
+        }),
+    };
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        let c = bytes[at];
+        if c == b'"' {
+            let end = text[at + 1..]
+                .find('"')
+                .map_or(bytes.len(), |end| at + end + 2);
+            push(T::String, end - at);
+            at = end;
+        } else if text[at..].starts_with("//") {
+            push(T::Comment, bytes.len() - at);
+            at = bytes.len();
+        } else if c.is_ascii_alphabetic() || c == b'_' {
+            let end = text[at..]
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .map_or(bytes.len(), |end| at + end);
+            let word = &text[at..end];
+            let kind = if KEYWORDS.contains(&word) {
+                T::Keyword
+            } else if text[end..].starts_with('(') || text[end..].starts_with("!(") {
+                T::Function
+            } else if word.starts_with(|c: char| c.is_ascii_uppercase()) {
+                T::Type
+            } else {
+                T::Plain
+            };
+            push(kind, end - at);
+            at = end;
+        } else if c.is_ascii_digit() {
+            push(T::Number, 1);
+            at += 1;
+        } else {
+            push(T::Plain, 1);
+            at += 1;
+        }
+    }
+    out
+}
+
+fn review_line(
+    kind: wire::experimental::ReviewLineKind,
+    old: u32,
+    new: u32,
+    text: &str,
+) -> wire::experimental::ReviewLine {
+    wire::experimental::ReviewLine {
+        kind: kind as i32,
+        old_line: old,
+        new_line: new,
+        text: text.into(),
+        runs: rust_runs(text),
+    }
+}
+
+fn kept(old: u32, new: u32, text: &str) -> wire::experimental::ReviewLine {
+    review_line(wire::experimental::ReviewLineKind::Context, old, new, text)
+}
+
+fn put(new: u32, text: &str) -> wire::experimental::ReviewLine {
+    review_line(wire::experimental::ReviewLineKind::Added, 0, new, text)
+}
+
+fn cut(old: u32, text: &str) -> wire::experimental::ReviewLine {
+    review_line(wire::experimental::ReviewLineKind::Removed, old, 0, text)
+}
+
+fn definition(
+    kind: wire::experimental::ReviewDefinitionKind,
+    label: &str,
+    lines: (u32, u32),
+    parent: Option<u32>,
+) -> wire::experimental::ReviewDefinition {
+    wire::experimental::ReviewDefinition {
+        kind: kind as i32,
+        name: label.rsplit(' ').next().unwrap_or_default().into(),
+        label: label.into(),
+        start_line: lines.0,
+        end_line: lines.1,
+        parent,
+        side: wire::experimental::ReviewSide::Snapshot as i32,
+    }
+}
+
+/// `impl Store`, `fn open` and `fn close` of `src/store.rs`.
+fn store_definitions() -> [wire::experimental::ReviewDefinition; 3] {
+    use wire::experimental::ReviewDefinitionKind as K;
+    [
+        definition(K::Impl, "impl Store", (12, 96), None),
+        definition(K::Method, "fn open", (38, 48), Some(0)),
+        definition(K::Method, "fn close", (68, 74), Some(0)),
+    ]
+}
+
+/// The hunk of `fn close` against `old_commit`, as `ended` leaves its new
+/// line.
+fn close_hunk(old_commit: &str, old_start: u32, ended: &str) -> wire::experimental::ReviewHunk {
+    let [store, _, close] = store_definitions();
+    wire::experimental::ReviewHunk {
+        old_commit: old_commit.into(),
+        old_start,
+        new_start: 70,
+        scope: vec![store, close],
+        lines: vec![
+            kept(old_start, 70, "    pub fn close(self) -> io::Result<()> {"),
+            put(71, ended),
+            kept(old_start + 1, 72, "        drop(self.file);"),
+            kept(old_start + 2, 73, "        Ok(())"),
+            kept(old_start + 3, 74, "    }"),
+        ],
+    }
+}
+
+/// Every change since the base: an edit to `fn open` of the store, a new
+/// file of flags, and the lock file.
+fn review_files_all() -> Vec<wire::experimental::ReviewFileDiff> {
+    use wire::experimental::{ReviewFileDiff, ReviewHunk};
+    let [store, open, close] = store_definitions();
+    vec![
+        ReviewFileDiff {
+            path: "src/store.rs".into(),
+            hunks: vec![
+                ReviewHunk {
+                    old_commit: REVIEW_BASE.into(),
+                    old_start: 39,
+                    new_start: 39,
+                    scope: vec![store.clone(), open.clone()],
+                    lines: vec![
+                        kept(
+                            39,
+                            39,
+                            "    pub fn open(path: &Path, flags: Flags) -> io::Result<Store> {",
+                        ),
+                        kept(40, 40, "        let path = path.join(\"store\");"),
+                        cut(41, "        let file = File::open(&path)?;"),
+                        put(41, "        let file = open_with_flags(&path, flags)?;"),
+                        put(42, "        log::debug!(\"opened {}\", path.display());"),
+                        kept(42, 43, "        Ok(Store { file, flags })"),
+                        kept(43, 44, "    }"),
+                    ],
+                },
+                close_hunk(REVIEW_BASE, 69, "        self.file.sync_all()?;"),
+            ],
+            outline: vec![store, open, close],
+            context: Vec::new(),
+        },
+        ReviewFileDiff {
+            path: "src/flags.rs".into(),
+            hunks: vec![ReviewHunk {
+                old_commit: REVIEW_BASE.into(),
+                old_start: 0,
+                new_start: 1,
+                scope: Vec::new(),
+                lines: vec![
+                    put(1, "/// How a store opens its file."),
+                    put(2, "#[derive(Clone, Copy, Debug, Default)]"),
+                    put(3, "pub struct Flags {"),
+                    put(4, "    pub read_only: bool,"),
+                    put(5, "    pub create: bool,"),
+                    put(6, "}"),
+                ],
+            }],
+            outline: vec![definition(
+                wire::experimental::ReviewDefinitionKind::Struct,
+                "struct Flags",
+                (1, 6),
+                None,
+            )],
+            context: Vec::new(),
+        },
+    ]
+}
+
+fn changed_file(
+    path: &str,
+    status: wire::FileStatus,
+    added: u32,
+    removed: u32,
+    flags: &[wire::FileFlag],
+) -> wire::ChangedFile {
+    wire::ChangedFile {
+        path: path.into(),
+        status: status as i32,
+        added,
+        removed,
+        language: if path.ends_with(".rs") {
+            "rust".into()
+        } else {
+            String::new()
+        },
+        flags: flags.iter().map(|flag| *flag as i32).collect(),
+        ..Default::default()
+    }
+}
+
+/// A comment on `lines` of `src/store.rs` in `commit`, placed where `at`
+/// says, sent in `round` or a draft.
+fn store_comment(
+    id: &str,
+    commit: &str,
+    lines: (u32, u32),
+    words: &str,
+    round: Option<u32>,
+    at: wire::experimental::review_placement::At,
+) -> wire::experimental::ReviewerComment {
+    use wire::experimental::{ReviewAnchor, ReviewLineRange, ReviewPlacement, ReviewerComment};
+    ReviewerComment {
+        id: id.as_bytes().to_vec(),
+        anchor: Some(ReviewAnchor {
+            commit: commit.into(),
+            path: "src/store.rs".into(),
+            lines: Some(ReviewLineRange {
+                start: lines.0,
+                end: lines.1,
+            }),
+        }),
+        text: words.into(),
+        snippet: Vec::new(),
+        scope: Vec::new(),
+        round,
+        placement: Some(ReviewPlacement {
+            at: Some(at),
+            changed_near: false,
+            path: "src/store.rs".into(),
+        }),
+        revision: 1,
+        sent_revision: round.map(|_| 1),
+    }
+}
+
+fn placed_on(start: u32, end: u32) -> wire::experimental::review_placement::At {
+    wire::experimental::review_placement::At::Lines(wire::experimental::ReviewLineRange {
+        start,
+        end,
+    })
+}
+
+/// The summary of a first look: three files changed since `main`, and a
+/// draft on the store's new call.
+fn first_look_summary() -> wire::experimental::ReviewSummary {
+    use wire::{FileFlag, FileStatus};
+    wire::experimental::ReviewSummary {
+        id: b"review".to_vec(),
+        base_branch: "main".into(),
+        base_commit: REVIEW_BASE.into(),
+        snapshot: REVIEW_SNAPSHOT.into(),
+        files: vec![
+            changed_file(
+                "Cargo.lock",
+                FileStatus::Changed,
+                12,
+                4,
+                &[FileFlag::Lockfile],
+            ),
+            changed_file("src/flags.rs", FileStatus::Created, 6, 0, &[]),
+            changed_file("src/store.rs", FileStatus::Changed, 3, 1, &[]),
+        ],
+        comments: vec![store_comment(
+            "draft-open",
+            REVIEW_SNAPSHOT,
+            (41, 41),
+            "Keep File::open for read-only stores: open_with_flags creates the file.",
+            None,
+            placed_on(41, 41),
+        )],
+        objects: "/srv/amux/.amux/review/objects".into(),
+        root: "/srv/amux".into(),
+        ..Default::default()
+    }
+}
+
+/// A page over `summary` with `all` and `since_last` fetched, named for
+/// the chat it opens from.
+fn review_scene(
+    summary: wire::experimental::ReviewSummary,
+    all: Vec<wire::experimental::ReviewFileDiff>,
+    since_last: Vec<wire::experimental::ReviewFileDiff>,
+) -> crate::chat::review::Page {
+    use std::sync::Arc;
+    let by_path = |files: Vec<wire::experimental::ReviewFileDiff>| {
+        files
+            .into_iter()
+            .map(|file| (file.path.clone(), Arc::new(file)))
+            .collect()
+    };
+    let mut page = crate::chat::review::Page::new();
+    page.set_owner("fixer", "/srv/amux");
+    page.update(crate::chat::review::Fetched {
+        summary: Some(Arc::new(summary)),
+        all: by_path(all),
+        since_last: by_path(since_last),
+        context: Vec::new(),
+    });
+    page
+}
+
+/// The review page on a first look, with a draft under the store's new
+/// call and a second being written on `fn close`'s new line.
+pub fn review_first_look() -> crate::chat::review::Page {
+    let mut page = review_scene(first_look_summary(), review_files_all(), Vec::new());
+    page.show_file("src/store.rs");
+    let key = |code| KeyEvent::new(code, crossterm::event::KeyModifiers::NONE);
+    for code in [
+        KeyCode::Char('J'),
+        KeyCode::Char('J'),
+        KeyCode::Char('j'),
+        KeyCode::Char('c'),
+    ] {
+        page.key(key(code));
+    }
+    for c in "Does close need to sync if the store is read-only?".chars() {
+        page.key(key(KeyCode::Char(c)));
+    }
+    page
+}
+
+/// The review's next look, after one round: since the last review, the
+/// store's `fn close` changed again.
+pub fn review_since_last() -> crate::chat::review::Page {
+    use wire::experimental::review_placement::At;
+    use wire::experimental::{ReviewRound, ReviewSummary};
+    let mut sent = store_comment(
+        "sent-open",
+        REVIEW_ROUND,
+        (41, 41),
+        "Keep File::open for read-only stores: open_with_flags creates the file.",
+        Some(1),
+        placed_on(41, 41),
+    );
+    sent.snippet = vec![
+        kept(
+            39,
+            39,
+            "    pub fn open(path: &Path, flags: Flags) -> io::Result<Store> {",
+        ),
+        kept(40, 40, "        let path = path.join(\"store\");"),
+        cut(41, "        let file = File::open(&path)?;"),
+        put(41, "        let file = open_with_flags(&path, flags)?;"),
+    ];
+    let [store, open, close] = store_definitions();
+    sent.scope = vec![store.clone(), open];
+    let mut outdated = store_comment(
+        "sent-close",
+        REVIEW_ROUND,
+        (71, 71),
+        "sync_all can fail: don't drop its error.",
+        Some(1),
+        At::Outdated(wire::Empty {}),
+    );
+    outdated.snippet = vec![
+        kept(69, 70, "    pub fn close(self) -> io::Result<()> {"),
+        put(71, "        self.file.sync_all();"),
+    ];
+    outdated.scope = vec![store, close];
+    let draft = store_comment(
+        "draft-close",
+        REVIEW_SNAPSHOT,
+        (71, 71),
+        "Good. Say in a comment why the error matters here.",
+        None,
+        placed_on(71, 71),
+    );
+    let summary = ReviewSummary {
+        rounds: vec![ReviewRound {
+            snapshot: REVIEW_ROUND.into(),
+            base_commit: REVIEW_BASE.into(),
+            input_id: REVIEW_ROUND_INPUT.to_vec(),
+        }],
+        since_last: vec![changed_file(
+            "src/store.rs",
+            wire::FileStatus::Changed,
+            1,
+            1,
+            &[],
+        )],
+        comments: vec![sent, outdated, draft],
+        ..first_look_summary()
+    };
+    let since = wire::experimental::ReviewFileDiff {
+        path: "src/store.rs".into(),
+        hunks: vec![{
+            let mut hunk = close_hunk(REVIEW_ROUND, 70, "        self.file.sync_all()?;");
+            hunk.lines
+                .insert(1, cut(71, "        self.file.sync_all();"));
+            hunk
+        }],
+        outline: store_definitions().to_vec(),
+        context: Vec::new(),
+    };
+    let mut page = review_scene(summary, review_files_all(), vec![since]);
+    page.show_file("src/store.rs");
+    page
+}
+
+/// The round the review sent before the next look closed, opened from the
+/// sent review in the chat: its whole diff, from the base to the round's
+/// snapshot, with its two comments on the lines they were written on.
+pub fn review_round() -> crate::chat::review::Page {
+    let summary = review_since_last()
+        .fetched()
+        .summary
+        .clone()
+        .expect("the next look's summary");
+    let (_, mut round) =
+        ui_runtime::review::round_of(&summary, &summary.id, REVIEW_ROUND_INPUT).expect("the round");
+    round.files = first_look_summary().files;
+    // The round's snapshot, before the agent made close keep sync_all's
+    // error.
+    let mut files: Vec<_> = review_files_all()
+        .into_iter()
+        .map(|mut file| {
+            if file.path == "src/store.rs" {
+                file.hunks[1] = close_hunk(REVIEW_BASE, 69, "        self.file.sync_all();");
+            }
+            file
+        })
+        .collect();
+    // A past round opens its lockfile too, which the review folds.
+    files.push(wire::experimental::ReviewFileDiff {
+        path: "Cargo.lock".into(),
+        hunks: vec![wire::experimental::ReviewHunk {
+            old_commit: REVIEW_BASE.into(),
+            old_start: 210,
+            new_start: 210,
+            scope: Vec::new(),
+            lines: vec![
+                kept(210, 210, "[[package]]"),
+                kept(211, 211, "name = \"store\""),
+                cut(212, "version = \"0.3.0\""),
+                put(212, "version = \"0.4.0\""),
+            ],
+        }],
+        outline: Vec::new(),
+        context: Vec::new(),
+    });
+    let state = ui_view::ReviewPageState {
+        toggled_files: vec!["Cargo.lock".into()],
+        ..ui_view::ReviewPageState::default()
+    };
+    let mut page = crate::chat::review::Page::round(1);
+    page.set_owner("fixer", "/srv/amux");
+    page.round_read(
+        Ok(Some(ui_runtime::review::Round {
+            summary: round,
+            files,
+            notices: Vec::new(),
+            state,
+        })),
+        "",
+    );
+    page
+}
+
+/// The first look's draft held on its snapshot after the agent changed
+/// code.
+pub fn review_drafts_stale() -> crate::chat::review::Page {
+    let summary = wire::experimental::ReviewSummary {
+        stale: true,
+        ..first_look_summary()
+    };
+    let mut page = review_scene(summary, review_files_all(), Vec::new());
+    page.show_file("src/store.rs");
+    page
+}
+
+/// A review with nothing changed and no comments.
+pub fn review_empty() -> crate::chat::review::Page {
+    let summary = wire::experimental::ReviewSummary {
+        files: Vec::new(),
+        comments: Vec::new(),
+        ..first_look_summary()
+    };
+    review_scene(summary, Vec::new(), Vec::new())
+}
+
+/// The page for an agent whose computer does not run reviews.
+pub fn review_not_offered() -> crate::chat::review::Page {
+    let mut page = crate::chat::review::Page::new();
+    page.set_owner("fixer", "/srv/amux");
+    page.notice(ui_view::ReviewNotice::NotOffered, true);
+    page
+}
+
+/// A chat whose agent's review holds three drafts, written before the
+/// agent last changed code: its row says so, and the composer's chip
+/// follows the row.
+pub fn chat_review_chip() -> ChatScene {
+    let mut scene = chat_formatted();
+    let mut agent = scene.state.agent().clone();
+    wire::experimental::REVIEW_ROW.put(
+        &mut agent.experimental,
+        &wire::experimental::ReviewRowEntry {
+            drafts: 3,
+            counter: 7,
+            moved: true,
+            review_id: b"review".to_vec(),
+        },
+    );
+    scene.state.update(ui_state::Msg::Entry(agent));
+    for c in "Here's my review of the store change.".chars() {
+        scene.view.key(
+            &scene.state,
+            KeyEvent::from(KeyCode::Char(c)),
+            Theme::default(),
+        );
+    }
+    scene
 }
 
 /// A row as the feed draws it outside a run: the agent's and the
@@ -627,96 +1210,6 @@ pub fn authored_home() -> HomeScene {
     }
 }
 
-fn review_page(theme: Theme) -> Buffer {
-    let mut page = commented_review();
-    let mut terminal = Terminal::new(TestBackend::new(WIDTH, PAGE_HEIGHT)).expect("test terminal");
-    terminal
-        .draw(|frame| {
-            let area = frame.area();
-            page.draw(frame, area, None, theme);
-        })
-        .expect("draw");
-    terminal.backend().buffer().clone()
-}
-
-/// The review page over a two-file working-tree diff, with a comment on
-/// one line and a second being written on the next.
-pub fn commented_review() -> ReviewPage {
-    let patch = "\
-diff --git a/src/sum.rs b/src/sum.rs
-index 1111111..2222222 100644
---- a/src/sum.rs
-+++ b/src/sum.rs
-@@ -1,5 +1,6 @@
- fn main() {
-     let a = 1;
--    let b = 2;
--    println!(\"{}\", a + b);
-+    let b = 3;
-+    let c = 4;
-+    println!(\"{}\", a + b + c);
- }
-@@ -19,3 +20,3 @@ fn total(xs: &[i32]) -> i32 {
-     let mut sum = 0;
--    for x in xs { sum += x; }
-+    for x in xs { sum += *x; }
-     sum
-diff --git a/NOTES.md b/NOTES.md
-new file mode 100644
-index 0000000..3333333
---- /dev/null
-+++ b/NOTES.md
-@@ -0,0 +1 @@
-+Remember the sum changed.
-";
-    let diff = wire::Diff {
-        patch: Some(BlobRef {
-            hash: vec![7; 32],
-            name: "working-tree.diff".into(),
-            mime: "text/x-diff".into(),
-            size: patch.len() as u64,
-        }),
-        base: Some(wire::DiffBase {
-            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-        }),
-        head: "0463fb2c".into(),
-        merge_base: None,
-        files: vec![
-            wire::DiffFile {
-                path: "src/sum.rs".into(),
-                added: 3,
-                removed: 2,
-                change: wire::DiffFileChange::Changed as i32,
-                binary: false,
-            },
-            wire::DiffFile {
-                path: "NOTES.md".into(),
-                added: 1,
-                removed: 0,
-                change: wire::DiffFileChange::Created as i32,
-                binary: false,
-            },
-        ],
-        own_commits: None,
-    };
-    let mut page = ReviewPage::new(diff, patch.into());
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
-    page.key(key(KeyCode::Char('j')));
-    page.key(key(KeyCode::Char('j')));
-    page.key(key(KeyCode::Char('c')));
-    for c in "why 3? the spec says b stays 2".chars() {
-        page.key(key(KeyCode::Char(c)));
-    }
-    page.key(key(KeyCode::Enter));
-    page.key(key(KeyCode::Char('j')));
-    page.key(key(KeyCode::Char('c')));
-    for c in "and c".chars() {
-        page.key(key(KeyCode::Char(c)));
-    }
-    page
-}
-
 // --- rows ------------------------------------------------------------------
 
 fn row(kind: RowKind) -> Row {
@@ -865,17 +1358,20 @@ fn facts(row: &Row) -> RowFacts {
             text: text.into(),
         };
         facts.patch = Some(PatchHead {
-            lines: vec![
-                line(
-                    41,
-                    LineKind::Context,
-                    "    fn redraw(&mut self, frame: &mut Frame) {",
-                ),
-                line(42, LineKind::Removed, "        self.paint_all(frame);"),
-                line(42, LineKind::Added, "        if self.dirty {"),
-                line(43, LineKind::Added, "            self.paint_all(frame);"),
-                line(44, LineKind::Added, "        }"),
-            ],
+            hunks: vec![PatchHunk {
+                start: Some(HunkStart { old: 41, new: 41 }),
+                lines: vec![
+                    line(
+                        41,
+                        LineKind::Context,
+                        "    fn redraw(&mut self, frame: &mut Frame) {",
+                    ),
+                    line(42, LineKind::Removed, "        self.paint_all(frame);"),
+                    line(42, LineKind::Added, "        if self.dirty {"),
+                    line(43, LineKind::Added, "            self.paint_all(frame);"),
+                    line(44, LineKind::Added, "        }"),
+                ],
+            }],
             more: 10,
         });
     }
@@ -970,9 +1466,14 @@ fn row_sets() -> Vec<RowSet> {
                             Segment::Text("Why does the fleet flicker? See ".into()),
                             Segment::Attachment(AttachmentView::Image(image.clone())),
                             Segment::Text(" and my notes ".into()),
-                            Segment::Attachment(AttachmentView::Review {
-                                patch: None,
+                            Segment::Attachment(AttachmentView::SentReview {
                                 comments: 2,
+                                review: ui_view::SentReviewRef {
+                                    review_id: vec![1; 16],
+                                    round: 1,
+                                    input_id: vec![7; 16],
+                                },
+                                text: "Two comments on src/sum.rs.".into(),
                             }),
                         ],
                         steered: false,
@@ -1782,12 +2283,12 @@ fn choice(outcome: ChoiceOutcome) -> Choice {
 }
 
 /// One numbered line of an authored edit ask's patch.
-fn patch(number: Option<u32>, kind: LineKind, text: &str) -> EditLine {
-    EditLine::Line(PatchLine {
+fn patch(number: Option<u32>, kind: LineKind, text: &str) -> PatchLine {
+    PatchLine {
         number,
         kind,
         text: text.into(),
-    })
+    }
 }
 
 fn card(body: AskBody, mut choices: Vec<Choice>) -> AskCard {
@@ -1950,16 +2451,18 @@ fn cards() -> Vec<CardSet> {
                     files: 1,
                     added: 2,
                     removed: 1,
-                    lines: vec![
-                        EditLine::Hunk {
-                            old_start: 10,
-                            new_start: 10,
-                        },
-                        patch(Some(10), LineKind::Context, "let a = 1;"),
-                        patch(Some(11), LineKind::Removed, "let b = 2;"),
-                        patch(Some(11), LineKind::Added, "let b = 3;"),
-                        patch(Some(12), LineKind::Added, "let c = 4;"),
-                    ],
+                    patch: vec![FilePatch {
+                        file: None,
+                        hunks: vec![PatchHunk {
+                            start: Some(HunkStart { old: 10, new: 10 }),
+                            lines: vec![
+                                patch(Some(10), LineKind::Context, "let a = 1;"),
+                                patch(Some(11), LineKind::Removed, "let b = 2;"),
+                                patch(Some(11), LineKind::Added, "let b = 3;"),
+                                patch(Some(12), LineKind::Added, "let c = 4;"),
+                            ],
+                        }],
+                    }],
                     line: Some(11),
                     reason: String::new(),
                     created: Some(false),
@@ -2454,15 +2957,17 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         uncommitted: Some(totals(4, 42, 7)),
         on_branch: Some(totals(6, 120, 30)),
     };
-    let file = |path: &str, added, removed, change: wire::DiffFileChange| wire::DiffFile {
+    use wire::FileStatus::{Changed, Created, Deleted};
+    use wire::{ChangedFile, FileStatus, GetChangesResponse};
+    let file = |path: &str, added, removed, status: FileStatus| ChangedFile {
         path: path.into(),
         added,
         removed,
-        change: change as i32,
-        binary: false,
+        status: status as i32,
+        language: "rust".into(),
+        ..Default::default()
     };
-    use wire::DiffFileChange::{Changed, Created, Deleted};
-    let uncommitted = wire::Diff {
+    let uncommitted = GetChangesResponse {
         files: vec![
             file("crates/ui-view/src/overview.rs", 30, 4, Changed),
             file("README.md", 2, 0, Changed),
@@ -2471,7 +2976,8 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         ],
         ..Default::default()
     };
-    let on_branch = wire::Diff {
+    let on_branch = GetChangesResponse {
+        base_branch: "main".into(),
         files: vec![
             file("crates/ui-view/src/overview.rs", 64, 10, Changed),
             file("README.md", 2, 0, Changed),
@@ -2630,25 +3136,26 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
         })));
         state
     };
-    let scene = |state: &SessionState, comparison: Comparison, diff: Option<&wire::Diff>| {
-        let mut view = ChatView::new(b"agent".to_vec(), now, false);
-        view.pane_open = true;
-        view.comparison = comparison;
-        if let Some(diff) = diff {
-            view.changes_fetched(
-                FetchKey {
-                    comparison,
-                    totals: None,
-                },
-                diff.clone(),
-            );
-        }
-        ChatScene {
-            view,
-            state: state.clone(),
-            now,
-        }
-    };
+    let scene =
+        |state: &SessionState, comparison: Comparison, diff: Option<&GetChangesResponse>| {
+            let mut view = ChatView::new(b"agent".to_vec(), now, false);
+            view.pane_open = true;
+            view.comparison = comparison;
+            if let Some(diff) = diff {
+                view.changes_fetched(
+                    FetchKey {
+                        comparison,
+                        totals: None,
+                    },
+                    diff.clone(),
+                );
+            }
+            ChatScene {
+                view,
+                state: state.clone(),
+                now,
+            }
+        };
 
     let claude_working = wire::ClaudeSnapshot {
         model: Some("opus".into()),

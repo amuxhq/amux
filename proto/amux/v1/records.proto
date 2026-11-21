@@ -479,7 +479,7 @@ message QueuedInput {
 }
 
 // ---------------------------------------------------------------------------
-// Attachments, blobs, diffs
+// Attachments and blobs
 // ---------------------------------------------------------------------------
 
 message Attachment {
@@ -487,10 +487,21 @@ message Attachment {
     BlobRef image = 1;
     BlobRef file = 2;
     InlineText text = 3;
-    Review review = 4;
     // Comments a person made on a web page, sent from the browser extension.
     PageReview page = 5;
   }
+  // What experiments say about the attachment, each entry keyed by an
+  // experiment's version (e.g. "reviews/1") and holding an encoded
+  // amux.experimental message. The attachment reads as what `of` holds to a
+  // build that knows none of its entries, so an entry only adds to it. A
+  // build reads only the entries of the versions it implements and ignores
+  // every other key. The map is promised; its entries are not. Empty
+  // outside experiments.
+  map<string, bytes> experimental = 1000;
+  // A review of a patch the host built, retired for the review service's
+  // pages.
+  reserved 4;
+  reserved "review";
 }
 
 // Content-addressed bytes in the owning agent's directory. The name belongs
@@ -506,66 +517,6 @@ message BlobRef {
 message InlineText {
   string name = 1;
   string text = 2;
-}
-
-// A comparison of an agent's working tree, made on the agent's host. It
-// runs to the working tree, untracked files included, from HEAD or from
-// where the branch left the named base. The patch is a text/x-diff blob of
-// the agent, built only when asked for; its index lines carry each file's
-// full object ids.
-message Diff {
-  BlobRef patch = 1;
-  DiffBase base = 2;
-  // Empty before the first commit.
-  string head = 3;
-  optional string merge_base = 4;
-  repeated DiffFile files = 5;
-  // Commits on the branch HEAD has checked out that no other branch, tag or
-  // remote-tracking ref holds, the branch's own upstream aside: what
-  // deleting the branch would lose, so a branch with none goes with an
-  // agent's workspace. Absent on a detached head, when it could not be
-  // counted, and from hosts before it, which a reader takes as not known.
-  optional uint32 own_commits = 6;
-}
-
-message DiffFile {
-  string path = 1;
-  // Lines; none for a binary file.
-  uint32 added = 2;
-  uint32 removed = 3;
-  DiffFileChange change = 4;
-  bool binary = 5;
-}
-
-enum DiffFileChange {
-  DIFF_FILE_CHANGE_UNSPECIFIED = 0;
-  DIFF_FILE_CHANGE_CHANGED = 1;
-  DIFF_FILE_CHANGE_CREATED = 2;
-  DIFF_FILE_CHANGE_DELETED = 3;
-}
-
-message DiffBase {
-  oneof base {
-    // From the folder's HEAD commit.
-    Empty head = 1;
-    string branch = 2;
-  }
-}
-
-// A diff exactly as the GetDiff call returned it, frozen when the review page
-// opened, plus a person's comments.
-message Review {
-  Diff diff = 1;
-  repeated ReviewComment comments = 2;
-}
-
-message ReviewComment {
-  string path = 1;
-  // New-side line; zero comments on the file as a whole.
-  uint32 line = 2;
-  // Old-side line for a comment on a removed line.
-  uint32 old_line = 3;
-  string text = 4;
 }
 
 // Comments a person made on a web page: an app the agent builds, a page it

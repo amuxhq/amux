@@ -2,6 +2,7 @@ shell |  | agents | 0,62,402,778
 chat |  | decision-pty | 0,116,402,724
 chat.row.prompt | Check the deployment once. |  | 16,124,370,40
 chat.prose.render |  | rendered | 161,134,211,20
+chat.row.command | Wants to run, deploy --check |  | 16,176,370,20
 ask | Wants to run a command | open | 12,574,378,256
 ask.more | More |  | 338,582,44,44
 ask.subject | deploy --check |  | 28,630,346,40
@@ -18,6 +19,7 @@ chat.title | decision-pty | decision-pty | 76,66,165,36
  | Allow |  | 28,770,169,44
  | Deny… |  | 205,770,169,44
  | Check the deployment once. |  | 16,124,370,40
+ | Wants to run, deploy --check |  | 16,176,370,20
 BackButton | Agents |  | 16,62,44,44
  | decision-pty, /p/t/a/n/d/work · desk |  | 76,66,165,36
  | More |  | 350,66,28,36

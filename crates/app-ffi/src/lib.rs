@@ -17,6 +17,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub use app_bridge::{EdgeOverrides, Lifecycle, ProfileId, StartConfig};
 
+mod review;
+
+pub use review::*;
+
 // The tests drive real agent processes, which run on Unix.
 #[cfg(all(test, unix))]
 mod tests;
@@ -72,7 +76,8 @@ impl AmuxRuntime {
 /// a test chooses, such as serving links on loopback.
 #[cfg(test)]
 fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
-    app_bridge::start(config, overrides).map(|runtime| Box::new(AmuxRuntime(runtime)))
+    app_bridge::start(config, overrides, app_bridge::Surface::Ios)
+        .map(|runtime| Box::new(AmuxRuntime(runtime)))
 }
 
 /// Attaches as `amux_runtime_attach` does, to the daemon answering on a
@@ -290,6 +295,62 @@ pub unsafe extern "C" fn amux_command_matches(
     })
 }
 
+/// A fenced code block coloured by kind of token, as the shared view
+/// colours it for every client: the code, the fence's info string (its
+/// first word names the language) and whether this is the block still
+/// being written, the last of a message still streaming whose closing
+/// fence has not arrived. Answers a `HighlightedCode` as JSON, one line
+/// for each of the code's lines; null only when the code is not UTF-8.
+/// The caller frees the answer.
+///
+/// A result that is not `settled` is drawn as it is and asked for again
+/// soon (within a tenth of a second): a grammar is being built, or a
+/// streaming block's completed lines are being passed over, in the
+/// background. Callable from any thread; finished code is kept by content,
+/// so asking again for the same block costs a lookup.
+///
+/// # Safety
+/// The strings are NUL-terminated; `info` may be null for no language.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_highlight_block(
+    code: *const c_char,
+    info: *const c_char,
+    streaming: bool,
+) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: the caller's contract.
+        let Some(code) = (unsafe { text(code) }) else {
+            return std::ptr::null_mut();
+        };
+        // SAFETY: the caller's contract.
+        let info = unsafe { text(info) }.unwrap_or_default();
+        into_c_string(app_bridge::highlight_block(code, info, streaming))
+    })
+}
+
+/// A file's change coloured as the file at `path` is, from its hunks as
+/// an edit ask's card carries them (a `FilePatch`'s `[PatchHunk]` as JSON),
+/// each hunk coloured as a fragment of its own. Answers a `HighlightedCode`
+/// as JSON with one line for each of the hunks' lines, hunk after hunk;
+/// null when the hunks do not parse. Settles and frees as
+/// `amux_highlight_block` does.
+///
+/// # Safety
+/// The strings are NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_highlight_patch(
+    path: *const c_char,
+    hunks: *const c_char,
+) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: the caller's contract.
+        let path = unsafe { text(path) }.unwrap_or_default();
+        // SAFETY: the caller's contract.
+        let hunks = unsafe { text(hunks) };
+        into_c_string(app_bridge::highlight_patch(path, hunks))
+    })
+}
+
 /// Whether `pasted`, arriving in a draft in one paste, joins it as one
 /// text attachment rather than as words, by the rule every client's paste
 /// follows.
@@ -327,7 +388,7 @@ pub unsafe extern "C" fn amux_runtime_start(
         Err("the runtime panicked while starting".to_owned()),
         || {
             // SAFETY: the caller's contract.
-            app_bridge::start_from_json(unsafe { text(config) })
+            app_bridge::start_from_json(unsafe { text(config) }, app_bridge::Surface::Ios)
                 .map(|runtime| Box::new(AmuxRuntime(runtime)))
         },
     );
@@ -1379,9 +1440,9 @@ pub unsafe extern "C" fn amux_profile_agent_act(
 }
 
 /// What deleting an agent, named by its `AgentKey` as JSON, does to its
-/// workspace, once current: the ticket answers `{"Ok": DeleteWarning}`,
-/// `{"Ok": null}` when the workspace stays, or `{"Err": ..}`. For an agent
-/// with no process it asks the agent's host first.
+/// workspace, as the agent's host previews it: the ticket answers
+/// `{"Ok": DeleteWarning}` (`Unknown` when the host could not be asked),
+/// or `{"Ok": null}` when the workspace stays.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; the string is NUL-terminated.
@@ -1811,9 +1872,9 @@ pub unsafe extern "C" fn amux_session_discard(chat: *const AmuxChat, input_id: *
     });
 }
 
-/// Fetches the files changed for `comparison` (a JSON `Comparison`), with
-/// no patch, as the overview opens; the ticket answers `{"Ok": Overview}` or
-/// `{"Err": ..}`.
+/// Asks the agent's host which files changed for `comparison` (a JSON
+/// `Comparison`), as the overview opens; the ticket answers
+/// `{"Ok": Overview}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `comparison` is a C string.
@@ -1829,47 +1890,6 @@ pub unsafe extern "C" fn amux_session_open_overview(
         };
         // SAFETY: the caller's contract.
         open.0.open_overview(unsafe { text(comparison) })
-    })
-}
-
-/// Asks the agent's host for its diff for `comparison` (a JSON
-/// `Comparison`, or null for the uncommitted work) and the patch it names;
-/// the ticket answers `{"Ok": FrozenReview}` or `{"Err": ..}`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `comparison` is a C string or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_review(
-    chat: *const AmuxChat,
-    comparison: *const c_char,
-) -> u64 {
-    guard(0, || {
-        // SAFETY: the caller's contract.
-        let Some(open) = (unsafe { held_chat(chat) }) else {
-            return 0;
-        };
-        // SAFETY: the caller's contract.
-        open.0.review(unsafe { text(comparison) })
-    })
-}
-
-/// The review page's document: a `FrozenReview`'s patch parsed into files
-/// and hunks, with `comments` (a JSON array of `ReviewComment`) placed on
-/// their lines. Null when either argument does not parse.
-///
-/// # Safety
-/// The strings are NUL-terminated.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_review_doc(
-    review: *const c_char,
-    comments: *const c_char,
-) -> *mut c_char {
-    guard(std::ptr::null_mut(), || {
-        // SAFETY: the caller's contract.
-        let review = unsafe { text(review) };
-        // SAFETY: the caller's contract.
-        let comments = unsafe { text(comments) };
-        into_c_string(app_bridge::review_doc(review, comments))
     })
 }
 

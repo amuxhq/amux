@@ -15,7 +15,8 @@ use crate::ids::{
 };
 use crate::payload::{
     AgentSpec, Answer, CarrierKind, ChannelError, ClientRequest, ControlFrame, JobResult,
-    LinkCloseReason, LinkFrame, PairMessage, PeerRequest, PublicKey, Push, Response, Status,
+    LinkCloseReason, LinkFrame, PairMessage, PeerRead, PeerRequest, PublicKey, Push, Response,
+    Status,
 };
 use crate::presence::Route;
 use crate::reach::{AttemptOutcome, Plan};
@@ -96,7 +97,7 @@ pub enum Input {
     PeerCall {
         from: HostId,
         call: CallId,
-        request: PeerRequest,
+        request: PeerRead,
     },
     /// What came back of a call the core made with [`Output::Call`].
     PeerAnswer {
@@ -455,15 +456,13 @@ pub enum Output {
     Rediscover,
     /// Make `request` of `host` on a channel to it, and report what came
     /// back as [`Input::PeerAnswer`] under `call`: one answer for a unary
-    /// call, one per event and then its end for a stream.
+    /// call, one per event and then its end for a stream. What comes back
+    /// is absorbed into the store, so the driver steps it with the store
+    /// lent.
     Call {
         host: HostId,
         call: CallId,
         request: PeerRequest,
-        /// What comes back is absorbed into the store, so the driver steps
-        /// it with the store lent. A forwarded call's reply reads nothing
-        /// of it, and is stepped at once.
-        absorbed: bool,
     },
     /// The core wants nothing more of a call it made: the driver lets go
     /// of its stream, and reports nothing more of it.
@@ -734,26 +733,20 @@ pub enum Job {
     /// Remove the directory and everything in it; one already gone is
     /// removed.
     RemoveDir { path: PathBuf },
-    /// Compare the working tree at `cwd` with `base`, answered as
-    /// [`JobResult::Compared`] or [`JobResult::CompareFailed`]; the patch
-    /// is built only `with_patch`.
-    Compare {
-        cwd: PathBuf,
-        base: wire::diff_base::Base,
-        with_patch: bool,
-    },
     /// Make a worktree of the repository at `repo` named `name`, answered
     /// as [`JobResult::Worktree`] or [`JobResult::Refused`].
     MakeWorktree { repo: PathBuf, name: String },
     /// The workspaces experiment's work, answered as
     /// [`JobResult::Workspace`].
     Workspace(crate::workspaces::WorkspaceJob),
+    /// The reviews experiment's work, answered as [`JobResult::Review`].
+    Review(crate::reviews::Job),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload::{Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest};
+    use crate::payload::{Answer, ClientRequest, JobResult, PeerFailure, PeerRead, PeerReply};
 
     #[test]
     fn every_kind_of_input_reads_back_as_written() {
@@ -806,25 +799,20 @@ mod tests {
             },
             Input::PeerCall {
                 from: HostId([1; 16]),
-                call: CallId(7),
-                request: PeerRequest::SubscribeSession(wire::SubscribeSessionRequest {
+                call: CallId(11),
+                request: PeerRead::FollowSession(wire::FollowSessionRequest {
                     agent_id: vec![1, 2],
-                    from: Some(wire::subscribe_session_request::From::After(wire::After {
+                    from: Some(wire::follow_session_request::From::After(wire::After {
                         revision: 3,
                         cap: 4,
                         generation: 5,
                     })),
                 }),
             },
-            Input::ClientCall {
-                call: CallId(8),
-                request: ClientRequest::Forward {
-                    host: HostId([2; 16]),
-                    request: Box::new(PeerRequest::FileAgent(wire::FileAgentRequest {
-                        agent_id: vec![3],
-                        filing: wire::Filing::Closed as i32,
-                    })),
-                },
+            Input::PeerCall {
+                from: HostId([1; 16]),
+                call: CallId(12),
+                request: PeerRead::FollowAgents,
             },
             Input::PeerAnswer {
                 call: CallId(9),
@@ -1017,7 +1005,6 @@ mod tests {
                         id: vec![4; 16],
                         ..Default::default()
                     }),
-                    from: crate::payload::MessageFrom::Agent(AgentId([5; 16])),
                 },
             },
             Input::Verdict {

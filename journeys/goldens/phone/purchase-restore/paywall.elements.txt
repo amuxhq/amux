@@ -2,7 +2,7 @@ shell |  | agents | 0,62,402,778
 home |  | unsubscribed | 0,174,402,617
 paywall |  | yearly | 0,116,402,724
 paywall.title |  | Reach your agents anywhere | 16,124,218,64
-paywall.explanation |  | A subscription reaches your hosts from anywhere. Hosts on this network work without one. | 16,194,367,39
+paywall.explanation |  | Pro reaches your computers from anywhere. Computers on this network work without it. | 16,194,327,39
 paywall.monthly | Monthly £7.99 | not chosen | 16,255,370,48
 paywall.yearly | Yearly £79.99 | chosen | 16,303,370,68
 paywall.terms |  |  | 16,385,333,37
@@ -12,7 +12,7 @@ paywall.buy | Subscribe · £79.99 a year | yearly | 26,744,350,44
 paywall.restore | Restore Purchases |  | 133,784,136,48
  | Reach your agents
 anywhere |  | 16,124,218,64
- | A subscription reaches your hosts from anywhere. Hosts on this network work without one. |  | 16,194,367,39
+ | Pro reaches your computers from anywhere. Computers on this network work without it. |  | 16,194,327,39
  | Monthly, £7.99 |  | 16,255,370,48
  | Yearly, £79.99, 2 months free |  | 16,303,370,68
  | Cancel any time in the App Store. A subscription bought on the web carries over. |  | 16,385,333,37

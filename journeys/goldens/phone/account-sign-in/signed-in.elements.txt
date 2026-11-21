@@ -3,7 +3,7 @@ home |  | ready | 0,174,402,617
 you |  | ada@example.com | 0,132,402,708
 account.ada@example.com | ada, ada@example.com | selected | 30,156,342,59
 you.add | Add Account |  | 16,215,370,46
-you.subscription | Relay | Subscribed | 16,303,370,46
+you.subscription | Pro | Subscribed | 16,303,370,46
 you.signOut | Sign Out |  | 16,349,370,46
 you.remove | Remove from This Phone |  | 16,395,370,46
 you.delete | Delete Account |  | 16,441,370,46
@@ -21,24 +21,24 @@ you.report | Report a Problem |  | 16,968,370,46
 you.dump | Export Diagnostics |  | 16,1014,370,46
 you.help.caption |  |  | 16,1068,310,32
 you.close | Close |  | 342,82,40,36
- | Pair your first host |  | 16,204,214,32
+ | Pair your first computer |  | 16,204,279,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
  | desk is online, Pair it from anywhere, Pair |  | 16,305,370,60
  | Agents |  | 16,127,116,42
  | Switch account | ada | 20,66,36,36
- | Agents |  | 111,795,94,54
+ | Agents |  | 110,795,95,54
  | Agents |  | 140,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 229,830,29,12
- | Agents |  | 111,795,94,54
- | Agents |  | 141,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 230,830,29,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 216,830,56,12
+ | Agents |  | 110,795,95,54
+ | Agents |  | 140,830,35,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 217,830,55,12
  | ACCOUNTS |  | 18,132,74,16
  | ada, ada@example.com |  | 30,156,342,59
  | Add Account |  | 16,215,370,45
  | ADA |  | 18,279,28,16
- | Relay, Subscribed |  | 16,303,370,45
+ | Pro, Subscribed |  | 16,303,370,45
  | Sign Out |  | 16,349,370,46
  | Remove from This Phone |  | 16,395,370,46
  | Delete Account |  | 16,441,370,46
@@ -59,5 +59,5 @@ you.close | Close |  | 342,82,40,36
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1068,282,32
  | Settings |  | 167,89,68,21
  | Close |  | 342,82,40,36
- | Agents | selected | 111,795,94,54
- | Hosts |  | 197,795,94,54
+ | Agents | selected | 110,795,95,54
+ | Computers |  | 197,795,95,54

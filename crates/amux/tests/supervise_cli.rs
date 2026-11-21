@@ -539,7 +539,6 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
 /// the middle of a turn keeps its process across it.
 #[tokio::test(flavor = "multi_thread")]
 async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it() {
-    use client::Installation as _;
     use support::desk::{Desk, LONG_GRACE_SECS};
 
     let gate_dir = tempfile::tempdir().unwrap();
@@ -573,15 +572,15 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
     );
     let chats = support::client(&desk.socket).await;
     support::until("the agent is mid-turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let id = &id;
-        async move { support::says(&support::chat(&mut chats, id).await, "started", 1) }
+        async move { support::says(&support::chat(&chats, id).await, "started", 1) }
     })
     .await
     .unwrap();
     let agent = agent_pid(&desk.agent_dir(&id)).expect("the agent runs");
 
-    let door = client::GrpcInstallation::connect(&desk.socket)
+    let door = client::Installation::connect(&desk.socket, client::Surface::Terminal)
         .await
         .unwrap();
     let switched = door
@@ -644,7 +643,7 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
         "the agent kept its process"
     );
 
-    let door = client::GrpcInstallation::connect(&desk.socket)
+    let door = client::Installation::connect(&desk.socket, client::Surface::Terminal)
         .await
         .unwrap();
     let settings = door.get_settings().await.unwrap();
@@ -652,9 +651,9 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
     std::fs::write(&gate, b"").unwrap();
     let chats = support::client(&desk.socket).await;
     support::until("the turn finishes under the new daemon", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let id = &id;
-        async move { support::says(&support::chat(&mut chats, id).await, "finished", 1) }
+        async move { support::says(&support::chat(&chats, id).await, "finished", 1) }
     })
     .await
     .unwrap();

@@ -940,7 +940,7 @@ one entry per target triple, and one signature over all of it.
   `preview`, however well it is signed: a build deployed to preview cannot
   be served to stable by whoever holds the manifest's URL.
 - A binary looks itself up by the triple it was built for, which
-  `crates/node/build.rs` compiles in as `AMUX_TARGET`.
+  `crates/release/build.rs` compiles in as `AMUX_TARGET`.
 - `url` is fetched as-is; the file there is the whole `amux` binary, and
   `size` is its length. The supervisor writes no more than `size` bytes
   of it, and installs it only when its length and hash are the entry's.

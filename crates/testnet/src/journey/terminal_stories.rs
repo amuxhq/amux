@@ -746,8 +746,10 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     ])
 }
 
-/// The one prompt carrying the paste and the review, as the desk holds it.
-fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
+/// The one prompt carrying the paste and the review, as the desk holds it:
+/// text, the paste, text and the review, in that order. Answers it, and the
+/// snapshot the review names.
+fn reviewed(chat: &Value, comment: &str) -> Result<(Value, String), String> {
     let sent: Vec<&Value> = items(chat)
         .iter()
         .filter(|item| {
@@ -769,29 +771,30 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
         .iter()
         .map(|attachment| &attachment["kind"])
         .collect();
-    if item["text"] != "Please check \u{fffc} against \u{fffc}"
-        || kinds != [&json!("text"), &json!("review")]
+    // The paste stands in the words; the review, sent from the chip beside
+    // the composer, follows them.
+    if item["text"] != "Please check \u{fffc} against"
+        || kinds != [&json!("text"), &json!("text")]
+        || !attachments[1]["review"].is_object()
     {
         return Err(format!(
             "the prompt's order is not text, paste, text, review: {item}"
         ));
     }
-    if attachments[0]["text"] != pasted() {
+    if attachments[0]["text"] != pasted() || attachments[0]["review"].is_object() {
         return Err("the pasted text arrived changed".to_owned());
     }
-    let comments = &attachments[1]["comments"];
-    if *comments != json!([{"path": "deploy.sh", "line": 3, "old_line": 0, "text": comment}]) {
-        return Err(format!("the review's comments are {comments}"));
-    }
-    Ok((*item).clone())
+    let snapshot = sent_review(&attachments[1], comment)?;
+    Ok(((*item).clone(), snapshot))
 }
 
 fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
     // The reviewer's working tree on the desk: one commit and an edit.
-    review_repository(&journey.ready.root.join("desk/work"))?;
+    let work = journey.ready.root.join("desk/work");
+    review_repository(&work)?;
 
     // On the laptop: text, a long paste as one token, text, and a review of
-    // the desk's working tree with one comment.
+    // the desk's working tree with one comment on the changed line.
     let pane = journey.launch("terminal", "laptop", &[])?;
     journey.open_chat(&pane, "reviewer")?;
     journey.type_text(&pane, "Please check ")?;
@@ -800,10 +803,10 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
     // The chip is followed by a space of its own.
     journey.type_text(&pane, "against ")?;
     journey.keys(&pane, &["C-a", "r"])?;
-    journey.wait_terms(&pane, &["review · working tree at", "deploy.sh  +2 −1"])?;
+    journey.wait_terms(&pane, &["review · since main at", "1 file · +2 −1"])?;
     let mut on_line = false;
     for _ in 0..12 {
-        if spaced(&journey.capture(&pane)?, "│▌", "3 + rsync --delete") {
+        if spaced(&journey.capture(&pane)?, "▌", "3 + rsync --delete") {
             on_line = true;
             break;
         }
@@ -819,15 +822,15 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["c"])?;
     journey.type_text(&pane, COMMENT)?;
     journey.keys(&pane, &["Enter"])?;
-    journey.wait_terms(
-        &pane,
-        &["1 file · +2 −1 · 1 comment", &format!("│ {COMMENT}")],
-    )?;
+    journey.wait_terms(&pane, &["1 draft", &format!("│ {COMMENT}")])?;
     journey.frame(&pane, "review-comment")?;
     journey.keys(&pane, &["q"])?;
     journey.wait_terms(
         &pane,
-        &["Please check [pasted-1 · 12 lines] against [review · 1 comment]"],
+        &[
+            "Please check [pasted-1 · 12 lines] against",
+            "[review · 1 comment ✕]",
+        ],
     )?;
     journey.frame(&pane, "composer-tokens")?;
     journey.keys(&pane, &["Enter"])?;
@@ -837,8 +840,8 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
         "the reviewer's reply",
     )?;
 
-    // The desk received the tokens in order, the paste's exact text, the
-    // comment, and the patch it made itself, whose bytes are on its disk.
+    // The desk received the tokens in order, the paste's exact text, and
+    // the review as text naming its snapshot and the comment on its code.
     let received = journey.wait_chat(
         "desk",
         "reviewer",
@@ -852,10 +855,23 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
         },
         "received",
     )?;
-    let item = reviewed(&received, COMMENT)?;
+    let (item, snapshot) = reviewed(&received, COMMENT)?;
     let control =
         negative_control(reviewed(&received, &format!("{COMMENT} (a wrong comment)")).map(drop))?;
-    patch_on_disk(&journey.ready.root, &text(&item["attachments"][1]["patch"]))?;
+    snapshot_outside(&work, &text(&item["attachments"][1]["text"]), &snapshot)?;
+
+    // The desk's review holds the comment, sent in round 1 on that
+    // snapshot.
+    let desk_review = Control::Review {
+        host: "desk".to_owned(),
+        agent: "reviewer".to_owned(),
+    };
+    wait_sent_on_desk(
+        || journey.request(desk_review.clone(), None),
+        COMMENT,
+        &snapshot,
+    )?;
+    journey.request(desk_review, Some("desk-review"))?;
 
     // Revisited: the chat opened again shows the paste's opening lines in
     // place and the review as its token.
@@ -875,10 +891,14 @@ fn attachment_or_review(journey: &mut TerminalJourney) -> Proved {
     Ok(vec![
         "the prompt reached the desk as text, the paste, text and the review, in that order".to_owned(),
         "the paste arrived as one token holding exactly the twelve lines pasted".to_owned(),
-        format!("the review carries one comment on deploy.sh line 3: {}", quoted(COMMENT)),
+        format!(
+            "the review reached the agent as text: deploy.sh line 3, the changed line as diff, then {}, and the snapshot its line numbers refer to",
+            quoted(COMMENT)
+        ),
         control,
-        "the review names a patch the desk computed; its bytes on the desk hash to that name and hold the edit"
+        "the snapshot is a commit kept outside the repository; the command the review gives reads it and finds the tree unmoved, and it holds the edit"
             .to_owned(),
+        "the desk's review holds the comment, sent in round 1 on that snapshot".to_owned(),
         "the chat opened again shows the paste in place, the review token and the reply".to_owned(),
         "the client exited 0".to_owned(),
     ])
@@ -1387,11 +1407,16 @@ fn queue_and_steer(journey: &mut TerminalJourney) -> Proved {
     // While it works, prompts queue under the feed.
     journey.type_text(&pane, STEER)?;
     journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| spaced(frame, STEER, "queued"),
+        "first prompt queued",
+    )?;
     journey.type_text(&pane, WITHDRAWN)?;
     journey.keys(&pane, &["Enter"])?;
     journey.wait(
         &pane,
-        |frame| spaced(frame, WITHDRAWN, "queued"),
+        |frame| spaced(frame, STEER, "queued") && spaced(frame, WITHDRAWN, "queued"),
         "two queued",
     )?;
     journey.frame(&pane, "queued")?;
@@ -1517,7 +1542,7 @@ fn send_may_not_have_arrived(journey: &mut TerminalJourney) -> Proved {
     journey.type_text(&pane, MAYBE)?;
     journey.wait_terms(&pane, &[MAYBE])?;
     journey.keys(&pane, &["Enter"])?;
-    // Sent: the composer is empty again. The forwarded call reaches the
+    // Sent: the composer is empty again. The carried call reaches the
     // cabin at once and waits there for an answer that does not come; it
     // would give up after 30 seconds, so everything until the prompt reads
     // may not have arrived happens well inside that.

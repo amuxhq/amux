@@ -176,6 +176,8 @@ pub struct LinkSocket {
     drops: DropCounts,
     /// What the peers' clock counts from.
     epoch: Instant,
+    /// Every link waiting for the substrate to take a send.
+    send_waiters: Arc<SendWaiters>,
 }
 
 impl fmt::Debug for LinkSocket {
@@ -196,6 +198,7 @@ impl LinkSocket {
             state: Mutex::new(State::default()),
             drops: DropCounts::default(),
             epoch: Instant::now(),
+            send_waiters: Arc::default(),
         }))
     }
 
@@ -844,8 +847,61 @@ impl fmt::Debug for Writable {
 }
 
 impl UdpPoller for Writable {
+    /// Each link has a poller of its own, but a substrate's readiness, a
+    /// tokio socket's among them, wakes only the waker of its last poll.
+    /// The substrate is polled with one waker that wakes every link
+    /// waiting, so no link's packets wait on a wakeup another link took.
     fn poll_writable(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        self.0.substrate().poll_send_ready(cx)
+        let waiters = &self.0.send_waiters;
+        // Registered before the poll, so readiness that comes in between
+        // still wakes this link.
+        waiters.wait(cx.waker());
+        let shared = Waker::from(waiters.clone());
+        let ready = self
+            .0
+            .substrate()
+            .poll_send_ready(&mut Context::from_waker(&shared));
+        if ready.is_ready() {
+            waiters.forget(cx.waker());
+        }
+        ready
+    }
+}
+
+/// The links waiting for the substrate to take a send: one wake of the
+/// substrate's wakes them all.
+#[derive(Default)]
+struct SendWaiters(Mutex<Vec<Waker>>);
+
+impl SendWaiters {
+    fn waiting(&self) -> std::sync::MutexGuard<'_, Vec<Waker>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn wait(&self, waker: &Waker) {
+        let mut waiting = self.waiting();
+        if !waiting.iter().any(|held| held.will_wake(waker)) {
+            waiting.push(waker.clone());
+        }
+    }
+
+    fn forget(&self, waker: &Waker) {
+        self.waiting().retain(|held| !held.will_wake(waker));
+    }
+}
+
+impl std::task::Wake for SendWaiters {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        let waiting = std::mem::take(&mut *self.waiting());
+        for waker in waiting {
+            waker.wake();
+        }
     }
 }
 
@@ -1134,6 +1190,100 @@ mod tests {
             segment_size: None,
             src_ip: None,
         }
+    }
+
+    /// A substrate not yet writable that, as tokio's `poll_send_ready`
+    /// does, keeps only the waker of the last poll.
+    #[derive(Default)]
+    struct NotYetWritable {
+        writable: std::sync::atomic::AtomicBool,
+        waker: Mutex<Option<Waker>>,
+    }
+
+    impl NotYetWritable {
+        fn becomes_writable(&self) {
+            self.writable.store(true, Ordering::SeqCst);
+            if let Some(waker) = self.waker.lock().unwrap().take() {
+                waker.wake();
+            }
+        }
+    }
+
+    impl Datagrams for NotYetWritable {
+        fn send_to(&self, _buf: &[u8], _to: SocketAddr) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn poll_send_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            if self.writable.load(Ordering::SeqCst) {
+                return Poll::Ready(Ok(()));
+            }
+            *self.waker.lock().unwrap() = Some(cx.waker().clone());
+            Poll::Pending
+        }
+
+        fn poll_recv(
+            &self,
+            _cx: &mut Context<'_>,
+            _buf: &mut [u8],
+        ) -> Poll<io::Result<(usize, SocketAddr)>> {
+            Poll::Pending
+        }
+
+        fn local_addr(&self) -> io::Result<SocketAddr> {
+            Ok("192.0.2.1:4000".parse().unwrap())
+        }
+    }
+
+    /// A waker that counts its wakes.
+    #[derive(Default)]
+    struct Wakes(AtomicU64);
+
+    impl std::task::Wake for Wakes {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Every link on the socket has its own poller, and a freshly bound
+    /// socket is not writable until the OS says so. A launch dials its
+    /// hosts within a millisecond of each other, so each link's first
+    /// packets wait on that at once: each must be woken when it comes, or a
+    /// link's first flight waits for its retransmit timer, a second at the
+    /// start of a handshake.
+    #[test]
+    fn every_link_waiting_to_send_is_woken_when_the_socket_is_writable() {
+        let substrate = Arc::new(NotYetWritable::default());
+        let socket = LinkSocket::bind(substrate.clone(), HostId::new_v4()).unwrap();
+        let mut first = socket.clone().create_io_poller();
+        let mut second = socket.clone().create_io_poller();
+        let first_wakes = Arc::new(Wakes::default());
+        let second_wakes = Arc::new(Wakes::default());
+        let first_waker = Waker::from(first_wakes.clone());
+        let second_waker = Waker::from(second_wakes.clone());
+        assert!(
+            first
+                .as_mut()
+                .poll_writable(&mut Context::from_waker(&first_waker))
+                .is_pending()
+        );
+        assert!(
+            second
+                .as_mut()
+                .poll_writable(&mut Context::from_waker(&second_waker))
+                .is_pending()
+        );
+
+        substrate.becomes_writable();
+
+        assert_eq!(first_wakes.0.load(Ordering::SeqCst), 1, "the first link");
+        assert_eq!(second_wakes.0.load(Ordering::SeqCst), 1, "the second link");
+        assert!(
+            first
+                .as_mut()
+                .poll_writable(&mut Context::from_waker(&first_waker))
+                .is_ready()
+        );
     }
 
     /// One poll of quinn's receive side: the stand-in and the packet, or

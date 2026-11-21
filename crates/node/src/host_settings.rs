@@ -210,26 +210,41 @@ impl HostSettings {
         path: &str,
         pinned: bool,
     ) -> Result<Option<InstallationConfig>, SettingsError> {
-        let path = PathBuf::from(repository(path, self.home())?);
-        let held = self.current().repositories;
-        let listed = held.contains(&path);
-        if listed == pinned {
-            return Ok(None);
-        }
-        let mut paths: Vec<PathBuf> = held.into_iter().filter(|held| *held != path).collect();
-        if pinned {
-            paths.push(path);
-        }
-        let request = UpdateSettingsRequest {
-            repositories: Some(wire::RepositoryList {
-                paths: paths
-                    .iter()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .collect(),
-            }),
-            ..UpdateSettingsRequest::default()
-        };
-        self.update(&request).map(Some)
+        let home = self.home();
+        let path = repository(path, home)?;
+        // Made of the list as the file holds it under the write's lock, not
+        // as last polled: a pin made at the same moment, or a hand edit the
+        // poll has not seen, would otherwise be written over.
+        let mut already = false;
+        let config = self.write(
+            |fresh| {
+                // An entry is the folder however it was written, from home
+                // or through a link; one that names no absolute path is no
+                // folder this pin can be about, and is kept as written.
+                let mut kept = toml_edit::Array::new();
+                let mut listed = false;
+                for entry in &fresh.repositories {
+                    let entry = entry.to_string_lossy();
+                    if repository(&entry, home).is_ok_and(|entry| entry == path) {
+                        listed = true;
+                        if !pinned {
+                            continue;
+                        }
+                    }
+                    kept.push(entry.as_ref());
+                }
+                if listed == pinned {
+                    already = true;
+                    return Ok(Vec::new());
+                }
+                if pinned {
+                    kept.push(path.as_str());
+                }
+                Ok(vec![("repositories", Some(kept.into()))])
+            },
+            |_| Ok(()),
+        )?;
+        Ok((!already).then_some(config))
     }
 
     /// Keeps a person's pick as what later agents of its kind start with.
@@ -301,6 +316,11 @@ impl HostSettings {
             None => held.config.clone(),
         };
         let changes = changes_of(&fresh)?;
+        // Nothing to change writes nothing; a change made beside the daemon
+        // that the file now holds is the poll's to apply.
+        if changes.is_empty() {
+            return Ok(held.config.clone());
+        }
         let (text, edited) = settings::edit::edit(&held.text, &changes)?;
         let config = match &self.file {
             Some(path) => read(&text, path)?,
@@ -579,6 +599,114 @@ mod tests {
             unpinned.repositories,
             "the file says it"
         );
+    }
+
+    /// A pin is made of the list the file holds when it is written, so a
+    /// hand edit the daemon has not polled yet is kept, and so are pins
+    /// made at the same moment.
+    #[test]
+    fn a_pin_keeps_what_the_file_gained_since_it_was_last_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        let folder = |name: &str| {
+            let folder = dir.path().join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            folder.canonicalize().unwrap()
+        };
+        let (edited, app) = (folder("edited"), folder("app"));
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: Some(dir.path().to_owned()),
+        });
+        std::fs::write(&path, format!("repositories = [{:?}]\n", edited)).unwrap();
+        let pinned = settings.pin(app.to_str().unwrap(), true).unwrap().unwrap();
+        assert_eq!(pinned.repositories, [edited.clone(), app.clone()]);
+
+        let many: Vec<PathBuf> = (0..8).map(|n| folder(&format!("many/{n}"))).collect();
+        std::thread::scope(|scope| {
+            for folder in &many {
+                let settings = &settings;
+                scope.spawn(move || settings.pin(folder.to_str().unwrap(), true).unwrap());
+            }
+        });
+        let listed = InstallationConfig::from_file(&path).unwrap().repositories;
+        for folder in [&edited, &app].into_iter().chain(&many) {
+            assert!(
+                listed.contains(folder),
+                "{folder:?} is missing from {listed:?}"
+            );
+        }
+    }
+
+    /// An entry names its folder however the person wrote it, from home or
+    /// through a link; unpinning that folder takes the entry out, and an
+    /// entry that no longer resolves stays as written.
+    #[test]
+    fn an_unpin_finds_the_entry_however_it_was_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let (app, lib) = (dir.path().join("src/app"), dir.path().join("src/lib"));
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        let linked = dir.path().join("lib-link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&lib, &linked).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&lib, &linked).unwrap();
+        let gone = dir.path().join("gone");
+        std::fs::write(
+            &path,
+            format!(
+                "repositories = [\"~/src/app\", {:?}, {:?}, \"relative/one\"]\n",
+                linked, gone
+            ),
+        )
+        .unwrap();
+        let settings = HostSettings::new(SettingsOptions {
+            file: Some(path.clone()),
+            initial: InstallationConfig::from_file(&path).unwrap(),
+            login: None,
+            home: Some(dir.path().to_owned()),
+        });
+        let (app, lib) = (app.canonicalize().unwrap(), lib.canonicalize().unwrap());
+        assert!(
+            settings.pin(app.to_str().unwrap(), true).unwrap().is_none(),
+            "a folder listed from home is pinned already"
+        );
+        assert!(
+            settings.pin(lib.to_str().unwrap(), true).unwrap().is_none(),
+            "a folder listed through a link is pinned already"
+        );
+        let unpinned = settings
+            .pin(app.to_str().unwrap(), false)
+            .unwrap()
+            .expect("the entry written from home goes");
+        assert_eq!(
+            unpinned.repositories,
+            [linked.clone(), gone.clone(), PathBuf::from("relative/one")]
+        );
+        let unpinned = settings
+            .pin(lib.to_str().unwrap(), false)
+            .unwrap()
+            .expect("the entry written through a link goes");
+        assert_eq!(
+            unpinned.repositories,
+            [gone.clone(), PathBuf::from("relative/one")],
+            "entries that do not resolve are kept as written"
+        );
+        assert_eq!(
+            InstallationConfig::from_file(&path).unwrap().repositories,
+            unpinned.repositories,
+            "the file says it"
+        );
+        let unpinned = settings
+            .pin(gone.to_str().unwrap(), false)
+            .unwrap()
+            .expect("a folder that went is unpinned by its path");
+        assert_eq!(unpinned.repositories, [PathBuf::from("relative/one")]);
     }
 
     #[test]

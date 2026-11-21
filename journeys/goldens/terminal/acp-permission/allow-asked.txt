@@ -29,6 +29,6 @@
   │                                                                                                        │
   │ › 1. Yes                                                                                               │
   │   2. No  esc · tab to add a note                                                                       │
-  ╰──────────────────────────────────────────────────────────────────────── fake-model (medium) · default ─╯
+  ╰────────────────────────────────────────────────────────────────────────────────── fake-model (medium) ─╯
 
   enter choose   ctrl+x interrupt   ctrl+a more

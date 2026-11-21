@@ -5,7 +5,13 @@ import android.app.Activity
 internal object DebugHooks {
     val enabled: Boolean = false
 
-    fun onActivityCreated(activity: Activity) {
+    val compositionOverrides: CompositionOverrides? = null
+
+    fun onApplicationCreated(application: AmuxApplication, composition: Composition) {
+        // Release builds ship with no debug hooks.
+    }
+
+    fun onActivityCreated(activity: Activity, composition: Composition) {
         // Release builds ship with no debug hooks.
     }
 }

@@ -36,6 +36,8 @@ pub(super) fn kind_of(
         }),
         Acp::Message(m) => plain(prose(held, m.complete, false)),
         Acp::Thought(t) => plain(thinking(state, held, t.complete)),
+        // A question tool's call: the ask's row it names stands for it.
+        Acp::Tool(tool) if !tool.ask_item_key.is_empty() => plain(RowKind::Hidden),
         Acp::Tool(tool) => tool_row(state, held, tool),
         Acp::Turn(turn) => plain(turn_row(state, held, turn)),
         // An ACP agent says its compaction as an item of its own.

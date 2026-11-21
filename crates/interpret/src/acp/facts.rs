@@ -458,6 +458,8 @@ impl State {
                 .map(|input| serde_json::to_vec(input).unwrap_or_default())
                 .unwrap_or_default(),
             ended_at_ms: finished(state as i32).then(|| self.shared.now_ms()),
+            // Named on emitting, from the asks that named the call.
+            ask_item_key: String::new(),
         };
         self.tools.insert(id.clone(), tool);
         self.outputs.insert(id.clone(), output);
@@ -554,6 +556,7 @@ impl State {
                         message: form.message,
                         schema_json,
                     }),
+                    form.tool_call_id.flatten(),
                 );
             }
             AgentRequest::ElicitationCreate(CreateElicitationRequest::Url(page)) => self.work_ask(
@@ -564,6 +567,7 @@ impl State {
                     message: page.message,
                     url: page.url,
                 }),
+                page.tool_call_id.flatten(),
             ),
             AgentRequest::ElicitationCreate(CreateElicitationRequest::Unknown(_)) => {
                 self.refuse_request(emit, id, "elicitation/create");
@@ -675,7 +679,18 @@ impl State {
             .any(|name| naming.amux_tool(name).is_some())
     }
 
-    fn work_ask(&mut self, emit: &mut Emit, id: &RequestId, body: acp_ask::Body) {
+    /// An ask that is the work, drawn as its own row. The call it names as
+    /// its own (`toolCallId`: Antigravity's question tool, `agy-question`,
+    /// and Grok's, `grok-question`) is how the agent asks, so the call is
+    /// drawn naming the ask's item, which stands for it as Claude's
+    /// question does, and no client draws it as a step beside the ask.
+    fn work_ask(
+        &mut self,
+        emit: &mut Emit,
+        id: &RequestId,
+        body: acp_ask::Body,
+        call: Option<String>,
+    ) {
         self.close_stream(emit);
         let key = self.ask_for(id);
         let ask = AcpAsk {
@@ -683,6 +698,12 @@ impl State {
             key,
             body: Some(body),
         };
+        if let Some(call) = call.filter(|call| !call.is_empty()) {
+            self.folded.insert(call.clone(), ask.item_key.clone());
+            if !self.tool_closed(&call) {
+                self.emit_tool(emit, &call);
+            }
+        }
         self.shared.open_ask(ask.clone());
         self.emit_ask_item(emit, &ask, None);
     }
@@ -784,6 +805,7 @@ impl State {
                 questions,
                 provider_dialog: false,
             }),
+            Some(request.tool_call_id),
         );
     }
 

@@ -1291,3 +1291,85 @@ fn groks_question_request_is_refused_from_another_agent() {
     assert_eq!(written[0]["error"]["code"], -32601);
     assert!(state.shared().asks().is_empty());
 }
+
+/// The ask each emission of call `id` in a step names as standing for it:
+/// None where the call was not emitted, empty where it names none.
+fn call_asks(stepped: &interpret::Stepped, id: &str) -> Option<String> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .filter(|item| item.key == format!("tool:{id}"))
+        .filter_map(
+            |item| match wire::AcpItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::acp_item::Kind::Tool(tool)) => Some(tool.ask_item_key),
+                _ => None,
+            },
+        )
+        .next_back()
+}
+
+/// A question tool's call, which the agent's form names as its own, names
+/// the form's ask in return, from the ask on and for the rest of the call,
+/// so no client draws it as a step beside the question (`agy-question`).
+#[test]
+fn a_call_a_form_names_is_drawn_by_the_forms_ask() {
+    let mut state = opened("antigravity", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "ask me"));
+    let called = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "Run ask_question", "kind": "other", "status": "pending"}),
+        ),
+    );
+    assert_eq!(call_asks(&called, "c1").as_deref(), Some(""));
+    let asked = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": "3", "method": "elicitation/create",
+            "params": {"sessionId": "s1", "toolCallId": "c1", "mode": "form",
+                "message": "The agent has a question.",
+                "requestedSchema": {"type": "object", "properties": {
+                    "q1": {"type": "string", "title": "Tea or coffee?"}}}}}),
+        ),
+    );
+    let ask = state.shared().asks().open_asks()[0].item_key.clone();
+    assert_eq!(ask, "ask:ask-1");
+    assert_eq!(call_asks(&asked, "c1"), Some(ask.clone()));
+    let done = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1",
+            "status": "completed"}),
+        ),
+    );
+    assert_eq!(call_asks(&done, "c1"), Some(ask));
+}
+
+/// Grok names its question tool's call too, and the call's first word may
+/// come after the question (`grok-question`); any other call stays a step.
+#[test]
+fn a_call_named_by_groks_question_is_drawn_by_it_even_when_it_comes_later() {
+    let mut state = opened("grok", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "ask me"));
+    let asked = Acp::step(&mut state, grok_questions(4));
+    assert_eq!(call_asks(&asked, "c1"), None);
+    let called = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "ask_user_question", "kind": "other", "status": "pending"}),
+        ),
+    );
+    assert_eq!(call_asks(&called, "c1").as_deref(), Some("ask:ask-1"));
+    let other = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c2",
+            "title": "read_file", "kind": "read", "status": "pending"}),
+        ),
+    );
+    assert_eq!(call_asks(&other, "c2").as_deref(), Some(""));
+}

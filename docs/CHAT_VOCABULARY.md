@@ -265,11 +265,13 @@ agent says each one is:
   once is `Deny` with a note, and the rest are `Offered`. Its body is a `Command`, an `Edit` from the call's diffs,
   or a `Tool` with the call's title and input.
 - **A form or a link the agent asks itself** is `Form` or `Link` named for the agent, with `Submit` or `OpenLink`
-  and a `Decline` that takes words instead. A field whose answers are titled constants (`oneOf` of `const` and
+  and a `Decline` that takes words instead. The tool call it names as its own (Antigravity's and Grok's question
+  tools) is `Hidden`: the ask's row is its only trace, as Claude's question is, and it is no step of a run. A field whose answers are titled constants (`oneOf` of `const` and
   `title`) arrives as a choice of the titles, and the agent is sent the constant of the one picked.
 - **Grok's question tool** is an `AskBody::Question` card, as Claude's and Codex's are, and settles as a
   `Questions` row: each question with its options, one answer or several as Grok says, and your own words allowed
-  for each. Skipping every question declines them, and Grok goes on with its own judgment.
+  for each. Skipping every question declines them, and Grok goes on with its own judgment. Its call is `Hidden`,
+  as a form's is.
 - **Session facts.** Usage has no windows or credits; settings are picks of the agent's models, efforts and modes.
   A new agent starts on the agent's own mode unless the person picks one: the agent marks none of its modes
   normal, so none is chosen for it.

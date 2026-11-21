@@ -1371,8 +1371,12 @@ read from what Grok 1.0.92 accepted live since it is not published; a
 question nobody answered is left out, and an ask with every question
 skipped is answered `cancelled`, which Grok tells its model as declined.
 (Grok's `skip_interview` ends its plan interview, a different thing, and
-is never sent.) Replying instead withdraws the ask, cancels the turn and
-queues the words.
+is never sent.) A form, link or question names the call it comes from
+(`toolCallId`), a question tool's: that call is emitted naming the ask's
+item (`AcpTool.ask_item_key`), from the ask on, and clients draw the ask's
+row alone for both (`agy-question`, `grok-question`). The call's item stays
+a tool item, since an item's key never changes arm. Replying instead
+withdraws the ask, cancels the turn and queues the words.
 
 **What is not read.** A vendor method (`_` prefix) that is any other
 request is answered "method not found" at once, Grok's tool-server forms

@@ -529,6 +529,11 @@ pub struct State {
     #[serde(with = "serde_pb::msg_map")]
     tools: BTreeMap<String, AcpTool>,
     outputs: BTreeMap<String, String>,
+    /// The calls a form, link or question ask named as its own, by call,
+    /// with the key of that ask's item: the call is how the agent asks, so
+    /// it is drawn naming the ask, which stands for it.
+    #[serde(default)]
+    folded: BTreeMap<String, String>,
     context: Option<(u64, u64)>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<wire::AcpUsage>,
@@ -687,6 +692,7 @@ impl State {
             early_boundary: None,
             tools: BTreeMap::new(),
             outputs: BTreeMap::new(),
+            folded: BTreeMap::new(),
             context: None,
             usage: None,
             sign_in: None,
@@ -1061,9 +1067,12 @@ impl State {
     }
 
     fn emit_tool(&mut self, emit: &mut Emit, id: &str) {
-        let Some(tool) = self.tools.get(id).cloned() else {
+        let Some(mut tool) = self.tools.get(id).cloned() else {
             return;
         };
+        if let Some(ask) = self.folded.get(id) {
+            tool.ask_item_key = ask.clone();
+        }
         let complete = finished(tool.state);
         self.emit_item(
             emit,
@@ -1883,6 +1892,9 @@ fn describe_tool(tool: &AcpTool) -> String {
                 .as_str_name()
                 .trim_start_matches("DECISION_OUTCOME_")
         ));
+    }
+    if !tool.ask_item_key.is_empty() {
+        text.push_str(&format!(" asks={}", tool.ask_item_key));
     }
     for location in &tool.locations {
         text.push_str(&format!(" at={}", location.path));

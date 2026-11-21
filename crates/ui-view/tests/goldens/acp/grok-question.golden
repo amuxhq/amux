@@ -20,7 +20,7 @@
      1 boundary:1 Hidden collapsed
      2 prompt:70312d33 Prompt { text: [Text("Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word.")], steered: false }
      3 message:1 Prose { text: [Text("I'll ask with the question tool, then answer in one word.")], streaming: false, working_note: false }
-     4 tool:call-058ee3c5-f85e-4103-91ca-fe31bfb26630-0 ToolCall { server: "", tool: "Ask: Do you prefer tea or coffee?", fact: "", state: Succeeded, result: "User has answered your questions: \"Do you prefer tea or coffee?\"=\"Tea\". You can now continue with the user's answers in mind." } run[tool:call-058ee3c5-f85e-4103-91ca-fe31bfb26630-0..tool:call-058ee3c5-f85e-4103-91ca-fe31bfb26630-0 x1 rece…
+     4 tool:call-058ee3c5-f85e-4103-91ca-fe31bfb26630-0 Hidden collapsed
      5 ask:ask-1 [Answered:  = Tea skipped=0] Ask(Questions { questions: [QuestionView { header: "", question: "Do you prefer tea or coffee?", multi_select: false, options: [OptionView { label: "Tea", description: "You prefer tea.", preview: "", recommended: false }, OptionView { label: "Coffee", description: "You prefer coffee.", preview: "", recommended: false }], allow_other: true, secret: false …
      6 message:2 Prose { text: [Text("Tea")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(3935), failed: false }

@@ -403,3 +403,81 @@ fn a_new_acp_agent_with_no_catalogue_yet_offers_no_model_or_effort() {
     assert_eq!(view.changeable.permission, Changeable::NotOffered);
     assert_eq!(view.changeable.mode, Changeable::NotOffered);
 }
+
+/// An ACP item, numbered `order` in the session, keyed `key`.
+fn acp_item(order: u64, key: &str, kind: wire::acp_item::Kind) -> wire::Item {
+    wire::Item {
+        key: key.into(),
+        order,
+        revision: order,
+        kind: Kind::Acp as i32,
+        body: wire::AcpItem { kind: Some(kind) }.encode_to_vec(),
+        at_ms: order as i64 * 1_000,
+        ..Default::default()
+    }
+}
+
+fn acp_tool(title: &str, kind: wire::AcpToolKind, asks: &str) -> wire::acp_item::Kind {
+    wire::acp_item::Kind::Tool(wire::AcpTool {
+        title: title.into(),
+        kind: kind as i32,
+        state: wire::ToolState::Succeeded as i32,
+        class: wire::ToolClass::Read as i32,
+        ask_item_key: asks.into(),
+        ..Default::default()
+    })
+}
+
+/// A question tool's call names the ask that stands for it, and draws no
+/// row and no step of its own: the question's row is its only trace, as
+/// Claude's question is. A call naming none is a step as ever.
+#[test]
+fn a_question_tools_call_is_drawn_by_its_ask_alone() {
+    use wire::acp_item::Kind as Acp;
+    let mut state = SessionState::new(row(wire::Lifecycle::Live), CAP);
+    state.update(Msg::Connection(ui_state::Connection::Live));
+    state.update(event(
+        session_event::Of::Snapshot(wire::Snapshot::default()),
+    ));
+    let question = wire::AskItem {
+        ask: Some(wire::ask_item::Ask::Question(wire::QuestionAsk {
+            questions: vec![wire::Question {
+                question: "Tea or coffee?".into(),
+                options: vec![wire::QuestionOption {
+                    label: "Tea".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            provider_dialog: false,
+        })),
+        closed: None,
+    };
+    for item in [
+        acp_item(1, "prompt:1", Acp::Prompt(wire::Prompt::default())),
+        acp_item(
+            2,
+            "tool:read",
+            acp_tool("Read notes.txt", wire::AcpToolKind::Read, ""),
+        ),
+        acp_item(
+            3,
+            "tool:ask",
+            acp_tool("ask_user_question", wire::AcpToolKind::Other, "ask:ask-1"),
+        ),
+        acp_item(4, "ask:ask-1", Acp::Ask(question)),
+    ] {
+        state.update(event(session_event::Of::Item(item)));
+    }
+    state.update(event(session_event::Of::CaughtUp(wire::CaughtUp {
+        revision: 0,
+    })));
+    let rows = crate::support::all_rows(&state, ToolRows::ShowAll);
+    let at = |order: u64| rows.iter().find(|row| row.order == order).unwrap();
+    assert!(matches!(at(3).kind, RowKind::Hidden), "{:?}", at(3).kind);
+    assert!(at(3).collapsed);
+    assert!(matches!(at(4).kind, RowKind::Ask(_)), "{:?}", at(4).kind);
+    let read = at(2).run.clone().expect("the read is a step");
+    assert_eq!(read.steps, 1);
+    assert!(at(3).run.is_none());
+}

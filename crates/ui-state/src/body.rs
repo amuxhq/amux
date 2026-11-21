@@ -114,13 +114,14 @@ fn acp_class(kind: &wire::acp_item::Kind) -> ItemClass {
             complete: thinking.complete,
         },
         // ACP has no subagents of its own, and amux's spawn is drawn by
-        // the child it names on its own row.
+        // the child it names on its own row. A question tool's call is
+        // drawn by its ask's row.
         Acp::Tool(tool) => ItemClass::Tool(ToolFacts {
             in_flight: in_flight(tool.state),
             subagent: false,
             child: false,
             opens: false,
-            hidden: false,
+            hidden: !tool.ask_item_key.is_empty(),
         }),
         Acp::Turn(_) => ItemClass::Turn,
         Acp::Error(error) => api_error(error),
@@ -386,7 +387,8 @@ pub struct ToolFacts {
     /// started or continues (see [`opens`]).
     pub opens: bool,
     /// Bookkeeping drawn by no client: Claude's task list, which the task
-    /// list shows, and Codex's calls on child threads that start none.
+    /// list shows, Codex's calls on child threads that start none, and an
+    /// ACP agent's question tool's call, which its ask's row stands for.
     pub hidden: bool,
 }
 

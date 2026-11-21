@@ -5256,6 +5256,13 @@ pub struct AcpTool {
     /// When the call finished, by amux's clock.
     #[prost(int64, optional, tag = "9")]
     pub ended_at_ms: ::core::option::Option<i64>,
+    /// The key of the ask item drawn for this call, when the call is how the
+    /// agent asks (a question tool, whose form or questions name the call):
+    /// the ask's row stands for it, so no client draws the call as a step
+    /// beside it. Empty for any other call, which is drawn as its own step,
+    /// as builds without the field drew every call.
+    #[prost(string, tag = "10")]
+    pub ask_item_key: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AcpTool {
     const NAME: &'static str = "AcpTool";

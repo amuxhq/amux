@@ -72,6 +72,12 @@ message AcpTool {
   bytes input_json = 8;
   // When the call finished, by amux's clock.
   optional int64 ended_at_ms = 9;
+  // The key of the ask item drawn for this call, when the call is how the
+  // agent asks (a question tool, whose form or questions name the call):
+  // the ask's row stands for it, so no client draws the call as a step
+  // beside it. Empty for any other call, which is drawn as its own step,
+  // as builds without the field drew every call.
+  string ask_item_key = 10;
 }
 
 enum AcpToolKind {

@@ -166,8 +166,9 @@ def strings_xml_files(root: Path) -> list[Path]:
         return []
     found = [
         path
-        for path in android_root.rglob("strings.xml")
-        if "build" not in path.relative_to(android_root).parts
+        for path in android_root.rglob("strings*.xml")
+        if path.parent.name.startswith("values")
+        and "build" not in path.relative_to(android_root).parts
         and ".gradle" not in path.relative_to(android_root).parts
     ]
     return sorted(found)
@@ -210,6 +211,7 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
         raise ValueError("no strings.xml resources found under apps/android/")
 
     entry_count = 0
+    seen_by_dir: dict[Path, dict[str, set[str]]] = {}
     for xml_file in xml_files:
         rel_path = xml_file.relative_to(root).as_posix()
         raw_content = xml_file.read_text(encoding="utf-8")
@@ -222,11 +224,14 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
         if tree.tag != "resources":
             raise ValueError(f"{rel_path}: expected <resources> root element")
 
-        seen_names: dict[str, set[str]] = {
-            "string": set(),
-            "string-array": set(),
-            "plurals": set(),
-        }
+        seen_names = seen_by_dir.setdefault(
+            xml_file.parent,
+            {
+                "string": set(),
+                "string-array": set(),
+                "plurals": set(),
+            },
+        )
         for elem in tree:
             if elem.tag == "string":
                 name = elem.attrib.get("name")
@@ -328,7 +333,7 @@ def check(root: Path = ROOT) -> tuple[list[str], str]:
             )
 
     summary = (
-        f"{len(xml_files)} strings.xml file(s), {entry_count} string entry/entries, "
+        f"{len(xml_files)} strings*.xml file(s), {entry_count} string entry/entries, "
         f"{len(kt_files)} feature Kotlin file(s), {len(exemptions)} non-copy exemption(s)"
     )
     return complaints, summary

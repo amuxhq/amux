@@ -261,6 +261,54 @@ class StringsLintTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate key"):
             lint.check(self.root)
 
+    def test_scans_all_values_strings_xml_variants_and_cross_file_duplicates(self):
+        chat_rows_xml = Path("apps/android/features/src/main/res/values/strings_chat_rows.xml")
+        chat_asks_xml = Path("apps/android/features/src/main/res/values/strings_chat_asks.xml")
+        localized_xml = Path("apps/android/features/src/main/res/values-fr/strings_chat_rows.xml")
+        non_values_xml = Path("apps/android/features/src/main/res/xml/strings_ignored.xml")
+
+        self.write(
+            chat_rows_xml,
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<resources>\n"
+            '    <string name="row_ok">Working…</string>\n'
+            '    <string name="row_bad">Done!</string>\n'
+            "</resources>\n",
+        )
+        self.write(
+            chat_asks_xml,
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<resources>\n"
+            '    <string name="row_ok">Duplicate across sibling file</string>\n'
+            "</resources>\n",
+        )
+        self.write(
+            localized_xml,
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<resources>\n"
+            '    <string name="row_ok">En cours…</string>\n'
+            "</resources>\n",
+        )
+        self.write(
+            non_values_xml,
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<resources>\n"
+            '    <string name="ignored">Not in values!</string>\n'
+            "</resources>\n",
+        )
+
+        discovered = [p.relative_to(self.root).as_posix() for p in lint.strings_xml_files(self.root)]
+        self.assertIn(chat_rows_xml.as_posix(), discovered)
+        self.assertIn(chat_asks_xml.as_posix(), discovered)
+        self.assertIn(localized_xml.as_posix(), discovered)
+        self.assertNotIn(non_values_xml.as_posix(), discovered)
+
+        complaints, _ = lint.check(self.root)
+        self.assertTrue(any("strings_chat_rows.xml" in c and "exclamation mark" in c for c in complaints), complaints)
+        self.assertTrue(any("strings_chat_rows.xml" in c and "duplicate string key 'row_ok'" in c for c in complaints), complaints)
+        self.assertFalse(any("strings_ignored.xml" in c for c in complaints), complaints)
+        self.assertFalse(any("values-fr" in c for c in complaints), complaints)
+
 
 if __name__ == "__main__":
     unittest.main()

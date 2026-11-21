@@ -618,7 +618,7 @@ public enum ChatWords {
         case .snapshotFailed(let message):
             String(localized: "Couldn’t take a snapshot of the working tree: \(message)")
         case .unreachable:
-            String(localized: "This agent’s computer can’t be reached. What was loaded still reads, and changes wait for it.")
+            String(localized: "This agent’s computer can’t be reached. What was loaded still reads; comments can’t be saved until it’s back.")
         }
     }
 

@@ -1721,8 +1721,8 @@ fn banner_lines(banner: &ReviewBanner, width: usize, theme: Theme) -> Vec<Line<'
             Some(("r", "try again")),
         ),
         ReviewBanner::Unreachable => (
-            "This agent's computer can't be reached: what was loaded still reads, and changes \
-             wait for it."
+            "This agent's computer can't be reached: what was loaded still reads, and comments \
+             can't be saved until it's back."
                 .into(),
             theme.warning(),
             None,

@@ -76,8 +76,9 @@ taken, the review says so, and conflicted files show their markers.
 Select a line, or several lines of one file, and comment on them, or comment
 on a whole file. How you select is in each app's own page:
 [terminal](terminal.md#reviewing-changes), [iPhone](iphone.md#reviewing-changes);
-on the Mac, click a line and Shift-click or drag to take in more, then press
-Return.
+on the Mac, click a line to open a comment on it, or drag or Shift-click to
+take in more lines first. From the keyboard, the arrow keys pick a line,
+Shift with them takes in more, and Return opens the comment.
 
 Comments are saved on the agent's computer as you write them. Until you send
 them they're drafts: you can change their words or delete them, and they
@@ -156,7 +157,8 @@ anything you're reading. Comments written on another device appear as
 they're saved.
 
 If the agent's computer goes to sleep or out of reach, what you already
-loaded still reads. Commenting waits until it's back.
+loaded still reads, but comments can't be saved until it's back; nothing
+holds them to save later.
 
 ## What a review keeps
 

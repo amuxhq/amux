@@ -236,7 +236,7 @@ the page says so and `r` refreshes it.
 | `j` `k` | Next or previous line |
 | `J` `K` | Next or previous change |
 | `]` `[` | Next or previous file |
-| `c` or Enter | Comment on the line, or on the whole file from its heading |
+| `c` or Enter | Comment on the line; `c` on a file's heading comments on the whole file |
 | `v`, or Shift+↓ ↑ | Select several lines, then `c` to comment on all of them |
 | Enter on a draft | Change its words; empty them to delete it |
 | `d` | Delete the comment under the cursor |

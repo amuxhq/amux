@@ -130,7 +130,7 @@ enum HostWords {
     /// The host's kind as one of the app's icons.
     static func lucide(_ host: HostView) -> String {
         switch host.platform {
-        case .ios: "smartphone"
+        case .ios, .android: "smartphone"
         case .linux, .windows: "server"
         case .macos, .unspecified, nil: "laptop"
         }

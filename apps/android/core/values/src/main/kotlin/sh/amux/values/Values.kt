@@ -5495,6 +5495,8 @@ enum class Platform {
     Windows,
     @SerialName("Ios")
     Ios,
+    @SerialName("Android")
+    Android,
     /** Not said: a host never adjacent, or a system amux does not name. */
     @SerialName("Unspecified")
     Unspecified,

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.PhoneIphone
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -338,6 +339,7 @@ private fun HostRowItem(
 private fun hostGlyph(platform: Platform?): ImageVector = when (platform) {
     Platform.Linux -> Icons.Outlined.Dns
     Platform.Ios -> Icons.Outlined.PhoneIphone
+    Platform.Android -> Icons.Outlined.PhoneAndroid
     Platform.Macos, Platform.Windows, Platform.Unspecified, null -> Icons.Outlined.Computer
 }
 

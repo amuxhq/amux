@@ -59,6 +59,7 @@ val Platform.label: String?
         Platform.Linux -> "Linux"
         Platform.Windows -> "Windows"
         Platform.Ios -> "iOS"
+        Platform.Android -> "Android"
         Platform.Unspecified -> null
     }
 

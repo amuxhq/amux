@@ -5616,6 +5616,7 @@ public enum Platform: String, Codable, Hashable, Sendable, CaseIterable {
     case linux = "Linux"
     case windows = "Windows"
     case ios = "Ios"
+    case android = "Android"
     /// Not said: a host never adjacent, or a system amux does not name.
     case unspecified = "Unspecified"
 }

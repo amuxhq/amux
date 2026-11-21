@@ -1912,6 +1912,7 @@ pub enum Platform {
     Linux = 2,
     Windows = 3,
     Ios = 4,
+    Android = 5,
 }
 impl Platform {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1925,6 +1926,7 @@ impl Platform {
             Self::Linux => "PLATFORM_LINUX",
             Self::Windows => "PLATFORM_WINDOWS",
             Self::Ios => "PLATFORM_IOS",
+            Self::Android => "PLATFORM_ANDROID",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1935,6 +1937,7 @@ impl Platform {
             "PLATFORM_LINUX" => Some(Self::Linux),
             "PLATFORM_WINDOWS" => Some(Self::Windows),
             "PLATFORM_IOS" => Some(Self::Ios),
+            "PLATFORM_ANDROID" => Some(Self::Android),
             _ => None,
         }
     }

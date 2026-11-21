@@ -249,7 +249,8 @@
       {"literal": "\"away\"", "context": "case .away: \"away\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"offline\"", "context": "case .offline: \"offline\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"macOS\"", "context": "case .macos: \"macOS\"", "reason": "Platform name, spelled as the platform spells it; not translated.", "count": 1},
-      {"literal": "\"iOS\"", "context": "case .ios: \"iOS\"", "reason": "Platform name, spelled as the platform spells it; not translated.", "count": 1}
+      {"literal": "\"iOS\"", "context": "case .ios: \"iOS\"", "reason": "Platform name, spelled as the platform spells it; not translated.", "count": 1},
+      {"literal": "\"Android\"", "context": "case .android: \"Android\"", "reason": "Platform name, spelled as the platform spells it; not translated.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Identifiers.swift": [
       {"literal": "\"not a UUID: \\(text)\"", "context": ".init(codingPath: decoder.codingPath, debugDescription: \"not a UUID: \\(text)\"))", "reason": "Decoder or invariant diagnostic retained for debugging; not displayed by a view.", "count": 1},
@@ -527,7 +528,7 @@
       {"literal": "\"hosts.localNetwork\"", "context": "LocalNetworkRefused(heading: model.hosts.isEmpty, identifier: \"hosts.localNetwork\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"server.rack\"", "context": "case .linux: \"server.rack\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"pc\"", "context": "case .windows: \"pc\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"iphone\"", "context": "case .ios: \"iphone\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"iphone\"", "context": "case .ios, .android: \"iphone\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"desktopcomputer\"", "context": "case .macos, .unspecified, nil: \"desktopcomputer\"", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"subscribe\"", "context": "id: \"subscribe\", glyph: \"person.slash\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"person.slash\"", "context": "id: \"subscribe\", glyph: \"person.slash\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

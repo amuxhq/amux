@@ -267,7 +267,7 @@ public struct HostsTab: View {
         switch host.platform {
         case .linux: "server.rack"
         case .windows: "pc"
-        case .ios: "iphone"
+        case .ios, .android: "iphone"
         case .macos, .unspecified, nil: "desktopcomputer"
         }
     }

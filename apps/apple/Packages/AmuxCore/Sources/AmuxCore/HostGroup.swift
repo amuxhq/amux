@@ -39,6 +39,7 @@ extension Platform {
         case .linux: "Linux"
         case .windows: "Windows"
         case .ios: "iOS"
+        case .android: "Android"
         case .unspecified: nil
         }
     }

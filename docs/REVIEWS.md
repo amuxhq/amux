@@ -143,7 +143,8 @@ asks after kept commits the store may not hold. So every call whose object
 directory is the store, or the throwaway folder `moved` writes into, runs
 with lazy fetching off (`GIT_NO_LAZY_FETCH`, honoured from git 2.44): an
 object it does not see is missing, as in a full clone, and nothing goes over
-the network, waits on credentials or leaves a pack in the store. Reads, with
+the network, waits on credentials or leaves a pack in the store; a git older than 2.44 ignores the setting
+and still fetches, into the store. Reads, with
 the repository as git's object directory, are left to fetch as the person's
 own `git diff` would, as `GetChanges` does: in a partial clone a comparison
 needing a blob the clone never fetched fetches it into the repository.

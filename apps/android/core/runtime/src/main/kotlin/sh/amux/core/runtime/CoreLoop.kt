@@ -6,6 +6,9 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -102,6 +105,50 @@ class CoreLoop(
             throw e.cause ?: e
         }
     }
+
+    /**
+     * Runs [block] on the single core thread without blocking the caller's thread.
+     */
+    suspend fun <T> runOnCore(block: () -> T): T {
+        if (coreThreadRef.get() == true) {
+            return block()
+        }
+        return suspendCancellableCoroutine { cont ->
+            try {
+                executor.execute {
+                    try {
+                        val value = block()
+                        if (cont.isActive) cont.resume(value)
+                    } catch (t: Throwable) {
+                        if (cont.isActive) cont.resumeWithException(t)
+                    }
+                }
+            } catch (e: RejectedExecutionException) {
+                if (cont.isActive) cont.resumeWithException(RuntimeFailure(Bridge.STOPPED_REASON))
+            }
+        }
+    }
+
+    /**
+     * Starts an asynchronous bridge act on the core thread and suspends until
+     * its JSON answer is delivered after the step's deltas.
+     */
+    suspend fun awaitAct(start: (Long) -> Long): String {
+        val future = submitAct(start)
+        return suspendCancellableCoroutine { cont ->
+            future.whenComplete { value, error ->
+                if (!cont.isActive) return@whenComplete
+                if (error != null) {
+                    val cause = (error as? java.util.concurrent.CompletionException)?.cause ?: error
+                    cont.resumeWithException(cause)
+                } else {
+                    cont.resume(value ?: STOPPED_ANSWER)
+                }
+            }
+        }
+    }
+
+    fun isRunning(): Boolean = runtimeHandle != 0L && !stopping.get()
 
     /**
      * Starts an asynchronous bridge act on the core thread and returns a

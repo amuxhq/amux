@@ -1485,6 +1485,57 @@ async fn a_folder_outside_a_repository_has_no_snapshot() {
     assert!(matches!(error, GitError::NotARepository), "{error:?}");
 }
 
+/// A clean filter other than LFS's (git-crypt, nbstripout, one of the
+/// person's own) runs when the snapshot adds a file it names, so the
+/// snapshot holds what a commit of the file would: the base's side holds
+/// cleaned bytes too, and a snapshot of the raw ones would show every line
+/// of such a file changed. The snapshot's diff from HEAD is the person's
+/// own `git diff HEAD`, and the tree has not moved right after it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_clean_filter_runs_so_the_snapshot_holds_what_a_commit_would() {
+    let repo = repository();
+    let root = repo.path();
+    git(root, &["config", "filter.upper.clean", "tr a-z A-Z"]);
+    git(root, &["config", "filter.upper.smudge", "cat"]);
+    write(root, ".gitattributes", "*.up filter=upper\n");
+    write(root, "kept.up", "hello\n");
+    git(root, &["add", ".gitattributes", "kept.up"]);
+    git(root, &["commit", "-q", "-m", "filtered"]);
+    write(root, "kept.up", "hello world\n");
+    write(root, "new.up", "new\n");
+
+    let store = store();
+    let snapshot = take(root, &store.store).await;
+    let commit = snapshot.commit.as_str();
+    assert_eq!(
+        read(root, &store.store, commit, "kept.up").await.unwrap(),
+        b"HELLO WORLD\n"
+    );
+    assert_eq!(
+        read(root, &store.store, commit, "new.up").await.unwrap(),
+        b"NEW\n"
+    );
+    let shown = store
+        .store
+        .reading(
+            root,
+            &["diff", "--no-textconv", "HEAD", commit, "--", "kept.up"],
+        )
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(shown.stdout).unwrap(),
+        git(root, &["diff", "--no-textconv", "HEAD", "--", "kept.up"]) + "\n"
+    );
+    assert!(
+        !snapshot::moved(root, &store.store, &LIMITS, commit, &snapshot.omitted)
+            .await
+            .unwrap()
+    );
+}
+
 /// The pointer LFS commits for `content`, as its spec writes one.
 fn lfs_pointer(sha256: &str, size: usize) -> String {
     format!("version https://git-lfs.github.com/spec/v1\noid sha256:{sha256}\nsize {size}\n")

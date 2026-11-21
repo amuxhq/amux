@@ -239,6 +239,19 @@ options (`DIFF_OPTIONS`):
 | `core.longpaths=true` | Git for Windows refuses a path past 260 characters ("Filename too long") unless it is set, so one deep file would fail every snapshot and every read of the working tree; git on macOS and Linux has no such limit and ignores the key |
 | `diff.autoRefreshIndex=true` | A file whose times alone changed reads as unchanged, as it does by default, whatever the person set; with optional locks off, git writes no refresh into the person's index |
 
+Clean filters other than LFS's are not pinned: git-crypt's, nbstripout's
+or a person's own run when a snapshot adds a file `.gitattributes` names
+for one, and when a file whose times changed is compared, as they do for
+the person's own `git status` and `git diff`. So a snapshot holds what a
+commit of the file would, which is what the base's side of every
+comparison holds: the review of such a file is the person's
+`git diff --no-textconv`, `GetChanges` counts the same lines, and the
+agent's diff command, run with the person's configuration, compares like
+with like. A file whose cleaned form is ciphertext reads as binary, as it
+does without the text conversion that would decrypt it; a filter marked
+required that fails refuses the snapshot, as it fails the person's own
+`git diff` (`a_clean_filter_runs_so_the_snapshot_holds_what_a_commit_would`).
+
 The one call that runs with the person's configuration alone is checking out
 a new worktree, which is the person's own work: their filters must run so its
 files are their content rather than LFS pointers, and their hooks as on any
@@ -559,6 +572,14 @@ hold, retention with the agent, and isolation from the person's repository.
 
 **Finding a comment's new place by searching for its text.** Line mapping
 through git's diff is the proven method, and the one GitHub uses.
+
+**Emptying every clean filter, as LFS's are.** The snapshot would hold a
+filtered file's raw bytes while the base holds its cleaned ones, so a
+git-crypt file would compare plaintext with ciphertext and a notebook
+nbstripout cleans would show its outputs as changes, in lines no one
+changed and no commit will hold. LFS's are emptied for what they write into
+`.git/lfs`, and its pointer is worked out in their place; there is no
+general way to work out what another filter would store.
 
 **Leaving git's diff to the person's configuration.** Line numbers, hunk
 boundaries and file order would differ from one machine to the next, and

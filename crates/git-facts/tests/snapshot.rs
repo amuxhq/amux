@@ -382,7 +382,8 @@ async fn every_answer(root: &Path, from: &str) -> Vec<String> {
 
 /// The person's configuration changes neither what the crate answers nor
 /// anything in `.git`, whatever it asks for: a filesystem monitor and a
-/// split index, both of which write into `.git`; LFS configured as
+/// split index, both of which write into `.git`, the index split for real
+/// so that reading it would refresh its shared index; LFS configured as
 /// required but not installed, with a file LFS tracks whose cached times
 /// are stale, so any read that runs the filter fails; and every diff
 /// setting that changes what git writes (submodules as a log, hunks joined
@@ -470,6 +471,22 @@ async fn the_persons_git_configuration_changes_no_answer_and_nothing_in_git() {
     ] {
         git(root, &["config", key, value]);
     }
+    // The index split for real, as git writes it with that setting: what
+    // the person's index links to is a shared index in `.git`, whose time
+    // git refreshes whenever it reads an index linked to it.
+    git(root, &["update-index", "--split-index"]);
+    let shared: Vec<_> = std::fs::read_dir(root.join(".git"))
+        .unwrap()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("sharedindex.")
+        })
+        .collect();
+    assert_eq!(shared.len(), 1, "the index is split");
+    std::thread::sleep(Duration::from_millis(1100));
     let before = manifest(root);
     let configured = every_answer(root, &from).await;
     unchanged(&before, root, "every call, with the person's configuration");

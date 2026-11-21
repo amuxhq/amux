@@ -550,7 +550,7 @@ pub async fn changes(cwd: &Path, base: &Base) -> Result<Changes, GitError> {
     };
     let scratch = Scratch::new(cwd).await?;
     let raw = scratch.diff(&against, true).await?;
-    let files = flagged(cwd, None, raw).await?;
+    let files = flagged(cwd, Later::Tree(&scratch.index()), raw).await?;
     Ok(Changes {
         root,
         base: used,
@@ -770,6 +770,27 @@ fn sum(files: &[RawFile]) -> ChangeTotals {
         })
 }
 
+/// The shared index files in `git_dir`, the folder holding an index: what
+/// a split index there may name. None for an index that was never split.
+fn shared_indexes(git_dir: &Path) -> Result<Vec<std::path::PathBuf>, GitError> {
+    let entries = match std::fs::read_dir(git_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(GitError::Scratch(error)),
+    };
+    Ok(entries
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("sharedindex.")
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+        })
+        .map(|entry| entry.path())
+        .collect())
+}
+
 /// The scratch index's name inside its folder.
 const INDEX: &str = "index";
 
@@ -835,14 +856,11 @@ impl<'a> Scratch<'a> {
     /// The copy of the person's index alone, nothing marked in it.
     async fn copied(cwd: &'a Path) -> Result<Self, GitError> {
         let scratch = Self::empty(cwd)?;
-        let own = text(
-            &checked(
-                cwd,
-                None,
-                &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-            )
-            .await?,
-        );
+        let own = text(&checked(cwd, None, &["rev-parse", "--absolute-git-dir"]).await?);
+        // Where git keeps the index of the working tree `cwd` is in, a
+        // linked worktree's among its own files: `--git-path index` would
+        // answer the index this crate's calls are given instead.
+        let own = Path::new(&own).join(INDEX).to_string_lossy().into_owned();
         // The bytes, not the file: a copy would carry the index's own
         // permissions with it. The modification time comes too: git reads
         // again any entry written in the same second as the index file, and
@@ -858,12 +876,79 @@ impl<'a> Scratch<'a> {
                     .and_then(|meta| meta.modified())
                     .map_err(GitError::Scratch)?;
                 to.set_modified(written).map_err(GitError::Scratch)?;
+                drop(to);
+                let shared = shared_indexes(Path::new(&own).parent().unwrap_or(cwd))?;
+                if !shared.is_empty() {
+                    scratch.unsplit(&shared, written).await?;
+                }
             }
             // A repository nothing was ever added to has no index yet.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(GitError::Scratch(error)),
         }
         Ok(scratch)
+    }
+
+    /// Makes the copy a whole index, when the person's is split: a split
+    /// index holds only the entries changed since its shared index, which
+    /// it names, and git reading it reads that shared index too and
+    /// refreshes the shared file's time, so that it outlives the expiry of
+    /// unused ones. Read with the repository, every call on the copy would
+    /// touch a file in `.git`. The shared indexes `shared` are copied into a
+    /// repository of the scratch's own, git merges the copy with its shared
+    /// index there and writes it whole, and the copy keeps the time the
+    /// person's index was written at. Entries git found racily clean while
+    /// writing it are marked to be read again, as git marks them in any
+    /// index it writes.
+    async fn unsplit(
+        &self,
+        shared: &[std::path::PathBuf],
+        written: std::time::SystemTime,
+    ) -> Result<(), GitError> {
+        let format = text(&checked(self.cwd, None, &["rev-parse", "--show-object-format"]).await?);
+        let own = self.dir.path().join("unsplit.git");
+        let own_text = own.to_string_lossy();
+        let format_arg = format!("--object-format={format}");
+        checked(
+            self.dir.path(),
+            None,
+            &[
+                "init",
+                "-q",
+                "--bare",
+                "--template=",
+                &format_arg,
+                own_text.as_ref(),
+            ],
+        )
+        .await?;
+        for path in shared {
+            let Some(name) = path.file_name() else {
+                continue;
+            };
+            // The bytes, never a link: a link would share the file whose
+            // time git refreshes.
+            std::fs::copy(path, own.join(name)).map_err(GitError::Scratch)?;
+        }
+        let mut unsplit = command(
+            self.dir.path(),
+            Some(&self.index()),
+            &["update-index", "--no-split-index"],
+        );
+        unsplit
+            .env("GIT_DIR", &own)
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_COMMON_DIR");
+        succeeded(
+            &["update-index"],
+            unsplit.output().await.map_err(GitError::Spawn)?,
+        )?;
+        std::fs::File::options()
+            .write(true)
+            .open(self.index())
+            .and_then(|index| index.set_modified(written))
+            .map_err(GitError::Scratch)?;
+        std::fs::remove_dir_all(&own).map_err(GitError::Scratch)
     }
 
     fn index(&self) -> std::path::PathBuf {
@@ -1002,23 +1087,37 @@ fn raw_files(output: &[u8]) -> Vec<RawFile> {
     files
 }
 
-/// `files` with their flags, read from the repository's top folder.
-/// With `commits`, a store and the later commit, both sides are commits,
-/// read from their objects in the repository and the store, and the later
-/// commit's `.gitattributes` apply; without, the later side is the working
-/// tree, read from its files (an object id git shows for a file there is
-/// the index's, which may not be what the file holds), and so are its
-/// `.gitattributes`.
+/// The later side of a comparison whose files are flagged.
+#[derive(Clone, Copy)]
+enum Later<'a> {
+    /// The working tree, read from its files (an object id git shows for a
+    /// file there is the index's, which may not be what the file holds),
+    /// with its `.gitattributes`, and the index's for files not there,
+    /// read from the copy of the person's index at this path: git reading
+    /// the person's own refreshes files in `.git` (a split index's shared
+    /// one).
+    Tree(&'a Path),
+    /// A commit, read with the store beside the repository, its own
+    /// `.gitattributes` applying.
+    Commit(&'a objects::ObjectStore, &'a str),
+}
+
+/// `files` with their flags, read from the repository's top folder: both
+/// sides commits, read from their objects in the repository and the store,
+/// or the later side the working tree.
 async fn flagged(
     root: &Path,
-    commits: Option<(&objects::ObjectStore, &str)>,
+    later: Later<'_>,
     files: Vec<RawFile>,
 ) -> Result<Vec<ChangedFile>, GitError> {
     if files.is_empty() {
         return Ok(Vec::new());
     }
-    let store = commits.map(|(store, _)| store);
-    let attributes = attributes(root, commits, &files).await?;
+    let store = match later {
+        Later::Commit(store, _) => Some(store),
+        Later::Tree(_) => None,
+    };
+    let attributes = attributes(root, later, &files).await?;
     let regular = |mode: &str| mode.starts_with("100");
     let hashed =
         |id: &str| store.is_some() && !id.is_empty() && id.bytes().any(|byte| byte != b'0');
@@ -1131,11 +1230,10 @@ fn read_head(path: &Path) -> Vec<u8> {
 
 /// What `.gitattributes` says of each file's `linguist-generated` and
 /// `linguist-vendored`: Some either way when it says, None when it does
-/// not. Read from the working tree's, or with `commits`, a store and a
-/// commit, from the commit's.
+/// not. Read from the working tree's, or a commit's.
 async fn attributes(
     cwd: &Path,
-    commits: Option<(&objects::ObjectStore, &str)>,
+    later: Later<'_>,
     files: &[RawFile],
 ) -> Result<std::collections::HashMap<String, (Option<bool>, Option<bool>)>, GitError> {
     let mut input = Vec::new();
@@ -1143,9 +1241,9 @@ async fn attributes(
         input.extend_from_slice(file.path.as_bytes());
         input.push(0);
     }
-    let output = match commits {
-        None => checked_with_input(cwd, None, &ATTRIBUTES, input).await?,
-        Some((store, commit)) => attributes_at(cwd, store, commit, input).await?,
+    let output = match later {
+        Later::Tree(index) => checked_with_input(cwd, Some(index), &ATTRIBUTES, input).await?,
+        Later::Commit(store, commit) => attributes_at(cwd, store, commit, input).await?,
     };
     let mut said = std::collections::HashMap::<String, (Option<bool>, Option<bool>)>::new();
     let fields: Vec<_> = output.split(|byte| *byte == 0).collect();
@@ -1181,27 +1279,12 @@ const ATTRIBUTES: [&str; 5] = [
 /// `.gitattributes` of `commit`, read with `store` beside the repository.
 /// Git reads them from a commit itself since 2.40 (`--source`); an older
 /// git is given a temporary index of the commit's tree to read them from.
+/// `check-attr` reads an index whatever it is asked, so it reads an empty
+/// one of its own rather than the person's, which git reading would
+/// refresh files in `.git` for (a split index's shared one). The index
+/// lives in a folder only this user can enter, as the scratch index does,
+/// and goes when done.
 async fn attributes_at(
-    cwd: &Path,
-    store: &objects::ObjectStore,
-    commit: &str,
-    input: Vec<u8>,
-) -> Result<Vec<u8>, GitError> {
-    let source = format!("--source={commit}");
-    let mut args = vec![ATTRIBUTES[0], &source];
-    args.extend(&ATTRIBUTES[1..]);
-    let output = objects::finish(store.reading(cwd, &args), Some(input.clone())).await?;
-    if output.status.success() {
-        return Ok(output.stdout);
-    }
-    attributes_by_index(cwd, store, commit, input).await
-}
-
-/// [`attributes_at`] through a temporary index holding `commit`'s tree,
-/// read with `check-attr --cached`, for a git that cannot read a commit's
-/// attributes itself. The index lives in a folder only this user can
-/// enter, as the scratch index does, and goes when done.
-async fn attributes_by_index(
     cwd: &Path,
     store: &objects::ObjectStore,
     commit: &str,
@@ -1209,13 +1292,35 @@ async fn attributes_by_index(
 ) -> Result<Vec<u8>, GitError> {
     let scratch = Scratch::empty(cwd)?;
     let index = scratch.index();
+    let source = format!("--source={commit}");
+    let mut args = vec![ATTRIBUTES[0], &source];
+    args.extend(&ATTRIBUTES[1..]);
+    let mut check = store.reading(cwd, &args);
+    check.env("GIT_INDEX_FILE", &index);
+    let output = objects::finish(check, Some(input.clone())).await?;
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+    attributes_by_index(cwd, store, commit, &index, input).await
+}
+
+/// [`attributes_at`] through the temporary index `index`, made to hold
+/// `commit`'s tree, read with `check-attr --cached`, for a git that cannot
+/// read a commit's attributes itself.
+async fn attributes_by_index(
+    cwd: &Path,
+    store: &objects::ObjectStore,
+    commit: &str,
+    index: &Path,
+    input: Vec<u8>,
+) -> Result<Vec<u8>, GitError> {
     let mut read = store.reading(cwd, &["read-tree", commit]);
-    read.env("GIT_INDEX_FILE", &index);
+    read.env("GIT_INDEX_FILE", index);
     objects::checked("read-tree", read, None).await?;
     let mut args = vec![ATTRIBUTES[0], "--cached"];
     args.extend(&ATTRIBUTES[1..]);
     let mut check = store.reading(cwd, &args);
-    check.env("GIT_INDEX_FILE", &index);
+    check.env("GIT_INDEX_FILE", index);
     objects::checked("check-attr", check, Some(input)).await
 }
 
@@ -1479,11 +1584,28 @@ const DIFF_OPTIONS: &[&str] = &[
 /// killed if dropped.
 fn command(cwd: &Path, index: Option<&Path>, args: &[&str]) -> tokio::process::Command {
     let mut command = as_configured(cwd);
-    command.args(CONFIG).args(args);
-    if let Some(index) = index {
-        command.env("GIT_INDEX_FILE", index);
-    }
     command
+        .args(CONFIG)
+        .args(args)
+        .env("GIT_INDEX_FILE", index.unwrap_or_else(|| no_index()));
+    command
+}
+
+/// The index a git call that names none of its own reads: a file in a
+/// folder that is never made, which git reads as an empty index. Git
+/// reading the person's index refreshes the time of a file in `.git` (the
+/// shared index a split index names), and many calls read one that need
+/// none (a diff of two commits, for the attributes it looks up), so none
+/// of this crate's calls reads it; [`Scratch`] copies its bytes instead.
+/// A call that writes an index always names one, and one written here
+/// would fail, the folder being absent.
+fn no_index() -> &'static Path {
+    static NO_INDEX: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| {
+        std::env::temp_dir()
+            .join(format!("amux-git-facts-no-index-{}", std::process::id()))
+            .join(INDEX)
+    });
+    &NO_INDEX
 }
 
 /// Git in `cwd` with the person's configuration alone, no arguments yet:
@@ -1544,7 +1666,8 @@ mod blocking {
             })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("GIT_OPTIONAL_LOCKS", "0");
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_INDEX_FILE", super::no_index());
         let mut child = command.spawn().map_err(GitError::Spawn)?;
         let Some(input) = input else {
             return child.wait_with_output().map_err(GitError::Spawn);
@@ -1739,9 +1862,11 @@ mod tests {
             (head.as_str(), "set", "unspecified"),
             (taken.commit.as_str(), "unset", "set"),
         ] {
-            let by_index = super::attributes_by_index(root, &store, commit, input.clone())
-                .await
-                .unwrap();
+            let scratch = super::Scratch::empty(root).unwrap();
+            let by_index =
+                super::attributes_by_index(root, &store, commit, &scratch.index(), input.clone())
+                    .await
+                    .unwrap();
             let from_commit = super::attributes_at(root, &store, commit, input.clone())
                 .await
                 .unwrap();

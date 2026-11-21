@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use crate::objects::{ObjectStore, finish};
 use crate::{
-    ChangedFile, GitError, RawFile, Status, UsedBase, answer, branch_base, default_branch,
+    ChangedFile, GitError, Later, RawFile, Status, UsedBase, answer, branch_base, default_branch,
     empty_tree as empty_tree_in, flagged, raw_files, succeeded, text,
 };
 
@@ -130,7 +130,7 @@ pub async fn files(
 ) -> Result<Vec<ChangedFile>, CompareError> {
     let root = top(cwd).await?;
     let raw = raw(&root, store, from, to, None).await?;
-    match flagged(&root, Some((store, to)), raw).await {
+    match flagged(&root, Later::Commit(store, to), raw).await {
         Ok(files) => Ok(files),
         Err(error) => Err(explained(&root, store, &[from, to], error).await),
     }

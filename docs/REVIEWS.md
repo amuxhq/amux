@@ -112,7 +112,10 @@ snapshot` (`snapshot::take`):
 1. The person's index is copied to a temporary file that keeps its
    modification time: git trusts an entry's cached stat data by comparing
    it with the index file's own time, and a copy stamped now would hide an
-   edit made in the same second as the last index write.
+   edit made in the same second as the last index write. A split index is
+   made whole in the copy, through a copy of its shared index in a
+   repository of the scratch's own: git reading an index linked to the
+   shared one in `.git` refreshes that file's time.
 2. The paths that differ from that index, and the untracked ones, are listed
    and measured before anything is stored. A file over 1 MiB is left out and
    named (`omitted`, listed as large), unless it is in conflict or Git LFS
@@ -192,9 +195,12 @@ options (`DIFF_OPTIONS`):
 
 The one call that runs with the person's configuration alone is checking out
 a new worktree, which is the person's own work: their filters must run so its
-files are their content rather than LFS pointers. A test runs every call
-under a hostile configuration and checks the answers are the same and `.git`
-is byte for byte unchanged
+files are their content rather than LFS pointers. No call reads the
+person's index either: one that names no index of its own is given an empty
+one (`no_index`), since git reads an index even to diff two commits, for
+the attributes it looks up. A test runs every call under a hostile
+configuration, the index split for real, and checks the answers are the
+same and `.git` is byte for byte unchanged
 (`the_persons_git_configuration_changes_no_answer_and_nothing_in_git`).
 
 ## Comparisons

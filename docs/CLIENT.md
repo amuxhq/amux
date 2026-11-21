@@ -506,7 +506,8 @@ if the runtime's source for that agent is current, or after the delta if it is c
 ### Sending
 
 `send_prompt` puts the text and attachments in the kind's prompt input (`ui_view::act_input`), refuses it at
-once when it carries an attachment the agent does not take, gives it a fresh input id, applies `Msg::Send` so the optimistic row exists at once, and calls `SendInput`. The reply is the
+once when it carries an attachment the agent does not take (recorded as a refused prompt, so its words and
+attachments go back to the composer like any refusal's), gives it a fresh input id, applies `Msg::Send` so the optimistic row exists at once, and calls `SendInput`. The reply is the
 interpreter's verdict: accepted (possibly `queued`), or rejected with a reason. A prompt sent while a turn runs
 waits in the agent's queue, which every snapshot lists, so other clients see it too; `queue_rows` offers
 withdraw and send-now on it, and send-now steers it into the running turn, where it reads "steered" until its

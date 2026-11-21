@@ -292,8 +292,17 @@ pub fn untaken_file(state: &SessionState, mime: &str) -> Option<Untaken> {
 /// pasted as an attachment and a web page's comments go as text, which
 /// every agent takes.
 pub fn untaken(state: &SessionState, attachments: &[wire::Attachment]) -> Option<Untaken> {
+    untaken_by(&state.capabilities(), attachments)
+}
+
+/// The same for an agent not started yet, by what its host says the picked
+/// agent can do: a new agent's first message is checked before anything is
+/// created or stored.
+pub fn untaken_by(
+    can: &wire::AgentCapabilities,
+    attachments: &[wire::Attachment],
+) -> Option<Untaken> {
     use wire::attachment::Of;
-    let can = state.capabilities();
     attachments
         .iter()
         .find_map(|attachment| match &attachment.of {

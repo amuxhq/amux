@@ -264,7 +264,7 @@ parent's.
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
 its first prompt (an empty Enter just resumes). An exited ACP agent that cannot reopen its session has no text box:
-its edge reads `Ended · this agent cannot be resumed`. A prompt to an idle agent shows at once in the feed, and one to a
+in its place `Ended · OpenCode can't reopen this conversation`, and typing goes nowhere. A prompt to an idle agent shows at once in the feed, and one to a
 busy agent at once in the queue. While the chat is not current (the host away, the chat catching up, this
 machine's daemon reconnecting) Enter sends nothing: the words stay in the composer, whose top edge says why, and
 nothing sends them later; once the chat is current, Enter sends them. A refused Enter, and a refusal that puts

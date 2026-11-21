@@ -845,17 +845,31 @@ impl Session {
 
     /// A prompt in this agent's kind. One carrying an attachment the agent
     /// does not take (an image to an agent that takes none) is refused at
-    /// once, never sent.
+    /// once and never sent, as a prompt the agent refused is: it is among
+    /// `ui_view::refused_prompts` with its words and attachments, so every
+    /// client gives the draft back with why.
     pub async fn send_prompt(&self, text: &str, attachments: Vec<wire::Attachment>) -> Sent {
-        let taken = ui_view::untaken(&self.inner.model().state, &attachments).is_none();
-        match inputs::prompt(self.kind(), text, attachments).filter(|_| taken) {
-            Some(input) => self.send(input).await,
+        let untaken = ui_view::untaken(&self.inner.model().state, &attachments);
+        let unsupported = || {
+            InputOutcome::Reply(rejected(wire::Rejected {
+                refusal: wire::Refusal::Unsupported as i32,
+                detail: None,
+            }))
+        };
+        match inputs::prompt(self.kind(), text, attachments) {
+            Some(input) if untaken.is_none() => self.send(input).await,
+            Some(input) => {
+                let id = input.input_id.clone();
+                self.inner.apply(Msg::Send(input));
+                self.inner.apply(Msg::Sent(id.clone(), unsupported()));
+                Sent {
+                    id,
+                    outcome: unsupported(),
+                }
+            }
             None => Sent {
                 id: Vec::new(),
-                outcome: InputOutcome::Reply(rejected(wire::Rejected {
-                    refusal: wire::Refusal::Unsupported as i32,
-                    detail: None,
-                })),
+                outcome: unsupported(),
             },
         }
     }

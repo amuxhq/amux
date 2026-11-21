@@ -162,6 +162,25 @@ impl Setup {
             .is_some_and(|can| can.attachable);
     }
 
+    /// Why the first message's attachments cannot go to the picked agent,
+    /// by what its host says that agent can do: an image to one that takes
+    /// none, a file to one that takes no files. None when they can, or when
+    /// the host has not said what the agent can do.
+    pub fn untaken(&self, fleet: &FleetState, attachments: &[wire::Attachment]) -> Option<String> {
+        let can = fleet
+            .host(&self.host)
+            .and_then(|entry| entry.provider(&self.agent))
+            .and_then(|offer| offer.capabilities)?;
+        let what = match ui_view::untaken_by(&can, attachments)? {
+            ui_view::Untaken::Images => "images",
+            ui_view::Untaken::Files => "files",
+        };
+        Some(format!(
+            "{} can't take {what}",
+            agent_name(fleet, &self.host, &self.agent)
+        ))
+    }
+
     /// Nothing picked: the agent will start on its host's defaults.
     fn start_from_defaults(&mut self) {
         self.model = None;

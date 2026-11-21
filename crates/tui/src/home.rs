@@ -1082,6 +1082,13 @@ impl Home {
                     self.open_setting(fleet, Setting::Folder);
                     return vec![];
                 }
+                // An attachment the picked agent does not take is said
+                // before anything is created or stored, whichever agent
+                // was picked after the paste.
+                if let Some(why) = setup.untaken(fleet, self.draft.editor.attachments()) {
+                    self.draft.error = Some(why);
+                    return vec![];
+                }
                 self.draft.starting = true;
                 self.draft.error = None;
                 return vec![FleetEffect::Start {

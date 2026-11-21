@@ -166,9 +166,10 @@ impl ChatView {
             let action = self.ask.box_key(&card, key);
             return self.ask_effects(state, &card, action);
         }
-        // A provider subagent takes no messages: there is no field to type
-        // in, and Enter sends nothing.
-        if matches!(state.composer(), Composer::Native { .. }) {
+        // A provider subagent takes no messages, nor does an agent that has
+        // ended and cannot be resumed: there is no field to type in, and
+        // Enter sends nothing.
+        if matches!(state.composer(), Composer::Native { .. } | Composer::Ended) {
             if key.code == KeyCode::Esc {
                 self.escape();
             }

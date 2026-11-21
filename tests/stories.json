@@ -394,6 +394,12 @@
       "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
     },
     {
+      "name": "chat.acp-ended",
+      "shows": "An ACP agent that exited and cannot reopen its conversation: in the composer's place, that it has ended and takes no more messages.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
+    },
+    {
       "name": "chat.away",
       "shows": "A chat whose host is away: it says so, and a message typed meanwhile stays in the composer until the host is back.",
       "clients": ["phone", "terminal"]

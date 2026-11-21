@@ -257,3 +257,50 @@ fn an_image_pasted_for_an_agent_that_takes_none_is_refused_at_once() {
     );
     assert!(view.attaching().is_empty());
 }
+
+/// A new agent's first message with an image, for an agent its host says
+/// takes none, is refused before anything is created or stored, whichever
+/// agent was picked after the paste; the draft stays.
+#[test]
+fn a_new_agents_image_is_refused_before_the_agent_is_made() {
+    use crate::setup::Item;
+    let mut fleet = home_fleet();
+    let mut studio = host(b"a", "studio", Reads::Online);
+    if let wire::inventory_event::Of::Host(entry) = &mut studio {
+        entry.providers.push(wire::ProviderOnHost {
+            capabilities: Some(wire::AgentCapabilities::acp(true, false, false)),
+            ..offered("opencode", "OpenCode", Kind::Acp)
+        });
+    }
+    inventory(&mut fleet, studio);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    home_screen(&mut home, &fleet, theme());
+    for c in "what is this".chars() {
+        home.key(&fleet, key(KeyCode::Char(c)));
+    }
+    home.draft.editor.attach(wire::Attachment {
+        of: Some(wire::attachment::Of::Image(wire::BlobRef {
+            hash: vec![7; 32],
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            size: 8,
+        })),
+    });
+    // Picked after the paste.
+    home.open_setup().unwrap().pick(Item::Kind, "opencode");
+    let effects = home.key(&fleet, key(KeyCode::Enter));
+    assert!(effects.is_empty(), "{effects:?}");
+    assert_eq!(home.draft.editor.attachments().len(), 1);
+    assert!(home.draft.editor.text().starts_with("what is this"));
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("OpenCode can't take images"), "{screen}");
+
+    // Claude takes images: the same draft starts.
+    home.open_setup().unwrap().pick(Item::Kind, "claude");
+    let effects = home.key(&fleet, key(KeyCode::Enter));
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Start { .. }]),
+        "{effects:?}"
+    );
+}

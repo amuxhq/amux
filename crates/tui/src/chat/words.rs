@@ -369,10 +369,24 @@ pub(super) fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Op
     })
 }
 
-/// The composer's top edge once an agent that cannot be resumed has
-/// exited: its program cannot reopen the conversation, so Enter sends
-/// nothing.
-pub(super) const ENDED_WORDS: &str = "Ended · this agent cannot be resumed";
+/// In place of the composer once an agent that cannot be resumed has
+/// exited: its program cannot reopen the conversation, so there is nothing
+/// to type into, and nothing is passed off as a resume.
+pub(super) fn ended_box(
+    who: &str,
+    controls: &ui_view::ControlsSummary,
+    width: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    const MARGIN: usize = 2;
+    let inner = width.saturating_sub(2 * MARGIN + 4).max(1);
+    let said = format!("Ended · {who} can't reopen this conversation");
+    let body = text::wrap(&said, inner)
+        .into_iter()
+        .map(|line| Line::from(Span::styled(line, theme.muted())))
+        .collect();
+    framed(body, theme.hairline(), &ROUNDED, controls, width, theme).0
+}
 
 /// The composer's top edge while terminal Claude's own view is on another
 /// conversation: prompts are refused until it is back on this one.
@@ -402,7 +416,6 @@ pub(super) fn edge_title(
         .map(|words| (words, theme.faint()))
         .or_else(|| match composer {
             Composer::Resume => Some(("Enter resumes".to_owned(), theme.muted())),
-            Composer::Ended => Some((ENDED_WORDS.to_owned(), theme.muted())),
             _ => None,
         })
         .or_else(|| limit.map(|words| (words, theme.warning())))

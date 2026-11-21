@@ -38,9 +38,9 @@ use ui_view::{AskCard, CardState, Reach, ask_card, overview, queue_rows};
 use wire::Attachment;
 pub(crate) use words::{FREE_PLAN_AWAY, Keys, activity_words, keys, next_control, refusal_words};
 use words::{
-    Hint, edge_title, ends_with_exit, exit_words, has_draft, key_event, native_box, native_hint,
-    problem_words, quiet_activity, refused_command_words, settled, sign_in_notice, turn_hint,
-    unchangeable_words, withdraw_effect,
+    Hint, edge_title, ended_box, ends_with_exit, exit_words, has_draft, key_event, native_box,
+    native_hint, problem_words, quiet_activity, refused_command_words, settled, sign_in_notice,
+    turn_hint, unchangeable_words, withdraw_effect,
 };
 #[cfg(feature = "fixtures")]
 pub(crate) use words::{composer_lines, native_composer_lines, sign_in_composer_lines};

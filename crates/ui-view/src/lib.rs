@@ -36,7 +36,7 @@ pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, Untaken,
     command_matches, composer, context, pastes_as_attachment, prompts_underway, queue_rows,
-    refused_prompts, sign_in, switched_away, untaken, untaken_file,
+    refused_prompts, sign_in, switched_away, untaken, untaken_by, untaken_file,
 };
 pub use fleet::{
     ActivityLine, ExitCause, FamilyHeader, FleetCard, FleetFilter, FleetOnly, FleetRow,

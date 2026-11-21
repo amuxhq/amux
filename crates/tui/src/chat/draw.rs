@@ -17,7 +17,7 @@ use super::layout::{Anchor, Laid};
 use super::selection::ScreenCells;
 use super::{
     CHAT_MIN, ChatView, ComposerSpot, HeaderControl, HeaderSpots, Hint, LOADING_HINT_MS, PANE_MAX,
-    PANE_MIN, PanelEntry, QueuedSpot, Selection, ask, commands, composer, edge_title,
+    PANE_MIN, PanelEntry, QueuedSpot, Selection, ask, commands, composer, edge_title, ended_box,
     ends_with_exit, exit_words, feed, key_event, keys, layout, native_box, native_hint, pane,
     problem_words, quiet_activity, rows, settled, sign_in_notice, turn_hint,
 };
@@ -273,7 +273,7 @@ impl ChatView {
         // since sending is how someone who signed in elsewhere tries again;
         // a provider subagent's takes no messages, so it is left alone.
         if let Some(sign_in) = &sign_in
-            && !matches!(state.composer(), Composer::Native { .. })
+            && !matches!(state.composer(), Composer::Native { .. } | Composer::Ended)
         {
             bottom.extend(sign_in_notice(&host, sign_in, width, theme));
             bottom.push(Line::default());
@@ -489,6 +489,11 @@ impl ChatView {
                     theme,
                 ));
                 hint = native_hint(&stop, self.leader);
+            }
+            _ if state.composer() == Composer::Ended => {
+                bottom.extend(ended_box(&state.provider_name(), &summary, width, theme));
+                let more = format!("ctrl+{}", self.leader);
+                hint = Hint::Keys(keys(&[(more.as_str(), "more")]));
             }
             _ => {
                 plain_box = Some(bottom.len());

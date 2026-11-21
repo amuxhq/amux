@@ -260,6 +260,7 @@ pub fn all() -> Vec<Story> {
             chat(Kind::Acp, "agy-question", Pick::Asking)
         }),
         story("chat.acp-queued", acp_queued),
+        story("chat.acp-ended", acp_ended),
         story("chat.away", draft_while_away),
         story("chat.exited", exited_with_a_draft),
         story("chat.signed-out", || {
@@ -431,6 +432,36 @@ fn acp_queued() -> Scene {
     Scene::Chat(Box::new(scene))
 }
 
+/// An ACP agent that exited and cannot reopen its conversation: no field
+/// to type in, only why.
+fn acp_ended() -> Scene {
+    // OpenCode as an agent that offered no way to reopen a session.
+    let frames = replayed_as(Kind::Acp, "opencode-prompt", |snapshot| {
+        if let Some(can) = &mut snapshot.capabilities {
+            can.resumable = false;
+        }
+    });
+    let (mut state, now) = frames.last().cloned().expect("the recording has frames");
+    let mut exited = state.agent().clone();
+    exited.lifecycle = wire::Lifecycle::Exited as i32;
+    exited.exit_cause = wire::ExitCause::ProviderExited as i32;
+    state.update(Msg::Entry(exited));
+    assert_eq!(state.composer(), ui_state::Composer::Ended);
+    let mut scene = ChatScene {
+        view: ChatView::new(b"agent".to_vec(), now, false),
+        state,
+        now,
+    };
+    // What is typed has nowhere to go.
+    let theme = Theme::dark(tui::ColorMode::TrueColor);
+    for c in "one more thing".chars() {
+        scene
+            .view
+            .key(&scene.state, KeyEvent::from(KeyCode::Char(c)), theme);
+    }
+    Scene::Chat(Box::new(scene))
+}
+
 fn draft_while_away() -> Scene {
     let mut scene = recorded(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last);
     scene.state.update(Msg::Host(wire::HostEntry {
@@ -472,6 +503,16 @@ fn exited_with_a_draft() -> Scene {
 /// The session after each frame of a recorded fixture, with the newest
 /// item's time: caught up after the first frame, as a live chat is.
 fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
+    replayed_as(kind, fixture, |_| {})
+}
+
+/// The same, each snapshot changed by `edit` on its way in: a recording
+/// drawn as an agent that answered otherwise would be.
+fn replayed_as(
+    kind: Kind,
+    fixture: &str,
+    edit: impl Fn(&mut wire::Snapshot),
+) -> Vec<(SessionState, i64)> {
     let dir = match kind {
         Kind::ClaudePty => "claude_pty",
         Kind::ClaudeSdk => "claude_sdk",
@@ -514,7 +555,10 @@ fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
         for (id, verdict) in &frame.replies {
             state.update(Msg::Sent(id.clone(), InputOutcome::Reply(verdict.clone())));
         }
-        for event in committer.commit(&frame.step) {
+        for mut event in committer.commit(&frame.step) {
+            if let Some(wire::session_event::Of::Snapshot(snapshot)) = &mut event.of {
+                edit(snapshot);
+            }
             state.update(Msg::Event(event));
         }
         if index == 0 {

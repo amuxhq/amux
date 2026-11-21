@@ -9,7 +9,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.AnnotatedString
 import java.util.UUID
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -20,8 +26,10 @@ import org.robolectric.annotation.Config
 import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
 import sh.amux.core.runtime.ChatBridge
+import sh.amux.core.runtime.FleetEvent
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.OpenChat
+import sh.amux.core.runtime.RuntimeFailure
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
@@ -421,12 +429,14 @@ class ShellTest {
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_SEND).assertIsDisplayed().performClick()
         composeRule.waitForIdle()
 
-        // Back on ChatScreen with Review attached in ChatModel draft
+        // Back on ChatScreen with Review attached in composer (without calling stores.chat!)
         composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
-        val model = stores.chat(agentKey)
-        assertTrue(model.attachments.any { it is DraftAttachment.Review && it.comments.size == 1 })
+        assertTrue(stores.holds(agentKey))
+        assertTrue(stores.isShown(agentKey))
+        assertEquals(1, stores.activeViewers(agentKey))
+        composeRule.onNodeWithTag(ChatComposerTags.ATTACHMENTS_ROW).assertIsDisplayed()
 
-        // Deliver an AskCard and answer it
+        // Deliver an AskCard via runtime event stream and answer it
         val ask = AskCard(
             kind = Kind.ClaudeSdk,
             key = "ask-shell-1",
@@ -446,11 +456,13 @@ class ShellTest {
             state = sh.amux.values.CardState.Open,
         )
         composeRule.runOnIdle {
-            model.apply(
-                ChatDelta(
-                    chat = fakeChat.id,
-                    rows = emptyList(),
-                    ask = AskMoved(card = ask),
+            stores.moved(
+                FleetEvent.Chat(
+                    ChatDelta(
+                        chat = fakeChat.id,
+                        rows = emptyList(),
+                        ask = AskMoved(card = ask),
+                    ),
                 ),
             )
         }
@@ -459,10 +471,259 @@ class ShellTest {
         composeRule.waitForIdle()
         assertEquals(listOf("ask-shell-1" to 0), fakeChat.answeredChoices)
 
-        // Back returns cleanly to AgentsHome
+        // Back returns cleanly to AgentsHome and releases viewer lease
         composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.HOME_SCREEN).assertIsDisplayed()
+        assertEquals(0, stores.activeViewers(agentKey))
+        assertFalse(stores.isShown(agentKey))
+    }
+
+    private fun sampleDeskHost(uuid: String): Pair<HostId, HostView> {
+        val hostId = HostId(UUID.fromString(uuid))
+        val desk = HostView(
+            hostId = hostId.bytes,
+            name = "desk",
+            local = false,
+            trusted = true,
+            candidate = false,
+            reach = Reach.Online(RouteKind.Direct),
+            addrs = listOf("192.168.1.9:4433"),
+            relayOnly = false,
+            pairingOpen = false,
+            current = true,
+            providers = emptyList(),
+            platform = Platform.Macos,
+        )
+        return hostId to desk
+    }
+
+    private fun sampleFleetRow(agentKey: AgentKey, name: String): FleetRow = FleetRow(
+        card = FleetCard(
+            agent = agentKey,
+            name = name,
+            handle = name,
+            kind = Kind.ClaudeSdk,
+            attention = Attention.Idle,
+            cwd = "/Users/ada/source/amux",
+            phaseSinceMs = 1_000L,
+            host = "desk",
+            hostReach = Reach.Online(RouteKind.Direct),
+            children = 0,
+            familyAttention = Attention.Idle,
+            members = 1,
+            descendants = 0,
+            backgroundJobs = 0,
+            closeHeld = false,
+            filing = Filing.Open,
+            topLevel = true,
+            native = false,
+        ),
+        depth = 0,
+        expanded = false,
+        secondLine = SecondLine.LastSaid("Ready for the next step."),
+    )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun conversationToChangesTransitionKeepsSessionAlivePastRetention() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val (hostId, desk) = sampleDeskHost("88888888-8888-8888-8888-888888888888")
+        val agentKey = AgentKey(
+            host = hostId.bytes,
+            agent = List(16) { 8 },
+        )
+        val agentRow = sampleFleetRow(agentKey, "desk-review")
+
+        var nowMs = 1_000L
+        var openCount = 0
+        val dispatcher = StandardTestDispatcher()
+        val testScope = TestScope(dispatcher)
+        val fakeChat = FakeShellChat(agentKey)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            scope = testScope,
+            clock = { nowMs },
+            sessionRetentionMs = 5_000L,
+            chatBridge = FakeShellChatBridge(),
+            opener = {
+                openCount += 1
+                fakeChat
+            },
+        )
+        stores.hosts.show(listOf(desk))
+        stores.fleet.show(
+            FleetView(
+                sections = listOf(
+                    FleetSection(
+                        kind = SectionKind.Live,
+                        families = 1,
+                        foldedByDefault = false,
+                        rows = listOf(agentRow),
+                    ),
+                ),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        // Open Conversation
+        composeRule.onNodeWithTag(TestTags.homeRow("desk-review")).performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, openCount)
+        assertEquals(1, stores.activeViewers(agentKey))
+        assertFalse(fakeChat.closed)
+
+        // Transition Conversation -> Changes: session stays active past retention window
+        composeRule.onNodeWithTag(ChatScreenTags.CHANGES).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
+        nowMs += 10_000L
+        testScope.advanceTimeBy(10_000L)
+        testScope.runCurrent()
+        assertFalse("Session must not close while viewing Changes", fakeChat.closed)
+        assertTrue(stores.holds(agentKey))
+        assertEquals(1, stores.activeViewers(agentKey))
+        assertEquals(1, openCount)
+
+        // Transition Changes -> Conversation: session still active past retention window
+        composeRule.runOnIdle { router.pop() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        nowMs += 10_000L
+        testScope.advanceTimeBy(10_000L)
+        testScope.runCurrent()
+        assertFalse("Session must not close after returning to Conversation", fakeChat.closed)
+        assertTrue(stores.holds(agentKey))
+        assertEquals(1, stores.activeViewers(agentKey))
+        assertEquals(1, openCount)
+
+        // Leave Conversation -> AgentsHome: lease drops to 0 and expires after retention
+        composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
+        composeRule.waitForIdle()
+        assertEquals(0, stores.activeViewers(agentKey))
+        nowMs += 6_000L
+        testScope.advanceTimeBy(6_000L)
+        testScope.runCurrent()
+        assertTrue("Session should close after retention once no route shows it", fakeChat.closed)
+        assertFalse(stores.holds(agentKey))
+    }
+
+    @Test
+    fun conversationReopensAutomaticallyWhenProfileVersionAdvances() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val (hostId, _) = sampleDeskHost("99999999-9999-9999-9999-999999999999")
+        val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 9 })
+        var ready = false
+        val fakeChat = FakeShellChat(agentKey)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            chatBridge = FakeShellChatBridge(),
+            opener = {
+                if (!ready) {
+                    throw RuntimeFailure("nothing is running for this account")
+                }
+                fakeChat
+            },
+        )
+        router.push(Route.Conversation(agentKey))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("nothing is running for this account").assertIsDisplayed()
+
+        // Once the profile attaches/updates, ConversationRouteContent re-acquires automatically
+        composeRule.runOnIdle {
+            ready = true
+            stores.attach(null)
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithText("Ready for the next step.").assertIsDisplayed()
+    }
+
+    @Test
+    fun askActionsBindToRenderedAskKey() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val (hostId, _) = sampleDeskHost("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 10 })
+        val fakeChat = FakeShellChat(agentKey)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            chatBridge = FakeShellChatBridge(),
+            opener = { fakeChat },
+        )
+        router.push(Route.Conversation(agentKey))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        val askOne = AskCard(
+            kind = Kind.ClaudeSdk,
+            key = "ask-one",
+            itemKey = "item-1",
+            position = 1L,
+            count = 1L,
+            body = AskBody.Command("echo first", "", "First ask", ""),
+            choices = listOf(Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false)),
+            questionNote = false,
+            questionSkip = false,
+            questionReply = false,
+            stopsTurn = true,
+            defaultToNo = false,
+            state = sh.amux.values.CardState.Open,
+        )
+        val askTwo = askOne.copy(
+            key = "ask-two",
+            itemKey = "item-2",
+            body = AskBody.Command("echo second", "", "Second ask", ""),
+        )
+
+        composeRule.runOnIdle {
+            stores.moved(FleetEvent.Chat(ChatDelta(chat = fakeChat.id, rows = emptyList(), ask = AskMoved(card = askOne))))
+        }
+        composeRule.onNodeWithText("echo first").assertIsDisplayed()
+
+        // Replace with ask-two before clicking
+        composeRule.runOnIdle {
+            stores.moved(FleetEvent.Chat(ChatDelta(chat = fakeChat.id, rows = emptyList(), ask = AskMoved(card = askTwo))))
+        }
+        composeRule.onNodeWithText("echo second").assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf("ask-two" to 0), fakeChat.answeredChoices)
     }
 
     private class FakeShellChatBridge : ChatBridge {
@@ -500,6 +761,7 @@ class ShellTest {
 
     private class FakeShellChat(private val agent: AgentKey) : OpenChat {
         override val id: Long = 42L
+        var closed: Boolean = false
         val sent = mutableListOf<Draft>()
         val answeredChoices = mutableListOf<Pair<String, Int>>()
 
@@ -556,7 +818,9 @@ class ShellTest {
             commands = emptyList(),
         )
 
-        override fun close() {}
+        override fun close() {
+            closed = true
+        }
         override fun opening(): ChatDelta = ChatDelta(
             chat = id,
             rows = emptyList(),

@@ -21,6 +21,25 @@ class StoriesTest {
             "fleet.no-matches",
             "fleet.large-text",
             "fleet.two-accounts",
+            "chat.active",
+            "chat.streaming",
+            "chat.native-subagent",
+            "chat.exited",
+            "chat.offline-draft",
+            "chat.overview",
+            "chat.settings",
+            "chat.loading",
+            "chat.queued",
+            "chat.signed-out",
+            "chat.large-text",
+            "chat.ask-command",
+            "chat.ask-edit",
+            "chat.ask-question",
+            "chat.ask-plan",
+            "chat.ask-form",
+            "ask.question-large-text",
+            "review.diff",
+            "review.no-changes",
             "hosts.paired",
             "hosts.empty",
             "hosts.nearby-found",
@@ -32,6 +51,12 @@ class StoriesTest {
         for (id in required) {
             assertTrue("Missing required story: $id", id in ids)
         }
+        val byId = Stories.all.associateBy { it.id }
+        assertTrue("chat.large-text must use >= 1.5x font scale", byId.getValue("chat.large-text").fontScale >= 1.5f)
+        assertTrue(
+            "ask.question-large-text must use >= 1.5x font scale",
+            byId.getValue("ask.question-large-text").fontScale >= 1.5f,
+        )
     }
 
     @Test

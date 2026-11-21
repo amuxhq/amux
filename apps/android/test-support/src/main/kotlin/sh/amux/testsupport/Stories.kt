@@ -105,6 +105,7 @@ import sh.amux.values.Platform
 import sh.amux.values.Provider
 import sh.amux.values.ProviderSignIn
 import sh.amux.values.QuestionView
+import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
 import sh.amux.values.Repository
 import sh.amux.values.ReviewComment
@@ -119,6 +120,8 @@ import sh.amux.values.SectionKind
 import sh.amux.values.Segment
 import sh.amux.values.ServerView
 import sh.amux.values.SettingsView
+import sh.amux.values.SignInState
+import sh.amux.values.SignInView
 import sh.amux.values.SubagentGroup
 import sh.amux.values.TaskLine
 import sh.amux.values.TaskMark
@@ -443,6 +446,43 @@ object Stories {
                 )
             }
         },
+        Story(
+            id = "chat.loading",
+            area = "Chat",
+            title = "Loading conversation",
+            description = "Opening conversation before initial transcript rows have arrived.",
+        ) {
+            val (state, source) = loadingChatFixture()
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.queued",
+            area = "Chat",
+            title = "Queued prompts",
+            description = "Working turn with steered and queued follow-up prompts waiting above the composer.",
+        ) {
+            val (state, source) = queuedChatFixture()
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.signed-out",
+            area = "Chat",
+            title = "Provider signed out",
+            description = "Conversation showing the provider sign-in notice in the composer footer.",
+        ) {
+            val (state, source) = signedOutChatFixture()
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.large-text",
+            area = "Chat",
+            title = "Active conversation (large text)",
+            description = "Active conversation rendered at 1.5x accessibility font scaling.",
+            fontScale = 1.5f,
+        ) {
+            val (state, source) = activeChatFixture()
+            ChatScreen(state = state, rowSource = source)
+        },
 
         // --- Asks ----------------------------------------------------------
         Story(
@@ -468,6 +508,16 @@ object Stories {
             area = "Asks",
             title = "Question ask",
             description = "Structured question ask card with recommended option and Something else.",
+        ) {
+            val (state, source) = askChatFixture(questionAskCard())
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "ask.question-large-text",
+            area = "Asks",
+            title = "Question ask (large text)",
+            description = "Structured question ask card docked over chat at 1.5x accessibility font scaling.",
+            fontScale = 1.5f,
         ) {
             val (state, source) = askChatFixture(questionAskCard())
             ChatScreen(state = state, rowSource = source)
@@ -500,6 +550,22 @@ object Stories {
         ) {
             ReviewPage(
                 state = sampleReviewPageState(),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "review.no-changes",
+            area = "Review",
+            title = "Review (no changes)",
+            description = "Diff review empty state when the selected comparison has no changes.",
+        ) {
+            ReviewPage(
+                state = ReviewPageState(
+                    doc = null,
+                    comparison = Comparison.Uncommitted,
+                    comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
+                    baseBranch = "main",
+                ),
                 onAction = {},
             )
         },
@@ -1064,6 +1130,65 @@ object Stories {
             nowMs = NOW_MS,
         )
         return state to StaticChatRowSource(rows = rows)
+    }
+
+    private fun loadingChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
+        val frame = ScriptedChat.frame(
+            name = "auth-migration",
+            phase = PhaseView.Starting,
+            mode = Composer.Waiting(Waiting.CatchingUp),
+            caughtUp = false,
+        ).copy(
+            connection = Connection.Connecting,
+            controls = sampleControls(),
+        )
+        val state = ChatScreenState(
+            subject = sampleChatSubject(
+                name = "auth-migration",
+                hostName = "desk",
+            ).copy(connecting = true),
+            keys = emptyList(),
+            empty = true,
+            frame = frame,
+            loadingHint = true,
+            canSend = false,
+            nowMs = NOW_MS,
+        )
+        return state to StaticChatRowSource(rows = emptyList())
+    }
+
+    private fun queuedChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
+        val (base, source) = streamingChatFixture()
+        val queued = listOf(
+            QueuedRow(
+                inputId = listOf(11),
+                text = listOf(Segment.Text("Capture the relay trace logs if the second attempt times out.")),
+                steered = true,
+                canWithdraw = true,
+                canSendNow = true,
+            ),
+            QueuedRow(
+                inputId = listOf(12),
+                text = listOf(Segment.Text("Then run the full reconnect suite twice to check for flake.")),
+                steered = false,
+                canWithdraw = true,
+                canSendNow = false,
+            ),
+        )
+        val frame = requireNotNull(base.frame).copy(queue = queued)
+        return base.copy(frame = frame) to source
+    }
+
+    private fun signedOutChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
+        val (base, source) = activeChatFixture()
+        val frame = requireNotNull(base.frame).copy(
+            signIn = SignInView(
+                state = SignInState.SignedOut,
+                account = "ada@example.com",
+                message = "Claude session expired on studio.",
+            ),
+        )
+        return base.copy(frame = frame) to source
     }
 
     private fun askChatFixture(card: AskCard): Pair<ChatScreenState, StaticChatRowSource> {

@@ -80,9 +80,17 @@ class Composition(
     private val accountsFile: File = overrides.accountsFile
         ?: File(File(appContext.filesDir, "amux"), "accounts.json")
 
+    private val attachmentDir: File = File(appContext.cacheDir, "amux-attachments")
+
     val accounts: AccountRegistry = AccountRegistry(
         file = accountsFile,
-        makeStores = { account -> StoreBundle(account = account, scope = scope) },
+        makeStores = { account ->
+            StoreBundle(
+                account = account,
+                scope = scope,
+                attachmentDir = attachmentDir,
+            )
+        },
     )
 
     val cloud: CloudService = overrides.cloud ?: AmuxCloudService()
@@ -98,6 +106,7 @@ class Composition(
     val signedOutStores: StoreBundle = StoreBundle(
         account = AccountId("signed-out"),
         scope = scope,
+        attachmentDir = attachmentDir,
     )
 
     private val entitlementWatch: EntitlementWatch

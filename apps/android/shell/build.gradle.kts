@@ -39,6 +39,7 @@ dependencies {
     implementation(project(":design"))
     implementation(project(":features"))
 
+    implementation(libs.androidx.core.ktx)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)

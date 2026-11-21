@@ -4,9 +4,17 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.content.FileProvider
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
+import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sh.amux.core.runtime.ChatModel
@@ -18,6 +26,27 @@ import sh.amux.words.OpenableLink
  * Android platform helpers owned by `:shell` so `:features` stays pure Compose.
  */
 internal object ShellPlatform {
+    private val UNSAFE_VIEW_EXTENSIONS = setOf(
+        "apk",
+        "sh",
+        "command",
+        "bat",
+        "cmd",
+        "exe",
+        "jar",
+    )
+
+    internal data class BoundedReadResult(
+        val bytes: ByteArray,
+        val exceededLimit: Boolean,
+    )
+
+    internal data class PickedMetadata(
+        val name: String,
+        val size: Long,
+        val mime: String?,
+    )
+
     fun copyToClipboard(context: Context, text: String, label: String = "amux") {
         val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         manager.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -40,6 +69,58 @@ internal object ShellPlatform {
         }
     }
 
+    /**
+     * Opens a downloaded local attachment in a viewer app via [FileProvider]
+     * (`ACTION_VIEW` with read URI permission), falling back to [shareFile]
+     * for unsafe executable extensions or when no viewer handles the MIME type.
+     */
+    fun openOrShareFile(context: Context, file: File) {
+        val ext = file.extension.lowercase()
+        if (ext in UNSAFE_VIEW_EXTENSIONS) {
+            shareFile(context, file)
+            return
+        }
+        val uri = fileProviderUri(context, file) ?: return
+        val mime = resolveShareMime(file)
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val opened = runCatching { context.startActivity(viewIntent) }.isSuccess
+        if (!opened) {
+            shareFile(context, file)
+        }
+    }
+
+    /** Shares or exports a local file via Android's system chooser using [FileProvider]. */
+    fun shareFile(context: Context, file: File) {
+        val uri = fileProviderUri(context, file) ?: return
+        val mime = resolveShareMime(file)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(sendIntent, file.name).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(chooser) }
+    }
+
+    private fun fileProviderUri(context: Context, file: File): Uri? =
+        runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.getOrNull()
+
+    private fun resolveShareMime(file: File): String {
+        val ext = file.extension.lowercase()
+        if (ext.isNotEmpty()) {
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)?.let { return it }
+        }
+        return PickedAttachment.fromFile(ByteArray(0), file.name, null).mime
+    }
+
     private fun launchViewIntent(context: Context, uri: Uri) {
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -48,69 +129,208 @@ internal object ShellPlatform {
     }
 
     /**
-     * Reads display name, MIME type, and size from [ContentResolver] BEFORE
-     * reading bytes, then hands off to [ChatModel.attachCheckingSize] so
-     * oversized (>64 MB) files are refused before entering memory.
+     * Reads at most [maxBytes] + 1 bytes from [input] without buffering an
+     * unbounded document into memory. Returns `exceededLimit = true` as soon
+     * as the stream produces more than [maxBytes] bytes.
      */
-    fun attachPickedUri(
+    internal fun readStreamBounded(
+        input: InputStream,
+        maxBytes: Long,
+    ): BoundedReadResult {
+        require(maxBytes >= 0L) { "maxBytes must be non-negative" }
+        val cap = maxBytes.coerceAtMost(Int.MAX_VALUE.toLong() - 1L).toInt()
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        var total = 0L
+        while (true) {
+            val remainingToExceed = (cap.toLong() + 1L - total).coerceAtMost(buffer.size.toLong()).toInt()
+            if (remainingToExceed <= 0) {
+                return BoundedReadResult(bytes = ByteArray(0), exceededLimit = true)
+            }
+            val read = input.read(buffer, 0, remainingToExceed)
+            if (read < 0) {
+                return BoundedReadResult(bytes = out.toByteArray(), exceededLimit = false)
+            }
+            total += read
+            if (total > maxBytes) {
+                return BoundedReadResult(bytes = ByteArray(0), exceededLimit = true)
+            }
+            out.write(buffer, 0, read)
+        }
+    }
+
+    /**
+     * Classifies picked bytes according to the shared native image rule
+     * (PNG, JPEG, GIF, or WebP from magic bytes). Unsupported photo/image
+     * formats (such as HEIC/HEIF/AVIF) are transcoded via [transcodeToNativeImage]
+     * when possible, otherwise attached as a non-image file (`image = false`).
+     */
+    internal fun classifyPickedBytes(
+        bytes: ByteArray,
+        name: String,
+        reportedMime: String?,
+        isPhoto: Boolean,
+        transcodeToNativeImage: ((ByteArray) -> Pair<ByteArray, String>?)? = null,
+    ): PickedAttachment {
+        val sniffed = PickedAttachment.sniffNativeImageMime(bytes)
+        if (sniffed != null) {
+            return PickedAttachment(
+                data = bytes,
+                name = name,
+                mime = sniffed,
+                image = true,
+            )
+        }
+
+        val shouldTryTranscode = isPhoto || reportedMime?.lowercase()?.startsWith("image/") == true
+        if (shouldTryTranscode && transcodeToNativeImage != null && bytes.isNotEmpty()) {
+            val converted = runCatching { transcodeToNativeImage(bytes) }.getOrNull()
+            if (converted != null) {
+                val (convertedBytes, _) = converted
+                val convertedSniffed = PickedAttachment.sniffNativeImageMime(convertedBytes)
+                if (convertedSniffed != null) {
+                    val convertedName = replaceImageExtension(name, convertedSniffed)
+                    return PickedAttachment(
+                        data = convertedBytes,
+                        name = convertedName,
+                        mime = convertedSniffed,
+                        image = true,
+                    )
+                }
+            }
+        }
+
+        return PickedAttachment.fromFile(
+            data = bytes,
+            name = name,
+            mime = reportedMime,
+        )
+    }
+
+    private fun replaceImageExtension(name: String, mime: String): String {
+        val ext = when (mime) {
+            "image/png" -> "png"
+            "image/jpeg" -> "jpg"
+            "image/gif" -> "gif"
+            "image/webp" -> "webp"
+            else -> return name
+        }
+        val stem = name.substringBeforeLast('.', name).ifEmpty { "photo" }
+        return "$stem.$ext"
+    }
+
+    private fun transcodeViaImageDecoder(bytes: ByteArray): Pair<ByteArray, String>? {
+        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+        val bitmap = ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        }
+        return try {
+            val out = ByteArrayOutputStream()
+            val hasAlpha = bitmap.hasAlpha()
+            val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+            val mime = if (hasAlpha) "image/png" else "image/jpeg"
+            val quality = if (hasAlpha) 100 else 90
+            if (bitmap.compress(format, quality, out)) {
+                out.toByteArray() to mime
+            } else {
+                null
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /**
+     * Queries display name, size, and MIME type on [Dispatchers.IO], enforces
+     * the 64 MB attachment cap both before opening and while streaming bytes,
+     * classifies/transcodes images by their magic bytes, and uploads to [model].
+     */
+    suspend fun attachPickedUri(
         context: Context,
         uri: Uri,
         isPhoto: Boolean,
         model: ChatModel,
     ) {
         val resolver = context.contentResolver
-        var displayName: String? = null
-        var reportedSize: Long = -1L
+        val metadata = withContext(Dispatchers.IO) {
+            var displayName: String? = null
+            var reportedSize = -1L
 
-        runCatching {
-            resolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIdx >= 0 && !cursor.isNull(nameIdx)) {
-                        displayName = cursor.getString(nameIdx)
-                    }
-                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) {
-                        reportedSize = cursor.getLong(sizeIdx)
+            runCatching {
+                resolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIdx >= 0 && !cursor.isNull(nameIdx)) {
+                            displayName = cursor.getString(nameIdx)
+                        }
+                        val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) {
+                            reportedSize = cursor.getLong(sizeIdx)
+                        }
                     }
                 }
             }
+
+            if (reportedSize < 0L) {
+                reportedSize = runCatching {
+                    resolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                        afd.length.takeIf { it >= 0L } ?: 0L
+                    }
+                }.getOrNull() ?: 0L
+            }
+
+            val resolvedName = displayName?.takeIf { it.isNotBlank() }
+                ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                ?: if (isPhoto) "photo.jpg" else "attachment"
+
+            val detectedMime = runCatching { resolver.getType(uri) }.getOrNull()?.takeIf { it.isNotBlank() }
+            PickedMetadata(name = resolvedName, size = reportedSize, mime = detectedMime)
         }
 
-        if (reportedSize < 0L) {
-            reportedSize = runCatching {
-                resolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
-                    afd.length.takeIf { it >= 0L } ?: 0L
-                }
-            }.getOrNull() ?: 0L
+        if (metadata.size > 0L && !model.admits(metadata.name, metadata.size)) {
+            return
         }
 
-        val resolvedName = displayName?.takeIf { it.isNotBlank() }
-            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: if (isPhoto) "photo.jpg" else "attachment"
+        val limit = ChatModel.ATTACHMENT_LIMIT_BYTES
+        val readOutcome = withContext(Dispatchers.IO) {
+            runCatching {
+                resolver.openInputStream(uri)?.use { stream ->
+                    readStreamBounded(stream, maxBytes = limit)
+                } ?: throw RuntimeFailure("could not read ${metadata.name}")
+            }
+        }
 
-        val detectedMime = resolver.getType(uri)?.takeIf { it.isNotBlank() }
-            ?: PickedAttachment.fromFile(ByteArray(0), resolvedName, null).mime
-        val treatAsImage = isPhoto || PickedAttachment.isNativeImageMime(detectedMime)
+        val bounded = readOutcome.getOrElse { failure ->
+            model.attachCheckingSize(
+                name = metadata.name,
+                size = 0L,
+                mime = metadata.mime ?: "application/octet-stream",
+                image = false,
+                readBytes = { throw failure },
+            )
+            return
+        }
 
-        model.attachCheckingSize(
-            name = resolvedName,
-            size = reportedSize,
-            mime = detectedMime,
-            image = treatAsImage,
-            readBytes = {
-                withContext(Dispatchers.IO) {
-                    resolver.openInputStream(uri)?.use { stream ->
-                        stream.readBytes()
-                    } ?: throw RuntimeFailure("could not read $resolvedName")
-                }
-            },
-        )
+        if (bounded.exceededLimit) {
+            model.admits(metadata.name, limit + 1L)
+            return
+        }
+
+        val classified = withContext(Dispatchers.IO) {
+            classifyPickedBytes(
+                bytes = bounded.bytes,
+                name = metadata.name,
+                reportedMime = metadata.mime,
+                isPhoto = isPhoto,
+                transcodeToNativeImage = ::transcodeViaImageDecoder,
+            )
+        }
+        model.attach(classified)
     }
 }

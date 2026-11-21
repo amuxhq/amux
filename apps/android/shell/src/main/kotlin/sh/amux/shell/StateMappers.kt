@@ -109,6 +109,7 @@ object StateMappers {
                 topLevel = card.topLevel,
                 workspaceGoes = card.workspaceGoes,
                 native = card.native,
+                key = agent,
             )
         }
         val hostView = hostId?.let { hosts.host(it) }
@@ -120,6 +121,7 @@ object StateMappers {
             reach = hostView?.reach ?: Reach.Online(RouteKind.Direct),
             connecting = connecting,
             filing = Filing.Open,
+            key = agent,
         )
     }
 
@@ -129,9 +131,10 @@ object StateMappers {
         subject: ChatSubject,
         family: FamilyHeader?,
         nowMs: Long,
+        openedAttachment: ChatOpenedAttachmentUi? = null,
     ): ChatScreenState {
         val activitySubject = when (val kind = chat.frame?.composer?.activity?.kind) {
-            is ActivityKind.Running -> model.cell(kind.key).row?.let(ChatWords::subject)
+            is ActivityKind.Running -> model.rowOrNull(kind.key)?.let(ChatWords::subject)
             else -> null
         }
 
@@ -185,17 +188,6 @@ object StateMappers {
             null -> null
         }
 
-        val openedAttachmentUi = chat.openedAttachment?.let { file ->
-            val bytes = runCatching { file.readBytes() }.getOrNull()
-            val ext = file.extension.lowercase()
-            val isImage = ext in setOf("png", "jpg", "jpeg", "gif", "webp")
-            ChatOpenedAttachmentUi(
-                name = file.name,
-                bytes = if (isImage) bytes else null,
-                isImage = isImage,
-            )
-        }
-
         val activeAskKey = chat.ask?.key
         val keptQuestion = activeAskKey?.let { model.questionDraft(it) }?.toUi()
         val keptForm = activeAskKey?.let { model.formDraft(it) }
@@ -208,6 +200,9 @@ object StateMappers {
             frame = chat.frame,
             ask = chat.ask,
             overview = chat.overview,
+            overviewChangesComparison = chat.overviewChangesComparison,
+            overviewChangesLoading = chat.overviewChangesLoading,
+            overviewChangesError = chat.overviewChangesError,
             settings = chat.settings,
             openedAgents = chat.openedAgents,
             liveSubagents = chat.liveSubagents,
@@ -234,7 +229,7 @@ object StateMappers {
             keptQuestionDraft = keptQuestion,
             keptFormValues = keptForm,
             requestedOverlay = requestedOverlay,
-            openedAttachment = openedAttachmentUi,
+            openedAttachment = openedAttachment,
             dictationEnabled = false,
             dictationActive = chat.dictation.active,
             dictationSentence = chat.dictation.sentence,

@@ -3,7 +3,8 @@
 //! Claude or Codex agent there. Its reply streams to the laptop, its
 //! permission request is answered from the laptop, an interrupt from the
 //! laptop cancels its turn, and a stop from the laptop ends it on the desk.
-//! The desk runs the fake ACP agent, playing the desk's script.
+//! The desk runs the fake ACP agent, playing the desk's script. A host also
+//! lists the ACP agents it offers, for a paired host's client to read.
 
 #![cfg(unix)]
 
@@ -394,6 +395,125 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
     );
 
     drop(laptop);
+    net.shutdown().await.unwrap();
+}
+
+/// The version the desk's fake agent reports at `initialize`.
+const VERSION: &str = "4.5.6";
+
+/// A host lists the ACP agents it offers in its own entry, without any
+/// client asking: with what it is called, the kind it runs as, how to sign
+/// in, its version, whether it is signed in and what its agents can do. A
+/// paired host's client reads all of that from its inventory, and the
+/// catalogue the entry names by hash from `GetCatalogue` on that host.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hosts_acp_agent_is_offered_with_its_descriptor_and_capabilities_to_another() {
+    let script = Script {
+        version: Some(VERSION.into()),
+        acp: AcpAgent {
+            name: "fake-acp".into(),
+            image: true,
+            resume: true,
+            ..AcpAgent::default()
+        },
+        ..Script::default()
+    };
+    let net = Net::start(
+        Topology::new()
+            .host_decl(HostDecl {
+                name: "desk".into(),
+                script: Some(script),
+                ..HostDecl::default()
+            })
+            .host("laptop")
+            .link("desk", "laptop"),
+    )
+    .await
+    .unwrap();
+    let desk = net.host("desk").unwrap().host_id;
+
+    // The laptop's inventory, until the desk's entry lists the agent as
+    // asked: the desk asks it as it starts.
+    let mut inventory = net.observe_inventory("laptop").await.unwrap();
+    let listed = |events: &[wire::InventoryEvent]| {
+        testnet::observe::inventory_hosts(events)
+            .into_iter()
+            .find(|host| host.host_id() == desk.as_bytes())
+            .and_then(|host| host.provider(FAKE_ACP_AGENT).cloned())
+            .filter(|offered| offered.catalogue.is_some())
+    };
+    inventory
+        .observe_until(|events| listed(events).is_some(), PATIENCE)
+        .await
+        .unwrap_or_else(|stuck| panic!("the desk's entry listing {FAKE_ACP_AGENT}: {stuck}"));
+    let entry = testnet::observe::inventory_hosts(inventory.events())
+        .into_iter()
+        .find(|host| host.host_id() == desk.as_bytes())
+        .unwrap();
+    let offered = listed(inventory.events()).unwrap();
+
+    let descriptor = offered.descriptor.clone().expect("a descriptor");
+    assert_eq!(
+        descriptor,
+        wire::ProviderDescriptor {
+            name: "Fake ACP Agent".into(),
+            kind: wire::Kind::Acp as i32,
+            sign_in_hint: "Run `fake-acp login` in the terminal".into(),
+            version: VERSION.into(),
+        },
+        "named as the desk's config names it, with the agent's own sign-in words and version"
+    );
+    assert_eq!(offered.signed_in(), Some(true));
+    assert_eq!(
+        offered.capabilities,
+        Some(wire::AgentCapabilities::acp(true, true, false)),
+        "resumable (it offers session/resume), takes images, and folds no prompt into a turn"
+    );
+    let capabilities = offered.capabilities.clone().unwrap();
+    assert!(!capabilities.stops_job && !capabilities.switches_back && !capabilities.attachable);
+    // Claude and Codex are listed beside it, each by its own descriptor.
+    let ids: Vec<&str> = entry
+        .providers
+        .iter()
+        .map(|provider| provider.provider.as_str())
+        .collect();
+    assert_eq!(ids, ["claude", "codex", FAKE_ACP_AGENT]);
+    for (id, name) in [("claude", "Claude"), ("codex", "Codex")] {
+        let own = entry.provider(id).unwrap();
+        assert_eq!(own.name(), name, "{id}");
+        assert!(own.capabilities.is_some(), "{id} says what it can do");
+    }
+    println!(
+        "1. the laptop reads the desk's {FAKE_ACP_AGENT}: {:?} {} as {:?}, signed in, {capabilities:?}",
+        descriptor.name,
+        descriptor.version,
+        wire::Kind::try_from(descriptor.kind)
+    );
+
+    // The catalogue the entry names, asked of the desk from the laptop.
+    let catalogue = net
+        .client("laptop")
+        .unwrap()
+        .get_catalogue(Request::new(wire::GetCatalogueRequest {
+            host_id: desk.as_bytes().to_vec(),
+            provider: FAKE_ACP_AGENT.into(),
+        }))
+        .await
+        .expect("the desk answers what its agent offers")
+        .into_inner();
+    assert_eq!(
+        Some(&catalogue.hash),
+        offered.catalogue.as_ref(),
+        "the copy the entry names"
+    );
+    let decoded = wire::Catalogue::decode(catalogue.bytes.as_slice()).unwrap();
+    println!(
+        "2. GetCatalogue from the laptop answers the entry's copy: {} models, {} modes",
+        decoded.models.len(),
+        decoded.modes.len()
+    );
+
+    drop(inventory);
     net.shutdown().await.unwrap();
 }
 

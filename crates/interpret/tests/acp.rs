@@ -627,7 +627,11 @@ fn other_tools_and_attach_still_ask() {
         Acp::step(&mut state, prompt("a", "go"));
         let stepped = Acp::step(&mut state, asked_about(7, call.clone()));
         assert!(writes(&stepped.effects).is_empty(), "{agent}: {call}");
-        assert_eq!(state.shared().asks().open_asks().len(), 1, "{agent}: {call}");
+        assert_eq!(
+            state.shared().asks().open_asks().len(),
+            1,
+            "{agent}: {call}"
+        );
     }
 }
 

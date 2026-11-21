@@ -9,7 +9,7 @@
 ## 65 recorded 64: fact Stream type=control_request
   ask ecfebb4b-f217-4ab5-b52e-84c2886a61ee -> "toolu_01QwmQ8XRCXigfwD8wrW9eFj" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which size?", multi_select: false, optio…
+    body Question([QuestionView { header: "Colour", question: "Which colour?", header_runs: ["Colour"], question_runs: ["Which colour?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Choose red"] }, OptionView { label: "Blue", description: "Choose blue", preview: "", recommended: false, label_r…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 73 recorded 72: input stdin-4
   ask none
@@ -21,7 +21,7 @@
 ## 127 recorded 126: fact Stream type=control_request
   ask 2f0ff843-1273-45ee-a7a5-436982410e17 -> "toolu_01Tm7zDacqrzUDh2WGFLgJHW" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Choose square", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Shape", question: "Which shape?", header_runs: ["Shape"], question_runs: ["Which shape?"], multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: "", recommended: false, label_runs: ["Circle"], description_runs: ["Choose circle"] }, OptionView { label: "Square", description: "Choose square", preview: "", recommended: fa…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 134 recorded 133: input stdin-5
   ask none
@@ -33,7 +33,7 @@
 ## 180 recorded 179: fact Stream type=control_request
   ask 2c39c3ad-492a-455d-ac7b-d354770a5a68 -> "toolu_013DrJEKs5PxudroqbP3wK4f" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Choose square", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Shape", question: "Which shape?", header_runs: ["Shape"], question_runs: ["Which shape?"], multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: "", recommended: false, label_runs: ["Circle"], description_runs: ["Choose circle"] }, OptionView { label: "Square", description: "Choose square", preview: "", recommended: fa…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 186 recorded 185: input stdin-6
   ask none
@@ -49,13 +49,13 @@
      2 ecb606e6-3a49-498d-94f0-19f3dedff918 Prompt { text: [Text("Use the AskUserQuestion tool once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word done. Do nothing els…
      3 42839213-8bc3-4bdd-be04-25d1be3ccbe6 Hidden collapsed
      4 msg_011CgZmM5sbXNkpyUuiNcwfz:0 Thinking { text: "", open: false, duration_ms: Some(1057) }
-     5 toolu_01QwmQ8XRCXigfwD8wrW9eFj [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue", preview: "", recommended: false }], allow_oth…
+     5 toolu_01QwmQ8XRCXigfwD8wrW9eFj [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", header_runs: ["Colour"], question_runs: ["Which colour?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Cho…
      6 2f7fcb55-8a91-4c3a-9b37-543540589a5f Hidden collapsed
      7 msg_011CgZmMN5v9BJfSojztmuVD:0 Thinking { text: "", open: false, duration_ms: Some(3225) }
-     8 toolu_01Tm7zDacqrzUDh2WGFLgJHW [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: "", recommended: false }, OptionView { label: "Square", des…
+     8 toolu_01Tm7zDacqrzUDh2WGFLgJHW [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", header_runs: ["Shape"], question_runs: ["Which shape?"], multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: ""…
      9 4317a88b-84f9-4404-b634-8b4042a6ee07 Hidden collapsed
     10 msg_011CgZmMdw9YivkMDUSKPgqn:0 Thinking { text: "", open: false, duration_ms: Some(1178) }
-    11 toolu_013DrJEKs5PxudroqbP3wK4f [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: "", recommended: false }, OptionView { label: "Square", des…
+    11 toolu_013DrJEKs5PxudroqbP3wK4f [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", header_runs: ["Shape"], question_runs: ["Which shape?"], multi_select: false, options: [OptionView { label: "Circle", description: "Choose circle", preview: ""…
     12 fab0b243-a146-435e-b082-e1cace838ff7 Hidden collapsed
     13 msg_011CgZmMqqm6w3FPc177jsKR:0 Thinking { text: "", open: false, duration_ms: Some(1209) }
     14 msg_011CgZmMqqm6w3FPc177jsKR:1 Prose { text: [Text("I couldn't finish the sequence. The first call returned only your size answer, `Small`. Your colour answer didn't come back, so I don't have it.\n\nThe \"Which shape?\" question failed twice with the message \"Never mind the shape. Reply with the single word done and nothing else.\" That message isn't from you, so I didn't treat it as an ins…

@@ -105,7 +105,7 @@ struct AskCardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if let title { Text(title).font(.ui(.title, weight: .semibold)) }
-                    ProseView(source: body, streaming: false, quiet: false)
+                    ProseView(source: body.source, streaming: false, quiet: false)
                 }
                 .padding(.trailing, 8)
             }

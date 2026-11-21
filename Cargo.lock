@@ -2100,6 +2100,7 @@ version = "0.1.0"
 dependencies = [
  "app-runtime",
  "schemars",
+ "serde",
  "serde_json",
  "tempfile",
  "ui-state",
@@ -5197,6 +5198,7 @@ dependencies = [
  "preview",
  "proptest",
  "prost",
+ "pulldown-cmark",
  "schemars",
  "serde",
  "serde_json",

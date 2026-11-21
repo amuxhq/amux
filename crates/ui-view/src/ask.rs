@@ -9,6 +9,7 @@ use ui_state::{InputState, OpenAsk, Refusal, SessionState};
 use wire::{ClaudeAnswer, CodexAnswer, Decision as CodexDecision, ask, claude_answer, codex_ask};
 
 use crate::form::{FormField, form_fields};
+use crate::markdown::{InlineRun, Markdown, inline_runs};
 use crate::rows::{
     FilePatch, change_hunks, codex_file, counts, first_change, plan_parts, replaced_hunks,
 };
@@ -106,7 +107,7 @@ pub enum AskBody {
     /// The plan's title and body, as its row has them.
     Plan {
         title: Option<String>,
-        body: String,
+        body: Markdown,
     },
     Form {
         server: String,
@@ -141,6 +142,9 @@ pub enum AskBody {
 pub struct QuestionView {
     pub header: String,
     pub question: String,
+    /// The header and the question as their inline markdown reads.
+    pub header_runs: Vec<InlineRun>,
+    pub question_runs: Vec<InlineRun>,
     pub multi_select: bool,
     pub options: Vec<OptionView>,
     /// "Something else…" is always last when offered.
@@ -157,6 +161,9 @@ pub struct OptionView {
     pub description: String,
     pub preview: String,
     pub recommended: bool,
+    /// The label and the description as their inline markdown reads.
+    pub label_runs: Vec<InlineRun>,
+    pub description_runs: Vec<InlineRun>,
 }
 
 /// One choice, stated as what happens, with the answer it sends.
@@ -605,6 +612,8 @@ pub(crate) fn question(q: &wire::Question) -> QuestionView {
     QuestionView {
         header: q.header.clone(),
         question: q.question.clone(),
+        header_runs: inline_runs(&q.header),
+        question_runs: inline_runs(&q.question),
         multi_select: q.multi_select,
         options: q
             .options
@@ -623,6 +632,14 @@ pub(crate) fn question(q: &wire::Question) -> QuestionView {
     }
 }
 
+impl OptionView {
+    /// An option as an agent wrote it: a label ending "(Recommended)" is
+    /// recommended, and its words are read as inline markdown.
+    pub fn new(label: &str, description: &str, preview: &str, recommended: bool) -> OptionView {
+        lifted(label, description, preview, recommended)
+    }
+}
+
 pub(crate) fn lifted(
     label: &str,
     description: &str,
@@ -635,6 +652,8 @@ pub(crate) fn lifted(
         None => (trimmed.to_owned(), false),
     };
     OptionView {
+        label_runs: inline_runs(&label),
+        description_runs: inline_runs(description),
         label,
         description: description.to_owned(),
         preview: preview.to_owned(),
@@ -688,7 +707,8 @@ fn plan_card(
                 | ui_state::ItemBody::Codex(wire::codex_item::Kind::Plan(plan))
                     if !plan.complete
             );
-            plan_parts(&held.item.text, writing)
+            let (title, body) = plan_parts(&held.item.text, writing);
+            (title, Markdown::parse(&body, writing))
         })
         .unwrap_or_default();
     (AskBody::Plan { title, body }, choices)

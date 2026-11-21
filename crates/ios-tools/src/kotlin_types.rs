@@ -867,7 +867,14 @@ fn kotlin_type(
                 .get("items")
                 .ok_or_else(|| format!("{owner}: an array without items"))?;
             let (item, item_nullable) = kotlin_type(owner, items, shadowed, ctx)?;
-            format!("List<{item}{}>", if item_nullable { "?" } else { "" })
+            // Inside a sealed interface with a variant named `List`, the
+            // bare name is that variant.
+            let list = if shadowed.contains("List") {
+                "kotlin.collections.List"
+            } else {
+                "List"
+            };
+            format!("{list}<{item}{}>", if item_nullable { "?" } else { "" })
         }
         other => return Err(format!("{owner}: an unsupported type {other}")),
     };
@@ -1112,6 +1119,13 @@ mod tests {
         assert!(
             main_kt.contains("data class Installed(\n        val version: String,\n    ) : sh.amux.values.Installed"),
             "Installed.Installed supertype must be package-qualified"
+        );
+
+        // A variant named `List` leaves Kotlin's own list qualified inside
+        // its sealed interface.
+        assert!(
+            main_kt.contains("val items: kotlin.collections.List<ProseItem>,\n    ) : ProseBlock"),
+            "ProseBlock.List must qualify kotlin.collections.List"
         );
 
         // Shadowed external/peer types inside sealed interface variants are package-qualified.

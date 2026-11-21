@@ -1,3 +1,4 @@
+import AmuxFixtures
 import AmuxCore
 import AmuxDesign
 import SwiftUI
@@ -271,14 +272,14 @@ private func environment(
 private func row(_ id: String, _ order: UInt64, collapsed: Bool = false) -> Row {
     Row(
         id: id, order: order, atMs: 0,
-        kind: .prose(text: [.text(id)], streaming: false, workingNote: false),
+        kind: .prose(text: [.text(Markdown(words: id))], streaming: false, workingNote: false),
         collapsed: collapsed, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 
 private func prose(_ id: String, _ order: UInt64, _ text: String) -> Row {
     Row(
         id: id, order: order, atMs: 0,
-        kind: .prose(text: [.text(text)], streaming: false, workingNote: false),
+        kind: .prose(text: [.text(Markdown(words: text))], streaming: false, workingNote: false),
         collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 

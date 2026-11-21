@@ -409,6 +409,8 @@ fn a_refused_rename_keeps_its_reason_and_way_out_at_80_columns() {
 /// in its question and options' words.
 fn code_question() -> AskCard {
     let option = |label: &str, description: &str| ui_view::OptionView {
+        label_runs: Vec::new(),
+        description_runs: Vec::new(),
         label: label.into(),
         description: description.into(),
         preview: String::new(),
@@ -421,6 +423,8 @@ fn code_question() -> AskCard {
         position: 1,
         count: 1,
         body: ui_view::AskBody::Question(vec![ui_view::QuestionView {
+            header_runs: Vec::new(),
+            question_runs: Vec::new(),
             header: "Exact target".into(),
             question: "`q1/README.md` is absent; `../plan1/README.md` has two lines \
                        (`UPDATED`, `done`). Which should be used?"
@@ -796,10 +800,13 @@ fn prose_with_image(size: u64, thumbnails: bool) -> crate::chat::feed::Drawn {
     use crate::chat::feed::{Placement, row_lines};
     let row = ui_view::Row {
         kind: ui_view::RowKind::Prose {
-            text: vec![
-                Segment::Text("Here it is:".to_owned()),
-                Segment::Attachment(ui_view::AttachmentView::Image(attached(size))),
-            ],
+            text: ui_view::prose_parts(
+                vec![
+                    Segment::Text("Here it is:".to_owned()),
+                    Segment::Attachment(ui_view::AttachmentView::Image(attached(size))),
+                ],
+                false,
+            ),
             streaming: false,
             working_note: false,
         },

@@ -8,6 +8,7 @@ import sh.amux.values.QuestionResponse
 import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Segment
+import sh.amux.values.ProsePart
 
 /**
  * A photo or file the person picked, ready for [ChatModel.attach].
@@ -382,7 +383,7 @@ val RowKind.inFlight: Boolean
 internal val Row.holdsAttachment: Boolean
     get() = when (val k = kind) {
         is RowKind.Image -> true
-        is RowKind.Prompt -> k.text.any { it is Segment.Attachment }
-        is RowKind.Prose -> k.text.any { it is Segment.Attachment }
+        is RowKind.Prompt -> k.text.any { it is ProsePart.Attachment }
+        is RowKind.Prose -> k.text.any { it is ProsePart.Attachment }
         else -> false
     }

@@ -140,7 +140,7 @@ struct ChatRow: View {
     @ViewBuilder private var kind: some View {
         switch row.kind {
         case .prompt(let text, let steered):
-            PromptBubble(segments: text, steered: steered)
+            PromptBubble(segments: text.map(\.segment), steered: steered)
                 .padding(.bottom, 14)
         case .prose(let text, let streaming, let workingNote):
             ProseView(source: ChatWords.text(of: text), streaming: streaming, quiet: workingNote)
@@ -342,7 +342,7 @@ struct ChatRow: View {
                     glyph: "list-checks", accented: verdict == .open, rail: rail,
                     verb: Self.planVerb(verdict), subject: title ?? "", meta: writing ? "writing" : "",
                     note: note)
-                ProseView(source: body, streaming: writing, quiet: false)
+                ProseView(source: body.source, streaming: writing, quiet: false)
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
                     .padding(.leading, GridLine.text)

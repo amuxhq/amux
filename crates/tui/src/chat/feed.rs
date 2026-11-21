@@ -19,8 +19,8 @@ use ratatui::text::{Line, Span};
 use ui_state::{AgentKey, Key, PhaseView};
 use ui_view::{
     AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, ExitCause,
-    FileChangeView, GroupState, OpenedAgent, PlanVerdict, QuestionView, Resolution, Row, RowKind,
-    Run, RunCounts, Segment,
+    FileChangeView, GroupState, OpenedAgent, PlanVerdict, ProsePart, QuestionView, Resolution, Row,
+    RowKind, Run, RunCounts, Segment,
 };
 use wire::BlobRef;
 
@@ -292,11 +292,25 @@ pub fn row_lines(
         }
         Placement::Plain => match &row.kind {
             RowKind::Prompt { text, steered } => prompt(
-                &mut drawn, row, text, *steered, expanded, facts, width, theme,
+                &mut drawn,
+                row,
+                &rows::segments_of(text),
+                *steered,
+                expanded,
+                facts,
+                width,
+                theme,
             ),
             RowKind::Prose {
                 text, streaming, ..
-            } => prose(&mut drawn, text, *streaming, facts, width, theme),
+            } => prose(
+                &mut drawn,
+                &rows::segments_of(text),
+                *streaming,
+                facts,
+                width,
+                theme,
+            ),
             RowKind::Ask(AskRow::Plan {
                 title,
                 body,
@@ -310,7 +324,7 @@ pub fn row_lines(
                 &row.id,
                 &Plan {
                     title: title.as_deref(),
-                    body,
+                    body: &body.source,
                     verdict: *verdict,
                     mode,
                     mode_name,
@@ -799,9 +813,9 @@ pub fn pinned_prompt(row: &Row, faint: bool, width: usize, theme: Theme) -> Vec<
     let room = inner.saturating_sub(2 * inset + text::str_width(&when) + 2);
     let source: String = words
         .iter()
-        .map(|segment| match segment {
-            Segment::Text(text) => text.clone(),
-            Segment::Attachment(view) => chip(view),
+        .map(|part| match part {
+            ProsePart::Text(text) => text.source.clone(),
+            ProsePart::Attachment(view) => chip(view),
         })
         .collect();
     let joined = source.split_whitespace().collect::<Vec<_>>().join(" ");

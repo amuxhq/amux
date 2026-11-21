@@ -150,6 +150,8 @@ import sh.amux.values.SignInOfferOutcome
 import sh.amux.values.SignInOfferView
 import sh.amux.values.ReviewOutcome
 import sh.amux.words.EMPTY_GROUP_STATE
+import sh.amux.values.ProsePart
+import sh.amux.testsupport.plainMarkdown
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -1411,7 +1413,7 @@ class ShellTest {
                 order = 1L,
                 atMs = 1_000L,
                 kind = RowKind.Prose(
-                    text = listOf(Segment.Text("Ready for the next step.")),
+                    text = listOf(ProsePart.Text(plainMarkdown("Ready for the next step."))),
                     streaming = false,
                     workingNote = false,
                 ),

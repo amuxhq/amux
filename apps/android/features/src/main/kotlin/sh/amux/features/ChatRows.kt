@@ -85,6 +85,7 @@ import sh.amux.values.Segment
 import sh.amux.values.SendState
 import sh.amux.words.AgentStanding
 import sh.amux.words.ChatWords
+import sh.amux.words.segment
 import sh.amux.words.OpenableLink
 import sh.amux.words.RailJoin
 import sh.amux.words.RunPlacement
@@ -298,7 +299,7 @@ private fun ChatRowKindView(
     when (val kind = row.kind) {
         is RowKind.Prompt -> {
             PromptBubbleRow(
-                segments = kind.text,
+                segments = kind.text.map { it.segment },
                 steered = kind.steered,
                 imageBytes = imageBytes,
                 onOpenImage = callbacks.onOpenImage,
@@ -309,7 +310,7 @@ private fun ChatRowKindView(
         }
         is RowKind.Prose -> {
             ProseRowView(
-                segments = kind.text,
+                segments = kind.text.map { it.segment },
                 streaming = kind.streaming,
                 workingNote = kind.workingNote,
                 imageBytes = imageBytes,

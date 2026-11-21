@@ -27,6 +27,13 @@ android {
             isIncludeAndroidResources = true
         }
     }
+
+    // The parsed prose the storybooks draw: one file, written by
+    // `cargo run -p ios-tools -- markdown-fixtures` where the Swift package
+    // that bundles it for the iPhone and the Mac keeps it.
+    sourceSets["main"].resources.srcDir(
+        rootDir.resolve("../apple/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures"),
+    )
 }
 
 kotlin {

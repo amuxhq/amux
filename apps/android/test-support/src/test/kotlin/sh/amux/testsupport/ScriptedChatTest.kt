@@ -26,6 +26,7 @@ import sh.amux.values.PageOutcome
 import sh.amux.values.RowKind
 import sh.amux.values.Segment
 import sh.amux.values.SettingChange
+import sh.amux.values.ProsePart
 
 class ScriptedChatTest {
     private val noJniBridge = object : ChatBridge {
@@ -80,7 +81,7 @@ class ScriptedChatTest {
         model.reading(atNewest = false)
         scripted.append(
             listOf(
-                ScriptedChat.row("s3", 3, RowKind.Prose(listOf(Segment.Text("done")), false, false)),
+                ScriptedChat.row("s3", 3, RowKind.Prose(listOf(ProsePart.Text(plainMarkdown("done"))), false, false)),
             ),
         )
         scripted.deliver(model)

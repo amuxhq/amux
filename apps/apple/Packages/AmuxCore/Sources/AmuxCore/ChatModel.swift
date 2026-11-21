@@ -156,7 +156,7 @@ public enum ChatAsk: Equatable, Sendable {
 extension Row {
     /// It shows an attachment whose bytes it may be waiting on.
     fileprivate var holdsAttachment: Bool {
-        let isAttachment: (Segment) -> Bool = {
+        let isAttachment: (ProsePart) -> Bool = {
             if case .attachment = $0 { true } else { false }
         }
         return switch kind {

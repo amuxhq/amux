@@ -2619,6 +2619,8 @@ fn a_paste_goes_to_the_field_with_the_keys() {
 #[test]
 fn a_paste_into_a_secret_answer_shows_as_bullets() {
     let token = ui_view::QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: "Token".into(),
         question: "Paste the deploy token".into(),
         multi_select: false,
@@ -4516,12 +4518,16 @@ fn scrolled_back_offers_the_way_to_the_newest() {
 /// Two questions as headless Claude asks them: pick one, then pick several.
 fn two_questions() -> ui_view::AskCard {
     let option = |label: &str| ui_view::OptionView {
+        label_runs: Vec::new(),
+        description_runs: Vec::new(),
         label: label.into(),
         description: String::new(),
         preview: String::new(),
         recommended: false,
     };
     let question = |header: &str, multi_select| ui_view::QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: header.into(),
         question: format!("{header}?"),
         multi_select,
@@ -4707,7 +4713,7 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
         let frames = fixtures::frames(kind, "plans");
         let plan_card = |state: &SessionState| {
             ask_card(state).filter(|card| {
-                matches!(card.body, AskBody::Plan { ref title, ref body } if title.is_some() || !body.is_empty())
+                matches!(card.body, AskBody::Plan { ref title, ref body } if title.is_some() || !body.source.is_empty())
                     && card.state == CardState::Open
             })
         };

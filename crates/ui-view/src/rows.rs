@@ -15,8 +15,9 @@ use wire::{
 
 use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
 use crate::code::LineKind;
+use crate::markdown::{InlineRun, Markdown};
 use crate::run::Run;
-use crate::segments::{Segment, segments};
+use crate::segments::{ProsePart, prose_parts, segments};
 use crate::subagents::{Groups, SubagentGroup};
 use crate::text::{terminal_text, within, without_direction_controls};
 use crate::turn::{TurnPart, TurnPlace, Turns};
@@ -87,11 +88,11 @@ pub enum ToolRows<'a> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum RowKind {
     Prompt {
-        text: Vec<Segment>,
+        text: Vec<ProsePart>,
         steered: bool,
     },
     Prose {
-        text: Vec<Segment>,
+        text: Vec<ProsePart>,
         streaming: bool,
         working_note: bool,
     },
@@ -220,7 +221,7 @@ pub enum RowKind {
         from: String,
         kind: EnvelopeKind,
         /// Its words, with its attachments where their placeholders stand.
-        text: Vec<Segment>,
+        text: Vec<ProsePart>,
         /// A message this agent sent: the recipient as the model named it,
         /// and how the send went; empty and unspecified on one it received.
         to: String,
@@ -253,7 +254,7 @@ pub enum AskRow {
     /// yet and nothing of that line in the body.
     Plan {
         title: Option<String>,
-        body: String,
+        body: Markdown,
         verdict: PlanVerdict,
         /// Approved switching: the permission switched to, and its name as
         /// the agent's catalogue gives it. Empty otherwise.
@@ -334,6 +335,8 @@ pub enum Resolution {
 pub struct AnswerView {
     /// "(Recommended)" lifted off, as on the card.
     pub picked: Vec<String>,
+    /// Each picked label as its inline markdown reads.
+    pub picked_runs: Vec<Vec<InlineRun>>,
     pub other: Option<String>,
     pub hidden: bool,
     /// The person's note on this question.
@@ -737,7 +740,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
     use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     let item = &held.item;
-    let text = || chat_segments(held);
+    let text = || chat_text(held, false);
     let plain = |kind| (kind, None, false);
     match &held.body {
         ItemBody::Claude(kind) => match kind {
@@ -864,6 +867,11 @@ fn ask_row(item: &wire::AskItem) -> RowKind {
                         .iter()
                         .map(|label| lifted(label, "", "", false).label)
                         .collect(),
+                    picked_runs: answer
+                        .picked
+                        .iter()
+                        .map(|label| lifted(label, "", "", false).label_runs)
+                        .collect(),
                     other: answer.other.clone(),
                     hidden: answer.hidden,
                     note: answer.note.clone(),
@@ -930,7 +938,7 @@ fn plan_row(state: &SessionState, held: &Held, plan: &wire::Plan) -> RowKind {
     let (title, body) = plan_parts(&held.item.text, !plan.complete);
     RowKind::Ask(AskRow::Plan {
         title,
-        body,
+        body: Markdown::parse(&body, !plan.complete),
         verdict,
         mode_name: permission_name(&state.agent_state().permissions, &plan.permission),
         mode: plan.permission.clone(),
@@ -972,20 +980,24 @@ pub(crate) fn plan_parts(text: &str, writing: bool) -> (Option<String>, String) 
     (named.then(|| title.to_owned()), rest.to_owned())
 }
 
-/// A message's text and attachments as a row draws them. Direction
+/// A message's text and attachments as a row draws them, its words read
+/// as markdown; `streaming` while it is still being written. Direction
 /// controls are dropped from the text, so a name quoted in it reads the
 /// same on every client and cannot turn the rest of the message around.
-fn chat_segments(held: &Held) -> Vec<Segment> {
-    segments(
-        &without_direction_controls(&held.item.text),
-        &held.item.attachments,
-        &held.item.input_id,
+fn chat_text(held: &Held, streaming: bool) -> Vec<ProsePart> {
+    prose_parts(
+        segments(
+            &without_direction_controls(&held.item.text),
+            &held.item.attachments,
+            &held.item.input_id,
+        ),
+        streaming,
     )
 }
 
 fn prose(held: &Held, complete: bool, working_note: bool) -> RowKind {
     RowKind::Prose {
-        text: chat_segments(held),
+        text: chat_text(held, !complete),
         streaming: !complete,
         working_note,
     }
@@ -1159,7 +1171,7 @@ fn agent_message(held: &Held, m: &wire::AgentMessage) -> RowKind {
     RowKind::AgentMessage {
         from,
         kind: m.kind(),
-        text: chat_segments(held),
+        text: chat_text(held, false),
         to: m.to.clone(),
         sent: m.send_state(),
         rejection: m.rejection.clone(),

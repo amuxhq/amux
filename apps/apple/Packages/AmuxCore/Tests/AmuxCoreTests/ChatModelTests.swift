@@ -1,3 +1,4 @@
+import AmuxFixtures
 import AmuxWords
 import Foundation
 import XCTest
@@ -374,7 +375,7 @@ private func agents(_ standing: [(UInt8, PhaseView)]) -> ChatAgents {
 private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? = nil) -> Row {
     Row(
         id: id, order: order, atMs: 0,
-        kind: .prose(text: [.text(text.isEmpty ? id : text)], streaming: false, workingNote: false),
+        kind: .prose(text: [.text(Markdown(words: text.isEmpty ? id : text))], streaming: false, workingNote: false),
         collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: run, turn: nil)
 }
 

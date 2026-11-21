@@ -348,6 +348,14 @@ public enum ChatWords {
             .first ?? "")
     }
 
+    public static func text(of parts: [ProsePart]) -> String {
+        text(of: parts.map(\.segment))
+    }
+
+    public static func spoken(of parts: [ProsePart]) -> String {
+        spoken(of: parts.map(\.segment))
+    }
+
     public static func text(of segments: [Segment]) -> String {
         segments.map { segment in
             switch segment {

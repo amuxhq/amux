@@ -57,6 +57,7 @@ import sh.amux.values.RowKind
 import sh.amux.values.Run
 import sh.amux.values.RunCounts
 import sh.amux.values.Scope
+import sh.amux.values.ProsePart
 import sh.amux.values.Segment
 import sh.amux.values.ServerView
 import sh.amux.values.SettingsView
@@ -482,6 +483,9 @@ object ChatWords {
         val newline = text.indexOf('\n')
         return if (newline < 0) text else text.substring(0, newline)
     }
+
+    @JvmName("textOfParts")
+    fun text(parts: List<ProsePart>): String = text(parts.map { it.segment })
 
     fun text(segments: List<Segment>): String =
         segments.joinToString("") { segment ->

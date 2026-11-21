@@ -49,6 +49,7 @@ import sh.amux.values.JobRow
 import sh.amux.values.JobStop
 import sh.amux.values.Kind
 import sh.amux.values.LineKind
+import sh.amux.values.Markdown
 import sh.amux.values.ModelChoice
 import sh.amux.values.Offline
 import sh.amux.values.OpenedAgent
@@ -252,10 +253,10 @@ internal object CatalogFixtures {
         state = CallPhase.Succeeded,
     )
 
-    private fun prompt(text: String): RowKind = RowKind.Prompt(text = listOf(Segment.Text(text)), steered = false)
+    private fun prompt(text: String): RowKind = RowKind.Prompt(text = listOf(prosePart(text)), steered = false)
 
     private fun prose(text: String): RowKind =
-        RowKind.Prose(text = listOf(Segment.Text(text)), streaming = false, workingNote = false)
+        RowKind.Prose(text = listOf(prosePart(text)), streaming = false, workingNote = false)
 
     private fun explore(verb: ExploreVerb, subject: String, state: CallPhase = CallPhase.Succeeded): RowKind =
         RowKind.Explore(verb = verb, subject = subject, state = state, result = "")
@@ -340,10 +341,11 @@ internal object CatalogFixtures {
     val workingActivity = Activity(kind = ActivityKind.Running("w06"), sinceMs = 0L, elapsedMs = 33_000L, turnElapsedMs = 33_000L)
 
     const val PLAN_TITLE = "Collapse the pairing failures onto one message"
-    const val PLAN_BODY = "The client maps gRPC statuses onto distinct strings in three places. The protocol refuses " +
+    const val PLAN_SOURCE = "The client maps gRPC statuses onto distinct strings in three places. The protocol refuses " +
         "to distinguish them, so the client must not either.\n\n" +
         "1. One arm, one string\n" +
         "2. Update the three specs"
+    val PLAN_BODY: Markdown = MarkdownFixtures.parsed(PLAN_SOURCE)
 
     /** A prompt, the agent's look around, and the plan it proposed. */
     val planned: List<Row> = listOf(

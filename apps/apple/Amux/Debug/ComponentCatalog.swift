@@ -106,27 +106,27 @@ enum ComponentCatalog {
             ScriptedChat.row(id, order, kind, attention: attention, decision: decision, run: run, parent: parent)
         }
         return [
-            row("prompt", r("p1", 1, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false))),
+            row("prompt", r("p1", 1, .prompt(text: [.fixture("Collapse the pairing errors onto one string.")], steered: false))),
             row("prompt-attachments", height: 390, r("p2", 2, .prompt(
-                text: [.text("Here is the screen and the log."), .attachment(.image(F.photo)),
+                text: [.fixture("Here is the screen and the log."), .attachment(.image(F.photo)),
                        .attachment(.file(F.log)), .attachment(.text(name: "Pasted text", lines: 240, text: ""))],
                 steered: false))),
             row("prompt-sent-review", height: 140, r("p5", 5, .prompt(
-                text: [.text("These two, then run the suite."),
+                text: [.fixture("These two, then run the suite."),
                        .attachment(.sentReview(comments: 2, review: ReviewStory.sent, text: ""))],
                 steered: false))),
-            row("prompt-steered", r("p3", 3, .prompt(text: [.text("Use the new error table instead.")], steered: true))),
+            row("prompt-steered", r("p3", 3, .prompt(text: [.fixture("Use the new error table instead.")], steered: true))),
             row("prompt-quote", height: 150, r("p4", 4, .prompt(
-                text: [.text("> The retry only fires when the socket closes cleanly.\n\nOh **really**?")],
+                text: [.fixture("> The retry only fires when the socket closes cleanly.\n\nOh **really**?")],
                 steered: false))),
             row("prose", height: 330, readiness: true, r("s1", 4, .prose(
-                text: [.text(F.markdown)], streaming: false, workingNote: false))),
+                text: [.fixture(F.markdown)], streaming: false, workingNote: false))),
             row("prose-code", height: 520, readiness: true, r("s3", 4, .prose(
-                text: [.text(F.codeMarkdown)], streaming: false, workingNote: false))),
+                text: [.fixture(F.codeMarkdown)], streaming: false, workingNote: false))),
             row("prose-code-streaming", height: 220, readiness: true, r("s4", 4, .prose(
-                text: [.text(F.streamingCode)], streaming: true, workingNote: false))),
+                text: [.fixture(F.streamingCode, streaming: true)], streaming: true, workingNote: false))),
             row("prose-working-note", height: 120, readiness: true, r("s2", 5, .prose(
-                text: [.text("Checking which crates read the table first.")], streaming: true,
+                text: [.fixture("Checking which crates read the table first.", streaming: true)], streaming: true,
                 workingNote: true))),
             row("thinking", r("t1", 6, .thinking(text: "", open: false, durationMs: 8_000))),
             row("thinking-open", height: 150, expanded: true, r("t2", 7, .thinking(
@@ -218,10 +218,10 @@ enum ComponentCatalog {
             row("model-switch", r("z5", 29, .modelSwitch(to: "sonnet 4.6", reason: "Opus declined this request"))),
             row("boundary", r("z6", 30, .boundary(kind: .cleared, cause: ""))),
             row("agent-message", height: 130, r("m1", 31, .agentMessage(
-                from: "worker-2", kind: .finished, text: [.text("3 specs updated, all green.")], to: "",
+                from: "worker-2", kind: .finished, text: [.fixture("3 specs updated, all green.")], to: "",
                 sent: .unspecified, rejection: ""))),
             row("agent-message-rejected", height: 130, r("m2", 32, .agentMessage(
-                from: "", kind: .message, text: [.text("Please rebase onto main first.")], to: "worker-3",
+                from: "", kind: .message, text: [.fixture("Please rebase onto main first.")], to: "worker-3",
                 sent: .rejected, rejection: "no agent by that name"))),
             row("auto-review", r("v1", 33, .autoReview(
                 status: .approved, statusWord: "approved", risk: "low", rationale: "Local only.",
@@ -666,7 +666,7 @@ enum ComponentCatalog {
             // model is told, as the debug door's scroll does.
             model.reading(atNewest: false)
             list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: false)
-            source.append([ScriptedChat.row("n1", 100, .prose(text: [.text("Done. The three arms are one now.")], streaming: false, workingNote: false))])
+            source.append([ScriptedChat.row("n1", 100, .prose(text: [.fixture("Done. The three arms are one now.")], streaming: false, workingNote: false))])
             source.deliver(to: model)
         }
     }
@@ -1466,13 +1466,13 @@ enum CatalogFixtures {
     /// A plan as the shared view hands it: the title lifted from its
     /// opening heading, and the rest.
     static let planTitle = "Collapse the pairing failures onto one message"
-    static let planBody = """
+    static let planBody = MarkdownFixtures.parsed("""
         The client maps gRPC statuses onto distinct strings in three places. The protocol refuses \
         to distinguish them, so the client must not either.
 
         1. One arm, one string
         2. Update the three specs
-        """
+        """)
 
     /// An edit's patch as the shared view hands it: one file, its one hunk
     /// with where it starts.
@@ -1583,7 +1583,7 @@ enum CatalogFixtures {
 
     /// A prompt, the agent's look around, and the plan it proposed.
     static let planned: [Row] = [
-        ScriptedChat.row("p1", 1, .prompt(text: [.text("Plan how to collapse the pairing errors.")], steered: false)),
+        ScriptedChat.row("p1", 1, .prompt(text: [.fixture("Plan how to collapse the pairing errors.")], steered: false)),
         ScriptedChat.row("e1", 2, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
         ScriptedChat.row("e2", 3, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded, result: "")),
         ScriptedChat.row("l1", 4, .ask(.plan(body: planBody, verdict: .open, mode: "", modeName: "", writing: false, note: nil, title: planTitle))),
@@ -1623,7 +1623,7 @@ enum CatalogFixtures {
             .fileChange(files: [FileRow(path: path, change: .edited, added: added, removed: removed, line: nil)], state: .succeeded)
         }
         return [
-            r("c02", 2, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false)),
+            r("c02", 2, .prompt(text: [.fixture("Collapse the pairing errors onto one string.")], steered: false)),
         ] + ScriptedChat.run([
             r("c03", 3, .thinking(text: "", open: false, durationMs: 8_000)),
             r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
@@ -1640,7 +1640,7 @@ enum CatalogFixtures {
             r("c14", 14, command("rm -rf target", .denied, exit: nil),
               decision: Decision(outcome: .denied, elsewhere: false, granted: nil, note: "Use cargo clean instead")),
         ], failed: ["c13"]) + [
-            r("c15", 15, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
+            r("c15", 15, .prose(text: [.fixture("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
             r("c16", 16, .turnEnd(failed: false, durationMs: 102_000)),
         ]
     }()
@@ -1652,7 +1652,7 @@ enum CatalogFixtures {
             ScriptedChat.row(id, order, kind)
         }
         return conversation + [
-            r("w01", 20, .prompt(text: [.text("Drop the unused import and run the whole suite.")], steered: false)),
+            r("w01", 20, .prompt(text: [.fixture("Drop the unused import and run the whole suite.")], steered: false)),
         ] + ScriptedChat.run([
             r("w02", 21, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
             r("w03", 22, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 0, removed: 1, line: nil)], state: .succeeded)),
@@ -2373,9 +2373,9 @@ extension CatalogFixtures {
     static let delegating: [Row] = {
         func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row { ScriptedChat.row(id, order, kind) }
         return conversation + [
-            r("d01", 30, .prompt(text: [.text("Split the pairing audit four ways and report back.")], steered: false)),
+            r("d01", 30, .prompt(text: [.fixture("Split the pairing audit four ways and report back.")], steered: false)),
             r("d02", 31, .thinking(text: "", open: false, durationMs: 3_000)),
-            r("d03", 32, .prose(text: [.text("Starting four subagents, one per area.")], streaming: false, workingNote: false)),
+            r("d03", 32, .prose(text: [.fixture("Starting four subagents, one per area.")], streaming: false, workingNote: false)),
         ] + ScriptedChat.group(delegated.enumerated().map { index, agent in
             call("d0\(index + 4)", 33 + UInt64(index), agent.1, agent: agent.0, state: .running)
         })
@@ -2402,14 +2402,14 @@ extension CatalogFixtures {
     static let subagentWork: [Row] = {
         func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row { ScriptedChat.row(id, order, kind) }
         return [
-            r("s01", 1, .prompt(text: [.text("Survey the relay’s retry path: where a dropped link is retried, and what bounds it.")], steered: false)),
+            r("s01", 1, .prompt(text: [.fixture("Survey the relay’s retry path: where a dropped link is retried, and what bounds it.")], steered: false)),
             r("s02", 2, .thinking(text: "The retry lives in the link layer, so start at the dialler.", open: false, durationMs: 2_000)),
         ] + ScriptedChat.run([
             r("s03", 3, .explore(verb: .search, subject: "retry_after", state: .succeeded, result: "")),
             r("s04", 4, .explore(verb: .read, subject: "crates/relay-core/src/dial.rs", state: .succeeded, result: "")),
             r("s05", 5, .command(command: "cargo test -p relay-core retry", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 6_100, exitCode: 0)),
         ]) + [
-            r("s06", 6, .prose(text: [.text("The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.")], streaming: false, workingNote: false)),
+            r("s06", 6, .prose(text: [.fixture("The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.")], streaming: false, workingNote: false)),
             r("s07", 7, .explore(verb: .read, subject: "crates/relay-core/src/link.rs", state: .running, result: "")),
         ]
     }()

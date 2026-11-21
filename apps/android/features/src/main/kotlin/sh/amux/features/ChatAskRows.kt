@@ -101,7 +101,7 @@ internal fun AskRowView(
                             color = AmuxTheme.colors.sunken,
                         ) {
                             MarkdownView(
-                                markdown = ask.body,
+                                markdown = ask.body.source,
                                 title = ask.title,
                                 onOpenLink = onOpenLink,
                                 onCopyCode = onCopyCode,

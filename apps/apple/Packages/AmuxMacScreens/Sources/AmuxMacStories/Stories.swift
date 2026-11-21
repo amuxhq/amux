@@ -1,5 +1,6 @@
 import AppKit
 import AmuxMacScreens
+import AmuxFixtures
 import AmuxValues
 import Foundation
 import SwiftUI
@@ -379,7 +380,7 @@ public enum Stories {
             durationMs: state == .running ? nil : ms, exitCode: state == .running ? nil : exit)
     }
 
-    private static func text(_ words: String) -> [Segment] { [.text(words)] }
+    private static func text(_ words: String) -> [ProsePart] { [.fixture(words)] }
 
     private static func frame(
         _ card: FleetCard, _ phase: PhaseView, activity: ActivityKind? = nil, mode: Composer = .send,
@@ -845,7 +846,7 @@ public enum Stories {
     private static let reviewedRows: [Row] = conversationRows + [
         r("r10", .prompt(
             text: [
-                .text("Two things on the test."),
+                .fixture("Two things on the test."),
                 .attachment(.sentReview(
                     comments: 2,
                     review: SentReviewRef(

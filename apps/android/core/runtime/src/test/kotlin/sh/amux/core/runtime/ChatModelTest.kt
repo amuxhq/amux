@@ -75,6 +75,8 @@ import sh.amux.values.Row
 import sh.amux.values.RowKind
 import sh.amux.values.Run
 import sh.amux.values.RunCounts
+import sh.amux.values.Markdown
+import sh.amux.values.ProsePart
 import sh.amux.values.Segment
 import sh.amux.values.SendOutcome
 import sh.amux.values.SentPrompt
@@ -512,7 +514,7 @@ class ChatModelTest {
         order = order,
         atMs = 0L,
         kind = RowKind.Prose(
-            text = listOf(Segment.Text(text.ifEmpty { id })),
+            text = listOf(ProsePart.Text(Markdown(text.ifEmpty { id }, emptyList()))),
             streaming = false,
             workingNote = false,
         ),
@@ -1192,7 +1194,7 @@ class ChatModelTest {
                 order = 1L,
                 atMs = 0L,
                 kind = RowKind.Prose(
-                    text = listOf(Segment.Attachment(AttachmentView.Image(shot))),
+                    text = listOf(ProsePart.Attachment(AttachmentView.Image(shot))),
                     streaming = false,
                     workingNote = false,
                 ),

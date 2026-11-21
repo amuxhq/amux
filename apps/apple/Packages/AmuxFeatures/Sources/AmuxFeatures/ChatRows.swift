@@ -159,9 +159,9 @@ public struct ChatRowView: View {
     private var kindView: some View {
         switch row.kind {
         case .prompt(let text, let steered):
-            PromptBubble(text: text, steered: steered).padding(.bottom, RowGrid.prose)
+            PromptBubble(text: text.map(\.segment), steered: steered).padding(.bottom, RowGrid.prose)
         case .prose(let text, let streaming, let workingNote):
-            ProseRow(text: text, streaming: streaming, workingNote: workingNote)
+            ProseRow(text: text.map(\.segment), streaming: streaming, workingNote: workingNote)
                 .padding(.bottom, RowGrid.prose)
         case .thinking(let text, let open, let durationMs):
             GridRow(
@@ -1388,7 +1388,7 @@ private struct AskRowView: View {
                 meta: RowMeta(verdict == .approvedSwitching
                     ? String(localized: "switched to \(modeName.isEmpty ? mode : modeName)") : ""),
                 quote: sentBack ? ChatWords.firstLine(note ?? "") : nil,
-                below: open || expanded ? AnyView(planBody(title, body, writing: writing)) : nil,
+                below: open || expanded ? AnyView(planBody(title, body.source, writing: writing)) : nil,
                 opens: !open, open: expanded, toggle: toggle)
         case .form(let server, let message, let fields, let resolution):
             GridRow(

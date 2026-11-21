@@ -862,14 +862,19 @@ pub(crate) fn missing_public_view_values(definitions: &Map<String, Value>) -> Ve
         "crates/app-runtime/src/values.rs",
     ] {
         let path = root.join(dir);
-        let files = if path.is_dir() {
-            std::fs::read_dir(&path)
-                .unwrap()
-                .map(|entry| entry.unwrap().path())
-                .collect()
-        } else {
-            vec![path]
-        };
+        let mut files = Vec::new();
+        let mut folders = vec![path];
+        while let Some(path) = folders.pop() {
+            if path.is_dir() {
+                folders.extend(
+                    std::fs::read_dir(&path)
+                        .unwrap()
+                        .map(|entry| entry.unwrap().path()),
+                );
+            } else {
+                files.push(path);
+            }
+        }
         for file in files {
             let text = std::fs::read_to_string(&file).unwrap();
             for line in text.lines() {

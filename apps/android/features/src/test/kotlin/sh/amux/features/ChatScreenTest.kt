@@ -61,6 +61,10 @@ import sh.amux.values.SettingsView
 import sh.amux.values.TaskLine
 import sh.amux.values.TaskMark
 import sh.amux.values.TasksView
+import sh.amux.values.ProsePart
+import sh.amux.testsupport.plainMarkdown
+import sh.amux.testsupport.prosePart
+import sh.amux.testsupport.MarkdownFixtures
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -105,7 +109,7 @@ class ChatScreenTest {
             id = "r1",
             order = 1L,
             atMs = 1_000L,
-            kind = RowKind.Prompt(text = listOf(Segment.Text("Fix the retry loop.")), steered = false),
+            kind = RowKind.Prompt(text = listOf(ProsePart.Text(plainMarkdown("Fix the retry loop."))), steered = false),
             collapsed = false,
             attention = false,
         ),
@@ -114,7 +118,7 @@ class ChatScreenTest {
             order = 2L,
             atMs = 2_000L,
             kind = RowKind.Prose(
-                text = listOf(Segment.Text("Updated backoff logic in `retry.rs`.")),
+                text = listOf(prosePart("Updated backoff logic in `retry.rs`.")),
                 streaming = false,
                 workingNote = false,
             ),
@@ -557,7 +561,7 @@ class ChatScreenTest {
                 order = i.toLong(),
                 atMs = i * 1_000L,
                 kind = RowKind.Prose(
-                    text = listOf(Segment.Text("Transcript message number $i with enough text to occupy vertical space.")),
+                    text = listOf(ProsePart.Text(plainMarkdown("Transcript message number $i with enough text to occupy vertical space."))),
                     streaming = false,
                     workingNote = false,
                 ),

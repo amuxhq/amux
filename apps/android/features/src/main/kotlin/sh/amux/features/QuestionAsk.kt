@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
 import sh.amux.design.thumbTarget
+import sh.amux.values.InlineRun
 import sh.amux.values.OptionView
 import sh.amux.values.QuestionResponse
 import sh.amux.values.QuestionView
@@ -464,12 +465,25 @@ internal fun QuestionAskSection(
                                 )
                             } else {
                                 QuestionOptionRow(
-                                    option = OptionView(
-                                        label = stringResource(R.string.ask_question_something_else_ellipsis),
-                                        description = "",
-                                        preview = "",
-                                        recommended = false,
-                                    ),
+                                    option = stringResource(R.string.ask_question_something_else_ellipsis).let { label ->
+                                        // The app's own words, which hold no markup.
+                                        OptionView(
+                                            label = label,
+                                            description = "",
+                                            preview = "",
+                                            recommended = false,
+                                            labelRuns = listOf(
+                                                InlineRun(
+                                                    text = label,
+                                                    strong = false,
+                                                    emphasis = false,
+                                                    strikethrough = false,
+                                                    code = false,
+                                                ),
+                                            ),
+                                            descriptionRuns = emptyList(),
+                                        )
+                                    },
                                     multi = currentQuestion.multiSelect,
                                     isSelected = false,
                                     quiet = true,

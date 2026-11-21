@@ -384,6 +384,8 @@ enum class AgentNameProblem {
 data class AnswerView(
     /** "(Recommended)" lifted off, as on the card. */
     @SerialName("picked") val picked: List<String>,
+    /** Each picked label as its inline markdown reads. */
+    @SerialName("picked_runs") val pickedRuns: List<List<InlineRun>>,
     @SerialName("hidden") val hidden: Boolean,
     @SerialName("skipped") val skipped: Boolean,
     /** The person's note on this question. */
@@ -440,7 +442,7 @@ sealed interface AskBody {
     data class Question(val value: List<QuestionView>) : AskBody
     /** The plan's title and body, as its row has them. */
     data class Plan(
-        val body: String,
+        val body: Markdown,
         val title: String? = null,
     ) : AskBody
     data class Form(
@@ -568,7 +570,7 @@ object AskBodySerializer : KSerializer<AskBody> {
                     ?: throw SerializationException("AskBody.Plan payload must be an object")
                 AskBody.Plan(
                     body = json.decodeFromJsonElement(
-                        serializer<String>(),
+                        serializer<Markdown>(),
                         fields["body"] ?: throw SerializationException("AskBody.Plan missing field body"),
                     ),
                     title = fields["title"]?.takeUnless { it is JsonNull }?.let {
@@ -704,7 +706,7 @@ object AskBodySerializer : KSerializer<AskBody> {
             is AskBody.Plan -> JsonObject(
                 mapOf(
                     "Plan" to buildJsonObject {
-                        put("body", json.encodeToJsonElement(serializer<String>(), value.body))
+                        put("body", json.encodeToJsonElement(serializer<Markdown>(), value.body))
                         value.title?.let {
                             put("title", json.encodeToJsonElement(serializer<String>(), it))
                         }
@@ -813,7 +815,7 @@ sealed interface AskRow {
      * yet and nothing of that line in the body.
      */
     data class Plan(
-        val body: String,
+        val body: Markdown,
         val verdict: PlanVerdict,
         val mode: String,
         val modeName: String,
@@ -890,7 +892,7 @@ object AskRowSerializer : KSerializer<AskRow> {
                     ?: throw SerializationException("AskRow.Plan payload must be an object")
                 AskRow.Plan(
                     body = json.decodeFromJsonElement(
-                        serializer<String>(),
+                        serializer<Markdown>(),
                         fields["body"] ?: throw SerializationException("AskRow.Plan missing field body"),
                     ),
                     verdict = json.decodeFromJsonElement(
@@ -1045,7 +1047,7 @@ object AskRowSerializer : KSerializer<AskRow> {
             is AskRow.Plan -> JsonObject(
                 mapOf(
                     "Plan" to buildJsonObject {
-                        put("body", json.encodeToJsonElement(serializer<String>(), value.body))
+                        put("body", json.encodeToJsonElement(serializer<Markdown>(), value.body))
                         put("verdict", json.encodeToJsonElement(serializer<PlanVerdict>(), value.verdict))
                         put("mode", json.encodeToJsonElement(serializer<String>(), value.mode))
                         put("mode_name", json.encodeToJsonElement(serializer<String>(), value.modeName))
@@ -4031,6 +4033,25 @@ data class Identity(
     @SerialName("fingerprint") val fingerprint: String,
 )
 
+/**
+ * A stretch of inline text that is all one style. A line break is a
+ * `\n` in its text. Neighbouring runs differ in style.
+ */
+@Serializable
+data class InlineRun(
+    @SerialName("text") val text: String,
+    @SerialName("strong") val strong: Boolean,
+    @SerialName("emphasis") val emphasis: Boolean,
+    @SerialName("strikethrough") val strikethrough: Boolean,
+    /** Inline code. */
+    @SerialName("code") val code: Boolean,
+    /**
+     * The address the run links to, as written. Whether a client opens
+     * it is the client's to decide.
+     */
+    @SerialName("link") val link: String? = null,
+)
+
 /** An input as the client that sent it observes it. */
 @Serializable(with = InputStateSerializer::class)
 sealed interface InputState {
@@ -4451,6 +4472,17 @@ data class MachineSettings(
     @SerialName("start_at_login") val startAtLogin: Boolean? = null,
 )
 
+/** Text as written, and the blocks it reads as. */
+@Serializable
+data class Markdown(
+    /**
+     * The text as the agent or person wrote it, for copying and for
+     * reading aloud.
+     */
+    @SerialName("source") val source: String,
+    @SerialName("blocks") val blocks: List<ProseBlock>,
+)
+
 /** A mode: how the agent works (Codex's default or plan). */
 @Serializable
 data class ModeChoice(
@@ -4857,6 +4889,9 @@ data class OptionView(
     @SerialName("description") val description: String,
     @SerialName("preview") val preview: String,
     @SerialName("recommended") val recommended: Boolean,
+    /** The label and the description as their inline markdown reads. */
+    @SerialName("label_runs") val labelRuns: List<InlineRun>,
+    @SerialName("description_runs") val descriptionRuns: List<InlineRun>,
 )
 
 /**
@@ -5447,6 +5482,294 @@ data class ProfileView(
     @SerialName("account") val account: AccountView,
 )
 
+/** One block of prose. */
+@Serializable(with = ProseBlockSerializer::class)
+sealed interface ProseBlock {
+    data object Rule : ProseBlock
+    /** Level 1 to 6. */
+    data class Heading(
+        val level: Int,
+        val text: kotlin.collections.List<InlineRun>,
+    ) : ProseBlock
+    data class Paragraph(
+        val text: kotlin.collections.List<InlineRun>,
+    ) : ProseBlock
+    /**
+     * Numbered from `start` when `ordered`, else bulleted. `depth` is how
+     * many lists hold this one: 0 for a list of its own. A client sizes
+     * the marker column for the list's widest marker, so every item's
+     * text starts at one edge.
+     */
+    data class List(
+        val ordered: Boolean,
+        val start: Long,
+        val depth: Int,
+        val items: kotlin.collections.List<ProseItem>,
+    ) : ProseBlock
+    data class Quote(
+        val blocks: kotlin.collections.List<sh.amux.values.ProseBlock>,
+    ) : ProseBlock
+    /**
+     * Each row holds a cell per column, as the header does; `alignments`
+     * has one entry per column.
+     */
+    data class Table(
+        val alignments: kotlin.collections.List<TableAlign>,
+        val header: kotlin.collections.List<kotlin.collections.List<InlineRun>>,
+        val rows: kotlin.collections.List<kotlin.collections.List<kotlin.collections.List<InlineRun>>>,
+    ) : ProseBlock
+    /**
+     * Code, with the first word of its fence's info string as its
+     * language (empty when it names none, and for indented code). Its
+     * lines are parted by `\n`. `closed` is false for a fence the text
+     * ends inside: in a reply still streaming, the block still being
+     * written. That one keeps a last empty line after a final newline,
+     * which says the line before it is complete.
+     */
+    data class Code(
+        val language: String,
+        val code: String,
+        val closed: Boolean,
+    ) : ProseBlock
+}
+
+object ProseBlockSerializer : KSerializer<ProseBlock> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ProseBlock")
+
+    override fun deserialize(decoder: Decoder): ProseBlock {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ProseBlock requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        if (element is JsonPrimitive && element.isString) {
+            return when (element.content) {
+                "Rule" -> ProseBlock.Rule
+                else -> throw SerializationException("no ProseBlock is named ${element.content}")
+            }
+        }
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ProseBlock must be a string or object")
+        if (obj.size != 1) {
+            throw SerializationException("ProseBlock names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "Heading" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ProseBlock.Heading payload must be an object")
+                ProseBlock.Heading(
+                    level = json.decodeFromJsonElement(
+                        serializer<Int>(),
+                        fields["level"] ?: throw SerializationException("ProseBlock.Heading missing field level"),
+                    ),
+                    text = json.decodeFromJsonElement(
+                        serializer<List<InlineRun>>(),
+                        fields["text"] ?: throw SerializationException("ProseBlock.Heading missing field text"),
+                    ),
+                )
+            }
+            "Paragraph" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ProseBlock.Paragraph payload must be an object")
+                ProseBlock.Paragraph(
+                    text = json.decodeFromJsonElement(
+                        serializer<List<InlineRun>>(),
+                        fields["text"] ?: throw SerializationException("ProseBlock.Paragraph missing field text"),
+                    ),
+                )
+            }
+            "List" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ProseBlock.List payload must be an object")
+                ProseBlock.List(
+                    ordered = json.decodeFromJsonElement(
+                        serializer<Boolean>(),
+                        fields["ordered"] ?: throw SerializationException("ProseBlock.List missing field ordered"),
+                    ),
+                    start = json.decodeFromJsonElement(
+                        serializer<Long>(),
+                        fields["start"] ?: throw SerializationException("ProseBlock.List missing field start"),
+                    ),
+                    depth = json.decodeFromJsonElement(
+                        serializer<Int>(),
+                        fields["depth"] ?: throw SerializationException("ProseBlock.List missing field depth"),
+                    ),
+                    items = json.decodeFromJsonElement(
+                        serializer<List<ProseItem>>(),
+                        fields["items"] ?: throw SerializationException("ProseBlock.List missing field items"),
+                    ),
+                )
+            }
+            "Quote" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ProseBlock.Quote payload must be an object")
+                ProseBlock.Quote(
+                    blocks = json.decodeFromJsonElement(
+                        serializer<List<ProseBlock>>(),
+                        fields["blocks"] ?: throw SerializationException("ProseBlock.Quote missing field blocks"),
+                    ),
+                )
+            }
+            "Table" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ProseBlock.Table payload must be an object")
+                ProseBlock.Table(
+                    alignments = json.decodeFromJsonElement(
+                        serializer<List<TableAlign>>(),
+                        fields["alignments"] ?: throw SerializationException("ProseBlock.Table missing field alignments"),
+                    ),
+                    header = json.decodeFromJsonElement(
+                        serializer<List<List<InlineRun>>>(),
+                        fields["header"] ?: throw SerializationException("ProseBlock.Table missing field header"),
+                    ),
+                    rows = json.decodeFromJsonElement(
+                        serializer<List<List<List<InlineRun>>>>(),
+                        fields["rows"] ?: throw SerializationException("ProseBlock.Table missing field rows"),
+                    ),
+                )
+            }
+            "Code" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ProseBlock.Code payload must be an object")
+                ProseBlock.Code(
+                    language = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["language"] ?: throw SerializationException("ProseBlock.Code missing field language"),
+                    ),
+                    code = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["code"] ?: throw SerializationException("ProseBlock.Code missing field code"),
+                    ),
+                    closed = json.decodeFromJsonElement(
+                        serializer<Boolean>(),
+                        fields["closed"] ?: throw SerializationException("ProseBlock.Code missing field closed"),
+                    ),
+                )
+            }
+            else -> throw SerializationException("unknown ProseBlock variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ProseBlock) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ProseBlock requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            ProseBlock.Rule -> JsonPrimitive("Rule")
+            is ProseBlock.Heading -> JsonObject(
+                mapOf(
+                    "Heading" to buildJsonObject {
+                        put("level", json.encodeToJsonElement(serializer<Int>(), value.level))
+                        put("text", json.encodeToJsonElement(serializer<List<InlineRun>>(), value.text))
+                    },
+                ),
+            )
+            is ProseBlock.Paragraph -> JsonObject(
+                mapOf(
+                    "Paragraph" to buildJsonObject {
+                        put("text", json.encodeToJsonElement(serializer<List<InlineRun>>(), value.text))
+                    },
+                ),
+            )
+            is ProseBlock.List -> JsonObject(
+                mapOf(
+                    "List" to buildJsonObject {
+                        put("ordered", json.encodeToJsonElement(serializer<Boolean>(), value.ordered))
+                        put("start", json.encodeToJsonElement(serializer<Long>(), value.start))
+                        put("depth", json.encodeToJsonElement(serializer<Int>(), value.depth))
+                        put("items", json.encodeToJsonElement(serializer<List<ProseItem>>(), value.items))
+                    },
+                ),
+            )
+            is ProseBlock.Quote -> JsonObject(
+                mapOf(
+                    "Quote" to buildJsonObject {
+                        put("blocks", json.encodeToJsonElement(serializer<List<ProseBlock>>(), value.blocks))
+                    },
+                ),
+            )
+            is ProseBlock.Table -> JsonObject(
+                mapOf(
+                    "Table" to buildJsonObject {
+                        put("alignments", json.encodeToJsonElement(serializer<List<TableAlign>>(), value.alignments))
+                        put("header", json.encodeToJsonElement(serializer<List<List<InlineRun>>>(), value.header))
+                        put("rows", json.encodeToJsonElement(serializer<List<List<List<InlineRun>>>>(), value.rows))
+                    },
+                ),
+            )
+            is ProseBlock.Code -> JsonObject(
+                mapOf(
+                    "Code" to buildJsonObject {
+                        put("language", json.encodeToJsonElement(serializer<String>(), value.language))
+                        put("code", json.encodeToJsonElement(serializer<String>(), value.code))
+                        put("closed", json.encodeToJsonElement(serializer<Boolean>(), value.closed))
+                    },
+                ),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
+/**
+ * One list item: its blocks, the first drawn beside the marker; and for
+ * a task list's item, whether its task is done.
+ */
+@Serializable
+data class ProseItem(
+    @SerialName("blocks") val blocks: List<ProseBlock>,
+    @SerialName("task") val task: Boolean? = null,
+)
+
+/**
+ * A row's words read as markdown, or one attachment, in reading order:
+ * [`Segment`]s as a chat row carries them, parsed once for every client.
+ */
+@Serializable(with = ProsePartSerializer::class)
+sealed interface ProsePart {
+    data class Text(val value: Markdown) : ProsePart
+    data class Attachment(val value: AttachmentView) : ProsePart
+}
+
+object ProsePartSerializer : KSerializer<ProsePart> {
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("sh.amux.values.ProsePart")
+
+    override fun deserialize(decoder: Decoder): ProsePart {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("ProsePart requires Json")
+        val element = jsonDecoder.decodeJsonElement()
+        val obj = element as? JsonObject
+            ?: throw SerializationException("ProsePart must be an object")
+        if (obj.size != 1) {
+            throw SerializationException("ProsePart names exactly one variant")
+        }
+        val (tag, payload) = obj.entries.first()
+        val json = jsonDecoder.json
+        return when (tag) {
+            "Text" -> ProsePart.Text(json.decodeFromJsonElement(serializer<Markdown>(), payload))
+            "Attachment" -> ProsePart.Attachment(json.decodeFromJsonElement(serializer<AttachmentView>(), payload))
+            else -> throw SerializationException("unknown ProsePart variant $tag")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ProsePart) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("ProsePart requires Json")
+        val json = jsonEncoder.json
+        val element: JsonElement = when (value) {
+            is ProsePart.Text -> JsonObject(
+                mapOf("Text" to json.encodeToJsonElement(serializer<Markdown>(), value.value)),
+            )
+            is ProsePart.Attachment -> JsonObject(
+                mapOf("Attachment" to json.encodeToJsonElement(serializer<AttachmentView>(), value.value)),
+            )
+        }
+        jsonEncoder.encodeJsonElement(element)
+    }
+}
+
 /**
  * Which provider's program a host runs: the vocabulary amux uses to ask a
  * host what it offers with no agent running. Distinct from Kind, which is
@@ -5487,6 +5810,9 @@ data class QuestionResponse(
 data class QuestionView(
     @SerialName("header") val header: String,
     @SerialName("question") val question: String,
+    /** The header and the question as their inline markdown reads. */
+    @SerialName("header_runs") val headerRuns: List<InlineRun>,
+    @SerialName("question_runs") val questionRuns: List<InlineRun>,
     @SerialName("multi_select") val multiSelect: Boolean,
     @SerialName("options") val options: List<OptionView>,
     /** "Something else…" is always last when offered. */
@@ -6753,11 +7079,11 @@ data class Row(
 sealed interface RowKind {
     data object Stopped : RowKind
     data class Prompt(
-        val text: List<Segment>,
+        val text: List<ProsePart>,
         val steered: Boolean,
     ) : RowKind
     data class Prose(
-        val text: List<Segment>,
+        val text: List<ProsePart>,
         val streaming: Boolean,
         val workingNote: Boolean,
     ) : RowKind
@@ -6868,7 +7194,7 @@ sealed interface RowKind {
     data class AgentMessage(
         val from: String,
         val kind: EnvelopeKind,
-        val text: List<Segment>,
+        val text: List<ProsePart>,
         val to: String,
         val sent: SendState,
         val rejection: String,
@@ -6920,7 +7246,7 @@ object RowKindSerializer : KSerializer<RowKind> {
                     ?: throw SerializationException("RowKind.Prompt payload must be an object")
                 RowKind.Prompt(
                     text = json.decodeFromJsonElement(
-                        serializer<List<Segment>>(),
+                        serializer<List<ProsePart>>(),
                         fields["text"] ?: throw SerializationException("RowKind.Prompt missing field text"),
                     ),
                     steered = json.decodeFromJsonElement(
@@ -6934,7 +7260,7 @@ object RowKindSerializer : KSerializer<RowKind> {
                     ?: throw SerializationException("RowKind.Prose payload must be an object")
                 RowKind.Prose(
                     text = json.decodeFromJsonElement(
-                        serializer<List<Segment>>(),
+                        serializer<List<ProsePart>>(),
                         fields["text"] ?: throw SerializationException("RowKind.Prose missing field text"),
                     ),
                     streaming = json.decodeFromJsonElement(
@@ -7274,7 +7600,7 @@ object RowKindSerializer : KSerializer<RowKind> {
                         fields["kind"] ?: throw SerializationException("RowKind.AgentMessage missing field kind"),
                     ),
                     text = json.decodeFromJsonElement(
-                        serializer<List<Segment>>(),
+                        serializer<List<ProsePart>>(),
                         fields["text"] ?: throw SerializationException("RowKind.AgentMessage missing field text"),
                     ),
                     to = json.decodeFromJsonElement(
@@ -7344,7 +7670,7 @@ object RowKindSerializer : KSerializer<RowKind> {
             is RowKind.Prompt -> JsonObject(
                 mapOf(
                     "Prompt" to buildJsonObject {
-                        put("text", json.encodeToJsonElement(serializer<List<Segment>>(), value.text))
+                        put("text", json.encodeToJsonElement(serializer<List<ProsePart>>(), value.text))
                         put("steered", json.encodeToJsonElement(serializer<Boolean>(), value.steered))
                     },
                 ),
@@ -7352,7 +7678,7 @@ object RowKindSerializer : KSerializer<RowKind> {
             is RowKind.Prose -> JsonObject(
                 mapOf(
                     "Prose" to buildJsonObject {
-                        put("text", json.encodeToJsonElement(serializer<List<Segment>>(), value.text))
+                        put("text", json.encodeToJsonElement(serializer<List<ProsePart>>(), value.text))
                         put("streaming", json.encodeToJsonElement(serializer<Boolean>(), value.streaming))
                         put("working_note", json.encodeToJsonElement(serializer<Boolean>(), value.workingNote))
                     },
@@ -7532,7 +7858,7 @@ object RowKindSerializer : KSerializer<RowKind> {
                     "AgentMessage" to buildJsonObject {
                         put("from", json.encodeToJsonElement(serializer<String>(), value.from))
                         put("kind", json.encodeToJsonElement(serializer<EnvelopeKind>(), value.kind))
-                        put("text", json.encodeToJsonElement(serializer<List<Segment>>(), value.text))
+                        put("text", json.encodeToJsonElement(serializer<List<ProsePart>>(), value.text))
                         put("to", json.encodeToJsonElement(serializer<String>(), value.to))
                         put("sent", json.encodeToJsonElement(serializer<SendState>(), value.sent))
                         put("rejection", json.encodeToJsonElement(serializer<String>(), value.rejection))
@@ -8218,6 +8544,20 @@ data class SubagentGroup(
      */
     @SerialName("open") val open: Boolean,
 )
+
+/** How a table column's cells sit. */
+@Serializable
+enum class TableAlign {
+    @SerialName("Left")
+    Left,
+    @SerialName("Center")
+    Center,
+    @SerialName("Right")
+    Right,
+    /** As the column's text runs: the markdown named no alignment. */
+    @SerialName("None")
+    None,
+}
 
 /** One task of the list, by its subject. */
 @Serializable

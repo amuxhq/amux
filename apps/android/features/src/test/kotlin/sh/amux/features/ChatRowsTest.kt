@@ -53,6 +53,13 @@ import sh.amux.values.Segment
 import sh.amux.values.SendState
 import sh.amux.values.SubagentGroup
 import sh.amux.words.RunPlacement
+import sh.amux.values.ProsePart
+import sh.amux.testsupport.plainMarkdown
+import sh.amux.testsupport.OptionView
+import sh.amux.testsupport.QuestionView
+import sh.amux.testsupport.AnswerView
+import sh.amux.testsupport.prosePart
+import sh.amux.testsupport.MarkdownFixtures
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -91,8 +98,8 @@ class ChatRowsTest {
             id = "p1",
             kind = RowKind.Prompt(
                 text = listOf(
-                    Segment.Text("Update the parser"),
-                    Segment.Attachment(AttachmentView.File(fileBlob)),
+                    ProsePart.Text(plainMarkdown("Update the parser")),
+                    ProsePart.Attachment(AttachmentView.File(fileBlob)),
                 ),
                 steered = true,
             ),
@@ -119,7 +126,7 @@ class ChatRowsTest {
         val prose = makeRow(
             id = "prose1",
             kind = RowKind.Prose(
-                text = listOf(Segment.Text("Everything compiles.")),
+                text = listOf(ProsePart.Text(plainMarkdown("Everything compiles."))),
                 streaming = true,
                 workingNote = true,
             ),
@@ -357,7 +364,7 @@ class ChatRowsTest {
                 id = "ask-plan",
                 kind = RowKind.Ask(
                     AskRow.Plan(
-                        body = "1. Split the read path.\n2. Run the spec suite.",
+                        body = MarkdownFixtures.parsed("1. Split the read path.\n2. Run the spec suite."),
                         verdict = PlanVerdict.Open,
                         mode = "",
                         modeName = "",
@@ -420,7 +427,7 @@ class ChatRowsTest {
                 kind = RowKind.AgentMessage(
                     from = "worker-1",
                     kind = EnvelopeKind.Finished,
-                    text = listOf(Segment.Text("Completed migration.")),
+                    text = listOf(ProsePart.Text(plainMarkdown("Completed migration."))),
                     to = "",
                     sent = SendState.Sent,
                     rejection = "",

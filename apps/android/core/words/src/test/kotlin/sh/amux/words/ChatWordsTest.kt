@@ -62,6 +62,8 @@ import sh.amux.values.RowKind
 import sh.amux.values.Run
 import sh.amux.values.RunCounts
 import sh.amux.values.Scope
+import sh.amux.values.Markdown
+import sh.amux.values.ProsePart
 import sh.amux.values.Segment
 import sh.amux.values.SentReviewRef
 import sh.amux.values.ServerView
@@ -302,7 +304,7 @@ class ChatWordsTest {
     @Test
     fun theRailRunsBetweenGridRowsAndBreaksAtProse() {
         val tool = row(RowKind.Background(command = "npm run dev", description = "", running = true, durationMs = null))
-        val prose = row(RowKind.Prose(text = listOf(Segment.Text("Done.")), streaming = false, workingNote = false))
+        val prose = row(RowKind.Prose(text = listOf(ProsePart.Text(Markdown("Done.", emptyList()))), streaming = false, workingNote = false))
         assertEquals(RailJoin(continues = true), RailJoin.of(tool, next = tool))
         assertEquals(RailJoin(continues = false), RailJoin.of(tool, next = prose))
         assertEquals(RailJoin(continues = false), RailJoin.of(tool, next = null))
@@ -715,15 +717,15 @@ class ChatWordsTest {
     fun aSecretAnswerIsNeverShownAndSkippedReadsSkipped() {
         assertEquals(
             "answered (hidden)",
-            ChatWords.answer(AnswerView(emptyList(), hidden = true, skipped = false, note = null, other = null)),
+            ChatWords.answer(AnswerView(emptyList(), emptyList(), hidden = true, skipped = false, note = null, other = null)),
         )
         assertEquals(
             "macOS, \u201CBSD\u201D",
-            ChatWords.answer(AnswerView(listOf("macOS"), hidden = false, skipped = false, note = null, other = "BSD")),
+            ChatWords.answer(AnswerView(listOf("macOS"), emptyList(), hidden = false, skipped = false, note = null, other = "BSD")),
         )
         assertEquals(
             "Skipped",
-            ChatWords.answer(AnswerView(emptyList(), hidden = false, skipped = true, note = "later", other = null)),
+            ChatWords.answer(AnswerView(emptyList(), emptyList(), hidden = false, skipped = true, note = "later", other = null)),
         )
     }
 

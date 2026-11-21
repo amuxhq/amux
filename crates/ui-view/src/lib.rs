@@ -15,6 +15,7 @@ mod code;
 mod composer;
 mod fleet;
 mod form;
+mod markdown;
 mod onboarding;
 mod overview;
 mod repository;
@@ -51,6 +52,9 @@ pub use form::{
     FieldProblem, FormField, FormFieldKind, FormProblem, FormValue, form_answer, form_fields,
     form_problems,
 };
+pub use markdown::{
+    InlineRun, Markdown, ProseBlock, ProseItem, TableAlign, inline_runs, runs_text,
+};
 pub use onboarding::{OnboardingView, SetupStep, next_step, onboarding_view, step_open};
 pub use overview::{
     ChangeTotals, ChangedFile, Changes, Comparison, FileStatus, Folder, JobRow, JobStop, Overview,
@@ -66,7 +70,9 @@ pub use rows::{
     ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
-pub use segments::{AttachmentView, Segment, SentReviewRef, THUMBNAIL_SIZE_LIMIT, segments};
+pub use segments::{
+    AttachmentView, ProsePart, Segment, SentReviewRef, THUMBNAIL_SIZE_LIMIT, prose_parts, segments,
+};
 pub use settings::{
     Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,
     ModeChoice, ModelChoice, NewAgentChoices, NewAgentPick, PermissionChoice, SettingChange,

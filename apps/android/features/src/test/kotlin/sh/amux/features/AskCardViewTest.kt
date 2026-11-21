@@ -56,6 +56,12 @@ import sh.amux.values.QuestionView
 import sh.amux.values.Refusal
 import sh.amux.values.RefusalReason
 import sh.amux.values.Scope
+import sh.amux.testsupport.OptionView
+import sh.amux.testsupport.QuestionView
+import sh.amux.testsupport.AnswerView
+import sh.amux.testsupport.plainMarkdown
+import sh.amux.testsupport.prosePart
+import sh.amux.testsupport.MarkdownFixtures
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -339,7 +345,7 @@ class AskCardViewTest {
         val askCard = card(
             body = AskBody.Plan(
                 title = "Refactor cache",
-                body = "1. Split read and write paths.\n2. Add unit tests.",
+                body = MarkdownFixtures.parsed("1. Split read and write paths.\n2. Add unit tests."),
             ),
             choices = listOf(
                 Choice(ChoiceOutcome.ApprovePlan(mode = "", modeName = ""), primary = true, takesNote = false),
@@ -539,7 +545,7 @@ class AskCardViewTest {
     fun planWhoseOnlyApprovalSwitchesModeSaysSo() {
         val actions = mutableListOf<AskAction>()
         val askCard = card(
-            body = AskBody.Plan(title = "Refactor cache", body = "1. Split read and write paths."),
+            body = AskBody.Plan(title = "Refactor cache", body = MarkdownFixtures.parsed("1. Split read and write paths.")),
             choices = listOf(
                 Choice(ChoiceOutcome.ApprovePlan(mode = "acceptEdits", modeName = "Accept edits"), primary = true, takesNote = false),
                 Choice(ChoiceOutcome.SendBack, primary = false, takesNote = true),

@@ -2699,6 +2699,8 @@ impl AskUi {
 /// number is typed.
 fn form_questions(fields: &[Field]) -> Vec<QuestionView> {
     let option = |label: &str| ui_view::OptionView {
+        label_runs: Vec::new(),
+        description_runs: Vec::new(),
         label: label.to_owned(),
         description: String::new(),
         preview: String::new(),
@@ -2718,6 +2720,8 @@ fn form_questions(fields: &[Field]) -> Vec<QuestionView> {
                 FieldKind::Text { .. } | FieldKind::Number { .. } => (Vec::new(), false),
             };
             QuestionView {
+                header_runs: Vec::new(),
+                question_runs: Vec::new(),
                 header: field.title.clone(),
                 question: field.title.clone(),
                 multi_select,

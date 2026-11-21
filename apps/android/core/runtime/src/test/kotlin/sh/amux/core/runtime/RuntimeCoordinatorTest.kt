@@ -222,4 +222,77 @@ class RuntimeCoordinatorTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun stopDuringInFlightStartCleansUpStartedRuntimeAndReleasesWaiters() {
+        assumeFalse("wake_fd watcher requires Unix", isWindows)
+        val tempDir = Files.createTempDirectory("amux-coordinator-cancel-start").toFile()
+        val mainExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "test-cancel-main").apply { isDaemon = true }
+        }
+        val mainDispatcher = mainExecutor.asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + mainDispatcher)
+        val dispatch: (() -> Unit) -> Unit = { block -> mainExecutor.execute(block) }
+
+        val enteredStart = CompletableDeferred<Unit>()
+        val releaseStart = java.util.concurrent.CountDownLatch(1)
+        val createdRef = java.util.concurrent.atomic.AtomicReference<Runtime?>(null)
+
+        val registry = AccountRegistry(
+            makeStores = { id -> StoreBundle(account = id, scope = scope) },
+        )
+        val signedOut = StoreBundle(account = AccountId("signed-out"), scope = scope)
+        val coordinator = RuntimeCoordinator(
+            registry = registry,
+            installationDir = tempDir,
+            deviceName = "Cancel Start Test",
+            signedOutStores = signedOut,
+            scope = scope,
+            ioDispatcher = Dispatchers.IO,
+            dispatch = dispatch,
+            options = RuntimeCoordinator.Options(lan = false),
+            starter = RuntimeStarter { config, disp, onProfilesMoved ->
+                enteredStart.complete(Unit)
+                releaseStart.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                Runtime.start(config, dispatch = disp, onProfilesMoved = onProfilesMoved)
+                    .also { createdRef.set(it) }
+            },
+        )
+
+        try {
+            runBlocking(mainDispatcher) {
+                coordinator.start()
+                withTimeout(5_000L) { enteredStart.await() }
+
+                // Stop while starter.start() is still blocked on IO.
+                coordinator.stop()
+                assertNull(coordinator.runtime)
+
+                // Let starter.start() return a real Runtime after cancellation.
+                releaseStart.countDown()
+
+                // Wait until the orphan runtime is created and stopped by finally.
+                val stopped = withTimeout(5_000L) {
+                    while (true) {
+                        val created = createdRef.get()
+                        if (created != null && created.createProfile().isFailure) {
+                            return@withTimeout true
+                        }
+                        kotlinx.coroutines.yield()
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    false
+                }
+                assertNotNull("starter should have returned a runtime", createdRef.get())
+                assertTrue("orphan runtime must be stopped immediately after cancelled startup", stopped)
+                assertNull(coordinator.runtime)
+            }
+        } finally {
+            releaseStart.countDown()
+            coordinator.stop()
+            scope.cancel()
+            mainExecutor.shutdownNow()
+            tempDir.deleteRecursively()
+        }
+    }
 }

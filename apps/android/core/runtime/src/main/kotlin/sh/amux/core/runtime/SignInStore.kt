@@ -1,5 +1,6 @@
 package sh.amux.core.runtime
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,6 +59,9 @@ class SignInStore(
                 return null
             }
             kept(account, keep)
+        } catch (e: CancellationException) {
+            _state.update { it.copy(phase = Phase.Ready) }
+            throw e
         } catch (e: CloudException) {
             _state.update { it.copy(phase = phaseAfter(e.error)) }
             null
@@ -73,7 +77,12 @@ class SignInStore(
     suspend fun keep(keep: suspend (SignedInAccount) -> CloudError?): SignedInAccount? {
         val mismatched = _state.value.phase as? Phase.Mismatched ?: return null
         _state.update { it.copy(phase = Phase.HandingOff) }
-        return kept(mismatched.got, keep)
+        return try {
+            kept(mismatched.got, keep)
+        } catch (e: CancellationException) {
+            _state.update { it.copy(phase = Phase.Ready) }
+            throw e
+        }
     }
 
     suspend fun discard(cloud: CloudService) {

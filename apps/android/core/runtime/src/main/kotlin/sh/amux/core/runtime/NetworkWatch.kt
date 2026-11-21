@@ -2,7 +2,6 @@ package sh.amux.core.runtime
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import kotlinx.coroutines.CoroutineScope
@@ -25,8 +24,9 @@ object NoOpNetworkWatcher : NetworkWatcher {
 }
 
 /**
- * Pure debouncer that suppresses the initial network-registration callback burst
- * and coalesces handover bursts within [debounceMs] into a single notification.
+ * Pure filter and debouncer that suppresses the initial default-network
+ * registration burst, ignores RSSI / link-bandwidth jitter on an unchanged
+ * network + transport set, and coalesces genuine handovers within [debounceMs].
  */
 class NetworkChangeDebouncer(
     private val scope: CoroutineScope,
@@ -34,7 +34,8 @@ class NetworkChangeDebouncer(
 ) {
     private val lock = Any()
     private var generation = 0
-    private var seeded = false
+    private var baselineNetworkId: Long? = null
+    private var baselineTransports: Int? = null
     private var pendingJob: Job? = null
     private var onChange: (() -> Unit)? = null
 
@@ -51,34 +52,86 @@ class NetworkChangeDebouncer(
         }
     }
 
-    fun onEvent() {
-        val mine: Int
+    fun onAvailable(networkId: Long) {
         synchronized(lock) {
             if (onChange == null) return
-            if (!seeded) {
-                seeded = true
+            val existing = baselineNetworkId
+            if (existing == null) {
+                // First callback after registration seeds the active network.
+                baselineNetworkId = networkId
+                baselineTransports = null
                 return
             }
-            if (pendingJob?.isActive == true) return
-            mine = generation
-            pendingJob = scope.launch {
-                delay(debounceMs)
-                val callback = synchronized(lock) {
-                    if (mine != generation) {
-                        null
-                    } else {
-                        pendingJob = null
-                        onChange
-                    }
-                }
-                callback?.invoke()
+            if (existing == networkId) {
+                return
             }
+            baselineNetworkId = networkId
+            baselineTransports = null
+            scheduleLocked()
+        }
+    }
+
+    fun onCapabilitiesChanged(networkId: Long, transports: Int) {
+        synchronized(lock) {
+            if (onChange == null) return
+            val existing = baselineNetworkId
+            if (existing == null) {
+                baselineNetworkId = networkId
+                baselineTransports = transports
+                return
+            }
+            if (existing == networkId) {
+                val knownTransports = baselineTransports
+                if (knownTransports == null) {
+                    // Initial capabilities snapshot for the network we just seeded.
+                    baselineTransports = transports
+                    return
+                }
+                if (knownTransports == transports) {
+                    // Same network and same transport set (e.g. RSSI / bandwidth jitter).
+                    return
+                }
+                baselineTransports = transports
+                scheduleLocked()
+                return
+            }
+            baselineNetworkId = networkId
+            baselineTransports = transports
+            scheduleLocked()
+        }
+    }
+
+    fun onLost(networkId: Long) {
+        synchronized(lock) {
+            if (onChange == null) return
+            if (baselineNetworkId != networkId) return
+            baselineNetworkId = NO_NETWORK
+            baselineTransports = 0
+            scheduleLocked()
+        }
+    }
+
+    private fun scheduleLocked() {
+        if (pendingJob?.isActive == true) return
+        val mine = generation
+        pendingJob = scope.launch {
+            delay(debounceMs)
+            val callback = synchronized(lock) {
+                if (mine != generation) {
+                    null
+                } else {
+                    pendingJob = null
+                    onChange
+                }
+            }
+            callback?.invoke()
         }
     }
 
     private fun stopLocked() {
         generation += 1
-        seeded = false
+        baselineNetworkId = null
+        baselineTransports = null
         onChange = null
         pendingJob?.cancel()
         pendingJob = null
@@ -86,6 +139,7 @@ class NetworkChangeDebouncer(
 
     companion object {
         const val DEFAULT_DEBOUNCE_MS: Long = 250L
+        private const val NO_NETWORK: Long = -1L
     }
 }
 
@@ -108,25 +162,21 @@ class AndroidNetworkWatch(
         debouncer.start(onChange)
         val registered = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                debouncer.onEvent()
+                debouncer.onAvailable(network.networkHandle)
             }
 
             override fun onLost(network: Network) {
-                debouncer.onEvent()
+                debouncer.onLost(network.networkHandle)
             }
 
             override fun onCapabilitiesChanged(
                 network: Network,
                 networkCapabilities: NetworkCapabilities,
             ) {
-                debouncer.onEvent()
-            }
-
-            override fun onLinkPropertiesChanged(
-                network: Network,
-                linkProperties: LinkProperties,
-            ) {
-                debouncer.onEvent()
+                debouncer.onCapabilitiesChanged(
+                    networkId = network.networkHandle,
+                    transports = transportMask(networkCapabilities),
+                )
             }
         }
         synchronized(lock) {
@@ -152,6 +202,30 @@ class AndroidNetworkWatch(
         debouncer.stop()
         if (manager != null && current != null) {
             runCatching { manager.unregisterNetworkCallback(current) }
+        }
+    }
+
+    companion object {
+        private val TRACKED_TRANSPORTS = intArrayOf(
+            NetworkCapabilities.TRANSPORT_CELLULAR,
+            NetworkCapabilities.TRANSPORT_WIFI,
+            NetworkCapabilities.TRANSPORT_BLUETOOTH,
+            NetworkCapabilities.TRANSPORT_ETHERNET,
+            NetworkCapabilities.TRANSPORT_VPN,
+            NetworkCapabilities.TRANSPORT_WIFI_AWARE,
+            NetworkCapabilities.TRANSPORT_LOWPAN,
+            NetworkCapabilities.TRANSPORT_USB,
+            NetworkCapabilities.TRANSPORT_SATELLITE,
+        )
+
+        internal fun transportMask(capabilities: NetworkCapabilities): Int {
+            var mask = 0
+            for (transport in TRACKED_TRANSPORTS) {
+                if (capabilities.hasTransport(transport)) {
+                    mask = mask or (1 shl transport)
+                }
+            }
+            return mask
         }
     }
 }

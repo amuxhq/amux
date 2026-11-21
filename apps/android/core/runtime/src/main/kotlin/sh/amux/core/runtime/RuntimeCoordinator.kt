@@ -7,8 +7,10 @@ import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -110,6 +112,7 @@ class RuntimeCoordinator(
     private var launchGeneration: Int = 0
     private var startingJob: Job? = null
     private var lastFedJob: Job? = null
+    private val waiterLock = Any()
     private val startWaiters = mutableListOf<CompletableDeferred<Runtime?>>()
 
     init {
@@ -131,7 +134,11 @@ class RuntimeCoordinator(
 
     /** Starts the embedded installation if not already running or starting. */
     fun start() {
-        if (runtime != null || startingJob != null) return
+        val expectedLaunch = synchronized(waiterLock) {
+            if (runtime != null || startingJob != null) return
+            launchGeneration += 1
+            launchGeneration
+        }
         val dir = installationDir
         val currentState = _state.value
         val config = StartConfig(
@@ -148,36 +155,66 @@ class RuntimeCoordinator(
             tail = null,
             telemetry = currentState.shareUsage,
         )
-        launchGeneration += 1
-        val expectedLaunch = launchGeneration
-        startingJob = scope.launch {
-            val result: Result<Runtime> = withContext(ioDispatcher) {
-                try {
-                    dir.mkdirs()
-                    Result.success(
-                        starter.start(config, dispatch) { listed ->
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            var startedRuntime: Runtime? = null
+            try {
+                val result: Result<Runtime> = withContext(ioDispatcher) {
+                    try {
+                        dir.mkdirs()
+                        val created = starter.start(config, dispatch) { listed ->
                             profilesMoved(listed, expectedLaunch)
-                        },
-                    )
-                } catch (f: RuntimeFailure) {
-                    Result.failure(f)
-                } catch (t: Throwable) {
-                    Result.failure(RuntimeFailure(t.message ?: t.toString()))
+                        }
+                        startedRuntime = created
+                        Result.success(created)
+                    } catch (f: RuntimeFailure) {
+                        Result.failure(f)
+                    } catch (t: Throwable) {
+                        Result.failure(RuntimeFailure(t.message ?: t.toString()))
+                    }
+                }
+                if (onStarted(result, expectedLaunch)) {
+                    startedRuntime = null
+                }
+            } finally {
+                val orphan = startedRuntime
+                if (orphan != null) {
+                    withContext(NonCancellable + ioDispatcher) {
+                        orphan.stop()
+                    }
                 }
             }
-            onStarted(result, expectedLaunch)
+        }
+        val shouldStart = synchronized(waiterLock) {
+            if (expectedLaunch == launchGeneration && runtime == null) {
+                startingJob = job
+                true
+            } else {
+                false
+            }
+        }
+        if (shouldStart) {
+            job.start()
+        } else {
+            job.cancel()
         }
     }
 
-    private fun onStarted(result: Result<Runtime>, expectedLaunch: Int) {
-        if (expectedLaunch != launchGeneration) {
-            result.getOrNull()?.stop()
-            return
+    /**
+     * Hands a freshly started [Runtime] to this coordinator.
+     *
+     * Returns `true` if ownership transferred to `this.runtime` (or no runtime was
+     * created), or `false` if this launch was superseded so the caller must stop it.
+     */
+    private fun onStarted(result: Result<Runtime>, expectedLaunch: Int): Boolean {
+        synchronized(waiterLock) {
+            if (expectedLaunch != launchGeneration) {
+                return false
+            }
+            startingJob = null
+            result.getOrNull()?.let { runtime = it }
         }
-        startingJob = null
         result.fold(
             onSuccess = { startedRuntime ->
-                runtime = startedRuntime
                 updateFailures(failure = null, storeFailure = null)
                 val current = _state.value
                 startedRuntime.setTelemetry(current.shareUsage)
@@ -204,20 +241,25 @@ class RuntimeCoordinator(
                 completeWaiters(null)
             },
         )
+        return true
     }
 
     /** Suspends until startup finishes, returning the running [Runtime] or `null` on failure. */
     suspend fun awaitStarted(): Runtime? {
-        runtime?.let { return it }
-        if (startingJob == null) return null
-        val waiter = CompletableDeferred<Runtime?>()
-        startWaiters.add(waiter)
+        val waiter = synchronized(waiterLock) {
+            runtime?.let { return it }
+            if (startingJob == null) return null
+            CompletableDeferred<Runtime?>().also { startWaiters.add(it) }
+        }
         return waiter.await()
     }
 
     private fun completeWaiters(value: Runtime?) {
-        val pending = startWaiters.toList()
-        startWaiters.clear()
+        val pending = synchronized(waiterLock) {
+            val copy = startWaiters.toList()
+            startWaiters.clear()
+            copy
+        }
         for (waiter in pending) {
             waiter.complete(value)
         }
@@ -226,14 +268,20 @@ class RuntimeCoordinator(
     /** Stops the installation cleanly, closing any open profile and chats first. */
     fun stop() {
         closeProfile()
-        launchGeneration += 1
-        startingJob?.cancel()
-        startingJob = null
+        val jobToCancel: Job?
+        val runtimeToStop: Runtime?
+        synchronized(waiterLock) {
+            launchGeneration += 1
+            jobToCancel = startingJob
+            startingJob = null
+            runtimeToStop = runtime
+            runtime = null
+        }
+        jobToCancel?.cancel()
         completeWaiters(null)
         networkWatch.stop()
         discovery?.stop()
-        runtime?.stop()
-        runtime = null
+        runtimeToStop?.stop()
         _state.update { it.copy(profiles = emptyList(), activeProfileId = null) }
     }
 

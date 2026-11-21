@@ -163,8 +163,14 @@ class PairingStore(
         return currentAttempt
     }
 
-    fun reached(result: Result<PendingPair>, attempt: Int, relayOnly: Boolean = false) {
-        if (attempt != this.attempt) return
+    /**
+     * Records the outcome of a [PairRequest] attempt.
+     *
+     * Returns `true` if [attempt] is still the active attempt, or `false` if a
+     * newer attempt or cancellation superseded it.
+     */
+    fun reached(result: Result<PendingPair>, attempt: Int, relayOnly: Boolean = false): Boolean {
+        if (attempt != this.attempt) return false
         result.fold(
             onSuccess = { pending ->
                 _state.update { it.copy(phase = Phase.Confirming(pending)) }
@@ -181,6 +187,7 @@ class PairingStore(
                 }
             },
         )
+        return true
     }
 
     fun paired(result: Result<String>, attempt: Int) {

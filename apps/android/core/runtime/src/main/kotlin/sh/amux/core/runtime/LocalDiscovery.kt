@@ -40,6 +40,14 @@ class NsdDiscoveryTracker(
     private val handOver: (List<Found>) -> Unit,
 ) {
     private val foundByService = LinkedHashMap<String, Found>()
+    private var browseGeneration: Long = 0L
+
+    /** Starts a fresh browse session and returns its monotonic generation token. */
+    @Synchronized
+    fun beginSession(): Long {
+        browseGeneration += 1L
+        return browseGeneration
+    }
 
     @Synchronized
     fun onServiceUpdated(
@@ -47,7 +55,9 @@ class NsdDiscoveryTracker(
         attributes: Map<String, ByteArray?>,
         addresses: List<InetAddress>,
         port: Int,
+        generation: Long? = null,
     ) {
+        if (generation != null && generation != browseGeneration) return
         val claim = parseClaim(attributes)
         if (claim == null || (only != null && claim.host !in only)) {
             if (foundByService.remove(serviceName) != null) {
@@ -79,16 +89,22 @@ class NsdDiscoveryTracker(
     }
 
     @Synchronized
-    fun onServiceLost(serviceName: String) {
+    fun onServiceLost(serviceName: String, generation: Long? = null) {
+        if (generation != null && generation != browseGeneration) return
         if (foundByService.remove(serviceName) != null) {
             emit()
         }
     }
 
-    /** Clears tracked entries without withdrawing them from the runtime (used on background). */
+    /**
+     * Ends the current browse session, clears tracked entries, and publishes
+     * an empty snapshot so the runtime forgets computers from a previous network.
+     */
     @Synchronized
     fun forget() {
+        browseGeneration += 1L
         foundByService.clear()
+        emit()
     }
 
     @Synchronized
@@ -166,7 +182,7 @@ class AndroidLocalDiscovery(
     }
 
     private var browsing = false
-    private var browseGeneration = 0
+    private var browseGeneration = 0L
     private var multicastLock: WifiManager.MulticastLock? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private val infoCallbacks = mutableMapOf<String, NsdManager.ServiceInfoCallback>()
@@ -176,8 +192,8 @@ class AndroidLocalDiscovery(
         synchronized(lock) {
             if (browsing) return
             browsing = true
-            browseGeneration += 1
-            val generation = browseGeneration
+            val generation = tracker.beginSession()
+            browseGeneration = generation
 
             acquireMulticastLock()
 
@@ -212,6 +228,7 @@ class AndroidLocalDiscovery(
             }.onFailure {
                 browsing = false
                 discoveryListener = null
+                tracker.forget()
                 releaseMulticastLock()
             }
         }
@@ -224,14 +241,14 @@ class AndroidLocalDiscovery(
         synchronized(lock) {
             if (!browsing) return
             browsing = false
-            browseGeneration += 1
+            browseGeneration += 1L
             listenerToStop = discoveryListener
             discoveryListener = null
             callbacksToStop = infoCallbacks.values.toList()
             infoCallbacks.clear()
-            tracker.forget()
             releaseMulticastLock()
         }
+        tracker.forget()
         if (manager != null) {
             for (callback in callbacksToStop) {
                 runCatching { manager.unregisterServiceInfoCallback(callback) }
@@ -242,7 +259,7 @@ class AndroidLocalDiscovery(
         }
     }
 
-    private fun registerInfoCallback(serviceInfo: NsdServiceInfo, generation: Int) {
+    private fun registerInfoCallback(serviceInfo: NsdServiceInfo, generation: Long) {
         val manager = nsdManager ?: return
         val name = serviceInfo.serviceName
         val previous: NsdManager.ServiceInfoCallback?
@@ -264,6 +281,7 @@ class AndroidLocalDiscovery(
                     attributes = updated.attributes,
                     addresses = updated.hostAddresses,
                     port = updated.port,
+                    generation = generation,
                 )
             }
 
@@ -271,7 +289,7 @@ class AndroidLocalDiscovery(
                 synchronized(lock) {
                     if (generation != browseGeneration || !browsing) return
                 }
-                tracker.onServiceLost(name)
+                tracker.onServiceLost(name, generation = generation)
             }
 
             override fun onServiceInfoCallbackUnregistered() = Unit
@@ -295,7 +313,7 @@ class AndroidLocalDiscovery(
         }
     }
 
-    private fun unregisterInfoCallback(serviceName: String, generation: Int) {
+    private fun unregisterInfoCallback(serviceName: String, generation: Long) {
         val manager = nsdManager
         val removed = synchronized(lock) {
             if (generation != browseGeneration) return
@@ -304,7 +322,7 @@ class AndroidLocalDiscovery(
         if (manager != null && removed != null) {
             runCatching { manager.unregisterServiceInfoCallback(removed) }
         }
-        tracker.onServiceLost(serviceName)
+        tracker.onServiceLost(serviceName, generation = generation)
     }
 
     private fun acquireMulticastLock() {

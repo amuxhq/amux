@@ -1,5 +1,6 @@
 package sh.amux.core.runtime
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,6 +95,9 @@ class DeletionStore(
                     outcome
                 }
             }
+        } catch (e: CancellationException) {
+            _state.update { it.copy(phase = Phase.Asking) }
+            throw e
         } catch (e: CloudException) {
             _state.update { it.copy(phase = phaseAfter(e.error)) }
             null

@@ -35,6 +35,8 @@ class StoreBundle(
     private val opener: ((AgentKey) -> OpenChat)? = null,
     private val acting: (suspend (AgentAct, AgentKey) -> Result<Unit>)? = null,
     private val warning: (suspend (AgentKey) -> Result<DeleteWarning?>)? = null,
+    private val beginPairOp: (suspend (PairRequest) -> Result<PendingPair>)? = null,
+    private val abandonPairOp: (suspend (PendingPair) -> Result<Unit>)? = null,
 ) {
     val fleet: FleetStore = FleetStore(clock = clock)
     val hosts: HostsStore = HostsStore(scope = scope, clock = clock)
@@ -43,6 +45,9 @@ class StoreBundle(
 
     private val _applied = MutableStateFlow(0)
     val applied: StateFlow<Int> = _applied.asStateFlow()
+
+    private val _profileReady = MutableStateFlow(false)
+    val profileReady: StateFlow<Boolean> = _profileReady.asStateFlow()
 
     var profile: Profile? = null
         private set
@@ -106,6 +111,7 @@ class StoreBundle(
     /** Attaches a live [Profile] and loads its initial fleet snapshot, or detaches when `null`. */
     fun attach(profile: Profile?) {
         this.profile = profile
+        _profileReady.value = profile != null
         if (profile != null) {
             apply(profile.fleetOpening())
         }
@@ -124,10 +130,14 @@ class StoreBundle(
     }
 
     private fun apply(delta: FleetDelta) {
-        val view = delta.view ?: listedView ?: return
-        val hostViews = delta.hosts ?: listedHosts ?: return
-        listedView = view
-        listedHosts = hostViews
+        if (delta.view != null) {
+            listedView = delta.view
+        }
+        if (delta.hosts != null) {
+            listedHosts = delta.hosts
+        }
+        val view = listedView ?: return
+        val hostViews = listedHosts ?: return
 
         fleet.show(view, hostViews)
         if (delta.hosts != null) {
@@ -199,19 +209,30 @@ class StoreBundle(
     }
 
     fun pairLink(link: String, relayOnly: Boolean = false): Boolean {
-        if (profile == null) return false
+        if (profile == null && beginPairOp == null) return false
         pairing.open()
         beginPair(PairRequest.Link(link), relayOnly = relayOnly)
         return true
     }
 
     private fun beginPair(request: PairRequest, relayOnly: Boolean) {
-        val activeProfile = profile ?: return
+        val activeProfile = profile
+        val pairAction = beginPairOp
+        if (activeProfile == null && pairAction == null) return
         val attempt = pairing.checking()
         val unsubscribed = relayOnly && hosts.snapshot.account?.pro == false
         scope.launch {
-            val reached = activeProfile.beginPair(request)
-            pairing.reached(reached, attempt = attempt, relayOnly = unsubscribed)
+            val reached = if (pairAction != null) {
+                pairAction(request)
+            } else {
+                activeProfile!!.beginPair(request)
+            }
+            val accepted = pairing.reached(reached, attempt = attempt, relayOnly = unsubscribed)
+            if (!accepted) {
+                reached.getOrNull()?.let { stalePending ->
+                    abandonPair(activeProfile, stalePending)
+                }
+            }
         }
     }
 
@@ -230,9 +251,33 @@ class StoreBundle(
 
     fun abandonPairing(pending: PendingPair) {
         pairing.abandoned()
-        val activeProfile = profile ?: return
+        val activeProfile = profile
+        if (activeProfile == null && abandonPairOp == null) return
         scope.launch {
-            activeProfile.abandonPair(pending)
+            abandonPair(activeProfile, pending)
+        }
+    }
+
+    /**
+     * Cancels the current pairing modal: abandons an already-returned
+     * [PendingPair] if confirming, or invalidates any in-flight `beginPair`
+     * attempt so its late-arriving token is abandoned automatically.
+     */
+    fun cancelPairing() {
+        val currentPhase = pairing.snapshot.phase
+        if (currentPhase is PairingStore.Phase.Confirming) {
+            abandonPairing(currentPhase.pending)
+        } else {
+            pairing.abandoned()
+        }
+    }
+
+    private suspend fun abandonPair(activeProfile: Profile?, pending: PendingPair) {
+        val abandonAction = abandonPairOp
+        if (abandonAction != null) {
+            abandonAction(pending)
+        } else {
+            activeProfile?.abandonPair(pending)
         }
     }
 

@@ -68,25 +68,135 @@ class ServicesAndReportingTest {
     }
 
     @Test
-    fun networkChangeDebouncerSuppressesInitialEventAndCoalescesBursts() = runTest {
+    fun nsdDiscoveryTrackerPublishesEmptySnapshotOnForgetAndIgnoresStaleGenerations() {
+        val emissions = mutableListOf<List<Found>>()
+        val tracker = NsdDiscoveryTracker { emissions.add(it) }
+        val attrs = mapOf(
+            "hid" to hostId.toString().toByteArray(StandardCharsets.UTF_8),
+            "name" to "desk".toByteArray(StandardCharsets.UTF_8),
+            "scope" to "".toByteArray(StandardCharsets.UTF_8),
+            "pair" to "1".toByteArray(StandardCharsets.UTF_8),
+        )
+        val ipv4 = InetAddress.getByName("192.168.1.10")
+
+        val gen1 = tracker.beginSession()
+        tracker.onServiceUpdated("desk", attrs, listOf(ipv4), 41999, generation = gen1)
+        assertEquals(1, emissions.last().size)
+
+        // Stopping discovery clears local state AND withdraws results by emitting emptyList().
+        tracker.forget()
+        assertTrue(tracker.current().isEmpty())
+        assertTrue(emissions.last().isEmpty())
+        val countAfterForget = emissions.size
+
+        // Callbacks from superseded browse sessions are ignored.
+        val gen2 = tracker.beginSession()
+        tracker.onServiceUpdated("desk", attrs, listOf(ipv4), 41999, generation = gen1)
+        assertEquals(countAfterForget, emissions.size)
+        assertTrue(tracker.current().isEmpty())
+
+        // Fresh session callbacks take effect.
+        tracker.onServiceUpdated("desk", attrs, listOf(ipv4), 41999, generation = gen2)
+        assertEquals(1, tracker.current().size)
+        assertEquals("desk", emissions.last().single().name)
+    }
+
+    @Test
+    fun networkChangeDebouncerSuppressesInitialBurstAndRssiJitter() = runTest {
         var notifications = 0
         val debouncer = NetworkChangeDebouncer(scope = this, debounceMs = 250L)
         debouncer.start { notifications += 1 }
 
-        // Initial registration callback is suppressed.
-        debouncer.onEvent()
+        val wifiMask = 1 shl 1
+        val cellMask = 1 shl 0
+
+        // Entire initial registration burst (onAvailable + initial capabilities) is suppressed.
+        debouncer.onAvailable(networkId = 100L)
+        debouncer.onCapabilitiesChanged(networkId = 100L, transports = wifiMask)
         advanceTimeBy(500L)
         assertEquals(0, notifications)
 
-        // Burst of 3 handover events coalesces into 1 notification.
-        debouncer.onEvent()
-        advanceTimeBy(100L)
-        debouncer.onEvent()
-        debouncer.onEvent()
-        advanceTimeBy(200L)
+        // Repeated capabilities with identical network + transports (RSSI/bandwidth jitter) are ignored.
+        debouncer.onCapabilitiesChanged(networkId = 100L, transports = wifiMask)
+        debouncer.onCapabilitiesChanged(networkId = 100L, transports = wifiMask)
+        advanceTimeBy(500L)
+        assertEquals(0, notifications)
+
+        // Real transport handover (Wi-Fi -> cellular on new network) coalesces into 1 notification.
+        debouncer.onLost(networkId = 100L)
+        advanceTimeBy(50L)
+        debouncer.onAvailable(networkId = 200L)
+        debouncer.onCapabilitiesChanged(networkId = 200L, transports = cellMask)
+        advanceTimeBy(300L)
         assertEquals(1, notifications)
 
+        // Adding VPN transport on the same network counts as a transport change.
+        debouncer.onCapabilitiesChanged(networkId = 200L, transports = cellMask or (1 shl 4))
+        advanceTimeBy(300L)
+        assertEquals(2, notifications)
+
         debouncer.stop()
+    }
+
+    @Test
+    fun storeBundleCachesPartialFleetDeltasAndAbandonsLatePendingPair() = runTest {
+        val abandoned = mutableListOf<sh.amux.values.PendingPair>()
+        val pairDeferred = CompletableDeferred<Result<sh.amux.values.PendingPair>>()
+        val bundle = StoreBundle(
+            account = AccountId("signed-out"),
+            scope = this,
+            beginPairOp = { pairDeferred.await() },
+            abandonPairOp = { pending ->
+                abandoned.add(pending)
+                Result.success(Unit)
+            },
+        )
+
+        val view = sh.amux.values.FleetView(sections = emptyList(), needYou = 0, working = 0)
+        val deskHost = sh.amux.values.HostView(
+            hostId = hostId.bytes,
+            name = "desk",
+            local = false,
+            trusted = true,
+            candidate = false,
+            reach = sh.amux.values.Reach.Online(sh.amux.values.RouteKind.Direct),
+            addrs = emptyList(),
+            relayOnly = false,
+            pairingOpen = false,
+            current = true,
+            providers = emptyList(),
+            platform = sh.amux.values.Platform.Macos,
+        )
+
+        // Partial delta with only view is cached until hosts arrive.
+        bundle.moved(FleetEvent.Fleet(sh.amux.values.FleetDelta(view = view, hosts = null)))
+        assertEquals(0, bundle.applied.value)
+
+        // Second partial delta with only hosts merges with the cached view!
+        bundle.moved(FleetEvent.Fleet(sh.amux.values.FleetDelta(view = null, hosts = listOf(deskHost))))
+        assertEquals(1, bundle.applied.value)
+        assertEquals(1, bundle.hosts.snapshot.hosts.size)
+        assertEquals("desk", bundle.hosts.snapshot.hosts.single().name)
+
+        // Start pairing via link, then cancel before beginPair completes.
+        assertTrue(bundle.pairLink("https://amux.sh/p#abc"))
+        assertEquals(PairingStore.Phase.Checking, bundle.pairing.snapshot.phase)
+        bundle.cancelPairing()
+        assertEquals(PairingStore.Phase.Entering, bundle.pairing.snapshot.phase)
+
+        val latePending = sh.amux.values.PendingPair(
+            token = listOf(9, 8, 7),
+            hostId = hostId.bytes,
+            name = "desk",
+            fingerprint = "deadbeef",
+            expiresAtMs = 999_999L,
+            via = sh.amux.values.RouteKind.Direct,
+        )
+        pairDeferred.complete(Result.success(latePending))
+        advanceTimeBy(100L)
+
+        assertEquals(PairingStore.Phase.Entering, bundle.pairing.snapshot.phase)
+        assertEquals(listOf(latePending), abandoned)
     }
 
     @Test

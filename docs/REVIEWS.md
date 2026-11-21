@@ -458,7 +458,12 @@ written on older code while `moved` is set. No client polls.
   even for its own children, since a review is a person's and an agent reads
   what it is sent;
 - only for the host's own agents: a copy of another host's agent is
-  `NOT_FOUND`, naming that host.
+  `NOT_FOUND`, naming that host;
+- never for a provider's subagent, which works in its parent's folder, so
+  its changes are in its parent's review, and has no directory of its own
+  to keep one in: `UNIMPLEMENTED`, as for a review not offered. No client
+  asks for one: the terminal answers its review key in a subagent's chat
+  with a notice, and the apps show a subagent no changes to review.
 
 Any node carries a call to it unread, so the phone, whose runtime runs no
 experiment, reaches a desk's review. The other statuses a client acts on:

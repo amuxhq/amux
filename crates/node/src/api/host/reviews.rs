@@ -9,7 +9,8 @@
 //! reviews are written by people, and an agent reads what it is sent.
 //! Answered only for this host's own agents, whose working trees and
 //! snapshots are here: a copy of another host's agent is not found,
-//! naming the host that runs it.
+//! naming the host that runs it. A provider's subagent is not offered a
+//! review: its changes are in its parent's.
 
 use std::sync::{Arc, Weak};
 
@@ -64,8 +65,8 @@ type Asked<T> = (Arc<ProfileRuntime>, AgentRow, T, Caller);
 
 impl Reviews {
     /// `request` as a person asks it of one of this host's own agents,
-    /// named by `agent`; refused for an agent, and for an agent this host
-    /// only holds a copy of.
+    /// named by `agent`; refused for an agent, for an agent this host only
+    /// holds a copy of, and for a provider's subagent.
     async fn asked<T>(
         &self,
         request: Request<T>,
@@ -84,6 +85,16 @@ impl Reviews {
             .own_row(agent_id(agent(&request))?)
             .await
             .map_err(|error| status(error.to_wire()))?;
+        // A provider's subagent works in its parent's folder, so its changes
+        // are its parent's review's. It has no directory of its own either:
+        // the daemon's startup sweep counts none for it and removes one made
+        // under its id, which would strand the review's rows.
+        if row.native.is_some() {
+            return Err(status(wire_error(
+                ErrorCode::Unimplemented,
+                "a provider's subagent works in its parent's folder, so its changes are in its parent's review",
+            )));
+        }
         Ok((runtime, row, request, caller))
     }
 }
@@ -138,8 +149,9 @@ mod tests {
     use crate::api::testing::{Calling, Served, served_as};
     use crate::{AgentId, HostId};
 
-    /// A host with one agent of its own, `own`, and a copy of `away`, which
-    /// the paired host `paired` runs; both exited.
+    /// A host with one agent of its own, `own`, a provider's subagent of
+    /// it, `native`, and a copy of `away`, which the paired host `paired`
+    /// runs; all exited.
     struct Host {
         _root: tempfile::TempDir,
         daemon: Option<crate::Daemon>,
@@ -147,6 +159,7 @@ mod tests {
         here: HostId,
         paired: HostId,
         own: AgentId,
+        native: AgentId,
         away: AgentId,
     }
 
@@ -160,7 +173,7 @@ mod tests {
             let here = crate::create_profile(&data_dir).unwrap();
             let profile = crate::profile_dir(&data_dir, here);
             let paired = HostId::new_v4();
-            let [own, away] = std::array::from_fn(|_| AgentId::new_v4());
+            let [own, native, away] = std::array::from_fn(|_| AgentId::new_v4());
             let mut store = store::Sqlite::open(
                 &profile.join(crate::install::STORE),
                 here.as_bytes().to_vec(),
@@ -188,6 +201,26 @@ mod tests {
                     .unwrap();
                 }
             }
+            // A subagent the provider ran, in its parent's folder, with no
+            // directory of its own.
+            let mut row = AgentRow::new(
+                AgentKey::new(here.as_bytes().to_vec(), native.as_bytes().to_vec()),
+                wire::Kind::ClaudeSdk,
+                work.to_string_lossy(),
+            );
+            row.name = "sub-0000".to_owned();
+            row.parent = Some(AgentKey::new(
+                here.as_bytes().to_vec(),
+                own.as_bytes().to_vec(),
+            ));
+            row.native = Some(wire::NativeChild {
+                provider_child_id: "toolu_1".to_owned(),
+            });
+            row.lifecycle = wire::Lifecycle::Exited as i32;
+            row.exit_cause = wire::ExitCause::Finished as i32;
+            row.incarnation = 1;
+            row.created_at_ms = 1;
+            store.put_agent(&row).unwrap();
             // Paired, so its copy is kept: never reached in these tests.
             store
                 .put_trusted_host(
@@ -245,6 +278,7 @@ mod tests {
                 here,
                 paired,
                 own,
+                native,
                 away,
             }
         }
@@ -437,6 +471,45 @@ mod tests {
                 "{served:?} {calling:?} is answered as if nothing served reviews"
             );
         }
+        host.stop().await;
+    }
+
+    /// A provider's subagent works in its parent's folder, so its changes
+    /// are in its parent's review; and it has no directory of its own for a
+    /// review to be kept in. Every call is refused before any review is
+    /// begun, as one not offered, naming why.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_providers_subagent_is_not_offered_a_review() {
+        let host = Host::start(true).await;
+        // A repository, so nothing but the refusal stops a review.
+        let made = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(host._root.path().join("work"))
+            .output()
+            .unwrap();
+        assert!(made.status.success());
+        for (served, calling) in host.people() {
+            for answer in host.every_call(served, calling.clone(), host.native).await {
+                let refused = answer.unwrap_err();
+                assert_eq!(
+                    refused.code(),
+                    tonic::Code::Unimplemented,
+                    "{served:?} {calling:?}: {refused:?}"
+                );
+                assert!(
+                    refused.message().contains("parent's review"),
+                    "{}",
+                    refused.message()
+                );
+            }
+        }
+        let native = host.native.as_bytes().to_vec();
+        let review = host
+            .runtime
+            .read_rows(move |store| store.review(&native))
+            .await
+            .unwrap();
+        assert!(review.is_none(), "no review was begun: {review:?}");
         host.stop().await;
     }
 

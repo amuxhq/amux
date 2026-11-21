@@ -1216,6 +1216,24 @@ async fn a_changed_lfs_file_is_stored_as_its_pointer_without_lfs() {
     };
     assert!(!moved().await.unwrap());
     assert!(!mark.exists(), "an LFS filter ran");
+    // Made executable, its content as it was: its pointer is the
+    // snapshot's, its mode is not, and a snapshot now would store the new
+    // mode.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let set = |mode: u32| {
+            std::fs::set_permissions(
+                root.join("model.bin"),
+                std::fs::Permissions::from_mode(mode),
+            )
+            .unwrap();
+        };
+        set(0o755);
+        assert!(moved().await.unwrap(), "a mode changed alone");
+        set(0o644);
+        assert!(!moved().await.unwrap());
+    }
     write(root, "model.bin", "weights v3\n");
     assert!(moved().await.unwrap());
     unchanged(&before, root, "asking whether LFS files moved");

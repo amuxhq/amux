@@ -475,14 +475,16 @@ pub async fn moved(
     let lfs = lfs_paths(root, &index, paths.iter()).await?;
     // With LFS's filters off, git compares a file LFS tracks by its content
     // with the pointer the snapshot holds, so those differ always; what
-    // counts is whether the file's pointer is still the snapshot's.
+    // counts is whether the entry a snapshot would store for it, its
+    // pointer and its mode as [`attempt`] works them out, is still the
+    // snapshot's.
     let mut pointers = Vec::new();
     for file in &differ {
         if !lfs.contains(file.path.as_bytes()) || file.status == Status::Deleted {
             return Ok(true);
         }
         match std::fs::symlink_metadata(on_disk(root, file.path.as_bytes())) {
-            Ok(meta) if meta.is_file() => {}
+            Ok(meta) if meta.is_file() && mode(&meta) == file.old_mode => {}
             _ => return Ok(true),
         }
         match pointer(&on_disk(root, file.path.as_bytes())).await {

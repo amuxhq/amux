@@ -1407,11 +1407,16 @@ fn queue_and_steer(journey: &mut TerminalJourney) -> Proved {
     // While it works, prompts queue under the feed.
     journey.type_text(&pane, STEER)?;
     journey.keys(&pane, &["Enter"])?;
+    journey.wait(
+        &pane,
+        |frame| spaced(frame, STEER, "queued"),
+        "first prompt queued",
+    )?;
     journey.type_text(&pane, WITHDRAWN)?;
     journey.keys(&pane, &["Enter"])?;
     journey.wait(
         &pane,
-        |frame| spaced(frame, WITHDRAWN, "queued"),
+        |frame| spaced(frame, STEER, "queued") && spaced(frame, WITHDRAWN, "queued"),
         "two queued",
     )?;
     journey.frame(&pane, "queued")?;

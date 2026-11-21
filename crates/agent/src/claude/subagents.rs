@@ -52,6 +52,20 @@ const DRAIN_WAIT: Duration = Duration::from_millis(2000);
 #[derive(Default)]
 pub struct Followers {
     followed: BTreeMap<String, Follower>,
+    #[cfg(test)]
+    wake: Option<std::sync::Arc<tokio::sync::Notify>>,
+}
+
+#[cfg(test)]
+impl Followers {
+    /// Followers whose file watches are woken by `wake` instead of the OS
+    /// watcher, for paused-clock tests.
+    fn with_wake(wake: std::sync::Arc<tokio::sync::Notify>) -> Self {
+        Self {
+            followed: BTreeMap::new(),
+            wake: Some(wake),
+        }
+    }
 }
 
 struct Follower {
@@ -107,12 +121,22 @@ impl Followers {
             });
             return;
         }
+        #[cfg(test)]
+        let tail = match &self.wake {
+            Some(wake) => Tail::with_wake(cursors.join(agent_id), rows, wake.clone()),
+            None => Tail::new(cursors.join(agent_id), rows),
+        };
+        #[cfg(not(test))]
         let tail = Tail::new(cursors.join(agent_id), rows);
         let (asks, asked) = mpsc::unbounded_channel();
+        #[cfg(test)]
+        let meta_wake = self.wake.clone();
         let task = tokio::spawn(read(
             agent_id.to_owned(),
             tail.clone(),
             meta,
+            #[cfg(test)]
+            meta_wake,
             events.clone(),
             asked,
         ));
@@ -201,6 +225,7 @@ async fn read(
     agent_id: String,
     tail: Tail,
     meta_path: PathBuf,
+    #[cfg(test)] meta_wake: Option<std::sync::Arc<tokio::sync::Notify>>,
     events: mpsc::Sender<ProviderEvent>,
     mut asked: mpsc::UnboundedReceiver<Ask>,
 ) {
@@ -212,6 +237,12 @@ async fn read(
     // it is asked about.
     let mut rows_changed = Some(tail.watch());
     // The meta is watched until it is read or no longer waited for.
+    #[cfg(test)]
+    let mut meta_changed = Some(match meta_wake {
+        Some(wake) => Watch::manual(meta_path.clone(), wake),
+        None => Watch::new(meta_path.clone()),
+    });
+    #[cfg(not(test))]
     let mut meta_changed = Some(Watch::new(meta_path.clone()));
     let meta_by = Instant::now() + META_WAIT;
     let mut met = false;
@@ -509,7 +540,7 @@ mod tests {
     async fn an_idle_file_is_read_when_it_grows_and_once_drained_only_when_followed_again() {
         let at = folder();
         let (sender, mut events) = mpsc::channel(16);
-        let mut followers = Followers::default();
+        let mut followers = Followers::with_wake(std::sync::Arc::new(tokio::sync::Notify::new()));
         followers.follow(&at.agent_dir, &at.transcript, "a1", &sender);
         assert_eq!(next_row(&mut events).await["uuid"], "u1");
 
@@ -571,7 +602,8 @@ mod tests {
     async fn a_drain_is_reported_once_the_final_reply_it_waits_for_is_read() {
         let at = folder();
         let (sender, mut events) = mpsc::channel(16);
-        let mut followers = Followers::default();
+        let wake = std::sync::Arc::new(tokio::sync::Notify::new());
+        let mut followers = Followers::with_wake(wake.clone());
         followers.follow(&at.agent_dir, &at.transcript, "a1", &sender);
         assert_eq!(next_row(&mut events).await["uuid"], "u1");
 
@@ -580,19 +612,14 @@ mod tests {
         // The follower takes the ask and finds nothing to read yet.
         tokio::time::sleep(Duration::from_millis(100)).await;
         append(&at.rows, &reply_row("DONE"));
+        wake.notify_one();
         assert_eq!(next_row(&mut events).await["uuid"], "r-DONE");
         let (_, drained) = next(&mut events).await;
         assert_eq!(drained["type"], "subagent_drained");
-        // The file system reports the row from a thread of its own, which
-        // the paused clock does not wait for: when the runtime idles first,
-        // the clock jumps to the follower's fallback poll, which reads the
-        // row instead. Either way the drain is reported before its wait is
-        // over.
-        let waited = asked.elapsed();
-        assert!(
-            waited <= Duration::from_millis(100) + crate::tail::FALLBACK_POLL
-                && waited < DRAIN_WAIT,
-            "drained {waited:?} after it was asked"
+        assert_eq!(
+            asked.elapsed(),
+            Duration::from_millis(100),
+            "drained without waiting for the drain deadline"
         );
     }
 

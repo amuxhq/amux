@@ -450,8 +450,14 @@ stop = "echo stopped >> .wt/ran"
             let (backends, tree) = (backends.clone(), tree.clone());
             std::thread::spawn(move || backends.stop_when_unheld(&tree))
         };
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        assert!(!ran(&tree).contains("stopped"), "a claim keeps it running");
+        // A held tree blocks the stopper's flock; wait briefly and confirm
+        // neither the stopper finishes nor the stop hook runs while claimed.
+        let held_until = std::time::Instant::now() + std::time::Duration::from_millis(150);
+        while std::time::Instant::now() < held_until {
+            assert!(!stopper.is_finished(), "a claim keeps the stopper waiting");
+            assert!(!ran(&tree).contains("stopped"), "a claim keeps it running");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         backends.release(&tree);
         stopper.join().unwrap().unwrap();
         assert!(ran(&tree).contains("stopped"));

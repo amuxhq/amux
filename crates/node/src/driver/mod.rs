@@ -909,8 +909,28 @@ impl CoreThread {
             Input::JobDone { job, .. } => Some(*job),
             _ => None,
         };
-        self.record(&input);
+        let mut recorded = self.ring.is_some().then(core_ring::Batch::new);
+        if let Some(batch) = recorded.as_mut()
+            && let Err(error) = batch.push(&Recorded::input(&input))
+        {
+            tracing::warn!(%error, "encoding an input for the core's ring failed");
+            recorded = None;
+        }
         self.daemon.step(input, out);
+        // Append the step's input and every journal read it produced in one
+        // write, before executing any output (including Output::Dump), so a
+        // live snapshot reading the ring never bisects a step between its
+        // input and its reads.
+        if let Some(mut batch) = recorded {
+            for output in out.iter() {
+                if let Output::Ingested { agent, report } = output
+                    && let Err(error) = batch.push(&Recorded::read(*agent, report))
+                {
+                    tracing::warn!(%error, "encoding what ingest read for the core's ring failed");
+                }
+            }
+            self.record_batch(&batch);
+        }
         // The call's own answers reach its queue together, where the first
         // of them stood, so a reader woken by one finds the step's rest: a
         // Subscribe's opening rows are there with its Snapshot.
@@ -984,15 +1004,15 @@ impl CoreThread {
         }
     }
 
-    /// Records an input in the ring before the core steps it. A ring that
-    /// fills before the checkpoint interval is up asks for a checkpoint,
-    /// which starts the next segment.
-    fn record(&mut self, input: &Input) {
+    /// Records one completed step (its input and any journal reads it made) in
+    /// the ring as a single write. A ring that fills before the checkpoint
+    /// interval is up asks for a checkpoint, which starts the next segment.
+    fn record_batch(&mut self, batch: &core_ring::Batch) {
         let Some(ring) = self.ring.as_mut() else {
             return;
         };
-        if let Err(error) = ring.append_as(&Recorded::input(input)) {
-            tracing::warn!(%error, "recording an input in the core's ring failed");
+        if let Err(error) = ring.append_batch(batch) {
+            tracing::warn!(%error, "recording a step in the core's ring failed");
         }
         if ring.full() && self.checkpointing.is_none() {
             self.again.push_back(Input::Timer {
@@ -1037,11 +1057,6 @@ impl CoreThread {
             Output::EndCall { call, status } => self.calls.end(call, status),
             Output::Shell(work) => self.shell_work(runtime, work),
             Output::Ingested { agent, report } => {
-                if let Some(ring) = self.ring.as_mut()
-                    && let Err(error) = ring.append(&Recorded::read(agent, &report))
-                {
-                    tracing::warn!(%error, "recording what ingest read in the core's ring failed");
-                }
                 runtime.ingested(&report);
                 self.ingested(agent, report);
             }

@@ -63,6 +63,43 @@ impl Default for Pins {
 /// The most folders a host's own entry offers.
 pub(crate) const MOST_FOLDERS: usize = 50;
 
+/// The folders a host's own entry offers, as the latest refresh found them.
+/// Refreshes run as tasks of their own and a slow scan can finish after a
+/// later one: each refresh takes a number when it is asked for, and what
+/// it found is kept only when no refresh asked for after it has been kept
+/// already, so a pin made a moment ago is not put back by an older scan.
+#[derive(Default)]
+pub(crate) struct Offered {
+    asked: std::sync::atomic::AtomicU64,
+    /// The number of the refresh whose folders these are, and the folders.
+    held: std::sync::Mutex<(u64, Vec<wire::Folder>)>,
+}
+
+impl Offered {
+    /// Numbers a refresh being asked for, later ones higher.
+    pub(crate) fn ask(&self) -> u64 {
+        self.asked
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .wrapping_add(1)
+    }
+
+    pub(crate) fn get(&self) -> Vec<wire::Folder> {
+        self.held.lock().unwrap().1.clone()
+    }
+
+    /// Keeps what refresh `number` found unless a later refresh's folders
+    /// are held; answers whether the folders held moved.
+    pub(crate) fn found(&self, number: u64, folders: Vec<wire::Folder>) -> bool {
+        let mut held = self.held.lock().unwrap();
+        if number <= held.0 {
+            return false;
+        }
+        let moved = held.1 != folders;
+        *held = (number, folders);
+        moved
+    }
+}
+
 /// The folders a host's own entry offers: its pinned repositories that
 /// still exist, in their order, then the recent directories that still
 /// exist, newest first, then where Claude Code and Codex ran lately
@@ -191,6 +228,39 @@ mod tests {
             .iter()
             .map(|folder| (folder.name.as_str(), folder.kind()))
             .collect()
+    }
+
+    /// Two refreshes asked for one after the other can finish in either
+    /// order; the later one's folders are what stay offered.
+    #[test]
+    fn an_older_refresh_finishing_last_does_not_replace_a_newer_one() {
+        let offered = Offered::default();
+        let pinned = |name: &str| wire::Folder {
+            path: format!("/{name}"),
+            name: name.to_owned(),
+            kind: wire::FolderKind::Pinned as i32,
+            ..wire::Folder::default()
+        };
+        let (older, newer) = (offered.ask(), offered.ask());
+        assert!(
+            offered.found(newer, vec![pinned("app")]),
+            "the newer one moves them"
+        );
+        assert!(
+            !offered.found(older, Vec::new()),
+            "the older one, finishing last, is dropped"
+        );
+        assert_eq!(offered.get(), [pinned("app")]);
+        let latest = offered.ask();
+        assert!(
+            !offered.found(latest, vec![pinned("app")]),
+            "the same folders do not move"
+        );
+        assert!(
+            offered.found(offered.ask(), Vec::new()),
+            "a later unpin is kept"
+        );
+        assert!(offered.get().is_empty());
     }
 
     #[test]

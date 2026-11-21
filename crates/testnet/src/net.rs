@@ -2540,7 +2540,9 @@ impl Net {
             .link_log(host)?
             .iter()
             .rev()
-            .find(|event| event.peer == peer)
+            .find(|event| {
+                event.peer == peer && event.event != node::link_log::LinkTransition::CaughtUp
+            })
             .and_then(|event| {
                 (event.event != node::link_log::LinkTransition::Down).then_some(event.path)
             }))

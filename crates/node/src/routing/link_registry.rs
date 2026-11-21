@@ -71,7 +71,7 @@ impl LinkRegistry {
 
     /// A peer link came up: its peer's path machine chooses its path from
     /// now on.
-    fn path_up(
+    pub(crate) fn path_up(
         &self,
         link: &LinkId,
         host: HostId,
@@ -229,7 +229,6 @@ impl LinkRegistry {
         let (close_tx, close_rx) = mpsc::channel(1);
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
-        let carrier_for_paths = native_carrier.clone();
         // Read while the route is fresh: a route the socket lets go first
         // still names the forwarder that carried it.
         if let Some(native) = &native_carrier {
@@ -257,7 +256,6 @@ impl LinkRegistry {
             if let Some(old) = old {
                 old.closed.notify_waiters();
             }
-            self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
             self.registered.notify_waiters();
             return Some(Registration { close_rx });
         }
@@ -351,7 +349,6 @@ impl LinkRegistry {
         if let Some(old) = old {
             old.closed.notify_waiters();
         }
-        self.path_up(&link, host.id, role, carrier_for_paths.as_ref());
         self.registered.notify_waiters();
         Some(Registration { close_rx })
     }

@@ -1,9 +1,17 @@
 package sh.amux.features
 
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.Layout
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import sh.amux.words.RowState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
@@ -80,6 +88,8 @@ import sh.amux.words.OpenableLink
 /** Semantic test tags for [ChatScreen] and its headers, banners, feed, and dialogs. */
 object ChatScreenTags {
     const val TOP_BAR: String = "chat.topBar"
+    const val OPENING: String = "chat.waiting"
+    const val NOT_OPENED: String = "chat.failure"
     const val TITLE: String = "chat.title"
     const val HEADER: String = "chat.header"
     const val CHANGES: String = "chat.changes"
@@ -97,7 +107,6 @@ object ChatScreenTags {
     const val MENU_CANCEL_STOP: String = "chat.menu.cancelStop"
     const val MENU_DELETE: String = "chat.menu.delete"
     const val FAMILY_PARENT: String = "chat.family.parent"
-    const val FAMILY_CHILDREN: String = "chat.family.children"
     const val HELD_STOP: String = "chat.settleHeld"
     const val HELD_STOP_CANCEL: String = "chat.settleHeld.cancel"
     const val ENDED_BANNER: String = "chat.ended"
@@ -223,6 +232,8 @@ data class ChatScreenState(
     val dictationEnabled: Boolean = false,
     val dictationActive: Boolean = false,
     val dictationSentence: String? = null,
+    /** Whether the dock's task row starts open, as a story pictures it. */
+    val dockOpen: Boolean = false,
 ) {
     val arrivalsHeld: Boolean
         get() = frame?.arrivalsHeld == true
@@ -311,13 +322,46 @@ data class ChatScreenCallbacks(
 
 private const val TOP_PAGING_THRESHOLD: Int = 40
 
+/** How much of the transcript stays in sight above a docked ask. */
+private val FeedGlimpse = 48.dp
+
+/**
+ * The transcript above what stands under it. The dock is measured first,
+ * in all the room but a [FeedGlimpse] of the transcript, so a tall ask
+ * always leaves the person a view of what it is about; past that room the
+ * ask's own content scrolls. Whatever the dock holds besides the ask, its
+ * banners, notices and padding, comes out of the same room, so nothing is
+ * counted by hand. The transcript takes what is left.
+ */
+@Composable
+private fun TranscriptOverDock(
+    transcript: @Composable () -> Unit,
+    dock: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Layout(contents = listOf(transcript, dock), modifier = modifier) { (feed, under), constraints ->
+        val height = constraints.maxHeight
+        val width = constraints.maxWidth
+        val glimpse = FeedGlimpse.roundToPx().coerceAtMost(height)
+        val dockPlaceable = under.single().measure(
+            Constraints(minWidth = width, maxWidth = width, minHeight = 0, maxHeight = height - glimpse),
+        )
+        val feedHeight = height - dockPlaceable.height
+        val feedPlaceable = feed.single().measure(Constraints.fixed(width, feedHeight))
+        layout(width, height) {
+            feedPlaceable.place(0, 0)
+            dockPlaceable.place(0, feedHeight)
+        }
+    }
+}
+
 /**
  * Full-screen agent conversation view.
  *
- * Composes the top app bar, optional family header, held-stop / ended banners,
- * keyed per-row transcript `LazyColumn`, floating New activity pill, and the
- * edge-to-edge IME-aware bottom dock (switching cleanly between [AskCardView]
- * and [ChatOverviewStrip] + [ChatComposer]).
+ * Composes the top app bar, the line naming who started a subagent, the
+ * ended banner, keyed per-row transcript `LazyColumn`, floating New activity
+ * pill, and the edge-to-edge IME-aware bottom dock (switching cleanly between
+ * [AskCardView] and [ChatComposer] with its dock).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -640,20 +684,12 @@ private fun ChatScreenContent(
                     .padding(innerPadding)
                     .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
             ) {
-                // Family header (parent back-chip for subagents; expandable children summary for head)
+                // Who started this agent, for a subagent's chat.
                 val family = state.family
                 if (family != null) {
                     ChatFamilyBar(
                         family = family,
                         onOpenAgent = callbacks.onOpenAgent,
-                    )
-                }
-
-                // Held stop banner under header
-                if (state.subject.closeHeld) {
-                    HeldStopBanner(
-                        host = state.subject.host,
-                        onCancelStop = callbacks.onCancelSettle,
                     )
                 }
 
@@ -663,45 +699,52 @@ private fun ChatScreenContent(
                     EndedChatBanner(message = endedMessage)
                 }
 
-                // Transcript feed + floating New activity pill
-                Box(
+                TranscriptOverDock(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .imeNestedScroll(),
-                ) {
-                    ChatTranscriptList(
-                        state = state,
-                        rowSource = rowSource,
-                        listState = listState,
-                        callbacks = rowCallbacks,
-                        onRetryPaging = { callbacks.onReachedTop(0) },
-                    )
-
-                    if (state.newActivity) {
-                        NewActivityPill(
-                            onClick = callbacks.onJumpToNewest,
+                        .fillMaxWidth(),
+                    transcript = {
+                        // The transcript and its floating New activity pill.
+                        Box(
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = Space.s),
-                        )
-                    } else if (!state.following && state.keys.isNotEmpty()) {
-                        JumpToNewestButton(
-                            onClick = callbacks.onJumpToNewest,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = Space.s),
-                        )
-                    }
-                }
+                                .fillMaxSize()
+                                .imeNestedScroll(),
+                        ) {
+                            ChatTranscriptList(
+                                state = state,
+                                rowSource = rowSource,
+                                listState = listState,
+                                callbacks = rowCallbacks,
+                                onRetryPaging = { callbacks.onReachedTop(0) },
+                            )
 
-                // Bottom dock: Ask card takes over composer; otherwise overview strip + composer
-                ChatBottomDock(
-                    state = state,
-                    callbacks = callbacks,
-                    clock = clock,
-                    onOpenOverview = { overviewOpen = true },
-                    onOpenSettings = { settingsOpen = true },
+                            if (state.newActivity) {
+                                NewActivityPill(
+                                    onClick = callbacks.onJumpToNewest,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = Space.s),
+                                )
+                            } else if (!state.following && state.keys.isNotEmpty()) {
+                                JumpToNewestButton(
+                                    onClick = callbacks.onJumpToNewest,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = Space.s),
+                                )
+                            }
+                        }
+                    },
+                    dock = {
+                        // The open ask in the composer's place, or the composer and its dock.
+                        ChatBottomDock(
+                            state = state,
+                            callbacks = callbacks,
+                            clock = clock,
+                            onOpenOverview = { overviewOpen = true },
+                            onOpenSettings = { settingsOpen = true },
+                        )
+                    },
                 )
             }
         }
@@ -879,16 +922,24 @@ private data class TranscriptScrollObservation(
     val anchor: Triple<String?, String?, Int>,
 )
 
-/** Fallback screen shown when a chat cannot be opened (e.g. deleted or detached profile). */
+/**
+ * A chat whose conversation is not here: still opening, or not coming, with
+ * why in the computer's own words. Drawn as the app's other empty states are,
+ * a heading and a sentence at the top, under the bar's back arrow, so the way
+ * out is where it is on the chat it stands in for.
+ *
+ * [failure] null is the opening state.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatUnavailableScreen(
+fun ChatPlaceholderScreen(
     title: String,
-    reason: String,
+    failure: String?,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
     val backLabel = stringResource(R.string.action_back)
     AmuxGround(
         modifier = modifier
@@ -907,16 +958,42 @@ fun ChatUnavailableScreen(
                 )
             },
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(Space.margin),
+                    .padding(start = Space.margin, end = Space.margin, top = Space.l),
             ) {
-                AmuxEmptyCard(
-                    title = stringResource(R.string.chat_not_opened_title),
-                    detail = reason,
-                )
+                if (failure == null) {
+                    val opening = stringResource(R.string.chat_opening)
+                    Row(
+                        modifier = Modifier
+                            .semantics(mergeDescendants = true) {}
+                            .testTag(ChatScreenTags.OPENING),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+                    ) {
+                        AmuxStateMark(state = RowState.Working)
+                        Text(text = opening, style = typography.bodyEmphasis, color = colors.ink)
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .semantics(mergeDescendants = true) {}
+                            .testTag(ChatScreenTags.NOT_OPENED),
+                        verticalArrangement = Arrangement.spacedBy(Space.s),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_not_opened_title),
+                            style = typography.screenTitle,
+                            color = colors.ink,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        if (failure.isNotEmpty()) {
+                            Text(text = failure, style = typography.detail, color = colors.removed)
+                        }
+                    }
+                }
             }
         }
     }

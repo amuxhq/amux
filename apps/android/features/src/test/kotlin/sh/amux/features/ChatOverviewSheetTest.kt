@@ -124,7 +124,7 @@ class ChatOverviewSheetTest {
     )
 
     @Test
-    fun overviewRendersTasksJobsStopConfirmationServersUsageAndChangedFiles() {
+    fun overviewRendersJobsStopConfirmationServersUsageAndChangedFiles() {
         val actions = mutableListOf<ChatOverviewAction>()
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
@@ -135,10 +135,8 @@ class ChatOverviewSheetTest {
             }
         }
 
-        // Tasks
-        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_TASKS).assertIsDisplayed()
-        composeRule.onNodeWithText("3/7").assertIsDisplayed()
-        composeRule.onNodeWithText("Updating the pairing copy").assertIsDisplayed()
+        // The task list docks above the composer, so the overview leaves it out.
+        composeRule.onNodeWithText("Updating the pairing copy").assertDoesNotExist()
 
         // Background jobs & stop confirmation AlertDialog
         composeRule.onNodeWithTag(AskReviewTags.overviewJob(0)).performScrollTo().assertIsDisplayed()
@@ -163,47 +161,6 @@ class ChatOverviewSheetTest {
         // Changed files tap opens review
         composeRule.onNodeWithTag(AskReviewTags.overviewFile("src/auth/token.rs")).performScrollTo().performClick()
         assertEquals(ChatOverviewAction.OpenReview("src/auth/token.rs"), actions.last())
-    }
-
-    @Test
-    fun overviewStripShowsWhenActiveAndDispatchesCallbacks() {
-        var openedOverview = false
-        var openedReview = false
-        val state = sampleState()
-
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                ChatOverviewStrip(
-                    overview = state.overview,
-                    context = state.context,
-                    clock = ElapsedClock { nowMs },
-                    onOpenOverview = { openedOverview = true },
-                    onOpenReview = { openedReview = true },
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_STRIP).assertIsDisplayed()
-        composeRule.onNodeWithText("Updating the pairing copy").performClick()
-        assertTrue(openedOverview)
-
-        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_STRIP_CHANGES).performClick()
-        assertTrue(openedReview)
-    }
-
-    @Test
-    fun overviewStripHidesWhenNothingIsActive() {
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                ChatOverviewStrip(
-                    overview = Overview(jobs = emptyList(), failedServers = emptyList()),
-                    context = ContextView(usedTokens = 20_000L, nearFull = false, percent = 10L, windowTokens = 200_000L),
-                    onOpenOverview = {},
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_STRIP).assertDoesNotExist()
     }
 
     @Test

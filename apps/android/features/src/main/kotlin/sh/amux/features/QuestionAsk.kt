@@ -1,5 +1,11 @@
 package sh.amux.features
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import sh.amux.design.backdrop
 import sh.amux.design.ThumbTarget
 import androidx.compose.foundation.layout.heightIn
@@ -674,6 +680,7 @@ private fun QuestionStepChip(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuestionOptionRow(
     option: OptionView,
@@ -684,74 +691,99 @@ private fun QuestionOptionRow(
     quiet: Boolean = false,
 ) {
     val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
     val indicatorShape = RoundedCornerShape(if (multi) 5.dp else 9.dp)
+    val rowShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
     val labelPlain = MarkdownDocument.inline(option.label).plainText
     val detailPlain = if (option.description != option.label) {
         MarkdownDocument.inline(option.description).plainText
     } else {
         ""
     }
+    val labelStyle = if (quiet) typography.body else typography.bodyEmphasis
+    // The row is the one control, so TalkBack reads its words and whether it
+    // is chosen as one stop.
+    val choose = if (multi) {
+        Modifier.toggleable(value = isSelected, role = Role.Checkbox, onValueChange = { onClick() })
+    } else {
+        Modifier.selectable(selected = isSelected, role = Role.RadioButton, onClick = onClick)
+    }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
+            .clip(rowShape)
             .background(colors.sunken)
-            .border(
-                width = if (isSelected) 1.5.dp else AmuxTheme.metrics.hairline,
-                color = if (isSelected) colors.ink else colors.hairline.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
+            .then(
+                if (isSelected) Modifier.border(1.5.dp, colors.ink, rowShape) else Modifier,
             )
-            .clickable(role = if (multi) Role.Checkbox else Role.RadioButton, onClick = onClick)
+            .then(choose)
             .heightIn(min = ThumbTarget.MinSize)
-            .padding(horizontal = Space.m, vertical = Space.s)
-            .semantics { selected = isSelected },
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = Space.m + Space.xxs, vertical = 11.dp),
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
+        // The box sits on the label's first line, not the middle of a
+        // label and detail that run to several lines.
+        val firstLine = with(LocalDensity.current) { labelStyle.lineHeight.toDp() }
         Box(
-            modifier = Modifier
-                .size(18.dp)
-                .clip(indicatorShape)
-                .background(if (isSelected) colors.ink else Color.Transparent)
-                .border(
-                    width = 1.5.dp,
-                    color = if (isSelected) colors.ink else colors.inkFaint,
-                    shape = indicatorShape,
-                ),
+            modifier = Modifier.height(firstLine),
             contentAlignment = Alignment.Center,
         ) {
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint = colors.ground,
-                    modifier = Modifier.size(12.dp),
-                )
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(indicatorShape)
+                    .background(if (isSelected) colors.ink else Color.Transparent)
+                    .border(
+                        width = 1.5.dp,
+                        color = if (isSelected) colors.ink else colors.inkFaint,
+                        shape = indicatorShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isSelected) {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = colors.raised,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
             }
         }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(Space.xxs),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
+            // The tag beside the label while both fit, under it when they
+            // do not; neither is broken mid-word.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(Space.xs),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = labelPlain,
-                    style = if (quiet) AmuxTheme.typography.body else AmuxTheme.typography.bodyEmphasis,
+                    style = labelStyle,
                     color = if (quiet) colors.inkMuted else colors.ink,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (option.recommended) {
-                    AmuxStatusChip(text = stringResource(R.string.ask_question_recommended))
+                    Text(
+                        text = stringResource(R.string.ask_question_recommended).uppercase(),
+                        style = typography.sectionTitle,
+                        color = colors.inkMuted,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .border(AmuxTheme.metrics.hairline, colors.hairline, RoundedCornerShape(5.dp))
+                            .padding(horizontal = 5.dp, vertical = Space.xxs),
+                    )
                 }
             }
             if (detailPlain.isNotEmpty()) {
                 Text(
                     text = detailPlain,
-                    style = AmuxTheme.typography.detail,
+                    style = typography.detail,
                     color = colors.inkMuted,
                 )
             }

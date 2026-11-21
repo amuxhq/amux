@@ -57,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -1077,9 +1078,20 @@ internal fun GridRow(
         .padding(start = if (rail.nested) RowGridMetrics.NestedIndent else 0.dp)
     val gapBelow = if (rail.continues) RowGridMetrics.InRunBottom else RowGridMetrics.AfterRunBottom
 
-    val resolvedActionDesc = actionDescription ?: stringResource(
+    // TalkBack hears a step as one stop: its own words, read in the order
+    // they are drawn (what it did, to what, its facts, note and quote), then
+    // whatever it shows under them, such as a plan's text or the answers
+    // given. No label stands in for those words, since a label would hide
+    // the text under it. A step that opens in place says whether it is
+    // open, and its tap is named for what it does.
+    val clickLabel = actionDescription ?: stringResource(
         if (open) R.string.chat_row_collapse else R.string.chat_row_expand,
     )
+    val stateWord = if (opens && !pushes) {
+        stringResource(if (open) R.string.state_expanded else R.string.state_collapsed)
+    } else {
+        null
+    }
 
     // A step that opens takes the gap under it into its target, so the
     // target reaches 48 dp while adding as little as it can to the run's
@@ -1089,16 +1101,15 @@ internal fun GridRow(
             .fillMaxWidth()
             .heightIn(min = ThumbTarget.MinSize)
             .clip(RoundedCornerShape(Space.s))
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics {
-                contentDescription = listOf(verb, subject, resolvedActionDesc)
-                    .filter { it.isNotEmpty() }
-                    .joinToString(", ")
+            .clickable(role = Role.Button, onClickLabel = clickLabel, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                if (stateWord != null) stateDescription = stateWord
             }
             .padding(bottom = gapBelow)
     } else {
         Modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) {}
             .padding(bottom = gapBelow)
     }
 

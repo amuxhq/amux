@@ -46,7 +46,7 @@ import sh.amux.features.ChatRowCellUi
 import sh.amux.features.ChatRowSource
 import sh.amux.features.ChatScreen
 import sh.amux.features.ChatScreenCallbacks
-import sh.amux.features.ChatUnavailableScreen
+import sh.amux.features.ChatPlaceholderScreen
 import sh.amux.features.TestTags
 import sh.amux.features.defaultValidateAgentName
 import sh.amux.features.validateFormFields
@@ -164,16 +164,14 @@ internal fun ChatRoute(
     val coroutineScope = rememberCoroutineScope()
 
     val opened = rememberChatLease(stores = stores, agent = agent)
-    if (opened == null) {
-        AmuxGround(modifier = Modifier.fillMaxSize().testTag(TestTags.SCREEN_CONVERSATION)) {}
-        return
-    }
-    val model = opened.getOrNull()?.model
+    val model = opened?.getOrNull()?.model
     if (model == null) {
+        // Still opening, or not coming: the name the fleet knows it by, if
+        // it knows it, over what is happening.
         val name by stores.fleet.state.collectPart(agent) { it.row(agent)?.name }
-        ChatUnavailableScreen(
-            title = name ?: agent.toString(),
-            reason = opened.exceptionOrNull()?.failureDescription ?: "",
+        ChatPlaceholderScreen(
+            title = name.orEmpty(),
+            failure = opened?.let { it.exceptionOrNull()?.failureDescription.orEmpty() },
             onBack = { router.pop() },
         )
         return

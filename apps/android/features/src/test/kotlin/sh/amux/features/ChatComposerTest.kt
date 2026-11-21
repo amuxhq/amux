@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import sh.amux.values.TaskMark
+import sh.amux.values.TaskLine
+import sh.amux.values.TasksView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -152,7 +155,7 @@ class ChatComposerTest {
     }
 
     @Test
-    fun resumeModeAllowsEmptyDraftAndDraftAndDispatchesOnResume() {
+    fun resumeModeWaitsForADraft() {
         var resumeCount = 0
         val emptyState = ChatComposerState(
             composer = ComposerView(mode = Composer.Resume, switchedAway = false),
@@ -172,8 +175,8 @@ class ChatComposerTest {
         }
 
         composeRule.onNodeWithTag(ChatComposerTags.EXITED_HEAD).assertIsDisplayed()
-        composeRule.onNodeWithTag(ChatComposerTags.RESUME_BUTTON).assertIsEnabled().performClick()
-        assertEquals(1, resumeCount)
+        composeRule.onNodeWithTag(ChatComposerTags.RESUME_BUTTON).assertIsNotEnabled().performClick()
+        assertEquals(0, resumeCount)
     }
 
     @Test
@@ -355,8 +358,7 @@ class ChatComposerTest {
     }
 
     @Test
-    fun switchedAwaySignInAttachmentsAndControlsStripWork() {
-        var switchedBack = false
+    fun signInAttachmentsModelChipAndDockWork() {
         var openedSettings = false
         var openedOverview = false
         val removed = mutableListOf<Int>()
@@ -364,15 +366,22 @@ class ChatComposerTest {
 
         val blob = BlobRef(hash = listOf(4, 5), name = "screenshot.png", mime = "image/png", size = 512_000L)
         val state = ChatComposerState(
-            composer = ComposerView(mode = Composer.Send, switchedAway = true),
+            composer = ComposerView(mode = Composer.Send, switchedAway = false),
             host = "studio",
             kind = Kind.ClaudePty,
             signIn = SignInView(state = SignInState.SignedOut, account = "ada@example.com", message = "Session expired."),
             attachments = listOf(ComposerAttachmentUi(id = "att-1", view = AttachmentView.Image(blob))),
-            notice = "File exceeds the 64 MB limit.",
             controls = ControlsSummary(model = "Sonnet 4.6", effort = "high"),
-            showOverviewChip = true,
-            overviewSummary = "3/7 tasks",
+            tasks = TasksView(
+                done = 1,
+                total = 2,
+                current = "Split the lexer",
+                entries = listOf(
+                    TaskLine("Read the parser", TaskMark.Done),
+                    TaskLine("Split the lexer", TaskMark.Current),
+                ),
+            ),
+            backgroundJobs = 2,
         )
 
         composeRule.setContent {
@@ -380,7 +389,6 @@ class ChatComposerTest {
                 ChatComposer(
                     state = state,
                     callbacks = ChatComposerCallbacks(
-                        onSwitchBack = { switchedBack = true },
                         onRemoveAttachment = { removed += it },
                         onOpenSettings = { openedSettings = true },
                         onOpenOverview = { openedOverview = true },
@@ -390,19 +398,19 @@ class ChatComposerTest {
             }
         }
 
-        composeRule.onNodeWithTag(ChatComposerTags.SWITCHED_AWAY).assertIsDisplayed()
-        composeRule.onNodeWithTag(ChatComposerTags.SWITCH_BACK).performClick()
-        assertTrue(switchedBack)
-
         composeRule.onNodeWithTag(ChatComposerTags.SIGN_IN_NOTICE).assertIsDisplayed()
-        composeRule.onNodeWithTag(ChatComposerTags.NOTICE).assertIsDisplayed()
         composeRule.onNodeWithTag(ChatComposerTags.ATTACHMENTS_ROW).assertIsDisplayed()
         composeRule.onNodeWithTag(ChatRowTags.ATTACHMENT_REMOVE).performClick()
         assertEquals(listOf(0), removed)
 
         composeRule.onNodeWithTag(ChatComposerTags.MODEL_CHIP).performClick()
-        composeRule.onNodeWithTag(ChatComposerTags.OVERVIEW_CHIP).performClick()
         assertTrue(openedSettings)
+
+        // The task list unfolds in place; the background row opens the overview.
+        composeRule.onNodeWithTag(ChatComposerTags.task(0)).assertDoesNotExist()
+        composeRule.onNodeWithTag(ChatComposerTags.TASKS).performClick()
+        composeRule.onNodeWithTag(ChatComposerTags.task(1)).assertIsDisplayed()
+        composeRule.onNodeWithTag(ChatComposerTags.BACKGROUND).performClick()
         assertTrue(openedOverview)
 
         composeRule.onNodeWithTag(ChatComposerTags.ATTACH_BUTTON).performClick()

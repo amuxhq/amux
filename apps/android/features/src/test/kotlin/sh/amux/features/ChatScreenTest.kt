@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.unit.height
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -333,7 +336,7 @@ class ChatScreenTest {
     }
 
     @Test
-    fun familyChildrenHeaderExpandsAndOpensChildAgent() {
+    fun dockHeadUnfoldsStartedAgentsAndOpensOne() {
         val opened = mutableListOf<AgentKey>()
         val state = ChatScreenState(
             subject = ChatSubject(name = "head-agent", host = "desk"),
@@ -356,7 +359,9 @@ class ChatScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(ChatScreenTags.FAMILY_CHILDREN).assertIsDisplayed().performClick()
+        // The agents this one started sit in the dock, folded under its head.
+        composeRule.onNodeWithTag(ChatScreenTags.familyChild("worker-a")).assertDoesNotExist()
+        composeRule.onNodeWithTag(ChatComposerTags.TASKS).assertIsDisplayed().performClick()
         composeRule.onNodeWithTag(ChatScreenTags.familyChild("worker-a")).assertIsDisplayed().performClick()
         assertEquals(listOf(childKey), opened)
     }
@@ -408,6 +413,96 @@ class ChatScreenTest {
 
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
         assertEquals(listOf(AskAction.Choose(0, null, askKey = "ask-1")), askActions)
+    }
+
+    private fun accessAsk(paths: Int): AskCard = AskCard(
+        kind = Kind.ClaudeSdk,
+        key = "ask-access",
+        itemKey = "item-access",
+        position = 1L,
+        count = 1L,
+        body = AskBody.Access(
+            reason = "Read build inputs",
+            read = (1..paths).map { "/var/cache/module-$it/artifacts" },
+            write = emptyList(),
+            network = false,
+            hosts = emptyList(),
+        ),
+        choices = listOf(
+            Choice(ChoiceOutcome.GrantForTurn, primary = true, takesNote = false),
+            Choice(ChoiceOutcome.Deny, primary = false, takesNote = false),
+        ),
+        questionNote = false,
+        questionSkip = false,
+        questionReply = false,
+        stopsTurn = true,
+        defaultToNo = false,
+        state = CardState.Open,
+    )
+
+    @Test
+    fun tallAskLeavesAGlimpseOfTheTranscriptUnderBannersAndANotice() {
+        val rows = sampleRows()
+        val state = ChatScreenState(
+            subject = ChatSubject(name = "refactor-auth", host = "desk", closeHeld = true),
+            keys = rows.map { it.id },
+            frame = baseFrame(phase = PhaseView.NeedsYou),
+            ask = accessAsk(paths = 60),
+            notice = "File exceeds the 64 MB limit.",
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatScreen(state = state, rowSource = StaticChatRowSource(rows), callbacks = ChatScreenCallbacks())
+            }
+        }
+
+        val feed = composeRule.onNodeWithTag(ChatScreenTags.FEED).getBoundsInRoot()
+        assertTrue("feed is ${feed.height}", feed.height >= 48.dp)
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT).assertIsDisplayed()
+    }
+
+    @Test
+    fun dockStaysUnfoldedWhileAnAskComesAndGoes() {
+        val ask = accessAsk(paths = 1)
+        var state by mutableStateOf(
+            ChatScreenState(
+                subject = ChatSubject(name = "refactor-auth", host = "desk", key = agentKey),
+                frame = baseFrame(),
+                overview = Overview(
+                    jobs = emptyList(),
+                    failedServers = emptyList(),
+                    changes = null,
+                    tasks = TasksView(
+                        done = 1,
+                        total = 2,
+                        current = "Split the lexer",
+                        entries = listOf(
+                            TaskLine("Read the parser", TaskMark.Done),
+                            TaskLine("Split the lexer", TaskMark.Current),
+                        ),
+                    ),
+                    usageNearLimit = null,
+                ),
+            ),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatScreen(state = state, rowSource = StaticChatRowSource(emptyList()), callbacks = ChatScreenCallbacks())
+            }
+        }
+
+        composeRule.onNodeWithTag(ChatComposerTags.TASKS).performClick()
+        composeRule.onNodeWithTag(ChatComposerTags.task(1)).assertIsDisplayed()
+
+        state = state.copy(ask = ask)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ChatComposerTags.DOCK).assertDoesNotExist()
+
+        state = state.copy(ask = null)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ChatComposerTags.task(1)).assertIsDisplayed()
     }
 
     @Test

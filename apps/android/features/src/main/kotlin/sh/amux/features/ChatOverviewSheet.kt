@@ -4,6 +4,10 @@ import androidx.compose.ui.graphics.Color
 import sh.amux.design.backdrop
 import sh.amux.design.ThumbTarget
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import sh.amux.design.IconSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -132,6 +136,12 @@ fun ChatOverviewModalSheet(
 /**
  * Pure Compose body of the chat overview sheet. Exposed directly so headless
  * storybook and Robolectric tests can exercise every section cleanly.
+ *
+ * The agent's own page: its name and where it runs, then what runs around
+ * the chat, in iOS's order: the background jobs, the changed files for the
+ * chosen comparison, the tool servers that failed, the usage windows near a
+ * limit and the context near its end. Sections are flat rows under their
+ * heads. The task list is not repeated here; it docks above the composer.
  */
 @Composable
 fun ChatOverviewSheetContent(
@@ -139,7 +149,6 @@ fun ChatOverviewSheetContent(
     onAction: (ChatOverviewAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = AmuxTheme.colors
     val overview = state.overview
     val now = Instant.ofEpochMilli(state.nowMs)
     var pendingStop by remember { mutableStateOf<Pair<JobRow, String>?>(null) }
@@ -151,17 +160,12 @@ fun ChatOverviewSheetContent(
             .verticalScroll(rememberScrollState())
             .padding(bottom = Space.xl)
             .testTag(AskReviewTags.OVERVIEW_SHEET),
-        verticalArrangement = Arrangement.spacedBy(Space.l),
+        verticalArrangement = Arrangement.spacedBy(OverviewSectionGap),
     ) {
         OverviewPlaceHeader(
             subject = state.subject,
             onClose = { onAction(ChatOverviewAction.Dismiss) },
         )
-
-        val tasks = overview?.tasks
-        if (tasks != null && (tasks.total > 0 || tasks.entries.isNotEmpty())) {
-            OverviewTasksSection(tasks = tasks)
-        }
 
         if (overview != null && overview.jobs.isNotEmpty()) {
             OverviewJobsSection(
@@ -169,20 +173,6 @@ fun ChatOverviewSheetContent(
                 now = now,
                 onRequestStop = { job, key -> pendingStop = job to key },
             )
-        }
-
-        if (overview != null && overview.failedServers.isNotEmpty()) {
-            OverviewFailedServersSection(servers = overview.failedServers)
-        }
-
-        val usage = overview?.usageNearLimit
-        if (usage != null) {
-            OverviewUsageSection(usage = usage, now = now)
-        }
-
-        val context = state.context
-        if (context != null) {
-            OverviewContextSection(context = context)
         }
 
         OverviewChangesSection(
@@ -198,101 +188,47 @@ fun ChatOverviewSheetContent(
             onRetryChanges = { onAction(ChatOverviewAction.RetryChanges) },
             onOpenReview = { path -> onAction(ChatOverviewAction.OpenReview(path)) },
         )
+
+        if (overview != null && overview.failedServers.isNotEmpty()) {
+            OverviewFailedServersSection(servers = overview.failedServers)
+        }
+
+        val usage = overview?.usageNearLimit
+        if (usage != null) {
+            OverviewUsageSection(usage = usage, now = now)
+        }
+
+        // Context is said only while it is worth saying: near its end the
+        // agent compacts what it remembers.
+        val context = state.context
+        val left = context?.let(ChatWords::contextLeft)
+        if (context != null && left != null) {
+            OverviewContextSection(context = context, left = left)
+        }
     }
 
     val confirmStop = pendingStop
     if (confirmStop != null) {
         val (job, key) = confirmStop
-        Dialog(
-            onDismissRequest = { pendingStop = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            ChatOverviewStopDialogContent(
-                job = job,
-                onConfirm = {
-                    pendingStop = null
-                    onAction(ChatOverviewAction.StopJob(key))
-                },
-                onDismiss = { pendingStop = null },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.xl),
-            )
-        }
+        StopJobDialog(
+            job = job,
+            onDismiss = { pendingStop = null },
+            onConfirm = {
+                pendingStop = null
+                onAction(ChatOverviewAction.StopJob(key))
+            },
+        )
     }
 }
 
-/**
- * Pure Compose dialog panel for confirming that a background job should be
- * stopped without stopping the agent. Exposed for headless storybook rendering.
- */
-@Composable
-fun ChatOverviewStopDialogContent(
-    job: JobRow,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = AmuxTheme.colors
-    AmuxPanel(
-        shape = RoundedCornerShape(20.dp),
-        color = colors.raised,
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag(AskReviewTags.OVERVIEW_STOP_DIALOG),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Space.l),
-            verticalArrangement = Arrangement.spacedBy(Space.m),
-        ) {
-            Text(
-                text = ChatWords.stopJob(job),
-                style = AmuxTheme.typography.bodyEmphasis,
-                color = colors.ink,
-            )
-            Text(
-                text = ChatWords.STOP_JOB_LEAVES,
-                style = AmuxTheme.typography.detail,
-                color = colors.inkMuted,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_CANCEL),
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_cancel),
-                        style = AmuxTheme.typography.body,
-                        color = colors.inkMuted,
-                    )
-                }
-                TextButton(
-                    onClick = onConfirm,
-                    modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_CONFIRM),
-                ) {
-                    Text(
-                        text = stringResource(R.string.overview_stop),
-                        style = AmuxTheme.typography.bodyEmphasis,
-                        color = colors.removed,
-                    )
-                }
-            }
-        }
-    }
-}
+/** The room between the overview's sections, as iOS spaces them. */
+private val OverviewSectionGap = 22.dp
 
 @Composable
 private fun OverviewPlaceHeader(
     subject: ChatSubjectUi,
     onClose: () -> Unit,
 ) {
-    val colors = AmuxTheme.colors
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,118 +240,73 @@ private fun OverviewPlaceHeader(
             onClose = onClose,
             closeModifier = Modifier.testTag(AskReviewTags.OVERVIEW_CLOSE),
         )
-        Column(
-            modifier = Modifier.padding(horizontal = Space.margin),
-            verticalArrangement = Arrangement.spacedBy(Space.xs),
-        ) {
-            if (subject.host.isNotEmpty()) {
-                PlaceFactRow(label = stringResource(R.string.overview_label_host), value = subject.host)
-            }
-            if (subject.directory.isNotEmpty()) {
-                PlaceFactRow(label = stringResource(R.string.overview_label_directory), value = subject.directory)
-            }
-            if (!subject.branch.isNullOrEmpty()) {
-                PlaceFactRow(label = stringResource(R.string.overview_label_branch), value = subject.branch)
-            }
-            if (subject.address.isNotEmpty()) {
-                PlaceFactRow(label = stringResource(R.string.overview_label_address), value = subject.address)
-            }
+        val facts = buildList {
+            if (subject.host.isNotEmpty()) add(stringResource(R.string.overview_label_host) to subject.host)
+            if (subject.directory.isNotEmpty()) add(stringResource(R.string.overview_label_directory) to subject.directory)
+            if (!subject.branch.isNullOrEmpty()) add(stringResource(R.string.overview_label_branch) to subject.branch)
+            if (subject.address.isNotEmpty()) add(stringResource(R.string.overview_label_address) to subject.address)
         }
+        PlaceFacts(facts = facts, modifier = Modifier.padding(horizontal = Space.margin))
     }
 }
 
+/**
+ * The place's facts as two columns: every label the widest label's width,
+ * so the values start on one edge.
+ */
 @Composable
-private fun PlaceFactRow(
-    label: String,
-    value: String,
+private fun PlaceFacts(
+    facts: List<Pair<String, String>>,
+    modifier: Modifier = Modifier,
 ) {
+    if (facts.isEmpty()) return
     val colors = AmuxTheme.colors
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.m),
-    ) {
-        Text(
-            text = label,
-            style = AmuxTheme.typography.caption,
-            color = colors.inkFaint,
-        )
-        SelectionContainer(modifier = Modifier.weight(1f)) {
-            Text(
-                text = value,
-                style = AmuxTheme.typography.monoSmall,
-                color = colors.inkMuted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+    val labelStyle = AmuxTheme.typography.caption
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelWidth = remember(facts, labelStyle, density) {
+        with(density) {
+            facts.maxOf { (label, _) -> measurer.measure(label, labelStyle).size.width }.toDp()
         }
     }
-}
-
-@Composable
-private fun OverviewTasksSection(tasks: TasksView) {
-    val colors = AmuxTheme.colors
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AskReviewTags.OVERVIEW_TASKS),
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        AmuxSectionHeader(
-            title = stringResource(R.string.overview_section_tasks),
-            trailing = "${tasks.done}/${tasks.total}",
-        )
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-        ) {
-            Column(
+        facts.forEach { (label, value) ->
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Space.l),
-                verticalArrangement = Arrangement.spacedBy(Space.s),
+                    .semantics(mergeDescendants = true) {},
+                horizontalArrangement = Arrangement.spacedBy(Space.m),
             ) {
-                tasks.entries.forEachIndexed { index, entry ->
-                    val icon = when (entry.mark) {
-                        TaskMark.Done -> Icons.Outlined.CheckCircle
-                        TaskMark.Current -> Icons.Outlined.RadioButtonChecked
-                        TaskMark.Todo -> Icons.Outlined.RadioButtonUnchecked
-                    }
-                    val iconTint = when (entry.mark) {
-                        TaskMark.Done -> colors.inkFaint
-                        TaskMark.Current -> colors.ink
-                        TaskMark.Todo -> colors.inkMuted
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(AskReviewTags.overviewTask(index)),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = iconTint,
-                            modifier = Modifier.size(IconSize.Inline),
-                        )
-                        Text(
-                            text = entry.subject,
-                            style = if (entry.mark == TaskMark.Current) {
-                                AmuxTheme.typography.bodyEmphasis
-                            } else {
-                                AmuxTheme.typography.body
-                            },
-                            color = if (entry.mark == TaskMark.Done) colors.inkFaint else colors.ink,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                Text(
+                    text = label,
+                    style = labelStyle,
+                    color = colors.inkFaint,
+                    modifier = Modifier
+                        .width(labelWidth)
+                        .alignByBaseline(),
+                )
+                SelectionContainer(modifier = Modifier.weight(1f).alignByBaseline()) {
+                    Text(
+                        text = value,
+                        style = AmuxTheme.typography.mono,
+                        color = colors.inkMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * The jobs still running. One the agent's kind can stop alone is a button
+ * the whole row wide; a tap asks first, naming it. The agent keeps running
+ * either way.
+ */
 @Composable
 private fun OverviewJobsSection(
     jobs: List<JobRow>,
@@ -428,83 +319,80 @@ private fun OverviewJobsSection(
             title = stringResource(R.string.overview_section_background),
             trailing = jobs.size.toString(),
         )
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                jobs.forEachIndexed { index, job ->
-                    if (index > 0) AmuxHairline()
-                    val stopKey = when (val stop = job.stop) {
-                        is JobStop.Offered -> stop.key
-                        is JobStop.Refused -> stop.key
-                        JobStop.Stopping, JobStop.Unavailable -> null
-                    }
-                    val elapsed = ChatWords.ran(sinceMs = job.startedAtMs, now = now)
-                    // Each job's line is the Stop button's full 48 dp, so the
-                    // buttons of jobs listed one under another never overlap
-                    // and the card's edge never cuts the first one.
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Space.l)
-                            .testTag(AskReviewTags.overviewJob(index)),
-                        verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = ThumbTarget.MinSize),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.s),
-                        ) {
-                            Text(
-                                text = ChatWords.firstLine(job.command),
-                                style = AmuxTheme.typography.mono,
-                                color = colors.ink,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (job.stop is JobStop.Stopping) {
-                                Text(
-                                    text = ChatWords.STOPPING_JOB,
-                                    style = AmuxTheme.typography.caption,
-                                    color = colors.inkMuted,
-                                )
-                            } else {
-                                Text(
-                                    text = elapsed,
-                                    style = AmuxTheme.typography.caption,
-                                    color = colors.inkFaint,
-                                )
-                            }
+        jobs.forEachIndexed { index, job ->
+            val stopKey = when (val stop = job.stop) {
+                is JobStop.Offered -> stop.key
+                is JobStop.Refused -> stop.key
+                JobStop.Stopping, JobStop.Unavailable -> null
+            }
+            val elapsed = ChatWords.ran(sinceMs = job.startedAtMs, now = now)
+            val command = ChatWords.firstLine(job.command)
+            val stopLabel = stringResource(R.string.overview_stop_job_description, command)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(AskReviewTags.overviewJob(index)),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = ThumbTarget.MinSize)
+                        .then(
                             if (stopKey != null) {
-                                val stopDescription = stringResource(
-                                    R.string.overview_stop_job_description,
-                                    ChatWords.firstLine(job.command),
-                                )
-                                AmuxEdgeIconButton(
-                                    icon = Icons.Outlined.StopCircle,
-                                    contentDescription = stopDescription,
-                                    onClick = { onRequestStop(job, stopKey) },
-                                    modifier = Modifier.testTag(AskReviewTags.overviewJobStop(index)),
-                                )
-                            }
-                        }
-                        val refused = job.stop as? JobStop.Refused
-                        if (refused != null && refused.error.isNotEmpty()) {
-                            Text(
-                                text = ChatWords.firstLine(refused.error),
-                                style = AmuxTheme.typography.caption,
-                                color = colors.accent,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(bottom = Space.s),
-                            )
-                        }
+                                Modifier
+                                    .clickable(role = Role.Button, onClickLabel = stopLabel) {
+                                        onRequestStop(job, stopKey)
+                                    }
+                                    .testTag(AskReviewTags.overviewJobStop(index))
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .semantics(mergeDescendants = true) {}
+                        .padding(horizontal = Space.margin),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+                ) {
+                    Text(
+                        text = command,
+                        style = AmuxTheme.typography.mono,
+                        color = colors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (job.stop is JobStop.Stopping) {
+                        Text(
+                            text = ChatWords.STOPPING_JOB,
+                            style = AmuxTheme.typography.caption,
+                            color = colors.inkMuted,
+                        )
+                    } else {
+                        Text(
+                            text = elapsed,
+                            style = AmuxTheme.typography.caption,
+                            color = colors.inkFaint,
+                        )
                     }
+                    if (stopKey != null) {
+                        Icon(
+                            imageVector = Icons.Outlined.StopCircle,
+                            contentDescription = null,
+                            tint = colors.inkMuted,
+                            modifier = Modifier.size(IconSize.Row),
+                        )
+                    }
+                }
+                val refused = job.stop as? JobStop.Refused
+                if (refused != null && refused.error.isNotEmpty()) {
+                    Text(
+                        text = ChatWords.firstLine(refused.error),
+                        style = AmuxTheme.typography.caption,
+                        color = colors.accent,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = Space.margin),
+                    )
                 }
             }
         }
@@ -514,42 +402,36 @@ private fun OverviewJobsSection(
 @Composable
 private fun OverviewFailedServersSection(servers: List<ServerView>) {
     val colors = AmuxTheme.colors
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+    ) {
         AmuxSectionHeader(
             title = stringResource(R.string.overview_section_servers),
             trailing = servers.size.toString(),
         )
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-            borderColor = colors.accent.copy(alpha = 0.45f),
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                servers.forEachIndexed { index, server ->
-                    if (index > 0) AmuxHairline()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Space.l, vertical = Space.s)
-                            .testTag(AskReviewTags.overviewServer(server.name)),
-                        verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                    ) {
-                        Text(
-                            text = ChatWords.failed(server),
-                            style = AmuxTheme.typography.bodyEmphasis,
-                            color = colors.accent,
-                        )
-                        if (server.error.isNotEmpty()) {
-                            Text(
-                                text = ChatWords.firstLine(server.error),
-                                style = AmuxTheme.typography.caption,
-                                color = colors.inkMuted,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+        servers.forEach { server ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {}
+                    .padding(horizontal = Space.margin)
+                    .testTag(AskReviewTags.overviewServer(server.name)),
+                verticalArrangement = Arrangement.spacedBy(Space.xxs),
+            ) {
+                Text(
+                    text = ChatWords.failed(server),
+                    style = AmuxTheme.typography.body,
+                    color = colors.accent,
+                )
+                if (server.error.isNotEmpty()) {
+                    Text(
+                        text = ChatWords.firstLine(server.error),
+                        style = AmuxTheme.typography.caption,
+                        color = colors.inkFaint,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -566,6 +448,7 @@ private fun OverviewUsageSection(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(AskReviewTags.OVERVIEW_USAGE),
+        verticalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
     ) {
         AmuxSectionHeader(
             title = stringResource(R.string.overview_section_usage),
@@ -573,103 +456,87 @@ private fun OverviewUsageSection(
                 if (usage.blocked) R.string.overview_usage_blocked else R.string.overview_usage_near_limit,
             ),
         )
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-            borderColor = if (usage.blocked) colors.accent else Color.Transparent,
-        ) {
+        usage.windows.forEachIndexed { index, window ->
+            val label = ChatWords.usageLabel(window.label)
+            val detail = ChatWords.usageDetail(window, now = now)
+            // A reached limit is a failure and takes the accent; one near
+            // its limit reads in ink; the rest stay muted.
+            val rowColor = when (window.state) {
+                UsageState.Blocked -> colors.accent
+                UsageState.NearLimit -> colors.ink
+                else -> colors.inkMuted
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Space.l),
-                verticalArrangement = Arrangement.spacedBy(Space.s),
+                    .semantics(mergeDescendants = true) {}
+                    .padding(horizontal = Space.margin)
+                    .testTag(AskReviewTags.overviewUsageWindow(index)),
+                verticalArrangement = Arrangement.spacedBy(Space.xxs),
             ) {
-                usage.windows.forEachIndexed { index, window ->
-                    val label = ChatWords.usageLabel(window.label)
-                    val detail = ChatWords.usageDetail(window, now = now)
-                    val rowColor = when (window.state) {
-                        UsageState.Blocked -> colors.accent
-                        UsageState.NearLimit -> colors.ink
-                        else -> colors.inkMuted
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(AskReviewTags.overviewUsageWindow(index)),
-                        verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = label,
-                                style = AmuxTheme.typography.body,
-                                color = rowColor,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = ChatWords.used(window),
-                                style = AmuxTheme.typography.bodyEmphasis,
-                                color = rowColor,
-                            )
-                        }
-                        if (detail != null) {
-                            Text(
-                                text = detail,
-                                style = AmuxTheme.typography.caption,
-                                color = colors.inkFaint,
-                            )
-                        }
-                    }
-                }
-                val credits = usage.credits
-                if (!credits.isNullOrEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
-                        text = stringResource(R.string.overview_usage_credits, credits),
+                        text = label,
+                        style = AmuxTheme.typography.body,
+                        color = rowColor,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = ChatWords.used(window),
+                        style = AmuxTheme.typography.body,
+                        color = rowColor,
+                    )
+                }
+                if (detail != null) {
+                    Text(
+                        text = detail,
                         style = AmuxTheme.typography.caption,
                         color = colors.inkFaint,
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun OverviewContextSection(context: ContextView) {
-    val colors = AmuxTheme.colors
-    val trailing = ChatWords.contextLeft(context)
-        ?: context.percent?.let { stringResource(R.string.overview_context_percent, it) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(AskReviewTags.OVERVIEW_CONTEXT),
-    ) {
-        AmuxSectionHeader(
-            title = stringResource(R.string.overview_section_context),
-            trailing = trailing,
-        )
-        AmuxPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Space.margin),
-            borderColor = if (context.nearFull) colors.accent.copy(alpha = 0.55f) else colors.hairline,
-        ) {
-            ContextMeterBlock(
-                context = context,
-                modifier = Modifier.padding(Space.l),
+        val credits = usage.credits
+        if (!credits.isNullOrEmpty()) {
+            Text(
+                text = stringResource(R.string.overview_usage_credits, credits),
+                style = AmuxTheme.typography.caption,
+                color = colors.inkFaint,
+                modifier = Modifier.padding(horizontal = Space.margin),
             )
         }
     }
 }
 
+/** How full the conversation's context is, in ink: it is information, not a failure. */
+@Composable
+private fun OverviewContextSection(context: ContextView, left: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {}
+            .testTag(AskReviewTags.OVERVIEW_CONTEXT),
+        verticalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+    ) {
+        AmuxSectionHeader(
+            title = stringResource(R.string.overview_section_context),
+            trailing = left,
+        )
+        Text(
+            text = ChatWords.contextUsed(context),
+            style = AmuxTheme.typography.body,
+            color = AmuxTheme.colors.ink,
+            modifier = Modifier.padding(horizontal = Space.margin),
+        )
+    }
+}
+
 /**
- * Static horizontal context capacity meter. Draws a crisp neutral bar (switching
- * to the attention accent at or above 80% used) without using Material progress
- * indicator spinners.
+ * Static horizontal context capacity meter: a crisp neutral bar, without
+ * Material's progress indicator spinners.
  */
 @Composable
 internal fun ContextMeterBlock(
@@ -678,7 +545,6 @@ internal fun ContextMeterBlock(
 ) {
     val colors = AmuxTheme.colors
     val fraction = ((context.percent ?: 0L).coerceIn(0L, 100L)) / 100f
-    val fillColor = if (context.nearFull) colors.accent else colors.inkMuted
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -698,7 +564,7 @@ internal fun ContextMeterBlock(
                             .fillMaxWidth(fraction)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(3.dp))
-                            .background(fillColor),
+                            .background(colors.inkMuted),
                     )
                 }
             }
@@ -710,7 +576,7 @@ internal fun ContextMeterBlock(
             Text(
                 text = ChatWords.contextUsed(context),
                 style = AmuxTheme.typography.detail,
-                color = if (context.nearFull) colors.accent else colors.ink,
+                color = colors.ink,
                 modifier = Modifier.weight(1f),
             )
             val percent = context.percent
@@ -718,7 +584,7 @@ internal fun ContextMeterBlock(
                 Text(
                     text = stringResource(R.string.overview_context_percent, percent),
                     style = AmuxTheme.typography.monoSmall,
-                    color = if (context.nearFull) colors.accent else colors.inkMuted,
+                    color = colors.inkMuted,
                 )
             }
         }
@@ -750,7 +616,7 @@ private fun OverviewChangesSection(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Space.s),
+        verticalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
     ) {
         AmuxSectionHeader(
             title = stringResource(R.string.overview_section_changes),
@@ -790,7 +656,7 @@ private fun OverviewChangesSection(
                     Text(
                         text = stringResource(R.string.action_retry),
                         style = AmuxTheme.typography.bodyEmphasis,
-                        color = colors.ink,
+                        color = colors.accent,
                     )
                 }
             }
@@ -804,34 +670,28 @@ private fun OverviewChangesSection(
                     .testTag(AskReviewTags.OVERVIEW_CHANGES_LOADING),
             )
         } else if (matchedChanges != null && matchedChanges.totals.files > 0) {
-            AmuxPanel(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.margin),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    matchedChanges.folders.forEachIndexed { folderIndex, folder ->
-                        if (folderIndex > 0) AmuxHairline()
-                        OverviewFolderGroup(
-                            folder = folder,
-                            onSelectFile = { onOpenReview(it) },
-                        )
-                    }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                matchedChanges.folders.forEach { folder ->
+                    OverviewFolderGroup(
+                        folder = folder,
+                        onSelectFile = { onOpenReview(it) },
+                    )
                 }
             }
-            Box(
+            val reviewLabel = stringResource(R.string.overview_review_changes)
+            Text(
+                text = reviewLabel,
+                style = AmuxTheme.typography.bodyEmphasis,
+                color = colors.accent,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.margin),
-            ) {
-                AmuxActionButton(
-                    label = stringResource(R.string.overview_review_changes),
-                    kind = ActionButtonKind.Outline,
-                    fillWidth = true,
-                    onClick = { onOpenReview(null) },
-                    modifier = Modifier.testTag(AskReviewTags.OVERVIEW_REVIEW),
-                )
-            }
+                    .padding(horizontal = Space.margin - Space.s)
+                    .clip(RoundedCornerShape(Space.s))
+                    .clickable(role = Role.Button) { onOpenReview(null) }
+                    .heightIn(min = ThumbTarget.MinSize)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = Space.s)
+                    .testTag(AskReviewTags.OVERVIEW_REVIEW),
+            )
         } else {
             val emptyMessage = if (matchedChanges == null && totals != null) {
                 stringResource(R.string.overview_changes_listing)
@@ -850,6 +710,7 @@ private fun OverviewChangesSection(
     }
 }
 
+/** A folder's path, then its files under it; files at the root stand alone. */
 @Composable
 private fun OverviewFolderGroup(
     folder: Folder,
@@ -863,30 +724,33 @@ private fun OverviewFolderGroup(
                 style = AmuxTheme.typography.monoSmall,
                 color = colors.inkFaint,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                overflow = TextOverflow.MiddleEllipsis,
                 modifier = Modifier.padding(
-                    start = Space.m,
-                    end = Space.l,
+                    start = Space.margin,
+                    end = Space.margin,
                     top = Space.s,
                     bottom = Space.xxs,
                 ),
             )
         }
         folder.files.forEach { file ->
+            val counts = ChatWords.counts(added = file.added, removed = file.removed)
+            val spokenFile = stringResource(R.string.chat_overview_file_spoken, file.path, counts)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(role = Role.Button) { onSelectFile(file.path) }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = spokenFile
+                    }
                     .heightIn(min = ThumbTarget.MinSize)
                     .padding(
-                        start = if (folder.path.isEmpty()) Space.m else Space.xl,
-                        end = Space.l,
-                        top = Space.xs,
-                        bottom = Space.xs,
+                        start = if (folder.path.isEmpty()) Space.margin else Space.margin + Space.m + Space.xxs,
+                        end = Space.margin,
                     )
                     .testTag(AskReviewTags.overviewFile(file.path)),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
+                horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
             ) {
                 Text(
                     text = file.name,
@@ -899,7 +763,7 @@ private fun OverviewFolderGroup(
                     ),
                     color = if (file.status == FileStatus.Deleted) colors.inkFaint else colors.ink,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    overflow = TextOverflow.StartEllipsis,
                     modifier = Modifier.weight(1f),
                 )
                 DiffDeltaCounts(added = file.added, removed = file.removed)
@@ -908,175 +772,3 @@ private fun OverviewFolderGroup(
     }
 }
 
-/**
- * Compact folded overview strip docked above the composer whenever tasks,
- * background jobs, failed tool servers, usage warnings, near-full context, or
- * changed files are active.
- */
-@Composable
-fun ChatOverviewStrip(
-    overview: Overview?,
-    context: ContextView?,
-    changeTotals: ChangeTotals? = null,
-    clock: ElapsedClock = ElapsedClock.Still,
-    onOpenOverview: () -> Unit,
-    onOpenReview: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
-) {
-    val tasks = overview?.tasks?.takeIf { it.total > 0 || it.entries.isNotEmpty() }
-    val jobCount = overview?.jobs?.size ?: 0
-    val failedCount = overview?.failedServers?.size ?: 0
-    val usage = overview?.usageNearLimit
-    val contextWarning = ChatWords.contextLeft(context)
-    val totals = overview?.changes?.totals ?: changeTotals
-    val changedFiles = totals?.files ?: 0
-
-    val hasAny = tasks != null ||
-        jobCount > 0 ||
-        failedCount > 0 ||
-        usage != null ||
-        contextWarning != null ||
-        changedFiles > 0
-    if (!hasAny) return
-
-    val colors = AmuxTheme.colors
-    val openOverviewLabel = stringResource(R.string.overview_strip_open)
-
-    AmuxChrome(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag(AskReviewTags.OVERVIEW_STRIP),
-        shape = RoundedCornerShape(AmuxTheme.metrics.cardRadius),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            var drewRow = false
-            if (tasks != null) {
-                drewRow = true
-                StripRow(
-                    leading = "${tasks.done}/${tasks.total}",
-                    text = ChatWords.headTask(tasks),
-                    accent = false,
-                    description = openOverviewLabel,
-                    onClick = onOpenOverview,
-                )
-            }
-            if (jobCount > 0) {
-                if (drewRow) AmuxHairline()
-                drewRow = true
-                StripRow(
-                    leading = null,
-                    text = ChatWords.inBackground(jobCount),
-                    accent = false,
-                    description = openOverviewLabel,
-                    onClick = onOpenOverview,
-                )
-            }
-            if (failedCount > 0) {
-                if (drewRow) AmuxHairline()
-                drewRow = true
-                val label = if (failedCount == 1) {
-                    stringResource(R.string.overview_strip_failed_one)
-                } else {
-                    stringResource(R.string.overview_strip_failed_many, failedCount)
-                }
-                StripRow(
-                    leading = null,
-                    text = label,
-                    accent = true,
-                    description = openOverviewLabel,
-                    onClick = onOpenOverview,
-                )
-            }
-            if (usage != null) {
-                if (drewRow) AmuxHairline()
-                drewRow = true
-                val label = if (usage.blocked) {
-                    ChatWords.limitReached(usage, now = Instant.ofEpochMilli(clock.nowMs()))
-                } else {
-                    stringResource(R.string.overview_strip_usage_near)
-                }
-                StripRow(
-                    leading = null,
-                    text = label,
-                    accent = true,
-                    description = openOverviewLabel,
-                    onClick = onOpenOverview,
-                )
-            }
-            if (contextWarning != null) {
-                if (drewRow) AmuxHairline()
-                drewRow = true
-                StripRow(
-                    leading = null,
-                    text = contextWarning,
-                    accent = true,
-                    description = openOverviewLabel,
-                    onClick = onOpenOverview,
-                )
-            }
-            if (changedFiles > 0 && totals != null) {
-                if (drewRow) AmuxHairline()
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(role = Role.Button) {
-                            if (onOpenReview != null) onOpenReview() else onOpenOverview()
-                        }
-                        .heightIn(min = ThumbTarget.MinSize)
-                        .padding(horizontal = Space.l, vertical = Space.s)
-                        .testTag(AskReviewTags.OVERVIEW_STRIP_CHANGES),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
-                ) {
-                    Text(
-                        text = ChatWords.files(changedFiles),
-                        style = AmuxTheme.typography.body,
-                        color = colors.ink,
-                        modifier = Modifier.weight(1f),
-                    )
-                    DiffDeltaCounts(added = totals.added, removed = totals.removed)
-                    AmuxDisclosureChevron()
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StripRow(
-    leading: String?,
-    text: String,
-    accent: Boolean,
-    description: String,
-    onClick: () -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val spoken = stringResource(R.string.overview_strip_spoken, text, description)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = ThumbTarget.MinSize)
-            .padding(horizontal = Space.l, vertical = Space.s)
-            .semantics { contentDescription = spoken },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-    ) {
-        if (leading != null) {
-            Text(
-                text = leading,
-                style = AmuxTheme.typography.monoSmall,
-                color = colors.inkMuted,
-            )
-        }
-        Text(
-            text = text,
-            style = if (accent) AmuxTheme.typography.bodyEmphasis else AmuxTheme.typography.body,
-            color = if (accent) colors.accent else colors.ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        AmuxDisclosureChevron()
-    }
-}

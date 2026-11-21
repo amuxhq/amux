@@ -32,13 +32,13 @@ import sh.amux.features.AskReviewTags
 import sh.amux.features.ElapsedClock
 import sh.amux.features.ChatOverviewSheetContent
 import sh.amux.features.ChatOverviewState
-import sh.amux.features.ChatOverviewStopDialogContent
+import sh.amux.features.StopJobCard
 import sh.amux.features.ChatScreen
 import sh.amux.features.ChatScreenState
 import sh.amux.features.ChatSettingsSheetContent
 import sh.amux.features.ChatSettingsState
 import sh.amux.features.ChatSubject
-import sh.amux.features.ChatUnavailableScreen
+import sh.amux.features.ChatPlaceholderScreen
 import sh.amux.features.DeleteAgentCard
 import sh.amux.features.DeleteAccountPhaseUi
 import sh.amux.features.DeleteAccountSheetContent
@@ -465,7 +465,7 @@ object Stories {
                     }
                 },
             ) {
-                ChatOverviewStopDialogContent(job = job, onConfirm = {}, onDismiss = {})
+                StopJobCard(job = job, onConfirm = {}, onDismiss = {})
             }
         },
         Story(
@@ -513,7 +513,15 @@ object Stories {
             title = "Chat could not be opened",
             description = "Unavailable conversation screen explaining why the chat could not be opened.",
         ) {
-            ChatUnavailableScreen(title = F.subject.name, reason = "desk did not answer", onBack = {})
+            ChatPlaceholderScreen(title = F.subject.name, failure = "desk did not answer", onBack = {})
+        },
+        Story(
+            id = "chat.opening",
+            area = "Chat",
+            title = "Opening a chat",
+            description = "The chat's page while its conversation is still opening.",
+        ) {
+            ChatPlaceholderScreen(title = F.subject.name, failure = null, onBack = {})
         },
         Story(
             id = "chat.queued",
@@ -522,6 +530,22 @@ object Stories {
             description = "Working turn with a withdrawable prompt, a steering one, and one from another agent queued above the composer.",
         ) {
             StoryChatScreen(workingChat(queue = true))
+        },
+        Story(
+            id = "chat.dock",
+            area = "Chat",
+            title = "Dock above the composer",
+            description = "A working parent's dock folded: its task list's head, the agents it started, two jobs in the background and a queued prompt.",
+        ) {
+            StoryChatScreen(dockChat(open = false))
+        },
+        Story(
+            id = "chat.dock-open",
+            area = "Chat",
+            title = "Dock opened",
+            description = "The dock opened in place: the task list, the agents this one started, then the head and a queued prompt.",
+        ) {
+            StoryChatScreen(dockChat(open = true))
         },
         Story(
             id = "chat.signed-out",
@@ -1120,7 +1144,11 @@ object Stories {
         content: @Composable () -> Unit,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            background()
+            // The real dialog is a window of its own that hides the screen
+            // behind it from TalkBack; the sweep should see what TalkBack does.
+            Box(modifier = Modifier.fillMaxSize().clearAndSetSemantics {}) {
+                background()
+            }
             AmuxScrim()
             Box(
                 modifier = Modifier
@@ -1270,6 +1298,25 @@ object Stories {
         ),
         strip = opus,
     )
+
+    private fun dockChat(open: Boolean): StoryChat {
+        val chat = chat(
+            rows = F.working,
+            frame = ScriptedChat.frame(
+                phase = PhaseView.Working,
+                activity = F.workingActivity,
+                queue = F.queue.take(1),
+            ),
+            strip = ScriptedChat.strip(
+                tasks = F.pairingTasks,
+                model = "opus 4.6",
+                effort = "high",
+                background = if (open) null else 2,
+            ),
+            family = F.family.copy(children = F.family.children + F.docsSweep),
+        )
+        return StoryChat(chat.state.copy(dockOpen = open), chat.source)
+    }
 
     private fun delegatingChat(open: Boolean): StoryChat = chat(
         rows = F.delegating,

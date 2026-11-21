@@ -2,6 +2,9 @@ package sh.amux.testsupport
 
 import sh.amux.features.ChatSubject
 import sh.amux.values.Activity
+import sh.amux.values.TaskMark
+import sh.amux.values.TaskLine
+import sh.amux.values.TasksView
 import sh.amux.values.ActivityKind
 import sh.amux.values.AgentKey
 import sh.amux.values.AskBody
@@ -447,6 +450,64 @@ internal object CatalogFixtures {
             native = false,
         ),
     )
+
+    // --- The dock ------------------------------------------------------------
+
+    val pairingTasks = TasksView(
+        done = 3,
+        total = 7,
+        current = "Updating the three spec tests",
+        entries = listOf(
+            TaskLine("Find every call site that maps a status to a string", TaskMark.Done),
+            TaskLine("Collapse the match in pairing.rs onto one arm", TaskMark.Done),
+            TaskLine("Delete the three unused error constants", TaskMark.Done),
+            TaskLine("Update the three spec tests that assert on the old strings", TaskMark.Current),
+            TaskLine("Run the spec suite", TaskMark.Todo),
+            TaskLine("Check nothing in docs asserts on the old copy", TaskMark.Todo),
+            TaskLine("Write the changelog line", TaskMark.Todo),
+        ),
+    )
+
+    private fun startedCard(
+        id: Int,
+        name: String,
+        kind: Kind,
+        attention: Attention,
+        host: String,
+        exitCause: ExitCause? = null,
+    ) = FleetCard(
+        agent = AgentKey(host = List(16) { 1 }, agent = List(16) { id }),
+        name = name,
+        handle = name,
+        kind = kind,
+        attention = attention,
+        cwd = "",
+        phaseSinceMs = 0L,
+        host = host,
+        hostReach = Reach.Online(RouteKind.Direct),
+        children = 0,
+        familyAttention = attention,
+        members = 1,
+        descendants = 0,
+        backgroundJobs = 0,
+        closeHeld = false,
+        filing = Filing.Open,
+        topLevel = true,
+        native = false,
+        exitCause = exitCause,
+    )
+
+    /** The agents a parent started: one waiting on the person, one working. */
+    val family = FamilyHeader(
+        children = listOf(
+            startedCard(3, "worker-2", Kind.ClaudeSdk, Attention.NeedsYou, "Laptop"),
+            startedCard(4, "worker-3", Kind.Codex, Attention.Working, "Studio"),
+        ),
+        attention = Attention.NeedsYou,
+        needYou = 1,
+    )
+
+    val docsSweep = startedCard(5, "docs-sweep", Kind.ClaudeSdk, Attention.Exited, "Studio", ExitCause.Finished)
 
     // --- Settings -----------------------------------------------------------
 

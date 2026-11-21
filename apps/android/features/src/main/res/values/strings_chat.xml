@@ -30,7 +30,18 @@
 
     <!-- Banners -->
     <string name="chat_settle_held">Settle held · sends when %1$s is back</string>
-    <string name="chat_settle_held_cancel">Cancel Stop</string>
+    <string name="chat_settle_held_cancel">Cancel</string>
+
+    <!-- The dock above the composer -->
+    <string name="chat_dock_started">Started</string>
+    <string name="chat_dock_progress">%1$d/%2$d</string>
+    <string name="chat_overview_file_spoken">%1$s, %2$s</string>
+    <string name="chat_dock_background_hint">Open Overview</string>
+    <string name="state_expanded">Expanded</string>
+    <string name="state_collapsed">Collapsed</string>
+    <string name="task_done">Done</string>
+    <string name="task_current">In progress</string>
+    <string name="task_todo">To do</string>
 
     <!-- Transcript paging & empty states -->
     <string name="chat_paging_loading">Loading earlier…</string>
@@ -66,5 +77,6 @@
     <string name="chat_command_replace_detail">Selecting %1$s replaces your current draft.</string>
     <string name="chat_command_replace_confirm">Replace</string>
     <string name="chat_command_replace_keep">Keep Draft</string>
-    <string name="chat_not_opened_title">Chat unavailable</string>
+    <string name="chat_not_opened_title">Couldn’t open this chat</string>
+    <string name="chat_opening">Opening this chat</string>
 </resources>

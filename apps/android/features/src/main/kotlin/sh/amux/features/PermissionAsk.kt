@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.BoxWithConstraints
 import sh.amux.design.ThumbTarget
 import androidx.compose.foundation.layout.heightIn
 import sh.amux.design.IconSize
@@ -19,7 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -172,10 +175,10 @@ private fun AskScopeChoiceRow(
         horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
         Icon(
-            imageVector = Icons.Outlined.Repeat,
+            imageVector = Icons.Rounded.Repeat,
             contentDescription = null,
             tint = colors.inkMuted,
-            modifier = Modifier.size(IconSize.Inline),
+            modifier = Modifier.size(IconSize.Row),
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -202,6 +205,14 @@ internal const val DIFF_PREVIEW_LIMIT: Int = 12
 
 private const val DIFF_WHOLE_CAP: Int = 400
 
+/**
+ * A short diff inline, green and red, with the whole of it one tap away.
+ * Where each hunk starts reads as its first line in the new file.
+ *
+ * Every row is as wide as the widest line, or the card when that is wider,
+ * so the added and removed washes run edge to edge rather than stopping
+ * where each line's text ends; long lines scroll sideways together.
+ */
 @Composable
 internal fun EditDiffPreview(
     lines: List<EditLine>,
@@ -209,88 +220,59 @@ internal fun EditDiffPreview(
 ) {
     val colors = AmuxTheme.colors
     val shown = if (showWhole) lines.take(DIFF_WHOLE_CAP) else lines.take(DIFF_PREVIEW_LIMIT)
-    val addedTint = colors.added.copy(alpha = 0.14f)
-    val removedTint = colors.removed.copy(alpha = 0.14f)
-    val ellipsis = stringResource(R.string.ask_diff_hunk_ellipsis)
+    val addedTint = colors.added.copy(alpha = 0.18f)
+    val removedTint = colors.removed.copy(alpha = 0.18f)
+    val shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-            .background(colors.sunken)
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = Space.xs),
+            .clip(shape)
+            .background(colors.sunken),
     ) {
-        shown.forEach { editLine ->
-            when (editLine) {
-                is EditLine.File -> {
-                    Text(
-                        text = ChatWords.fileHeader(editLine.value),
-                        style = AmuxTheme.typography.monoSmall,
-                        color = colors.inkMuted,
-                        modifier = Modifier.padding(horizontal = Space.s, vertical = Space.xxs),
-                    )
-                }
-                is EditLine.Hunk -> {
-                    val label = if (editLine.newStart > 0) {
-                        "$ellipsis ${stringResource(R.string.ask_diff_line_start, editLine.newStart)}"
-                    } else {
-                        ellipsis
+        val viewport = maxWidth
+        Column(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 6.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(IntrinsicSize.Max)
+                    .widthIn(min = viewport),
+            ) {
+                shown.forEach { editLine ->
+                    val (text, ink, wash) = when (editLine) {
+                        is EditLine.File -> Triple(
+                            ChatWords.fileHeader(editLine.value),
+                            colors.inkMuted,
+                            Color.Transparent,
+                        )
+                        is EditLine.Hunk -> Triple(
+                            stringResource(R.string.ask_diff_line_start, editLine.newStart),
+                            colors.inkFaint,
+                            Color.Transparent,
+                        )
+                        is EditLine.Line -> {
+                            val patch = editLine.value
+                            when (patch.kind) {
+                                LineKind.Added -> Triple("+" + patch.text, colors.ink, addedTint)
+                                LineKind.Removed -> Triple("-" + patch.text, colors.ink, removedTint)
+                                LineKind.Context -> Triple(" " + patch.text, colors.ink, Color.Transparent)
+                            }
+                        }
                     }
                     Text(
-                        text = label,
+                        text = text,
                         style = AmuxTheme.typography.monoSmall,
-                        color = colors.inkFaint,
-                        modifier = Modifier.padding(horizontal = Space.s, vertical = Space.xxs),
-                    )
-                }
-                is EditLine.Line -> {
-                    val patch = editLine.value
-                    val wash = when (patch.kind) {
-                        LineKind.Added -> addedTint
-                        LineKind.Removed -> removedTint
-                        LineKind.Context -> Color.Transparent
-                    }
-                    val prefix = when (patch.kind) {
-                        LineKind.Added -> "+"
-                        LineKind.Removed -> "\u2212"
-                        LineKind.Context -> " "
-                    }
-                    val prefixColor = when (patch.kind) {
-                        LineKind.Added -> colors.added
-                        LineKind.Removed -> colors.removed
-                        LineKind.Context -> colors.inkFaint
-                    }
-                    Row(
+                        color = ink,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(wash)
-                            .padding(horizontal = Space.s, vertical = 1.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (patch.number != null) {
-                            Text(
-                                text = patch.number.toString(),
-                                style = AmuxTheme.typography.monoSmall,
-                                color = colors.inkFaint,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier
-                                    .width(32.dp)
-                                    .padding(end = Space.s),
-                            )
-                        }
-                        Text(
-                            text = prefix,
-                            style = AmuxTheme.typography.monoSmall,
-                            color = prefixColor,
-                            modifier = Modifier.width(12.dp),
-                        )
-                        Text(
-                            text = patch.text,
-                            style = AmuxTheme.typography.monoSmall,
-                            color = colors.ink,
-                        )
-                    }
+                            .padding(horizontal = Space.s),
+                    )
                 }
             }
         }

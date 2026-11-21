@@ -2,6 +2,21 @@ package sh.amux.features
 
 import sh.amux.design.IconSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.filled.FrontHand
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PriorityHigh
+import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import sh.amux.design.spillTarget
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -130,11 +145,13 @@ fun AskCardView(
         if (onInterrupt != null) onInterrupt() else onAction(AskAction.Interrupt)
     }
 
-    // Hoisted above the CardState branch so typed denial / send-back notes and
-    // plan toggles survive Sending -> Rejected for the same ask key.
+    // Hoisted above the CardState branch so typed denial / send-back notes,
+    // plan toggles and how long a grant lasts survive Sending -> Rejected for
+    // the same ask key.
     var noting by remember(card.key) { mutableStateOf(false) }
     var noteText by remember(card.key) { mutableStateOf("") }
     var planAutoAccept by remember(card.key) { mutableStateOf(false) }
+    var grantForSession by remember(card.key) { mutableStateOf(false) }
 
     AmuxPanel(
         modifier = modifier
@@ -142,13 +159,11 @@ fun AskCardView(
             .testTag(AskReviewTags.ASK_CARD),
         // Docked over the transcript, the card takes the floating radius,
         // as iOS's does.
+        // The card spends the accent once, on its mark; the frame stays
+        // neutral in every state.
         shape = RoundedCornerShape(AmuxTheme.metrics.floatRadius),
         color = colors.raised,
-        borderColor = if (card.state is CardState.Open || card.state is CardState.Rejected) {
-            colors.accent.copy(alpha = 0.45f)
-        } else {
-            colors.hairline
-        },
+        borderColor = colors.hairline,
     ) {
         if (card.state is CardState.Sending) {
             Row(
@@ -199,6 +214,8 @@ fun AskCardView(
                         onNoteTextChange = { noteText = it },
                         planAutoAccept = planAutoAccept,
                         onPlanAutoAcceptChange = { planAutoAccept = it },
+                        grantForSession = grantForSession,
+                        onGrantForSessionChange = { grantForSession = it },
                         keptQuestionDraft = keptQuestionDraft,
                         onQuestionDraftChange = onQuestionDraftChange,
                         keptFormValues = keptFormValues,
@@ -228,11 +245,11 @@ private fun AskCardHeader(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
     ) {
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(AskMarkSize)
                 .clip(CircleShape)
                 .background(colors.accentFill),
             contentAlignment = Alignment.Center,
@@ -241,45 +258,52 @@ private fun AskCardHeader(
                 imageVector = askBodyIcon(card.body),
                 contentDescription = null,
                 tint = colors.onAccent,
-                modifier = Modifier.size(IconSize.Inline),
+                modifier = Modifier.size(IconSize.Small),
             )
         }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(Space.xxs),
-        ) {
-            if (card.state is CardState.Open) {
-                Text(
-                    text = stringResource(R.string.ask_needs_answer),
-                    style = AmuxTheme.typography.badge,
-                    color = colors.accent,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = ChatWords.headline(card),
-                style = AmuxTheme.typography.bodyEmphasis,
-                color = colors.ink,
-            )
-        }
+        Text(
+            text = ChatWords.headline(card),
+            style = AmuxTheme.typography.bodyEmphasis,
+            color = colors.ink,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
+        )
         val position = ChatWords.position(card)
         if (position != null) {
-            AmuxStatusChip(
+            Text(
                 text = position,
+                style = AmuxTheme.typography.monoSmall,
+                color = colors.inkMuted,
+                maxLines = 1,
                 modifier = Modifier.testTag(AskReviewTags.ASK_POSITION),
             )
         }
         if (card.stopsTurn) {
             Box {
                 val moreLabel = stringResource(R.string.action_more_options)
-                AmuxEdgeIconButton(
-                    icon = Icons.Outlined.MoreHoriz,
-                    contentDescription = moreLabel,
+                // A 28 dp hairline circle on the card's trailing edge, its
+                // 48 dp target spilling into the card's padding.
+                AmuxEdgeTarget(
+                    footprint = AskMoreSize,
                     onClick = { menuExpanded = true },
-                    ink = GlyphInk.More,
+                    contentDescription = moreLabel,
                     modifier = Modifier.testTag(AskReviewTags.ASK_MORE),
-                )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(AskMoreSize)
+                            .border(AmuxTheme.metrics.hairline, colors.hairline, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreHoriz,
+                            contentDescription = null,
+                            tint = colors.inkMuted,
+                            modifier = Modifier.size(IconSize.Inline),
+                        )
+                    }
+                }
                 DropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
@@ -312,6 +336,10 @@ private fun AskCardHeader(
         }
     }
 }
+
+/** The accent disc an ask opens with, and the hairline circle round its ⋯. */
+private val AskMarkSize = 24.dp
+private val AskMoreSize = 28.dp
 
 @Composable
 private fun AskStateBanner(
@@ -396,13 +424,13 @@ private fun refusalMessage(refusal: Refusal): String {
 }
 
 private fun askBodyIcon(body: AskBody): ImageVector = when (body) {
-    is AskBody.Command, is AskBody.Edit, is AskBody.Tool -> Icons.Outlined.FrontHand
-    is AskBody.Question -> Icons.AutoMirrored.Outlined.HelpOutline
-    is AskBody.Plan -> Icons.AutoMirrored.Outlined.FormatListBulleted
-    is AskBody.Form -> Icons.Outlined.Ballot
-    is AskBody.Link -> Icons.Outlined.Link
-    is AskBody.Access -> Icons.Outlined.Lock
-    is AskBody.Unanswerable -> Icons.Outlined.PriorityHigh
+    is AskBody.Command, is AskBody.Edit, is AskBody.Tool -> Icons.Filled.FrontHand
+    is AskBody.Question -> Icons.Filled.QuestionMark
+    is AskBody.Plan -> Icons.AutoMirrored.Filled.FormatListBulleted
+    is AskBody.Form -> Icons.AutoMirrored.Filled.ListAlt
+    is AskBody.Link -> Icons.Filled.Link
+    is AskBody.Access -> Icons.Filled.Lock
+    is AskBody.Unanswerable -> Icons.Filled.PriorityHigh
 }
 
 @Composable
@@ -414,6 +442,8 @@ private fun AskCardBody(
     onNoteTextChange: (String) -> Unit,
     planAutoAccept: Boolean,
     onPlanAutoAcceptChange: (Boolean) -> Unit,
+    grantForSession: Boolean,
+    onGrantForSessionChange: (Boolean) -> Unit,
     keptQuestionDraft: QuestionDraft?,
     onQuestionDraftChange: (QuestionDraft) -> Unit,
     keptFormValues: List<FormValue>?,
@@ -473,11 +503,14 @@ private fun AskCardBody(
                 onAction = onAction,
                 modifier = modifier,
             ) {
+                // A path too long for its line is cut in its middle, so the
+                // file's name stays. Compose cuts a middle on one line only.
                 AskSubjectBox(
                     text = body.path,
                     added = body.added,
                     removed = body.removed,
-                    maxLines = 2,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
                 )
                 if (body.lines.isNotEmpty()) {
                     EditDiffPreview(
@@ -485,18 +518,23 @@ private fun AskCardBody(
                         showWhole = showWholeDiff,
                     )
                     if (body.lines.size > DIFF_PREVIEW_LIMIT) {
-                        TextButton(
-                            onClick = { showWholeDiff = !showWholeDiff },
-                            modifier = Modifier.testTag(AskReviewTags.ASK_DIFF_TOGGLE),
-                            contentPadding = PaddingValues(horizontal = Space.xs, vertical = Space.xs),
+                        val toggleLabel = stringResource(
+                            if (showWholeDiff) R.string.ask_diff_show_less else R.string.ask_diff_show_whole,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .spillTarget()
+                                .clickable(role = Role.Button) { showWholeDiff = !showWholeDiff }
+                                .testTag(AskReviewTags.ASK_DIFF_TOGGLE),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
                         ) {
                             Text(
-                                text = stringResource(
-                                    if (showWholeDiff) R.string.ask_diff_show_less else R.string.ask_diff_show_whole,
-                                ),
+                                text = toggleLabel,
                                 style = AmuxTheme.typography.bodyEmphasis,
                                 color = AmuxTheme.colors.ink,
                             )
+                            AmuxDisclosureChevron(tint = AmuxTheme.colors.inkMuted)
                         }
                     }
                 }
@@ -521,9 +559,10 @@ private fun AskCardBody(
             }
         }
         is AskBody.Plan -> {
+            // The plan reads under its own heading in the chat; the card is
+            // only the decision.
             PlanAskSection(
                 card = card,
-                plan = body,
                 autoAccept = planAutoAccept,
                 onAutoAcceptChange = onPlanAutoAcceptChange,
                 noting = noting,
@@ -531,7 +570,6 @@ private fun AskCardBody(
                 note = noteText,
                 onNoteChange = onNoteTextChange,
                 onAction = onAction,
-                onCopyCode = onCopyCode,
                 modifier = modifier,
             )
         }
@@ -558,6 +596,8 @@ private fun AskCardBody(
             AccessAskSection(
                 card = card,
                 access = body,
+                forSession = grantForSession,
+                onForSessionChange = onGrantForSessionChange,
                 onAction = onAction,
                 modifier = modifier,
             )
@@ -653,30 +693,27 @@ internal fun NoteStepSection(
 
         val ordered = denyIndices.sortedByDescending { card.choices[it].outcome == ChoiceOutcome.DenyAndStop }
         val trimmed = note.trim()
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.s),
-        ) {
-            ordered.forEach { index ->
-                val choice = card.choices[index]
-                val isStop = choice.outcome == ChoiceOutcome.DenyAndStop
-                val enabled = !(choice.outcome == ChoiceOutcome.SendBack && trimmed.isEmpty())
-                val buttonLabel = ChatWords.choice(choice.copy(takesNote = false))
-                AmuxActionButton(
-                    label = buttonLabel,
-                    kind = if (isStop && ordered.size > 1) ActionButtonKind.Outline else ActionButtonKind.Primary,
-                    fillWidth = true,
-                    enabled = enabled,
-                    onClick = {
-                        val outgoing = if (choice.takesNote && trimmed.isNotEmpty()) trimmed else null
-                        onChoose(index, outgoing)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(AskReviewTags.askChoice(index)),
-                )
-            }
-        }
+        AskButtonPair(
+            buttons = ordered.map { index ->
+                @Composable {
+                    val choice = card.choices[index]
+                    val isStop = choice.outcome == ChoiceOutcome.DenyAndStop
+                    val enabled = !(choice.outcome == ChoiceOutcome.SendBack && trimmed.isEmpty())
+                    val buttonLabel = ChatWords.choice(choice.copy(takesNote = false))
+                    AmuxActionButton(
+                        label = buttonLabel,
+                        kind = if (isStop && ordered.size > 1) ActionButtonKind.Outline else ActionButtonKind.Primary,
+                        fillWidth = true,
+                        enabled = enabled,
+                        onClick = {
+                            val outgoing = if (choice.takesNote && trimmed.isNotEmpty()) trimmed else null
+                            onChoose(index, outgoing)
+                        },
+                        modifier = Modifier.testTag(AskReviewTags.askChoice(index)),
+                    )
+                }
+            },
+        )
     }
 }
 
@@ -687,6 +724,7 @@ internal fun AskSubjectBox(
     added: Int? = null,
     removed: Int? = null,
     maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
 ) {
     val colors = AmuxTheme.colors
     Row(
@@ -705,7 +743,7 @@ internal fun AskSubjectBox(
                 style = AmuxTheme.typography.mono,
                 color = colors.ink,
                 maxLines = maxLines,
-                overflow = TextOverflow.Ellipsis,
+                overflow = overflow,
             )
         }
         if (added != null && removed != null) {
@@ -728,16 +766,61 @@ internal fun AskButtonPair(
     primary: (@Composable () -> Unit)?,
     secondary: (@Composable () -> Unit)?,
 ) {
-    if (primary == null && secondary == null) return
-    Row(
+    AskButtonPair(buttons = listOfNotNull(primary, secondary))
+}
+
+/**
+ * A card's buttons side by side, sharing the width equally, or one above the
+ * other when any label would not fit whole beside the others, as at the
+ * largest text sizes. A label is never cut short.
+ */
+@Composable
+internal fun AskButtonPair(buttons: List<@Composable () -> Unit>) {
+    if (buttons.isEmpty()) return
+    val gap = Space.s
+    Layout(
+        contents = buttons,
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-    ) {
-        if (primary != null) {
-            Box(modifier = Modifier.weight(1f)) { primary() }
+    ) { measurables, constraints ->
+        val each = measurables.map { it.first() }
+        val gapPx = gap.roundToPx()
+        if (!constraints.hasBoundedWidth) {
+            // No width to share, as in a horizontal scroll: each button takes
+            // its own width, side by side.
+            val placeables = each.map { it.measure(constraints.copy(minWidth = 0)) }
+            val height = placeables.maxOf { it.height }
+            val total = placeables.sumOf { it.width } + gapPx * (placeables.size - 1)
+            return@Layout layout(total, height) {
+                var x = 0
+                placeables.forEach { placeable ->
+                    placeable.place(x, (height - placeable.height) / 2)
+                    x += placeable.width + gapPx
+                }
+            }
         }
-        if (secondary != null) {
-            Box(modifier = Modifier.weight(1f)) { secondary() }
+        val width = constraints.maxWidth
+        val share = (width - gapPx * (each.size - 1)) / each.size
+        val sideBySide = each.all { it.maxIntrinsicWidth(constraints.maxHeight) <= share }
+        if (sideBySide) {
+            val placeables = each.map { it.measure(Constraints.fixedWidth(share)) }
+            val height = placeables.maxOf { it.height }
+            layout(width, height) {
+                var x = 0
+                placeables.forEach { placeable ->
+                    placeable.place(x, (height - placeable.height) / 2)
+                    x += share + gapPx
+                }
+            }
+        } else {
+            val placeables = each.map { it.measure(Constraints.fixedWidth(width)) }
+            val height = placeables.sumOf { it.height } + gapPx * (placeables.size - 1)
+            layout(width, height) {
+                var y = 0
+                placeables.forEach { placeable ->
+                    placeable.place(0, y)
+                    y += placeable.height + gapPx
+                }
+            }
         }
     }
 }

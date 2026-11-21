@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.assertTextEquals
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -155,7 +156,7 @@ class AskCardViewTest {
     }
 
     @Test
-    fun permissionEditRendersDiffHunksAndEllipsis() {
+    fun permissionEditRendersDiffHunksAndLines() {
         val actions = mutableListOf<AskAction>()
         val askCard = card(
             body = AskBody.Edit(
@@ -164,7 +165,7 @@ class AskCardViewTest {
                 added = 2,
                 removed = 1,
                 lines = listOf(
-                    EditLine.Hunk(oldStart = 0, newStart = 0),
+                    EditLine.Hunk(oldStart = 10, newStart = 10),
                     EditLine.Line(PatchLine(LineKind.Removed, "let old = 1;", number = 10)),
                     EditLine.Line(PatchLine(LineKind.Added, "let next = 2;", number = 10)),
                     EditLine.Line(PatchLine(LineKind.Added, "let more = 3;", number = 11)),
@@ -184,8 +185,9 @@ class AskCardViewTest {
         }
 
         composeRule.onNodeWithText("src/main.rs").assertIsDisplayed()
-        composeRule.onNodeWithText("⋯").assertIsDisplayed()
-        composeRule.onNodeWithText("let next = 2;").assertIsDisplayed()
+        // A hunk reads as where it starts; each line carries its sign.
+        composeRule.onNodeWithText("Line 10").assertIsDisplayed()
+        composeRule.onNodeWithText("+let next = 2;").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
         assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
     }
@@ -342,11 +344,12 @@ class AskCardViewTest {
             }
         }
 
-        composeRule.onNodeWithText("Refactor cache").assertIsDisplayed()
-        // Toggle switch on -> wording becomes "Yes, and switch to auto"
+        // The card is the decision; the plan itself reads in the transcript.
+        composeRule.onNodeWithText("Refactor cache").assertDoesNotExist()
+        // Switching on picks the approval that changes mode; the button
+        // still says Approve.
         composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_SWITCH).performClick()
-        composeRule.onNodeWithText("Yes, and switch to auto").assertIsDisplayed()
-        composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_APPROVE).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_APPROVE).assertTextEquals("Approve").performClick()
         assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
 
         // Send back requires a note
@@ -475,8 +478,73 @@ class AskCardViewTest {
         composeRule.onNodeWithText("/tmp/out").assertIsDisplayed()
         composeRule.onNodeWithText("/var/cache").assertIsDisplayed()
         composeRule.onNodeWithText("crates.io").assertIsDisplayed()
+        // One Grant, for as long as the How long choice says: this turn
+        // until the person picks the session.
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT).performClick()
+        assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
         composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_SESSION).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT).performClick()
         assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
+    }
+
+    @Test
+    fun accessGrantLengthSurvivesARefusal() {
+        val actions = mutableListOf<AskAction>()
+        val accessCard = card(
+            body = AskBody.Access(
+                reason = "Fetch build cache",
+                read = emptyList(),
+                write = listOf("/tmp/out"),
+                network = false,
+                hosts = emptyList(),
+            ),
+            choices = listOf(
+                Choice(ChoiceOutcome.GrantForTurn, primary = true, takesNote = false),
+                Choice(ChoiceOutcome.GrantForSession, primary = false, takesNote = false),
+                Choice(ChoiceOutcome.Deny, primary = false, takesNote = false),
+            ),
+        )
+        var currentCard by mutableStateOf(accessCard)
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                AskCardView(card = currentCard, onAction = { actions += it })
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_SESSION).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT).performClick()
+        assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
+
+        // Sending swaps the body out; the refusal brings it back as it was.
+        currentCard = accessCard.copy(state = CardState.Sending)
+        composeRule.waitForIdle()
+        currentCard = accessCard.copy(state = CardState.Rejected(Refusal(RefusalReason.HostUnreachable)))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT).performClick()
+        assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
+        assertEquals(ChoiceOutcome.GrantForSession, accessCard.choices[1].outcome)
+    }
+
+    @Test
+    fun planWhoseOnlyApprovalSwitchesModeSaysSo() {
+        val actions = mutableListOf<AskAction>()
+        val askCard = card(
+            body = AskBody.Plan(title = "Refactor cache", body = "1. Split read and write paths."),
+            choices = listOf(
+                Choice(ChoiceOutcome.ApprovePlan(mode = "acceptEdits", modeName = "Accept edits"), primary = true, takesNote = false),
+                Choice(ChoiceOutcome.SendBack, primary = false, takesNote = true),
+            ),
+        )
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                AskCardView(card = askCard, onAction = { actions += it })
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_SWITCH).assertDoesNotExist()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_SWITCHES).assertTextEquals("Switches to Accept edits")
+        composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_APPROVE).assertTextEquals("Approve").performClick()
+        assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
     }
 
     @Test
@@ -735,7 +803,8 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_NOTE).assertIsDisplayed()
         composeRule.onNodeWithText("Keep target cache").assertIsDisplayed()
 
-        // Tall Access card keeps Grant/Deny buttons reachable inside 520dp dock cap.
+        // A tall access card keeps its choice and buttons reachable under
+        // its scrolling facts.
         currentCard = card(
             body = AskBody.Access(
                 reason = "Read build inputs",
@@ -753,6 +822,7 @@ class AskCardViewTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_TURN).assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_SESSION).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT).assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.askChoice(2)).assertIsDisplayed()
     }
 
@@ -848,30 +918,5 @@ class AskCardViewTest {
             ),
             actions.last(),
         )
-    }
-
-    @Test
-    fun planAskWiresMarkdownCodeCopyControl() {
-        val copied = mutableListOf<String>()
-        val planCard = card(
-            body = AskBody.Plan(
-                title = "Migration plan",
-                body = "Run this step:\n\n```sh\ncargo test\n```",
-            ),
-            choices = listOf(Choice(ChoiceOutcome.ApprovePlan("", ""), primary = true, takesNote = false)),
-        )
-
-        composeRule.setContent {
-            AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                AskCardView(
-                    card = planCard,
-                    onAction = {},
-                    onCopyCode = { copied += it },
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag(MarkdownViewTags.CODE_COPY).performClick()
-        assertEquals(listOf("cargo test"), copied)
     }
 }

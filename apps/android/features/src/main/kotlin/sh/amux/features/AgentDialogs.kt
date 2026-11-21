@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import sh.amux.design.Backdrop
 import sh.amux.design.ProvideAmuxBackdrop
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +46,7 @@ import sh.amux.design.LocalAmuxPhotographed
 import sh.amux.design.Space
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.DeleteWarning
+import sh.amux.values.JobRow
 import sh.amux.values.WorkspaceGoes
 import sh.amux.words.ChatWords
 import sh.amux.words.DeleteWords
@@ -340,6 +343,55 @@ fun DeleteAgentCard(
 }
 
 /**
+ * Asks before stopping one of an agent's background jobs, naming it; the
+ * agent keeps running either way.
+ */
+@Composable
+fun StopJobDialog(
+    job: JobRow,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AgentDialog(onDismiss = onDismiss) {
+        StopJobCard(job = job, onDismiss = onDismiss, onConfirm = onConfirm)
+    }
+}
+
+/** The stop-job dialog's card, drawn by [StopJobDialog] and by stories over a screen. */
+@Composable
+fun StopJobCard(
+    job: JobRow,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AgentDialogCard(
+        title = ChatWords.stopJob(job),
+        modifier = modifier.testTag(AskReviewTags.OVERVIEW_STOP_DIALOG),
+        buttons = {
+            DialogTextButton(
+                label = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+                modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_CANCEL),
+            )
+            DialogTextButton(
+                label = stringResource(R.string.overview_stop),
+                emphasis = true,
+                destructive = true,
+                onClick = onConfirm,
+                modifier = Modifier.testTag(AskReviewTags.OVERVIEW_STOP_CONFIRM),
+            )
+        },
+    ) {
+        Text(
+            text = ChatWords.STOP_JOB_LEAVES,
+            style = AmuxTheme.typography.detail,
+            color = AmuxTheme.colors.inkMuted,
+        )
+    }
+}
+
+/**
  * An alert dialog's card: Material's alert shape, padding and button row,
  * on the raised surface. Shown through [BasicAlertDialog], which gives it
  * the window, scrim, width and dismissal of an `AlertDialog`; kept apart
@@ -379,10 +431,13 @@ private fun AgentDialogCard(
     ) {
         ProvideAmuxBackdrop(Backdrop.Raised) {
         Column(modifier = Modifier.padding(Space.xl)) {
+            // The title heads the dialog's window, so TalkBack's heading
+            // navigation lands on it first.
             Text(
                 text = title,
                 style = AmuxTheme.typography.identifier,
                 color = colors.ink,
+                modifier = Modifier.semantics { heading() },
             )
             Spacer(modifier = Modifier.height(Space.l))
             Column(verticalArrangement = Arrangement.spacedBy(Space.s), content = body)

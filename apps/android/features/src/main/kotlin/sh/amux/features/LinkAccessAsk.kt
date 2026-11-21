@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -109,6 +111,8 @@ internal fun LinkAskSection(
 internal fun AccessAskSection(
     card: AskCard,
     access: AskBody.Access,
+    forSession: Boolean,
+    onForSessionChange: (Boolean) -> Unit,
     onAction: (AskAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -116,6 +120,7 @@ internal fun AccessAskSection(
     val turnIndex = card.choices.indexOfFirst { it.outcome == ChoiceOutcome.GrantForTurn }.takeIf { it >= 0 }
     val sessionIndex = card.choices.indexOfFirst { it.outcome == ChoiceOutcome.GrantForSession }.takeIf { it >= 0 }
     val denyIndices = card.choices.indices.filter { it != turnIndex && it != sessionIndex }
+    val howLong = stringResource(R.string.ask_access_how_long)
 
     Column(
         modifier = modifier,
@@ -162,38 +167,49 @@ internal fun AccessAskSection(
             }
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Space.s),
-        ) {
-            if (turnIndex != null) {
-                AmuxActionButton(
-                    label = stringResource(R.string.ask_access_grant_turn),
-                    kind = ActionButtonKind.Primary,
-                    fillWidth = true,
-                    onClick = { onAction(AskAction.Choose(turnIndex, null, askKey = card.key)) },
-                    modifier = Modifier.testTag(AskReviewTags.ASK_GRANT_TURN),
-                )
-            }
-            if (sessionIndex != null) {
-                AmuxActionButton(
-                    label = stringResource(R.string.ask_access_grant_session),
-                    kind = if (turnIndex == null) ActionButtonKind.Primary else ActionButtonKind.Outline,
-                    fillWidth = true,
-                    onClick = { onAction(AskAction.Choose(sessionIndex, null, askKey = card.key)) },
-                    modifier = Modifier.testTag(AskReviewTags.ASK_GRANT_SESSION),
-                )
-            }
-            denyIndices.forEach { idx ->
-                AmuxActionButton(
-                    label = ChatWords.choice(card.choices[idx]),
-                    kind = ActionButtonKind.Outline,
-                    fillWidth = true,
-                    onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
-                    modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
-                )
-            }
+        // How long a grant lasts, when the agent offers both, then one
+        // Grant for the length chosen beside the ways to refuse.
+        if (turnIndex != null && sessionIndex != null) {
+            AmuxSegmentedChoice(
+                options = listOf(false, true),
+                selected = forSession,
+                label = { session ->
+                    stringResource(if (session) R.string.ask_access_this_session else R.string.ask_access_this_turn)
+                },
+                onSelect = onForSessionChange,
+                tag = { session -> if (session) AskReviewTags.ASK_GRANT_SESSION else AskReviewTags.ASK_GRANT_TURN },
+                modifier = Modifier.semantics {
+                    contentDescription = howLong
+                },
+            )
         }
+        val grantIndex = (if (forSession) sessionIndex else turnIndex) ?: turnIndex ?: sessionIndex
+        AskButtonPair(
+            buttons = buildList {
+                if (grantIndex != null) {
+                    add {
+                        AmuxActionButton(
+                            label = stringResource(R.string.ask_access_grant),
+                            kind = ActionButtonKind.Primary,
+                            fillWidth = true,
+                            onClick = { onAction(AskAction.Choose(grantIndex, null, askKey = card.key)) },
+                            modifier = Modifier.testTag(AskReviewTags.ASK_GRANT),
+                        )
+                    }
+                }
+                denyIndices.forEach { idx ->
+                    add {
+                        AmuxActionButton(
+                            label = ChatWords.choice(card.choices[idx]),
+                            kind = ActionButtonKind.Outline,
+                            fillWidth = true,
+                            onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
+                            modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
+                        )
+                    }
+                }
+            },
+        )
     }
 }
 

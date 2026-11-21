@@ -1,5 +1,13 @@
 package sh.amux.features
 
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
 import sh.amux.design.backdrop
 import sh.amux.design.ThumbTarget
 import androidx.compose.foundation.layout.heightIn
@@ -226,6 +234,7 @@ internal fun FormAskSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FormFieldControl(
     field: FormField,
@@ -324,42 +333,47 @@ private fun FormFieldControl(
                         color = colors.inkFaint,
                     )
                 }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Surface(
+                // Material's exposed dropdown: the field opens its menu of
+                // choices under it, and TalkBack hears it as a drop-down list.
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val fieldShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                            .clickable(role = Role.DropdownList) { expanded = true }
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                             .thumbTarget()
                             .heightIn(min = AmuxFieldHeight)
+                            .clip(fieldShape)
+                            // Drawn as the text fields beside it are: the same
+                            // fill, edge, height and text inset.
+                            .background(AmuxTheme.backdrop)
+                            .border(AmuxTheme.metrics.hairline, colors.hairline, fieldShape)
+                            .semantics {
+                                contentDescription = fieldLabel
+                                stateDescription = chosenLabel
+                            }
+                            .padding(horizontal = Space.l, vertical = Space.s)
                             .testTag(AskReviewTags.askField(field.name)),
-                        shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                        // Drawn as the text fields beside it are: the same
-                        // fill, height and text inset.
-                        color = AmuxTheme.backdrop,
-                        border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Space.l, vertical = Space.s),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = chosenLabel,
-                                style = AmuxTheme.typography.body,
-                                color = if (chosenIndex != null) colors.ink else colors.inkMuted,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(
-                                imageVector = Icons.Outlined.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(IconSize.Control),
-                            )
-                        }
+                        Text(
+                            text = chosenLabel,
+                            style = AmuxTheme.typography.body,
+                            color = if (chosenIndex != null) colors.ink else colors.inkMuted,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = colors.inkMuted,
+                            modifier = Modifier.size(IconSize.Control),
+                        )
                     }
-                    DropdownMenu(
+                    ExposedDropdownMenu(
                         expanded = expanded,
                         onDismissRequest = { expanded = false },
                         containerColor = colors.raised,
@@ -377,6 +391,7 @@ private fun FormFieldControl(
                                     expanded = false
                                     onValueChange(FormValue.Choice(optionIndex))
                                 },
+                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
                                 modifier = Modifier.testTag(AskReviewTags.askFieldChoice(field.name, optionIndex)),
                             )
                         }
@@ -409,8 +424,10 @@ private fun FormFieldControl(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                                .clickable(role = Role.Checkbox) {
-                                    val next = if (isChecked) picked - optionIndex else picked + optionIndex
+                                // The row is the one control, so TalkBack
+                                // reads the option and its state as one stop.
+                                .toggleable(value = isChecked, role = Role.Checkbox) { checked ->
+                                    val next = if (checked) picked + optionIndex else picked - optionIndex
                                     onValueChange(FormValue.Many(next.sorted()))
                                 }
                                 .heightIn(min = ThumbTarget.MinSize)
@@ -421,10 +438,7 @@ private fun FormFieldControl(
                         ) {
                             Checkbox(
                                 checked = isChecked,
-                                onCheckedChange = { checked ->
-                                    val next = if (checked) picked + optionIndex else picked - optionIndex
-                                    onValueChange(FormValue.Many(next.sorted()))
-                                },
+                                onCheckedChange = null,
                                 colors = CheckboxDefaults.colors(
                                     checkedColor = colors.ink,
                                     uncheckedColor = colors.inkMuted,

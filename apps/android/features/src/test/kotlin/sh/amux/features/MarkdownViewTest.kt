@@ -1,5 +1,13 @@
 package sh.amux.features
 
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasText
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -148,7 +156,6 @@ class MarkdownViewTest {
         }
 
         composeRule.onNodeWithText("See amux docs and ignored.").assertIsDisplayed()
-        composeRule.onNodeWithTag(MarkdownViewTags.STREAMING).assertIsDisplayed()
 
         // Verify the built AnnotatedString carries only the openable https link and invokes onOpenLink.
         val annotated = buildInlineMarkdownAnnotatedString(
@@ -165,13 +172,35 @@ class MarkdownViewTest {
     }
 
     @Test
-    fun nonStreamingHidesStreamingIndicator() {
+    fun streamingReplyIsOneStopThatSaysSoAndADoneOneIsNot() {
+        var streaming by mutableStateOf(true)
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                MarkdownView(markdown = "All done.", streaming = false)
+                MarkdownView(markdown = "First part.\n\nSecond part.", streaming = streaming)
             }
         }
 
-        assertEquals(0, composeRule.onAllNodesWithTag(MarkdownViewTags.STREAMING).fetchSemanticsNodes().size)
+        // TalkBack stops at the reply as a whole and hears its state there.
+        composeRule.onNode(
+            hasText("First part.") and hasText("Second part.") and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Streaming"),
+        ).assertExists()
+
+        streaming = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("First part.").assertIsDisplayed()
+        composeRule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun streamingReplyWithNothingWrittenYetSaysItsState() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                MarkdownView(markdown = "", streaming = true)
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Streaming").assertExists()
     }
 }

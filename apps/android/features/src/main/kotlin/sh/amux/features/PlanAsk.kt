@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
@@ -29,7 +30,6 @@ import sh.amux.words.ChatWords
 @Composable
 internal fun PlanAskSection(
     card: AskCard,
-    plan: AskBody.Plan,
     autoAccept: Boolean,
     onAutoAcceptChange: (Boolean) -> Unit,
     noting: Boolean,
@@ -37,7 +37,6 @@ internal fun PlanAskSection(
     note: String,
     onNoteChange: (String) -> Unit,
     onAction: (AskAction) -> Unit,
-    onCopyCode: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
@@ -60,37 +59,6 @@ internal fun PlanAskSection(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        val planTitle = plan.title
-        if (!planTitle.isNullOrBlank() || plan.body.isNotBlank()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                    .background(colors.sunken)
-                    .heightIn(max = 220.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(Space.m)
-                    .testTag(AskReviewTags.ASK_PLAN_BODY),
-                verticalArrangement = Arrangement.spacedBy(Space.xs),
-            ) {
-                if (plan.body.isNotBlank()) {
-                    MarkdownView(
-                        markdown = plan.body,
-                        title = planTitle,
-                        onOpenLink = { link -> onAction(AskAction.OpenUrl(link.url)) },
-                        onCopyCode = onCopyCode,
-                    )
-                } else if (!planTitle.isNullOrBlank()) {
-                    Text(
-                        text = planTitle,
-                        style = AmuxTheme.typography.bodyEmphasis,
-                        color = colors.ink,
-                    )
-                }
-            }
-        }
-
         if (noting) {
             NoteStepSection(
                 card = card,
@@ -104,15 +72,14 @@ internal fun PlanAskSection(
             if (switchedIndex != null && plainIndex != null) {
                 val switchedChoice = card.choices[switchedIndex]
                 val switchTitle = ChatWords.planSwitch(switchedChoice)
+                // One stop for TalkBack: the switch's words and its state.
                 AmuxSwitchRow(
                     checked = autoAccept,
                     onCheckedChange = onAutoAcceptChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                        .background(colors.sunken)
                         .testTag(AskReviewTags.ASK_PLAN_SWITCH),
-                    contentPadding = PaddingValues(horizontal = Space.m, vertical = Space.s),
+                    contentPadding = PaddingValues(vertical = Space.xs),
                     colors = amuxSwitchColors(),
                     spacing = Space.s,
                 ) {
@@ -124,27 +91,31 @@ internal fun PlanAskSection(
                         )
                         Text(
                             text = stringResource(R.string.ask_plan_as_work_starts),
-                            style = AmuxTheme.typography.caption,
+                            style = AmuxTheme.typography.monoSmall,
                             color = colors.inkMuted,
                         )
                     }
                 }
             }
 
-            val activeApproveIndex = (if (autoAccept) switchedIndex else plainIndex) ?: approveIndices.firstOrNull()
-            val approveLabel = if (activeApproveIndex != null) {
-                val outcome = card.choices[activeApproveIndex].outcome as? ChoiceOutcome.ApprovePlan
-                if (outcome != null && outcome.mode.isNotEmpty()) {
-                    stringResource(
-                        R.string.ask_plan_approve_and_switch,
-                        outcome.modeName.ifEmpty { outcome.mode },
-                    )
-                } else {
-                    stringResource(R.string.ask_plan_approve)
-                }
-            } else {
-                null
+            // The only way to approve also changes the permission mode: no
+            // switch to offer, so say what Approve will do in its place.
+            if (switchedIndex != null && plainIndex == null) {
+                val outcome = card.choices[switchedIndex].outcome as ChoiceOutcome.ApprovePlan
+                Text(
+                    text = stringResource(R.string.ask_plan_switches, outcome.modeName.ifEmpty { outcome.mode }),
+                    style = AmuxTheme.typography.detail,
+                    color = colors.inkMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(AskReviewTags.ASK_PLAN_SWITCHES),
+                )
             }
+
+            val activeApproveIndex = (if (autoAccept) switchedIndex else plainIndex) ?: approveIndices.firstOrNull()
+            // Approve says the same whether or not the mode changes: the
+            // switch or the caption above it already says what else happens.
+            val approveLabel = activeApproveIndex?.let { stringResource(R.string.ask_plan_approve) }
 
             val firstOther = otherIndices.firstOrNull()
             AskButtonPair(

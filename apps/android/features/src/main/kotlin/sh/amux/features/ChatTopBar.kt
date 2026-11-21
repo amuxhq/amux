@@ -65,6 +65,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.amux.design.AmuxHairline
+import sh.amux.design.AmuxChrome
+import sh.amux.design.spillTarget
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.ripple
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
@@ -203,7 +208,7 @@ internal fun ChatTopBar(
                                 if (unconfirmed) {
                                     AmuxStateMark(
                                         state = RowState.HostAway(subject.host),
-                                        size = 8.dp,
+                                        size = 11.dp,
                                     )
                                 }
                                 Text(
@@ -473,199 +478,87 @@ internal fun ChatTopBar(
     }
 }
 
+/**
+ * Who started this agent, one tap from its own chat, with a mark when it
+ * needs the person. The agents this one started dock above the composer.
+ */
 @Composable
 internal fun ChatFamilyBar(
     family: FamilyHeader,
     onOpenAgent: (AgentKey) -> Unit,
 ) {
-    val parent = family.parent
-    val children = family.children
-    if (parent == null && children.isEmpty()) return
-
+    val parent = family.parent ?: return
     val colors = AmuxTheme.colors
-    var childrenExpanded by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.ground)
-            .padding(horizontal = Space.margin, vertical = Space.xs),
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        if (parent != null) {
-            val parentNeedsYou = parent.familyAttention == Attention.NeedsYou ||
-                parent.attention == Attention.NeedsYou
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    modifier = Modifier
-                        .thumbTarget()
-                        .clip(AmuxShapes.Pill)
-                        .clickable(role = Role.Button) { onOpenAgent(parent.agent) }
-                        .testTag(ChatScreenTags.FAMILY_PARENT),
-                    shape = AmuxShapes.Pill,
-                    color = colors.raised,
-                    border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = Space.m, vertical = Space.xs + Space.xxs),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
-                    ) {
-                        if (parentNeedsYou) {
-                            AmuxAttentionDot(size = 7.dp)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.NorthWest,
-                                contentDescription = null,
-                                tint = colors.inkFaint,
-                                modifier = Modifier.size(13.dp),
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.chat_family_from, parent.name),
-                            style = AmuxTheme.typography.caption,
-                            color = colors.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-
-        if (children.isNotEmpty()) {
-            val needYouCount = maxOf(
-                family.needYou,
-                children.count {
-                    it.attention == Attention.NeedsYou || it.familyAttention == Attention.NeedsYou
-                },
-            )
-            val countText = if (children.size == 1) {
-                stringResource(R.string.chat_family_subagent_one)
-            } else {
-                stringResource(R.string.chat_family_subagent_many, children.size)
-            }
-            val attentionText = when {
-                needYouCount == 1 -> stringResource(R.string.chat_family_needs_you_one)
-                needYouCount > 1 -> stringResource(R.string.chat_family_needs_you, needYouCount)
-                else -> null
-            }
-
-            AmuxPanel(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = ThumbTarget.MinSize)
-                            .clickable(role = Role.Button) { childrenExpanded = !childrenExpanded }
-                            .padding(horizontal = Space.m, vertical = Space.s)
-                            .testTag(ChatScreenTags.FAMILY_CHILDREN),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    ) {
-                        if (needYouCount > 0) {
-                            AmuxAttentionDot(size = 7.dp)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.AccountTree,
-                                contentDescription = null,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(15.dp),
-                            )
-                        }
-                        Text(
-                            text = countText,
-                            style = AmuxTheme.typography.caption,
-                            color = colors.ink,
-                        )
-                        if (attentionText != null) {
-                            Text(
-                                text = attentionText,
-                                style = AmuxTheme.typography.caption,
-                                color = colors.accent,
-                            )
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = if (childrenExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                            contentDescription = null,
-                            tint = colors.inkFaint,
-                            modifier = Modifier.size(IconSize.Inline),
-                        )
-                    }
-                    if (childrenExpanded) {
-                        children.forEach { child ->
-                            AmuxHairline()
-                            FamilyChildRow(
-                                child = child,
-                                onOpen = { onOpenAgent(child.agent) },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FamilyChildRow(
-    child: FleetCard,
-    onOpen: () -> Unit,
-) {
-    val colors = AmuxTheme.colors
-    val needsYou = child.attention == Attention.NeedsYou || child.familyAttention == Attention.NeedsYou
-    val stateText = remember(child) { ChatWords.childState(child) }
+    val parentNeedsYou = parent.familyAttention == Attention.NeedsYou ||
+        parent.attention == Attention.NeedsYou
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = ThumbTarget.MinSize)
-            .clickable(role = Role.Button, onClick = onOpen)
-            .padding(horizontal = Space.m, vertical = Space.s)
-            .testTag(ChatScreenTags.familyChild(child.name)),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
+            // A little room above, so the pill's target, which spills past
+            // its drawn edge, stops short of the top bar's.
+            .padding(start = Space.margin, end = Space.margin, top = Space.xxs, bottom = Space.s),
     ) {
-        if (needsYou) {
-            AmuxAttentionDot(size = 7.dp)
-        } else {
-            Spacer(modifier = Modifier.width(7.dp))
+        Box(
+            modifier = Modifier
+                .spillTarget()
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    role = Role.Button,
+                ) { onOpenAgent(parent.agent) }
+                .testTag(ChatScreenTags.FAMILY_PARENT),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(AmuxShapes.Pill)
+                    .background(colors.raised)
+                    .indication(interaction, ripple())
+                    .padding(horizontal = Space.s + Space.xxs, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                if (parentNeedsYou) {
+                    AmuxAttentionDot(size = 7.dp)
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.NorthWest,
+                        contentDescription = null,
+                        tint = colors.inkFaint,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.chat_family_from, parent.name),
+                    style = AmuxTheme.typography.caption,
+                    color = colors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        Text(
-            text = child.name,
-            style = AmuxTheme.typography.detail,
-            color = colors.ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = stateText,
-            style = AmuxTheme.typography.caption,
-            color = if (needsYou) colors.accent else colors.inkMuted,
-            maxLines = 1,
-        )
     }
 }
 
+/** A settle that has not gone yet, with the way to take it back. */
 @Composable
 internal fun HeldStopBanner(
     host: String,
     onCancelStop: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    AmuxPanel(
+    AmuxChrome(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.margin, vertical = Space.xs)
             .testTag(ChatScreenTags.HELD_STOP),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Space.m, vertical = Space.s),
+                .padding(horizontal = Space.m + Space.xxs, vertical = Space.s),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.s),
+            horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Schedule,

@@ -49,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -83,7 +84,6 @@ object MarkdownViewTags {
     const val QUOTE: String = "markdown.quote"
     const val TABLE: String = "markdown.table"
     const val RULE: String = "markdown.rule"
-    const val STREAMING: String = "markdown.streaming"
 }
 
 /**
@@ -112,8 +112,11 @@ private object ParsedMarkdownCache {
  * Supports headings (levels 1–6), paragraphs with inline styling and clickable
  * [OpenableLink]s, ordered/unordered nested lists, horizontally scrollable
  * fenced code blocks with copy action and diff line colouring, block quotes,
- * horizontally scrollable tables, horizontal rules, Codex [workingNote] ink,
- * and a quiet non-spinner [streaming] pulse.
+ * horizontally scrollable tables, horizontal rules and Codex [workingNote] ink.
+ *
+ * A [streaming] reply draws nothing extra: the composer's activity line
+ * already says the turn is working. TalkBack hears the reply as one stop
+ * whose state says it is still streaming.
  */
 @Composable
 fun MarkdownView(
@@ -129,9 +132,23 @@ fun MarkdownView(
     val document = remember(markdown) { ParsedMarkdownCache.parse(markdown) }
     val widthModifier = if (inBubble) Modifier else Modifier.fillMaxWidth()
 
+    val streamingLabel = stringResource(R.string.markdown_streaming)
     Column(
         modifier = modifier
             .then(widthModifier)
+            .then(
+                when {
+                    !streaming -> Modifier
+                    // Nothing written yet: the reply is only its state, said
+                    // as what the stop is.
+                    document.blocks.isEmpty() && title.isNullOrEmpty() ->
+                        Modifier.semantics { contentDescription = streamingLabel }
+                    // While it streams, the reply is one stop that says so;
+                    // its blocks part again into stops of their own once it
+                    // is done.
+                    else -> Modifier.semantics(mergeDescendants = true) { stateDescription = streamingLabel }
+                },
+            )
             .testTag(MarkdownViewTags.ROOT),
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
@@ -150,9 +167,6 @@ fun MarkdownView(
                 onOpenLink = onOpenLink,
                 onCopyCode = onCopyCode,
             )
-        }
-        if (streaming) {
-            StreamingPulseIndicator()
         }
     }
 }
@@ -207,12 +221,13 @@ fun buildInlineMarkdownAnnotatedString(
                 span.code -> colors.inkMuted
                 else -> baseInk
             },
+            // Inline code is plain mono text in the size of the words around
+            // it, with no box: a box butts against the letters beside it and
+            // breaks into slabs where a span wraps.
             fontFamily = if (span.code) AmuxFonts.Mono else null,
-            fontSize = if (span.code) typography.mono.fontSize else typography.body.fontSize.takeIf { false } ?: androidx.compose.ui.unit.TextUnit.Unspecified,
             fontWeight = if (span.bold) FontWeight.SemiBold else null,
             fontStyle = if (span.italic) FontStyle.Italic else null,
             textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
-            background = if (span.code) colors.sunken else Color.Unspecified,
         )
         addStyle(spanStyle, start, end)
 
@@ -620,34 +635,3 @@ private fun MarkdownTableRow(
     }
 }
 
-@Composable
-private fun StreamingPulseIndicator() {
-    val colors = AmuxTheme.colors
-    val reduced = Motion.isReducedMotion()
-    val streamingLabel = stringResource(R.string.markdown_streaming)
-
-    // Read in the draw block only, so the pulse redraws without recomposing.
-    val alpha: State<Float>? = if (reduced) {
-        null
-    } else {
-        val transition = rememberInfiniteTransition(label = "markdownStreaming")
-        transition.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 0.85f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 900),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "streamingAlpha",
-        )
-    }
-
-    Canvas(
-        modifier = Modifier
-            .size(8.dp)
-            .semantics { contentDescription = streamingLabel }
-            .testTag(MarkdownViewTags.STREAMING),
-    ) {
-        drawCircle(color = colors.inkMuted.copy(alpha = alpha?.value ?: 0.55f))
-    }
-}

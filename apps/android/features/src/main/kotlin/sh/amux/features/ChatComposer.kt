@@ -1,6 +1,31 @@
 package sh.amux.features
 
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.CallSplit
+import androidx.compose.material.icons.outlined.ArrowCircleUp
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.RadioButtonChecked
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
+import sh.amux.values.AgentKey
+import sh.amux.values.Attention
+import sh.amux.values.FleetCard
+import sh.amux.values.TaskMark
+import sh.amux.values.TasksView
 import sh.amux.design.IconSize
 import sh.amux.design.AmuxShapes
 import androidx.compose.animation.core.LinearEasing
@@ -164,13 +189,13 @@ object ChatComposerTags {
     const val SWITCH_BACK: String = "chat.switchBack"
     const val SIGN_IN_NOTICE: String = "chat.foot.sign-in"
     const val NOTICE: String = "chat.notice"
-    const val QUEUED_STRIP: String = "chat.queued.strip"
+    const val DOCK: String = "chat.dock"
+    const val TASKS: String = "chat.tasks"
+    const val BACKGROUND: String = "chat.background"
     const val SLASH_POPUP: String = "chat.slash.popup"
     const val ATTACHMENTS_ROW: String = "chat.attachments"
     const val ATTACHING: String = "chat.attaching"
-    const val CONTROLS_STRIP: String = "chat.controls"
     const val MODEL_CHIP: String = "chat.model"
-    const val OVERVIEW_CHIP: String = "chat.composer.overview"
     const val ATTACH_BUTTON: String = "chat.attach"
     const val ATTACH_MENU_PHOTO: String = "chat.attach.photo"
     const val ATTACH_MENU_FILE: String = "chat.attach.file"
@@ -184,6 +209,7 @@ object ChatComposerTags {
     const val NATIVE_STOPPING: String = "chat.native.stopping"
     const val NATIVE_REFUSED: String = "chat.native.refused"
 
+    fun task(index: Int): String = "chat.tasks.$index"
     fun queuedRow(index: Int): String = "chat.queued.$index"
     fun queuedSendNow(index: Int): String = "chat.queued.$index.sendNow"
     fun queuedWithdraw(index: Int): String = "chat.queued.$index.withdraw"
@@ -218,15 +244,20 @@ data class ChatComposerState(
     val queued: List<QueuedRow> = emptyList(),
     val underway: List<SentPrompt> = emptyList(),
     val refused: List<RefusedPrompt> = emptyList(),
+    /** The agent's task list, which heads the dock above the composer. */
+    val tasks: TasksView? = null,
+    /** The agents this one started, listed when the dock's head opens. */
+    val children: List<FleetCard> = emptyList(),
+    /** How many of the agent's jobs still run in the background. */
+    val backgroundJobs: Int = 0,
+    /** Whether the dock's head starts open. */
+    val dockOpen: Boolean = false,
     val slashMatches: List<CommandMatch> = emptyList(),
     val attachments: List<ComposerAttachmentUi> = emptyList(),
     val uploadingCount: Int = 0,
-    val notice: String? = null,
     val controls: ControlsSummary? = null,
     val context: ContextView? = null,
     val settingsAvailable: Boolean = true,
-    val overviewSummary: String? = null,
-    val showOverviewChip: Boolean = false,
     val usageLimitMessage: String? = null,
     val dictationEnabled: Boolean = false,
     val dictationActive: Boolean = false,
@@ -260,6 +291,14 @@ data class ChatComposerCallbacks(
     val onStopNative: (key: String) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
     val onOpenOverview: () -> Unit = {},
+    val onOpenAgent: (AgentKey) -> Unit = {},
+    /**
+     * Where the dock's unfolded state is kept, when the caller keeps it:
+     * then [ChatComposerState.dockOpen] is the state, and it outlives the
+     * composer leaving the screen while an ask is docked. Without it the
+     * dock keeps its own, starting from [ChatComposerState.dockOpen].
+     */
+    val onDockOpenChange: ((Boolean) -> Unit)? = null,
     val onToggleDictation: () -> Unit = {},
 )
 
@@ -281,14 +320,12 @@ fun ChatComposer(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.m, vertical = Space.s)
             .testTag(ChatComposerTags.ROOT),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        if (state.composer.switchedAway) {
-            SwitchedAwayBanner(onSwitchBack = callbacks.onSwitchBack)
-        }
-
+        // A sign-in problem stands above a composer that still sends:
+        // sending is how someone who signed in elsewhere tries again. A
+        // provider subagent takes no messages, so it has no notice.
         if (state.signIn != null && nativeMode == null) {
             SignInNoticeCard(
                 signIn = state.signIn,
@@ -297,27 +334,7 @@ fun ChatComposer(
             )
         }
 
-        if (!state.notice.isNullOrEmpty()) {
-            Text(
-                text = state.notice,
-                style = AmuxTheme.typography.detail,
-                color = AmuxTheme.colors.removed,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Space.xs)
-                    .testTag(ChatComposerTags.NOTICE),
-            )
-        }
-
-        if (state.queued.isNotEmpty() || state.underway.isNotEmpty() || state.refused.isNotEmpty()) {
-            PromptsQueueStrip(
-                queued = state.queued,
-                underway = state.underway,
-                refused = state.refused,
-                host = state.host,
-                callbacks = callbacks,
-            )
-        }
+        ChatDockCard(state = state, callbacks = callbacks)
 
         if (nativeMode == null && state.slashMatches.isNotEmpty()) {
             SlashMatchesPopup(
@@ -348,7 +365,7 @@ fun ChatComposer(
 }
 
 @Composable
-private fun SwitchedAwayBanner(onSwitchBack: () -> Unit) {
+internal fun SwitchedAwayBanner(onSwitchBack: () -> Unit) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
     AmuxChrome(
@@ -430,213 +447,457 @@ private fun SignInNoticeCard(
     }
 }
 
+/**
+ * What docks above the composer, in one card with hairlines between its
+ * parts: the agent's task list as one row that opens in place to the list
+ * and the agents this one started, what still runs in the background, then
+ * the queued prompts, this phone's prompts not yet in the chat, and the ones
+ * refused. The card goes when every part is empty.
+ */
 @Composable
-private fun PromptsQueueStrip(
-    queued: List<QueuedRow>,
-    underway: List<SentPrompt>,
-    refused: List<RefusedPrompt>,
-    host: String,
+private fun ChatDockCard(
+    state: ChatComposerState,
     callbacks: ChatComposerCallbacks,
 ) {
-    val colors = AmuxTheme.colors
-    val typography = AmuxTheme.typography
+    val tasks = state.tasks?.takeIf { it.total > 0 || it.entries.isNotEmpty() }
+    val children = state.children
+    val head = tasks != null || children.isNotEmpty()
+    val jobs = state.backgroundJobs
+    if (!head && jobs == 0 && state.queued.isEmpty() && state.underway.isEmpty() && state.refused.isEmpty()) {
+        return
+    }
+    var ownExpanded by rememberSaveable { mutableStateOf(state.dockOpen) }
+    val hoisted = callbacks.onDockOpenChange
+    val expanded = if (hoisted != null) state.dockOpen else ownExpanded
+    val toggleExpanded = {
+        if (hoisted != null) hoisted(!state.dockOpen) else ownExpanded = !ownExpanded
+    }
 
     AmuxChrome(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(ChatComposerTags.QUEUED_STRIP),
+            .testTag(ChatComposerTags.DOCK),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             var shownAny = false
-
-            queued.forEachIndexed { index, row ->
-                if (shownAny) AmuxHairline()
+            fun rule(): Boolean {
+                val draw = shownAny
                 shownAny = true
+                return draw
+            }
+
+            if (head) {
+                if (expanded) {
+                    if (tasks != null && tasks.entries.isNotEmpty()) {
+                        rule()
+                        DockTaskList(tasks)
+                        AmuxHairline()
+                    }
+                    if (children.isNotEmpty()) {
+                        rule()
+                        DockStarted(children = children, onOpen = callbacks.onOpenAgent)
+                        AmuxHairline()
+                    }
+                }
+                rule()
+                DockHead(
+                    tasks = tasks,
+                    started = children.size,
+                    expanded = expanded,
+                    onToggle = toggleExpanded,
+                )
+            }
+
+            if (jobs > 0) {
+                if (rule()) AmuxHairline()
+                DockBackground(count = jobs, onOpen = callbacks.onOpenOverview)
+            }
+
+            state.queued.forEachIndexed { index, row ->
+                if (rule()) AmuxHairline()
                 val preview = remember(row.text) { ChatWords.text(row.text) }
                 val stateWord = remember(row) { ChatWords.queued(row) }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = Space.l, end = Space.xs, top = Space.s, bottom = Space.s)
-                        .testTag(ChatComposerTags.queuedRow(index)),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                DockTrayRow(
+                    text = preview,
+                    state = stateWord,
+                    warn = false,
+                    icon = Icons.Outlined.Schedule,
+                    modifier = Modifier.testTag(ChatComposerTags.queuedRow(index)),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Schedule,
-                        contentDescription = null,
-                        tint = colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Inline),
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                    ) {
-                        Text(
-                            text = preview,
-                            style = typography.body,
-                            color = colors.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (row.steered) {
-                                AmuxStatusChip(text = stateWord)
-                            } else {
-                                Text(
-                                    text = stateWord,
-                                    style = typography.caption,
-                                    color = colors.inkFaint,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
                     if (row.canSendNow) {
-                        val sendNowLabel = stringResource(R.string.chat_composer_send_now)
-                        IconButton(
+                        AmuxEdgeIconButton(
+                            icon = Icons.Outlined.ArrowCircleUp,
+                            contentDescription = stringResource(R.string.chat_composer_send_now),
                             onClick = { callbacks.onSendNow(row) },
                             modifier = Modifier.testTag(ChatComposerTags.queuedSendNow(index)),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.ArrowUpward,
-                                contentDescription = sendNowLabel,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(IconSize.Control),
-                            )
-                        }
+                        )
                     }
                     if (row.canWithdraw) {
-                        val withdrawLabel = stringResource(R.string.chat_composer_withdraw)
-                        IconButton(
+                        AmuxEdgeIconButton(
+                            icon = Icons.Outlined.Edit,
+                            contentDescription = stringResource(R.string.chat_composer_withdraw),
                             onClick = { callbacks.onWithdraw(row) },
                             modifier = Modifier.testTag(ChatComposerTags.queuedWithdraw(index)),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Edit,
-                                contentDescription = withdrawLabel,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(IconSize.Control),
-                            )
-                        }
+                        )
                     }
                 }
             }
 
-            underway.forEachIndexed { index, prompt ->
-                if (shownAny) AmuxHairline()
-                shownAny = true
+            state.underway.forEachIndexed { index, prompt ->
+                if (rule()) AmuxHairline()
                 val preview = remember(prompt.text) { ChatWords.text(prompt.text) }
                 val lost = prompt.underway is Underway.MayNotHaveArrived
-                val statusWord = remember(prompt.underway, host) {
-                    ChatWords.underway(prompt.underway, host = host)
+                val statusWord = remember(prompt.underway, state.host) {
+                    ChatWords.underway(prompt.underway, host = state.host)
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = Space.l, end = Space.xs, top = Space.s, bottom = Space.s)
-                        .testTag(ChatComposerTags.underwayRow(index)),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                DockTrayRow(
+                    text = preview,
+                    state = statusWord,
+                    warn = lost,
+                    icon = if (lost) Icons.Outlined.ErrorOutline else Icons.AutoMirrored.Outlined.Send,
+                    modifier = Modifier.testTag(ChatComposerTags.underwayRow(index)),
                 ) {
-                    Icon(
-                        imageVector = if (lost) Icons.Outlined.ErrorOutline else Icons.AutoMirrored.Outlined.Send,
-                        contentDescription = null,
-                        tint = if (lost) colors.accent else colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Inline),
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                    ) {
-                        Text(
-                            text = preview,
-                            style = typography.body,
-                            color = colors.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = statusWord,
-                            style = typography.caption,
-                            color = if (lost) colors.accent else colors.inkFaint,
-                            maxLines = 2,
-                        )
-                    }
                     if (lost) {
-                        val resendLabel = stringResource(R.string.chat_composer_resend)
-                        IconButton(
+                        AmuxEdgeIconButton(
+                            icon = Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.chat_composer_resend),
                             onClick = { callbacks.onResend(prompt.inputId) },
                             modifier = Modifier.testTag(ChatComposerTags.underwayResend(index)),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Refresh,
-                                contentDescription = resendLabel,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(IconSize.Control),
-                            )
-                        }
-                        val discardLabel = stringResource(R.string.chat_composer_discard)
-                        IconButton(
+                        )
+                        AmuxEdgeIconButton(
+                            icon = Icons.Outlined.Close,
+                            contentDescription = stringResource(R.string.chat_composer_discard),
                             onClick = { callbacks.onDiscard(prompt.inputId) },
                             modifier = Modifier.testTag(ChatComposerTags.underwayDiscard(index)),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Close,
-                                contentDescription = discardLabel,
-                                tint = colors.inkMuted,
-                                modifier = Modifier.size(IconSize.Control),
-                            )
-                        }
+                        )
                     }
                 }
             }
 
-            refused.forEachIndexed { index, prompt ->
-                if (shownAny) AmuxHairline()
-                shownAny = true
+            state.refused.forEachIndexed { index, prompt ->
+                if (rule()) AmuxHairline()
                 val reasonText = refusalMessage(prompt.reason)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = Space.l, end = Space.xs, top = Space.s, bottom = Space.s)
+                        .heightIn(min = DockRowHeight)
+                        .padding(horizontal = Space.l, vertical = Space.s)
                         .testTag(ChatComposerTags.refusedRow(index)),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                    horizontalArrangement = Arrangement.spacedBy(Space.m),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.ErrorOutline,
                         contentDescription = null,
-                        tint = colors.removed,
-                        modifier = Modifier.size(IconSize.Inline),
+                        tint = AmuxTheme.colors.removed,
+                        modifier = Modifier.size(DockGlyph),
                     )
                     Text(
                         text = reasonText,
-                        style = typography.detail,
-                        color = colors.removed,
+                        style = AmuxTheme.typography.detail,
+                        color = AmuxTheme.colors.removed,
                         modifier = Modifier.weight(1f),
                     )
-                    val dismissLabel = stringResource(R.string.chat_composer_dismiss)
-                    IconButton(
+                    AmuxEdgeIconButton(
+                        icon = Icons.Outlined.Close,
+                        contentDescription = stringResource(R.string.chat_composer_dismiss),
                         onClick = { callbacks.onDismissRefused(prompt.inputId) },
                         modifier = Modifier.testTag(ChatComposerTags.refusedDismiss(index)),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = dismissLabel,
-                            tint = colors.inkMuted,
-                            modifier = Modifier.size(IconSize.Control),
-                        )
-                    }
+                    )
                 }
             }
         }
     }
 }
+
+/** The dock's head: the task in hand and how far the list has got, or how many agents it started. */
+@Composable
+private fun DockHead(
+    tasks: TasksView?,
+    started: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    val title = remember(tasks, started) { tasks?.let(ChatWords::headTask) ?: ChatWords.started(started) }
+    val progress = tasks?.let { stringResource(R.string.chat_dock_progress, it.done, it.total) }
+    val label = progress?.let { "$it $title" } ?: title
+    val spoken = if (started > 0) "$label, ${ChatWords.started(started)}" else label
+    val expandedWord = stringResource(R.string.state_expanded)
+    val collapsedWord = stringResource(R.string.state_collapsed)
+    Row(
+        modifier = Modifier
+            .testTag(ChatComposerTags.TASKS)
+            .fillMaxWidth()
+            .heightIn(min = DockHeadHeight)
+            .clickable(role = Role.Button, onClick = onToggle)
+            .clearAndSetSemantics {
+                role = Role.Button
+                contentDescription = spoken
+                stateDescription = if (expanded) expandedWord else collapsedWord
+                onClick { onToggle(); true }
+            }
+            .padding(horizontal = Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+    ) {
+        if (tasks != null) {
+            Text(
+                text = progress.orEmpty(),
+                style = typography.monoSmall,
+                color = colors.inkMuted,
+            )
+        }
+        Text(
+            text = title,
+            style = typography.body,
+            color = colors.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (started > 0) {
+            Row(
+                modifier = Modifier
+                    .height(26.dp)
+                    .background(colors.sunken, AmuxShapes.Pill)
+                    .padding(horizontal = Space.s + Space.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.CallSplit,
+                    contentDescription = null,
+                    tint = colors.ink,
+                    modifier = Modifier.size(IconSize.Small),
+                )
+                Text(
+                    text = started.toString(),
+                    style = typography.monoSmall,
+                    color = colors.ink,
+                )
+            }
+        }
+        Icon(
+            imageVector = if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+            contentDescription = null,
+            tint = colors.inkMuted,
+            modifier = Modifier.size(IconSize.Row),
+        )
+    }
+}
+
+@Composable
+private fun DockTaskList(tasks: TasksView) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Space.l, vertical = Space.m + Space.xxs),
+        verticalArrangement = Arrangement.spacedBy(Space.m),
+    ) {
+        tasks.entries.forEachIndexed { index, entry ->
+            val markWord = when (entry.mark) {
+                TaskMark.Done -> stringResource(R.string.task_done)
+                TaskMark.Current -> stringResource(R.string.task_current)
+                TaskMark.Todo -> stringResource(R.string.task_todo)
+            }
+            Row(
+                modifier = Modifier
+                    .testTag(ChatComposerTags.task(index))
+                    .fillMaxWidth()
+                    .clearAndSetSemantics {
+                        contentDescription = entry.subject
+                        stateDescription = markWord
+                    },
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(Space.m),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(DockGlyph)
+                        .heightIn(min = with(LocalDensity.current) { typography.body.lineHeight.toDp() }),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = when (entry.mark) {
+                            TaskMark.Done -> Icons.Outlined.Check
+                            TaskMark.Current -> Icons.Outlined.RadioButtonChecked
+                            TaskMark.Todo -> Icons.Outlined.RadioButtonUnchecked
+                        },
+                        contentDescription = null,
+                        tint = if (entry.mark == TaskMark.Todo) colors.inkMuted else colors.inkFaint,
+                        modifier = Modifier.size(IconSize.Small),
+                    )
+                }
+                Text(
+                    text = entry.subject,
+                    style = if (entry.mark == TaskMark.Current) typography.bodyEmphasis else typography.body,
+                    color = if (entry.mark == TaskMark.Done) colors.inkFaint else colors.ink,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/** The agents this one started, each one tap from its own chat. */
+@Composable
+private fun DockStarted(
+    children: List<FleetCard>,
+    onOpen: (AgentKey) -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        Text(
+            text = stringResource(R.string.chat_dock_started).uppercase(),
+            style = typography.sectionTitle,
+            color = colors.inkFaint,
+            modifier = Modifier
+                .padding(start = Space.l, end = Space.l, top = Space.m + Space.xxs, bottom = Space.xs)
+                .semantics { heading() },
+        )
+        children.forEach { child ->
+            val needsYou = child.attention == Attention.NeedsYou || child.familyAttention == Attention.NeedsYou
+            val stateText = remember(child) { ChatWords.childState(child) }
+            Row(
+                modifier = Modifier
+                    .testTag(ChatScreenTags.familyChild(child.name))
+                    .fillMaxWidth()
+                    .heightIn(min = 54.dp)
+                    .clickable(role = Role.Button) { onOpen(child.agent) }
+                    .semantics(mergeDescendants = true) {}
+                    .padding(horizontal = Space.l),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+            ) {
+                Box(modifier = Modifier.width(DockGlyph), contentAlignment = Alignment.Center) {
+                    if (needsYou) AmuxAttentionDot(size = 8.dp)
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
+                ) {
+                    Text(
+                        text = child.name,
+                        style = typography.identifier,
+                        color = colors.ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stateText,
+                        style = typography.monoSmall,
+                        color = if (child.attention == Attention.NeedsYou) colors.accent else colors.inkFaint,
+                        maxLines = 1,
+                    )
+                }
+                AmuxDisclosureChevron()
+            }
+        }
+    }
+}
+
+/** What runs on after a turn, counted; the overview names each one. */
+@Composable
+private fun DockBackground(count: Int, onOpen: () -> Unit) {
+    val colors = AmuxTheme.colors
+    val words = ChatWords.inBackground(count)
+    val hint = stringResource(R.string.chat_dock_background_hint)
+    Row(
+        modifier = Modifier
+            .testTag(ChatComposerTags.BACKGROUND)
+            .fillMaxWidth()
+            .heightIn(min = DockHeadHeight)
+            .clickable(role = Role.Button, onClickLabel = hint, onClick = onOpen)
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Settings,
+            contentDescription = null,
+            tint = colors.inkMuted,
+            modifier = Modifier.size(DockGlyph),
+        )
+        Text(
+            text = words,
+            style = AmuxTheme.typography.body,
+            color = colors.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        AmuxDisclosureChevron()
+    }
+}
+
+/** A prompt on one line after its glyph, its state under it, and its acts as glyphs at the row's end. */
+@Composable
+private fun DockTrayRow(
+    text: String,
+    state: String,
+    warn: Boolean,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    actions: @Composable () -> Unit,
+) {
+    val colors = AmuxTheme.colors
+    val typography = AmuxTheme.typography
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = DockRowHeight)
+            .padding(horizontal = Space.l, vertical = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.m),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (warn) colors.accent else colors.inkMuted,
+            modifier = Modifier.size(DockGlyph),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .semantics(mergeDescendants = true) {},
+            verticalArrangement = Arrangement.spacedBy(Space.xxs),
+        ) {
+            Text(
+                text = text,
+                style = typography.body,
+                color = colors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = state,
+                style = typography.caption,
+                color = if (warn) colors.accent else colors.inkFaint,
+                maxLines = 2,
+            )
+        }
+        // Two glyphs side by side keep their 48 dp targets apart.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AmuxEdgeSpill * 2),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            actions()
+        }
+    }
+}
+
+/** The dock's rows: a head or background row, and a prompt row with its state under it. */
+private val DockHeadHeight = 50.dp
+private val DockRowHeight = 52.dp
+
+/** The column the dock's leading glyphs sit in. */
+private val DockGlyph = 18.dp
 
 @Composable
 private fun refusalMessage(refusal: Refusal): String {
@@ -762,11 +1023,15 @@ private fun StandardComposerCard(
         state.controls?.let { ChatWords.chip(it, context = state.context) }
     }
 
+    // At the largest text sizes the model's words get a row of their own:
+    // beside the buttons there is room for only a few letters.
+    val chipOwnRow = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
+
     AmuxChrome(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Space.l, vertical = Space.m),
+                .padding(start = Space.l, end = Space.l, top = Space.m + Space.xxs, bottom = Space.m),
             verticalArrangement = Arrangement.spacedBy(Space.s + Space.xxs),
         ) {
             val activity = state.composer.activity
@@ -839,13 +1104,16 @@ private fun StandardComposerCard(
                 // controls' targets sit close below it.
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(vertical = Space.xxs)
                     .spillTarget(spill = Alignment.Bottom)
                     .semantics { contentDescription = placeholder }
                     .testTag(ChatComposerTags.INPUT_FIELD),
                 decorator = { innerTextField ->
+                    // The target grows upward from the text, so the text
+                    // keeps to the bottom of it, where the layout put it.
                     Box(
                         modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.CenterStart,
+                        contentAlignment = Alignment.BottomStart,
                     ) {
                         if (field.state.text.isEmpty()) {
                             Text(
@@ -861,22 +1129,23 @@ private fun StandardComposerCard(
                 },
             )
 
-            if (controlsChip != null || state.showOverviewChip) {
-                ControlsSummaryStrip(
+            val warnsPermission = state.controls?.permission?.neverAsks == true
+            if (chipOwnRow && controlsChip != null) {
+                ModelChip(
                     chip = controlsChip,
-                    warnsPermission = state.controls?.permission?.neverAsks == true,
-                    settingsAvailable = state.settingsAvailable,
-                    showOverviewChip = state.showOverviewChip,
-                    overviewSummary = state.overviewSummary,
-                    onOpenSettings = callbacks.onOpenSettings,
-                    onOpenOverview = callbacks.onOpenOverview,
+                    warnsPermission = warnsPermission,
+                    enabled = state.settingsAvailable,
+                    wraps = true,
+                    onClick = callbacks.onOpenSettings,
                 )
             }
 
+            // Wide enough apart that the plus disc's target, which spills
+            // past its drawn edge, stops short of the chip's.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
             ) {
                 Box {
                     val attachLabel = stringResource(R.string.chat_composer_attach)
@@ -941,7 +1210,19 @@ private fun StandardComposerCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
+                // The chip may take all the room between the plus and the
+                // controls at the end, and shortens only when that runs out.
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (!chipOwnRow && controlsChip != null) {
+                        ModelChip(
+                            chip = controlsChip,
+                            warnsPermission = warnsPermission,
+                            enabled = state.settingsAvailable,
+                            wraps = false,
+                            onClick = callbacks.onOpenSettings,
+                        )
+                    }
+                }
 
                 if (state.dictationEnabled) {
                     val dictateLabel = stringResource(
@@ -961,7 +1242,9 @@ private fun StandardComposerCard(
                         tint = if (state.dictationActive) colors.accent else colors.inkMuted,
                         modifier = Modifier.testTag(ChatComposerTags.DICTATE_BUTTON),
                     )
-                    Spacer(modifier = Modifier.width(Space.xl))
+                    // Enough room that the glyph's 48 dp target and the
+                    // disc's meet without overlapping, as iOS spaces them.
+                    Spacer(modifier = Modifier.width(Space.m + Space.xxs))
                 }
 
                 ComposerPrimaryControl(
@@ -973,134 +1256,142 @@ private fun StandardComposerCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The model and its effort, then a permission or mode other than the normal
+ * one, as one borderless capsule. A permission that stops asking reads in
+ * the failure red. A tap opens the agent's settings.
+ *
+ * Beside the buttons the words stay on one line and shorten at their end;
+ * on a row of their own ([wraps]) they wrap whole, in a rounded box, since a
+ * capsule's ends would cut into a second line.
+ */
 @Composable
-private fun ControlsSummaryStrip(
-    chip: ChatWords.ControlsChip?,
+private fun ModelChip(
+    chip: ChatWords.ControlsChip,
     warnsPermission: Boolean,
-    settingsAvailable: Boolean,
-    showOverviewChip: Boolean,
-    overviewSummary: String?,
-    onOpenSettings: () -> Unit,
-    onOpenOverview: () -> Unit,
+    enabled: Boolean,
+    wraps: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
-    val overviewFallback = stringResource(R.string.chat_composer_overview)
-
-    FlowRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(ChatComposerTags.CONTROLS_STRIP),
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        if (chip != null) {
-            val annotated = remember(chip, warnsPermission, colors) {
-                buildAnnotatedString {
-                    var led = false
-                    if (chip.model.isNotEmpty()) {
-                        withStyle(SpanStyle(color = colors.inkMuted)) { append(chip.model) }
-                        led = true
-                    }
-                    if (chip.detail.isNotEmpty()) {
-                        withStyle(SpanStyle(color = colors.inkMuted)) {
-                            if (led) append(" · ")
-                            append(chip.detail)
-                        }
-                        led = true
-                    }
-                    chip.unusual.forEachIndexed { index, word ->
-                        val isWarning = warnsPermission && index == 0
-                        withStyle(SpanStyle(color = if (isWarning) colors.removed else colors.ink)) {
-                            if (led) append(" · ")
-                            append(word)
-                        }
-                        led = true
-                    }
-                }
+    val annotated = remember(chip, warnsPermission, colors, wraps) {
+        // On a row of its own a no-break space holds each "·" to the word
+        // before it, so a wrapped line never starts with one.
+        val joint = if (wraps) "\u00A0· " else " · "
+        buildAnnotatedString {
+            var led = false
+            if (chip.model.isNotEmpty()) {
+                withStyle(SpanStyle(color = colors.inkMuted)) { append(chip.model) }
+                led = true
             }
-            val spoken = remember(chip) {
-                (listOf(chip.model, chip.detail) + chip.unusual)
-                    .filter { it.isNotEmpty() }
-                    .joinToString(" · ")
-            }
-            val settingsDescription = stringResource(R.string.chat_composer_settings_named, spoken)
-            Surface(
-                modifier = Modifier
-                    .thumbTarget()
-                    .clip(AmuxShapes.Pill)
-                    .clickable(enabled = settingsAvailable, role = Role.Button, onClick = onOpenSettings)
-                    .semantics { contentDescription = settingsDescription }
-                    .testTag(ChatComposerTags.MODEL_CHIP),
-                shape = AmuxShapes.Pill,
-                color = colors.sunken,
-                border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = Space.m, vertical = Space.s),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Tune,
-                        contentDescription = null,
-                        tint = colors.inkFaint,
-                        modifier = Modifier.size(13.dp),
-                    )
-                    Text(
-                        text = annotated,
-                        style = typography.caption,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 220.dp),
-                    )
-                    Icon(
-                        imageVector = Icons.Outlined.ExpandMore,
-                        contentDescription = null,
-                        tint = colors.inkFaint,
-                        modifier = Modifier.size(IconSize.Small),
-                    )
+            if (chip.detail.isNotEmpty()) {
+                withStyle(SpanStyle(color = colors.inkMuted)) {
+                    if (led) append(joint)
+                    append(chip.detail)
                 }
+                led = true
             }
-        }
-
-        if (showOverviewChip) {
-            val overviewText = overviewSummary?.takeIf { it.isNotBlank() } ?: overviewFallback
-            Surface(
-                modifier = Modifier
-                    .thumbTarget()
-                    .clip(AmuxShapes.Pill)
-                    .clickable(role = Role.Button, onClick = onOpenOverview)
-                    .semantics { contentDescription = overviewText }
-                    .testTag(ChatComposerTags.OVERVIEW_CHIP),
-                shape = AmuxShapes.Pill,
-                color = colors.sunken,
-                border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = Space.m, vertical = Space.s),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ViewList,
-                        contentDescription = null,
-                        tint = colors.inkMuted,
-                        modifier = Modifier.size(IconSize.Small),
-                    )
-                    Text(
-                        text = overviewText,
-                        style = typography.caption,
-                        color = colors.ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            chip.unusual.forEachIndexed { index, word ->
+                val isWarning = warnsPermission && index == 0
+                withStyle(SpanStyle(color = if (isWarning) colors.removed else colors.ink)) {
+                    if (led) append(joint)
+                    append(word)
                 }
+                led = true
             }
         }
     }
+    val spoken = remember(chip) {
+        (listOf(chip.model, chip.detail) + chip.unusual)
+            .filter { it.isNotEmpty() }
+            .joinToString(" · ")
+    }
+    val settingsDescription = stringResource(R.string.chat_composer_settings_named, spoken)
+    val shape = if (wraps) RoundedCornerShape(15.dp) else AmuxShapes.Pill
+    ComposerTapTarget(
+        onClick = onClick,
+        enabled = enabled,
+        contentDescription = settingsDescription,
+        shape = shape,
+        modifier = modifier.testTag(ChatComposerTags.MODEL_CHIP),
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = ModelChipHeight)
+                .background(colors.sunken, shape)
+                .padding(horizontal = 11.dp, vertical = if (wraps) 6.dp else 0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(
+                text = annotated,
+                style = typography.caption,
+                maxLines = if (wraps) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(
+                imageVector = Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = colors.inkFaint,
+                modifier = Modifier.size(IconSize.Small),
+            )
+        }
+    }
 }
+
+/**
+ * A small drawn control in the composer's button row: it takes only its own
+ * room in the row, so the row stays as tall as its discs, while its touch
+ * target reaches 48 dp around it. The press ripple draws on the control's
+ * own shape rather than the larger target.
+ */
+@Composable
+private fun ComposerTapTarget(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    contentDescription: String?,
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .spillTarget()
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .then(
+                if (contentDescription != null) {
+                    Modifier.semantics { this.contentDescription = contentDescription }
+                } else {
+                    Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .indication(interaction, ripple()),
+        ) {
+            content()
+        }
+    }
+}
+
+/** The model chip's drawn height, as iOS draws it. */
+private val ModelChipHeight = 30.dp
+
+/** The font scale from which the model chip takes its own row. */
+private const val LARGE_TEXT_SCALE = 1.3f
 
 /** The composer's round attach, send and stop controls, as iOS draws them. */
 private val ComposerDisc = 34.dp
@@ -1115,26 +1406,31 @@ private fun ComposerPrimaryControl(
 
     when {
         state.composer.mode is Composer.Resume -> {
-            val enabled = state.canResume
+            // Resume carries the draft as the agent's first prompt, so there
+            // is nothing to resume with until something is written.
+            val enabled = state.canResume && state.hasDraft
             val resumeLabel = stringResource(R.string.chat_composer_resume)
-            Button(
+            ComposerTapTarget(
                 onClick = callbacks.onResume,
                 enabled = enabled,
+                contentDescription = null,
                 shape = AmuxShapes.Pill,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.ink,
-                    contentColor = colors.ground,
-                    disabledContainerColor = colors.sunken,
-                    disabledContentColor = colors.inkFaint,
-                ),
-                contentPadding = PaddingValues(horizontal = Space.l, vertical = Space.s),
                 modifier = Modifier.testTag(ChatComposerTags.RESUME_BUTTON),
             ) {
-                Text(
-                    text = resumeLabel,
-                    style = typography.bodyEmphasis,
-                    maxLines = 1,
-                )
+                Box(
+                    modifier = Modifier
+                        .height(ComposerDisc)
+                        .background(if (enabled) colors.ink else colors.sunken, AmuxShapes.Pill)
+                        .padding(horizontal = Space.l),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = resumeLabel,
+                        style = typography.bodyEmphasis,
+                        color = if (enabled) colors.ground else colors.inkFaint,
+                        maxLines = 1,
+                    )
+                }
             }
         }
         !state.hasDraft && state.isWorking -> {
@@ -1381,7 +1677,7 @@ private fun ActivityLineView(
             .fillMaxWidth()
             .semantics(mergeDescendants = true) { contentDescription = spoken }
             .testTag(ChatComposerTags.ACTIVITY),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1395,17 +1691,22 @@ private fun ActivityLineView(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!parts.subject.isNullOrEmpty()) {
+            // The subject takes all the room the words and the clock leave,
+            // and is cut in its middle, where a command or a path matters
+            // least.
+            val subject = parts.subject
+            if (!subject.isNullOrEmpty()) {
                 Text(
-                    text = parts.subject!!,
+                    text = subject,
                     style = typography.monoSmall,
                     color = colors.inkMuted,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    overflow = TextOverflow.MiddleEllipsis,
+                    modifier = Modifier.weight(1f),
                 )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
             }
-            Spacer(modifier = Modifier.weight(1f))
             if (!parts.time.isNullOrEmpty()) {
                 Text(
                     text = parts.time!!,
@@ -1444,7 +1745,7 @@ private fun ActivityHairlineRule() {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(1.5.dp),
+            .height(AmuxTheme.metrics.hairline),
     ) {
         val startFrac: Float
         val endFrac: Float

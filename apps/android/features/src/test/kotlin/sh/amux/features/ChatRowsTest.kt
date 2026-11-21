@@ -1,5 +1,8 @@
 package sh.amux.features
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasText
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -139,7 +142,6 @@ class ChatRowsTest {
         }
 
         composeRule.onNodeWithText("Everything compiles.").assertIsDisplayed()
-        composeRule.onNodeWithTag(MarkdownViewTags.STREAMING).assertIsDisplayed()
         composeRule.onNodeWithText("Thought for 8s").assertIsDisplayed()
         composeRule.onNodeWithText("Checking edge cases.").assertIsDisplayed()
         composeRule.onNodeWithTag(ChatRowTags.kind("thinking")).performClick()
@@ -347,6 +349,67 @@ class ChatRowsTest {
         composeRule.onNodeWithText("4 subagents").assertIsDisplayed()
         composeRule.onNodeWithTag(ChatRowTags.SUBAGENT_GROUP).performClick()
         assertEquals(listOf("sub-group-1"), toggledGroups)
+    }
+
+    @Test
+    fun talkBackReadsAPlansStepsAndTheAnswersGivenWithTheirRow() {
+        val rows = listOf(
+            makeRow(
+                id = "ask-plan",
+                kind = RowKind.Ask(
+                    AskRow.Plan(
+                        body = "1. Split the read path.\n2. Run the spec suite.",
+                        verdict = PlanVerdict.Open,
+                        mode = "",
+                        modeName = "",
+                        writing = false,
+                        note = null,
+                        title = "Refactor cache",
+                    ),
+                ),
+            ),
+            makeRow(
+                id = "ask-q",
+                kind = RowKind.Ask(
+                    AskRow.Questions(
+                        questions = listOf(
+                            QuestionView(
+                                header = "Storage",
+                                question = "Which backend?",
+                                multiSelect = false,
+                                options = emptyList(),
+                                allowOther = true,
+                                secret = false,
+                            ),
+                        ),
+                        answers = listOf(
+                            AnswerView(picked = listOf("SQLite"), hidden = false, skipped = false, note = null),
+                        ),
+                        skipped = 0,
+                        resolution = Resolution.Answered,
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Column {
+                    rows.forEach { row -> ChatRowView(row = row, callbacks = ChatRowCallbacks()) }
+                }
+            }
+        }
+
+        // Each row is one stop whose words carry what it shows under its head,
+        // and no label stands in for them.
+        composeRule.onNode(
+            hasText("Plan proposed") and hasText("Run the spec suite.", substring = true) and
+                !SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription),
+        ).assertExists()
+        composeRule.onNode(
+            hasText("Answered") and hasText("SQLite") and
+                !SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription),
+        ).assertExists()
     }
 
     @Test

@@ -120,7 +120,6 @@
     <string name="chat_composer_resend">Resend</string>
     <string name="chat_composer_discard">Discard</string>
     <string name="chat_composer_dismiss">Dismiss</string>
-    <string name="chat_composer_overview">Overview</string>
     <string name="chat_composer_settings">Chat Settings</string>
     <string name="chat_composer_settings_named">Chat Settings, %1$s</string>
     <string name="chat_composer_native_stop">Stop</string>

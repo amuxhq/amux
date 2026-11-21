@@ -176,7 +176,9 @@ fun ChatSettingsSheetContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Space.margin),
-                    borderColor = if (context.nearFull) colors.accent.copy(alpha = 0.55f) else colors.hairline,
+                    // How full the context is reads in ink: it is information,
+                    // and the accent is kept for what needs the person.
+                    borderColor = colors.hairline,
                 ) {
                     ContextMeterBlock(
                         context = context,

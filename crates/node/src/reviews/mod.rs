@@ -971,7 +971,11 @@ impl Tree {
     }
 
     /// Removes from the store every snapshot `review` no longer keeps, and
-    /// the index of each. A failure leaves them, to go with the next.
+    /// the index of each: every name in the index folder that is not a
+    /// kept snapshot's. An index being made is written outside that folder
+    /// ([`Tree::making`]), so a read-only open making one meanwhile, which
+    /// holds no lock, never loses it here. A failure leaves them, to go
+    /// with the next.
     async fn drop_unkept(&self, review: &Review) {
         let keep = review.snapshots.iter().map(|taken| taken.commit.as_str());
         if let Err(error) = snapshot::drop(&self.root, &self.store, keep).await {
@@ -993,32 +997,50 @@ impl Tree {
         }
     }
 
+    /// The review's folder, holding the snapshot store and the indexes.
+    fn folder(&self) -> PathBuf {
+        self.dir.join(daemon_core::reviews::REVIEW)
+    }
+
     /// The folder holding an index of each snapshot.
     fn indexes(&self) -> PathBuf {
-        self.dir
-            .join(daemon_core::reviews::REVIEW)
-            .join(daemon_core::reviews::INDEXES)
+        self.folder().join(daemon_core::reviews::INDEXES)
+    }
+
+    /// Where an index of `snapshot` is written before it is moved into
+    /// [`Tree::indexes`]: in the review's folder, beside the index folder
+    /// rather than in it, which [`Tree::drop_unkept`] sweeps; so a half
+    /// written index is never read, and never swept from under its writer.
+    fn making(&self, snapshot: &str) -> PathBuf {
+        self.folder()
+            .join(format!(".index.{snapshot}.{}", uuid::Uuid::new_v4()))
     }
 
     /// The index of `snapshot`, made now if it is not there yet: what the
     /// agent's diff command reads the snapshot's files through, so that
     /// git compares the working tree with the snapshot, untracked files
     /// and all, without an index of the repository's own. Empty when it
-    /// cannot be made, and the agent's text then names none.
+    /// cannot be made, and the agent's text then names none; so too when
+    /// the review's folder is gone, as after starting over while a
+    /// read-only open was answering: that folder is made only by taking a
+    /// snapshot, never by reading one.
     async fn index_of(&self, snapshot: &str) -> String {
         let index = self.indexes().join(snapshot);
         if index.is_file() {
             return index.to_string_lossy().into_owned();
         }
-        if let Err(error) = std::fs::create_dir_all(self.indexes()) {
-            tracing::warn!(%error, "making a review's index folder failed");
-            return String::new();
+        match std::fs::create_dir(self.indexes()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return String::new(),
+            Err(error) => {
+                tracing::warn!(%error, "making a review's index folder failed");
+                return String::new();
+            }
         }
         // Written under another name and moved into place, so a diff the
         // agent runs meanwhile never reads half an index.
-        let making = self
-            .indexes()
-            .join(format!(".{snapshot}.{}", uuid::Uuid::new_v4()));
+        let making = self.making(snapshot);
         let made = self
             .store
             .reading(&self.root, &["read-tree", snapshot])
@@ -1298,6 +1320,70 @@ mod tests {
             expected,
             "read once: the next summary asks git nothing"
         );
+    }
+
+    /// The snapshot folders follow one rule against the opens that take
+    /// no lock: an index is written beside the index folder and moved in,
+    /// so the sweep of unkept indexes never removes one being made; and
+    /// reading never makes the review's folder, so a read-only open that
+    /// answers after a start over leaves it gone.
+    #[tokio::test]
+    async fn indexes_are_made_outside_the_swept_folder_and_never_remake_a_removed_review() {
+        let root = tempfile::tempdir().unwrap();
+        let work = root.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        git(&work, &["init", "-q", "-b", "main"]);
+        std::fs::write(work.join("notes.txt"), "one\n").unwrap();
+        git(&work, &["add", "."]);
+        git(&work, &["commit", "-q", "-m", "first"]);
+        let dir = root.path().join("agent");
+        let tree = Tree {
+            agent: AgentId::from_slice(&[7; 16]).unwrap(),
+            store: ObjectStore::at(daemon_core::reviews::objects(&dir)),
+            dir,
+            root: work.clone(),
+        };
+        let taken = snapshot::take(&work, &tree.store, &Limits::default(), SystemTime::now())
+            .await
+            .unwrap();
+
+        let making = tree.making(&taken.commit);
+        assert_eq!(making.parent(), Some(tree.folder().as_path()));
+        assert_ne!(making.parent(), Some(tree.indexes().as_path()));
+        let index = tree.index_of(&taken.commit).await;
+        assert_eq!(PathBuf::from(&index), tree.indexes().join(&taken.commit));
+        // An index another call is writing, and a stray in the index folder.
+        std::fs::write(&making, b"half an index").unwrap();
+        std::fs::write(tree.indexes().join("stray"), b"").unwrap();
+        let review = Review {
+            id: vec![1],
+            agent_id: vec![7; 16],
+            base_branch: String::new(),
+            began_at: String::new(),
+            common_dir: String::new(),
+            created_ms: 0,
+            snapshots: vec![Taken {
+                commit: taken.commit.clone(),
+                base_commit: String::new(),
+                base_name: String::new(),
+                bases: Vec::new(),
+                taken_ms: 0,
+                omitted: Vec::new(),
+                merging: false,
+            }],
+            rounds: Vec::new(),
+            comments: Vec::new(),
+        };
+        tree.drop_unkept(&review).await;
+        assert!(making.is_file(), "the index being made is left to its writer");
+        assert!(!tree.indexes().join("stray").exists());
+        assert!(std::path::Path::new(&index).is_file());
+
+        // Started over: the review's folder is gone, and a read answering
+        // late makes none.
+        std::fs::remove_dir_all(tree.folder()).unwrap();
+        assert_eq!(tree.index_of(&taken.commit).await, "");
+        assert!(!tree.folder().exists(), "reading never makes the review's folder");
     }
 
     #[tokio::test]

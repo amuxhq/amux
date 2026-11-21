@@ -173,7 +173,13 @@ shows that round's comments with the code stored with them.
 **The snapshot's index.** For each snapshot it keeps, the host makes a git
 index of it, `<agent dir>/review/indexes/<commit>`, written under another
 name and renamed into place, which the agent's diff command reads
-([what the agent reads](#what-the-agent-reads)).
+([what the agent reads](#what-the-agent-reads)). A read-only open makes one
+too and takes no lock, so one rule keeps it apart from the calls that do:
+the index is written in `review/`, beside `indexes/` rather than in it,
+which dropping the unkept sweeps of every name that is not a kept
+snapshot's; and only taking a snapshot makes the `review` folder, so a read
+answering after the review was started over makes no index and leaves the
+folder gone.
 
 **Lifetime.** The `review` folder goes with the agent's directory, when the
 review is started over, and when the daemon next opens the profile with the

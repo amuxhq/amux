@@ -32,9 +32,10 @@ bridge dispatch or writing C JNI glue, the bridge splits into two crates:
 - `crates/app-jni` (`cdylib`, compiled as `libamux_app.so`) is a thin Rust JNI
   facade over `app-bridge` for `sh.amux.core.runtime.NativeBridge`. Handles live
   in synchronized tables keyed by monotonic 64-bit ids so closed or invalid
-  handles never dereference freed memory; every JNI entry point catches Rust
-  panics (`catch_unwind`) and translates recoverable failures into
-  `BridgeException`.
+  handles never dereference freed memory, and every JNI entry point translates
+  recoverable failures into `BridgeException`. A panic aborts the app: every
+  library built for the app, the host JVM's included, has `panic = "abort"`,
+  so the entry points' `catch_unwind` only catches anything under `cargo test`.
 
 `apps/android/tools/android-rust.py` builds `app-jni` in three modes:
 
@@ -108,9 +109,10 @@ Kotlin owns the loop (`CoreLoop` in `:core:runtime`):
   stepping call (`runtimeStart`, `runtimeStop`, `profileOpen`, `sessionOpen`,
   `runtimeFeed`, `runtimeStep`).
 - A dedicated wake-watcher thread blocks in `NativeBridge.runtimeWaitWake`,
-  which calls `libc::poll` over the bridge's `wake_fd` and a per-runtime
-  `ShutdownPipe` (so stopping the runtime wakes the thread cleanly on both
-  Android and host JVM tests). Whenever the descriptor becomes readable, the
+  which calls `libc::poll` over the bridge's `wake_fd`. Stopping rings that
+  same descriptor (`runtimeInterruptWake`, and `runtimeStop` again), so the
+  watcher wakes, sees it is stopping and leaves without stepping, on both
+  Android and host JVM tests. Whenever the descriptor becomes readable, the
   watcher schedules `step()` on `amux-core` and waits for the step to drain the
   descriptor before polling again.
 - Each step decodes fleet deltas, chat deltas, sign-in offers, onboarding

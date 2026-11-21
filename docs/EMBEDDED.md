@@ -12,7 +12,7 @@ app layer splits those across five crates:
 | `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link; and `Phone`, the driver that steps its cores on the client's queue and confines its transport to one thread |
 | `app-bridge` | The language-neutral bridge over both: `AmuxRuntime`, `AmuxProfile`, `AmuxChat`, JSON in and out, the wake descriptor and step, and ticketed acts |
 | `app-ffi` | The C ABI facade over `app-bridge` for Apple clients: exported `amux_*` functions, opaque handles, the `staticlib`, and the header `cbindgen` generates |
-| `app-jni` | The JNI facade over `app-bridge` for the Android app and host JVM tests: monotonic 64-bit handle tables, a wake/shutdown poll pipe, panic-catching `BridgeException` translation, and the `cdylib` (`libamux_app.so`) |
+| `app-jni` | The JNI facade over `app-bridge` for the Android app and host JVM tests: monotonic 64-bit handle tables, a poll over the wake descriptor, `BridgeException` translation, and the `cdylib` (`libamux_app.so`) |
 
 The [iPhone app](IOS.md) and the [Android app](ANDROID.md) both build on this
 exact same embedded daemon (`app-embedded`) and session runtime (`app-runtime`),
@@ -125,8 +125,8 @@ calling thread holds. Through both `app-ffi` and `app-jni`, a step answers JSON
 with what moved in each open fleet and chat as a delta, the profile list when
 it moved, and the results of acts, each under the ticket its act returned when
 it started and after the deltas of what it moved. On Android, `app-jni` exposes
-`runtimeWaitWake`, which calls `libc::poll` over `wake_fd` and a per-runtime
-`ShutdownPipe` so Kotlin's wake watcher wakes cleanly on both updates and
+`runtimeWaitWake`, which calls `libc::poll` over `wake_fd`; stopping rings
+the same descriptor, so Kotlin's wake watcher wakes on both updates and
 shutdown without busy-polling.
 
 ## Profiles
@@ -232,10 +232,12 @@ a view value means adding it there.
 
 Everything crosses as JSON; every returned string is the caller's to free with
 `amux_string_free`, and every `AmuxBytes` with `amux_bytes_free`. A null
-return means the call failed, and a panic is caught at the boundary and reads
-as a failure. Reads return at once. An act that waits returns a ticket at
-once, and its JSON result comes back from a later `amux_runtime_step` under
-that ticket; nothing in the library calls into the client.
+return means the call failed. A panic aborts the app: every library built
+for an app has `panic = "abort"`, so the boundary's `catch_unwind` only turns
+a panic into a failure under `cargo test`, whose tests count them. Reads
+return at once. An act that waits returns a ticket at once, and its JSON
+result comes back from a later `amux_runtime_step` under that ticket; nothing
+in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |

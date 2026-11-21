@@ -153,7 +153,6 @@ class NativeBridgeJvmTest {
                 )
                 val runtimeHandle = loop.start(config)
                 assertTrue("expected positive runtime handle", runtimeHandle > 0L)
-                assertTrue("expected valid wake fd", NativeBridge.runtimeWakeFd(runtimeHandle) >= 0)
 
                 val profiles = initialProfiles.get(10, TimeUnit.SECONDS)
                 assertEquals("fresh installation should host one default profile", 1, profiles.size)

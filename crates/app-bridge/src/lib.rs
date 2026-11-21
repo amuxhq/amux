@@ -545,8 +545,11 @@ pub fn review_doc(review: Option<&str>, comments: Option<&str>) -> Option<String
 
 /// Starts the installation with its transport on a thread of its own and
 /// its cores on the calling thread's queue; blocks, stepping them, until
-/// every profile's store is open.
-pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
+/// every profile's store is open. The apps start from JSON
+/// ([`start_from_json`]); this form lets a test choose the overrides, such
+/// as serving links on loopback.
+#[doc(hidden)]
+pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<AmuxRuntime, String> {
     let phone = Phone::start(config, overrides, Arc::new(client::SystemClock))
         .map_err(|error| error.to_string())?;
     let installation = phone
@@ -557,7 +560,7 @@ pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxR
 }
 
 /// Starts the installation from a `StartConfig` as JSON.
-pub fn start_from_json(config: Option<&str>) -> Result<Box<AmuxRuntime>, String> {
+pub fn start_from_json(config: Option<&str>) -> Result<AmuxRuntime, String> {
     let config: StartConfig =
         parse(config).ok_or_else(|| "the start configuration is not a StartConfig".to_owned())?;
     start(&config, overrides(&config))
@@ -570,7 +573,7 @@ pub fn start_from_json(config: Option<&str>) -> Result<Box<AmuxRuntime>, String>
 /// Only the Mac app attaches, so the runtime names itself the Mac app to
 /// the daemon: on every profile socket it opens, which the daemon counts
 /// as the Mac app opening, and in what it answers of setting up.
-pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
+pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<AmuxRuntime, String> {
     let phone = Phone::attached().map_err(|error| error.to_string())?;
     let door = front_door.to_owned();
     let installation = phone
@@ -583,7 +586,7 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
 
 /// Attaches to amux on this machine from an `AttachConfig` as JSON.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub fn attach_from_json(config: Option<&str>) -> Result<Box<AmuxRuntime>, String> {
+pub fn attach_from_json(config: Option<&str>) -> Result<AmuxRuntime, String> {
     let config: app_runtime::values::AttachConfig = parse(config)
         .ok_or_else(|| "the attach configuration is not an AttachConfig".to_owned())?;
     let door =
@@ -679,7 +682,7 @@ fn serve(
     phone: Phone,
     installation: Arc<dyn client::Installation>,
     tail: u32,
-) -> Result<Box<AmuxRuntime>, String> {
+) -> Result<AmuxRuntime, String> {
     let outbox = Arc::new(Outbox {
         tickets: AtomicU64::new(0),
         fleets: AtomicU64::new(0),
@@ -726,7 +729,7 @@ fn serve(
             }
         }
     });
-    Ok(Box::new(AmuxRuntime {
+    Ok(AmuxRuntime {
         shared: Arc::new(Shared {
             phone,
             installation,
@@ -734,12 +737,12 @@ fn serve(
         }),
         watch: Some(watch),
         tail,
-    }))
+    })
 }
 
 /// Opens a profile's fleet; blocks, stepping the cores, until it has
 /// caught up with the profile's store.
-pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<AmuxProfile>, String> {
+fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<AmuxProfile, String> {
     let shared = runtime.shared.clone();
     let installation = shared.installation.clone();
     let clock: Arc<dyn client::Clock> = match shared.embedded() {
@@ -797,7 +800,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
         )
         .await;
     });
-    Ok(Box::new(AmuxProfile {
+    Ok(AmuxProfile {
         profile,
         fleet,
         shared,
@@ -806,7 +809,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
         offers,
         onboarding: Mutex::new(None),
         pairing: Mutex::new(None),
-    }))
+    })
 }
 
 fn overrides(config: &StartConfig) -> EdgeOverrides {
@@ -847,12 +850,16 @@ fn from_hex(hex: &str) -> Option<Vec<u8>> {
 // --- AmuxRuntime -----------------------------------------------------------
 
 impl AmuxRuntime {
-    /// The installation hosted in process; none when attached.
+    /// The installation hosted in process; none when attached. For tests
+    /// that reach past the bridge into the installation.
+    #[doc(hidden)]
     pub fn embedded(&self) -> Option<&Arc<EmbeddedRuntime>> {
         self.shared.embedded()
     }
 
-    /// The transport runtime handle.
+    /// The transport runtime handle. For tests that reach past the bridge
+    /// into the installation.
+    #[doc(hidden)]
     pub fn handle(&self) -> &Handle {
         self.shared.handle()
     }
@@ -905,6 +912,12 @@ impl AmuxRuntime {
     /// [`Self::step`].
     pub fn wake_fd(&self) -> i32 {
         self.shared.phone.wake_fd()
+    }
+
+    /// Makes [`Self::wake_fd`] readable from any thread, so an app thread
+    /// waiting on it returns, to step or to see that the runtime stopped.
+    pub fn ring(&self) {
+        self.shared.phone.ring();
     }
 
     /// Steps every input waiting for the cores on the calling queue, then
@@ -1286,7 +1299,7 @@ impl AmuxRuntime {
     }
 
     /// Opens a profile's fleet by its id string.
-    pub fn open_profile(&self, profile: Option<&str>) -> Result<Box<AmuxProfile>, String> {
+    pub fn open_profile(&self, profile: Option<&str>) -> Result<AmuxProfile, String> {
         let profile = profile_id(profile).ok_or("the profile is not a profile id")?;
         open_profile(self, profile)
     }
@@ -1675,7 +1688,7 @@ impl AmuxProfile {
 
     /// Opens a chat on a fleet agent, named by its `AgentKey` as JSON, with
     /// `tail` rows (the configured tail when zero).
-    pub fn open_chat(&self, agent: Option<&str>, tail: u32) -> Result<Box<AmuxChat>, String> {
+    pub fn open_chat(&self, agent: Option<&str>, tail: u32) -> Result<AmuxChat, String> {
         let agent: AgentKey = parse(agent).ok_or("the agent is not an AgentKey")?;
         let tail = if tail == 0 { self.tail } else { tail };
         let app = self.app.clone();
@@ -1688,11 +1701,11 @@ impl AmuxProfile {
         self.shared
             .outbox
             .opened(self.fleet, chat.id(), View::Chat(Arc::downgrade(&chat)));
-        Ok(Box::new(AmuxChat {
+        Ok(AmuxChat {
             chat,
             fleet: self.fleet,
             shared: self.shared.clone(),
-        }))
+        })
     }
 }
 

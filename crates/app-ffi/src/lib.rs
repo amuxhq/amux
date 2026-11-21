@@ -68,24 +68,18 @@ impl AmuxRuntime {
     }
 }
 
-/// Starts the installation with its transport on a thread of its own and
-/// its cores on the calling thread's queue; blocks, stepping them, until
-/// every profile's store is open.
-pub fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
-    app_bridge::start(config, overrides).map(|runtime| Box::new(AmuxRuntime(*runtime)))
+/// Starts the installation as `amux_runtime_start` does, with the overrides
+/// a test chooses, such as serving links on loopback.
+#[cfg(test)]
+fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
+    app_bridge::start(config, overrides).map(|runtime| Box::new(AmuxRuntime(runtime)))
 }
 
-/// Attaches to the daemon answering on `front_door` (`<root>/amux.sock`):
-/// the same runtime as [`start`], with the profiles and their agents the
-/// daemon's, reached over its sockets, and nothing hosted here.
-pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
-    app_bridge::attach(front_door, tail).map(|runtime| Box::new(AmuxRuntime(*runtime)))
-}
-
-/// Opens a profile's fleet; blocks, stepping the cores, until it has
-/// caught up with the profile's store.
-pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<AmuxProfile>, String> {
-    app_bridge::open_profile(&runtime.0, profile).map(|profile| Box::new(AmuxProfile(*profile)))
+/// Attaches as `amux_runtime_attach` does, to the daemon answering on a
+/// front door the test chooses.
+#[cfg(test)]
+fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
+    app_bridge::attach(front_door, tail).map(|runtime| Box::new(AmuxRuntime(runtime)))
 }
 
 // --- strings and pointers --------------------------------------------------
@@ -334,7 +328,7 @@ pub unsafe extern "C" fn amux_runtime_start(
         || {
             // SAFETY: the caller's contract.
             app_bridge::start_from_json(unsafe { text(config) })
-                .map(|runtime| Box::new(AmuxRuntime(*runtime)))
+                .map(|runtime| Box::new(AmuxRuntime(runtime)))
         },
     );
     match started {
@@ -368,7 +362,7 @@ pub unsafe extern "C" fn amux_runtime_attach(
         || {
             // SAFETY: the caller's contract.
             app_bridge::attach_from_json(unsafe { text(config) })
-                .map(|runtime| Box::new(AmuxRuntime(*runtime)))
+                .map(|runtime| Box::new(AmuxRuntime(runtime)))
         },
     );
     match attached {
@@ -456,14 +450,25 @@ pub unsafe extern "C" fn amux_runtime_wake_fd(runtime: *const AmuxRuntime) -> c_
 }
 
 /// Steps every input waiting for the cores on the calling queue, then
-/// answers what the app must do as JSON: `{"profiles": bool, "redraws":
-/// [{"fleet": n, "chat": n}], "answers": [{"ticket": n, "json": text}]}`.
-/// `profiles` says to read the profile list again; each redraw names a
-/// fleet, by the number `amux_profile_fleet_id` answers, or
-/// one of its chats (chat 0 for the fleet itself) whose changes wait to be
-/// taken; each answer is
-/// an act's result, under the ticket the act returned. Null for no
-/// runtime.
+/// answers what moved since the last step as JSON:
+///
+/// - `profiles`: every profile, oldest first, when the list moved; null
+///   otherwise.
+/// - `fleets`: `[{"fleet": n, "delta": FleetDelta}]`, each open fleet that
+///   moved, by the number `amux_profile_fleet_id` answers.
+/// - `chats`: `[{"fleet": n, "delta": ChatDelta}]`, each open chat that
+///   moved, with the fleet it belongs to.
+/// - `sign_in_offers`: `[{"fleet": n, "offers": [..]}]`, each open
+///   profile whose sign-in offers moved, with every offer it holds now.
+/// - `onboarding`: `[{"fleet": n, "onboarding": OnboardingState}]`, each
+///   followed profile whose setting up moved.
+/// - `pairing`: `[{"fleet": n, "status": PairingStatusView}]`, each open
+///   pairing window whose status moved.
+/// - `answers`: `[{"ticket": n, "json": text}]`, each act that ended, its
+///   result under the ticket the act returned, after the deltas of what it
+///   moved.
+///
+/// Null for no runtime.
 ///
 /// # Safety
 /// `runtime` is null or from `amux_runtime_start`.
@@ -959,7 +964,7 @@ pub unsafe extern "C" fn amux_profile_open(
         runtime
             .0
             .open_profile(unsafe { text(profile) })
-            .map(|profile| Box::new(AmuxProfile(*profile)))
+            .map(|profile| Box::new(AmuxProfile(profile)))
     });
     match opened {
         Ok(profile) => Box::into_raw(profile),
@@ -1559,7 +1564,7 @@ pub unsafe extern "C" fn amux_session_open(
         profile
             .0
             .open_chat(unsafe { text(agent) }, tail)
-            .map(|chat| Box::new(AmuxChat(*chat)))
+            .map(|chat| Box::new(AmuxChat(chat)))
     });
     match opened {
         Ok(chat) => Box::into_raw(chat),

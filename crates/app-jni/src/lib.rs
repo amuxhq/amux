@@ -3,8 +3,13 @@
 //! A thin Rust JNI layer over [`app_bridge`] for Kotlin class
 //! `sh.amux.core.runtime.NativeBridge`. Handles are stored in synchronized
 //! tables keyed by monotonic 64-bit ids so closed or invalid handles never
-//! dereference freed memory. Every entrypoint catches Rust panics and
-//! translates recoverable failures into `sh.amux.core.runtime.BridgeException`.
+//! dereference freed memory. Every entry point translates recoverable
+//! failures into `sh.amux.core.runtime.BridgeException`.
+//!
+//! A panic aborts the app: every library built for the app, the host JVM's
+//! included, has `panic = "abort"`. The entry points still catch unwinding,
+//! which only `cargo test` builds do, so a panic there fails the call
+//! instead of unwinding into the JVM.
 
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -19,7 +24,7 @@ use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jbyteArray, jint, jlong, jstring};
 
 const BRIDGE_EXCEPTION: &str = "sh/amux/core/runtime/BridgeException";
 
-// --- handle tables & wake pipe ---------------------------------------------
+// --- handle tables & waking ------------------------------------------------
 
 static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
 
@@ -27,119 +32,47 @@ fn next_handle() -> i64 {
     NEXT_HANDLE.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Waits for `fd` to become readable or for `timeout_ms` to pass (-1 for
+/// ever): 1 when readable, 0 on timeout or a signal, -1 on failure.
 #[cfg(unix)]
-struct ShutdownPipe {
-    read_fd: i32,
-    write_fd: i32,
-}
-
-#[cfg(unix)]
-impl ShutdownPipe {
-    fn new() -> Result<Self, String> {
-        let mut fds = [0i32; 2];
-        // SAFETY: `fds` is a valid 2-element array for pipe(2).
-        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
-            return Err(format!(
-                "failed to create wake shutdown pipe: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
-        for fd in fds {
-            // SAFETY: `fd` was just returned by pipe(2).
-            unsafe {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                if flags >= 0 {
-                    libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
-                }
-                let status = libc::fcntl(fd, libc::F_GETFL);
-                if status >= 0 {
-                    libc::fcntl(fd, libc::F_SETFL, status | libc::O_NONBLOCK);
-                }
-            }
-        }
-        Ok(Self {
-            read_fd: fds[0],
-            write_fd: fds[1],
-        })
+fn wait_readable(fd: i32, timeout_ms: i32) -> i32 {
+    if fd < 0 {
+        return -1;
     }
-
-    fn signal(&self) {
-        let byte = 1u8;
-        // SAFETY: `write_fd` is an open non-blocking pipe write end owned by `self`.
-        unsafe {
-            libc::write(self.write_fd, (&raw const byte).cast(), 1);
-        }
+    let mut watched = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: `watched` is one valid `pollfd`.
+    let rc = unsafe { libc::poll(&mut watched, 1, timeout_ms) };
+    if rc < 0 {
+        let interrupted = std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR);
+        return if interrupted { 0 } else { -1 };
     }
-
-    fn wait_wake(&self, wake_fd: i32, timeout_ms: i32) -> i32 {
-        if wake_fd < 0 {
-            return -1;
-        }
-        let mut fds = [
-            libc::pollfd {
-                fd: wake_fd,
-                events: libc::POLLIN,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: self.read_fd,
-                events: libc::POLLIN,
-                revents: 0,
-            },
-        ];
-        // SAFETY: `fds` points to 2 valid `pollfd` entries.
-        let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout_ms) };
-        if rc < 0 {
-            let err = std::io::Error::last_os_error();
-            return if err.raw_os_error() == Some(libc::EINTR) {
-                0
-            } else {
-                -1
-            };
-        }
-        if rc == 0 {
-            return 0;
-        }
-        if fds[1].revents != 0 {
-            return -1;
-        }
-        if (fds[0].revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP)) != 0 {
-            1
-        } else {
-            0
-        }
-    }
-}
-
-#[cfg(unix)]
-impl Drop for ShutdownPipe {
-    fn drop(&mut self) {
-        // SAFETY: both descriptors belong exclusively to `self`.
-        unsafe {
-            libc::close(self.read_fd);
-            libc::close(self.write_fd);
-        }
+    if rc > 0 && (watched.revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP)) != 0 {
+        1
+    } else {
+        0
     }
 }
 
 struct RuntimeSlot {
-    inner: RwLock<Option<Box<AmuxRuntime>>>,
+    inner: RwLock<Option<AmuxRuntime>>,
     /// Open profile handles owned by this runtime; `None` once stopping begins.
     profiles: Mutex<Option<HashSet<i64>>>,
-    #[cfg(unix)]
-    shutdown: ShutdownPipe,
 }
 
 struct ProfileSlot {
     runtime_handle: i64,
-    inner: RwLock<Option<Box<AmuxProfile>>>,
+    inner: RwLock<Option<AmuxProfile>>,
     /// Open chat handles owned by this profile; `None` once closing begins.
     chats: Mutex<Option<HashSet<i64>>>,
 }
 
 struct ChatSlot {
     profile_handle: i64,
-    inner: RwLock<Option<Box<AmuxChat>>>,
+    inner: RwLock<Option<AmuxChat>>,
 }
 
 type HandleMap<T> = Mutex<HashMap<i64, Arc<T>>>;
@@ -159,13 +92,11 @@ fn chats() -> &'static HandleMap<ChatSlot> {
     TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn insert_runtime(runtime: Box<AmuxRuntime>, #[cfg(unix)] shutdown: ShutdownPipe) -> i64 {
+fn insert_runtime(runtime: AmuxRuntime) -> i64 {
     let id = next_handle();
     let slot = Arc::new(RuntimeSlot {
         inner: RwLock::new(Some(runtime)),
         profiles: Mutex::new(Some(HashSet::new())),
-        #[cfg(unix)]
-        shutdown,
     });
     runtimes()
         .lock()
@@ -175,14 +106,7 @@ fn insert_runtime(runtime: Box<AmuxRuntime>, #[cfg(unix)] shutdown: ShutdownPipe
 }
 
 fn start_runtime_from_json(config: &str) -> Result<i64, String> {
-    #[cfg(unix)]
-    let shutdown = ShutdownPipe::new()?;
-    let runtime = app_bridge::start_from_json(Some(config))?;
-    Ok(insert_runtime(
-        runtime,
-        #[cfg(unix)]
-        shutdown,
-    ))
+    app_bridge::start_from_json(Some(config)).map(insert_runtime)
 }
 
 fn stop_runtime_handle(handle: i64) {
@@ -191,8 +115,12 @@ fn stop_runtime_handle(handle: i64) {
         .unwrap_or_else(|p| p.into_inner())
         .remove(&handle);
     if let Some(slot) = slot {
-        #[cfg(unix)]
-        slot.shutdown.signal();
+        // A thread waiting in `runtimeWaitWake` holds the runtime's read lock
+        // until its poll returns, and the write below waits for it. The ring
+        // stays readable until a step reads it, and the app steps on the
+        // thread that stops, so the waiter wakes, finds the handle gone and
+        // lets go.
+        ring_runtime(&slot);
         let child_profiles = slot
             .profiles
             .lock()
@@ -210,6 +138,17 @@ fn stop_runtime_handle(handle: i64) {
     }
 }
 
+fn ring_runtime(slot: &RuntimeSlot) {
+    if let Some(runtime) = slot
+        .inner
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+    {
+        runtime.ring();
+    }
+}
+
 fn get_runtime(handle: i64) -> Option<Arc<RuntimeSlot>> {
     runtimes()
         .lock()
@@ -221,7 +160,7 @@ fn get_runtime(handle: i64) -> Option<Arc<RuntimeSlot>> {
 fn with_runtime<T>(handle: i64, f: impl FnOnce(&AmuxRuntime) -> T) -> Option<T> {
     let slot = get_runtime(handle)?;
     let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
-    guard.as_deref().map(f)
+    guard.as_ref().map(f)
 }
 
 fn get_profile(handle: i64) -> Option<Arc<ProfileSlot>> {
@@ -235,7 +174,7 @@ fn get_profile(handle: i64) -> Option<Arc<ProfileSlot>> {
 fn open_profile_handle(runtime_handle: i64, profile_id: &str) -> Result<i64, String> {
     let slot = get_runtime(runtime_handle).ok_or_else(|| "the runtime has stopped".to_owned())?;
     let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
-    let Some(runtime) = guard.as_deref() else {
+    let Some(runtime) = guard.as_ref() else {
         return Err("the runtime has stopped".to_owned());
     };
     if slot
@@ -300,13 +239,13 @@ fn close_profile_handle(handle: i64) {
 fn with_profile<T>(handle: i64, f: impl FnOnce(&AmuxProfile) -> T) -> Option<T> {
     let slot = get_profile(handle)?;
     let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
-    guard.as_deref().map(f)
+    guard.as_ref().map(f)
 }
 
 fn open_chat_handle(profile_handle: i64, agent_json: &str, tail: u32) -> Result<i64, String> {
     let slot = get_profile(profile_handle).ok_or_else(|| "the profile is closed".to_owned())?;
     let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
-    let Some(profile) = guard.as_deref() else {
+    let Some(profile) = guard.as_ref() else {
         return Err("the profile is closed".to_owned());
     };
     if slot
@@ -373,7 +312,23 @@ fn with_chat<T>(handle: i64, f: impl FnOnce(&AmuxChat) -> T) -> Option<T> {
         .get(&handle)
         .cloned()?;
     let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
-    guard.as_deref().map(f)
+    guard.as_ref().map(f)
+}
+
+/// An act's ticket from a runtime, or 0, which no act answers, when the
+/// handle is closed.
+fn ticket_on_runtime(handle: i64, act: impl FnOnce(&AmuxRuntime) -> u64) -> jlong {
+    with_runtime(handle, act).unwrap_or(0) as jlong
+}
+
+/// As [`ticket_on_runtime`], from a profile.
+fn ticket_on_profile(handle: i64, act: impl FnOnce(&AmuxProfile) -> u64) -> jlong {
+    with_profile(handle, act).unwrap_or(0) as jlong
+}
+
+/// As [`ticket_on_runtime`], from a chat.
+fn ticket_on_chat(handle: i64, act: impl FnOnce(&AmuxChat) -> u64) -> jlong {
+    with_chat(handle, act).unwrap_or(0) as jlong
 }
 
 // --- JNI helpers -----------------------------------------------------------
@@ -632,22 +587,12 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeStop(
     });
 }
 
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWakeFd(
-    mut env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) -> jint {
-    guard_jni(&mut env, -1, |_| {
-        Ok(with_runtime(handle, AmuxRuntime::wake_fd).unwrap_or(-1))
-    })
-}
-
 /// Waits for the runtime's wake descriptor to become readable or until
 /// `timeout_ms` elapses (-1 for indefinite). Returns:
-/// - `1` when `wake_fd` is readable (caller should run `runtimeStep`),
+/// - `1` when `wake_fd` is readable (caller should run `runtimeStep`, unless
+///   it is stopping: `runtimeInterruptWake` rings the same descriptor),
 /// - `0` on timeout or signal interruption,
-/// - `-1` when the runtime is stopped or wake was interrupted for shutdown.
+/// - `-1` when the runtime is stopped, or stopped while this waited.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWaitWake(
     mut env: JNIEnv,
@@ -655,27 +600,36 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWaitWake(
     handle: jlong,
     timeout_ms: jint,
 ) -> jint {
-    guard_jni(&mut env, -1, |_| {
-        let Some(slot) = get_runtime(handle) else {
-            return Ok(-1);
-        };
-        let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
-        let Some(runtime) = guard.as_deref() else {
-            return Ok(-1);
-        };
-        #[cfg(unix)]
-        {
-            Ok(slot.shutdown.wait_wake(runtime.wake_fd(), timeout_ms))
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (runtime, timeout_ms);
-            Ok(-1)
-        }
-    })
+    guard_jni(&mut env, -1, |_| Ok(wait_wake(handle, timeout_ms)))
 }
 
-/// Wakes any thread blocked in `runtimeWaitWake` for shutdown.
+fn wait_wake(handle: i64, timeout_ms: i32) -> i32 {
+    let Some(slot) = get_runtime(handle) else {
+        return -1;
+    };
+    let guard = slot.inner.read().unwrap_or_else(|p| p.into_inner());
+    let Some(runtime) = guard.as_ref() else {
+        return -1;
+    };
+    #[cfg(unix)]
+    {
+        let ready = wait_readable(runtime.wake_fd(), timeout_ms);
+        // Stopping removes the handle, then rings to wake this wait.
+        if get_runtime(handle).is_some() {
+            ready
+        } else {
+            -1
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (runtime, timeout_ms);
+        -1
+    }
+}
+
+/// Wakes any thread blocked in `runtimeWaitWake`, which returns 1; the
+/// caller checks whether it is stopping before it steps.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeInterruptWake(
     mut env: JNIEnv,
@@ -683,12 +637,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeInterruptWa
     handle: jlong,
 ) {
     guard_jni(&mut env, (), |_| {
-        #[cfg(unix)]
         if let Some(slot) = get_runtime(handle) {
-            slot.shutdown.signal();
+            ring_runtime(&slot);
         }
-        #[cfg(not(unix))]
-        let _ = handle;
         Ok(())
     });
 }
@@ -728,7 +679,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeCreateProfi
     handle: jlong,
 ) -> jlong {
     guard_jni(&mut env, 0, |_| {
-        Ok(with_runtime(handle, AmuxRuntime::create_profile).unwrap_or(0) as jlong)
+        Ok(ticket_on_runtime(handle, AmuxRuntime::create_profile))
     })
 }
 
@@ -741,10 +692,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeDeleteProfi
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
-        Ok(
-            with_runtime(handle, |runtime| runtime.delete_profile(profile.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_runtime(handle, |runtime| {
+            runtime.delete_profile(profile.as_deref())
+        }))
     })
 }
 
@@ -763,10 +713,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeBind(
         let cloud_url = opt_string(env, cloud_url)?.unwrap_or_default();
         let client_id = opt_string(env, client_id)?.unwrap_or_default();
         let refresh_token = opt_string(env, refresh_token)?.unwrap_or_default();
-        Ok(with_runtime(handle, |runtime| {
+        Ok(ticket_on_runtime(handle, |runtime| {
             runtime.bind(profile.as_deref(), &cloud_url, &client_id, &refresh_token)
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -779,10 +728,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeSignOut(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
-        Ok(
-            with_runtime(handle, |runtime| runtime.sign_out(profile.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_runtime(handle, |runtime| {
+            runtime.sign_out(profile.as_deref())
+        }))
     })
 }
 
@@ -795,10 +743,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeTrustingPro
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let host_id = opt_string(env, host_id_json)?;
-        Ok(with_runtime(handle, |runtime| {
+        Ok(ticket_on_runtime(handle, |runtime| {
             runtime.trusting_profiles(host_id.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -811,10 +758,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeOfferPairin
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
-        Ok(
-            with_runtime(handle, |runtime| runtime.offer_pairing(profile.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_runtime(handle, |runtime| {
+            runtime.offer_pairing(profile.as_deref())
+        }))
     })
 }
 
@@ -872,10 +818,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeAccessToken
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
-        Ok(
-            with_runtime(handle, |runtime| runtime.access_token(profile.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_runtime(handle, |runtime| {
+            runtime.access_token(profile.as_deref())
+        }))
     })
 }
 
@@ -888,10 +833,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeHostId(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
-        Ok(
-            with_runtime(handle, |runtime| runtime.host_id(profile.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_runtime(handle, |runtime| {
+            runtime.host_id(profile.as_deref())
+        }))
     })
 }
 
@@ -906,10 +850,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWantNotific
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
         let key = opt_string(env, key_json)?;
-        Ok(with_runtime(handle, |runtime| {
+        Ok(ticket_on_runtime(handle, |runtime| {
             runtime.want_notifications(profile.as_deref(), key.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -922,10 +865,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeRefreshEnti
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
-        Ok(with_runtime(handle, |runtime| {
+        Ok(ticket_on_runtime(handle, |runtime| {
             runtime.refresh_entitlement(profile.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -980,7 +922,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeSettings(
     handle: jlong,
 ) -> jlong {
     guard_jni(&mut env, 0, |_| {
-        Ok(with_runtime(handle, AmuxRuntime::settings).unwrap_or(0) as jlong)
+        Ok(ticket_on_runtime(handle, AmuxRuntime::settings))
     })
 }
 
@@ -993,10 +935,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeUpdateSetti
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let change = opt_string(env, change_json)?;
-        Ok(
-            with_runtime(handle, |runtime| runtime.update_settings(change.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_runtime(handle, |runtime| {
+            runtime.update_settings(change.as_deref())
+        }))
     })
 }
 
@@ -1007,7 +948,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeSuggestRepo
     handle: jlong,
 ) -> jlong {
     guard_jni(&mut env, 0, |_| {
-        Ok(with_runtime(handle, AmuxRuntime::suggest_repositories).unwrap_or(0) as jlong)
+        Ok(ticket_on_runtime(handle, AmuxRuntime::suggest_repositories))
     })
 }
 
@@ -1022,10 +963,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWebSignInLi
     guard_jni(&mut env, 0, |env| {
         let profile = opt_string(env, profile_id)?;
         let path = opt_string(env, path)?;
-        Ok(with_runtime(handle, |runtime| {
+        Ok(ticket_on_runtime(handle, |runtime| {
             runtime.web_sign_in_link(profile.as_deref(), path.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1076,7 +1016,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileDump(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let reason = opt_string(env, reason)?.unwrap_or_default();
-        Ok(with_profile(handle, |profile| profile.dump(&reason)).unwrap_or(0) as jlong)
+        Ok(ticket_on_profile(handle, |profile| profile.dump(&reason)))
     })
 }
 
@@ -1093,10 +1033,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileSubmitRepor
         let dump_path = opt_string(env, dump_path)?.unwrap_or_default();
         let header = opt_bytes(env, header)?;
         let frame = opt_bytes(env, frame)?;
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.submit_report(&dump_path, header, frame)
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1109,10 +1048,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileBeginPair(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let request = opt_string(env, request_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.begin_pair(request.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.begin_pair(request.as_deref())
+        }))
     })
 }
 
@@ -1125,10 +1063,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileOfferSignIn
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let host_id = opt_string(env, host_id_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.offer_sign_in(host_id.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.offer_sign_in(host_id.as_deref())
+        }))
     })
 }
 
@@ -1141,10 +1078,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileAnswerSignI
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let answer = opt_string(env, answer_json)?;
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.answer_sign_in_offer(answer.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1169,10 +1105,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileAnswerOnboa
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let answer = opt_string(env, answer_json)?;
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.answer_onboarding(answer.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1185,7 +1120,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileOpenPairing
 ) -> jlong {
     guard_jni(&mut env, 0, |_| {
         let ttl = u64::try_from(ttl_seconds).unwrap_or(0);
-        Ok(with_profile(handle, |profile| profile.open_pairing(ttl)).unwrap_or(0) as jlong)
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.open_pairing(ttl)
+        }))
     })
 }
 
@@ -1196,7 +1133,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileClosePairin
     handle: jlong,
 ) -> jlong {
     guard_jni(&mut env, 0, |_| {
-        Ok(with_profile(handle, AmuxProfile::close_pairing).unwrap_or(0) as jlong)
+        Ok(ticket_on_profile(handle, AmuxProfile::close_pairing))
     })
 }
 
@@ -1209,10 +1146,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileConfirmPair
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let token = opt_string(env, token_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.confirm_pair(token.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.confirm_pair(token.as_deref())
+        }))
     })
 }
 
@@ -1225,10 +1161,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileAbandonPair
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let token = opt_string(env, token_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.abandon_pair(token.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.abandon_pair(token.as_deref())
+        }))
     })
 }
 
@@ -1241,10 +1176,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileUnpair(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let host_id = opt_string(env, host_id_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.unpair(host_id.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.unpair(host_id.as_deref())
+        }))
     })
 }
 
@@ -1255,7 +1189,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileRoster(
     handle: jlong,
 ) -> jlong {
     guard_jni(&mut env, 0, |_| {
-        Ok(with_profile(handle, AmuxProfile::roster).unwrap_or(0) as jlong)
+        Ok(ticket_on_profile(handle, AmuxProfile::roster))
     })
 }
 
@@ -1268,10 +1202,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileCreateAgent
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let agent = opt_string(env, agent_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.create_agent(agent.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.create_agent(agent.as_deref())
+        }))
     })
 }
 
@@ -1288,10 +1221,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileDirectories
         let host_id = opt_string(env, host_id_json)?;
         let query = opt_string(env, query)?.unwrap_or_default();
         let limit = u32::try_from(limit).unwrap_or(0);
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.directories(host_id.as_deref(), &query, limit)
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1307,10 +1239,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profilePinFolder(
     guard_jni(&mut env, 0, |env| {
         let host_id = opt_string(env, host_id_json)?;
         let path = opt_string(env, path)?.unwrap_or_default();
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.pin_folder(host_id.as_deref(), &path, pinned != 0)
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1325,10 +1256,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileAgentAct(
     guard_jni(&mut env, 0, |env| {
         let agent = opt_string(env, agent_json)?;
         let act = opt_string(env, act_json)?;
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.agent_act(agent.as_deref(), act.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1341,10 +1271,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileDeleteWarni
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let agent = opt_string(env, agent_json)?;
-        Ok(
-            with_profile(handle, |profile| profile.delete_warning(agent.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_profile(handle, |profile| {
+            profile.delete_warning(agent.as_deref())
+        }))
     })
 }
 
@@ -1359,10 +1288,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_profileHostCatalog
     guard_jni(&mut env, 0, |env| {
         let host_id = opt_string(env, host_id_json)?;
         let provider = opt_string(env, provider_json)?;
-        Ok(with_profile(handle, |profile| {
+        Ok(ticket_on_profile(handle, |profile| {
             profile.host_catalogue(host_id.as_deref(), provider.as_deref())
-        })
-        .unwrap_or(0) as jlong)
+        }))
     })
 }
 
@@ -1619,7 +1547,7 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionAct(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let act = opt_string(env, act_json)?;
-        Ok(with_chat(handle, |chat| chat.act(act.as_deref())).unwrap_or(0) as jlong)
+        Ok(ticket_on_chat(handle, |chat| chat.act(act.as_deref())))
     })
 }
 
@@ -1660,10 +1588,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionOpenOvervie
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let comparison = opt_string(env, comparison_json)?;
-        Ok(
-            with_chat(handle, |chat| chat.open_overview(comparison.as_deref())).unwrap_or(0)
-                as jlong,
-        )
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.open_overview(comparison.as_deref())
+        }))
     })
 }
 
@@ -1676,7 +1603,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionReview(
 ) -> jlong {
     guard_jni(&mut env, 0, |env| {
         let comparison = opt_string(env, comparison_json)?;
-        Ok(with_chat(handle, |chat| chat.review(comparison.as_deref())).unwrap_or(0) as jlong)
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.review(comparison.as_deref())
+        }))
     })
 }
 
@@ -1693,7 +1622,9 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_sessionPutBlob(
         let bytes = opt_bytes(env, bytes)?;
         let name = opt_string(env, name)?.unwrap_or_default();
         let mime = opt_string(env, mime)?.unwrap_or_default();
-        Ok(with_chat(handle, |chat| chat.put_blob(bytes, &name, &mime)).unwrap_or(0) as jlong)
+        Ok(ticket_on_chat(handle, |chat| {
+            chat.put_blob(bytes, &name, &mime)
+        }))
     })
 }
 
@@ -1776,30 +1707,49 @@ mod tests {
         rest[..end].to_owned()
     }
 
+    fn start_config(dir: &TempDir) -> String {
+        let data_dir = dir.0.to_str().expect("utf-8 temp dir");
+        let escaped_dir = data_dir.replace('\\', "\\\\").replace('"', "\\\"");
+        format!(
+            r#"{{"data_dir":"{escaped_dir}","device_name":"JNI Test","lan":false,"telemetry":false,"auto_reports":false}}"#
+        )
+    }
+
     #[cfg(unix)]
     #[test]
-    fn shutdown_pipe_wakes_poll_and_handles_timeout() {
-        let wake = ShutdownPipe::new().expect("wake pipe");
-        let shutdown = ShutdownPipe::new().expect("shutdown pipe");
+    fn an_interrupt_wakes_the_wait_and_a_stop_ends_it() {
+        let dir = TempDir::new("app-jni-wake");
+        let runtime_handle = start_runtime_from_json(&start_config(&dir)).expect("start runtime");
 
-        // Neither descriptor is readable -> immediate timeout (0).
-        assert_eq!(shutdown.wait_wake(wake.read_fd, 0), 0);
+        // A ring stays readable until a step reads it.
+        let _ = with_runtime(runtime_handle, AmuxRuntime::step);
+        ring_runtime(&get_runtime(runtime_handle).expect("runtime slot"));
+        assert_eq!(wait_wake(runtime_handle, 5_000), 1);
 
-        // Signaling wake makes wait_wake return 1.
-        wake.signal();
-        assert_eq!(shutdown.wait_wake(wake.read_fd, 100), 1);
-
-        // Signaling shutdown takes precedence and returns -1.
-        shutdown.signal();
-        assert_eq!(shutdown.wait_wake(wake.read_fd, 100), -1);
-
-        // Invalid wake descriptor returns -1.
-        assert_eq!(shutdown.wait_wake(-1, 0), -1);
+        // A watcher that never steps keeps waking until the stop, then ends.
+        let (ended, end) = std::sync::mpsc::channel();
+        let watcher = std::thread::spawn(move || {
+            loop {
+                let ready = wait_wake(runtime_handle, -1);
+                if ready < 0 {
+                    let _ = ended.send(ready);
+                    return;
+                }
+            }
+        });
+        stop_runtime_handle(runtime_handle);
+        assert_eq!(
+            end.recv_timeout(std::time::Duration::from_secs(30)),
+            Ok(-1),
+            "the stop ends the wait"
+        );
+        watcher.join().expect("watcher");
+        assert_eq!(wait_wake(runtime_handle, 0), -1);
     }
 
     #[test]
     fn handle_lookups_return_none_for_unknown_ids() {
-        assert!(with_runtime(0, AmuxRuntime::wake_fd).is_none());
+        assert!(with_runtime(0, |_| ()).is_none());
         assert!(with_profile(0, AmuxProfile::fleet_id).is_none());
         assert!(with_chat(0, AmuxChat::id).is_none());
     }
@@ -1807,11 +1757,7 @@ mod tests {
     #[test]
     fn runtime_stop_closes_unclosed_child_profiles_and_guards_closed_parents() {
         let dir = TempDir::new("app-jni-teardown");
-        let data_dir = dir.0.to_str().expect("utf-8 temp dir");
-        let escaped_dir = data_dir.replace('\\', "\\\\").replace('"', "\\\"");
-        let config = format!(
-            r#"{{"data_dir":"{escaped_dir}","device_name":"JNI Test","lan":false,"telemetry":false,"auto_reports":false}}"#
-        );
+        let config = start_config(&dir);
 
         let runtime_handle = start_runtime_from_json(&config).expect("start runtime");
         let stepped = with_runtime(runtime_handle, AmuxRuntime::step)
@@ -1839,7 +1785,7 @@ mod tests {
         // and removed before `AmuxRuntime::stop` flushes the installation.
         stop_runtime_handle(runtime_handle);
 
-        assert!(with_runtime(runtime_handle, AmuxRuntime::wake_fd).is_none());
+        assert!(with_runtime(runtime_handle, |_| ()).is_none());
         assert!(with_profile(profile_handle, AmuxProfile::fleet_id).is_none());
         assert!(open_profile_handle(runtime_handle, &profile_id).is_err());
         assert!(open_chat_handle(profile_handle, "{}", 50).is_err());

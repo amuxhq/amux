@@ -29,10 +29,10 @@ lint:
     {{bounded}} 300 sh -c 'sh apps/android/tools/feature-lint.sh && sh apps/android/tools/test-waits-lint.sh && sh apps/android/tools/strings-lint.sh'
     {{bounded}} 300 cargo run --locked -p ios-tools -- kotlin-types --check
 
-# Prove the JNI bridge graph carries no provider, host or test crate onto the
-# phone. The driving tools are the one deliberate exception and are checked
-# separately with them enabled.
-# Prove the JNI bridge graph carries no provider, host or test crate.
+# The driving tools are the one deliberate exception, checked below with
+# them enabled.
+#
+# Prove the JNI bridge graph carries no provider, host or test crate onto the phone.
 graph-check:
     mkdir -p target/android
     {{bounded}} 300 cargo tree --locked -p app-jni --target aarch64-linux-android -e normal --prefix none --format "{p}" > target/android/graph-shipping.txt

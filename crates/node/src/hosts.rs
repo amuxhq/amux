@@ -97,13 +97,9 @@ impl ProfileRuntime {
 
 fn hosts_trust_a_phone(entries: &[HostEntry], self_host: crate::HostId) -> bool {
     entries.iter().any(|entry| {
-        matches!(entry.standing, Some(wire::host_entry::Standing::Trusted(_)))
-            && entry.host.as_ref().is_some_and(|host| {
-                matches!(
-                    wire::Platform::try_from(host.platform),
-                    Ok(wire::Platform::Ios | wire::Platform::Android)
-                ) && host.host_id != self_host.as_bytes()
-            })
+        entry.trusted().is_some()
+            && entry.platform().is_phone()
+            && entry.host_id() != self_host.as_bytes()
     })
 }
 

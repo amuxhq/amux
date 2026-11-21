@@ -297,10 +297,7 @@ impl Daemon {
             });
         }
         for (host, said, relays) in self.routing.catalogue.claimed() {
-            if !untrusted(host)
-                || said.cloud_relay
-                || matches!(said.platform, wire::Platform::Ios | wire::Platform::Android)
-            {
+            if !untrusted(host) || said.cloud_relay || said.platform.is_phone() {
                 continue;
             }
             let mut announced_by: Vec<wire::Host> =

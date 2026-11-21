@@ -447,6 +447,13 @@ impl Candidate {
     }
 }
 
+impl Platform {
+    /// A phone: iOS or Android.
+    pub fn is_phone(self) -> bool {
+        matches!(self, Platform::Ios | Platform::Android)
+    }
+}
+
 impl Host {
     /// Whether the host serves as a cloud relay.
     pub fn is_cloud_relay(&self) -> bool {

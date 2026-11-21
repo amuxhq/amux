@@ -571,9 +571,12 @@ pub fn acp_fact(fact: &Fact) -> FactShape {
             .params
             .and_then(|raw| serde_json::from_str(raw.get()).ok())
             .unwrap_or_default();
+        // A vendor's params are its own data, which the record aliases, so
+        // only ACP's own methods are read for an update.
         let update: AcpUpdate = params
             .update
             .or(params.tool_call)
+            .filter(|_| !acp_protocol::EXTENSIONS.contains(&method) && acp_method(method))
             .and_then(|raw| serde_json::from_str(raw.get()).ok())
             .unwrap_or_default();
         let request = top.id.is_some().then_some("request");

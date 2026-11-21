@@ -358,6 +358,78 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
         "id",
         &[crate::codex::THREAD_REQUEST, crate::codex::RESUME_REQUEST],
     ),
+    // The agent process's handshake requests to an ACP agent, whose answers
+    // the interpreter tells apart by id. The interpreter's own requests
+    // (`amux-prompt-…`, `amux-set-…`, `amux-apply-…`) need no place here:
+    // it writes them itself, so a made-up stream learns them from its
+    // writes.
+    (
+        "id",
+        &[
+            crate::acp::INITIALIZE_REQUEST,
+            crate::acp::NEW_SESSION_REQUEST,
+            crate::acp::RESUME_REQUEST,
+            crate::acp::LOAD_REQUEST,
+        ],
+    ),
+    // JSON-RPC's version, the only one there is.
+    ("jsonrpc", &["2.0"]),
+    // ACP's closed sets the interpreter branches on, as `acp_protocol`
+    // spells them: a config option's category, a call's kind and status, a
+    // permission option's kind and the outcome chosen, a turn's stop
+    // reason, a plan entry's, a notice's and a compaction's.
+    (
+        "category",
+        &["mode", "model", "model_config", "thought_level", "speed"],
+    ),
+    (
+        "kind",
+        &[
+            "read",
+            "edit",
+            "delete",
+            "move",
+            "search",
+            "execute",
+            "think",
+            "fetch",
+            "switch_mode",
+            "other",
+            "allow_once",
+            "allow_always",
+            "reject_once",
+            "reject_always",
+        ],
+    ),
+    (
+        "status",
+        &["pending", "in_progress", "completed", "failed", "cancelled"],
+    ),
+    ("outcome", &["selected", "cancelled"]),
+    (
+        "stopReason",
+        &[
+            "end_turn",
+            "max_tokens",
+            "max_turn_requests",
+            "refusal",
+            "cancelled",
+        ],
+    ),
+    ("priority", &["high", "medium", "low"]),
+    ("severity", &["info", "warning", "error"]),
+    (
+        "state",
+        &[
+            "authenticated",
+            "unauthenticated",
+            "not_required",
+            "unknown",
+        ],
+    ),
+    // The auth method Grok lists only while signed in, by which the
+    // interpreter reads its sign-in (`grok-catalogue`).
+    ("id", &["cached_token"]),
     ("role", &["user", "assistant", "system"]),
     (
         "media_type",
@@ -482,6 +554,18 @@ const FRAMES: &[(&str, &str)] = &[
 /// position whose key is the data's (a model, a file, a question's id),
 /// itself aliased. A name anywhere else in data is aliased.
 const KEPT: &[(&str, &[&str])] = &[
+    // ACP: vendor data, of which the ACP interpreter reads Grok's turn
+    // tokens in its prompt answer (`grok-prompt`).
+    (
+        "*._meta",
+        &[
+            "inputTokens",
+            "outputTokens",
+            "cachedReadTokens",
+            "reasoningTokens",
+            "totalTokens",
+        ],
+    ),
     // Claude: a tool's input and result, wherever a frame carries them.
     ("message.content[].input", &["@input"]),
     ("event.content_block.input", &["@input"]),
@@ -1003,6 +1087,46 @@ fn kept(subtree: &str) -> &'static [&'static str] {
         .map_or(&[], |(_, kept)| kept)
 }
 
+/// The fields of a vendor's own ACP method that the ACP interpreter reads,
+/// by method and by place in the line, kept as names though the protocol
+/// crate leaves a vendor's params untyped: Grok's compaction report, told
+/// by its update's tag, with its token counts (`grok-compact`).
+const ACP_VENDOR_FIELDS: &[(&str, &[Place])] = &[(
+    "_x.ai/session_notification",
+    &[
+        ("params", &["update"]),
+        (
+            "params.update",
+            &["sessionUpdate", "tokens_before", "tokens_after"],
+        ),
+    ],
+)];
+
+/// A place in a line, with the names amux reads there.
+type Place = (&'static str, &'static [&'static str]);
+
+/// Marks the vendor fields of `line` that amux reads as typed in `fields`.
+fn vendor_fields(line: &Value, fields: &mut Fields) {
+    let Some(method) = line.get("method").and_then(Value::as_str) else {
+        return;
+    };
+    let Some((_, places)) = ACP_VENDOR_FIELDS.iter().find(|(named, _)| *named == method) else {
+        return;
+    };
+    for (place, read) in *places {
+        let pointer = format!("/{}", place.replace('.', "/"));
+        let Some(Value::Object(object)) = line.pointer(&pointer) else {
+            continue;
+        };
+        let untyped = object
+            .keys()
+            .filter(|name| !read.contains(&name.as_str()))
+            .cloned()
+            .collect();
+        fields.insert((*place).to_owned(), untyped);
+    }
+}
+
 /// The protobuf fields that name a model, effort, permission or mode from
 /// the provider's own catalogue, kept as a fact's model is when [`chosen`]
 /// holds them.
@@ -1479,7 +1603,16 @@ impl Skeleton {
             )
             | (wire::Kind::Unspecified, _) => Some(Fields::new()),
         };
-        let names = match &typed {
+        // The vendor fields amux reads are kept as names, though they are
+        // not reported as the protocol's own.
+        let read = typed.as_ref().map(|fields| {
+            let mut fields = fields.clone();
+            if kind == wire::Kind::Acp {
+                vendor_fields(&value, &mut fields);
+            }
+            fields
+        });
+        let names = match &read {
             None => Names::Own,
             Some(fields) => Names::Typed(fields),
         };
@@ -2003,6 +2136,15 @@ impl Skeleton {
         if CHOSEN
             .iter()
             .any(|(of, named, kind)| *of == message && *named == field && chosen(*kind, text))
+        {
+            return self.named(text);
+        }
+        // A built-in ACP agent's id, which amux chose and by which the
+        // interpreter knows that agent's quirks. An agent a person added
+        // goes by the id they gave it, which is aliased.
+        if message == "amux.v1.AgentSpec"
+            && field == "provider"
+            && crate::acp::built_in(text).is_some()
         {
             return self.named(text);
         }

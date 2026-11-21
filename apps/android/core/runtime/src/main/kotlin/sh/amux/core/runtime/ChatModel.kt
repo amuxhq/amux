@@ -340,6 +340,7 @@ class ChatModel(
     private data class Listed(val comparison: Comparison, val totals: ChangeTotals?)
     private var overviewShown: Boolean = false
     private var listed: Listed? = null
+    private var listingGeneration: Long = 0L
     var listingJob: Job? = null
         private set
 
@@ -407,6 +408,7 @@ class ChatModel(
     fun close() {
         loadingHintJob?.cancel()
         loadingHintJob = null
+        listingGeneration += 1
         listingJob?.cancel()
         listingJob = null
     }
@@ -771,22 +773,23 @@ class ChatModel(
             }
         }
         delta.overview?.let { incomingOverview ->
-            if (incomingOverview.changes != null) {
-                overview = incomingOverview
+            val keepChanges = overview?.changes?.takeIf {
+                overviewChangesComparison == comparison &&
+                    listed == Listed(comparison = comparison, totals = totals(comparison))
+            }
+            overview = if (keepChanges != null) {
+                incomingOverview.copy(changes = keepChanges)
+            } else if (
+                incomingOverview.changes != null &&
+                !overviewChangesLoading &&
+                overviewChangesError == null &&
+                listingGeneration == 0L
+            ) {
                 overviewChangesComparison = comparison
-                overviewChangesLoading = false
-                overviewChangesError = null
+                incomingOverview
             } else {
-                val keepChanges = overview?.changes?.takeIf {
-                    overviewChangesComparison == comparison &&
-                        listed == Listed(comparison = comparison, totals = totals(comparison))
-                }
-                overview = if (keepChanges != null) {
-                    incomingOverview.copy(changes = keepChanges)
-                } else {
-                    overviewChangesComparison = null
-                    incomingOverview
-                }
+                overviewChangesComparison = null
+                incomingOverview.copy(changes = null)
             }
         }
         delta.settings?.let { settings = it }
@@ -908,7 +911,14 @@ class ChatModel(
         if (this.comparison == comparison) return
         this.comparison = comparison
         overviewChangesError = null
-        listChangedFiles()
+        if (overviewShown) {
+            listChangedFiles()
+        } else {
+            listingGeneration += 1
+            listingJob?.cancel()
+            listingJob = null
+            overviewChangesLoading = false
+        }
         publish()
     }
 
@@ -920,6 +930,7 @@ class ChatModel(
             overviewChangesError = null
             listChangedFiles()
         } else {
+            listingGeneration += 1
             listingJob?.cancel()
             listingJob = null
             if (overviewChangesLoading) {
@@ -939,6 +950,7 @@ class ChatModel(
 
     /** Explicitly fetches the [Overview] (with changed files) for [comparison]. */
     fun openOverview(comparison: Comparison = this.comparison): Deferred<Result<Overview>> {
+        val gen = ++listingGeneration
         listingJob?.cancel()
         if (this.comparison == comparison) {
             overviewChangesLoading = true
@@ -947,7 +959,7 @@ class ChatModel(
         }
         val deferred = scope.async {
             val result = source.openOverview(comparison)
-            if (this@ChatModel.comparison == comparison) {
+            if (gen == listingGeneration && this@ChatModel.comparison == comparison) {
                 overviewChangesLoading = false
                 result.fold(
                     onSuccess = { fetched ->
@@ -973,13 +985,14 @@ class ChatModel(
         val asked = Listed(comparison = comparison, totals = totals(comparison))
         if (asked == listed) return
         listed = asked
+        val gen = ++listingGeneration
         listingJob?.cancel()
         overviewChangesLoading = true
         overviewChangesError = null
         publish()
         listingJob = scope.launch {
             val result = source.openOverview(asked.comparison)
-            if (comparison != asked.comparison) return@launch
+            if (gen != listingGeneration || comparison != asked.comparison) return@launch
             overviewChangesLoading = false
             result.fold(
                 onSuccess = { fetched ->
@@ -1239,6 +1252,33 @@ class ChatModel(
     }
 
     // --- Attachment Validation & Upload ------------------------------------
+
+    /**
+     * Marks a picked attachment as being read/prepared before [attach] begins
+     * uploading, keeping `uploading > 0` so Send and Resume stay disabled.
+     */
+    fun beginAttachmentPreparation() {
+        uploading += 1
+        notice = null
+        publish()
+    }
+
+    /** Releases a preparation reservation started by [beginAttachmentPreparation]. */
+    fun endAttachmentPreparation() {
+        if (uploading <= 0) return
+        uploading -= 1
+        publish()
+    }
+
+    /** Runs [block] while keeping `uploading > 0` until handoff, failure, or cancellation. */
+    suspend inline fun <T> withAttachmentPreparation(block: () -> T): T {
+        beginAttachmentPreparation()
+        return try {
+            block()
+        } finally {
+            endAttachmentPreparation()
+        }
+    }
 
     /**
      * Checks whether a file of [size] bytes may be attached before reading or
@@ -1577,6 +1617,7 @@ class ChatModel(
 
     private fun restoreWithoutSaving(sent: Draft) {
         val words = sent.words
+        val anchorTrailing = draftText.isNotEmpty() || positionedAttachments.any { it.offset != null }
         val prefixShift = when {
             draftText.isEmpty() -> 0
             words.isEmpty() -> 0
@@ -1594,7 +1635,13 @@ class ChatModel(
             words.isEmpty() -> draftText
             else -> "$words\n$draftText"
         }
-        val restoredAttachments = sent.positionedAttachments()
+        val restoredAttachments = sent.positionedAttachments().map { entry ->
+            if (anchorTrailing && entry.offset == null) {
+                entry.copy(offset = words.length)
+            } else {
+                entry
+            }
+        }
         if (restoredAttachments.isNotEmpty()) {
             positionedAttachments.addAll(0, restoredAttachments)
         }

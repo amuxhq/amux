@@ -805,4 +805,73 @@ class AskCardViewTest {
         composeRule.runOnIdle { backDispatcher.onBackPressed() }
         composeRule.onNodeWithText("Question one?").assertIsDisplayed()
     }
+
+    @Test
+    fun freeTextOtherRejectsBlankAndPreservesSurroundingSpacesVerbatim() {
+        val actions = mutableListOf<AskAction>()
+        val askCard = card(
+            body = AskBody.Question(
+                listOf(
+                    QuestionView(
+                        header = "Secret",
+                        question = "Enter passphrase",
+                        multiSelect = false,
+                        options = emptyList(),
+                        allowOther = true,
+                        secret = true,
+                    ),
+                ),
+            ),
+            choices = emptyList(),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                AskCardView(card = askCard, onAction = { actions += it })
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.ASK_OPTION_OTHER).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_OTHER_INPUT).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("   "))
+        }
+        composeRule.onNodeWithTag(AskReviewTags.ASK_NEXT).assertIsNotEnabled()
+
+        composeRule.onNodeWithTag(AskReviewTags.ASK_OTHER_INPUT).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("  secret  "))
+        }
+        composeRule.onNodeWithTag(AskReviewTags.ASK_NEXT).assertIsEnabled().performClick()
+        assertEquals(
+            AskAction.Respond(
+                responses = listOf(QuestionResponse(note = null, other = "  secret  ", picked = emptyList())),
+                askKey = "ask-1",
+            ),
+            actions.last(),
+        )
+    }
+
+    @Test
+    fun planAskWiresMarkdownCodeCopyControl() {
+        val copied = mutableListOf<String>()
+        val planCard = card(
+            body = AskBody.Plan(
+                title = "Migration plan",
+                body = "Run this step:\n\n```sh\ncargo test\n```",
+            ),
+            choices = listOf(Choice(ChoiceOutcome.ApprovePlan("", ""), primary = true, takesNote = false)),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                AskCardView(
+                    card = planCard,
+                    onAction = {},
+                    onCopyCode = { copied += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(MarkdownViewTags.CODE_COPY).performClick()
+        assertEquals(listOf("cargo test"), copied)
+    }
 }

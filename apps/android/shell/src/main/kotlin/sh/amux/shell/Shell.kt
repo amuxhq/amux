@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -537,10 +538,11 @@ fun Shell(
 private fun rememberChatLease(
     stores: StoreBundle,
     agent: AgentKey,
+    retryNonce: Int = 0,
 ): Result<ChatLease> {
     val profileReady by stores.profileReady.collectAsState()
     val profileVersion by stores.profileVersion.collectAsState()
-    val opened = remember(stores, agent, profileReady, profileVersion) {
+    val opened = remember(stores, agent, profileReady, profileVersion, retryNonce) {
         runCatching { stores.acquireChat(agent) }
     }
     DisposableEffect(opened) {
@@ -578,7 +580,7 @@ private fun ConversationRouteContent(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) {
-            coroutineScope.launch {
+            coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 ShellPlatform.attachPickedUri(
                     context = context,
                     uri = uri,
@@ -593,7 +595,7 @@ private fun ConversationRouteContent(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) {
-            coroutineScope.launch {
+            coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 ShellPlatform.attachPickedUri(
                     context = context,
                     uri = uri,
@@ -800,7 +802,8 @@ private fun ChangesRouteContent(
     router: Router,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val opened = rememberChatLease(stores = stores, agent = agent)
+    var retryNonce by remember(stores, agent) { mutableIntStateOf(0) }
+    val opened = rememberChatLease(stores = stores, agent = agent, retryNonce = retryNonce)
     val model = opened.getOrNull()?.model
     if (model == null) {
         ReviewPage(
@@ -809,7 +812,11 @@ private fun ChangesRouteContent(
                 error = opened.exceptionOrNull()?.failureDescription,
             ),
             onAction = { action ->
-                if (action is ReviewPageAction.Back) router.pop()
+                when (action) {
+                    ReviewPageAction.Back -> router.pop()
+                    ReviewPageAction.Retry -> retryNonce += 1
+                    else -> Unit
+                }
             },
         )
         return

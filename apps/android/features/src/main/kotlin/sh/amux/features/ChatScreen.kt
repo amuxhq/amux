@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +76,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -595,8 +595,13 @@ private fun ChatScreenContent(
     val lastLandingId = state.landingInFeed.lastOrNull()?.inputId
     val totalTailAnchor = state.keys.size + state.landingInFeed.size
     var initialFollowDone by remember { mutableStateOf(!state.following || totalTailAnchor == 0) }
+    var programmaticScrollCount by remember(listState) { mutableIntStateOf(0) }
+    var programmaticScrollEpoch by remember(listState) { mutableIntStateOf(0) }
     var userScrolledSinceSettle by remember { mutableStateOf(false) }
     var userHasInteracted by remember { mutableStateOf(false) }
+    val currentKeysAnchor by rememberUpdatedState(
+        Triple(state.keys.firstOrNull(), state.keys.lastOrNull(), totalTailAnchor),
+    )
 
     LaunchedEffect(
         state.following,
@@ -610,14 +615,20 @@ private fun ChatScreenContent(
             val totalItems = listState.layoutInfo.totalItemsCount
             val lastIndex = if (totalItems > 0) totalItems - 1 else totalTailAnchor - 1
             if (lastIndex >= 0) {
-                listState.scrollToItem(lastIndex)
-                val info = listState.layoutInfo
-                val lastVisible = info.visibleItemsInfo.lastOrNull()
-                if (lastVisible != null && lastVisible.index == info.totalItemsCount - 1) {
-                    val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
-                    if (overflow > 0) {
-                        listState.scrollBy(overflow.toFloat())
+                programmaticScrollCount += 1
+                try {
+                    listState.scrollToItem(lastIndex)
+                    val info = listState.layoutInfo
+                    val lastVisible = info.visibleItemsInfo.lastOrNull()
+                    if (lastVisible != null && lastVisible.index == info.totalItemsCount - 1) {
+                        val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
+                        if (overflow > 0) {
+                            listState.scrollBy(overflow.toFloat())
+                        }
                     }
+                } finally {
+                    programmaticScrollEpoch += 1
+                    programmaticScrollCount -= 1
                 }
             }
             initialFollowDone = true
@@ -626,34 +637,55 @@ private fun ChatScreenContent(
         }
     }
 
-    // Only user drag gestures (never frame-0 layout, programmatic scrollToItem,
-    // new row arrivals, or IME viewport shrink) change reading/following state.
+    // Any scroll outside our own auto-follow calls (touch drag, wheel, keyboard,
+    // accessibility actions) updates reading/following state, while frame-0 layout,
+    // programmatic scrollToItem, cap-scrolling, and IME viewport shrink do not.
     LaunchedEffect(listState) {
-        listState.interactionSource.interactions.collect { interaction ->
-            when (interaction) {
-                is DragInteraction.Start -> {
+        var settledPosition: Pair<Int, Int>? = null
+        var settledAnchor: Triple<String?, String?, Int>? = null
+        var settledEpoch = programmaticScrollEpoch
+        snapshotFlow {
+            TranscriptScrollObservation(
+                scrolling = listState.isScrollInProgress,
+                programmatic = programmaticScrollCount,
+                epoch = programmaticScrollEpoch,
+                atBottom = isNearTranscriptBottom(listState),
+                firstIndex = listState.firstVisibleItemIndex,
+                firstOffset = listState.firstVisibleItemScrollOffset,
+                followReady = initialFollowDone,
+                anchor = currentKeysAnchor,
+            )
+        }
+            .distinctUntilChanged()
+            .collect { obs ->
+                val pos = obs.firstIndex to obs.firstOffset
+                if (!obs.followReady || obs.programmatic > 0) {
+                    settledPosition = pos
+                    settledAnchor = obs.anchor
+                    settledEpoch = obs.epoch
+                    return@collect
+                }
+                if (obs.scrolling) {
+                    settledEpoch = obs.epoch
+                    settledAnchor = obs.anchor
                     userScrolledSinceSettle = true
                     userHasInteracted = true
-                }
-                is DragInteraction.Stop,
-                is DragInteraction.Cancel,
-                -> {
-                    if (!listState.isScrollInProgress && userScrolledSinceSettle) {
-                        userScrolledSinceSettle = false
-                        currentCallbacks.onReadingChange(isNearTranscriptBottom(listState))
-                    }
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress to isNearTranscriptBottom(listState) }
-            .distinctUntilChanged()
-            .collect { (scrolling, atBottom) ->
-                if (!scrolling && userScrolledSinceSettle) {
+                } else if (userScrolledSinceSettle) {
                     userScrolledSinceSettle = false
-                    currentCallbacks.onReadingChange(atBottom)
+                    settledPosition = pos
+                    settledAnchor = obs.anchor
+                    settledEpoch = obs.epoch
+                    currentCallbacks.onReadingChange(obs.atBottom)
+                } else if (obs.epoch != settledEpoch || obs.anchor != settledAnchor) {
+                    settledPosition = pos
+                    settledAnchor = obs.anchor
+                    settledEpoch = obs.epoch
+                } else if (settledPosition != null && pos != settledPosition) {
+                    settledPosition = pos
+                    userHasInteracted = true
+                    currentCallbacks.onReadingChange(obs.atBottom)
+                } else {
+                    settledPosition = pos
                 }
             }
     }
@@ -872,11 +904,13 @@ private fun ChatScreenContent(
             onDismiss = { settingsOpen = false },
             onSelectCommand = { command ->
                 settingsOpen = false
-                val prefix = command.sigil.ifEmpty { "/" } + command.name + " "
-                if (state.draft.isBlank() || state.draft.trimStart().startsWith(prefix.trimEnd())) {
-                    callbacks.onDraftChange(prefix)
-                } else {
-                    pendingCommandPrefix = prefix
+                val token = command.sigil.ifEmpty { "/" } + command.name
+                val prefix = "$token "
+                val trimmedStart = state.draft.trimStart()
+                when {
+                    state.draft.isBlank() -> callbacks.onDraftChange(prefix)
+                    trimmedStart == token || trimmedStart.startsWith(prefix) -> Unit
+                    else -> pendingCommandPrefix = prefix
                 }
             },
         )
@@ -991,6 +1025,17 @@ private fun ChatScreenContent(
         )
     }
 }
+
+private data class TranscriptScrollObservation(
+    val scrolling: Boolean,
+    val programmatic: Int,
+    val epoch: Int,
+    val atBottom: Boolean,
+    val firstIndex: Int,
+    val firstOffset: Int,
+    val followReady: Boolean,
+    val anchor: Triple<String?, String?, Int>,
+)
 
 /** Fallback screen shown when a chat cannot be opened (e.g. deleted or detached profile). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1984,6 +2029,7 @@ private fun ChatBottomDock(
                 onFormValuesChange = { values -> callbacks.onFormValuesChange(activeAsk.key, values) },
                 validateForm = callbacks.validateForm,
                 onInterrupt = callbacks.onInterrupt,
+                onCopyCode = callbacks.onCopyCode,
             )
         }
         return
@@ -2004,6 +2050,7 @@ private fun ChatBottomDock(
                     onFormValuesChange = { values -> callbacks.onFormValuesChange(activeAsk.key, values) },
                     validateForm = callbacks.validateForm,
                     onInterrupt = callbacks.onInterrupt,
+                    onCopyCode = callbacks.onCopyCode,
                 )
             }
         }

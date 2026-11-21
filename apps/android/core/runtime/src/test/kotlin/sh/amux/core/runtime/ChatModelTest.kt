@@ -1,7 +1,9 @@
 package sh.amux.core.runtime
 
 import java.nio.file.Files
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -41,6 +43,7 @@ import sh.amux.values.ControlsSummary
 import sh.amux.values.Diff
 import sh.amux.values.Draft
 import sh.amux.values.DraftAttachment
+import sh.amux.values.DraftPart
 import sh.amux.values.ExitCause
 import sh.amux.values.FieldProblem
 import sh.amux.values.FileStatus
@@ -1439,5 +1442,207 @@ class ChatModelTest {
         val realJpeg = PickedAttachment.fromFile(jpeg, "photo.bin", "application/octet-stream")
         assertTrue(realJpeg.image)
         assertEquals("image/jpeg", realJpeg.mime)
+    }
+
+    @Test
+    fun attachmentPreparationBlocksSendAndResumeUntilDoneFailureOrCancellation() =
+        runTest(StandardTestDispatcher()) {
+            val source = FakeChat(emptyList(), chatFrame())
+            val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+            model.setDraft("ship this with attachment")
+            assertTrue(model.canSend)
+
+            // Normal completion keeps canSend == false while active and restores it after.
+            val gate = CompletableDeferred<Unit>()
+            val prepJob = launch {
+                model.withAttachmentPreparation {
+                    assertFalse(model.canSend)
+                    assertEquals(1, model.snapshot.uploading)
+                    assertNull(model.send())
+                    gate.await()
+                }
+            }
+            runCurrent()
+            assertFalse(model.canSend)
+            assertEquals(1, model.snapshot.uploading)
+            gate.complete(Unit)
+            prepJob.join()
+            assertTrue(model.canSend)
+            assertEquals(0, model.snapshot.uploading)
+
+            // Failure releases the preparation count.
+            runCatching {
+                model.withAttachmentPreparation {
+                    assertFalse(model.canSend)
+                    throw IllegalStateException("disk error")
+                }
+            }
+            assertTrue(model.canSend)
+            assertEquals(0, model.snapshot.uploading)
+
+            // Cancellation releases the preparation count and restores canResume in Resume mode.
+            source.current = chatFrame(mode = Composer.Resume, phase = PhaseView.Exited(ExitCause.Ended))
+            source.pending.session = true
+            source.deliver(model)
+            assertTrue(model.canResume)
+
+            val cancelGate = CompletableDeferred<Unit>()
+            val cancelJob = launch {
+                model.withAttachmentPreparation {
+                    cancelGate.await()
+                }
+            }
+            runCurrent()
+            assertFalse(model.canResume)
+            assertEquals(1, model.snapshot.uploading)
+            cancelJob.cancel()
+            cancelJob.join()
+            assertTrue(model.canResume)
+            assertEquals(0, model.snapshot.uploading)
+        }
+
+    @Test
+    fun outOfOrderUncommittedDeltaDoesNotOverwriteOnBranchOverviewState() =
+        runTest(StandardTestDispatcher()) {
+            val git = Git(
+                baseBranch = "main",
+                branch = "fix",
+                uncommitted = ChangeTotals(files = 1, added = 2, removed = 0),
+                onBranch = ChangeTotals(files = 2, added = 9, removed = 1),
+            )
+            val uncommittedChanges = Changes(
+                totals = ChangeTotals(1, 2, 0),
+                folders = listOf(Folder("", listOf(ChangedFile("dirty.kt", "dirty.kt", 2, 0, FileStatus.Modified, false)))),
+            )
+            val onBranchChanges = Changes(
+                totals = ChangeTotals(2, 9, 1),
+                folders = listOf(Folder("", listOf(ChangedFile("branch.kt", "branch.kt", 9, 1, FileStatus.Modified, false)))),
+            )
+            val source = FakeChat(emptyList(), chatFrame().copy(git = git))
+            source.files = uncommittedChanges
+            source.overviewGate = CompletableDeferred()
+            val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+            model.showOverview(true)
+            assertTrue(model.snapshot.overviewChangesLoading)
+
+            // Switch to OnBranch while Uncommitted is in flight.
+            model.compare(Comparison.OnBranch)
+            assertTrue(model.snapshot.overviewChangesLoading)
+            assertNull(model.snapshot.overviewChangesComparison)
+
+            // Late untagged delta from the cancelled Uncommitted request arrives while OnBranch is loading.
+            model.apply(
+                ChatDelta(
+                    chat = 0L,
+                    rows = emptyList(),
+                    overview = Overview(jobs = emptyList(), failedServers = emptyList(), changes = uncommittedChanges),
+                ),
+            )
+            assertTrue(model.snapshot.overviewChangesLoading)
+            assertNull(model.snapshot.overviewChangesComparison)
+            assertNull(model.currentOverview?.changes)
+
+            // OnBranch fails; another stale Uncommitted delta must not clear the error or masquerade as OnBranch.
+            source.overviewFailure = RuntimeFailure("host away")
+            source.overviewGate!!.complete(Unit)
+            runCurrent()
+            assertFalse(model.snapshot.overviewChangesLoading)
+            assertEquals("host away", model.snapshot.overviewChangesError)
+
+            model.apply(
+                ChatDelta(
+                    chat = 0L,
+                    rows = emptyList(),
+                    overview = Overview(jobs = emptyList(), failedServers = emptyList(), changes = uncommittedChanges),
+                ),
+            )
+            assertEquals("host away", model.snapshot.overviewChangesError)
+            assertNull(model.snapshot.overviewChangesComparison)
+            assertNull(model.currentOverview?.changes)
+
+            // Retry succeeds with OnBranch changes; a subsequent stale delta keeps OnBranch intact.
+            source.overviewFailure = null
+            source.overviewGate = null
+            source.files = onBranchChanges
+            model.retryChangedFiles()
+            runCurrent()
+            assertEquals(Comparison.OnBranch, model.snapshot.overviewChangesComparison)
+            assertEquals(onBranchChanges, model.currentOverview?.changes)
+
+            model.apply(
+                ChatDelta(
+                    chat = 0L,
+                    rows = emptyList(),
+                    overview = Overview(jobs = emptyList(), failedServers = emptyList(), changes = uncommittedChanges),
+                ),
+            )
+            assertEquals(Comparison.OnBranch, model.snapshot.overviewChangesComparison)
+            assertEquals(onBranchChanges, model.currentOverview?.changes)
+        }
+
+    @Test
+    fun restoringRefusedPromptWithTrailingFileAheadOfNewerDraftPreservesOrder() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+        // Newer draft contains text with an inline paste B in the middle.
+        model.type("Newer  end")
+        val pasteText = (1..10).joinToString("\n") { "pasted line $it" }
+        model.type("Newer ${pasteText} end")
+        val pasteB = model.attachments.single()
+
+        // A refused prompt ended with trailing file A.
+        val fileA = DraftAttachment.File(
+            BlobRef(hash = listOf(1, 2, 3), name = "report.pdf", mime = "application/pdf", size = 128L),
+        )
+        source.drafts[listOf(99)] = Draft(
+            parts = listOf(
+                DraftPart.Text("First"),
+                DraftPart.Attachment(fileA),
+            ),
+        )
+        model.apply(
+            ChatDelta(
+                chat = 0L,
+                rows = emptyList(),
+                frame = chatFrame().copy(
+                    refused = listOf(
+                        RefusedPrompt(
+                            inputId = listOf(99),
+                            reason = Refusal(reason = RefusalReason.HostUnreachable, detail = null),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("First\nNewer  end", model.draft)
+        assertEquals(listOf(fileA, pasteB), model.attachments)
+
+        model.send()!!.join()
+        val sent = source.sent.single()
+        assertEquals(
+            listOf(
+                DraftPart.Text("First"),
+                DraftPart.Attachment(fileA),
+                DraftPart.Text("\nNewer "),
+                DraftPart.Attachment(pasteB),
+                DraftPart.Text(" end"),
+            ),
+            sent.parts,
+        )
+    }
+
+    @Test
+    fun questionDraftToResponsesPreservesNonblankOtherVerbatimAndDropsBlank() {
+        val draft = QuestionDraft(
+            picks = listOf(emptySet(), emptySet()),
+            others = listOf("  secret  ", "   "),
+            highlighted = listOf(null, null),
+        )
+        val responses = draft.toResponses()
+        assertEquals("  secret  ", responses[0].other)
+        assertNull(responses[1].other)
     }
 }

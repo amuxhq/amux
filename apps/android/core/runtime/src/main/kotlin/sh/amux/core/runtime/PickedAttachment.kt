@@ -250,7 +250,7 @@ data class QuestionDraft(
             QuestionResponse(note = note, other = null, picked = emptyList())
         } else {
             val chosen = picks[i].sorted()
-            val typedOther = others.getOrNull(i)?.trim()?.takeIf { it.isNotEmpty() }
+            val typedOther = others.getOrNull(i)?.takeIf { it.isNotBlank() }
             QuestionResponse(
                 note = note,
                 other = typedOther,

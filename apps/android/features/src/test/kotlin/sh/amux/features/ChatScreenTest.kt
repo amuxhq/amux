@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.AnnotatedString
 import org.junit.Assert.assertEquals
@@ -506,6 +507,12 @@ class ChatScreenTest {
         assertTrue("cap-scroll must not spuriously unfollow: $readingEvents", readingEvents.isEmpty())
         composeRule.onNodeWithText("Transcript message number 51 with enough text to occupy vertical space.")
             .assertIsDisplayed()
+
+        // Non-drag scroll (e.g. accessibility scroll / mouse wheel) updates reading=false and enables paging.
+        composeRule.onNodeWithTag(ChatScreenTags.FEED).performScrollToIndex(0)
+        composeRule.waitForIdle()
+        assertEquals(listOf(false), readingEvents)
+        assertTrue("scrolling to top via non-drag input must trigger paging", reachedTopEvents.isNotEmpty())
     }
 
     @Test
@@ -559,5 +566,52 @@ class ChatScreenTest {
         composeRule.onNodeWithTag(AskReviewTags.chatSettingsCommand("compact")).performClick()
         composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_CONFIRM).performClick()
         assertEquals(listOf("/compact "), draftChanges)
+    }
+
+    @Test
+    fun settingsCommandPreservesExistingCommandArgumentsAndConfirmsDifferentPrefix() {
+        val draftChanges = mutableListOf<String>()
+        val settingsWithCmd = sampleSettings().copy(
+            commands = listOf(
+                CommandView("compact", "Compact history", "", "built-in", "/", false),
+            ),
+        )
+        var screenState by mutableStateOf(
+            ChatScreenState(
+                subject = ChatSubject(name = "refactor-auth", host = "desk", key = agentKey),
+                keys = emptyList(),
+                frame = baseFrame(),
+                settings = settingsWithCmd,
+                draft = "/compact keep context",
+            ),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatScreen(
+                    state = screenState,
+                    rowSource = StaticChatRowSource(emptyList()),
+                    callbacks = ChatScreenCallbacks(
+                        onDraftChange = { draftChanges += it },
+                    ),
+                )
+            }
+        }
+
+        // Same command with arguments stays untouched without opening a confirmation dialog.
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_SETTINGS).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.chatSettingsCommand("compact")).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_DIALOG).assertDoesNotExist()
+        assertTrue("existing arguments for the same command must not be overwritten", draftChanges.isEmpty())
+
+        // Different command sharing a prefix prompts confirmation before overwriting.
+        screenState = screenState.copy(draft = "/compact-other")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_SETTINGS).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.chatSettingsCommand("compact")).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_DIALOG).assertIsDisplayed()
+        assertTrue(draftChanges.isEmpty())
     }
 }

@@ -14,7 +14,10 @@ import androidx.core.content.FileProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
 import java.nio.ByteBuffer
+import kotlin.math.floor
+import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sh.amux.core.runtime.ChatModel
@@ -26,6 +29,9 @@ import sh.amux.words.OpenableLink
  * Android platform helpers owned by `:shell` so `:features` stays pure Compose.
  */
 internal object ShellPlatform {
+    internal const val MAX_TRANSCODE_DIMENSION: Int = 4096
+    internal const val MAX_TRANSCODE_PIXELS: Long = 16_777_216L
+
     private val UNSAFE_VIEW_EXTENSIONS = setOf(
         "apk",
         "sh",
@@ -219,18 +225,100 @@ internal object ShellPlatform {
         return "$stem.$ext"
     }
 
-    private fun transcodeViaImageDecoder(bytes: ByteArray): Pair<ByteArray, String>? {
+    internal class OutputLimitExceededException : RuntimeException("Encoded output exceeded limit")
+
+    internal class BoundedByteArrayOutputStream(
+        private val maxBytes: Long,
+    ) : OutputStream() {
+        private val out = ByteArrayOutputStream()
+        private var written: Long = 0L
+
+        init {
+            require(maxBytes >= 0L) { "maxBytes must be non-negative" }
+        }
+
+        override fun write(b: Int) {
+            if (written + 1L > maxBytes) {
+                throw OutputLimitExceededException()
+            }
+            out.write(b)
+            written += 1L
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            if (off < 0 || len < 0 || off > b.size || off + len > b.size) {
+                throw IndexOutOfBoundsException()
+            }
+            if (len == 0) return
+            if (written + len.toLong() > maxBytes) {
+                throw OutputLimitExceededException()
+            }
+            out.write(b, off, len)
+            written += len.toLong()
+        }
+
+        fun toByteArray(): ByteArray = out.toByteArray()
+    }
+
+    /**
+     * Computes a bounded decode target size preserving aspect ratio so neither
+     * dimension exceeds [maxDimension] and total pixels never exceed [maxPixels].
+     * Returns `null` for non-positive dimensions.
+     */
+    internal fun boundedTranscodeSize(
+        width: Int,
+        height: Int,
+        maxDimension: Int = MAX_TRANSCODE_DIMENSION,
+        maxPixels: Long = MAX_TRANSCODE_PIXELS,
+    ): Pair<Int, Int>? {
+        if (width <= 0 || height <= 0 || maxDimension <= 0 || maxPixels <= 0L) return null
+        if (width <= maxDimension && height <= maxDimension && width.toLong() * height.toLong() <= maxPixels) {
+            return width to height
+        }
+        val dimScale = minOf(
+            maxDimension.toDouble() / width.toDouble(),
+            maxDimension.toDouble() / height.toDouble(),
+        )
+        val pixelScale = sqrt(maxPixels.toDouble() / (width.toDouble() * height.toDouble()))
+        val scale = minOf(1.0, dimScale, pixelScale)
+        var targetW = floor(width * scale).toInt().coerceIn(1, maxDimension)
+        var targetH = floor(height * scale).toInt().coerceIn(1, maxDimension)
+        while (targetW.toLong() * targetH.toLong() > maxPixels && (targetW > 1 || targetH > 1)) {
+            if (targetW >= targetH && targetW > 1) {
+                targetW -= 1
+            } else if (targetH > 1) {
+                targetH -= 1
+            }
+        }
+        return targetW to targetH
+    }
+
+    private fun transcodeViaImageDecoder(
+        bytes: ByteArray,
+        maxOutputBytes: Long = ChatModel.ATTACHMENT_LIMIT_BYTES,
+    ): Pair<ByteArray, String>? {
         val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
-        val bitmap = ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+        val bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val size = info.size
+            val bounded = boundedTranscodeSize(size.width, size.height)
+                ?: throw IllegalArgumentException("Invalid image dimensions: ${size.width}x${size.height}")
+            if (bounded.first != size.width || bounded.second != size.height) {
+                decoder.setTargetSize(bounded.first, bounded.second)
+            }
         }
         return try {
-            val out = ByteArrayOutputStream()
+            val out = BoundedByteArrayOutputStream(maxOutputBytes)
             val hasAlpha = bitmap.hasAlpha()
             val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
             val mime = if (hasAlpha) "image/png" else "image/jpeg"
             val quality = if (hasAlpha) 100 else 90
-            if (bitmap.compress(format, quality, out)) {
+            val compressed = try {
+                bitmap.compress(format, quality, out)
+            } catch (_: OutputLimitExceededException) {
+                return null
+            }
+            if (compressed) {
                 out.toByteArray() to mime
             } else {
                 null
@@ -250,7 +338,7 @@ internal object ShellPlatform {
         uri: Uri,
         isPhoto: Boolean,
         model: ChatModel,
-    ) {
+    ) = model.withAttachmentPreparation {
         val resolver = context.contentResolver
         val metadata = withContext(Dispatchers.IO) {
             var displayName: String? = null
@@ -294,7 +382,7 @@ internal object ShellPlatform {
         }
 
         if (metadata.size > 0L && !model.admits(metadata.name, metadata.size)) {
-            return
+            return@withAttachmentPreparation
         }
 
         val limit = ChatModel.ATTACHMENT_LIMIT_BYTES
@@ -314,12 +402,12 @@ internal object ShellPlatform {
                 image = false,
                 readBytes = { throw failure },
             )
-            return
+            return@withAttachmentPreparation
         }
 
         if (bounded.exceededLimit) {
             model.admits(metadata.name, limit + 1L)
-            return
+            return@withAttachmentPreparation
         }
 
         val classified = withContext(Dispatchers.IO) {
@@ -328,7 +416,7 @@ internal object ShellPlatform {
                 name = metadata.name,
                 reportedMime = metadata.mime,
                 isPhoto = isPhoto,
-                transcodeToNativeImage = ::transcodeViaImageDecoder,
+                transcodeToNativeImage = { raw -> transcodeViaImageDecoder(raw, maxOutputBytes = limit) },
             )
         }
         model.attach(classified)

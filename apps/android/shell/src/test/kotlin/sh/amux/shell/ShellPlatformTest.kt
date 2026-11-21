@@ -5,7 +5,9 @@ import java.io.InputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class ShellPlatformTest {
@@ -152,5 +154,53 @@ class ShellPlatformTest {
             transcodeToNativeImage = { null },
         )
         assertFalse(fakePng.image)
+    }
+
+    @Test
+    fun boundedByteArrayOutputStreamEnforcesLimitOnSingleAndBulkWrites() {
+        val exact = ShellPlatform.BoundedByteArrayOutputStream(maxBytes = 5L)
+        exact.write("hel".encodeToByteArray())
+        exact.write('l'.code)
+        exact.write('o'.code)
+        assertArrayEquals("hello".encodeToByteArray(), exact.toByteArray())
+
+        try {
+            exact.write('!'.code)
+            fail("expected OutputLimitExceededException on single-byte overflow")
+        } catch (_: ShellPlatform.OutputLimitExceededException) {
+            // expected
+        }
+
+        val bulk = ShellPlatform.BoundedByteArrayOutputStream(maxBytes = 4L)
+        bulk.write("ab".encodeToByteArray())
+        try {
+            bulk.write("cde".encodeToByteArray(), 0, 3)
+            fail("expected OutputLimitExceededException on bulk overflow")
+        } catch (_: ShellPlatform.OutputLimitExceededException) {
+            // expected
+        }
+        assertArrayEquals("ab".encodeToByteArray(), bulk.toByteArray())
+    }
+
+    @Test
+    fun boundedTranscodeSizePreservesAspectRatioWithinDimensionAndPixelCaps() {
+        assertEquals(1024 to 768, ShellPlatform.boundedTranscodeSize(1024, 768))
+        assertEquals(4096 to 2048, ShellPlatform.boundedTranscodeSize(8192, 4096))
+        assertEquals(2048 to 4096, ShellPlatform.boundedTranscodeSize(4096, 8192))
+
+        val pixelCapped = ShellPlatform.boundedTranscodeSize(
+            width = 4000,
+            height = 3000,
+            maxDimension = 4096,
+            maxPixels = 4_000_000L,
+        )!!
+        assertTrue(pixelCapped.first <= 4096 && pixelCapped.second <= 4096)
+        assertTrue(pixelCapped.first.toLong() * pixelCapped.second.toLong() <= 4_000_000L)
+        val originalRatio = 4000.0 / 3000.0
+        val scaledRatio = pixelCapped.first.toDouble() / pixelCapped.second.toDouble()
+        assertTrue(kotlin.math.abs(originalRatio - scaledRatio) < 0.01)
+
+        assertNull(ShellPlatform.boundedTranscodeSize(0, 100))
+        assertNull(ShellPlatform.boundedTranscodeSize(100, -1))
     }
 }

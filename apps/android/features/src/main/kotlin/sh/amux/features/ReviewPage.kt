@@ -261,7 +261,11 @@ fun ReviewPage(
                             val isSelected = comparison == state.comparison
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { onAction(ReviewPageAction.SelectComparison(comparison)) },
+                                onClick = {
+                                    if (comparison != state.comparison) {
+                                        onAction(ReviewPageAction.SelectComparison(comparison))
+                                    }
+                                },
                                 label = {
                                     Text(
                                         text = ChatWords.comparison(comparison, base = state.baseBranch),

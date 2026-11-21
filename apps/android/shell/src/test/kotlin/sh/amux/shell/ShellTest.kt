@@ -726,6 +726,51 @@ class ShellTest {
         assertEquals(listOf("ask-two" to 0), fakeChat.answeredChoices)
     }
 
+    @Test
+    fun changesRouteRetryReacquiresChatLeaseAfterInitialFailure() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val (hostId, _) = sampleDeskHost("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 11 })
+        var ready = false
+        var openAttempts = 0
+        val fakeChat = FakeShellChat(agentKey)
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            chatBridge = FakeShellChatBridge(),
+            opener = {
+                openAttempts += 1
+                if (!ready) {
+                    throw RuntimeFailure("host unreachable")
+                }
+                fakeChat
+            },
+        )
+        router.push(Route.Changes(agent = agentKey, initialFile = null))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_ERROR).assertIsDisplayed()
+        composeRule.onNodeWithText("host unreachable").assertIsDisplayed()
+        assertEquals(1, openAttempts)
+
+        ready = true
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_RETRY).performClick()
+        composeRule.waitForIdle()
+        assertEquals(2, openAttempts)
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithText("src/lib.rs").assertIsDisplayed()
+    }
+
     private class FakeShellChatBridge : ChatBridge {
         override val attachmentLimit: Long = 64L * 1024L * 1024L
         override fun commandMatches(commands: List<CommandView>, draft: String): List<CommandMatch> = emptyList()

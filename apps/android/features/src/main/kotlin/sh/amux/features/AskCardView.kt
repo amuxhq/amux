@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -375,6 +376,7 @@ fun AskCardView(
     onFormValuesChange: (List<FormValue>) -> Unit = {},
     validateForm: (List<FormField>, List<FormValue>) -> List<FormProblem> = ::validateFormFields,
     onInterrupt: (() -> Unit)? = null,
+    onCopyCode: (String) -> Unit = {},
 ) {
     val colors = AmuxTheme.colors
     val triggerInterrupt = {
@@ -455,6 +457,7 @@ fun AskCardView(
                         validateForm = validateForm,
                         onAction = onAction,
                         onInterrupt = triggerInterrupt,
+                        onCopyCode = onCopyCode,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f, fill = false),
@@ -677,6 +680,7 @@ private fun AskCardBody(
     validateForm: (List<FormField>, List<FormValue>) -> List<FormProblem>,
     onAction: (AskAction) -> Unit,
     onInterrupt: () -> Unit,
+    onCopyCode: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (val body = card.body) {
@@ -788,6 +792,7 @@ private fun AskCardBody(
                 note = noteText,
                 onNoteChange = onNoteTextChange,
                 onAction = onAction,
+                onCopyCode = onCopyCode,
                 modifier = modifier,
             )
         }
@@ -1067,6 +1072,7 @@ private fun PlanAskSection(
     note: String,
     onNoteChange: (String) -> Unit,
     onAction: (AskAction) -> Unit,
+    onCopyCode: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
@@ -1107,6 +1113,8 @@ private fun PlanAskSection(
                     MarkdownView(
                         markdown = plan.body,
                         title = planTitle,
+                        onOpenLink = { link -> onAction(AskAction.OpenUrl(link.url)) },
+                        onCopyCode = onCopyCode,
                     )
                 } else if (!planTitle.isNullOrBlank()) {
                     Text(
@@ -1800,7 +1808,7 @@ private fun QuestionAskSection(
 
     fun answered(index: Int): Boolean {
         if (index !in picks.indices) return false
-        return picks[index].isNotEmpty() || !others[index]?.trim().isNullOrEmpty()
+        return picks[index].isNotEmpty() || others[index]?.isNotBlank() == true
     }
 
     fun decided(index: Int): Boolean =
@@ -1812,7 +1820,7 @@ private fun QuestionAskSection(
         currentNotes: List<String> = notes,
     ): List<QuestionResponse> = questions.indices.map { index ->
         val note = currentNotes.getOrElse(index) { "" }.trim()
-        val other = currentOthers.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() }
+        val other = currentOthers.getOrNull(index)?.takeIf { it.isNotBlank() }
         val pickedList = if (other != null && !questions[index].multiSelect) {
             emptyList()
         } else {
@@ -2009,12 +2017,13 @@ private fun QuestionAskSection(
             } else if (step in questions.indices) {
                 val index = step
                 val currentQuestion = questions[index]
+                val bodyScrollState = key(cardKey, index) { rememberScrollState() }
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
+                        .verticalScroll(bodyScrollState),
                     verticalArrangement = Arrangement.spacedBy(Space.m),
                 ) {
                     Text(
@@ -2288,12 +2297,11 @@ private fun questionSummaryText(
     val parts = picked.sorted().mapNotNull { pos ->
         question.options.getOrNull(pos)?.let { MarkdownDocument.inline(it.label).plainText }
     }.toMutableList()
-    val trimmedOther = other?.trim()
-    if (!trimmedOther.isNullOrEmpty()) {
+    if (!other.isNullOrBlank()) {
         parts += if (question.secret) {
             stringResource(R.string.ask_question_answered_hidden)
         } else {
-            "\u201C$trimmedOther\u201D"
+            "\u201C$other\u201D"
         }
     }
     return when {

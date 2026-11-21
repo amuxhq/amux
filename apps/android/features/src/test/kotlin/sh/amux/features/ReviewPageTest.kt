@@ -301,4 +301,41 @@ class ReviewPageTest {
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertDoesNotExist()
         assertEquals(emptyList<ReviewPageAction>(), actions)
     }
+
+    @Test
+    fun tappingActiveComparisonChipIsNoOpAndPreservesOpenCommentDraft() {
+        val actions = mutableListOf<ReviewPageAction>()
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewPage(
+                    state = ReviewPageState(
+                        doc = sampleDoc(),
+                        comparison = Comparison.Uncommitted,
+                        baseBranch = "main",
+                    ),
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        // Direct tap on the active comparison chip must not emit SelectComparison.
+        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("uncommitted")).performClick()
+        assertEquals(emptyList<ReviewPageAction>(), actions)
+
+        // Even while a comment draft is open, invoking the active comparison chip keeps it intact.
+        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_INPUT).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("Keep this draft"))
+        }
+        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("uncommitted"))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(emptyList<ReviewPageAction>(), actions)
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithText("Keep this draft").assertIsDisplayed()
+
+        // Selecting a different comparison emits SelectComparison.
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_CANCEL).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.reviewComparison("onbranch")).performClick()
+        assertEquals(listOf(ReviewPageAction.SelectComparison(Comparison.OnBranch)), actions)
+    }
 }

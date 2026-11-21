@@ -198,8 +198,8 @@ fn token(text: &str) -> String {
         .collect()
 }
 
-/// The operating system's version: the product version on Apple systems,
-/// the kernel release on Linux and Android. Windows reports none.
+/// The operating system's version: the product version on Apple systems
+/// and Android, the kernel release on Linux. Windows reports none.
 fn os_version() -> Option<String> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
@@ -224,7 +224,27 @@ fn os_version() -> Option<String> {
         let text = text.split(|byte| *byte == 0).next().unwrap_or_default();
         Some(String::from_utf8_lossy(text).into_owned()).filter(|text| !text.is_empty())
     }
-    #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
+    // The Android release ("14"), not the kernel's, which says nothing of
+    // the system a person has.
+    #[cfg(target_os = "android")]
+    {
+        let mut value = [0 as std::ffi::c_char; libc::PROP_VALUE_MAX as usize];
+        // SAFETY: the name is NUL-terminated, and `value` holds the
+        // PROP_VALUE_MAX bytes the call may write, NUL included.
+        let len = unsafe {
+            libc::__system_property_get(c"ro.build.version.release".as_ptr(), value.as_mut_ptr())
+        };
+        if len <= 0 {
+            return None;
+        }
+        // SAFETY: the call NUL-terminates what it writes.
+        let release = unsafe { std::ffi::CStr::from_ptr(value.as_ptr()) };
+        Some(release.to_string_lossy().into_owned()).filter(|text| !text.is_empty())
+    }
+    #[cfg(all(
+        unix,
+        not(any(target_os = "macos", target_os = "ios", target_os = "android"))
+    ))]
     {
         // SAFETY: uname fills the zeroed struct it is handed.
         let mut name: libc::utsname = unsafe { std::mem::zeroed() };

@@ -152,6 +152,7 @@ chats with their agents, the installation's `ui.chat_in`:
   signing in (`not signed in · Run codex login.`). Long lists filter as you type; the folder's panel lists the
   host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's or an ACP agent's mode,
   or Claude's permissions that still ask, as in a chat; an ACP agent starts on its own mode until one is picked.
+  An ACP agent's modes stand for its permissions, so for one that offers modes `p` opens its modes.
   Each agent is created as the kind its host runs it as: Claude headless or in its terminal as the host says, Codex
   on its app server, an ACP agent over ACP.
 - **In each agent's own interface** (`native`): a small window over home with the name, the agent (every agent
@@ -436,7 +437,7 @@ moves the agent to its next mode where it offers modes (Codex: default and plan)
 permission that still asks before acting (terminal Claude: Claude's own cycle key). `ctrl+s` then `m`, `e` or `p`
 changes a running agent's model, effort or permission where it lets a client change them, and otherwise says how
 (terminal Claude's model and effort change by typing its own `/model` or `/effort`, its permission only by
-cycling); each model in the list carries the agent's own line on it, which says what an alias such as Claude's
+cycling). An ACP agent offers modes rather than permissions, so for one with modes `p` opens its modes; each model in the list carries the agent's own line on it, which says what an alias such as Claude's
 Default stands for. The composer's edge names the permission and the mode when they are not the agent's normal
 ones, and Codex settings that match no named permission read custom; the phone's model chip says the same. The
 phone's settings sheet offers every model, effort, permission and mode the agent offers.

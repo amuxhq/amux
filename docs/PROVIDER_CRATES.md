@@ -1,18 +1,20 @@
 # Provider crates
 
-*For developers changing how amux talks to Claude Code or Codex.*
+*For developers changing how amux talks to Claude Code, Codex or an agent that speaks the Agent Client Protocol.*
 
 Each provider is split into three layers, so that what the provider says,
 what amux does with it, and how amux reaches it can each change on its
 own. The layers are a protocol crate, an interpreter module and an agent
-host module, one of each per provider; neither provider's protocol crate
-or host module uses the other's.
+host module, one of each per protocol; no protocol crate or host module
+uses another's. Every agent that speaks the Agent Client Protocol (ACP)
+shares the ACP column; [ACP agents](ACP.md) covers what else is particular
+to them.
 
-| Layer | Claude | Codex | Holds |
-|---|---|---|---|
-| Protocol crate | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Every message in both directions, as types, with a decoder and an encoder. Nothing else. |
-| Interpreter module | [`interpret::claude_pty`](../crates/interpret/src/claude_pty/mod.rs) and [`interpret::claude_sdk`](../crates/interpret/src/claude_sdk/mod.rs) | [`interpret::codex`](../crates/interpret/src/codex/mod.rs) | Deciding what to send and what what was received means. |
-| Agent host module | [`agent::claude`](../crates/agent/src/claude.rs) | [`agent::codex`](../crates/agent/src/codex.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
+| Layer | Claude | Codex | ACP agents | Holds |
+|---|---|---|---|---|
+| Protocol crate | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | [`acp-protocol`](../crates/acp-protocol/src/lib.rs) | Every message in both directions, as types, with a decoder and an encoder. Nothing else. |
+| Interpreter module | [`interpret::claude_pty`](../crates/interpret/src/claude_pty/mod.rs) and [`interpret::claude_sdk`](../crates/interpret/src/claude_sdk/mod.rs) | [`interpret::codex`](../crates/interpret/src/codex/mod.rs) | [`interpret::acp`](../crates/interpret/src/acp/mod.rs) | Deciding what to send and what what was received means. |
+| Agent host module | [`agent::claude`](../crates/agent/src/claude.rs) | [`agent::codex`](../crates/agent/src/codex.rs) | [`agent::acp`](../crates/agent/src/acp.rs) | Starting the provider and carrying its bytes: launch arguments, the process, the terminal, sockets, the transcript file, the hook command. |
 
 ## Protocol
 
@@ -62,9 +64,9 @@ provider facts and decides what to write, and the agent process carries
 those writes. The [interpreters page](INTERPRETERS.md) describes them.
 
 No provider has a recording client of its own: amux's agent process drives
-headless Claude, terminal Claude and Codex in the live lane, and those
-captures, joined by the `claude-probe` and `codex-probe` binaries of
-`qualification`, are their corpora.
+headless Claude, terminal Claude, Codex and each built-in ACP agent in the
+live lane, and those captures, joined by the `claude-probe`, `codex-probe`
+and `acp-probe` binaries of `qualification`, are their corpora.
 
 ## Host
 
@@ -83,6 +85,13 @@ takes every message type from its protocol crate.
   it as bytes; the agent process and its interpreter build and read them
   with `codex-protocol`. The agent process uses it for every Codex agent
   and for the catalogue probe.
+- `agent::acp` runs an ACP agent's command over its stdin and stdout (the
+  start itself, shared by every platform, is in `agent::provider`) and
+  builds the requests of its handshake: `initialize`, then a new, resumed or
+  loaded session as the interpreter decides, with amux's tool server given
+  as an MCP entry. It turns a prompt's attachments into content blocks the
+  agent said it takes. The agent process uses it for every ACP agent, and
+  the catalogue helper uses it to send `initialize` alone.
 
 ## Who checks what
 

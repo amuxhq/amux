@@ -1227,6 +1227,8 @@ agent's stdio, one session per agent. Its envelope (`AcpItem`,
 `AcpSnapshot`, `AcpInput`, in `proto/amux/v1/acp.proto`) is its own and is
 shared by no other kind. Which agent runs is a plain string id
 (`AcpCreateConfig.agent`, the spec's `provider`), never a closed list.
+[ACP agents](ACP.md) ties this interpreter to the protocol crate, the host
+and the registry, and says how to add a built-in.
 
 **Quirks.** Where agents differ inside the protocol, `interpret::acp::quirks`
 picks a `Quirks` by the agent's id, each field citing the recording that
@@ -1356,8 +1358,12 @@ allow always nobody chose would be a session grant), recognised by the agent's n
 and the request's title, name and input (OpenCode retitles a call in its
 request, `opencode-allow`); `attach` asks, as it does in Claude, since it
 copies a file the agent names to where the agent reads unasked.
-`elicitation/create` opens a form or link ask row. Replying instead
-withdraws the ask, cancels the turn and queues the words.
+`elicitation/create` opens a form or link ask row. A field whose choices
+are a `oneOf` of constants with titles (as Antigravity's questions are,
+`agy-question`) is offered as a choice of the titles, and the answer sends
+the agent the constant of the title picked, so no client reads such a field
+as typed text. Replying instead withdraws the ask, cancels the turn and
+queues the words.
 
 **What is not read.** A vendor method (`_` prefix) that is a request is
 answered "method not found" at once, Grok's questions and tool-server forms
@@ -1379,6 +1385,7 @@ The messages themselves are in the protocol crates, described with these in
 |---|---|---|
 | [`agent::claude`](../crates/agent/src/claude.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files) and `amux internal hook claude` |
 | [`agent::codex`](../crates/agent/src/codex.rs) | Hosting the Codex app server: the listening socket (stdio on Windows), the process group, and whole messages in and out as bytes | The agent process, for its Codex server and the catalogue probe |
+| [`agent::acp`](../crates/agent/src/acp.rs) | Hosting an ACP agent over its stdio: the handshake's requests, opening, resuming or loading its session, prompts with their attachments as content blocks, amux's tool server as an MCP entry | The agent process, and the catalogue helper (`amux internal catalogue`), which sends `initialize` only |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-probe`'s terminal capture |
 
 ## Recordings and re-recording
@@ -1396,8 +1403,10 @@ Each kind's corpus sits beside the goldens that replay it, under
 | [`claude_pty/live/<scenario>/`](../crates/interpret/fixtures/claude_pty/live/README.md) | The whole terminal Claude corpus |
 | [`claude_pty/transcripts/`](../crates/interpret/fixtures/claude_pty/transcripts/README.md) | Two transcript captures that cannot be regenerated in the tree |
 | [`codex/live/<scenario>/`](../crates/interpret/fixtures/codex/live/README.md) | The whole Codex corpus |
+| [`acp/live/<agent>-<scenario>/`](../crates/interpret/fixtures/acp/live) | Each built-in ACP agent's corpus, prefixed by its id (`agy`, `opencode`, `grok`) |
 
-The probes that record and join them, `claude-probe` and `codex-probe`, are
+The probes that record and join them, `claude-probe`, `codex-probe` and
+`acp-probe`, are
 binaries of [`qualification`](../crates/qualification/src/lib.rs), with
 the recording manifests and sanitizer they share in its `recording` module.
 
@@ -1409,8 +1418,8 @@ machine paths, credentials and personal identifiers become placeholders, while
 provider ids, timestamps, payloads and ordering are kept.
 
 An interpreter fixture names its recording by a relative path and a format
-(`claude_pty_io`, `transcript_rows`, `claude_sdk_io` or `codex_io`), so the
-same bytes feed the provider fakes' conformance tests, the protocol crates'
+(`claude_pty_io`, `transcript_rows`, `claude_sdk_io`, `codex_io` or
+`acp_io`), so the same bytes feed the provider fakes' conformance tests, the protocol crates'
 corpus checks and the interpreter goldens.
 
 ### Re-recording
@@ -1429,6 +1438,10 @@ cargo run -p qualification --bin claude-probe -- join target/live/recordings/cla
 # Codex, the same way.
 just live codex <scenario>...
 cargo run -p qualification --bin codex-probe -- join target/live/recordings/codex/<scenario> <name>
+
+# ACP agents by id and scenarios, each a comma-separated list or `all`: a
+# scenario that runs to its end joins the corpus itself.
+just live acp <agent>[,<agent>...] <scenario>[,<scenario>...]
 ```
 
 The probe stands in for the provider on the lane's `PATH` and runs the real

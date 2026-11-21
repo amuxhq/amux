@@ -263,7 +263,8 @@ agent says each one is:
   once is `Deny` with a note, and the rest are `Offered`. Its body is a `Command`, an `Edit` from the call's diffs,
   or a `Tool` with the call's title and input.
 - **A form or a link the agent asks itself** is `Form` or `Link` named for the agent, with `Submit` or `OpenLink`
-  and a `Decline` that takes words instead.
+  and a `Decline` that takes words instead. A field whose answers are titled constants (`oneOf` of `const` and
+  `title`) arrives as a choice of the titles, and the agent is sent the constant of the one picked.
 - **Session facts.** Usage has no windows or credits; settings are picks of the agent's models, efforts and modes.
   A new agent starts on the agent's own mode unless the person picks one: the agent marks none of its modes
   normal, so none is chosen for it.

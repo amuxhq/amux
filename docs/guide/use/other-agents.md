@@ -77,6 +77,17 @@ in amux's log and is printed by `amux config edit`.
 
 ## What's different about these agents
 
+An agent's modes, such as OpenCode's build and plan, stand where Claude's
+permissions do. Shift+Tab steps through them, and in the terminal `ctrl+s`
+then `p` opens the list. An agent without modes, such as Grok, has nothing
+to step. When an agent asks before running a command or editing a file, you
+get exactly the choices it offers.
+
+A message you send while an agent works waits its turn, and you can withdraw
+it until then. Only Antigravity takes a waiting message into the turn it's
+running, so only Antigravity offers Send Now. When an agent asks you a
+question with set answers, you pick one.
+
 Some agents can't reopen a conversation in a new process. Such an agent
 never suspends. When its process ends, for example because the computer
 restarts, the agent has ended for good, and amux won't resume it. Start a

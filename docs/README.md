@@ -39,8 +39,10 @@ paths to the `.md` files, so they work both here and on the site.
   socket and raw attach, the tool server, exit and self-destruct.
 - [Provider crates](PROVIDER_CRATES.md) — each provider's protocol, host and client layers, who uses each, and
   the checks that hold them to the recordings.
-- [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude and Codex output becomes chat items:
-  the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
+- [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude, Codex and ACP agents' output becomes
+  chat items: the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
+- [ACP agents](ACP.md) — agents that speak the Agent Client Protocol: the layers, quirks by agent, resumability,
+  sign-in, the host's catalogue, capabilities and descriptors, and how to add a built-in.
 - [Journal and store](JOURNAL_AND_STORE.md) — journal segments, commit and revisions, durability, ingest, the
   store schema, own and replica rows, retention and disk-full.
 - [The wire](WIRE.md) — the amux.v1 service: subscriptions, items and appends, inputs and the queue, blobs,

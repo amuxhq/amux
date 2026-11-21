@@ -1,13 +1,6 @@
 package sh.amux.features
 
-import sh.amux.design.IconSize
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +26,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -58,6 +51,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,12 +61,13 @@ import sh.amux.design.AmuxColors
 import sh.amux.design.AmuxFonts
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
-import sh.amux.design.AmuxTypography
-import sh.amux.design.Motion
+import sh.amux.design.IconSize
 import sh.amux.design.Space
-import sh.amux.words.MarkdownBlock
-import sh.amux.words.MarkdownDocument
-import sh.amux.words.MarkdownText
+import sh.amux.values.InlineRun
+import sh.amux.values.Markdown
+import sh.amux.values.ProseBlock
+import sh.amux.values.ProseItem
+import sh.amux.values.TableAlign
 import sh.amux.words.OpenableLink
 
 /**
@@ -84,35 +80,21 @@ object MarkdownViewTags {
     const val QUOTE: String = "markdown.quote"
     const val TABLE: String = "markdown.table"
     const val RULE: String = "markdown.rule"
+
+    /** One list item's words, beside its marker. */
+    fun item(depth: Int, index: Int): String = "markdown.item.$depth.$index"
 }
 
 /**
- * Bounded LRU cache of parsed markdown documents so recompositions and scroll
- * recycling never re-parse unchanged prose on the UI thread.
- */
-private object ParsedMarkdownCache {
-    private const val MAX_ENTRIES = 64
-    private val cache = object : LinkedHashMap<String, MarkdownDocument>(MAX_ENTRIES, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownDocument>?): Boolean =
-            size > MAX_ENTRIES
-    }
-
-    @Synchronized
-    fun parse(source: String): MarkdownDocument {
-        cache[source]?.let { return it }
-        val doc = MarkdownDocument.parse(source)
-        cache[source] = doc
-        return doc
-    }
-}
-
-/**
- * Renders agent or prompt prose parsed by [MarkdownDocument.parse].
+ * Draws agent or prompt prose as the shared view layer parsed it: rows
+ * arrive with their words already in blocks, so nothing here reads
+ * markdown syntax.
  *
- * Supports headings (levels 1–6), paragraphs with inline styling and clickable
- * [OpenableLink]s, ordered/unordered nested lists, horizontally scrollable
- * fenced code blocks with copy action and diff line colouring, block quotes,
- * horizontally scrollable tables, horizontal rules and Codex [workingNote] ink.
+ * Draws headings (levels 1–6), paragraphs with inline styling and clickable
+ * [OpenableLink]s, ordered, bulleted and task lists whose items hold blocks,
+ * horizontally scrollable fenced code blocks with a copy action and diff line
+ * colouring, quotes holding blocks, horizontally scrollable tables,
+ * horizontal rules and Codex [workingNote] ink.
  *
  * A [streaming] reply draws nothing extra: the composer's activity line
  * already says the turn is working. TalkBack hears the reply as one stop
@@ -120,7 +102,7 @@ private object ParsedMarkdownCache {
  */
 @Composable
 fun MarkdownView(
-    markdown: String,
+    markdown: Markdown,
     modifier: Modifier = Modifier,
     workingNote: Boolean = false,
     streaming: Boolean = false,
@@ -129,8 +111,9 @@ fun MarkdownView(
     onOpenLink: (OpenableLink) -> Unit = {},
     onCopyCode: (String) -> Unit = {},
 ) {
-    val document = remember(markdown) { ParsedMarkdownCache.parse(markdown) }
+    val colors = AmuxTheme.colors
     val widthModifier = if (inBubble) Modifier else Modifier.fillMaxWidth()
+    val ink = if (workingNote) colors.inkMuted else colors.ink
 
     val streamingLabel = stringResource(R.string.markdown_streaming)
     Column(
@@ -141,7 +124,7 @@ fun MarkdownView(
                     !streaming -> Modifier
                     // Nothing written yet: the reply is only its state, said
                     // as what the stop is.
-                    document.blocks.isEmpty() && title.isNullOrEmpty() ->
+                    markdown.blocks.isEmpty() && title.isNullOrEmpty() ->
                         Modifier.semantics { contentDescription = streamingLabel }
                     // While it streams, the reply is one stop that says so;
                     // its blocks part again into stops of their own once it
@@ -155,86 +138,88 @@ fun MarkdownView(
         if (!title.isNullOrEmpty()) {
             MarkdownHeadingBlock(
                 level = 1,
-                text = remember(title) { MarkdownText.plain(title) },
-                workingNote = workingNote,
+                text = remember(title) { listOf(plainRun(title)) },
+                ink = ink,
                 onOpenLink = onOpenLink,
             )
         }
-        document.blocks.forEachIndexed { index, block ->
-            MarkdownBlockView(
-                block = block,
-                workingNote = workingNote,
-                onOpenLink = onOpenLink,
-                onCopyCode = onCopyCode,
-                // The last block of a reply still streaming is the one
-                // still being written.
-                streaming = streaming && index == document.blocks.lastIndex,
-            )
-        }
-    }
-}
-
-/**
- * Parses and converts an inline markdown string into a Compose [AnnotatedString]
- * styled with amux's bundled faces and clickable [OpenableLink] annotations.
- */
-@Composable
-fun rememberInlineMarkdown(
-    text: String,
-    workingNote: Boolean = false,
-    onOpenLink: (OpenableLink) -> Unit = {},
-): AnnotatedString {
-    val parsed = remember(text) { MarkdownDocument.inline(text) }
-    val colors = AmuxTheme.colors
-    val typography = AmuxTheme.typography
-    return remember(parsed, colors, typography, workingNote, onOpenLink) {
-        buildInlineMarkdownAnnotatedString(
-            markdownText = parsed,
-            colors = colors,
-            typography = typography,
-            workingNote = workingNote,
+        MarkdownBlocks(
+            blocks = markdown.blocks,
+            ink = ink,
+            streaming = streaming,
             onOpenLink = onOpenLink,
+            onCopyCode = onCopyCode,
         )
     }
 }
 
+/** [text] in no style: words amux writes itself, such as a plan's lifted title. */
+internal fun plainRun(text: String): InlineRun =
+    InlineRun(text = text, strong = false, emphasis = false, strikethrough = false, code = false)
+
+/** The runs' words without their styling: what TalkBack says and a test reads. */
+fun List<InlineRun>.plainText(): String = joinToString("") { it.text }
+
 /**
- * Converts a parsed [MarkdownText] into a Compose [AnnotatedString].
+ * Inline runs as a Compose [AnnotatedString] in amux's bundled faces, with
+ * clickable [OpenableLink] annotations.
  */
-fun buildInlineMarkdownAnnotatedString(
-    markdownText: MarkdownText,
-    colors: AmuxColors,
-    typography: AmuxTypography,
+@Composable
+fun rememberInlineRuns(
+    runs: List<InlineRun>,
     workingNote: Boolean = false,
     onOpenLink: (OpenableLink) -> Unit = {},
+): AnnotatedString {
+    val colors = AmuxTheme.colors
+    return remember(runs, colors, workingNote, onOpenLink) {
+        buildInlineAnnotatedString(runs = runs, colors = colors, workingNote = workingNote, onOpenLink = onOpenLink)
+    }
+}
+
+/**
+ * Converts inline runs into a Compose [AnnotatedString]. A link is
+ * underlined and coloured only when the phone will open it; any other
+ * target stays as its words.
+ */
+fun buildInlineAnnotatedString(
+    runs: List<InlineRun>,
+    colors: AmuxColors,
+    workingNote: Boolean = false,
+    onOpenLink: (OpenableLink) -> Unit = {},
+): AnnotatedString = annotatedRuns(runs, colors, if (workingNote) colors.inkMuted else colors.ink, onOpenLink)
+
+private fun annotatedRuns(
+    runs: List<InlineRun>,
+    colors: AmuxColors,
+    ink: Color,
+    onOpenLink: (OpenableLink) -> Unit,
 ): AnnotatedString = buildAnnotatedString {
-    val baseInk = if (workingNote) colors.inkMuted else colors.ink
-    for (span in markdownText.spans) {
+    for (run in runs) {
         val start = length
-        append(span.text)
+        append(run.text)
         val end = length
+        val link = run.link?.let(OpenableLink::parse)
 
         val decorations = mutableListOf<TextDecoration>()
-        if (span.strikethrough) decorations.add(TextDecoration.LineThrough)
-        if (span.underlined) decorations.add(TextDecoration.Underline)
+        if (run.strikethrough) decorations.add(TextDecoration.LineThrough)
+        if (link != null) decorations.add(TextDecoration.Underline)
 
         val spanStyle = SpanStyle(
             color = when {
-                span.link != null -> colors.accent
-                span.code -> colors.inkMuted
-                else -> baseInk
+                link != null -> colors.accent
+                run.code -> colors.inkMuted
+                else -> ink
             },
             // Inline code is plain mono text in the size of the words around
             // it, with no box: a box butts against the letters beside it and
             // breaks into slabs where a span wraps.
-            fontFamily = if (span.code) AmuxFonts.Mono else null,
-            fontWeight = if (span.bold) FontWeight.SemiBold else null,
-            fontStyle = if (span.italic) FontStyle.Italic else null,
+            fontFamily = if (run.code) AmuxFonts.Mono else null,
+            fontWeight = if (run.strong) FontWeight.SemiBold else null,
+            fontStyle = if (run.emphasis) FontStyle.Italic else null,
             textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
         )
         addStyle(spanStyle, start, end)
 
-        val link = span.link
         if (link != null) {
             addLink(
                 clickable = LinkAnnotation.Clickable(
@@ -254,47 +239,77 @@ fun buildInlineMarkdownAnnotatedString(
     }
 }
 
+/** Blocks in [ink], as a reply, a list item or a quote holds them. */
 @Composable
-private fun MarkdownBlockView(
-    block: MarkdownBlock,
-    workingNote: Boolean,
+private fun MarkdownBlocks(
+    blocks: List<ProseBlock>,
+    ink: Color,
+    streaming: Boolean,
     onOpenLink: (OpenableLink) -> Unit,
     onCopyCode: (String) -> Unit,
-    streaming: Boolean = false,
+) {
+    blocks.forEach { block ->
+        MarkdownBlockView(
+            block = block,
+            ink = ink,
+            streaming = streaming,
+            onOpenLink = onOpenLink,
+            onCopyCode = onCopyCode,
+        )
+    }
+}
+
+@Composable
+private fun MarkdownBlockView(
+    block: ProseBlock,
+    ink: Color,
+    streaming: Boolean,
+    onOpenLink: (OpenableLink) -> Unit,
+    onCopyCode: (String) -> Unit,
 ) {
     when (block) {
-        is MarkdownBlock.Heading -> MarkdownHeadingBlock(
+        is ProseBlock.Heading -> MarkdownHeadingBlock(
             level = block.level,
             text = block.text,
-            workingNote = workingNote,
+            ink = ink,
             onOpenLink = onOpenLink,
         )
-        is MarkdownBlock.Paragraph -> MarkdownParagraphBlock(
+        is ProseBlock.Paragraph -> MarkdownParagraphBlock(
             text = block.text,
-            workingNote = workingNote,
+            ink = ink,
             onOpenLink = onOpenLink,
         )
-        is MarkdownBlock.ListBlock -> MarkdownListBlockView(
+        is ProseBlock.List -> MarkdownListBlockView(
+            ordered = block.ordered,
+            depth = block.depth,
+            start = block.start,
             items = block.items,
-            workingNote = workingNote,
-            onOpenLink = onOpenLink,
-        )
-        is MarkdownBlock.Code -> MarkdownCodeBlockView(
-            language = block.language,
-            text = block.text,
-            onCopyCode = onCopyCode,
+            ink = ink,
             streaming = streaming,
-        )
-        is MarkdownBlock.Quote -> MarkdownQuoteBlockView(
-            lines = block.lines,
             onOpenLink = onOpenLink,
+            onCopyCode = onCopyCode,
         )
-        is MarkdownBlock.Table -> MarkdownTableBlockView(
+        is ProseBlock.Code -> MarkdownCodeBlockView(
+            language = block.language,
+            text = block.code,
+            onCopyCode = onCopyCode,
+            // Only a fence the text ends inside is still being written; every
+            // other block of a streaming reply is finished.
+            streaming = streaming && !block.closed,
+        )
+        is ProseBlock.Quote -> MarkdownQuoteBlockView(
+            blocks = block.blocks,
+            streaming = streaming,
+            onOpenLink = onOpenLink,
+            onCopyCode = onCopyCode,
+        )
+        is ProseBlock.Table -> MarkdownTableBlockView(
+            alignments = block.alignments,
             header = block.header,
             rows = block.rows,
             onOpenLink = onOpenLink,
         )
-        MarkdownBlock.Rule -> AmuxHairline(
+        ProseBlock.Rule -> AmuxHairline(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(MarkdownViewTags.RULE),
@@ -305,20 +320,16 @@ private fun MarkdownBlockView(
 @Composable
 private fun MarkdownHeadingBlock(
     level: Int,
-    text: MarkdownText,
-    workingNote: Boolean,
+    text: List<InlineRun>,
+    ink: Color,
     onOpenLink: (OpenableLink) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val typography = AmuxTheme.typography
-    val annotated = remember(text, colors, typography, workingNote, onOpenLink) {
-        buildInlineMarkdownAnnotatedString(text, colors, typography, workingNote, onOpenLink)
-    }
-    val style = headingStyle(level)
+    val annotated = remember(text, colors, ink, onOpenLink) { annotatedRuns(text, colors, ink, onOpenLink) }
     Text(
         text = annotated,
-        style = style,
-        color = if (workingNote) colors.inkMuted else colors.ink,
+        style = headingStyle(level),
+        color = ink,
         modifier = Modifier.semantics { heading() },
     )
 }
@@ -360,52 +371,85 @@ private fun headingStyle(level: Int): TextStyle = when (level) {
 
 @Composable
 private fun MarkdownParagraphBlock(
-    text: MarkdownText,
-    workingNote: Boolean,
+    text: List<InlineRun>,
+    ink: Color,
     onOpenLink: (OpenableLink) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
-    val annotated = remember(text, colors, typography, workingNote, onOpenLink) {
-        buildInlineMarkdownAnnotatedString(text, colors, typography, workingNote, onOpenLink)
-    }
-    SelectionContainer {
+    val annotated = remember(text, colors, ink, onOpenLink) { annotatedRuns(text, colors, ink, onOpenLink) }
+    SelectionContainer(modifier = modifier) {
         Text(
             text = annotated,
             style = typography.body,
-            color = if (workingNote) colors.inkMuted else colors.ink,
+            color = ink,
         )
     }
 }
 
+/**
+ * A list: each item's marker sits in a column as wide as the list's widest
+ * marker, numbers right-aligned in it (`9.` over `10.`), so every item's
+ * words start at one edge. Sized to each marker alone, item 10's words
+ * would start further right than item 9's.
+ */
 @Composable
 private fun MarkdownListBlockView(
-    items: List<MarkdownBlock.Item>,
-    workingNote: Boolean,
+    ordered: Boolean,
+    depth: Int,
+    start: Long,
+    items: List<ProseItem>,
+    ink: Color,
+    streaming: Boolean,
     onOpenLink: (OpenableLink) -> Unit,
+    onCopyCode: (String) -> Unit,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
-    Column(verticalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs)) {
-        items.forEach { item ->
-            val annotated = remember(item.text, colors, typography, workingNote, onOpenLink) {
-                buildInlineMarkdownAnnotatedString(item.text, colors, typography, workingNote, onOpenLink)
+    val markers = remember(ordered, start, items) {
+        items.mapIndexed { index, item ->
+            when (item.task) {
+                true -> "\u2713"
+                false -> "\u25CB"
+                null -> if (ordered) "${start + index}." else "\u2022"
             }
+        }
+    }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val column = remember(markers, typography.body, density) {
+        with(density) {
+            markers.maxOfOrNull { measurer.measure(it, style = typography.body).size.width }?.toDp() ?: 0.dp
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs)) {
+        items.forEachIndexed { index, item ->
+            // A task that is done recedes, as its marker does.
+            val itemInk = if (item.task == true) colors.inkFaint else ink
             Row(
-                modifier = Modifier.padding(start = (item.depth * 16).dp),
                 horizontalArrangement = Arrangement.spacedBy(Space.s),
                 verticalAlignment = Alignment.Top,
             ) {
                 Text(
-                    text = item.marker,
+                    text = markers[index],
                     style = typography.body,
                     color = colors.inkFaint,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(column),
                 )
-                SelectionContainer(modifier = Modifier.weight(1f, fill = false)) {
-                    Text(
-                        text = annotated,
-                        style = typography.body,
-                        color = if (workingNote) colors.inkMuted else colors.ink,
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .testTag(MarkdownViewTags.item(depth, index)),
+                    verticalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
+                ) {
+                    MarkdownBlocks(
+                        blocks = item.blocks,
+                        ink = itemInk,
+                        streaming = streaming,
+                        onOpenLink = onOpenLink,
+                        onCopyCode = onCopyCode,
                     )
                 }
             }
@@ -416,7 +460,7 @@ private fun MarkdownListBlockView(
 @Suppress("DEPRECATION")
 @Composable
 private fun MarkdownCodeBlockView(
-    language: String?,
+    language: String,
     text: String,
     onCopyCode: (String) -> Unit,
     /** The block still being written: the open fence of text still arriving. */
@@ -435,7 +479,7 @@ private fun MarkdownCodeBlockView(
         }
     }
 
-    val isDiff = remember(language) { language?.equals("diff", ignoreCase = true) == true }
+    val isDiff = remember(language) { language.equals("diff", ignoreCase = true) }
     val copyLabel = stringResource(if (copied) R.string.markdown_code_copied else R.string.markdown_copy_code)
     val shape = RoundedCornerShape(metrics.controlRadius)
 
@@ -455,7 +499,7 @@ private fun MarkdownCodeBlockView(
                     .padding(start = Space.m, end = Space.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!language.isNullOrEmpty()) {
+                if (language.isNotEmpty()) {
                     Text(
                         text = language,
                         style = typography.sectionTitle,
@@ -493,7 +537,7 @@ private fun MarkdownCodeBlockView(
                         // Drawn plain at once, then in the colours of its
                         // tokens as the shared view answers.
                         val answer = rememberHighlighted(
-                            CodeHighlighting.Request.Block(code = text, info = language.orEmpty(), streaming = streaming),
+                            CodeHighlighting.Request.Block(code = text, info = language, streaming = streaming),
                         )
                         val coloured = remember(text, answer, colors) {
                             answer?.let { colors.codeText(it.runsFor(codeLines(text))) }
@@ -549,11 +593,12 @@ private fun DiffCodeLines(text: String) {
 
 @Composable
 private fun MarkdownQuoteBlockView(
-    lines: List<MarkdownText>,
+    blocks: List<ProseBlock>,
+    streaming: Boolean,
     onOpenLink: (OpenableLink) -> Unit,
+    onCopyCode: (String) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val typography = AmuxTheme.typography
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -572,24 +617,22 @@ private fun MarkdownQuoteBlockView(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            lines.forEach { line ->
-                val annotated = remember(line, colors, typography, onOpenLink) {
-                    buildInlineMarkdownAnnotatedString(line, colors, typography, workingNote = true, onOpenLink = onOpenLink)
-                }
-                Text(
-                    text = annotated,
-                    style = typography.body,
-                    color = colors.inkMuted,
-                )
-            }
+            MarkdownBlocks(
+                blocks = blocks,
+                ink = colors.inkMuted,
+                streaming = streaming,
+                onOpenLink = onOpenLink,
+                onCopyCode = onCopyCode,
+            )
         }
     }
 }
 
 @Composable
 private fun MarkdownTableBlockView(
-    header: List<MarkdownText>,
-    rows: List<List<MarkdownText>>,
+    alignments: List<TableAlign>,
+    header: List<List<InlineRun>>,
+    rows: List<List<List<InlineRun>>>,
     onOpenLink: (OpenableLink) -> Unit,
 ) {
     val colors = AmuxTheme.colors
@@ -609,10 +652,10 @@ private fun MarkdownTableBlockView(
             border = BorderStroke(metrics.hairline, colors.hairline),
         ) {
             Column(modifier = Modifier.width(IntrinsicSize.Max)) {
-                MarkdownTableRow(cells = header, isHeader = true, onOpenLink = onOpenLink)
+                MarkdownTableRow(cells = header, alignments = alignments, isHeader = true, onOpenLink = onOpenLink)
                 rows.forEach { row ->
                     AmuxHairline()
-                    MarkdownTableRow(cells = row, isHeader = false, onOpenLink = onOpenLink)
+                    MarkdownTableRow(cells = row, alignments = alignments, isHeader = false, onOpenLink = onOpenLink)
                 }
             }
         }
@@ -621,27 +664,26 @@ private fun MarkdownTableBlockView(
 
 @Composable
 private fun MarkdownTableRow(
-    cells: List<MarkdownText>,
+    cells: List<List<InlineRun>>,
+    alignments: List<TableAlign>,
     isHeader: Boolean,
     onOpenLink: (OpenableLink) -> Unit,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
+    val ink = if (isHeader) colors.inkMuted else colors.ink
     Row(verticalAlignment = Alignment.Top) {
         cells.forEachIndexed { index, cell ->
-            val annotated = remember(cell, colors, typography, isHeader, onOpenLink) {
-                buildInlineMarkdownAnnotatedString(
-                    markdownText = cell,
-                    colors = colors,
-                    typography = typography,
-                    workingNote = isHeader,
-                    onOpenLink = onOpenLink,
-                )
-            }
+            val annotated = remember(cell, colors, ink, onOpenLink) { annotatedRuns(cell, colors, ink, onOpenLink) }
             Text(
                 text = annotated,
                 style = if (isHeader) typography.caption.copy(fontWeight = FontWeight.SemiBold) else typography.monoSmall,
-                color = if (isHeader) colors.inkMuted else colors.ink,
+                color = ink,
+                textAlign = when (alignments.getOrNull(index)) {
+                    TableAlign.Right -> TextAlign.End
+                    TableAlign.Center -> TextAlign.Center
+                    else -> TextAlign.Start
+                },
                 modifier = Modifier
                     .width(if (index == 0) 146.dp else 128.dp)
                     .padding(horizontal = Space.s + Space.xxs, vertical = Space.s),
@@ -649,4 +691,3 @@ private fun MarkdownTableRow(
         }
     }
 }
-

@@ -81,11 +81,11 @@ import sh.amux.values.GroupState
 import sh.amux.values.OpenedAgent
 import sh.amux.values.Row
 import sh.amux.values.RowKind
-import sh.amux.values.Segment
+import sh.amux.values.Markdown
+import sh.amux.values.ProsePart
 import sh.amux.values.SendState
 import sh.amux.words.AgentStanding
 import sh.amux.words.ChatWords
-import sh.amux.words.segment
 import sh.amux.words.OpenableLink
 import sh.amux.words.RailJoin
 import sh.amux.words.RunPlacement
@@ -299,7 +299,7 @@ private fun ChatRowKindView(
     when (val kind = row.kind) {
         is RowKind.Prompt -> {
             PromptBubbleRow(
-                segments = kind.text.map { it.segment },
+                parts = kind.text,
                 steered = kind.steered,
                 imageBytes = imageBytes,
                 onOpenImage = callbacks.onOpenImage,
@@ -310,7 +310,7 @@ private fun ChatRowKindView(
         }
         is RowKind.Prose -> {
             ProseRowView(
-                segments = kind.text.map { it.segment },
+                parts = kind.text,
                 streaming = kind.streaming,
                 workingNote = kind.workingNote,
                 imageBytes = imageBytes,
@@ -636,7 +636,7 @@ private fun ChatRowKindView(
 
 @Composable
 internal fun PromptBubbleRow(
-    segments: List<Segment>,
+    parts: List<ProsePart>,
     steered: Boolean,
     imageBytes: (BlobRef) -> ByteArray?,
     onOpenImage: (List<Int>, String) -> Unit,
@@ -666,8 +666,8 @@ internal fun PromptBubbleRow(
                 color = colors.sunken,
                 contentColor = colors.ink,
             ) {
-                SegmentsColumn(
-                    segments = segments,
+                ProsePartsColumn(
+                    parts = parts,
                     inBubble = true,
                     workingNote = false,
                     streaming = false,
@@ -692,7 +692,7 @@ internal fun PromptBubbleRow(
 
 @Composable
 private fun ProseRowView(
-    segments: List<Segment>,
+    parts: List<ProsePart>,
     streaming: Boolean,
     workingNote: Boolean,
     imageBytes: (BlobRef) -> ByteArray?,
@@ -701,8 +701,8 @@ private fun ProseRowView(
     onOpenLink: (OpenableLink) -> Unit,
     onCopyCode: (String) -> Unit,
 ) {
-    SegmentsColumn(
-        segments = segments,
+    ProsePartsColumn(
+        parts = parts,
         inBubble = false,
         workingNote = workingNote,
         streaming = streaming,
@@ -719,8 +719,8 @@ private fun ProseRowView(
 }
 
 @Composable
-private fun SegmentsColumn(
-    segments: List<Segment>,
+private fun ProsePartsColumn(
+    parts: List<ProsePart>,
     inBubble: Boolean,
     workingNote: Boolean,
     streaming: Boolean,
@@ -731,18 +731,18 @@ private fun SegmentsColumn(
     onCopyCode: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val lastTextIndex = segments.indexOfLast { it is Segment.Text }
+    val lastTextIndex = parts.indexOfLast { it is ProsePart.Text }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        segments.forEachIndexed { index, segment ->
-            when (segment) {
-                is Segment.Text -> {
+        parts.forEachIndexed { index, part ->
+            when (part) {
+                is ProsePart.Text -> {
                     val isStreamingThis = streaming && index == lastTextIndex
-                    if (segment.value.isNotBlank() || isStreamingThis) {
+                    if (part.value.blocks.isNotEmpty() || isStreamingThis) {
                         MarkdownView(
-                            markdown = segment.value,
+                            markdown = part.value,
                             workingNote = workingNote,
                             streaming = isStreamingThis,
                             inBubble = inBubble,
@@ -751,9 +751,9 @@ private fun SegmentsColumn(
                         )
                     }
                 }
-                is Segment.Attachment -> {
+                is ProsePart.Attachment -> {
                     MessageAttachmentView(
-                        view = segment.value,
+                        view = part.value,
                         imageBytes = imageBytes,
                         onOpenImage = onOpenImage,
                         onOpenAttachment = onOpenAttachment,
@@ -763,7 +763,7 @@ private fun SegmentsColumn(
         }
         if (streaming && lastTextIndex < 0) {
             MarkdownView(
-                markdown = "",
+                markdown = NO_WORDS,
                 workingNote = workingNote,
                 streaming = true,
                 inBubble = inBubble,
@@ -771,6 +771,8 @@ private fun SegmentsColumn(
         }
     }
 }
+
+private val NO_WORDS = Markdown(source = "", blocks = emptyList())
 
 @Composable
 private fun ErrorRowCard(

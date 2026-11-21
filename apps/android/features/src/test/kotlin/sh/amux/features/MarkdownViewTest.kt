@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,6 +25,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
+import sh.amux.testsupport.MarkdownFixtures
+import sh.amux.testsupport.plainMarkdown
+import sh.amux.values.Markdown
 import sh.amux.words.OpenableLink
 
 @RunWith(RobolectricTestRunner::class)
@@ -32,6 +36,8 @@ import sh.amux.words.OpenableLink
 class MarkdownViewTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    private fun parsed(source: String): Markdown = MarkdownFixtures.parsed(source)
 
     @Test
     fun rendersHeadingsInlineFormattingAndLists() {
@@ -50,7 +56,7 @@ class MarkdownViewTest {
 
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                MarkdownView(markdown = md)
+                MarkdownView(markdown = parsed(md))
             }
         }
 
@@ -74,7 +80,7 @@ class MarkdownViewTest {
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 MarkdownView(
-                    markdown = md,
+                    markdown = parsed(md),
                     onCopyCode = { copied += it },
                 )
             }
@@ -100,7 +106,7 @@ class MarkdownViewTest {
 
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                MarkdownView(markdown = md)
+                MarkdownView(markdown = parsed(md))
             }
         }
 
@@ -125,13 +131,14 @@ class MarkdownViewTest {
 
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                MarkdownView(markdown = md)
+                MarkdownView(markdown = parsed(md))
             }
         }
 
         composeRule.onNodeWithTag(MarkdownViewTags.QUOTE).assertIsDisplayed()
-        composeRule.onNodeWithText("Keep surfaces neutral.").assertIsDisplayed()
-        composeRule.onNodeWithText("Spend colour only on attention.").assertIsDisplayed()
+        // The quote's two lines are one paragraph broken where the agent
+        // broke it.
+        composeRule.onNodeWithText("Keep surfaces neutral.\nSpend colour only on attention.").assertIsDisplayed()
         composeRule.onNodeWithTag(MarkdownViewTags.TABLE).assertIsDisplayed()
         composeRule.onNodeWithText("Crate").assertIsDisplayed()
         composeRule.onNodeWithText("Role").assertIsDisplayed()
@@ -147,7 +154,7 @@ class MarkdownViewTest {
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 MarkdownView(
-                    markdown = md,
+                    markdown = parsed(md),
                     workingNote = true,
                     streaming = true,
                     onOpenLink = { opened += it },
@@ -158,10 +165,10 @@ class MarkdownViewTest {
         composeRule.onNodeWithText("See amux docs and ignored.").assertIsDisplayed()
 
         // Verify the built AnnotatedString carries only the openable https link and invokes onOpenLink.
-        val annotated = buildInlineMarkdownAnnotatedString(
-            markdownText = sh.amux.words.MarkdownDocument.inline(md),
+        val paragraph = parsed(md).blocks.single() as sh.amux.values.ProseBlock.Paragraph
+        val annotated = buildInlineAnnotatedString(
+            runs = paragraph.text,
             colors = sh.amux.design.AmuxDesign.App.colors(Appearance.Light),
-            typography = sh.amux.design.AmuxDesign.App.typography,
             onOpenLink = { opened += it },
         )
         val links = annotated.getLinkAnnotations(0, annotated.length)
@@ -176,7 +183,7 @@ class MarkdownViewTest {
         var streaming by mutableStateOf(true)
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                MarkdownView(markdown = "First part.\n\nSecond part.", streaming = streaming)
+                MarkdownView(markdown = parsed("First part.\n\nSecond part."), streaming = streaming)
             }
         }
 
@@ -197,10 +204,39 @@ class MarkdownViewTest {
     fun streamingReplyWithNothingWrittenYetSaysItsState() {
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                MarkdownView(markdown = "", streaming = true)
+                MarkdownView(markdown = plainMarkdown(""), streaming = true)
             }
         }
 
         composeRule.onNodeWithContentDescription("Streaming").assertExists()
+    }
+
+    @Test
+    fun aListsWordsStartAtOneEdgeHoweverWideItsNumbers() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                MarkdownView(markdown = parsed("9. Nine\n10. Ten"))
+            }
+        }
+
+        composeRule.onNodeWithText("9.").assertIsDisplayed()
+        composeRule.onNodeWithText("10.").assertIsDisplayed()
+        val nine = composeRule.onNodeWithTag(MarkdownViewTags.item(depth = 0, index = 0)).getUnclippedBoundsInRoot()
+        val ten = composeRule.onNodeWithTag(MarkdownViewTags.item(depth = 0, index = 1)).getUnclippedBoundsInRoot()
+        assertEquals(nine.left, ten.left)
+    }
+
+    @Test
+    fun aTaskListMarksWhatIsDoneAndWhatIsOpen() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                MarkdownView(markdown = parsed("- [x] Write the parser\n- [ ] Port the clients"))
+            }
+        }
+
+        composeRule.onNodeWithText("\u2713").assertIsDisplayed()
+        composeRule.onNodeWithText("\u25CB").assertIsDisplayed()
+        composeRule.onNodeWithText("Write the parser").assertIsDisplayed()
+        composeRule.onNodeWithText("Port the clients").assertIsDisplayed()
     }
 }

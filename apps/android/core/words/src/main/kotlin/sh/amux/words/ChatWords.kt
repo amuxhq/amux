@@ -484,8 +484,15 @@ object ChatWords {
         return if (newline < 0) text else text.substring(0, newline)
     }
 
+    /** A row's words as they were written, each attachment as its chip. */
     @JvmName("textOfParts")
-    fun text(parts: List<ProsePart>): String = text(parts.map { it.segment })
+    fun text(parts: List<ProsePart>): String =
+        parts.joinToString("") { part ->
+            when (part) {
+                is ProsePart.Text -> part.value.source
+                is ProsePart.Attachment -> "[${chip(part.value)}]"
+            }
+        }
 
     fun text(segments: List<Segment>): String =
         segments.joinToString("") { segment ->

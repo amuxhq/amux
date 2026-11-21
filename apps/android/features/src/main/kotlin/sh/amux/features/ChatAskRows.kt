@@ -101,7 +101,7 @@ internal fun AskRowView(
                             color = AmuxTheme.colors.sunken,
                         ) {
                             MarkdownView(
-                                markdown = ask.body.source,
+                                markdown = ask.body,
                                 title = ask.title,
                                 onOpenLink = onOpenLink,
                                 onCopyCode = onCopyCode,
@@ -304,12 +304,12 @@ private fun AskQuestionsRowView(
                             if (index > 0) AmuxHairline()
                             Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                                 val promptLabel = if (pairs.size == 1 || question.header.isEmpty()) {
-                                    question.question
+                                    question.questionRuns
                                 } else {
-                                    question.header
+                                    question.headerRuns
                                 }
                                 Text(
-                                    text = rememberInlineMarkdown(promptLabel, workingNote = true, onOpenLink = onOpenLink),
+                                    text = rememberInlineRuns(promptLabel, workingNote = true, onOpenLink = onOpenLink),
                                     style = AmuxTheme.typography.detail,
                                     color = AmuxTheme.colors.inkMuted,
                                 )
@@ -353,7 +353,7 @@ private fun AskAnswerValueView(
         val text = if (answer.picked.isEmpty()) {
             AnnotatedString(ChatWords.answer(answer))
         } else {
-            rememberInlineMarkdown(answer.picked.first(), onOpenLink = onOpenLink)
+            rememberInlineRuns(answer.pickedRuns.first(), onOpenLink = onOpenLink)
         }
         Text(
             text = text,
@@ -367,14 +367,14 @@ private fun AskAnswerValueView(
             horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            answer.picked.forEach { pick ->
+            answer.pickedRuns.forEach { pick ->
                 Surface(
                     shape = AmuxShapes.Pill,
                     color = colors.ground,
                     border = BorderStroke(AmuxTheme.metrics.hairline, colors.hairline),
                 ) {
                     Text(
-                        text = rememberInlineMarkdown(pick, onOpenLink = onOpenLink),
+                        text = rememberInlineRuns(pick, onOpenLink = onOpenLink),
                         style = typography.detail,
                         color = colors.ink,
                         maxLines = 1,

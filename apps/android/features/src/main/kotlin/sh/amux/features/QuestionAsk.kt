@@ -66,7 +66,6 @@ import sh.amux.values.InlineRun
 import sh.amux.values.OptionView
 import sh.amux.values.QuestionResponse
 import sh.amux.values.QuestionView
-import sh.amux.words.MarkdownDocument
 
 /** Progress kept across navigation for a multi-step question ask. */
 @Immutable
@@ -299,9 +298,9 @@ internal fun QuestionAskSection(
                             isSkipped = skipped.getOrElse(index) { false },
                         )
                         val heading = if (q.header.isEmpty()) {
-                            MarkdownDocument.inline(q.question).plainText
+                            q.questionRuns.plainText()
                         } else {
-                            "${q.header} · ${MarkdownDocument.inline(q.question).plainText}"
+                            "${q.header} · ${q.questionRuns.plainText()}"
                         }
                         val noteText = notes.getOrElse(index) { "" }.trim()
                         Column(
@@ -364,7 +363,7 @@ internal fun QuestionAskSection(
                     verticalArrangement = Arrangement.spacedBy(Space.m),
                 ) {
                     Text(
-                        text = MarkdownDocument.inline(currentQuestion.question).plainText,
+                        text = currentQuestion.questionRuns.plainText(),
                         style = AmuxTheme.typography.body,
                         color = colors.ink,
                         modifier = Modifier.testTag(AskReviewTags.ASK_QUESTION),
@@ -387,7 +386,7 @@ internal fun QuestionAskSection(
                             verticalArrangement = Arrangement.spacedBy(Space.xs),
                         ) {
                             Text(
-                                text = MarkdownDocument.inline(option.label).plainText,
+                                text = option.labelRuns.plainText(),
                                 style = AmuxTheme.typography.caption,
                                 color = colors.inkMuted,
                             )
@@ -627,7 +626,7 @@ private fun questionSummaryText(
     isSkipped: Boolean,
 ): String {
     val parts = picked.sorted().mapNotNull { pos ->
-        question.options.getOrNull(pos)?.let { MarkdownDocument.inline(it.label).plainText }
+        question.options.getOrNull(pos)?.let { it.labelRuns.plainText() }
     }.toMutableList()
     if (!other.isNullOrBlank()) {
         parts += if (question.secret) {
@@ -708,9 +707,9 @@ private fun QuestionOptionRow(
     val typography = AmuxTheme.typography
     val indicatorShape = RoundedCornerShape(if (multi) 5.dp else 9.dp)
     val rowShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
-    val labelPlain = MarkdownDocument.inline(option.label).plainText
+    val labelPlain = option.labelRuns.plainText()
     val detailPlain = if (option.description != option.label) {
-        MarkdownDocument.inline(option.description).plainText
+        option.descriptionRuns.plainText()
     } else {
         ""
     }

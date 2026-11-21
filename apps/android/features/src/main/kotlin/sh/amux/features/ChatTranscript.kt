@@ -58,7 +58,6 @@ import sh.amux.values.TurnPart
 import sh.amux.words.ChatWords
 import sh.amux.words.RailJoin
 import sh.amux.words.RunPlacement
-import sh.amux.words.segment
 
 /** Per-key cell snapshot observed by a single item in the chat transcript. */
 @Immutable
@@ -249,7 +248,7 @@ internal fun ChatTranscriptList(
                 horizontalAlignment = Alignment.End,
             ) {
                 PromptBubbleRow(
-                    segments = prompt.text.map { it.segment },
+                    parts = prompt.text,
                     steered = false,
                     // A prompt still landing has no row to say its image's
                     // bytes arrived, so each new chat state lets the image

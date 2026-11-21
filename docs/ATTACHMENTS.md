@@ -106,8 +106,9 @@ element syntax or a host-local path.
   `#`, then `;`). Everything else reaches the model as written, so code reads
   `if a < b && c > d` rather than `&lt;` and `&amp;`: models quoted entities
   back literally when asked to quote the code, or stopped to explain
-  decoding them. A body written by an older build, which escaped every
-  character, parses to the same text.
+  decoding them. The parser reads XML's five named entities and decimal
+  references wherever they are, so a body that writes `&lt;`, `&gt;` or
+  `&amp;` for a character parses to the same text as one that does not.
 
 `attachments::format` turns positioned text into the text a model reads, each
 placeholder replaced by its element with blob paths under the agent's blob

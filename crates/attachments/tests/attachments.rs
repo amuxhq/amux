@@ -193,8 +193,8 @@ fn a_body_escapes_only_what_reads_as_markup() {
         body("&amp; &lt; &#10; &nbsp;"),
         "&amp;amp; &amp;lt; &amp;#10; &amp;nbsp;"
     );
-    // An element written by an earlier build, every character escaped,
-    // reads the same.
+    // Entities in a body decode to the characters they name, so one that
+    // escapes every character reads the same.
     assert_eq!(
         parse("<amux-attachment kind=\"text\" name=\"n\">a &lt; b &amp;&amp; c &gt; d</amux-attachment>")
             .positioned

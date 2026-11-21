@@ -66,11 +66,30 @@ unit *ARGS:
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --host
     {{bounded}} 1800 {{gradle}} testDebugUnitTest :core:values:test :core:words:test :push:test "$@"
 
+# Run the automated Compose accessibility audit across every registered story.
+accessibility *ARGS:
+    {{bounded}} 1800 {{gradle}} :app:testDebugUnitTest --tests sh.amux.android.AccessibilityAuditTest "$@"
+
 # Render the headless Robolectric/Roborazzi storybook gallery.
 storybook *ARGS:
     if [ ! -f apps/android/tools/android-storybook.py ]; then echo "headless storybook runner is not wired yet" >&2; exit 1; fi
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-storybook.py "$@"
 
+# Build the release APK and shipping JNI library and prove no debug/test code or dynamic SQLite ships.
+scope-audit *ARGS:
+    {{bounded}} 2400 {{python}} -B apps/android/tools/android-scope-audit.py "$@"
+
 # Run the unit tests of the Android recipe and lint scripts.
 script-tests:
     {{bounded}} 120 {{python}} -m unittest discover -s apps/android/tools/tests -p '*_test.py' -t apps/android/tools/tests
+
+# Run the full Android verification gate in deterministic order.
+verify:
+    just android lint
+    just android graph-check
+    just android script-tests
+    just android unit --no-daemon
+    just android accessibility --no-daemon
+    just android storybook fleet.busy --no-daemon
+    just android scope-audit
+    just android journey

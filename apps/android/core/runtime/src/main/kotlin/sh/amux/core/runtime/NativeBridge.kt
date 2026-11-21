@@ -56,13 +56,13 @@ object NativeBridge {
     /**
      * Waits on the runtime's wake descriptor via POSIX `poll`.
      * Returns `1` when readable, `0` on timeout/EINTR, or `-1` once the
-     * runtime is stopped.
+     * runtime is stopping ([runtimeInterruptWake]) or stopped.
      */
     @JvmStatic external fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int
 
     /**
-     * Rings the runtime's wake descriptor, so a thread in [runtimeWaitWake]
-     * returns `1` and can see that it is stopping before it steps.
+     * Marks the runtime as stopping: a thread in [runtimeWaitWake] returns
+     * `-1`, and so does every wait after, whatever a step reads meanwhile.
      */
     @JvmStatic external fun runtimeInterruptWake(handle: Long)
 

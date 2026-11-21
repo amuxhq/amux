@@ -32,28 +32,63 @@ fn next_handle() -> i64 {
     NEXT_HANDLE.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Waits for `fd` to become readable or for `timeout_ms` to pass (-1 for
-/// ever): 1 when readable, 0 on timeout or a signal, -1 on failure.
+/// A runtime's stop, signalled once and readable for good: nothing ever
+/// reads it. The runtime's own wake descriptor cannot carry a stop, because
+/// every step reads it empty: a step racing the stop would swallow the wake
+/// and leave the watcher in its poll, holding the runtime the stop waits for.
 #[cfg(unix)]
-fn wait_readable(fd: i32, timeout_ms: i32) -> i32 {
-    if fd < 0 {
-        return -1;
+struct StopLatch {
+    reader: std::os::unix::net::UnixStream,
+    writer: std::os::unix::net::UnixStream,
+}
+
+#[cfg(unix)]
+impl StopLatch {
+    fn new() -> Result<Self, String> {
+        let (reader, writer) = std::os::unix::net::UnixStream::pair()
+            .and_then(|(reader, writer)| {
+                reader.set_nonblocking(true)?;
+                writer.set_nonblocking(true)?;
+                Ok((reader, writer))
+            })
+            .map_err(|error| format!("failed to create the runtime's stop latch: {error}"))?;
+        Ok(Self { reader, writer })
     }
-    let mut watched = libc::pollfd {
-        fd,
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    // SAFETY: `watched` is one valid `pollfd`.
-    let rc = unsafe { libc::poll(&mut watched, 1, timeout_ms) };
-    if rc < 0 {
-        let interrupted = std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR);
-        return if interrupted { 0 } else { -1 };
+
+    fn set(&self) {
+        use std::io::Write as _;
+        // A full buffer is readable already.
+        let _ = (&self.writer).write(&[1]);
     }
-    if rc > 0 && (watched.revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP)) != 0 {
-        1
-    } else {
-        0
+
+    /// Waits for the runtime's wake descriptor or `timeout_ms` (-1 for
+    /// ever): -1 once the latch is set or on failure, 1 when `wake_fd` is
+    /// readable, 0 on timeout or a signal.
+    fn wait(&self, wake_fd: i32, timeout_ms: i32) -> i32 {
+        use std::os::fd::AsRawFd as _;
+        if wake_fd < 0 {
+            return -1;
+        }
+        let watched = |fd| libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let mut fds = [watched(wake_fd), watched(self.reader.as_raw_fd())];
+        // SAFETY: `fds` holds two valid `pollfd` entries.
+        let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout_ms) };
+        if rc < 0 {
+            let interrupted = std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR);
+            return if interrupted { 0 } else { -1 };
+        }
+        let ready = libc::POLLIN | libc::POLLERR | libc::POLLHUP;
+        if fds[1].revents != 0 {
+            -1
+        } else if fds[0].revents & ready != 0 {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -61,6 +96,8 @@ struct RuntimeSlot {
     inner: RwLock<Option<AmuxRuntime>>,
     /// Open profile handles owned by this runtime; `None` once stopping begins.
     profiles: Mutex<Option<HashSet<i64>>>,
+    #[cfg(unix)]
+    stop: StopLatch,
 }
 
 struct ProfileSlot {
@@ -92,11 +129,13 @@ fn chats() -> &'static HandleMap<ChatSlot> {
     TABLE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn insert_runtime(runtime: AmuxRuntime) -> i64 {
+fn insert_runtime(runtime: AmuxRuntime, #[cfg(unix)] stop: StopLatch) -> i64 {
     let id = next_handle();
     let slot = Arc::new(RuntimeSlot {
         inner: RwLock::new(Some(runtime)),
         profiles: Mutex::new(Some(HashSet::new())),
+        #[cfg(unix)]
+        stop,
     });
     runtimes()
         .lock()
@@ -106,7 +145,14 @@ fn insert_runtime(runtime: AmuxRuntime) -> i64 {
 }
 
 fn start_runtime_from_json(config: &str) -> Result<i64, String> {
-    app_bridge::start_from_json(Some(config)).map(insert_runtime)
+    #[cfg(unix)]
+    let stop = StopLatch::new()?;
+    let runtime = app_bridge::start_from_json(Some(config))?;
+    Ok(insert_runtime(
+        runtime,
+        #[cfg(unix)]
+        stop,
+    ))
 }
 
 fn stop_runtime_handle(handle: i64) {
@@ -116,11 +162,10 @@ fn stop_runtime_handle(handle: i64) {
         .remove(&handle);
     if let Some(slot) = slot {
         // A thread waiting in `runtimeWaitWake` holds the runtime's read lock
-        // until its poll returns, and the write below waits for it. The ring
-        // stays readable until a step reads it, and the app steps on the
-        // thread that stops, so the waiter wakes, finds the handle gone and
-        // lets go.
-        ring_runtime(&slot);
+        // until its poll returns, and the write below waits for it: the latch
+        // wakes it, and every wait after returns at once.
+        #[cfg(unix)]
+        slot.stop.set();
         let child_profiles = slot
             .profiles
             .lock()
@@ -135,17 +180,6 @@ fn stop_runtime_handle(handle: i64) {
         if let Some(runtime) = runtime {
             runtime.stop();
         }
-    }
-}
-
-fn ring_runtime(slot: &RuntimeSlot) {
-    if let Some(runtime) = slot
-        .inner
-        .read()
-        .unwrap_or_else(|p| p.into_inner())
-        .as_ref()
-    {
-        runtime.ring();
     }
 }
 
@@ -589,10 +623,10 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeStop(
 
 /// Waits for the runtime's wake descriptor to become readable or until
 /// `timeout_ms` elapses (-1 for indefinite). Returns:
-/// - `1` when `wake_fd` is readable (caller should run `runtimeStep`, unless
-///   it is stopping: `runtimeInterruptWake` rings the same descriptor),
+/// - `1` when `wake_fd` is readable (caller should run `runtimeStep`),
 /// - `0` on timeout or signal interruption,
-/// - `-1` when the runtime is stopped, or stopped while this waited.
+/// - `-1` once the runtime is stopping (`runtimeInterruptWake`) or stopped,
+///   at once for every wait after.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWaitWake(
     mut env: JNIEnv,
@@ -613,13 +647,7 @@ fn wait_wake(handle: i64, timeout_ms: i32) -> i32 {
     };
     #[cfg(unix)]
     {
-        let ready = wait_readable(runtime.wake_fd(), timeout_ms);
-        // Stopping removes the handle, then rings to wake this wait.
-        if get_runtime(handle).is_some() {
-            ready
-        } else {
-            -1
-        }
+        slot.stop.wait(runtime.wake_fd(), timeout_ms)
     }
     #[cfg(not(unix))]
     {
@@ -628,8 +656,8 @@ fn wait_wake(handle: i64, timeout_ms: i32) -> i32 {
     }
 }
 
-/// Wakes any thread blocked in `runtimeWaitWake`, which returns 1; the
-/// caller checks whether it is stopping before it steps.
+/// Marks the runtime as stopping: any thread blocked in `runtimeWaitWake`
+/// returns -1, and so does every wait after.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeInterruptWake(
     mut env: JNIEnv,
@@ -637,9 +665,12 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeInterruptWa
     handle: jlong,
 ) {
     guard_jni(&mut env, (), |_| {
+        #[cfg(unix)]
         if let Some(slot) = get_runtime(handle) {
-            ring_runtime(&slot);
+            slot.stop.set();
         }
+        #[cfg(not(unix))]
+        let _ = handle;
         Ok(())
     });
 }
@@ -1717,13 +1748,13 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn an_interrupt_wakes_the_wait_and_a_stop_ends_it() {
+    fn a_ring_wakes_the_wait_and_a_stop_ends_it() {
         let dir = TempDir::new("app-jni-wake");
         let runtime_handle = start_runtime_from_json(&start_config(&dir)).expect("start runtime");
 
         // A ring stays readable until a step reads it.
         let _ = with_runtime(runtime_handle, AmuxRuntime::step);
-        ring_runtime(&get_runtime(runtime_handle).expect("runtime slot"));
+        with_runtime(runtime_handle, AmuxRuntime::ring).expect("runtime");
         assert_eq!(wait_wake(runtime_handle, 5_000), 1);
 
         // A watcher that never steps keeps waking until the stop, then ends.
@@ -1744,6 +1775,40 @@ mod tests {
             "the stop ends the wait"
         );
         watcher.join().expect("watcher");
+        assert_eq!(wait_wake(runtime_handle, 0), -1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_interrupt_ends_the_wait_even_after_a_step_drained_the_wake() {
+        let dir = TempDir::new("app-jni-interrupt");
+        let runtime_handle = start_runtime_from_json(&start_config(&dir)).expect("start runtime");
+        let interrupt = || {
+            get_runtime(runtime_handle)
+                .expect("runtime slot")
+                .stop
+                .set()
+        };
+
+        // The stop's signal lands, then a step on the core thread reads the
+        // wake descriptor empty before the watcher polls.
+        interrupt();
+        let _ = with_runtime(runtime_handle, AmuxRuntime::step);
+        let (ended, end) = std::sync::mpsc::channel();
+        let watcher = std::thread::spawn(move || {
+            let _ = ended.send(wait_wake(runtime_handle, -1));
+        });
+        assert_eq!(
+            end.recv_timeout(std::time::Duration::from_secs(5)),
+            Ok(-1),
+            "the interrupt still ends the wait"
+        );
+        watcher.join().expect("watcher");
+        // The latch stays set: every later wait returns at once, and a
+        // second interrupt is harmless.
+        interrupt();
+        assert_eq!(wait_wake(runtime_handle, -1), -1);
+        stop_runtime_handle(runtime_handle);
         assert_eq!(wait_wake(runtime_handle, 0), -1);
     }
 

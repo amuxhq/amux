@@ -109,10 +109,10 @@ Kotlin owns the loop (`CoreLoop` in `:core:runtime`):
   stepping call (`runtimeStart`, `runtimeStop`, `profileOpen`, `sessionOpen`,
   `runtimeFeed`, `runtimeStep`).
 - A dedicated wake-watcher thread blocks in `NativeBridge.runtimeWaitWake`,
-  which calls `libc::poll` over the bridge's `wake_fd`. Stopping rings that
-  same descriptor (`runtimeInterruptWake`, and `runtimeStop` again), so the
-  watcher wakes, sees it is stopping and leaves without stepping, on both
-  Android and host JVM tests. Whenever the descriptor becomes readable, the
+  which calls `libc::poll` over the bridge's `wake_fd` and a per-runtime stop
+  latch. `runtimeInterruptWake` and `runtimeStop` set the latch, which nothing
+  ever reads, so the watcher leaves even when a step has just read the wake
+  descriptor empty, on both Android and host JVM tests. Whenever the descriptor becomes readable, the
   watcher schedules `step()` on `amux-core` and waits for the step to drain the
   descriptor before polling again.
 - Each step decodes fleet deltas, chat deltas, sign-in offers, onboarding

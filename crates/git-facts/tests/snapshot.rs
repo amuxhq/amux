@@ -1058,6 +1058,59 @@ async fn in_a_partial_clone_nothing_is_fetched() {
     );
 }
 
+/// Git runs a repository's `post-index-change` hook whenever it writes an
+/// index, the temporary copy a snapshot works on included. A person's hook
+/// is theirs to run on their own index, not on ours: taking a snapshot and
+/// asking whether the tree moved run none.
+#[tokio::test]
+async fn the_persons_hooks_never_run() {
+    let repo = repository();
+    let root = repo.path();
+    let outside = tempfile::tempdir().unwrap();
+    let marker = outside.path().join("hook-ran");
+    let hook = root.join(".git/hooks/post-index-change");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    // Forward slashes, which the shell git runs hooks with reads on every
+    // platform.
+    let marked = marker.to_string_lossy().replace('\\', "/");
+    std::fs::write(&hook, format!("#!/bin/sh\necho ran >> \"{marked}\"\n")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    write(root, "base.txt", "one\nTWO\nthree\n");
+    write(root, "new.txt", "new\n");
+
+    // The hook is live: git writing a copy of the index runs it.
+    let copy = outside.path().join("index");
+    std::fs::copy(root.join(".git/index"), &copy).unwrap();
+    let marking = Command::new("git")
+        .args(["add", "--intent-to-add", "new.txt"])
+        .current_dir(root)
+        .env("GIT_INDEX_FILE", &copy)
+        .output()
+        .unwrap();
+    assert!(marking.status.success());
+    assert!(marker.exists(), "the hook runs for git on any index");
+    std::fs::remove_file(&marker).unwrap();
+
+    let store = store();
+    let taken = take(root, &store.store).await;
+    assert!(
+        !snapshot::moved(root, &store.store, &LIMITS, &taken.commit, &taken.omitted)
+            .await
+            .unwrap()
+    );
+    write(root, "newer.txt", "newer\n");
+    assert!(
+        snapshot::moved(root, &store.store, &LIMITS, &taken.commit, &taken.omitted)
+            .await
+            .unwrap()
+    );
+    assert!(!marker.exists(), "a snapshot or a moved check ran the hook");
+}
+
 /// Mid-merge, the snapshot says a merge is under way and holds the
 /// conflicted file with its markers, as the working tree does.
 #[tokio::test]

@@ -1526,6 +1526,8 @@ async fn run(
 ///   The options that pick hunks and their order go on each diff read
 ///   ([`DIFF_OPTIONS`]).
 /// - No advice on adding an embedded repository, which a snapshot does.
+/// - None of the person's hooks runs: [`no_hooks`] goes with this on
+///   every call.
 const CONFIG: &[&str] = &[
     "-c",
     "core.fsmonitor=false",
@@ -1579,13 +1581,33 @@ const DIFF_OPTIONS: &[&str] = &[
     "-O/dev/null",
 ];
 
-/// Git with `args` in `cwd`, run with [`CONFIG`], on the scratch `index`
-/// when given: its output and errors piped, nothing on its input, and
-/// killed if dropped.
+/// `core.hooksPath` set to a folder that is never made, for every call
+/// beside [`CONFIG`]: git finds no hook there, so none of the person's
+/// runs. Git runs `post-index-change` whenever it writes an index, the
+/// copies a snapshot and a moved check write included, and a person's hook
+/// is for their own work on their own index, whatever else it does. A
+/// folder that is not there needs nothing made or removed, and is read the
+/// same way on every platform.
+fn no_hooks() -> &'static std::ffi::OsStr {
+    static NO_HOOKS: std::sync::LazyLock<std::ffi::OsString> = std::sync::LazyLock::new(|| {
+        let mut setting = std::ffi::OsString::from("core.hooksPath=");
+        setting.push(
+            std::env::temp_dir().join(format!("amux-git-facts-no-hooks-{}", std::process::id())),
+        );
+        setting
+    });
+    &NO_HOOKS
+}
+
+/// Git with `args` in `cwd`, run with [`CONFIG`] and [`no_hooks`], on the
+/// scratch `index` when given: its output and errors piped, nothing on its
+/// input, and killed if dropped.
 fn command(cwd: &Path, index: Option<&Path>, args: &[&str]) -> tokio::process::Command {
     let mut command = as_configured(cwd);
     command
         .args(CONFIG)
+        .arg("-c")
+        .arg(no_hooks())
         .args(args)
         .env("GIT_INDEX_FILE", index.unwrap_or_else(|| no_index()));
     command
@@ -1632,7 +1654,7 @@ mod blocking {
     use std::path::Path;
     use std::process::{Command, Output, Stdio};
 
-    use super::{CONFIG, GitError, succeeded, text};
+    use super::{CONFIG, GitError, no_hooks, succeeded, text};
 
     /// [`super::answer`], blocking.
     pub(super) fn answer(cwd: &Path, args: &[&str]) -> Result<Option<String>, GitError> {
@@ -1657,6 +1679,8 @@ mod blocking {
         let mut command = Command::new("git");
         command
             .args(CONFIG)
+            .arg("-c")
+            .arg(no_hooks())
             .args(args)
             .current_dir(cwd)
             .stdin(if input.is_some() {

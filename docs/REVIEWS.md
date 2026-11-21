@@ -215,11 +215,13 @@ options (`DIFF_OPTIONS`):
 | `--no-ext-diff`, `--no-textconv` | A person's external diff or text conversion would replace the lines a comment is anchored on |
 | `--submodule=short` | `diff.submodule=log` writes a summary with no `diff --git` header, and `diff` the submodule's own files |
 | `--inter-hunk-context=0`, `--diff-algorithm=myers`, `--indent-heuristic`, `-O/dev/null` | Hunks, their boundaries and the order of files decide line numbers, placements and what since-last keeps; a person's algorithm or order file would move them |
+| `core.hooksPath` naming a folder that is never made | Git runs a repository's `post-index-change` hook whenever it writes an index, the copies a snapshot and a moved check write included; a person's hooks are for their own work |
 | `diff.autoRefreshIndex=true` | A file whose times alone changed reads as unchanged, as it does by default, whatever the person set; with optional locks off, git writes no refresh into the person's index |
 
 The one call that runs with the person's configuration alone is checking out
 a new worktree, which is the person's own work: their filters must run so its
-files are their content rather than LFS pointers. No call reads the
+files are their content rather than LFS pointers, and their hooks as on any
+checkout. No call reads the
 person's index either: one that names no index of its own is given an empty
 one (`no_index`), since git reads an index even to diff two commits, for
 the attributes it looks up. A test runs every call under a hostile

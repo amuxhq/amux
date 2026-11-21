@@ -129,7 +129,9 @@ pub fn segments(text: &str, attachments: &[Attachment], input_id: &[u8]) -> Vec<
         if index > 0
             && let Some(attachment) = attachments.next()
         {
-            out.push(Segment::Attachment(AttachmentView::of(attachment, input_id)));
+            out.push(Segment::Attachment(AttachmentView::of(
+                attachment, input_id,
+            )));
         }
         if !prose.is_empty() {
             out.push(Segment::Text(prose.to_owned()));

@@ -679,8 +679,8 @@ pub fn review_round() -> crate::chat::review::Page {
         .summary
         .clone()
         .expect("the next look's summary");
-    let (_, mut round) = ui_runtime::review::round_of(&summary, &summary.id, REVIEW_ROUND_INPUT)
-        .expect("the round");
+    let (_, mut round) =
+        ui_runtime::review::round_of(&summary, &summary.id, REVIEW_ROUND_INPUT).expect("the round");
     round.files = first_look_summary().files;
     // The round's snapshot, before the agent made close keep sync_all's
     // error.

@@ -660,9 +660,7 @@ async fn a_round_reads_its_whole_diff() {
     ];
     let reading = tokio::spawn({
         let review = review.clone();
-        async move {
-            review.round(b"review-1", b"the prompt").await
-        }
+        async move { review.round(b"review-1", b"the prompt").await }
     });
     let (request, reply) = calls.review_open().await;
     assert!(request.read_only);

@@ -1016,7 +1016,11 @@ mod tests {
             SNAPSHOT => wire::experimental::ReviewSide::Snapshot,
             _ => wire::experimental::ReviewSide::Compared,
         };
-        assert_eq!(asked.files[0].context_side(), side, "the side its commit is");
+        assert_eq!(
+            asked.files[0].context_side(),
+            side,
+            "the side its commit is"
+        );
         let read = page.page();
         assert!(
             read.rows.iter().any(|row| matches!(

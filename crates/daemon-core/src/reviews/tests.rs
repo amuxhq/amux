@@ -898,11 +898,7 @@ fn two_sends_in_one_input_close_one_round() {
     let review = w.review.unwrap();
     assert_eq!(review.rounds.len(), 1, "{:?}", review.rounds);
     assert_eq!(
-        review
-            .comments
-            .iter()
-            .map(|c| c.round)
-            .collect::<Vec<_>>(),
+        review.comments.iter().map(|c| c.round).collect::<Vec<_>>(),
         [Some(1), Some(1)]
     );
 }

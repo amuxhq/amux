@@ -390,7 +390,11 @@ fn attachments_keep_their_positions() {
         })),
         ..Default::default()
     };
-    let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()], &[]);
+    let tokens = segments(
+        "see \u{FFFC} and \u{FFFC}.",
+        &[image.clone(), text.clone()],
+        &[],
+    );
     assert_eq!(
         tokens,
         vec![

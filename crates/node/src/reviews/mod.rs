@@ -769,17 +769,13 @@ async fn languages(
     if !unread.is_empty() {
         // A file that cannot be read is drawn plain, as one with no `#!`
         // line is, and asked about again by the next summary.
-        if let Ok(heads) =
-            compare::heads(root, store, snapshot, &unread, SHEBANG_BYTES).await
-        {
+        if let Ok(heads) = compare::heads(root, store, snapshot, &unread, SHEBANG_BYTES).await {
             let read: HashMap<&str, String> = unread
                 .iter()
                 .zip(heads)
                 .map(|(path, head)| {
                     let language = head
-                        .and_then(|head| {
-                            Language::from_file(path, &String::from_utf8_lossy(&head))
-                        })
+                        .and_then(|head| Language::from_file(path, &String::from_utf8_lossy(&head)))
                         .map_or_else(String::new, |language| language.name().to_owned());
                     remember_sniffed(snapshot, path, &language);
                     (*path, language)
@@ -1375,7 +1371,10 @@ mod tests {
             comments: Vec::new(),
         };
         tree.drop_unkept(&review).await;
-        assert!(making.is_file(), "the index being made is left to its writer");
+        assert!(
+            making.is_file(),
+            "the index being made is left to its writer"
+        );
         assert!(!tree.indexes().join("stray").exists());
         assert!(std::path::Path::new(&index).is_file());
 
@@ -1383,7 +1382,10 @@ mod tests {
         // late makes none.
         std::fs::remove_dir_all(tree.folder()).unwrap();
         assert_eq!(tree.index_of(&taken.commit).await, "");
-        assert!(!tree.folder().exists(), "reading never makes the review's folder");
+        assert!(
+            !tree.folder().exists(),
+            "reading never makes the review's folder"
+        );
     }
 
     #[tokio::test]

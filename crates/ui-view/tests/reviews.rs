@@ -1253,7 +1253,11 @@ fn a_text_attachment_with_the_entry_draws_as_a_sent_review() {
     );
     // The chip names the input that held it, by which its round is found.
     assert_eq!(
-        segments(PLACEHOLDER.to_string().as_str(), &[attachment], b"the prompt"),
+        segments(
+            PLACEHOLDER.to_string().as_str(),
+            &[attachment],
+            b"the prompt"
+        ),
         [Segment::Attachment(AttachmentView::SentReview {
             comments: 2,
             review: SentReviewRef {

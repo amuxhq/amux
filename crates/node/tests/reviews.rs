@@ -1026,10 +1026,13 @@ async fn a_comment_on_a_removed_line_of_a_renamed_file_sits_in_the_renamed_file(
             vec![put("gone", &first.base_commit, "notes.txt", 25, 25)],
         )
         .await;
-    assert_eq!(at(&written, "gone"), At::Compared(ReviewComparedLines {
-        commit: first.base_commit.clone(),
-        lines: Some(ReviewLineRange { start: 25, end: 25 }),
-    }));
+    assert_eq!(
+        at(&written, "gone"),
+        At::Compared(ReviewComparedLines {
+            commit: first.base_commit.clone(),
+            lines: Some(ReviewLineRange { start: 25, end: 25 }),
+        })
+    );
     assert_eq!(placed_path(&written, "gone"), "renamed.txt");
     let snippet = &comment(&written, "gone").snippet;
     assert!(
@@ -1553,17 +1556,9 @@ mod sent {
         // draft moves on, two lines down, and its first snapshot is neither
         // its anchor, the latest, nor the one before.
         let work = host.install.work.clone();
-        std::fs::write(
-            work.join("notes.txt"),
-            numbered(1, &[(25, "feature")]),
-        )
-        .unwrap();
+        std::fs::write(work.join("notes.txt"), numbered(1, &[(25, "feature")])).unwrap();
         let second = host.refresh(&agent).await;
-        std::fs::write(
-            work.join("notes.txt"),
-            numbered(2, &[(25, "feature")]),
-        )
-        .unwrap();
+        std::fs::write(work.join("notes.txt"), numbered(2, &[(25, "feature")])).unwrap();
         let third = host.refresh(&agent).await;
         assert_ne!(second.snapshot, first.snapshot);
         assert_ne!(third.snapshot, second.snapshot);
@@ -1581,7 +1576,10 @@ mod sent {
         let [round] = sent.rounds.as_slice() else {
             panic!("one round: {:?}", sent.rounds);
         };
-        assert_eq!(round.snapshot, first.snapshot, "the snapshot the text names");
+        assert_eq!(
+            round.snapshot, first.snapshot,
+            "the snapshot the text names"
+        );
         assert_eq!(round.base_commit, drafted.base_commit);
         assert_eq!(round.input_id, input, "closed by the prompt the agent took");
         let anchor = comment(&sent, "one").anchor.clone().unwrap();

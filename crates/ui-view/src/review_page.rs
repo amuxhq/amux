@@ -847,10 +847,13 @@ pub fn anchor(page: &ReviewPage, from: usize, to: usize) -> Option<ReviewAnchor>
         });
     // What the compared commit names the file: its old path when the view
     // shows it renamed.
-    let mut old_path = page.rows[..from].iter().rev().find_map(|row| match &row.of {
-        ReviewRowOf::File(head) => Some(head.old_path.as_deref()),
-        _ => None,
-    });
+    let mut old_path = page.rows[..from]
+        .iter()
+        .rev()
+        .find_map(|row| match &row.of {
+            ReviewRowOf::File(head) => Some(head.old_path.as_deref()),
+            _ => None,
+        });
     let mut path: Option<&str> = None;
     // The first and last line selected on each side, both included.
     let mut new: Option<(u32, u32)> = None;

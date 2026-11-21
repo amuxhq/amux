@@ -688,10 +688,10 @@ fn apply_one(
                         sent_revision: Some(draft.revision),
                         // A refresh after the text was written moved the
                         // draft; what was sent is where the text says.
-                        anchor: named.anchor.as_ref().map_or_else(
-                            || draft.anchor.clone(),
-                            stored,
-                        ),
+                        anchor: named
+                            .anchor
+                            .as_ref()
+                            .map_or_else(|| draft.anchor.clone(), stored),
                         ..draft.clone()
                     },
                 )?;

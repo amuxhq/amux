@@ -262,6 +262,75 @@ fun ChatOverviewSheetContent(
     }
 }
 
+/**
+ * Pure Compose dialog panel for confirming that a background job should be
+ * stopped without stopping the agent. Exposed for headless storybook rendering.
+ */
+@Composable
+fun ChatOverviewStopDialogContent(
+    job: JobRow,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AmuxTheme.colors
+    AmuxPanel(
+        shape = RoundedCornerShape(20.dp),
+        color = colors.raised,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(AskReviewTags.OVERVIEW_STOP_DIALOG),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Space.l),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            Text(
+                text = ChatWords.stopJob(job),
+                style = AmuxTheme.typography.bodyEmphasis,
+                color = colors.ink,
+            )
+            Text(
+                text = ChatWords.STOP_JOB_LEAVES,
+                style = AmuxTheme.typography.detail,
+                color = colors.inkMuted,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(AskReviewTags.OVERVIEW_STOP_CANCEL),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_cancel),
+                        style = AmuxTheme.typography.body,
+                        color = colors.inkMuted,
+                    )
+                }
+                TextButton(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(AskReviewTags.OVERVIEW_STOP_CONFIRM),
+                ) {
+                    Text(
+                        text = stringResource(R.string.overview_stop),
+                        style = AmuxTheme.typography.bodyEmphasis,
+                        color = colors.removed,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun OverviewPlaceHeader(
     subject: ChatSubjectUi,

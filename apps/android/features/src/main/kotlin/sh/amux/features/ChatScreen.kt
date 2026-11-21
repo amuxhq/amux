@@ -2371,6 +2371,182 @@ private fun ChatDeleteDialog(
     )
 }
 
+/**
+ * Pure Compose dialog panel for renaming an agent from its chat. Exposed for
+ * headless storybook rendering over a conversation frame.
+ */
+@Composable
+fun ChatRenameDialogContent(
+    currentName: String,
+    initialDraft: String = currentName,
+    validateName: (String) -> AgentNameProblem? = { null },
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AmuxTheme.colors
+    var draft by remember(currentName, initialDraft) { mutableStateOf(initialDraft) }
+    val trimmed = draft.trim()
+    val problem = remember(trimmed) { validateName(trimmed) }
+    val inputShape = RoundedCornerShape(AmuxTheme.metrics.controlRadius)
+    val photographed = LocalAmuxPhotographed.current
+
+    AmuxPanel(
+        shape = RoundedCornerShape(20.dp),
+        color = colors.ground,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(ChatScreenTags.RENAME_DIALOG),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Space.l),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            Text(
+                text = stringResource(R.string.chat_rename_title, currentName),
+                style = AmuxTheme.typography.identifier,
+                color = colors.ink,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(inputShape)
+                        .background(colors.raised)
+                        .border(AmuxTheme.metrics.hairline, colors.hairline, inputShape)
+                        .padding(horizontal = Space.m, vertical = Space.m),
+                ) {
+                    if (draft.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.chat_rename_placeholder),
+                            style = AmuxTheme.typography.mono,
+                            color = colors.inkFaint,
+                        )
+                    }
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        singleLine = true,
+                        textStyle = AmuxTheme.typography.mono.copy(color = colors.ink),
+                        cursorBrush = SolidColor(if (photographed) Color.Unspecified else colors.ink),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(ChatScreenTags.RENAME_INPUT),
+                    )
+                }
+                if (problem != null && trimmed.isNotEmpty()) {
+                    Text(
+                        text = ChatWords.nameProblem(problem),
+                        style = AmuxTheme.typography.detail,
+                        color = colors.accent,
+                        modifier = Modifier.testTag(ChatScreenTags.RENAME_PROBLEM),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.thumbTarget(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_cancel),
+                        style = AmuxTheme.typography.body,
+                        color = colors.inkMuted,
+                    )
+                }
+                TextButton(
+                    onClick = { if (problem == null) onConfirm(trimmed) },
+                    enabled = problem == null,
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(ChatScreenTags.RENAME_CONFIRM),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_menu_rename),
+                        style = AmuxTheme.typography.bodyEmphasis,
+                        color = if (problem == null) colors.ink else colors.inkFaint,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Pure Compose dialog panel for confirming agent deletion from its chat.
+ * Exposed for headless storybook rendering over a conversation frame.
+ */
+@Composable
+fun ChatDeleteDialogContent(
+    agentName: String,
+    descendants: Int = 0,
+    warning: DeleteWarning? = null,
+    onDismiss: () -> Unit,
+    onConfirm: (discardingChanges: Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AmuxTheme.colors
+    AmuxPanel(
+        shape = RoundedCornerShape(20.dp),
+        color = colors.ground,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(ChatScreenTags.DELETE_DIALOG),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Space.l),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            Text(
+                text = stringResource(R.string.chat_delete_title, agentName),
+                style = AmuxTheme.typography.identifier,
+                color = colors.ink,
+            )
+            Text(
+                text = DeleteWords.message(descendants = descendants, warning = warning),
+                style = AmuxTheme.typography.detail,
+                color = colors.inkMuted,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.thumbTarget(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_cancel),
+                        style = AmuxTheme.typography.body,
+                        color = colors.inkMuted,
+                    )
+                }
+                TextButton(
+                    onClick = { onConfirm(DeleteWords.discards(warning)) },
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(ChatScreenTags.DELETE_CONFIRM),
+                ) {
+                    Text(
+                        text = stringResource(R.string.home_action_delete),
+                        style = AmuxTheme.typography.bodyEmphasis,
+                        color = colors.removed,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AttachmentPreviewDialog(
     attachment: ChatOpenedAttachmentUi,

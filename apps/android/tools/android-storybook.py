@@ -90,7 +90,7 @@ def load_manifest(out_dir: Path) -> list[dict]:
     return stories
 
 
-AREA_ORDER = ("Fleet", "Chat", "Asks", "Review", "Hosts", "Pairing", "System")
+AREA_ORDER = ("Fleet", "New Agent", "Chat", "Asks", "Review", "Hosts", "Pairing", "Settings", "Report", "System")
 
 
 def ordered_areas(stories: list[dict]) -> list[str]:

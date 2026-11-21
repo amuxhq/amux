@@ -74,15 +74,19 @@ class AndroidStorybookTest(unittest.TestCase):
     def test_area_tabs_order_chat_asks_review_between_fleet_and_hosts(self):
         stories = [
             {"id": "store.failure", "area": "System"},
-            {"id": "review.diff", "area": "Review"},
-            {"id": "hosts.paired", "area": "Hosts"},
+            {"id": "report.ready", "area": "Report"},
+            {"id": "settings.signed-in", "area": "Settings"},
+            {"id": "pair.confirm", "area": "Pairing"},
+            {"id": "review.page", "area": "Review"},
+            {"id": "hosts.list", "area": "Hosts"},
             {"id": "chat.ask-command", "area": "Asks"},
-            {"id": "chat.active", "area": "Chat"},
+            {"id": "chat.conversation", "area": "Chat"},
+            {"id": "new-agent.claude", "area": "New Agent"},
             {"id": "fleet.busy", "area": "Fleet"},
         ]
         self.assertEqual(
             storybook.ordered_areas(stories),
-            ["Fleet", "Chat", "Asks", "Review", "Hosts", "System"],
+            ["Fleet", "New Agent", "Chat", "Asks", "Review", "Hosts", "Pairing", "Settings", "Report", "System"],
         )
 
     def test_load_manifest_fails_on_missing_png(self):

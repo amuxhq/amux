@@ -1,5 +1,9 @@
 package sh.amux.testsupport
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +15,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import java.io.ByteArrayOutputStream
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxScrim
@@ -23,21 +29,52 @@ import sh.amux.design.Space
 import sh.amux.features.AccountUi
 import sh.amux.features.AgentsHome
 import sh.amux.features.AgentsHomeState
+import sh.amux.features.ChatDeleteDialogContent
 import sh.amux.features.ChatOverviewSheetContent
 import sh.amux.features.ChatOverviewState
+import sh.amux.features.ChatOverviewStopDialogContent
+import sh.amux.features.ChatRenameDialogContent
 import sh.amux.features.ChatScreen
 import sh.amux.features.ChatScreenState
 import sh.amux.features.ChatSettingsSheetContent
 import sh.amux.features.ChatSettingsState
 import sh.amux.features.ChatSubject
 import sh.amux.features.ChatSubjectUi
+import sh.amux.features.ChatUnavailableScreen
+import sh.amux.features.DeleteAccountPhaseUi
+import sh.amux.features.DeleteAccountSheetContent
+import sh.amux.features.DeleteAccountSheetState
+import sh.amux.features.HostPage
+import sh.amux.features.HostPageState
 import sh.amux.features.HostsTab
 import sh.amux.features.HostsTabState
+import sh.amux.features.NewAgentDirectoriesContent
+import sh.amux.features.NewAgentListingUi
+import sh.amux.features.NewAgentOfferUi
+import sh.amux.features.NewAgentScreen
+import sh.amux.features.NewAgentScreenState
 import sh.amux.features.PairingPhaseUi
 import sh.amux.features.PairingSheetContent
 import sh.amux.features.PairingSheetState
+import sh.amux.features.PaywallPhaseUi
+import sh.amux.features.PaywallPlanPeriod
+import sh.amux.features.PaywallPlanUi
+import sh.amux.features.PaywallScreen
+import sh.amux.features.PaywallScreenState
+import sh.amux.features.ReportDeliveryUi
+import sh.amux.features.ReportMarkUi
+import sh.amux.features.ReportOverlayContent
+import sh.amux.features.ReportUiState
 import sh.amux.features.ReviewPage
 import sh.amux.features.ReviewPageState
+import sh.amux.features.SettledScreen
+import sh.amux.features.SettledScreenState
+import sh.amux.features.SettingsAccountItem
+import sh.amux.features.SettingsAppearance
+import sh.amux.features.SettingsEntitlementBadge
+import sh.amux.features.SettingsNotificationStatus
+import sh.amux.features.SettingsScreen
+import sh.amux.features.SettingsScreenState
 import sh.amux.features.StaticChatRowSource
 import sh.amux.features.StoreFailureScreen
 import sh.amux.push.Said
@@ -66,7 +103,9 @@ import sh.amux.values.ComposerView
 import sh.amux.values.Connection
 import sh.amux.values.ContextView
 import sh.amux.values.ControlsSummary
+import sh.amux.values.DeleteWarning
 import sh.amux.values.DiffLine
+import sh.amux.values.Directory
 import sh.amux.values.EditLine
 import sh.amux.values.EffortChoice
 import sh.amux.values.ExitCause
@@ -95,6 +134,7 @@ import sh.amux.values.LineKind
 import sh.amux.values.ModeChoice
 import sh.amux.values.ModelChoice
 import sh.amux.values.Offline
+import sh.amux.values.OpenedAgent
 import sh.amux.values.OptionView
 import sh.amux.values.Overview
 import sh.amux.values.PatchLine
@@ -131,6 +171,7 @@ import sh.amux.values.UsageState
 import sh.amux.values.UsageView
 import sh.amux.values.UsageWindowView
 import sh.amux.values.Waiting
+import sh.amux.values.WorkspaceGoes
 
 /**
  * One named storybook screen fixture rendered by both headless Roborazzi
@@ -151,14 +192,38 @@ data class Story(
 object Stories {
     private const val NOW_MS: Long = 1_750_000_000_000L
 
+    /**
+     * Stories listed under `"clients": [..., "phone", ...]` in `tests/stories.json`
+     * that are intentionally excluded on Android, along with why.
+     */
+    val IOS_ONLY_STORIES: Map<String, String> = mapOf(
+        "fleet.first-run-refused" to "Android has no iOS Local Network permission dialog.",
+        "hosts.network-refused" to "Android has no iOS Local Network permission dialog.",
+    )
+
     private val desk = host(1, "desk", Platform.Macos)
-    private val studio = host(2, "studio", Platform.Macos)
+    private val studio = host(2, "studio", Platform.Macos, addrs = listOf("192.168.1.2:4433", "fe80::2:4433"))
     private val studioAway = host(2, "studio", Platform.Macos, reach = Reach.Away)
     private val garagePi = host(3, "garage-pi", Platform.Linux, reach = Reach.Online(RouteKind.Relay))
     private val oldMini = host(7, "old-mini", Platform.Macos, reach = Reach.Offline(Offline.Plain))
     private val laptopFound = host(4, "laptop", Platform.Macos, trusted = false, candidate = true, pairingOpen = false)
     private val laptopOpen = host(4, "laptop", Platform.Macos, trusted = false, candidate = true, pairingOpen = true)
     private val studioFound = host(5, "studio", Platform.Macos, trusted = false, candidate = true, pairingOpen = false)
+    private val studioRelay = host(
+        index = 6,
+        name = "studio",
+        platform = Platform.Macos,
+        trusted = false,
+        candidate = true,
+        reach = Reach.Offline(Offline.Plain),
+        relayOnly = true,
+        pairingOpen = false,
+    )
+
+    private const val SAMPLE_HOST_FINGERPRINT =
+        "9f4b2c81d7e03a5612489bcdf013579a6c8e0241b5d7f93a1e2c4b6d8f0a3c5e"
+    private const val SAMPLE_PHONE_FINGERPRINT =
+        "4c8e19a0d2f5b73168e4a209c7d3f18b5e60a4c2d8f1b309e7a5c1d4f2b8063e"
 
     private val adaAccount = AccountUi(
         id = "ada",
@@ -187,6 +252,40 @@ object Stories {
             description = "A day's agents across machines, one away: pinned, needs you, working, idle, a family, and settled.",
         ) {
             AgentsHome(state = busyFleetState(away = true), onAction = {})
+        },
+        Story(
+            id = "fleet.subagents",
+            area = "Fleet",
+            title = "Expanded subagent family",
+            description = "A family opened to its Claude subagents listed under their parent, one waiting on you.",
+        ) {
+            AgentsHome(state = subagentsFleetState(), onAction = {})
+        },
+        Story(
+            id = "fleet.signed-out",
+            area = "Fleet",
+            title = "Busy fleet (signed out)",
+            description = "Busy agent list on a phone with no account signed in.",
+        ) {
+            AgentsHome(
+                state = busyFleetState(
+                    away = false,
+                    accounts = emptyList(),
+                    includeNearby = false,
+                ).copy(accountPro = null),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "fleet.settled",
+            area = "Fleet",
+            title = "Settled agents",
+            description = "Settled archive list with search, restore, and delete actions.",
+        ) {
+            SettledScreen(
+                state = sampleSettledScreenState(),
+                onAction = {},
+            )
         },
         Story(
             id = "fleet.no-agents",
@@ -301,6 +400,25 @@ object Stories {
             )
         },
         Story(
+            id = "fleet.first-run-on-the-account-free",
+            area = "Fleet",
+            title = "First run (relay host on free plan)",
+            description = "Nothing paired on the free plan, with a computer on the account reachable only through the relay.",
+        ) {
+            AgentsHome(
+                state = AgentsHomeState(
+                    loaded = true,
+                    machines = emptyList(),
+                    discoveredHosts = listOf(studioRelay),
+                    orderedAtMs = NOW_MS,
+                    accounts = listOf(adaAccount),
+                    selectedAccount = adaAccount,
+                    accountPro = false,
+                ),
+                onAction = {},
+            )
+        },
+        Story(
             id = "fleet.filter",
             area = "Fleet",
             title = "Filtered fleet",
@@ -363,32 +481,100 @@ object Stories {
             )
         },
 
+        // --- New Agent -----------------------------------------------------
+        Story(
+            id = "new-agent.claude",
+            area = "New Agent",
+            title = "New Claude agent",
+            description = "Starting a Claude agent: host, folder, name, model, effort, and permission.",
+        ) {
+            NewAgentScreen(
+                state = sampleNewAgentState(),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "new-agent.browsing",
+            area = "New Agent",
+            title = "New Agent folder browser",
+            description = "Choosing the folder a new agent starts in: pinned repositories, recent folders, and a typed path.",
+        ) {
+            SheetStoryFrame {
+                NewAgentDirectoriesContent(
+                    state = sampleNewAgentState().copy(
+                        browsing = true,
+                        typedPath = "~/source/experiments/relay-probe",
+                    ),
+                    onAction = {},
+                )
+            }
+        },
+        Story(
+            id = "new-agent.large-text",
+            area = "New Agent",
+            title = "New Agent (large text)",
+            description = "New Agent form at 1.5x accessibility font scaling with stacked values and sticky Start bar.",
+            fontScale = 1.5f,
+        ) {
+            NewAgentScreen(
+                state = sampleNewAgentState(),
+                onAction = {},
+            )
+        },
+
         // --- Chat ----------------------------------------------------------
         Story(
-            id = "chat.active",
+            id = "chat.conversation",
             area = "Chat",
-            title = "Active conversation",
+            title = "Conversation",
             description = "Mixed markdown prose, collapsed explore run, command output, file change, subagent group, and active composer.",
         ) {
             val (state, source) = activeChatFixture()
             ChatScreen(state = state, rowSource = source)
         },
         Story(
-            id = "chat.streaming",
+            id = "chat.working",
             area = "Chat",
-            title = "Streaming reply",
+            title = "Working turn",
             description = "Turn at work with streaming prose, live activity line, and Interrupt button.",
         ) {
             val (state, source) = streamingChatFixture()
             ChatScreen(state = state, rowSource = source)
         },
         Story(
-            id = "chat.native-subagent",
+            id = "chat.asking",
+            area = "Chat",
+            title = "Agent asking",
+            description = "A chat whose agent is asking for approval, docked in place of the composer.",
+        ) {
+            val (state, source) = askChatFixture(commandAskCard())
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.subagents",
+            area = "Chat",
+            title = "Subagents group",
+            description = "Parent chat showing an expanded group of subagent calls: 2 running, 1 waiting on you, 1 done.",
+        ) {
+            val (state, source) = subagentsGroupChatFixture()
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.subagent",
             area = "Chat",
             title = "Provider subagent",
             description = "Claude subagent conversation with parent chip and read-only native composer with Stop.",
         ) {
             val (state, source) = nativeSubagentFixture()
+            ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.plan",
+            area = "Chat",
+            title = "Plan approval",
+            description = "Proposed plan read whole and waiting for approval in place of the composer.",
+        ) {
+            val (state, source) = askChatFixture(planAskCard())
             ChatScreen(state = state, rowSource = source)
         },
         Story(
@@ -401,10 +587,10 @@ object Stories {
             ChatScreen(state = state, rowSource = source)
         },
         Story(
-            id = "chat.offline-draft",
+            id = "chat.away",
             area = "Chat",
-            title = "Host out of reach with kept draft",
-            description = "Away host showing offline header, kept draft text, and disabled Send.",
+            title = "Host away with kept draft",
+            description = "Away host showing out-of-reach notice, kept draft text, and disabled Send.",
         ) {
             val (state, source) = offlineDraftFixture()
             ChatScreen(state = state, rowSource = source)
@@ -419,6 +605,31 @@ object Stories {
                 ChatOverviewSheetContent(
                     state = sampleOverviewState(),
                     onAction = {},
+                )
+            }
+        },
+        Story(
+            id = "chat.overview-stop",
+            area = "Chat",
+            title = "Stop background job dialog",
+            description = "Confirming stopping a background job from overview while keeping the agent running.",
+        ) {
+            val overviewState = sampleOverviewState()
+            val job = requireNotNull(overviewState.overview?.jobs?.firstOrNull())
+            DialogStoryFrame(
+                background = {
+                    SheetStoryFrame {
+                        ChatOverviewSheetContent(
+                            state = overviewState,
+                            onAction = {},
+                        )
+                    }
+                },
+            ) {
+                ChatOverviewStopDialogContent(
+                    job = job,
+                    onConfirm = {},
+                    onDismiss = {},
                 )
             }
         },
@@ -456,6 +667,18 @@ object Stories {
             ChatScreen(state = state, rowSource = source)
         },
         Story(
+            id = "chat.not-opened",
+            area = "Chat",
+            title = "Chat could not be opened",
+            description = "Unavailable conversation screen explaining why the chat could not be opened.",
+        ) {
+            ChatUnavailableScreen(
+                title = "spike-quic",
+                reason = "This agent is no longer on studio.",
+                onBack = {},
+            )
+        },
+        Story(
             id = "chat.queued",
             area = "Chat",
             title = "Queued prompts",
@@ -472,6 +695,50 @@ object Stories {
         ) {
             val (state, source) = signedOutChatFixture()
             ChatScreen(state = state, rowSource = source)
+        },
+        Story(
+            id = "chat.delete",
+            area = "Chat",
+            title = "Delete agent confirmation",
+            description = "Confirming deletion of a settled agent and its worktree from its chat.",
+        ) {
+            val (state, source) = exitedChatFixture()
+            val warning = DeleteWarning.Goes(
+                WorkspaceGoes(
+                    branch = "spike-quic",
+                    branchCommits = 2,
+                    uncommitted = ChangeTotals(files = 2, added = 34, removed = 9),
+                ),
+            )
+            DialogStoryFrame(
+                background = { ChatScreen(state = state, rowSource = source) },
+            ) {
+                ChatDeleteDialogContent(
+                    agentName = "spike-quic",
+                    descendants = 0,
+                    warning = warning,
+                    onDismiss = {},
+                    onConfirm = {},
+                )
+            }
+        },
+        Story(
+            id = "chat.rename",
+            area = "Chat",
+            title = "Rename agent dialog",
+            description = "Renaming an agent from its chat with live handle editing.",
+        ) {
+            val (state, source) = activeChatFixture()
+            DialogStoryFrame(
+                background = { ChatScreen(state = state, rowSource = source) },
+            ) {
+                ChatRenameDialogContent(
+                    currentName = "refactor-auth",
+                    initialDraft = "auth-token-expiry",
+                    onDismiss = {},
+                    onConfirm = {},
+                )
+            }
         },
         Story(
             id = "chat.large-text",
@@ -543,7 +810,7 @@ object Stories {
 
         // --- Review --------------------------------------------------------
         Story(
-            id = "review.diff",
+            id = "review.page",
             area = "Review",
             title = "Diff review page",
             description = "Full-screen working-tree diff review with file chips, hunks, and an inline comment.",
@@ -572,15 +839,15 @@ object Stories {
 
         // --- Hosts ---------------------------------------------------------
         Story(
-            id = "hosts.paired",
+            id = "hosts.list",
             area = "Hosts",
             title = "Paired computers",
-            description = "Paired computers grouped by reach: on this network, through the relay, away, and offline.",
+            description = "Paired computers grouped by reach (direct, relay, away, offline) with one nearby computer found.",
         ) {
             HostsTab(
                 state = HostsTabState(
                     hosts = listOf(desk, garagePi, studioAway, oldMini),
-                    discovered = emptyList(),
+                    discovered = listOf(laptopFound),
                     accountPro = false,
                     awayHostName = studioAway.name,
                     wentOfflineAtMs = mapOf(oldMini.hostId to (NOW_MS - 3 * 3_600_000L)),
@@ -601,6 +868,22 @@ object Stories {
             )
         },
         Story(
+            id = "hosts.on-the-account-free",
+            area = "Hosts",
+            title = "Hosts (relay host on free plan)",
+            description = "Computers tab on the free plan showing a computer on the account reachable only through the relay.",
+        ) {
+            HostsTab(
+                state = HostsTabState(
+                    hosts = listOf(desk),
+                    discovered = listOf(studioRelay),
+                    accountPro = false,
+                    nowMs = NOW_MS,
+                ),
+                onAction = {},
+            )
+        },
+        Story(
             id = "hosts.nearby-found",
             area = "Hosts",
             title = "Nearby computers found",
@@ -616,18 +899,54 @@ object Stories {
                 onAction = {},
             )
         },
+        Story(
+            id = "hosts.large-text",
+            area = "Hosts",
+            title = "Paired computers (large text)",
+            description = "Computers list rendered at 1.5x accessibility font scaling.",
+            fontScale = 1.5f,
+        ) {
+            HostsTab(
+                state = HostsTabState(
+                    hosts = listOf(desk, garagePi, studioAway, oldMini),
+                    discovered = listOf(laptopFound),
+                    accountPro = true,
+                    awayHostName = studioAway.name,
+                    wentOfflineAtMs = mapOf(oldMini.hostId to (NOW_MS - 3 * 3_600_000L)),
+                    nowMs = NOW_MS,
+                ),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "host.page",
+            area = "Hosts",
+            title = "Computer details",
+            description = "One computer's page: reach, platform, version, providers, copyable addresses, and key fingerprint.",
+        ) {
+            HostPage(
+                state = HostPageState(
+                    host = studio,
+                    fingerprint = SAMPLE_HOST_FINGERPRINT,
+                    nowMs = NOW_MS,
+                    canOfferSignIn = true,
+                    accountPro = true,
+                ),
+                onAction = {},
+            )
+        },
 
         // --- Pairing -------------------------------------------------------
         Story(
-            id = "pairing.pin-entering",
+            id = "pair.code-empty",
             area = "Pairing",
             title = "Pairing PIN entry",
-            description = "Six-digit code entry sheet for a nearby computer with an open pairing window.",
+            description = "Six-digit code entry sheet for a nearby computer with an empty keypad.",
         ) {
             PairingStoryFrame {
                 PairingSheetContent(
                     state = PairingSheetState(
-                        digits = "418",
+                        digits = "",
                         phase = PairingPhaseUi.Entering,
                         machine = laptopOpen,
                         nowMs = NOW_MS,
@@ -637,23 +956,16 @@ object Stories {
             }
         },
         Story(
-            id = "pairing.confirm",
+            id = "pair.code-checking",
             area = "Pairing",
-            title = "Pairing confirmation",
-            description = "Authenticated computer name, route, and full key fingerprint awaiting confirmation.",
+            title = "Pairing code checking",
+            description = "All six digits typed and the pairing code being checked.",
         ) {
-            val pending = PendingPair(
-                token = List(16) { 9 },
-                hostId = laptopOpen.hostId,
-                name = "laptop",
-                fingerprint = "9f4b2c81d7e03a5612489bcdf013579a6c8e0241b5d7f93a1e2c4b6d8f0a3c5e",
-                expiresAtMs = NOW_MS + 240_000L,
-                via = RouteKind.Direct,
-            )
             PairingStoryFrame {
                 PairingSheetContent(
                     state = PairingSheetState(
-                        phase = PairingPhaseUi.Confirming(pending = pending, platformName = "macOS"),
+                        digits = "418920",
+                        phase = PairingPhaseUi.Checking(viaLink = false),
                         machine = laptopOpen,
                         nowMs = NOW_MS,
                     ),
@@ -662,7 +974,7 @@ object Stories {
             }
         },
         Story(
-            id = "pairing.refused",
+            id = "pair.code-refused",
             area = "Pairing",
             title = "Pairing code refused",
             description = "Uniform refusal state after an invalid or expired code, ready for another entry.",
@@ -678,6 +990,217 @@ object Stories {
                     onAction = {},
                 )
             }
+        },
+        Story(
+            id = "pair.code-subscribe",
+            area = "Pairing",
+            title = "Pairing needs Pro subscription",
+            description = "A pairing code that reached a computer only the relay can carry, on the free plan.",
+        ) {
+            PairingStoryFrame {
+                PairingSheetContent(
+                    state = PairingSheetState(
+                        digits = "418920",
+                        phase = PairingPhaseUi.NeedsSubscription,
+                        machine = studioRelay,
+                        nowMs = NOW_MS,
+                    ),
+                    onAction = {},
+                )
+            }
+        },
+        Story(
+            id = "pair.needs-account",
+            area = "Pairing",
+            title = "Pairing needs sign-in",
+            description = "An invitation naming a computer only the relay can reach on a phone with no account.",
+        ) {
+            PairingStoryFrame {
+                PairingSheetContent(
+                    state = PairingSheetState(
+                        phase = PairingPhaseUi.NeedsAccount(signingIn = false),
+                        machine = studioRelay,
+                        nowMs = NOW_MS,
+                    ),
+                    onAction = {},
+                )
+            }
+        },
+        Story(
+            id = "pair.confirm",
+            area = "Pairing",
+            title = "Pairing confirmation",
+            description = "Authenticated computer name, route, and full key fingerprint awaiting confirmation.",
+        ) {
+            val pending = PendingPair(
+                token = List(16) { 9 },
+                hostId = laptopOpen.hostId,
+                name = "laptop",
+                fingerprint = SAMPLE_HOST_FINGERPRINT,
+                expiresAtMs = NOW_MS + 240_000L,
+                via = RouteKind.Direct,
+            )
+            PairingStoryFrame {
+                PairingSheetContent(
+                    state = PairingSheetState(
+                        phase = PairingPhaseUi.Confirming(pending = pending, platformName = "macOS"),
+                        machine = laptopOpen,
+                        nowMs = NOW_MS,
+                    ),
+                    onAction = {},
+                )
+            }
+        },
+        Story(
+            id = "pair.trusted",
+            area = "Pairing",
+            title = "Pairing completed",
+            description = "Confirmation state once the computer has been paired and trusted.",
+        ) {
+            PairingStoryFrame {
+                PairingSheetContent(
+                    state = PairingSheetState(
+                        phase = PairingPhaseUi.Trusted(name = "laptop"),
+                        machine = laptopOpen,
+                        nowMs = NOW_MS,
+                    ),
+                    onAction = {},
+                )
+            }
+        },
+
+        // --- Settings ------------------------------------------------------
+        Story(
+            id = "settings.signed-in",
+            area = "Settings",
+            title = "Settings (signed in)",
+            description = "Settings with signed-in account, appearance, notifications, privacy, diagnostics, and phone identity.",
+        ) {
+            SettingsScreen(
+                state = sampleSignedInSettingsState(),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "settings.signed-out",
+            area = "Settings",
+            title = "Settings (signed out)",
+            description = "Settings on a phone with no account signed in.",
+        ) {
+            SettingsScreen(
+                state = sampleSignedInSettingsState().copy(
+                    accounts = emptyList(),
+                    notificationStatus = SettingsNotificationStatus.NotAsked,
+                ),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "settings.paywall",
+            area = "Settings",
+            title = "Pro subscription",
+            description = "Subscribing to amux Pro: selectable monthly and yearly plans and purchase restoration.",
+        ) {
+            PaywallScreen(
+                state = PaywallScreenState(
+                    plans = listOf(
+                        PaywallPlanUi(
+                            id = "pro.monthly",
+                            period = PaywallPlanPeriod.Monthly,
+                            price = "$9 / month",
+                        ),
+                        PaywallPlanUi(
+                            id = "pro.yearly",
+                            period = PaywallPlanPeriod.Yearly,
+                            price = "$84 / year",
+                            saving = "Save 22%",
+                        ),
+                    ),
+                    chosen = PaywallPlanPeriod.Yearly,
+                    phase = PaywallPhaseUi.Ready,
+                    accountEmail = "ada@example.com",
+                ),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "settings.delete",
+            area = "Settings",
+            title = "Delete account confirmation",
+            description = "Asking before an account is permanently deleted, with the address typed to confirm.",
+        ) {
+            SheetStoryFrame {
+                DeleteAccountSheetContent(
+                    state = DeleteAccountSheetState(
+                        accountId = "ada",
+                        email = "ada@example.com",
+                        typedEmail = "ada@example.com",
+                        billingWarning = null,
+                        phase = DeleteAccountPhaseUi.Asking,
+                    ),
+                    onAction = {},
+                )
+            }
+        },
+        Story(
+            id = "settings.large-text",
+            area = "Settings",
+            title = "Settings (large text)",
+            description = "Settings rendered at 1.5x accessibility font scaling.",
+            fontScale = 1.5f,
+        ) {
+            SettingsScreen(
+                state = sampleSignedInSettingsState(),
+                onAction = {},
+            )
+        },
+
+        // --- Report --------------------------------------------------------
+        Story(
+            id = "report.ready",
+            area = "Report",
+            title = "Report a problem (ready)",
+            description = "Reporting a problem over a frozen copy of the screen before writing a note.",
+        ) {
+            val frameBytes = remember { sampleReportPngBytes() }
+            ReportOverlayContent(
+                state = ReportUiState(
+                    imageBytes = frameBytes,
+                    note = "",
+                    marks = emptyList(),
+                    signedIn = true,
+                    diagnosticDumpAttached = true,
+                    delivery = ReportDeliveryUi.Ready,
+                ),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "report.sent",
+            area = "Report",
+            title = "Report sent",
+            description = "A sent problem report showing the reference ID to quote.",
+        ) {
+            val frameBytes = remember { sampleReportPngBytes() }
+            ReportOverlayContent(
+                state = ReportUiState(
+                    imageBytes = frameBytes,
+                    note = "Scroll jumped past the last prompt after reconnect.",
+                    marks = listOf(
+                        ReportMarkUi(
+                            left = 0.12f,
+                            top = 0.24f,
+                            right = 0.88f,
+                            bottom = 0.44f,
+                            note = "Jump happened here",
+                        ),
+                    ),
+                    signedIn = true,
+                    diagnosticDumpAttached = true,
+                    delivery = ReportDeliveryUi.Sent(referenceId = "RPT-4829-AF"),
+                ),
+                onAction = {},
+            )
         },
 
         // --- System --------------------------------------------------------
@@ -710,6 +1233,25 @@ object Stories {
     @Composable
     private fun PairingStoryFrame(content: @Composable () -> Unit) {
         SheetStoryFrame(content = content)
+    }
+
+    @Composable
+    private fun DialogStoryFrame(
+        background: @Composable () -> Unit,
+        content: @Composable () -> Unit,
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            background()
+            AmuxScrim()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = Space.xl),
+                contentAlignment = Alignment.Center,
+            ) {
+                content()
+            }
+        }
     }
 
     @Composable
@@ -1121,7 +1663,7 @@ object Stories {
             subject = sampleChatSubject(
                 name = "reconnect-backoff",
                 hostName = "studio",
-                reach = Reach.Offline(Offline.Plain),
+                reach = Reach.Away,
             ),
             keys = rows.map { it.id },
             frame = frame,
@@ -1131,6 +1673,350 @@ object Stories {
         )
         return state to StaticChatRowSource(rows = rows)
     }
+
+    private fun subagentsGroupChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
+        val group = SubagentGroup(
+            first = "sg-1",
+            agents = listOf(listOf(21), listOf(22), listOf(23), listOf(24)),
+            open = true,
+        )
+        val groupState = GroupState(
+            agents = 4,
+            running = 2,
+            needsYou = 1,
+            idle = 0,
+            finished = 1,
+            ended = 0,
+            failed = 0,
+            unknown = 0,
+        )
+        val rows = listOf(
+            ScriptedChat.row(
+                id = "sg-prompt",
+                order = 1L,
+                kind = RowKind.Prompt(
+                    text = listOf(Segment.Text("Audit every platform client for expired-token handling in parallel.")),
+                    steered = false,
+                ),
+            ),
+            ScriptedChat.row(
+                id = "sg-1",
+                order = 2L,
+                kind = RowKind.Subagent(
+                    description = "Check Android OAuth refresh retry path",
+                    continued = false,
+                    state = CallPhase.Running,
+                    answer = "",
+                ),
+                opens = listOf(21),
+                group = group,
+            ),
+            ScriptedChat.row(
+                id = "sg-2",
+                order = 3L,
+                kind = RowKind.Subagent(
+                    description = "Check iOS keychain token expiry guard",
+                    continued = false,
+                    state = CallPhase.Running,
+                    answer = "",
+                ),
+                opens = listOf(22),
+                group = group,
+                parent = "sg-1",
+            ),
+            ScriptedChat.row(
+                id = "sg-3",
+                order = 4L,
+                kind = RowKind.Subagent(
+                    description = "Run relay token expiry integration test",
+                    continued = false,
+                    state = CallPhase.Running,
+                    answer = "",
+                ),
+                opens = listOf(23),
+                group = group,
+                parent = "sg-1",
+                attention = true,
+            ),
+            ScriptedChat.row(
+                id = "sg-4",
+                order = 5L,
+                kind = RowKind.Subagent(
+                    description = "Verify CLI credential reload on 401",
+                    continued = false,
+                    state = CallPhase.Succeeded,
+                    answer = "CLI refreshes and retries once when the server returns 401.",
+                    durationMs = 14_000L,
+                ),
+                opens = listOf(24),
+                group = group,
+                parent = "sg-1",
+            ),
+        )
+        val openedAgents = mapOf(
+            listOf(21) to OpenedAgent(
+                agent = AgentKey(host = desk.hostId, agent = List(16) { 21 }),
+                name = "android-oauth",
+                kind = Kind.ClaudeSdk,
+                phase = PhaseView.Working,
+            ),
+            listOf(22) to OpenedAgent(
+                agent = AgentKey(host = desk.hostId, agent = List(16) { 22 }),
+                name = "ios-keychain",
+                kind = Kind.ClaudeSdk,
+                phase = PhaseView.Working,
+            ),
+            listOf(23) to OpenedAgent(
+                agent = AgentKey(host = desk.hostId, agent = List(16) { 23 }),
+                name = "relay-expiry",
+                kind = Kind.ClaudeSdk,
+                phase = PhaseView.NeedsYou,
+            ),
+            listOf(24) to OpenedAgent(
+                agent = AgentKey(host = desk.hostId, agent = List(16) { 24 }),
+                name = "cli-reload",
+                kind = Kind.ClaudeSdk,
+                phase = PhaseView.Idle,
+            ),
+        )
+        val groupMap = mapOf("sg-1" to groupState)
+        val frame = ScriptedChat.frame(
+            name = "migration",
+            phase = PhaseView.Working,
+            mode = Composer.Send,
+            activity = Activity(
+                kind = ActivityKind.Subagents(3),
+                sinceMs = NOW_MS - 48_000L,
+                elapsedMs = 48_000L,
+                turnElapsedMs = 48_000L,
+            ),
+        ).copy(controls = sampleControls())
+        val state = ChatScreenState(
+            subject = sampleChatSubject(name = "migration", hostName = "desk"),
+            keys = rows.map { it.id },
+            frame = frame,
+            groupStates = groupMap,
+            settings = sampleSettingsView(),
+            nowMs = NOW_MS,
+        )
+        val source = StaticChatRowSource(
+            rows = rows,
+            expanded = setOf("sg-1"),
+            openedAgents = openedAgents,
+            groupStates = groupMap,
+        )
+        return state to source
+    }
+
+    private fun subagentsFleetState(): AgentsHomeState {
+        val parent = fleetRow(
+            index = 4,
+            name = "migration",
+            host = desk,
+            attention = Attention.NeedsYou,
+            minutesAgo = 2,
+            children = 2,
+            secondLine = SecondLine.Step(
+                ActivityLine(
+                    activity = Activity(
+                        kind = ActivityKind.Subagents(2),
+                        sinceMs = NOW_MS - 90_000L,
+                        elapsedMs = 90_000L,
+                        turnElapsedMs = 90_000L,
+                    ),
+                    step = null,
+                ),
+            ),
+        ).copy(expanded = true)
+        val childWaiting = fleetRow(
+            index = 41,
+            name = "relay-expiry",
+            host = desk,
+            attention = Attention.NeedsYou,
+            minutesAgo = 1,
+            secondLine = SecondLine.Said(
+                Said.Ask(
+                    key = "",
+                    wants = Wants.Run("cargo test -p relay token_expiry"),
+                    why = "",
+                    more = 0,
+                ),
+            ),
+        ).let { row ->
+            row.copy(
+                card = row.card.copy(topLevel = false, native = true),
+                depth = 1,
+            )
+        }
+        val childWorking = fleetRow(
+            index = 42,
+            name = "android-oauth",
+            host = desk,
+            attention = Attention.Working,
+            minutesAgo = 2,
+            secondLine = SecondLine.Step(
+                ActivityLine(
+                    activity = Activity(
+                        kind = ActivityKind.Running("read-1"),
+                        sinceMs = NOW_MS - 22_000L,
+                        elapsedMs = 22_000L,
+                        turnElapsedMs = 22_000L,
+                    ),
+                    step = "AmuxCloudService.kt",
+                ),
+            ),
+        ).let { row ->
+            row.copy(
+                card = row.card.copy(topLevel = false, native = true),
+                depth = 1,
+            )
+        }
+        val sibling = fleetRow(
+            index = 6,
+            name = "licensing",
+            host = studio,
+            attention = Attention.Idle,
+            minutesAgo = 18,
+            secondLine = SecondLine.LastSaid("Drafted the licensing page, ready for you to read."),
+        )
+        val needsYouRows = listOf(parent, childWaiting, childWorking)
+        val liveRows = listOf(sibling)
+        val sections = listOf(
+            FleetSection(SectionKind.NeedsYou, families = 1, foldedByDefault = false, rows = needsYouRows),
+            FleetSection(SectionKind.Live, families = 1, foldedByDefault = false, rows = liveRows),
+        )
+        return AgentsHomeState(
+            loaded = true,
+            rows = sections.flatMap { it.rows },
+            sections = sections,
+            needYou = 1,
+            working = 1,
+            machines = listOf(desk, studio),
+            orderedAtMs = NOW_MS,
+            accounts = listOf(adaAccount),
+            selectedAccount = adaAccount,
+            accountPro = true,
+        )
+    }
+
+    private fun sampleSettledScreenState(): SettledScreenState = SettledScreenState(
+        rows = listOf(
+            fleetRow(
+                index = 8,
+                name = "spike-quic",
+                host = studio,
+                attention = Attention.Exited,
+                minutesAgo = 180,
+                filing = Filing.Closed,
+                exitCause = ExitCause.Finished,
+                secondLine = SecondLine.LastSaid("QUIC holds up behind both NATs."),
+            ),
+            fleetRow(
+                index = 9,
+                name = "bisect-hang",
+                host = desk,
+                attention = Attention.Exited,
+                minutesAgo = 300,
+                filing = Filing.Closed,
+                exitCause = ExitCause.Failed("the provider exited: exit code 1"),
+                secondLine = SecondLine.Exited(ExitCause.Failed("the provider exited: exit code 1")),
+            ),
+            fleetRow(
+                index = 14,
+                name = "release-0-10",
+                host = desk,
+                attention = Attention.Exited,
+                minutesAgo = 1_440,
+                filing = Filing.Closed,
+                exitCause = ExitCause.Finished,
+                secondLine = SecondLine.LastSaid("Published release notes and tag."),
+            ),
+        ),
+        query = "",
+        nowMs = NOW_MS,
+    )
+
+    private fun sampleNewAgentState(): NewAgentScreenState = NewAgentScreenState(
+        hosts = listOf(desk, studio, garagePi),
+        selectedHostId = desk.hostId,
+        provider = Provider.Claude,
+        availableProviders = listOf(Provider.Claude, Provider.Codex),
+        offer = NewAgentOfferUi.Offered,
+        settings = sampleSettingsView(),
+        listing = NewAgentListingUi.Ready,
+        repositories = listOf(
+            Directory(path = "/Users/ada/source/amux", name = "amux"),
+            Directory(path = "/Users/ada/source/relay", name = "relay"),
+        ),
+        recent = listOf(
+            Directory(path = "/Users/ada/source/docs", name = "docs"),
+            Directory(path = "/Users/ada/scratch/bench", name = "bench"),
+        ),
+        directory = "/Users/ada/source/amux",
+        newWorktree = true,
+        name = "auth-pass",
+    )
+
+    private fun sampleSignedInSettingsState(): SettingsScreenState = SettingsScreenState(
+        accounts = listOf(
+            SettingsAccountItem(
+                id = "ada",
+                name = "Ada",
+                email = "ada@example.com",
+                line = "3 hosts",
+                signedIn = true,
+                selected = true,
+                entitlementBadge = SettingsEntitlementBadge.Pro,
+                entitlementSummary = "Pro plan",
+            ),
+        ),
+        appearance = SettingsAppearance.System,
+        notificationStatus = SettingsNotificationStatus.Enabled,
+        pushDeliveryComingSoon = true,
+        shareUsage = true,
+        autoReports = false,
+        deviceName = "Pixel 9",
+        canRenameDevice = false,
+        deviceFingerprint = SAMPLE_PHONE_FINGERPRINT,
+        fingerprintCopied = false,
+        appVersion = "0.11.0",
+        showContactSupport = true,
+    )
+
+    private fun sampleReportPngBytes(): ByteArray? = runCatching {
+        val width = 180
+        val height = 390
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val bgPaint = Paint().apply { color = 0xFFF6F6F5.toInt() }
+        val cardPaint = Paint().apply { color = 0xFFFFFFFF.toInt() }
+        val linePaint = Paint().apply { color = 0xFFDCDCD9.toInt() }
+        val inkPaint = Paint().apply { color = 0xFF161615.toInt() }
+        val mutedPaint = Paint().apply { color = 0xFF8C8C87.toInt() }
+        val accentPaint = Paint().apply { color = 0xFFD95D39.toInt() }
+
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+        canvas.drawRect(0f, 0f, width.toFloat(), 48f, cardPaint)
+        canvas.drawRect(0f, 47f, width.toFloat(), 48f, linePaint)
+        canvas.drawRoundRect(RectF(14f, 16f, 96f, 30f), 6f, 6f, inkPaint)
+
+        for (row in 0..3) {
+            val top = 64f + row * 68f
+            canvas.drawRoundRect(RectF(14f, top, width - 14f, top + 56f), 10f, 10f, cardPaint)
+            canvas.drawRoundRect(
+                RectF(24f, top + 12f, 24f + if (row == 0) 86f else 104f, top + 22f),
+                4f,
+                4f,
+                if (row == 0) accentPaint else inkPaint,
+            )
+            canvas.drawRoundRect(RectF(24f, top + 30f, width - 32f, top + 38f), 4f, 4f, mutedPaint)
+        }
+
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        bitmap.recycle()
+        out.toByteArray()
+    }.getOrNull()
 
     private fun loadingChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
         val frame = ScriptedChat.frame(
@@ -1718,6 +2604,8 @@ object Stories {
         reach: Reach = Reach.Online(RouteKind.Direct),
         relayOnly: Boolean = false,
         pairingOpen: Boolean = false,
+        addrs: List<String>? = null,
+        version: String = "0.11.0",
     ): HostView = HostView(
         hostId = List(16) { index },
         name = name,
@@ -1725,7 +2613,7 @@ object Stories {
         trusted = trusted,
         candidate = candidate,
         reach = reach,
-        addrs = if (candidate && !relayOnly) listOf("192.168.1.$index:4433") else emptyList(),
+        addrs = addrs ?: if (candidate && !relayOnly) listOf("192.168.1.$index:4433") else emptyList(),
         relayOnly = relayOnly,
         pairingOpen = pairingOpen,
         current = true,
@@ -1734,6 +2622,7 @@ object Stories {
             ProviderSignIn(Provider.Codex, signedIn = true),
         ),
         platform = platform,
+        version = version,
     )
 
     private fun fleetRow(

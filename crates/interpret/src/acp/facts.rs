@@ -21,7 +21,7 @@ use wire::{AcpAsk, AcpTool, acp_ask, acp_item};
 
 use super::{
     Category, INITIALIZE_REQUEST, LOAD_REQUEST, NEW_SESSION_REQUEST, RESUME_REQUEST, Request,
-    State, Streamed, choices, finished, item_body, permission_kind, tool_class, tool_kind,
+    State, Streamed, choices, finished, grok, item_body, permission_kind, tool_class, tool_kind,
 };
 use crate::{Channel, Effect, Emit, Fact, ItemDraft, ask_item, unknown};
 
@@ -42,6 +42,12 @@ struct XaiUpdate {
     tokens_before: Option<u64>,
     #[serde(default)]
     tokens_after: Option<u64>,
+    /// What Grok's interaction with a call is, and the call
+    /// (`grok-allow`).
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    tool_call_id: Option<String>,
 }
 
 /// The input of Grok's `use_tool` call, which runs a tool server's tool
@@ -167,11 +173,16 @@ fn tool_content(content: &[ToolCallContent]) -> (String, Vec<wire::AcpDiff>) {
     for part in content {
         match part {
             ToolCallContent::Content(content) => texts.extend(block_text(&content.content)),
-            ToolCallContent::Diff(diff) => diffs.push(wire::AcpDiff {
-                path: diff.path.clone(),
-                old_text: diff.old_text.clone().flatten(),
-                new_text: diff.new_text.clone(),
-            }),
+            ToolCallContent::Diff(diff) => {
+                let (old_line, new_line) = diff_starts(diff.meta.as_ref());
+                diffs.push(kept_diff(
+                    diff.path.clone(),
+                    diff.old_text.clone().flatten(),
+                    &diff.new_text,
+                    old_line,
+                    new_line,
+                ));
+            }
             // amux offers the agent no terminals, so none is shown.
             ToolCallContent::Terminal(_) | ToolCallContent::Unknown(_) => {}
         }
@@ -179,6 +190,214 @@ fn tool_content(content: &[ToolCallContent]) -> (String, Vec<wire::AcpDiff>) {
     let output = texts.join("\n");
     let cut = crate::shared::output_cut(&output);
     (output[cut..].to_owned(), diffs)
+}
+
+/// Where a diff's texts start in the file, where the agent says: Grok puts
+/// the lines in the diff's `_meta`, or in its first edit's details
+/// (`grok-edit`).
+fn diff_starts(meta: Option<&Value>) -> (Option<u32>, Option<u32>) {
+    #[derive(Default, Deserialize)]
+    struct Lines {
+        #[serde(default)]
+        old_line: Option<u32>,
+        #[serde(default)]
+        new_line: Option<u32>,
+    }
+    #[derive(Default, Deserialize)]
+    struct DiffMeta {
+        #[serde(flatten)]
+        lines: Lines,
+        #[serde(default)]
+        details: Vec<Lines>,
+    }
+    let meta = meta
+        .and_then(|meta| DiffMeta::deserialize(meta).ok())
+        .unwrap_or_default();
+    let first = meta.details.into_iter().next().unwrap_or_default();
+    let line = |line: Option<u32>| line.filter(|line| *line > 0);
+    (
+        line(meta.lines.old_line).or(line(first.old_line)),
+        line(meta.lines.new_line).or(line(first.new_line)),
+    )
+}
+
+/// A change as amux keeps it. The lines both texts share at their start and
+/// end are left out, since no row draws them: OpenCode sends the whole file
+/// on every update (`opencode-edit`), which would otherwise go to every
+/// device each time. Lines the agent gave for the texts' start move past
+/// what was left out. Each text left is then cut to its first
+/// [`OUTPUT_CAP`](crate::shared::OUTPUT_CAP)'s worth, as output is to its
+/// last, when it is longer than twice that. A new file is kept whole but
+/// for that cut.
+pub(super) fn kept_diff(
+    path: String,
+    old: Option<String>,
+    new: &str,
+    old_line: Option<u32>,
+    new_line: Option<u32>,
+) -> wire::AcpDiff {
+    let Some(old) = old else {
+        return wire::AcpDiff {
+            path,
+            old_text: None,
+            new_text: head(new).to_owned(),
+            old_line,
+            new_line,
+        };
+    };
+    let old_lines: Vec<&str> = old.split_inclusive('\n').collect();
+    let new_lines: Vec<&str> = new.split_inclusive('\n').collect();
+    let start = old_lines
+        .iter()
+        .zip(&new_lines)
+        .take_while(|(old, new)| old == new)
+        .count();
+    let end = old_lines[start..]
+        .iter()
+        .rev()
+        .zip(new_lines[start..].iter().rev())
+        .take_while(|(old, new)| old == new)
+        .count();
+    let kept = |lines: &[&str]| lines[start..lines.len() - end].concat();
+    let moved = |line: Option<u32>| line.map(|line| line.saturating_add(start as u32));
+    wire::AcpDiff {
+        path,
+        old_text: Some(head(&kept(&old_lines)).to_owned()),
+        new_text: head(&kept(&new_lines)).to_owned(),
+        old_line: moved(old_line),
+        new_line: moved(new_line),
+    }
+}
+
+/// A text longer than twice the output cap, cut to its first cap's worth
+/// at the last line break in it, else at a character boundary.
+fn head(text: &str) -> &str {
+    let cap = crate::shared::OUTPUT_CAP;
+    if text.len() <= 2 * cap {
+        return text;
+    }
+    let end = (0..=cap)
+        .rev()
+        .find(|at| text.is_char_boundary(*at))
+        .unwrap_or(0);
+    match text[..end].rfind('\n') {
+        Some(at) if at > 0 => &text[..=at],
+        _ => &text[..end],
+    }
+}
+
+/// A call's input as amux keeps it: each string in it longer than twice
+/// the output cap cut to its first cap's worth, as a file an agent writes
+/// is often there whole, so the input stays JSON a client reads.
+fn kept_input(input: &Value) -> Vec<u8> {
+    fn cut(value: &Value) -> Value {
+        match value {
+            Value::String(text) => Value::String(head(text).to_owned()),
+            Value::Array(items) => Value::Array(items.iter().map(cut).collect()),
+            Value::Object(fields) => Value::Object(
+                fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), cut(value)))
+                    .collect(),
+            ),
+            other => other.clone(),
+        }
+    }
+    serde_json::to_vec(&cut(input)).unwrap_or_default()
+}
+
+/// What a call's raw output says of a command: its exit code, under any of
+/// the names agents give it (Antigravity's and Grok's `exit_code`,
+/// OpenCode's `metadata.exit`, in `agy-allow` and `opencode-allow`), and
+/// whether the agent cut its output short (OpenCode's
+/// `metadata.truncated`).
+fn command_end(raw: &Value) -> (Option<i32>, bool) {
+    // Each field as any value, so one of an unexpected type leaves the
+    // rest readable.
+    #[derive(Default, Deserialize)]
+    struct End {
+        #[serde(default)]
+        exit_code: Option<Value>,
+        #[serde(default, rename = "exitCode")]
+        exit_code_camel: Option<Value>,
+        #[serde(default)]
+        exit: Option<Value>,
+        #[serde(default)]
+        truncated: Option<Value>,
+    }
+    #[derive(Default, Deserialize)]
+    struct RawOutput {
+        #[serde(flatten)]
+        end: End,
+        #[serde(default)]
+        metadata: Option<End>,
+    }
+    let raw = RawOutput::deserialize(raw).unwrap_or_default();
+    let places = [raw.end, raw.metadata.unwrap_or_default()];
+    let exit = places
+        .iter()
+        .flat_map(|end| [&end.exit_code, &end.exit_code_camel, &end.exit])
+        .flatten()
+        .find_map(Value::as_i64)
+        .and_then(|code| i32::try_from(code).ok());
+    let truncated = places
+        .iter()
+        .any(|end| end.truncated.as_ref().and_then(Value::as_bool) == Some(true));
+    (exit, truncated)
+}
+
+/// Where each change OpenCode made starts, by file, from the patch in its
+/// raw output (`metadata.filediff`, `opencode-edit`): the old and new line
+/// of the first line its first hunk removes or adds. Its texts are the
+/// whole file, so once the lines they share are left out
+/// ([`kept_diff`]), they start there.
+fn patch_starts(raw: &Value) -> Option<(String, u32, u32)> {
+    #[derive(Deserialize)]
+    struct FileDiff {
+        file: String,
+        patch: String,
+    }
+    #[derive(Deserialize)]
+    struct Metadata {
+        #[serde(default)]
+        filediff: Option<FileDiff>,
+    }
+    #[derive(Deserialize)]
+    struct RawOutput {
+        #[serde(default)]
+        metadata: Option<Metadata>,
+    }
+    let FileDiff { file, patch } = RawOutput::deserialize(raw).ok()?.metadata?.filediff?;
+    let mut lines = patch.lines().skip_while(|line| !line.starts_with("@@ "));
+    let header = lines.next()?;
+    let mut ranges = header.trim_start_matches("@@ ").split(' ');
+    let start = |range: Option<&str>, sign: char| -> Option<u32> {
+        range?.strip_prefix(sign)?.split(',').next()?.parse().ok()
+    };
+    let (mut old, mut new) = (start(ranges.next(), '-')?, start(ranges.next(), '+')?);
+    for line in lines {
+        if line.starts_with('-') || line.starts_with('+') {
+            return Some((file, old.max(1), new.max(1)));
+        }
+        old += 1;
+        new += 1;
+    }
+    None
+}
+
+/// Gives a call's kept changes the lines its raw output's patch names, for
+/// a change whose texts did not say where they start.
+fn number_diffs(diffs: &mut [wire::AcpDiff], raw: &Value) {
+    let Some((file, old, new)) = patch_starts(raw) else {
+        return;
+    };
+    for diff in diffs
+        .iter_mut()
+        .filter(|diff| diff.path == file && diff.old_text.is_some() && diff.old_line.is_none())
+    {
+        diff.old_line = Some(old);
+        diff.new_line = Some(new);
+    }
 }
 
 fn locations(locations: &[ToolCallLocation]) -> Vec<wire::AcpLocation> {
@@ -268,6 +487,11 @@ impl State {
             AgentNotification::SessionUpdate(update) => {
                 if !self.ours(&update.session_id) {
                     return self.log(emit, "an update for another session".to_owned());
+                }
+                if self.quirks().context_in_update_meta
+                    && let Some(used) = grok::context_used(update.meta.as_ref())
+                {
+                    self.context_used = Some(used);
                 }
                 self.update(emit, update.update)
             }
@@ -597,9 +821,14 @@ impl State {
         }
         let kind = tool_kind(call.kind.as_ref());
         let (output, diffs) = tool_content(call.content.as_deref().unwrap_or_default());
-        let state = tool_state(call.status.as_ref());
+        let state = self.reviewed_state(tool_state(call.status.as_ref()), &output);
         let decision = self.tools.get(&id).and_then(|tool| tool.decision.clone());
-        let tool = AcpTool {
+        let (exit_code, output_truncated) = call
+            .raw_output
+            .as_ref()
+            .map(command_end)
+            .unwrap_or_default();
+        let mut tool = AcpTool {
             title: call.title,
             kind: kind as i32,
             state: state as i32,
@@ -607,17 +836,22 @@ impl State {
             decision,
             locations: locations(call.locations.as_deref().unwrap_or_default()),
             diffs,
-            input_json: call
-                .raw_input
-                .as_ref()
-                .map(|input| serde_json::to_vec(input).unwrap_or_default())
-                .unwrap_or_default(),
+            input_json: call.raw_input.as_ref().map(kept_input).unwrap_or_default(),
             ended_at_ms: finished(state as i32).then(|| self.shared.now_ms()),
             // Named on emitting, from the asks that named the call.
             ask_item_key: String::new(),
+            exit_code,
+            output_truncated,
         };
+        if let Some(raw) = &call.raw_output {
+            number_diffs(&mut tool.diffs, raw);
+        }
         self.tools.insert(id.clone(), tool);
-        self.outputs.insert(id.clone(), output);
+        // While the agent's reviewer decides, the call's content is its
+        // description, which is no output of a call that has not run.
+        if !self.reviewing.contains(&id) {
+            self.outputs.insert(id.clone(), output);
+        }
         self.emit_tool(emit, &id);
     }
 
@@ -629,6 +863,20 @@ impl State {
             return;
         }
         let now = self.shared.now_ms();
+        let output = update
+            .content
+            .as_ref()
+            .and_then(Option::as_deref)
+            .map(tool_content);
+        let state = update
+            .status
+            .as_ref()
+            .and_then(Option::as_ref)
+            .map(|status| {
+                let words = output.as_ref().map(|(words, _)| words.as_str());
+                self.reviewed_state(tool_state(Some(status)), words.unwrap_or_default())
+            });
+        let reviewing = self.reviewing.contains(&id);
         let tool = self.tools.entry(id.clone()).or_insert_with(|| AcpTool {
             state: wire::ToolState::Running as i32,
             class: wire::ToolClass::Consequential as i32,
@@ -642,22 +890,27 @@ impl State {
             tool.kind = kind as i32;
             tool.class = tool_class(kind) as i32;
         }
-        if let Some(Some(status)) = &update.status {
-            tool.state = tool_state(Some(status)) as i32;
+        if let Some(state) = state {
+            tool.state = state as i32;
         }
         if let Some(Some(found)) = &update.locations {
             tool.locations = locations(found);
         }
         if let Some(input) = &update.raw_input {
-            tool.input_json = serde_json::to_vec(input).unwrap_or_default();
+            tool.input_json = kept_input(input);
         }
         if finished(tool.state) && tool.ended_at_ms.is_none() {
             tool.ended_at_ms = Some(now);
         }
-        if let Some(Some(content)) = &update.content {
-            let (output, diffs) = tool_content(content);
+        if let Some((output, diffs)) = output {
             tool.diffs = diffs;
-            self.outputs.insert(id.clone(), output);
+            if !reviewing {
+                self.outputs.insert(id.clone(), output);
+            }
+        }
+        if let Some(raw) = &update.raw_output {
+            (tool.exit_code, tool.output_truncated) = command_end(raw);
+            number_diffs(&mut tool.diffs, raw);
         }
         self.emit_tool(emit, &id);
     }
@@ -881,6 +1134,35 @@ impl State {
             }
             self.refuse_request(emit, id, &extension.method);
         }
+        if extension.method == grok::MODELS_UPDATE && self.quirks().context_in_update_meta {
+            self.learn_windows(grok::windows(&extension.params));
+        }
+        if extension.method == grok::SERVER_STATUS
+            && self.quirks().xai_servers
+            && let Some(server) = grok::server(&extension.params)
+        {
+            match self
+                .servers
+                .iter_mut()
+                .find(|held| held.name == server.name)
+            {
+                Some(held) => *held = server,
+                None => self.servers.push(server),
+            }
+        }
+        if extension.method == XAI_SESSION_NOTIFICATION
+            && self.opened
+            && self.quirks().xai_review
+            && let Ok(notification) =
+                serde_json::from_value::<XaiNotification>(extension.params.clone())
+            && let Some(review) = grok::review(
+                &notification.update.session_update,
+                notification.update.kind.as_deref(),
+                notification.update.tool_call_id.as_deref(),
+            )
+        {
+            self.review(emit, review);
+        }
         if extension.method == XAI_SESSION_NOTIFICATION
             && self.opened
             && let Ok(notification) =
@@ -1059,6 +1341,9 @@ impl State {
                 ),
             });
         }
+        if self.quirks().context_in_update_meta {
+            self.learn_windows(grok::windows_at_start(init.meta.as_ref()));
+        }
         self.reopens = Some(super::Reopens::of(&init));
         self.takes = Some(super::Takes::of(&init));
         self.say_capabilities();
@@ -1138,6 +1423,9 @@ impl State {
                 });
             }
         };
+        if self.quirks().context_in_update_meta {
+            self.learn_windows(grok::windows_in_session(&result));
+        }
         let setup = if reopened {
             serde_json::from_value::<SessionSetup>(result).ok()
         } else {

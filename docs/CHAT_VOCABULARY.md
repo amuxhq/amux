@@ -254,8 +254,11 @@ agent says each one is:
   title a call just begun, is left off); an execute is `Command`, its command read from the call's input, else its
   title; an edit, delete or move is `FileChange` from the call's diffs, else the places it names; anything else is
   `ToolCall` under its title. An ACP diff's texts carry no place in the file (OpenCode sends the whole file,
-  Antigravity and Grok the fragment they replace), so only a new file's lines are numbered; any other edit names no
-  line (a call's location says what it touches, not where the texts start). amux's own tools, which agents name in several ways, are amux's rows (`Child` and
+  Antigravity and Grok the fragment they replace), so a new file's lines are numbered, and another edit's only where
+  the agent says beside ACP where its texts start (Grok's diff `_meta`, OpenCode's patch in its raw output); any
+  other edit names no line (a call's location says what it touches, not where the texts start). A `Command`'s exit
+  code comes from the call's raw output where the agent puts one there, and a call Grok's own reviewer is deciding on
+  waits, with no output, until it runs or is denied. amux's own tools, which agents name in several ways, are amux's rows (`Child` and
   the rest), as for the other kinds.
 - **A notice** is `Notice { reason, severity, title, text }`: what the agent says about its session (`Agent`), or
   why a turn stopped short (`Refusal`, `MaxTokens`, `MaxTurnRequests`), as a note, a warning or an error. An error

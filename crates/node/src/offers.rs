@@ -105,13 +105,24 @@ fn own_sign_in_hint(provider: &str) -> &'static str {
     }
 }
 
-/// The first sign-in method an ACP agent describes, as its words for what
-/// a person does; empty where it describes none.
-fn agent_sign_in_hint(acp: Option<&wire::AcpOffer>) -> String {
-    acp.into_iter()
+/// What a person does to sign in to an ACP agent: the agent's own words
+/// where they name a command to run (OpenCode's "Run `opencode auth login`
+/// in the terminal"), else a built-in's hint, else the first sign-in method
+/// the agent describes at all ("Log in with your Google account"); empty
+/// where there is none of these.
+fn agent_sign_in_hint(provider: &str, acp: Option<&wire::AcpOffer>) -> String {
+    let described: Vec<&str> = acp
+        .into_iter()
         .flat_map(|acp| &acp.sign_in_methods)
         .map(|method| method.description.trim())
-        .find(|description| !description.is_empty())
+        .filter(|description| !description.is_empty())
+        .collect();
+    described
+        .iter()
+        .find(|description| description.contains('`'))
+        .copied()
+        .or_else(|| wire::agents::built_in(provider).map(|agent| agent.sign_in_hint))
+        .or_else(|| described.first().copied())
         .unwrap_or_default()
         .to_owned()
 }
@@ -258,7 +269,7 @@ impl Offers {
                 descriptor: Some(ProviderDescriptor {
                     name: program.name.clone(),
                     kind: wire::Kind::Acp as i32,
-                    sign_in_hint: agent_sign_in_hint(held.offer.acp.as_ref()),
+                    sign_in_hint: agent_sign_in_hint(&program.id, held.offer.acp.as_ref()),
                     version: held.offer.provider_version.clone(),
                 }),
                 // A copy an earlier build asked says nothing of them: it
@@ -957,5 +968,41 @@ mod tests {
         let unknown = agent_catalogue(&helper, Learned::default(), &Default::default());
         assert!(unknown.signed_in, "never called signed out on a guess");
         assert_eq!(unknown.acp.unwrap().sign_in(), SignInState::Unspecified);
+    }
+
+    /// An agent's own words for signing in are its hint where they name a
+    /// command; where they only say how (Grok's "Cached token from
+    /// ~/.grok/auth.json"), a built-in's hint says what to run, and an
+    /// agent a person added keeps its own words.
+    #[test]
+    fn a_sign_in_hint_says_what_to_run() {
+        let offer = |descriptions: &[&str]| AcpOffer {
+            sign_in_methods: descriptions
+                .iter()
+                .map(|description| wire::AcpSignInMethod {
+                    id: "m".into(),
+                    name: "M".into(),
+                    description: (*description).to_owned(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let grok = offer(&["Cached token from ~/.grok/auth.json", "Sign in with Grok"]);
+        assert_eq!(agent_sign_in_hint("grok", Some(&grok)), "Run `grok login`.");
+        let opencode = offer(&["Run `opencode auth login` in the terminal"]);
+        assert_eq!(
+            agent_sign_in_hint("opencode", Some(&opencode)),
+            "Run `opencode auth login` in the terminal"
+        );
+        assert_eq!(
+            agent_sign_in_hint("antigravity", None),
+            "Run agy and sign in when it asks."
+        );
+        let own = offer(&["", "Log in with your account"]);
+        assert_eq!(
+            agent_sign_in_hint("my-agent", Some(&own)),
+            "Log in with your account"
+        );
+        assert_eq!(agent_sign_in_hint("my-agent", None), "");
     }
 }

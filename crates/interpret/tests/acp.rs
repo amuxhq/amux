@@ -1706,3 +1706,241 @@ fn only_the_attach_tools_step_carries_an_attachment() {
         assert_eq!(writes, 0, "{provider}");
     }
 }
+
+/// The newest emission of call `id` in a step: the call and its words.
+fn emitted_call(stepped: &interpret::Stepped, id: &str) -> Option<(wire::AcpTool, String)> {
+    use prost::Message as _;
+    stepped
+        .step
+        .items
+        .iter()
+        .rev()
+        .filter(|item| item.key == format!("tool:{id}"))
+        .find_map(
+            |item| match wire::AcpItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::acp_item::Kind::Tool(tool)) => Some((tool, item.text.clone())),
+                _ => None,
+            },
+        )
+}
+
+/// Ends the running turn: the agent answers the prompt amux sent.
+fn turn_ends(state: &mut interpret::acp::State, prompted: &interpret::Stepped) {
+    let id = writes(&prompted.effects)
+        .into_iter()
+        .find(|written| written["method"] == "session/prompt")
+        .expect("a prompt was sent")["id"]
+        .clone();
+    Acp::step(
+        state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": id,
+            "result": {"stopReason": "end_turn"}})),
+    );
+}
+
+/// A call still running when its turn ends is settled there, cancelled,
+/// and its row is drawn for good. An update the agent sends for it later
+/// is dropped, not taken for a new call that opens a blank running row.
+#[test]
+fn a_late_update_for_a_call_its_turn_settled_is_dropped() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    let prompted = Acp::step(&mut state, prompt("a", "go"));
+    Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "ls", "kind": "execute", "status": "in_progress"}),
+        ),
+    );
+    turn_ends(&mut state, &prompted);
+    let late = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1",
+            "status": "completed", "content": [{"type": "content",
+                "content": {"type": "text", "text": "late words"}}]}),
+        ),
+    );
+    assert_eq!(emitted_call(&late, "c1"), None, "{:?}", late.step.items);
+}
+
+/// A command's exit code and a cut to its output are read from the call's
+/// raw output under the names agents give them: OpenCode's
+/// `metadata.exit` and `metadata.truncated`, Antigravity's `exit_code`.
+#[test]
+fn a_commands_exit_code_comes_from_its_raw_output() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "go"));
+    for (id, raw, code, truncated) in [
+        (
+            "c1",
+            serde_json::json!({"output": "…", "metadata": {"exit": 2, "truncated": true}}),
+            Some(2),
+            true,
+        ),
+        (
+            "c2",
+            serde_json::json!({"exit_code": 0, "output": "done"}),
+            Some(0),
+            false,
+        ),
+        ("c3", serde_json::json!({"output": "no code"}), None, false),
+    ] {
+        Acp::step(
+            &mut state,
+            update(
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": id,
+                "title": "run", "kind": "execute", "status": "in_progress"}),
+            ),
+        );
+        let ended = Acp::step(
+            &mut state,
+            update(
+                serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": id,
+                "status": "completed", "rawOutput": raw}),
+            ),
+        );
+        let (tool, _) = emitted_call(&ended, id).unwrap();
+        assert_eq!(
+            (tool.exit_code, tool.output_truncated),
+            (code, truncated),
+            "{id}"
+        );
+    }
+}
+
+/// A change keeps only the lines its texts do not share, so OpenCode's
+/// whole file, sent on every update, is not sent on to every device; where
+/// its raw output's patch says where the change starts, the change is
+/// numbered from there. Grok's lines in the diff's `_meta` say where its
+/// fragment starts, and move past the lines the fragment shares.
+#[test]
+fn a_change_keeps_its_own_lines_and_the_place_its_agent_says() {
+    let file: String = (1..=60).map(|n| format!("line {n}\n")).collect();
+    let edited = file.replace("line 41\n", "line forty-one\n");
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "edit"));
+    let patch = "Index: /work/f.txt\n===\n--- /work/f.txt\n+++ /work/f.txt\n\
+        @@ -38,7 +38,7 @@\n line 38\n line 39\n line 40\n-line 41\n+line forty-one\n line 42\n";
+    let ended = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "edit", "kind": "edit", "status": "completed",
+            "content": [{"type": "diff", "path": "/work/f.txt", "oldText": file, "newText": edited}],
+            "rawOutput": {"metadata": {"filediff": {"file": "/work/f.txt", "patch": patch}}}}),
+        ),
+    );
+    let (tool, _) = emitted_call(&ended, "c1").unwrap();
+    let diff = &tool.diffs[0];
+    assert_eq!(diff.old_text.as_deref(), Some("line 41\n"));
+    assert_eq!(diff.new_text, "line forty-one\n");
+    assert_eq!((diff.old_line, diff.new_line), (Some(41), Some(41)));
+
+    let mut grok = opened("grok", serde_json::json!({}));
+    Acp::step(&mut grok, prompt("a", "edit"));
+    let edited = Acp::step(
+        &mut grok,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "edit", "kind": "edit", "status": "completed",
+            "content": [{"type": "diff", "path": "/work/f.txt",
+                "oldText": "same\nhello\n", "newText": "same\ngoodbye\n",
+                "_meta": {"old_line": 9, "new_line": 9}}]}),
+        ),
+    );
+    let (tool, _) = emitted_call(&edited, "c1").unwrap();
+    let diff = &tool.diffs[0];
+    assert_eq!(diff.old_text.as_deref(), Some("hello\n"));
+    assert_eq!((diff.old_line, diff.new_line), (Some(10), Some(10)));
+}
+
+/// A change's texts and a call's input are cut as output is, so a file an
+/// agent writes whole does not go to every device whole: each long text to
+/// its first cap's worth, and the input still JSON a client reads.
+#[test]
+fn a_calls_long_texts_are_cut_as_output_is() {
+    let cap = interpret::OUTPUT_CAP;
+    let long: String = "x".repeat(99) + "\n";
+    let long = long.repeat(3 * cap / 100);
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "write"));
+    let written = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "write", "kind": "edit", "status": "completed",
+            "rawInput": {"filePath": "/work/big.txt", "content": long},
+            "content": [{"type": "diff", "path": "/work/big.txt", "oldText": null, "newText": long}]}),
+        ),
+    );
+    let (tool, _) = emitted_call(&written, "c1").unwrap();
+    assert!(
+        tool.diffs[0].new_text.len() <= cap,
+        "{}",
+        tool.diffs[0].new_text.len()
+    );
+    assert!(tool.diffs[0].new_text.ends_with('\n'));
+    assert!(tool.input_json.len() < 2 * cap, "{}", tool.input_json.len());
+    let input: serde_json::Value = serde_json::from_slice(&tool.input_json).unwrap();
+    assert_eq!(input["filePath"], "/work/big.txt");
+}
+
+/// While Grok's own reviewer decides on a call, the call waits, and its
+/// content (the call's description) is not its output; a call the reviewer
+/// blocks never ran, so it is denied, not failed (`grok-allow`).
+#[test]
+fn a_call_groks_reviewer_decides_on_waits_and_a_blocked_one_is_denied() {
+    let mut state = opened("grok", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "run it"));
+    let xai = |update: serde_json::Value| {
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "method": "_x.ai/session_notification",
+            "params": {"sessionId": "s1", "update": update}}),
+        )
+    };
+    Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+            "title": "run_terminal_command", "rawInput": {"command": "./script.sh"}}),
+        ),
+    );
+    let reviewing = Acp::step(
+        &mut state,
+        xai(
+            serde_json::json!({"sessionUpdate": "pending_interaction", "kind": "permission",
+            "tool_call_id": "c1"}),
+        ),
+    );
+    let (tool, _) = emitted_call(&reviewing, "c1").unwrap();
+    assert_eq!(tool.state(), wire::ToolState::Pending);
+    let described = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1",
+            "kind": "execute", "content": [{"type": "content",
+                "content": {"type": "text", "text": "Run the script"}}]}),
+        ),
+    );
+    let (tool, words) = emitted_call(&described, "c1").unwrap();
+    assert_eq!(
+        (tool.state(), words.as_str()),
+        (wire::ToolState::Pending, "")
+    );
+    Acp::step(
+        &mut state,
+        xai(serde_json::json!({"sessionUpdate": "interaction_resolved", "tool_call_id": "c1"})),
+    );
+    let blocked = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1",
+            "status": "failed", "content": [{"type": "content", "content": {"type": "text",
+                "text": "Tool `run_terminal_command` was not executed: Auto mode blocked this action (unknown script)."}}]}),
+        ),
+    );
+    let (tool, words) = emitted_call(&blocked, "c1").unwrap();
+    assert_eq!(tool.state(), wire::ToolState::Denied);
+    assert!(words.contains("Auto mode blocked"), "{words}");
+}

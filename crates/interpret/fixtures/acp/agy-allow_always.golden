@@ -51,7 +51,7 @@ snapshot WORKING queue=[] working_on="Run this exact shell command in the curren
 ## 36 recorded 35: fact Rpc method=session/update
 item tool:call_1714939669286364872 tool open at=3624 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED input="{\"CommandLine\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"WaitMsBef…"
 ## 38 recorded 37: fact Rpc method=session/update
-item tool:call_1714939669286364872 tool final at=3624 text="Created At: 2026-11-20T20:27:03+01:00\nCompleted At: 2026-11-20T20:27:03+01:00\nCommand exited with code 0.\n\nNo output from the command." EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED input="{\"CommandLine\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"WaitMsBef…"
+item tool:call_1714939669286364872 tool final at=3624 text="Created At: 2026-11-20T20:27:03+01:00\nCompleted At: 2026-11-20T20:27:03+01:00\nCommand exited with code 0.\n\nNo output from the command." EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED exit=0 input="{\"CommandLine\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"WaitMsBef…"
 ## 40 recorded 39: fact Rpc method=session/update
 item message:1 message open at=5429 text="done"
 ## 42 recorded 41: fact Rpc method=session/update
@@ -85,7 +85,7 @@ snapshot WORKING queue=[] working_on="Run exactly the same shell command again: 
 ## 57 recorded 56: fact Rpc method=session/update
 item tool:call_17224119568329202485 tool open at=7836 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED input="{\"CommandLine\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"WaitMsBef…"
 ## 59 recorded 58: fact Rpc method=session/update
-item tool:call_17224119568329202485 tool final at=7836 text="Created At: 2026-11-20T20:27:07+01:00\nCompleted At: 2026-11-20T20:27:07+01:00\nCommand exited with code 0.\n\nNo output from the command." EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED input="{\"CommandLine\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"WaitMsBef…"
+item tool:call_17224119568329202485 tool final at=7836 text="Created At: 2026-11-20T20:27:07+01:00\nCompleted At: 2026-11-20T20:27:07+01:00\nCommand exited with code 0.\n\nNo output from the command." EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED exit=0 input="{\"CommandLine\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"WaitMsBef…"
 ## 61 recorded 60: fact Rpc method=session/update
 item message:2 message open at=9574 text="done"
 ## 63 recorded 62: fact Rpc method=session/update

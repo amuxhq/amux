@@ -25,7 +25,7 @@
     10 turn:2 TurnEnd { duration_ms: Some(1609), failed: false }
     11 boundary:4 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context None sign-in None
+== context Some(ContextView { used_tokens: 21227, window_tokens: Some(256000), percent: Some(8), near_full: false }) sign-in None
 == settings
   model  grok-4.7 "Grok 4.7" efforts=[xhigh,high,medium,low]
   model* grok-4.7-build-fast "Grok 4.7 Fast" efforts=[xhigh,high,medium,low]

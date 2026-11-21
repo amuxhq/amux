@@ -78,6 +78,11 @@ message AcpTool {
   // beside it. Empty for any other call, which is drawn as its own step,
   // as builds without the field drew every call.
   string ask_item_key = 10;
+  // A command's exit code, from the call's raw output where the agent puts
+  // one there; absent where it does not.
+  optional int32 exit_code = 11;
+  // The agent cut the command's output short before sending it.
+  bool output_truncated = 12;
 }
 
 enum AcpToolKind {
@@ -106,6 +111,11 @@ message AcpDiff {
   // Absent for a new file.
   optional string old_text = 2;
   string new_text = 3;
+  // The lines of the file where old_text and new_text start, where the
+  // agent says; absent where it does not, and the change is then drawn
+  // with no line numbers.
+  optional uint32 old_line = 4;
+  optional uint32 new_line = 5;
 }
 
 message AcpNotice {
@@ -162,6 +172,9 @@ message AcpSnapshot {
   // resume or load, so an agent whose answer it never saw ends with its
   // process.
   optional AcpReopen reopen = 12;
+  // The agent's tool servers and how each stands, where the agent reports
+  // them (Grok does, beside ACP); empty where it does not.
+  repeated ToolServer servers = 13;
 }
 
 // What the agent says the session has used. Every field is absent until it

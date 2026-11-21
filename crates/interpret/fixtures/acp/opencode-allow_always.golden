@@ -103,7 +103,7 @@ item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="" EXECUTE RUNNIN
 ## 80 recorded 79: fact Rpc method=session/update
 item tool:call_9b4e415249a24fc19bade5b0 tool open at=5385 text="total 8\ndrwxr-xr-x@ 3 ###  staff   96 20 Nov 20:21 .\ndrwxr-xr-x@ 4 ###  staff  128 20 Nov 20:21 ..\n-rwxr-xr-x@ 1 ###  staff   27 20 Nov 20:21 amux-acp-allow-always.sh\n" EXECUTE RUNNING "ls -la" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
 ## 82 recorded 81: fact Rpc method=session/update
-item tool:call_9b4e415249a24fc19bade5b0 tool final at=5385 text="total 8\ndrwxr-xr-x@ 3 ###  staff   96 20 Nov 20:21 .\ndrwxr-xr-x@ 4 ###  staff  128 20 Nov 20:21 ..\n-rwxr-xr-x@ 1 ###  staff   27 20 Nov 20:21 amux-acp-allow-always.sh\n" EXECUTE SUCCEEDED "ls -la" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
+item tool:call_9b4e415249a24fc19bade5b0 tool final at=5385 text="total 8\ndrwxr-xr-x@ 3 ###  staff   96 20 Nov 20:21 .\ndrwxr-xr-x@ 4 ###  staff  128 20 Nov 20:21 ..\n-rwxr-xr-x@ 1 ###  staff   27 20 Nov 20:21 amux-acp-allow-always.sh\n" EXECUTE SUCCEEDED "ls -la" decision=ALLOWED at=<MACHINE_PATH> exit=0 input="{\"command\":\"ls -la\",\"cwd\":\"<MACHINE_PATH>\"}"
 ## 84 recorded 83: fact Rpc method=session/update
 item tool:call_715991cb03f84cd48a09c205 tool open at=5469 text="" READ RUNNING "read" at=<MACHINE_PATH> input="{\"filePath\":\"<MACHINE_PATH>\"}"
 ## 86 recorded 85: fact Rpc method=session/update
@@ -133,7 +133,7 @@ snapshot WORKING queue=[] working_on="Run this exact shell command in the curren
 ## 102 recorded 101: fact Rpc method=session/update
 item tool:call_4da0c0d3663244ebad595b60 tool open at=7502 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
 ## 104 recorded 103: fact Rpc method=session/update
-item tool:call_4da0c0d3663244ebad595b60 tool final at=7502 text="(no output)" EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+item tool:call_4da0c0d3663244ebad595b60 tool final at=7502 text="(no output)" EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" decision=ALLOWED at=<MACHINE_PATH> exit=0 input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
 ## 106 recorded 105: fact Rpc method=session/update
 item message:3 message open at=9322 text="done"
 ## 108 recorded 107: fact Rpc method=session/update
@@ -169,7 +169,7 @@ item tool:call_64f46e970aa649089b069a36 tool open at=11169 text="" EXECUTE RUNNI
 ## 127 recorded 126: fact Rpc method=session/update
 item tool:call_64f46e970aa649089b069a36 tool open at=11169 text="" EXECUTE RUNNING "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
 ## 129 recorded 128: fact Rpc method=session/update
-item tool:call_64f46e970aa649089b069a36 tool final at=11169 text="(no output)" EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
+item tool:call_64f46e970aa649089b069a36 tool final at=11169 text="(no output)" EXECUTE SUCCEEDED "./amux-acp-allow-always.sh amux-acp-allow-always.txt" at=<MACHINE_PATH> exit=0 input="{\"command\":\"./amux-acp-allow-always.sh amux-acp-allow-always.txt\",\"cwd\":\"<MACHIN…"
 ## 131 recorded 130: fact Rpc method=session/update
 item message:5 message open at=12468 text="done"
 ## 133 recorded 132: fact Rpc method=session/update

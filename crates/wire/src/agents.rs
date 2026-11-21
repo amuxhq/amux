@@ -20,6 +20,9 @@ pub struct BuiltIn {
     pub command: &'static str,
     /// The arguments that make the program serve ACP on its stdio.
     pub args: &'static [&'static str],
+    /// What a person does to sign in, for when the agent's own sign-in
+    /// methods do not say: each checked against the program's own help.
+    pub sign_in_hint: &'static str,
 }
 
 pub const BUILT_INS: [BuiltIn; 3] = [
@@ -28,18 +31,23 @@ pub const BUILT_INS: [BuiltIn; 3] = [
         name: "Antigravity",
         command: "agy",
         args: &["acp"],
+        // `agy --help` lists no sign-in command: the program asks for one
+        // when it starts signed out.
+        sign_in_hint: "Run agy and sign in when it asks.",
     },
     BuiltIn {
         id: "opencode",
         name: "OpenCode",
         command: "opencode",
         args: &["acp"],
+        sign_in_hint: "Run `opencode auth login`.",
     },
     BuiltIn {
         id: "grok",
         name: "Grok",
         command: "grok",
         args: &["agent", "stdio"],
+        sign_in_hint: "Run `grok login`.",
     },
 ];
 

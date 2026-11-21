@@ -19,6 +19,7 @@
 //! one early.
 
 mod facts;
+mod grok;
 mod offer;
 mod recording;
 
@@ -177,6 +178,21 @@ pub struct Quirks {
     /// ([`acp_protocol::xai`]). Seen in `grok-question`; the answer's shape
     /// is what Grok took when answered live.
     pub xai_questions: bool,
+    /// The context in use comes as `totalTokens` in each `session/update`'s
+    /// `_meta`, with no `usage_update`, and each model's window as
+    /// `totalContextTokens` in the `_meta` of the models `initialize`, the
+    /// session answer and `_x.ai/models/update` list. Seen in `grok-allow`
+    /// and `grok-catalogue`.
+    pub context_in_update_meta: bool,
+    /// The agent reports each of its tool servers with
+    /// `_x.ai/mcp/server_status`: ready, or unavailable and why. Seen in
+    /// `grok-allow` and `grok-elicitation`.
+    pub xai_servers: bool,
+    /// The agent's own reviewer decides on a call before it runs, between
+    /// `pending_interaction` of kind `permission` and `interaction_resolved`
+    /// in `_x.ai/session_notification`, and a call it blocks fails with
+    /// words saying so. Seen in `grok-allow`.
+    pub xai_review: bool,
 }
 
 /// How an agent names a tool server's tool on its calls. ACP gives a call
@@ -260,6 +276,9 @@ pub fn quirks(agent: &str) -> Quirks {
             offers_in_initialize: true,
             tool_naming: ToolNaming::DoubleUnderscore,
             xai_questions: true,
+            context_in_update_meta: true,
+            xai_servers: true,
+            xai_review: true,
             ..Quirks::default()
         },
         "opencode" => Quirks {
@@ -610,6 +629,22 @@ pub struct State {
     #[serde(default)]
     linking: Vec<Linking>,
     context: Option<(u64, u64)>,
+    /// The context in use and each model's window, by its id, for an agent
+    /// that says them beside ACP ([`Quirks::context_in_update_meta`]).
+    #[serde(default)]
+    context_used: Option<u64>,
+    #[serde(default)]
+    windows: BTreeMap<String, u64>,
+    /// The agent's tool servers as it last reported each.
+    #[serde(default, with = "serde_pb::msgs")]
+    servers: Vec<wire::ToolServer>,
+    /// The calls the agent's own reviewer is deciding on.
+    #[serde(default)]
+    reviewing: std::collections::BTreeSet<String>,
+    /// The calls the last turn's end settled, whose rows are drawn for
+    /// good: an update the agent sends for one after it is dropped.
+    #[serde(default)]
+    settled: std::collections::BTreeSet<String>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<wire::AcpUsage>,
     #[serde(with = "serde_pb::opt_msg")]
@@ -771,6 +806,11 @@ impl State {
             presented: 0,
             linking: Vec::new(),
             context: None,
+            context_used: None,
+            windows: BTreeMap::new(),
+            servers: Vec::new(),
+            reviewing: Default::default(),
+            settled: Default::default(),
             usage: None,
             sign_in: None,
             plan: None,
@@ -866,7 +906,7 @@ impl State {
         AcpSnapshot {
             agent: Some(self.agent.clone()),
             asks: self.shared.asks().open_asks().to_vec(),
-            context: Some(match self.context {
+            context: Some(match self.context.or_else(|| self.context_from_meta()) {
                 None => unknown::context_meter(),
                 Some((used_tokens, window)) => ContextMeter {
                     known: true,
@@ -913,6 +953,7 @@ impl State {
                     wire::AcpReopen::None
                 }) as i32
             }),
+            servers: self.servers.clone(),
         }
         .encode_to_vec()
     }
@@ -1309,6 +1350,9 @@ impl State {
         if let Some(ask) = self.folded.get(id) {
             tool.ask_item_key = ask.clone();
         }
+        if self.reviewing.contains(id) && !finished(tool.state) {
+            tool.state = wire::ToolState::Pending as i32;
+        }
         let complete = finished(tool.state);
         let output = self.outputs.get(id).cloned().unwrap_or_default();
         // amux's attach tool answers the element of what it stored, which
@@ -1348,10 +1392,58 @@ impl State {
     }
 
     /// Whether the call's row was drawn finished, after which nothing more
-    /// about it is drawn.
+    /// about it is drawn. A call a turn's end settled is no longer held,
+    /// and an update for it would otherwise open it again as a new call
+    /// with nothing but the update's fields.
     fn tool_closed(&self, id: &str) -> bool {
-        self.tools.get(id).is_some_and(|tool| finished(tool.state))
-            && self.shared.open_item(&tool_key(id)).is_none()
+        self.settled.contains(id)
+            || (self.tools.get(id).is_some_and(|tool| finished(tool.state))
+                && self.shared.open_item(&tool_key(id)).is_none())
+    }
+
+    /// The context in use against the running model's window, for an agent
+    /// that says both beside ACP.
+    fn context_from_meta(&self) -> Option<(u64, u64)> {
+        let used = self.context_used?;
+        let model = self.current(Category::Model)?;
+        Some((used, *self.windows.get(&model)?))
+    }
+
+    fn learn_windows(&mut self, windows: Vec<(String, u64)>) {
+        self.windows.extend(windows);
+    }
+
+    /// The agent's reviewer took a call up or finished with it. While it
+    /// decides, the call waits rather than runs; once it has, the call is
+    /// drawn as the agent next says.
+    fn review(&mut self, emit: &mut Emit, review: grok::Review) {
+        let id = match review {
+            grok::Review::Started(id) => {
+                self.reviewing.insert(id.clone());
+                // What the call said before the review is its description.
+                self.outputs.remove(&id);
+                id
+            }
+            grok::Review::Resolved(id) => {
+                if !self.reviewing.remove(&id) {
+                    return;
+                }
+                id
+            }
+        };
+        if self.tools.contains_key(&id) && !self.tool_closed(&id) {
+            self.emit_tool(emit, &id);
+        }
+    }
+
+    /// A call's state as the agent gave it, but for a failure that is the
+    /// agent's reviewer blocking it, which never ran: that is denied.
+    fn reviewed_state(&self, state: wire::ToolState, words: &str) -> wire::ToolState {
+        if self.quirks().xai_review && state == wire::ToolState::Failed && grok::blocked(words) {
+            wire::ToolState::Denied
+        } else {
+            state
+        }
     }
 
     fn decide(&mut self, emit: &mut Emit, item_key: &str, outcome: wire::DecisionOutcome) {
@@ -1391,6 +1483,13 @@ impl State {
             self.emit_tool(emit, &id);
         }
         // A finished call's row never changes again.
+        self.settled = self
+            .tools
+            .iter()
+            .filter(|(_, tool)| finished(tool.state))
+            .map(|(id, _)| id.clone())
+            .collect();
+        self.reviewing.clear();
         self.tools.retain(|_, tool| !finished(tool.state));
         let tools = &self.tools;
         self.outputs.retain(|id, _| tools.contains_key(id));
@@ -1899,6 +1998,9 @@ impl State {
         // A file a process linked is stored by the agent process that ran
         // it; what was not stored by now never will be, and keeps its words.
         self.linking.clear();
+        // A new process reports its own servers and reviews.
+        self.servers.clear();
+        self.reviewing.clear();
     }
 }
 
@@ -2179,6 +2281,18 @@ fn describe_tool(tool: &AcpTool) -> String {
             if diff.old_text.is_none() { "(new)" } else { "" },
             diff.new_text.lines().count()
         ));
+        if let Some(old) = &diff.old_text {
+            text.push_str(&format!(" -{}", old.lines().count()));
+        }
+        if let (Some(old), Some(new)) = (diff.old_line, diff.new_line) {
+            text.push_str(&format!(" @{old},{new}"));
+        }
+    }
+    if let Some(code) = tool.exit_code {
+        text.push_str(&format!(" exit={code}"));
+    }
+    if tool.output_truncated {
+        text.push_str(" truncated");
     }
     if !tool.input_json.is_empty() {
         text.push_str(&format!(
@@ -2363,6 +2477,27 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
                 .and_then(|reopen| wire::AcpReopen::try_from(reopen).ok())
                 .map_or("?", |reopen| reopen.as_str_name())
                 .trim_start_matches("ACP_REOPEN_"),
-        ),
+        ) + &describe_servers(&snapshot.servers),
     }
+}
+
+/// The servers an agent reported, for a golden: none says nothing.
+fn describe_servers(servers: &[wire::ToolServer]) -> String {
+    if servers.is_empty() {
+        return String::new();
+    }
+    let servers: Vec<String> = servers
+        .iter()
+        .map(|server| {
+            format!(
+                "{}:{}",
+                server.name,
+                server
+                    .status()
+                    .as_str_name()
+                    .trim_start_matches("TOOL_SERVER_STATUS_")
+            )
+        })
+        .collect();
+    format!(" servers=[{}]", servers.join(","))
 }

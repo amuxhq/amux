@@ -16,7 +16,7 @@
      1 boundary:1 Hidden collapsed
      2 prompt:70312d32 Prompt { text: [Text("In greeting.txt in the current folder, replace the word hello with goodbye. Change nothing else.")], steered: false }
      3 tool:call_53bada2447ef406ca60497c1 Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[tool:call_53bada2447ef406ca60497c1..tool:call_1fddfa9c3d724f26bfb1f82e x2 recent=1] collapsed
-     4 tool:call_1fddfa9c3d724f26bfb1f82e FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: None }], state: Succeeded } run[tool:call_53bada2447ef406ca60497c1..tool:call_1fddfa9c3d724f26bfb1f82e x2 recent=0 RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }]
+     4 tool:call_1fddfa9c3d724f26bfb1f82e FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[tool:call_53bada2447ef406ca60497c1..tool:call_1fddfa9c3d724f26bfb1f82e x2 recent=0 RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }]
      5 message:1 Prose { text: [Text("Done.")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(5121), failed: false }
      7 boundary:2 Hidden collapsed

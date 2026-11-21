@@ -12,12 +12,12 @@
      1 boundary:1 Hidden collapsed
      2 prompt:70312d33 Prompt { text: [Text("Run this exact shell command in the current folder with your shell tool: `./amux-make-file.sh amux-shell-denied.txt`. Then reply with the word done. If you are not allowed to run it, do not try another way; just say so.")], steered: false }
      3 message:1 Prose { text: [Text("I'll run that command in the current folder.")], streaming: false, working_note: false }
-     4 tool:call-70022a60-a14f-4329-aed5-98f4c3d35a12-0 Command { command: "./amux-make-file.sh amux-shell-denied.txt", description: "Run amux-make-file.sh to create the named file", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(5081) } run[tool:call-70022a60-a14f-4329-aed5-98f4c3d35a12-0..tool:call-70022a60-a14f-4329-aed…
+     4 tool:call-70022a60-a14f-4329-aed5-98f4c3d35a12-0 Command { command: "./amux-make-file.sh amux-shell-denied.txt", description: "Run amux-make-file.sh to create the named file", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(5081) } run[tool:call-70022a60-a14f-4329-aed5-98f4c3d35a12-0..tool:call-70022a60-a14f-4329-…
      5 message:2 Prose { text: [Text("done")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(9564), failed: false }
      7 boundary:2 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context None sign-in None
+== context Some(ContextView { used_tokens: 21176, window_tokens: Some(256000), percent: Some(8), near_full: false }) sign-in None
 == settings
   model  grok-4.7 "Grok 4.7" efforts=[xhigh,high,medium,low]
   model* grok-4.7-build-fast "Grok 4.7 Fast" efforts=[xhigh,high,medium,low]

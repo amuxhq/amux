@@ -94,8 +94,12 @@ amux never signs a person in to an agent. What it knows of sign-in comes from th
   request that was refused, so a refused resume is asked again as a resume. Once the session opens, the queue
   drains in order.
 
-The words a person sees for how to sign in are the agent's own: the description of its first auth method
-("Run `opencode auth login` in the terminal"), carried as the descriptor's `sign_in_hint`. The host takes the
+The words a person sees for how to sign in, carried as the descriptor's `sign_in_hint`, are the agent's own where
+an auth method's description names a command to run ("Run `opencode auth login` in the terminal"). Where none does
+(Antigravity's "Log in with your Google account", Grok's "Cached token from ~/.grok/auth.json"), a built-in's hint in
+the registry says what to run instead, each checked against the program's own help: "Run `grok login`.", and
+"Run agy and sign in when it asks.", since `agy` has no sign-in command. An agent a person added keeps its first
+description. The host takes the
 sign-in its agents meet as its word on that agent and republishes its entry when a conversation disagrees with
 what the host last said, so New Agent marks the agent not signed in everywhere.
 

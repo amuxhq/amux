@@ -21,13 +21,13 @@
      2 prompt:70312d33 Prompt { text: [Text("Run this exact shell command in the current folder with your shell tool: `./amux-make-file.sh amux-shell-allowed.txt`. Then reply with the word done. If you are not allowed to run it, do not try another way; just say so.")], steered: false }
      3 thought:1 Thinking { text: "Running the exact shell command and replying with \"done\".", open: false, duration_ms: Some(1659) }
      4 message:2 Prose { text: [Text("I'll run that command in the current folder.")], streaming: false, working_note: false }
-     5 tool:call-c6e60421-0276-4619-a2e1-72b677507657-0 Command { command: "./amux-make-file.sh amux-shell-allowed.txt", description: "Create amux-shell-allowed.txt via script", state: Failed, exit_code: None, output_head: ["Tool `run_terminal_command` was not executed: Auto mode blocked this action (The script contents are unknown, so it is not clear the command only does ordinary local development…
+     5 tool:call-c6e60421-0276-4619-a2e1-72b677507657-0 Command { command: "./amux-make-file.sh amux-shell-allowed.txt", description: "Create amux-shell-allowed.txt via script", state: Denied, exit_code: None, output_head: ["Tool `run_terminal_command` was not executed: Auto mode blocked this action (The script contents are unknown, so it is not clear the command only does ordinary local development…
      6 thought:3 Thinking { text: "The shell command was blocked because the script contents are unknown.", open: false, duration_ms: Some(6955) }
      7 message:4 Prose { text: [Text("I am not allowed to run that command. The shell tool blocked it because the script contents are unknown, so I did not run it.")], streaming: false, working_note: false }
      8 turn:1 TurnEnd { duration_ms: Some(9092), failed: false }
      9 boundary:2 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context None sign-in None
+== context Some(ContextView { used_tokens: 21277, window_tokens: Some(256000), percent: Some(8), near_full: false }) sign-in None
 == settings
   model  grok-4.7 "Grok 4.7" efforts=[xhigh,high,medium,low]
   model* grok-4.7-build-fast "Grok 4.7 Fast" efforts=[xhigh,high,medium,low]

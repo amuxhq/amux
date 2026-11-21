@@ -166,10 +166,10 @@ fn tool_row(
                 command,
                 description,
                 state: view,
-                exit_code: None,
+                exit_code: tool.exit_code,
                 output_head,
                 more_lines,
-                output_trimmed: false,
+                output_trimmed: tool.output_truncated,
                 output_tail: output_tail(&output),
                 duration_ms: duration(held.item.at_ms, tool.ended_at_ms),
             }
@@ -228,7 +228,7 @@ fn file_rows(cwd: &str, tool: &wire::AcpTool, view: CallPhase) -> Vec<FileRow> {
     tool.diffs
         .iter()
         .map(|diff| {
-            let lines = diff_lines(diff.old_text.as_deref(), &diff.new_text);
+            let lines = diff_patch(diff);
             let (added, removed) = counts(&lines);
             let change = match (&diff.old_text, tool.kind()) {
                 (_, AcpToolKind::Delete) => FileChangeView::Deleted,
@@ -247,6 +247,13 @@ fn file_rows(cwd: &str, tool: &wire::AcpTool, view: CallPhase) -> Vec<FileRow> {
         .collect()
 }
 
+/// A change an ACP agent gives, as patch lines ([`diff_lines`]), numbered
+/// from where its texts start in the file when the agent says.
+pub(crate) fn diff_patch(diff: &wire::AcpDiff) -> Vec<EditLine> {
+    let starts = diff.old_line.zip(diff.new_line);
+    diff_lines(diff.old_text.as_deref(), &diff.new_text, starts)
+}
+
 /// A change an ACP agent gives as text before and after, as patch lines:
 /// what the two share at their start and end is left out, and what lies
 /// between is removed then added. A new file's every line is added.
@@ -255,9 +262,10 @@ fn file_rows(cwd: &str, tool: &wire::AcpTool, view: CallPhase) -> Vec<FileRow> {
 /// the whole file, Antigravity and Grok only the fragment they replace. A
 /// call's location says which file it touches and perhaps a line in it,
 /// not where these texts start, so it is no hunk start either. Only a new
-/// file's lines have a known place, from its first line; any other change's
-/// lines go unnumbered and claim no line.
-pub(crate) fn diff_lines(old: Option<&str>, new: &str) -> Vec<EditLine> {
+/// file's lines have a known place, from its first line, and a change whose
+/// agent said beside ACP where its texts start (`starts`, the old line and
+/// the new); any other change's lines go unnumbered and claim no line.
+fn diff_lines(old: Option<&str>, new: &str, starts: Option<(u32, u32)>) -> Vec<EditLine> {
     let created = old.is_none();
     let old: Vec<&str> = old.map(|old| old.lines().collect()).unwrap_or_default();
     let new: Vec<&str> = new.lines().collect();
@@ -272,27 +280,40 @@ pub(crate) fn diff_lines(old: Option<&str>, new: &str) -> Vec<EditLine> {
         .zip(new[start..].iter().rev())
         .take_while(|(old, new)| old == new)
         .count();
-    let first = created.then_some(1);
-    let line = |offset: usize, kind, text: &str| {
+    // Where the change starts on each side, past the lines it shares.
+    let first = starts
+        .or(created.then_some((1, 1)))
+        .map(|(old, new)| (old + start as u32, new + start as u32));
+    let line = |from: Option<u32>, offset: usize, kind, text: &str| {
         EditLine::Line(PatchLine {
-            number: first.map(|first| first + offset as u32),
+            number: from.map(|from| from + offset as u32),
             kind,
             text: text.to_owned(),
         })
     };
     // Where the change starts, so a removal alone still says its line.
     let mut lines: Vec<EditLine> = first
-        .map(|first| EditLine::Hunk {
-            old_start: first,
-            new_start: first,
+        .map(|(old_start, new_start)| EditLine::Hunk {
+            old_start,
+            new_start,
         })
         .into_iter()
         .collect();
     for (offset, text) in old[start..old.len() - end].iter().enumerate() {
-        lines.push(line(offset, LineKind::Removed, text));
+        lines.push(line(
+            first.map(|(old, _)| old),
+            offset,
+            LineKind::Removed,
+            text,
+        ));
     }
     for (offset, text) in new[start..new.len() - end].iter().enumerate() {
-        lines.push(line(offset, LineKind::Added, text));
+        lines.push(line(
+            first.map(|(_, new)| new),
+            offset,
+            LineKind::Added,
+            text,
+        ));
     }
     lines
 }
@@ -371,7 +392,7 @@ pub(super) fn subject(tool: &wire::AcpTool) -> String {
 /// The first lines of the patch a landed change made: its first file's.
 pub(super) fn patch(tool: &wire::AcpTool) -> Option<Vec<EditLine>> {
     let diff = tool.diffs.first()?;
-    Some(diff_lines(diff.old_text.as_deref(), &diff.new_text))
+    Some(diff_patch(diff))
 }
 
 #[cfg(test)]
@@ -393,7 +414,7 @@ mod tests {
     /// first.
     #[test]
     fn a_change_reads_as_the_lines_it_changed() {
-        let lines = diff_lines(Some("a\nb\nc\nd\n"), "a\nB\nc\nd\n");
+        let lines = diff_lines(Some("a\nb\nc\nd\n"), "a\nB\nc\nd\n", None);
         assert_eq!(
             kinds(&lines),
             [
@@ -401,7 +422,7 @@ mod tests {
                 (None, LineKind::Added, "B".to_owned()),
             ]
         );
-        let made = diff_lines(None, "one\ntwo\n");
+        let made = diff_lines(None, "one\ntwo\n", None);
         assert_eq!(counts(&made), (2, 0));
         assert_eq!(first_change(&made), Some(1));
         assert_eq!(
@@ -411,7 +432,7 @@ mod tests {
                 (Some(2), LineKind::Added, "two".to_owned()),
             ]
         );
-        let grown = diff_lines(Some("a\n"), "a\nb\n");
+        let grown = diff_lines(Some("a\n"), "a\nb\n", None);
         assert_eq!(kinds(&grown), [(None, LineKind::Added, "b".to_owned())]);
     }
 
@@ -422,7 +443,7 @@ mod tests {
     /// texts start, so it numbers nothing either.
     #[test]
     fn a_change_with_no_place_in_the_file_claims_no_line() {
-        let lines = diff_lines(Some("Line two."), "Line two, edited.");
+        let lines = diff_lines(Some("Line two."), "Line two, edited.", None);
         assert_eq!(
             kinds(&lines),
             [
@@ -441,6 +462,7 @@ mod tests {
                 path: "/work/notes.txt".into(),
                 old_text: Some("Line two.".into()),
                 new_text: "Line two, edited.".into(),
+                ..Default::default()
             }],
             ..Default::default()
         };

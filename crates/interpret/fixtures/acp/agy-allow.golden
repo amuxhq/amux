@@ -51,7 +51,7 @@ snapshot WORKING queue=[] working_on="Run this exact shell command in the curren
 ## 36 recorded 35: fact Rpc method=session/update
 item tool:call_10957873202281386090 tool open at=3548 text="" EXECUTE RUNNING "./amux-make-file.sh amux-shell-allowed.txt" decision=ALLOWED input="{\"CommandLine\":\"./amux-make-file.sh amux-shell-allowed.txt\",\"WaitMsBeforeAsync\":…"
 ## 38 recorded 37: fact Rpc method=session/update
-item tool:call_10957873202281386090 tool final at=3548 text="Created At: 2026-11-20T20:26:50+01:00\nCompleted At: 2026-11-20T20:26:50+01:00\nCommand exited with code 0.\n\nNo output from the command." EXECUTE SUCCEEDED "./amux-make-file.sh amux-shell-allowed.txt" decision=ALLOWED input="{\"CommandLine\":\"./amux-make-file.sh amux-shell-allowed.txt\",\"WaitMsBeforeAsync\":…"
+item tool:call_10957873202281386090 tool final at=3548 text="Created At: 2026-11-20T20:26:50+01:00\nCompleted At: 2026-11-20T20:26:50+01:00\nCommand exited with code 0.\n\nNo output from the command." EXECUTE SUCCEEDED "./amux-make-file.sh amux-shell-allowed.txt" decision=ALLOWED exit=0 input="{\"CommandLine\":\"./amux-make-file.sh amux-shell-allowed.txt\",\"WaitMsBeforeAsync\":…"
 ## 40 recorded 39: fact Rpc method=session/update
 item message:1 message open at=5295 text="done"
 ## 42 recorded 41: fact Rpc method=session/update

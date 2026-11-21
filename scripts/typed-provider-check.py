@@ -135,6 +135,12 @@ EXEMPTIONS = [
         "an elicitation's form schema is kept as the agent wrote it; a Value would sort its keys and so the form's fields",
     ),
     Exemption(
+        "crates/interpret/src/acp/facts.rs",
+        "cut",
+        r"Value::(Array|Object)",
+        "an ACP call's input is whatever the tool was given, kept as written; only its long strings are cut",
+    ),
+    Exemption(
         "crates/interpret/src/codex/facts.rs",
         "elicitation",
         r"json_as_written\(payload, &\[\"params\", \"requestedSchema\"\]\)",

@@ -126,6 +126,7 @@ pub fn acp() -> AcpSnapshot {
         session_id: None,
         // The agent has not answered `initialize`.
         reopen: None,
+        servers: Vec::new(),
     }
 }
 

@@ -35,11 +35,11 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:70312d33 Prompt { text: [Text("Run this exact shell command in the current folder with your shell tool: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done.")], steered: false }
-     3 tool:call_1714939669286364872 Command { command: "./amux-acp-allow-always.sh amux-acp-allow-always.txt", description: "", state: Succeeded, exit_code: None, output_head: ["Created At: 2026-11-20T20:27:03+01:00", "Completed At: 2026-11-20T20:27:03+01:00", "Command exited with code 0."], more_lines: 2, output_trimmed: false, output_tail: ["Created At: 2026-11-20T20:27:03+01:00", "Completed At: …
+     3 tool:call_1714939669286364872 Command { command: "./amux-acp-allow-always.sh amux-acp-allow-always.txt", description: "", state: Succeeded, exit_code: Some(0), output_head: ["Created At: 2026-11-20T20:27:03+01:00", "Completed At: 2026-11-20T20:27:03+01:00", "Command exited with code 0."], more_lines: 2, output_trimmed: false, output_tail: ["Created At: 2026-11-20T20:27:03+01:00", "Completed A…
      4 message:1 Prose { text: [Text("done")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(4177), failed: false }
      6 prompt:70312d35 Prompt { text: [Text("Run exactly the same shell command again: `./amux-acp-allow-always.sh amux-acp-allow-always.txt`. Then reply with the word done.")], steered: false }
-     7 tool:call_17224119568329202485 Command { command: "./amux-acp-allow-always.sh amux-acp-allow-always.txt", description: "", state: Succeeded, exit_code: None, output_head: ["Created At: 2026-11-20T20:27:07+01:00", "Completed At: 2026-11-20T20:27:07+01:00", "Command exited with code 0."], more_lines: 2, output_trimmed: false, output_tail: ["Created At: 2026-11-20T20:27:07+01:00", "Completed At:…
+     7 tool:call_17224119568329202485 Command { command: "./amux-acp-allow-always.sh amux-acp-allow-always.txt", description: "", state: Succeeded, exit_code: Some(0), output_head: ["Created At: 2026-11-20T20:27:07+01:00", "Completed At: 2026-11-20T20:27:07+01:00", "Command exited with code 0."], more_lines: 2, output_trimmed: false, output_tail: ["Created At: 2026-11-20T20:27:07+01:00", "Completed …
      8 message:2 Prose { text: [Text("done")], streaming: false, working_note: false }
      9 turn:2 TurnEnd { duration_ms: Some(4055), failed: false }
     10 boundary:2 Hidden collapsed

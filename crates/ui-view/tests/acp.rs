@@ -561,3 +561,41 @@ fn a_cards_rules_come_from_what_its_ask_says() {
     let permission = card(permission_ask());
     assert!(permission.reply_instead && permission.stops_turn && !permission.default_to_no);
 }
+
+/// The tool servers an ACP agent reports (Grok's) are in the overview as
+/// Claude's and Codex's are: the ones that failed, and those that want a
+/// sign-in, said apart; a ready one is not listed.
+#[test]
+fn an_acp_agents_failed_servers_are_in_the_overview() {
+    let server = |name: &str, status: wire::ToolServerStatus, error: &str| wire::ToolServer {
+        name: name.into(),
+        status: status as i32,
+        error: error.into(),
+    };
+    let state = session(
+        wire::Lifecycle::Live,
+        wire::AgentCapabilities::default(),
+        wire::AcpSnapshot {
+            servers: vec![
+                server("spec", wire::ToolServerStatus::Ready, ""),
+                server(
+                    "posthog",
+                    wire::ToolServerStatus::NeedsAuth,
+                    "Auth required",
+                ),
+                server("broken", wire::ToolServerStatus::Failed, "exited with 1"),
+            ],
+            ..Default::default()
+        },
+        Vec::new(),
+    );
+    let failed: Vec<(String, bool)> = overview(&state, None)
+        .failed_servers
+        .into_iter()
+        .map(|server| (server.name, server.needs_auth))
+        .collect();
+    assert_eq!(
+        failed,
+        [("posthog".to_owned(), true), ("broken".to_owned(), false)]
+    );
+}

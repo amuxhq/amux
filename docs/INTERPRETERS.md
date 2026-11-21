@@ -1243,6 +1243,9 @@ beyond ACP.
 | `grok` | `initialize` lists the `cached_token` auth method only while signed in | `grok-catalogue`, `grok-signed_out` |
 | `grok` | `initialize`'s `_meta` lists the models with their efforts, and the commands, so the host's copy has them without a session | `grok-catalogue` |
 | `grok` | Its question tool asks in Grok's own `_x.ai/ask_user_question`, answered with the labels picked (or the words typed) by question text | `grok-question` |
+| `grok` | No `usage_update`: the context in use is `totalTokens` in each `session/update`'s `_meta`, against the running model's `totalContextTokens` from the models `initialize`, the session answer and `_x.ai/models/update` list | `grok-allow`, `grok-catalogue` |
+| `grok` | Its tool servers come in `_x.ai/mcp/server_status`, each ready or unavailable with why; one whose words say it wants a sign-in ("Auth required") needs one, and the snapshot's `servers` carry them to the overview as Claude's and Codex's do | `grok-allow`, `grok-elicitation` |
+| `grok` | Its own reviewer decides on a call between `pending_interaction` (kind `permission`) and `interaction_resolved`: meanwhile the call waits and its content, the call's description, is not its output; a call it blocks fails in words saying so, and is drawn denied | `grok-allow` |
 | each | How a call to a tool server's tool is named: `mcp_<server>_<tool>` and `Run …` (`antigravity`), `<server>_<tool>` (`opencode`), `<server>__<tool>` in `use_tool`'s input (`grok`); an added agent any of these | `agy-elicitation`, `opencode-elicitation`, `grok-elicitation` |
 
 What is generic, though only one agent shows it: a setting change's
@@ -1250,7 +1253,22 @@ answer is authoritative and `config_option_update` is ignored while one is
 in flight (Antigravity echoes the old value first, `agy-config`);
 `session/set_mode` is called only where the agent offers modes (Grok
 accepts it without, `grok-config`); a thought level is found by its
-option's category, not its id.
+option's category, not its id; a command's exit code is read from the
+call's `rawOutput` under the names agents give it (`exit_code` in
+Antigravity's and Grok's, `metadata.exit` in OpenCode's, with
+`metadata.truncated` when OpenCode cut the output, `agy-allow`,
+`opencode-allow`); a change's start line comes from Grok's diff `_meta`
+(`old_line`, `new_line`, `grok-edit`) or the first hunk of OpenCode's
+`rawOutput.metadata.filediff` patch (`opencode-edit`), and a change with
+neither is drawn unnumbered.
+
+**What a call keeps.** A change keeps only the lines its texts do not
+share at their start and end, since no row draws the rest and OpenCode
+sends the whole file on every update; each text left, and each string in
+a call's input, is then cut to its first `OUTPUT_CAP` when it is over
+twice that, as output is cut to its last. A turn's end settles every call
+still running, and an update the agent sends afterwards for a call it
+settled is dropped rather than opening a blank running row.
 
 **Handshake and reopening.** The agent process sends `initialize` and the
 session request under fixed ids (`INITIALIZE_REQUEST`,

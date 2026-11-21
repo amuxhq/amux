@@ -5264,6 +5264,13 @@ pub struct AcpTool {
     /// as builds without the field drew every call.
     #[prost(string, tag = "10")]
     pub ask_item_key: ::prost::alloc::string::String,
+    /// A command's exit code, from the call's raw output where the agent puts
+    /// one there; absent where it does not.
+    #[prost(int32, optional, tag = "11")]
+    pub exit_code: ::core::option::Option<i32>,
+    /// The agent cut the command's output short before sending it.
+    #[prost(bool, tag = "12")]
+    pub output_truncated: bool,
 }
 impl ::prost::Name for AcpTool {
     const NAME: &'static str = "AcpTool";
@@ -5301,6 +5308,13 @@ pub struct AcpDiff {
     pub old_text: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, tag = "3")]
     pub new_text: ::prost::alloc::string::String,
+    /// The lines of the file where old_text and new_text start, where the
+    /// agent says; absent where it does not, and the change is then drawn
+    /// with no line numbers.
+    #[prost(uint32, optional, tag = "4")]
+    pub old_line: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "5")]
+    pub new_line: ::core::option::Option<u32>,
 }
 impl ::prost::Name for AcpDiff {
     const NAME: &'static str = "AcpDiff";
@@ -5373,6 +5387,10 @@ pub struct AcpSnapshot {
     /// process.
     #[prost(enumeration = "AcpReopen", optional, tag = "12")]
     pub reopen: ::core::option::Option<i32>,
+    /// The agent's tool servers and how each stands, where the agent reports
+    /// them (Grok does, beside ACP); empty where it does not.
+    #[prost(message, repeated, tag = "13")]
+    pub servers: ::prost::alloc::vec::Vec<ToolServer>,
 }
 impl ::prost::Name for AcpSnapshot {
     const NAME: &'static str = "AcpSnapshot";

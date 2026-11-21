@@ -39,7 +39,7 @@ item tool:call_1fddfa9c3d724f26bfb1f82e tool open at=4568 text="" EDIT RUNNING "
 ## 23 recorded 22: fact Rpc method=session/update
 item tool:call_1fddfa9c3d724f26bfb1f82e tool open at=4568 text="" EDIT RUNNING "edit" at=<MACHINE_PATH> input="{\"filePath\":\"<MACHINE_PATH>\",\"newString\":\"goodbye world\",\"oldString\":\"hello worl…"
 ## 24 recorded 23: fact Rpc method=session/update
-item tool:call_1fddfa9c3d724f26bfb1f82e tool final at=4568 text="Edit applied successfully." EDIT SUCCEEDED "private<MACHINE_PATH>" at=<MACHINE_PATH> diff=<MACHINE_PATH> +1 input="{\"filePath\":\"<MACHINE_PATH>\",\"newString\":\"goodbye world\",\"oldString\":\"hello worl…"
+item tool:call_1fddfa9c3d724f26bfb1f82e tool final at=4568 text="Edit applied successfully." EDIT SUCCEEDED "private<MACHINE_PATH>" at=<MACHINE_PATH> diff=<MACHINE_PATH> +1 -1 @1,1 input="{\"filePath\":\"<MACHINE_PATH>\",\"newString\":\"goodbye world\",\"oldString\":\"hello worl…"
 ## 26 recorded 25: fact Rpc method=session/update
 item message:1 message open at=6171 text="Done."
 ## 28 recorded 27: fact Rpc method=session/update

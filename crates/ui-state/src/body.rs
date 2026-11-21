@@ -674,6 +674,7 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.effort = snapshot.effort;
             state.mode = snapshot.mode;
             state.provider_session = snapshot.session_id;
+            state.servers = snapshot.servers;
             state.sign_in = snapshot.sign_in.unwrap_or_default();
         }
         Kind::Unspecified => {}

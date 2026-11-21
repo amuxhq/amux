@@ -97,6 +97,8 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             "deleted",
             "needsAuth",
             "notLoggedIn",
+            // A tool server Grok could not start (`grok-allow`).
+            "unavailable",
         ],
     ),
     (
@@ -349,8 +351,12 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             wire::ATTACH_TOOL,
         ],
     ),
-    // What a Codex subagent did, reported on its parent's thread.
-    ("kind", &["started", "interacted", "completed"]),
+    // What a Codex subagent did, reported on its parent's thread; what
+    // Grok's own reviewer took up (`grok-allow`).
+    (
+        "kind",
+        &["started", "interacted", "completed", "permission"],
+    ),
     // The agent process's handshake requests to Codex, whose answers the
     // interpreter tells apart by id: a resumed thread's answer leaves its
     // turns out, a new thread's does not.
@@ -574,6 +580,8 @@ const KEPT: &[(&str, &[&str])] = &[
             "cachedReadTokens",
             "reasoningTokens",
             "totalTokens",
+            // Grok's window for each model it lists (`grok-catalogue`).
+            "totalContextTokens",
         ],
     ),
     // Claude: a tool's input and result, wherever a frame carries them.
@@ -1098,19 +1106,41 @@ fn kept(subtree: &str) -> &'static [&'static str] {
 }
 
 /// The fields of a vendor's own ACP method that the ACP interpreter reads,
-/// by method and by place in the line, kept as names though the protocol
-/// crate leaves this vendor method's params untyped: Grok's compaction report, told
-/// by its update's tag, with its token counts (`grok-compact`).
-const ACP_VENDOR_FIELDS: &[(&str, &[Place])] = &[(
-    "_x.ai/session_notification",
-    &[
-        ("params", &["update"]),
-        (
-            "params.update",
-            &["sessionUpdate", "tokens_before", "tokens_after"],
-        ),
-    ],
-)];
+/// by method and by place in the line (`[]` each element of a list), kept
+/// as names though the protocol crate leaves this vendor method's params
+/// untyped: Grok's compaction report, told by its update's tag, with its
+/// token counts (`grok-compact`), and its reviewer taking up a call and
+/// finishing with it (`grok-allow`); a tool server's state
+/// (`grok-allow`); and the models it lists, with each one's window.
+const ACP_VENDOR_FIELDS: &[(&str, &[Place])] = &[
+    (
+        "_x.ai/session_notification",
+        &[
+            ("params", &["update"]),
+            (
+                "params.update",
+                &[
+                    "sessionUpdate",
+                    "tokens_before",
+                    "tokens_after",
+                    "kind",
+                    "tool_call_id",
+                ],
+            ),
+        ],
+    ),
+    (
+        "_x.ai/mcp/server_status",
+        &[("params", &["name", "status", "detail"])],
+    ),
+    (
+        "_x.ai/models/update",
+        &[
+            ("params", &["availableModels", "currentModelId"]),
+            ("params.availableModels[]", &["modelId", "_meta"]),
+        ],
+    ),
+];
 
 /// A place in a line, with the names amux reads there.
 type Place = (&'static str, &'static [&'static str]);
@@ -1124,17 +1154,50 @@ fn vendor_fields(line: &Value, fields: &mut Fields) {
         return;
     };
     for (place, read) in *places {
-        let pointer = format!("/{}", place.replace('.', "/"));
-        let Some(Value::Object(object)) = line.pointer(&pointer) else {
+        let mut objects = objects_at(line, place).peekable();
+        if objects.peek().is_none() {
             continue;
-        };
-        let untyped = object
-            .keys()
+        }
+        let untyped = objects
+            .flat_map(|object| object.keys())
             .filter(|name| !read.contains(&name.as_str()))
             .cloned()
             .collect();
         fields.insert((*place).to_owned(), untyped);
     }
+}
+
+/// The objects at a place in a line, a `[]` segment standing for each
+/// element of the list there.
+fn objects_at<'a>(
+    line: &'a Value,
+    place: &str,
+) -> Box<dyn Iterator<Item = &'a serde_json::Map<String, Value>> + 'a> {
+    let (first, rest) = place.split_once('.').unwrap_or((place, ""));
+    let (name, each) = match first.strip_suffix("[]") {
+        Some(name) => (name, true),
+        None => (first, false),
+    };
+    let Some(below) = line.get(name) else {
+        return Box::new(std::iter::empty());
+    };
+    let below: Vec<&'a Value> = if each {
+        below
+            .as_array()
+            .map(|items| items.iter().collect())
+            .unwrap_or_default()
+    } else {
+        vec![below]
+    };
+    let rest = rest.to_owned();
+    Box::new(below.into_iter().flat_map(move |value| {
+        if rest.is_empty() {
+            Box::new(value.as_object().into_iter())
+                as Box<dyn Iterator<Item = &'a serde_json::Map<String, Value>>>
+        } else {
+            objects_at(value, &rest)
+        }
+    }))
 }
 
 /// The protobuf fields that name a model, effort, permission or mode from

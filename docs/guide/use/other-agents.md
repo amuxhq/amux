@@ -20,7 +20,7 @@ Grok. It can also run any other agent that speaks the Agent Client Protocol
 A computer offers one of these once the agent is installed there, so that
 amux finds its program on the `PATH` it starts agents with. amux never
 installs an agent for you. Sign in to each agent its own way before you start
-one, for example with `opencode auth login`. An agent started before you signed
+one, for example with `opencode auth login` or `grok login`. An agent started before you signed
 in waits and says it isn't signed in. Whatever you send it waits too. Sign in,
 then send it a message, and it starts and answers everything in order.
 
@@ -93,3 +93,12 @@ never suspends. When its process ends, for example because the computer
 restarts, the agent has ended for good, and amux won't resume it. Start a
 new one instead. Settling one ends its conversation for good too, so amux
 asks first.
+
+These agents tell amux less than Claude and Codex do, so their chats show
+less. A command shows its exit code where the agent reports one, and an
+edit its line numbers where the agent says where in the file it changed;
+otherwise the change is shown without them. The context meter fills only
+for an agent that reports its context, such as Grok, and the overview lists
+the tool servers an agent reports that failed or want you to sign in.
+When Grok's own reviewer checks a command before it runs, the step waits,
+and one the reviewer blocks shows as denied.

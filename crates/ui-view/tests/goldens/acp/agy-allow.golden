@@ -19,7 +19,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:70312d33 Prompt { text: [Text("Run this exact shell command in the current folder with your shell tool: `./amux-make-file.sh amux-shell-allowed.txt`. Then reply with the word done. If you are not allowed to run it, do not try another way; just say so.")], steered: false }
-     3 tool:call_10957873202281386090 Command { command: "./amux-make-file.sh amux-shell-allowed.txt", description: "", state: Succeeded, exit_code: None, output_head: ["Created At: 2026-11-20T20:26:50+01:00", "Completed At: 2026-11-20T20:26:50+01:00", "Command exited with code 0."], more_lines: 2, output_trimmed: false, output_tail: ["Created At: 2026-11-20T20:26:50+01:00", "Completed At: 2026-11-2…
+     3 tool:call_10957873202281386090 Command { command: "./amux-make-file.sh amux-shell-allowed.txt", description: "", state: Succeeded, exit_code: Some(0), output_head: ["Created At: 2026-11-20T20:26:50+01:00", "Completed At: 2026-11-20T20:26:50+01:00", "Command exited with code 0."], more_lines: 2, output_trimmed: false, output_tail: ["Created At: 2026-11-20T20:26:50+01:00", "Completed At: 2026-1…
      4 message:1 Prose { text: [Text("done")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(3930), failed: false }
      6 boundary:2 Hidden collapsed

@@ -42,7 +42,7 @@ snapshot WORKING queue=[] working_on="Run this exact shell command in the curren
 ## 21 recorded 20: fact Rpc method=session/update
 item tool:call_634b8ae97fc14e2eb500b2c9 tool open at=6683 text="" EXECUTE RUNNING "./amux-make-file.sh amux-shell-allowed.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-make-file.sh amux-shell-allowed.txt\",\"cwd\":\"<MACHINE_PATH>\"}"
 ## 23 recorded 22: fact Rpc method=session/update
-item tool:call_634b8ae97fc14e2eb500b2c9 tool final at=6683 text="(no output)" EXECUTE SUCCEEDED "./amux-make-file.sh amux-shell-allowed.txt" decision=ALLOWED at=<MACHINE_PATH> input="{\"command\":\"./amux-make-file.sh amux-shell-allowed.txt\",\"cwd\":\"<MACHINE_PATH>\"}"
+item tool:call_634b8ae97fc14e2eb500b2c9 tool final at=6683 text="(no output)" EXECUTE SUCCEEDED "./amux-make-file.sh amux-shell-allowed.txt" decision=ALLOWED at=<MACHINE_PATH> exit=0 input="{\"command\":\"./amux-make-file.sh amux-shell-allowed.txt\",\"cwd\":\"<MACHINE_PATH>\"}"
 ## 25 recorded 24: fact Rpc method=session/update
 item thought:1 thought open at=8569 text="Command"
 ## 26 recorded 25: fact Rpc method=session/update

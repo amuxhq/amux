@@ -589,6 +589,28 @@ fn amuxs_own_tools_are_allowed_without_asking() {
     }
 }
 
+/// A call to amux's own tool from an agent that offers no one-time allow
+/// asks as any other: allowing always would grant the session something
+/// nobody chose.
+#[test]
+fn amuxs_own_tools_ask_where_only_always_is_offered() {
+    let mut state = opened("antigravity", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "go"));
+    let stepped = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": 7, "method": "session/request_permission",
+            "params": {"sessionId": "s1",
+                "toolCall": {"toolCallId": "c1", "title": "Run mcp_amux_spawn",
+                    "name": "mcp_amux_spawn", "kind": "other", "status": "pending"},
+                "options": [{"optionId": "always", "name": "Always", "kind": "allow_always"},
+                    {"optionId": "no", "name": "Deny", "kind": "reject_once"}]}}),
+        ),
+    );
+    assert!(writes(&stepped.effects).is_empty());
+    assert_eq!(state.shared().asks().open_asks().len(), 1);
+}
+
 /// Everything else asks: another server's tool, a name in another agent's
 /// form, and amux's `attach`, which copies a file the agent names where the
 /// agent reads unasked, so the agent's own settings see the read first.

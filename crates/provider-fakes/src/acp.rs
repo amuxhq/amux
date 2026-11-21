@@ -334,6 +334,9 @@ impl Engine {
     }
 
     async fn request(&mut self, method: &str, id: Value, params: &Value) {
+        if self.agent.unanswered.as_deref() == Some(method) {
+            return;
+        }
         match method {
             "initialize" => {
                 let answer = self.initialized();
@@ -376,7 +379,7 @@ impl Engine {
                 "id": "fake-login",
                 "name": "Log in to the fake agent",
             }],
-            "protocolVersion": 1,
+            "protocolVersion": self.agent.protocol_version,
         });
         if !self.agent.anonymous {
             answer["agentInfo"] = json!({"name": self.agent.name, "version": self.version});

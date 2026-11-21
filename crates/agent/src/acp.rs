@@ -75,6 +75,19 @@ pub fn initialize(id: &str) -> Vec<u8> {
     ))
 }
 
+/// Whether the agent speaks amux's version of ACP, as its `initialize`
+/// answer says: an agent may answer with an older one, whose messages amux
+/// cannot be sure to read. The error says so in words for a person.
+pub fn speaks(agent: &str, init: &acp_protocol::agent::InitializeResponse) -> Result<(), String> {
+    if init.protocol_version == PROTOCOL_VERSION {
+        return Ok(());
+    }
+    Err(format!(
+        "{agent} speaks version {} of the Agent Client Protocol; amux speaks version {PROTOCOL_VERSION}",
+        init.protocol_version
+    ))
+}
+
 /// What a session is opened with besides its folder.
 pub struct SessionSetup {
     pub cwd: String,
@@ -277,7 +290,7 @@ fn image_block(path: &Path) -> Option<ContentBlock> {
 /// where it is UTF-8, else its bytes.
 fn resource_block(path: &Path, mime: &str) -> Option<ContentBlock> {
     let bytes = std::fs::read(path).ok()?;
-    let uri = file_uri(path);
+    let uri = file_uri(path)?;
     let mime_type = (!mime.is_empty()).then(|| Some(mime.to_owned()));
     let resource = match String::from_utf8(bytes) {
         Ok(text) => EmbeddedResourceResource::Text(TextResourceContents {
@@ -303,15 +316,25 @@ fn resource_block(path: &Path, mime: &str) -> Option<ContentBlock> {
     }))
 }
 
-/// A `file:` URI for an absolute path, with Windows' drive and separators
-/// written as URIs write them.
-fn file_uri(path: &Path) -> String {
-    let path = path.to_string_lossy().replace('\\', "/");
-    if path.starts_with('/') {
-        format!("file://{path}")
-    } else {
-        format!("file:///{path}")
-    }
+/// A `file:` URL for a path: percent-encoded, so a space, `#` or `%` in a
+/// folder's name is not read as the URL's own, and with Windows' drive and
+/// separators written as URLs write them. None for a path that cannot be
+/// made absolute.
+fn file_uri(path: &Path) -> Option<String> {
+    let path = std::path::absolute(path).ok()?;
+    url::Url::from_file_path(&path).ok().map(String::from)
+}
+
+/// Kills the process `pid` and every process below it, as `taskkill /T`
+/// does: the daemon stops an agent's process tree the same way.
+#[cfg(windows)]
+pub async fn kill_tree(pid: u32) {
+    let _ = tokio::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await;
 }
 
 /// The program to start for `command`. On Windows a bare name is looked up
@@ -450,11 +473,9 @@ mod tests {
         assert_eq!(blocks[3]["resource"]["text"], "kiwi\n");
         assert_eq!(blocks[3]["resource"]["mimeType"], "text/plain");
         let path = blobs.path().join("cd".repeat(32));
-        assert!(
-            blocks[3]["resource"]["uri"]
-                .as_str()
-                .unwrap()
-                .ends_with(&path.to_string_lossy().replace('\\', "/")),
+        assert_eq!(
+            blocks[3]["resource"]["uri"].as_str(),
+            super::file_uri(&path).as_deref(),
             "{blocks:?}"
         );
         assert_eq!(blocks[4]["text"], " please");
@@ -499,6 +520,36 @@ mod tests {
         assert!(
             text.contains(&blobs.path().join("cd".repeat(32)).display().to_string()),
             "{text}"
+        );
+    }
+
+    /// A file's URL percent-encodes what a URL would read as its own: a
+    /// space, a `#` that would start a fragment, and a `%` itself.
+    #[test]
+    fn a_files_url_is_percent_encoded() {
+        #[cfg(not(windows))]
+        assert_eq!(
+            super::file_uri(Path::new("/tmp/a b#c%d/notes.txt")).as_deref(),
+            Some("file:///tmp/a%20b%23c%25d/notes.txt")
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            super::file_uri(Path::new(r"C:\Users\a b#c%d\notes.txt")).as_deref(),
+            Some("file:///C:/Users/a%20b%23c%25d/notes.txt")
+        );
+    }
+
+    /// An agent answering in another version of ACP than amux's is told
+    /// apart, as the catalogue helper reports it.
+    #[test]
+    fn another_protocol_version_is_refused() {
+        let init = |version: u16| -> acp_protocol::agent::InitializeResponse {
+            serde_json::from_value(serde_json::json!({"protocolVersion": version})).unwrap()
+        };
+        assert_eq!(super::speaks("grok", &init(1)), Ok(()));
+        assert_eq!(
+            super::speaks("grok", &init(2)),
+            Err("grok speaks version 2 of the Agent Client Protocol; amux speaks version 1".into())
         );
     }
 

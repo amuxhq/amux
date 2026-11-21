@@ -29,6 +29,7 @@ mod hook_answers;
 mod host;
 mod notebook;
 mod provider;
+pub use provider::ACP_HANDSHAKE_WAIT;
 mod ready;
 pub mod spawns;
 mod tail;

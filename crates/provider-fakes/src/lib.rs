@@ -62,7 +62,10 @@ impl Kind {
     }
 }
 
-/// What a fake binary does, decided from its environment.
+/// What a fake binary does, decided from its environment. A fake decides
+/// it once, at its start, so a script's size beside a playback's costs
+/// nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum Mode {
     Script(Script),
     Playback(playback::Process),

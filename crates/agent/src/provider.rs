@@ -53,6 +53,10 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
+/// How long an ACP agent has to answer each request of its handshake:
+/// long enough for an agent that loads a lot at its start, or reaches a
+/// slow network for its sign-in.
+pub const ACP_HANDSHAKE_WAIT: Duration = Duration::from_secs(60);
 /// How long a resume keeps asking for a thread another Codex server still
 /// writes. A killed agent's server is told to finish by its tether, but
 /// Codex can take seconds to exit and holds the thread until it does.
@@ -78,6 +82,10 @@ pub enum ProviderEvent {
         path: PathBuf,
         error: io::Error,
     },
+    /// The provider runs but never got going, in these words: an ACP agent
+    /// that did not answer its handshake in time. The host kills it and
+    /// ends the incarnation as for one that could not be started.
+    Unstarted(String),
 }
 
 /// Writes the provider's state to `path` in private/, and reports the
@@ -113,6 +121,14 @@ pub enum ProviderError {
         crate::claude::version::MIN_TERMINAL
     )]
     ClaudeTooOld { found: String },
+    /// A later process of an ACP agent with a conversation whose saved id
+    /// cannot be read: opening a new session would pass a fresh
+    /// conversation off as the old one reopened.
+    #[error(
+        "the id of the agent's conversation, saved in {}, cannot be read, so the conversation cannot be reopened; amux does not start a new one in its place",
+        Path::new(dir::PRIVATE).join(dir::PROVIDER_SESSION).display()
+    )]
+    SessionLost,
     #[error("{0}")]
     Io(#[from] io::Error),
 }
@@ -192,12 +208,13 @@ impl Provider {
         spec: &AgentSpec,
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
+        clock: Arc<dyn crate::clock::Clock>,
     ) -> Result<Self, ProviderError> {
         match wire::Kind::try_from(spec.kind) {
             Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
             Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
             Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Acp) => Self::spawn_acp(spec, dir, events).await,
+            Ok(wire::Kind::Acp) => Self::spawn_acp(spec, dir, events, clock).await,
             Ok(wire::Kind::Unspecified) | Err(_) => {
                 unreachable!("run refuses any other kind")
             }
@@ -291,6 +308,13 @@ impl Provider {
             let status = tokio::select! {
                 status = child.wait() => status,
                 _ = killed => {
+                    // An agent npm installed runs behind a `.cmd` shim, whose
+                    // shell runs the agent as its child: killing the shim
+                    // alone would leave the agent running.
+                    #[cfg(windows)]
+                    if let Some(pid) = pid {
+                        crate::acp::kill_tree(pid).await;
+                    }
                     let _ = child.start_kill();
                     child.wait().await
                 }
@@ -608,13 +632,28 @@ impl Provider {
     /// Grok writes an error there for every remote tool server it cannot
     /// reach at each start.
     ///
+    /// Each handshake request has [`ACP_HANDSHAKE_WAIT`] on `clock` to be
+    /// answered, so a command that runs but never answers does not leave
+    /// the agent starting for good. A later process whose saved session id
+    /// is there but cannot be read is not started: it would open a new
+    /// session in place of the old one. One whose id is gone altogether
+    /// opens a new session, which the interpreter refuses where it knows
+    /// of a conversation.
+    ///
     /// [`opening`]: interpret::acp::opening
     async fn spawn_acp(
         spec: &AgentSpec,
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
+        clock: Arc<dyn crate::clock::Clock>,
     ) -> Result<Self, ProviderError> {
         let saved = saved_session(dir).filter(|_| spec.incarnation > 1);
+        if spec.incarnation > 1
+            && saved.is_none()
+            && dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION).exists()
+        {
+            return Err(ProviderError::SessionLost);
+        }
         let blobs = dir.join(dir::BLOBS);
         std::fs::create_dir_all(&blobs)?;
         let setup = crate::acp::SessionSetup {
@@ -664,12 +703,20 @@ impl Provider {
         let takes = Arc::new(std::sync::Mutex::new(crate::acp::Takes::default()));
 
         let (initialized, on_initialized) = oneshot::channel();
+        let (opened, on_opened) = oneshot::channel();
         let lines = events.clone();
         let read_takes = takes.clone();
         let reader = tokio::spawn(async move {
             let mut initialized = Some(initialized);
+            let mut opened = Some(opened);
             let mut stdout = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = stdout.next_line().await {
+                if opened.is_some()
+                    && acp_session_answered(line.as_bytes())
+                    && let Some(opened) = opened.take()
+                {
+                    let _ = opened.send(());
+                }
                 if initialized.is_some()
                     && let Some(answer) = acp_initialized(line.as_bytes())
                 {
@@ -720,21 +767,65 @@ impl Provider {
 
         let stdin: Stdin = Arc::new(tokio::sync::Mutex::new(Some(stdin)));
         let handshake = stdin.clone();
+        let unanswered = events.clone();
+        let agent = if spec.provider.is_empty() {
+            spec.provider_command.clone()
+        } else {
+            spec.provider.clone()
+        };
         tokio::spawn(async move {
+            let deadline = || {
+                clock.sleep_until(
+                    clock
+                        .now_ms()
+                        .saturating_add(ACP_HANDSHAKE_WAIT.as_millis() as i64),
+                )
+            };
+            let late = |method: &str| {
+                ProviderEvent::Unstarted(format!(
+                    "{agent} did not answer {method} within {} seconds",
+                    ACP_HANDSHAKE_WAIT.as_secs()
+                ))
+            };
             let initialize = crate::acp::initialize(interpret::acp::INITIALIZE_REQUEST);
             if write_line(&handshake, &initialize).await.is_err() {
                 return;
             }
-            // A refused or unreadable answer ends the incarnation in the
-            // interpreter, which reads it too.
-            let Ok(Some(init)) = on_initialized.await else {
+            // A refused or unreadable answer, or one in a version amux does
+            // not speak, ends the incarnation in the interpreter, which
+            // reads it too; so does an agent that ends first.
+            let init = tokio::select! {
+                answer = on_initialized => answer,
+                () = deadline() => {
+                    let _ = unanswered.send(late("initialize")).await;
+                    return;
+                }
+            };
+            let Ok(Some(init)) = init else {
                 return;
             };
+            if crate::acp::speaks("", &init).is_err() {
+                return;
+            }
             let opening = interpret::acp::opening(&init, saved.as_deref());
-            if let Some(request) =
+            let Some(request) =
                 crate::acp::open_session(&opening, &setup, acp_takes_folders(&init))
-            {
-                let _ = write_line(&handshake, &request).await;
+            else {
+                return;
+            };
+            if write_line(&handshake, &request).await.is_err() {
+                return;
+            }
+            let method = match opening {
+                interpret::acp::Opening::Resume(_) => "session/resume",
+                interpret::acp::Opening::Load(_) => "session/load",
+                _ => "session/new",
+            };
+            tokio::select! {
+                _ = on_opened => {}
+                () = deadline() => {
+                    let _ = unanswered.send(late(method)).await;
+                }
             }
         });
 
@@ -1395,6 +1486,19 @@ fn acp_initialized(line: &[u8]) -> Option<Option<acp_protocol::agent::Initialize
             .ok()
             .and_then(|result| acp_protocol::result(&result).ok())
     })
+}
+
+/// Whether `line` is an ACP agent's answer, of any kind, to the request
+/// that opens its session.
+fn acp_session_answered(line: &[u8]) -> bool {
+    use interpret::acp::{LOAD_REQUEST, NEW_SESSION_REQUEST, RESUME_REQUEST};
+    matches!(
+        acp_protocol::decode(line),
+        Ok(acp_protocol::AgentMessage::Response {
+            id: acp_protocol::RequestId::String(id),
+            ..
+        }) if [NEW_SESSION_REQUEST, RESUME_REQUEST, LOAD_REQUEST].contains(&id.as_str())
+    )
 }
 
 /// Whether an ACP agent takes more folders than its working one.

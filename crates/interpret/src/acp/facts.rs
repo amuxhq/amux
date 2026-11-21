@@ -603,14 +603,13 @@ impl State {
         self.tool_update(emit, &request.tool_call);
         if amux_tool {
             // amux's own tools never ask, on any kind: the call is allowed
-            // once, which a new process allows again, rather than always,
-            // which would be a grant the session holds.
-            let allow = [
-                PermissionOptionKind::AllowOnce,
-                PermissionOptionKind::AllowAlways,
-            ]
-            .iter()
-            .find_map(|kind| request.options.iter().find(|option| &option.kind == kind));
+            // once, which a new process allows again. Allowing always would
+            // be a grant the session holds that nobody chose, so an agent
+            // that offers no one-time allow asks as for any other call.
+            let allow = request
+                .options
+                .iter()
+                .find(|option| option.kind == PermissionOptionKind::AllowOnce);
             if let Some(allow) = allow {
                 let response = acp_protocol::ClientResponse::RequestPermission(
                     acp_protocol::client::RequestPermissionResponse::selected(&allow.option_id),
@@ -805,6 +804,19 @@ impl State {
                 ),
             });
         };
+        // An agent may answer with an older version than amux's, whose
+        // messages amux cannot be sure to read; the agent process opens no
+        // session for it either.
+        if init.protocol_version != acp_protocol::client::PROTOCOL_VERSION {
+            return emit.effect(Effect::Exit {
+                cause: format!(
+                    "{} speaks version {} of the Agent Client Protocol; amux speaks version {}",
+                    self.agent,
+                    init.protocol_version,
+                    acp_protocol::client::PROTOCOL_VERSION
+                ),
+            });
+        }
         self.reopens = Some(super::Reopens::of(&init));
         self.takes = Some(super::Takes::of(&init));
         // A conversation this process cannot reopen ends here; the agent
@@ -837,6 +849,17 @@ impl State {
     /// agent's ids (its calls, its requests) needs the session in its key.
     fn session_opened(&mut self, emit: &mut Emit, id: &str, result: Result<Value, RpcError>) {
         let reopened = id != NEW_SESSION_REQUEST;
+        // A new session where a conversation was had: the agent process
+        // lost the conversation's id, and a fresh conversation is never
+        // passed off as the old one reopened.
+        if !reopened && self.session_id.is_some() {
+            return emit.effect(Effect::Exit {
+                cause: format!(
+                    "the id of {}'s conversation was lost, so the conversation cannot be reopened; amux does not start a new one in its place",
+                    self.agent
+                ),
+            });
+        }
         let result = match result {
             Ok(result) => result,
             Err(error) => {

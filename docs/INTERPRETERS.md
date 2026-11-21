@@ -1339,7 +1339,8 @@ answer meant for an ask of an earlier process must never reach it.
 offering exactly the agent's options; an answer names one by id, and an
 allow-always one is a session grant (`opencode-allow_always`). A request
 for one of amux's own tools is answered allow once at once and opens no
-ask, recognised by the agent's naming quirk from the call's earlier title
+ask (an agent offering no allow once is asked as for any call, since an
+allow always nobody chose would be a session grant), recognised by the agent's naming quirk from the call's earlier title
 and the request's title, name and input (OpenCode retitles a call in its
 request, `opencode-allow`); `attach` asks, as it does in Claude, since it
 copies a file the agent names to where the agent reads unasked.

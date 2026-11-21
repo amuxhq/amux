@@ -175,6 +175,12 @@ pub struct AcpAgent {
     /// thought level and mode, as Antigravity's does (`agy-resume`); the
     /// others keep what was set.
     pub forgets_settings: bool,
+    /// The protocol version `initialize` answers with; ACP's own, 1, unless
+    /// set.
+    pub protocol_version: u16,
+    /// A request method the agent never answers, as an agent stuck at its
+    /// start would not (`initialize`, `session/new`, ...).
+    pub unanswered: Option<String>,
 }
 
 impl Default for AcpAgent {
@@ -192,6 +198,8 @@ impl Default for AcpAgent {
             cancel_chunks: 2,
             refuse_reopen: false,
             forgets_settings: false,
+            protocol_version: 1,
+            unanswered: None,
         }
     }
 }

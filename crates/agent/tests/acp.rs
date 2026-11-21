@@ -592,3 +592,101 @@ async fn amuxs_own_tools_are_allowed_without_asking() {
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
+
+/// Runs one turn and stops, leaving the session id saved for a later
+/// process.
+async fn had_a_conversation(agent: &Agent) {
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "hi").await, Verdict::Accepted);
+    agent
+        .wait("the turn ends", |log| log.turn_ends() == 1)
+        .await;
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+/// A later process whose saved session id is there but unreadable starts
+/// no agent, and one whose id is gone has its new session refused by the
+/// interpreter: either way no fresh conversation stands for the old one.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lost_session_id_ends_the_agent_rather_than_start_afresh() {
+    let session = |agent: &Agent| agent.dir.join(agent::PRIVATE).join("provider-session");
+
+    let agent = Agent::start(acp("opencode", said("hello"))).await;
+    had_a_conversation(&agent).await;
+    std::fs::write(session(&agent), "  \n").unwrap();
+    agent.resume();
+    match agent.exit().await {
+        ExitCause::Unstarted(why) => assert!(why.contains("cannot be read"), "{why}"),
+        other => panic!("the agent started: {other:?}"),
+    }
+    assert_eq!(sent(&agent, "session/new").len(), 1);
+    assert!(sent(&agent, "session/resume").is_empty());
+
+    let agent = Agent::start(acp("opencode", said("hello"))).await;
+    had_a_conversation(&agent).await;
+    std::fs::remove_file(session(&agent)).unwrap();
+    agent.resume();
+    let cause = interpreter_cause(agent.exit().await);
+    assert!(cause.contains("conversation was lost"), "{cause}");
+    assert!(sent(&agent, "session/resume").is_empty());
+    assert!(sent(&agent, "session/load").is_empty());
+}
+
+/// A command that runs but never answers a request of the handshake ends
+/// the agent once the request's wait is over, naming the request.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_handshake_that_is_never_answered_ends_the_agent() {
+    let wait = i64::try_from(agent::ACP_HANDSHAKE_WAIT.as_millis()).unwrap();
+    for method in ["initialize", "session/new"] {
+        let agent = Agent::start(Setup {
+            acp: AcpAgent {
+                unanswered: Some(method.into()),
+                ..AcpAgent::default()
+            },
+            ..acp("opencode", said("hello"))
+        })
+        .await;
+        let _daemon = agent.dial().await;
+        until(&format!("{method} to be sent"), || async {
+            if sent(&agent, method).is_empty() {
+                Err("not yet")
+            } else {
+                Ok(())
+            }
+        })
+        .await
+        .unwrap();
+        agent.clock.armed(T0 + wait).await;
+        agent.clock.set(T0 + wait);
+        match agent.exit().await {
+            ExitCause::Unstarted(why) => assert_eq!(
+                why,
+                format!("opencode did not answer {method} within 60 seconds")
+            ),
+            other => panic!("{method}: {other:?}"),
+        }
+    }
+}
+
+/// An agent that answers `initialize` in another version of ACP than
+/// amux's ends saying so, and no session is opened.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_in_another_protocol_version_ends() {
+    let agent = Agent::start(Setup {
+        acp: AcpAgent {
+            protocol_version: 2,
+            ..AcpAgent::default()
+        },
+        ..acp("opencode", said("hello"))
+    })
+    .await;
+    let _daemon = agent.dial().await;
+    let cause = interpreter_cause(agent.exit().await);
+    assert!(
+        cause.contains("speaks version 2 of the Agent Client Protocol"),
+        "{cause}"
+    );
+    assert!(sent(&agent, "session/new").is_empty());
+}

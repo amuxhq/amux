@@ -424,6 +424,7 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         answer.map_err(|error| format!("{agent} refused initialize: {}", error.message))?;
     let init: acp_protocol::agent::InitializeResponse = acp_protocol::result(&answer)
         .map_err(|error| format!("{agent}'s initialize answer: {error}"))?;
+    crate::acp::speaks(agent, &init)?;
     let offer = interpret::acp::host_offer(agent, &init);
     Ok(ProviderOffer {
         signed_in: offer.signed_in(),

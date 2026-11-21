@@ -57,10 +57,16 @@ const STORIES: &[(&str, Tell)] = &[
     ("report-a-problem", report_a_problem),
     ("first-run", first_run),
     ("provider-subagents", provider_subagents),
-    ("acp-create-from-config", super::terminal_acp::create_from_config),
+    (
+        "acp-create-from-config",
+        super::terminal_acp::create_from_config,
+    ),
     ("acp-permission", super::terminal_acp::permission),
     ("acp-interrupt", super::terminal_acp::interrupt),
-    ("acp-queue-and-withdraw", super::terminal_acp::queue_and_withdraw),
+    (
+        "acp-queue-and-withdraw",
+        super::terminal_acp::queue_and_withdraw,
+    ),
     ("acp-ends-for-good", super::terminal_acp::ends_for_good),
     ("acp-sign-in", super::terminal_acp::sign_in),
 ];

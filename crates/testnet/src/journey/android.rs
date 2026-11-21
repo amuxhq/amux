@@ -1869,7 +1869,12 @@ fn conversation_decision(journey: &mut AndroidJourney, agent: &str, provider_log
     send(journey, PROMPT)?;
 
     let card = journey.wait(
-        |drawn| drawn.has("ask") && labelled(drawn, "deploy --check") && labelled(drawn, "Allow"),
+        |drawn| {
+            drawn.has("ask")
+                && labelled(drawn, "Wants to run")
+                && labelled(drawn, "deploy --check")
+                && labelled(drawn, "Allow")
+        },
         "the permission card",
     )?;
     let sent = journey.wait_chat(
@@ -3125,7 +3130,12 @@ fn accessibility(journey: &mut AndroidJourney) -> Proved {
 
     send(journey, PROMPT)?;
     let card = journey.wait(
-        |drawn| drawn.has("ask") && labelled(drawn, "deploy --check") && labelled(drawn, "Allow"),
+        |drawn| {
+            drawn.has("ask")
+                && labelled(drawn, "Wants to run")
+                && labelled(drawn, "deploy --check")
+                && labelled(drawn, "Allow")
+        },
         "the permission card at large text",
     )?;
     journey.screen("permission", &[])?;

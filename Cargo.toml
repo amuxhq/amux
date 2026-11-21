@@ -236,17 +236,30 @@ debug = false
 incremental = true
 panic = "unwind"
 
-# SQLite's C and the protocol models run optimised in development builds too:
-# the models explore real stores in memory, thousands of transactions per
-# second of a test's budget, and unoptimised SQLite and Rust there are ten
-# times slower. Neither is anything a debugger steps through.
+# SQLite's C, stateright and the protocol models run optimised in development
+# builds too: the models explore real stores in memory, thousands of
+# transactions per second of a test's budget, and unoptimised SQLite,
+# stateright and Rust there are ten times slower. None is anything a debugger
+# steps through.
 [profile.dev.package.libsqlite3-sys]
 opt-level = 3
 
 [profile.dev.package.models]
 opt-level = 3
 
+[profile.dev.package.stateright]
+opt-level = 3
+
 [profile.dev.package.store]
+opt-level = 3
+
+# Full optimisation for the CI and nightly protocol-model runs, which explore
+# the seven `*-core` state machines millions of times. Keeps dev's unwind
+# panics, parallel codegen units and no LTO so compiles stay quick while the
+# model checker runs at full speed; kept separate from `dev` so everyday
+# edits to `*-core` crates stay fast to compile.
+[profile.models]
+inherits = "dev"
 opt-level = 3
 
 # What a release ships, for the daemon and the phone alike, and what perf runs

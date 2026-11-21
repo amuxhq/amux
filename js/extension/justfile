@@ -20,7 +20,7 @@ default:
 # Build the browser extension.
 build *ARGS:
     {{bounded}} 900 cargo build --locked -p browser-core --target wasm32-unknown-unknown --profile wasm
-    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && cd extension && node build.ts "$@"' sh "$@"
+    {{bounded}} 300 sh -c 'cd js && { [ "${AMUX_NPM_READY-}" = 1 ] || npm ci --no-audit --no-fund --loglevel=error; } && cd extension && node build.ts "$@"' sh "$@"
 
 # Types, unit tests, and the end-to-end test in Chromium against this tree's
 # amux and the fake providers. AMUX_E2E_KEEP=1 keeps what the provider read
@@ -28,7 +28,7 @@ build *ARGS:
 # Check and test the overlay and the extension.
 test: (build "--dev")
     {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
-    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && npx playwright install chromium >/dev/null && npx playwright test'
+    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
 
 # Biome's format and lint, the types, and the unit tests, without building.
 # `just premerge` runs them when anything under js/ differs from main.

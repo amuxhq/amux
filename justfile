@@ -48,20 +48,20 @@ mod mac 'apps/apple/Mac/justfile'
 mod browser 'js/extension/justfile'
 
 # Build the desktop product binaries.
-build:
+build: target-check
     {{bounded}} 900 cargo build --locked -p amux --bins
 
 # Check every workspace library and binary.
-check:
+check: target-check
     {{bounded}} 900 cargo check --locked --workspace --lib --bins
 
 # Every test runs in a process of its own (.config/nextest.toml).
 # Run workspace tests under cargo-nextest, preserving explicit Cargo target selections.
-test *ARGS: nextest
+test *ARGS: nextest target-check
     if [ "${1-}" = -- ]; then shift; fi; scripts/workspace-test.sh "$@"
 
 # Run tests for one named workspace crate.
-test-crate CRATE *ARGS: nextest
+test-crate CRATE *ARGS: nextest target-check
     crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 cargo nextest run --locked -p "$crate" "$@"
 
 # `just flaky [--load] TEST [COUNT]` runs every test whose name contains TEST
@@ -76,13 +76,19 @@ flaky *ARGS: nextest
 nextest:
     @cargo nextest --version >/dev/null 2>&1 || { echo "cargo-nextest is not installed: brew install cargo-nextest, or cargo install --locked cargo-nextest@0.9.150 (.config/nextest.toml requires it)" >&2; exit 1; }
 
+# Warn on stderr when target/ has accumulated dead caches or the disk is low,
+# without slowing down routine builds.
+[private]
+target-check:
+    @scripts/py -B scripts/sweep.py --check
+
 # Cross-compile every store test target and run it on the leased, booted iOS
 # simulator, after proving the store's integration binary carries SQLite itself.
 test-store-ios:
     scripts/with iphone -- {{bounded}} 2300 scripts/py -B apps/apple/Tools/ios-store-test.py
 
 # Compile every ordinary workspace test target without running it.
-test-build:
+test-build: target-check
     {{bounded}} 1200 cargo test --locked --workspace --lib --tests --no-run
 
 # Run all workspace documentation tests.
@@ -90,14 +96,14 @@ doctest:
     {{bounded}} 600 cargo test --locked --workspace --doc
 
 # Exercise TUI behavior.
-test-tui *ARGS: nextest
+test-tui *ARGS: nextest target-check
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo nextest run --locked -p tui --features fixtures "$@"
 
 # Lint every workspace target with warnings denied. The qualification
 # features only decide which targets build, so they are on here: the live
 # tests and the perf binaries run by hand, never in CI, and this is what
 # keeps them compiling.
-lint:
+lint: target-check
     {{bounded}} 1200 cargo clippy --locked --workspace --all-targets --features qualification/live,qualification/perf -- -D warnings
 
 # Format all Rust sources with the pinned nightly toolchain.
@@ -184,13 +190,13 @@ storybook *ARGS:
 # terminal all` runs every terminal story, keeps going after a failure,
 # prints one line per story to target/journeys/summary.txt and fails if any
 # story did.
-journey CLIENT NAME *ARGS:
+journey CLIENT NAME *ARGS: target-check
     #!/usr/bin/env sh
     set -eu
     if [ "${3-}" = -- ]; then shift 3; else shift 2; fi
     case "{{CLIENT}}" in
     terminal)
-        {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p testnet --bins
+        {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin testnet
         if [ "{{NAME}}" = all ]; then
             {{bounded}} 3000 target/debug/testnet journey terminal all
         else
@@ -262,21 +268,21 @@ deny:
 shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
 
-# A tree's wt stop hook runs this once nothing holds the tree: a tree starts
-# with a copy of the main checkout's target/, and each toolchain or
-# dependency change leaves the old output behind, while what any build read
-# in the last week stays. Needs `cargo install --locked cargo-sweep@0.8.0`;
-# without it, sweeps nothing.
-# Delete the build output in target/ that no build has used for a week.
-sweep:
-    @command -v cargo-sweep >/dev/null || { echo "cargo-sweep is not installed; nothing swept"; exit 0; }; {{bounded}} 120 cargo sweep --time 7
+# Prune dead incremental caches and cap Cargo deps in target/ (and
+# target/ios/rust-cargo when present) without evicting active build caches.
+# Pass `--cold` (as .wt.toml's stop hook does on suspend) to drop incremental/
+# completely, or `--dry-run` to preview. Needs `cargo install --locked
+# cargo-sweep@0.8.0` for the deps pass; incremental pruning still runs without it.
+# Prune dead build caches in target/ while keeping active caches warm.
+sweep *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 120 scripts/py -B scripts/sweep.py "$@"
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the
 # name goes to nextest (a test-name filter, `--no-capture`). The bound is the
 # protocol models' at their CI bounds, one after another on a four-core machine.
 # Run one catalogued suite's Cargo tests.
-suite NAME *ARGS: nextest
+suite NAME *ARGS: nextest target-check
     {{bounded}} 2400 scripts/py -B scripts/tests-catalog.py run "$@"
 
 # Print the suite catalogue with its boundaries, lanes and focused recipes.
@@ -300,7 +306,7 @@ script-tests:
 # hour of its six for the build; the single daemon's peer alone took two hours
 # on the twelve-core Mac.
 models-nightly *MODELS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked -p models --profile nightly --run-ignored only --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
+    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked --cargo-profile models -p models --profile nightly --run-ignored only --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per

@@ -4,13 +4,11 @@ import kotlinx.serialization.json.Json
 import java.util.Base64
 
 /**
- * Opening what a daemon sealed to this phone, for the debug build's door and
- * the tests. Shipping builds will open pushes through the Rust library when
- * push lands, so none of this ships.
+ * Opening what a daemon sealed to this phone.
  *
  * HPKE in base mode: the 32-byte encapsulated key, then the ciphertext, as
  * base64. A push the wrong key or a stale key cannot open comes back null,
- * and the plain alert the service sent stays on show.
+ * and the plain fallback alert shows instead.
  */
 object SealedPush {
     /**

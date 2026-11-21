@@ -251,6 +251,7 @@ class RuntimeCoordinator(
                     registry.show(current.profiles)
                     place()
                 }
+                pushRegistrar.updateAccounts(pushAccounts())
                 completeWaiters(startedRuntime)
             },
             onFailure = { error ->

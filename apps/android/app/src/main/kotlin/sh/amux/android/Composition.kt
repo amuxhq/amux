@@ -10,6 +10,7 @@ import android.os.Looper
 import androidx.lifecycle.ProcessLifecycleOwner
 import java.io.File
 import java.lang.ref.WeakReference
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
+import sh.amux.core.runtime.AgentKey
 import sh.amux.core.runtime.AmuxCloudService
 import sh.amux.core.runtime.AndroidLocalDiscovery
 import sh.amux.core.runtime.AndroidNetworkWatch
@@ -31,10 +33,13 @@ import sh.amux.core.runtime.CloudService
 import sh.amux.core.runtime.DeletionStore
 import sh.amux.core.runtime.DiscoverySource
 import sh.amux.core.runtime.EntitlementWatch
+import sh.amux.core.runtime.FcmPushRegistrar
+import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.InstallationPaths
 import sh.amux.core.runtime.NetworkWatcher
 import sh.amux.core.runtime.NoOpPushRegistrar
 import sh.amux.core.runtime.PaywallStore
+import sh.amux.core.runtime.PushDevice
 import sh.amux.core.runtime.PushRegistrar
 import sh.amux.core.runtime.RemovalStore
 import sh.amux.core.runtime.ReportFreezing
@@ -46,6 +51,8 @@ import sh.amux.core.runtime.SignInStore
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.core.runtime.StubBillingStoreFront
 import sh.amux.core.runtime.WebAuthPresenter
+import sh.amux.core.runtime.agentUuid
+import sh.amux.core.runtime.hostId
 import sh.amux.design.AppearanceMode
 import sh.amux.features.DiagnosticsExportState
 import sh.amux.features.SettingsNotificationStatus
@@ -54,6 +61,7 @@ import sh.amux.shell.AppLink
 import sh.amux.shell.DictationController
 import sh.amux.shell.NotificationChannels
 import sh.amux.shell.OAuthBrowser
+import sh.amux.shell.Route
 import sh.amux.shell.Router
 import sh.amux.shell.ShellAction
 import sh.amux.shell.ShellPlatform
@@ -72,6 +80,7 @@ data class CompositionOverrides(
     val starter: RuntimeStarter? = null,
     val discovery: DiscoverySource? = null,
     val useSystemDiscovery: Boolean = true,
+    val useSystemPush: Boolean = true,
     val networkWatch: NetworkWatcher? = null,
     val autoStart: Boolean = true,
     val attachProcessLifecycle: Boolean = true,
@@ -120,9 +129,28 @@ class Composition(
         },
     )
 
+    private var coordinatorRef: RuntimeCoordinator? = null
+
     val cloud: CloudService = overrides.cloud ?: AmuxCloudService()
     val billing: BillingStoreFront = overrides.billing ?: StubBillingStoreFront()
-    val pushRegistrar: PushRegistrar = overrides.pushRegistrar ?: NoOpPushRegistrar()
+    val pushRegistrar: PushRegistrar = overrides.pushRegistrar ?: if (
+        overrides.useSystemPush && FirebasePushBridge.isAvailable(appContext)
+    ) {
+        FcmPushRegistrar(
+            keys = AndroidPushKeyStore(appContext),
+            cloud = cloud,
+            environment = if (BuildConfig.DEBUG) {
+                PushDevice.Environment.Sandbox
+            } else {
+                PushDevice.Environment.Production
+            },
+            scope = scope,
+            host = { profileId -> coordinatorRef?.pushHost(profileId) },
+            say = { profileId, key -> coordinatorRef?.wantNotifications(profileId, key) == true },
+        )
+    } else {
+        NoOpPushRegistrar()
+    }
 
     val oauthBrowser: OAuthBrowser = OAuthBrowser(
         contextProvider = { activeActivity?.get() ?: appContext },
@@ -207,6 +235,7 @@ class Composition(
             pushRegistrar = pushRegistrar,
             starter = starter,
         )
+        coordinatorRef = runtime
 
         runtime.setShareUsage(prefs.getBoolean(PREF_SHARE_USAGE, true))
         runtime.setAutoReports(prefs.getBoolean(PREF_AUTO_REPORTS, false))
@@ -284,6 +313,7 @@ class Composition(
             lifecycleObserver.attach(ProcessLifecycleOwner.get().lifecycle)
         }
         runtime.start()
+        refreshFcmToken()
     }
 
     /**
@@ -334,7 +364,44 @@ class Composition(
     fun onActivityResumed(activity: Activity) {
         activeActivity = WeakReference(activity)
         syncNotifications(activity)
+        refreshFcmToken()
         oauthBrowser.onActivityResumed()
+    }
+
+    private fun refreshFcmToken() {
+        if (pushRegistrar is FcmPushRegistrar) {
+            FirebasePushBridge.fetchToken { token ->
+                pushRegistrar.updateToken(token.toByteArray(Charsets.UTF_8))
+            }
+        }
+    }
+
+    fun handleNotificationTap(host: String?, agent: String?) {
+        val hostId = host?.let(HostId::parse)
+        val agentUuid = agent?.let { runCatching { UUID.fromString(it.trim()) }.getOrNull() }
+        if (hostId == null || agentUuid == null) {
+            router.openFleet()
+            return
+        }
+        PushNotificationDelivery.clearForChat(appContext, hostId.toString(), agentUuid.toString())
+        val target = AgentKey(host = hostId, agent = agentUuid)
+        scope.launch {
+            runtime.bringForward(hostId)
+            val top = router.snapshot.topRoute
+            if (top != Route.Conversation(target)) {
+                router.openFleet()
+                router.push(Route.Conversation(target))
+            }
+        }
+    }
+
+    fun isViewingChat(host: String, agent: String): Boolean {
+        if (!runtime.snapshot.active) return false
+        val top = router.snapshot.topRoute as? Route.Conversation ?: return false
+        val topHost = top.agent.hostId?.toString() ?: return false
+        val topAgent = top.agent.agentUuid?.toString() ?: return false
+        return topHost.equals(host.trim(), ignoreCase = true) &&
+            topAgent.equals(agent.trim(), ignoreCase = true)
     }
 
     fun syncNotifications(context: Context = appContext) {

@@ -11,6 +11,9 @@ class AmuxApplication : Application() {
     lateinit var composition: Composition
         private set
 
+    internal val compositionOrNull: Composition?
+        get() = if (::composition.isInitialized) composition else null
+
     override fun onCreate() {
         super.onCreate()
         val overrides = DebugHooks.compositionOverrides ?: defaultOverrides()
@@ -23,12 +26,13 @@ class AmuxApplication : Application() {
     }
 
     private fun defaultOverrides(): CompositionOverrides {
-        // Avoid spawning live NsdManager / ConnectivityManager / JNI runtime
-        // threads during pure Robolectric JVM UI and storybook tests.
+        // Avoid spawning live NsdManager / ConnectivityManager / JNI runtime /
+        // Firebase threads during pure Robolectric JVM UI and storybook tests.
         val isRobolectric = Build.FINGERPRINT.equals("robolectric", ignoreCase = true)
         return if (isRobolectric) {
             CompositionOverrides(
                 useSystemDiscovery = false,
+                useSystemPush = false,
                 networkWatch = NoOpNetworkWatcher,
                 autoStart = false,
                 attachProcessLifecycle = false,

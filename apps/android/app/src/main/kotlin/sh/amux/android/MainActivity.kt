@@ -163,7 +163,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        val uri = intent?.data ?: return
+        if (intent == null) return
+        if (intent.getBooleanExtra(PushNotificationDelivery.EXTRA_PUSH_TAP, false)) {
+            val host = intent.getStringExtra(PushNotificationDelivery.EXTRA_PUSH_HOST)
+            val agent = intent.getStringExtra(PushNotificationDelivery.EXTRA_PUSH_AGENT)
+            intent.removeExtra(PushNotificationDelivery.EXTRA_PUSH_TAP)
+            intent.removeExtra(PushNotificationDelivery.EXTRA_PUSH_HOST)
+            intent.removeExtra(PushNotificationDelivery.EXTRA_PUSH_AGENT)
+            composition.handleNotificationTap(host = host, agent = agent)
+            return
+        }
+        val uri = intent.data ?: return
         composition.handleIncomingUri(uri)
     }
 }

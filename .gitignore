@@ -59,10 +59,14 @@ __pycache__/
 apps/apple/Signing.local.xcconfig
 
 # Credentials that must never be committed: environment files, App Store
-# Connect keys, certificates and their private keys, provisioning profiles.
+# Connect keys, certificates and their private keys, provisioning profiles,
+# Android signing keystores.
 .env
 .env.*
 *.p8
 *.p12
 *.pem
 *.mobileprovision
+*.jks
+*.keystore
+apps/android/app/google-services.json

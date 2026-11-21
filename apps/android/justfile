@@ -83,6 +83,24 @@ scope-audit *ARGS:
 script-tests:
     {{bounded}} 120 {{python}} -m unittest discover -s apps/android/tools/tests -p '*_test.py' -t apps/android/tools/tests
 
+# Version, audit, build, sign, verify and upload the Android App Bundle (.aab)
+# to Google Play internal testing, then commit, tag `android-v<version>-b<build>`
+# and push (--preflight reports inputs immediately; --rehearse builds and verifies
+# without writing the tree or tagging; --no-upload and --no-push stop short).
+# Version, sign, verify and upload the Android bundle, then tag and push.
+release *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 4800 {{python}} -B apps/android/tools/android-release.py "$@"
+
+# Promote a released Android versionCode on Google Play (`--channel stable|preview|closed|internal`,
+# `--track NAME`, `--rollout PCT`, `--notes-file PATH`, `--draft`, `--dry-run`).
+# Put a released Android build in front of people on Google Play.
+deploy VERSION *ARGS:
+    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 {{python}} -B apps/android/tools/android-deploy.py deploy {{VERSION}} "$@"
+
+# Show what each Google Play track currently holds for sh.amux.android.
+status:
+    {{bounded}} 120 {{python}} -B apps/android/tools/android-deploy.py status
+
 # Run the full Android verification gate in deterministic order.
 verify:
     just android lint

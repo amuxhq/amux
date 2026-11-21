@@ -72,6 +72,7 @@ class CompositionTest {
                 authPresenter = ScriptedWebAuth(),
                 dictation = dictation,
                 useSystemDiscovery = false,
+                useSystemPush = false,
                 autoStart = false,
                 attachProcessLifecycle = false,
                 installationDir = File(tempRoot, "install"),

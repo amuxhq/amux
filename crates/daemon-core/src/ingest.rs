@@ -82,6 +82,7 @@ impl Daemon {
                 frames: 0,
                 turn_ends: 0,
                 kind: 0,
+                provider: String::new(),
                 end: IngestEnd::Failed(error.to_string()),
                 seen,
                 skipped: 0,
@@ -146,6 +147,7 @@ impl Daemon {
             frames: batch.frames.len() as u32,
             turn_ends: 0,
             kind: 0,
+            provider: String::new(),
             end: if batch.more {
                 IngestEnd::More
             } else {
@@ -173,7 +175,10 @@ impl Daemon {
             if report.turn_ends > 0 {
                 // A turn end may have written an outbox row.
                 self.deliveries_due();
-                report.kind = self.store.agent(&key)?.map_or(0, |row| row.kind);
+                if let Some(row) = self.store.agent(&key)? {
+                    report.kind = row.kind;
+                    report.provider = row.provider_id().to_owned();
+                }
                 // It may have committed or reverted what other agents in
                 // its checkout count as their changes.
                 self.turn_ended_beside(agent, out);
@@ -459,6 +464,7 @@ mod tests {
                 frames: INGEST_BATCH as u32,
                 turn_ends: 0,
                 kind: 0,
+                provider: String::new(),
                 end: IngestEnd::More,
                 seen: end,
                 skipped: 0,

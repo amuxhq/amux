@@ -2011,7 +2011,7 @@ impl ProfileRuntime {
             .fetch_add(u64::from(report.skipped), Ordering::Relaxed);
         if report.turn_ends > 0
             && self.analytics.is_on()
-            && let Some(kind) = crate::telemetry::kind_coded(report.kind)
+            && let Some(kind) = crate::telemetry::kind_coded(report.kind, &report.provider)
         {
             self.turns.add(kind, report.turn_ends);
         }

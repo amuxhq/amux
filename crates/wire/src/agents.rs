@@ -48,6 +48,27 @@ pub fn built_in(id: &str) -> Option<&'static BuiltIn> {
     BUILT_INS.iter().find(|agent| agent.id == id)
 }
 
+/// The most characters an agent's id has.
+pub const ID_MOST: usize = 64;
+
+/// Why `id` is not shaped as an agent's id can be, if it is not: what a
+/// config entry's key and a spawn call's agent are both held to.
+pub fn shape_problem(id: &str) -> Option<String> {
+    let characters = id.bytes().all(|byte| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
+    });
+    let starts = id
+        .bytes()
+        .next()
+        .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit());
+    (!characters || !starts || id.len() > ID_MOST).then(|| {
+        format!(
+            "an agent's id is at most {ID_MOST} lowercase letters, digits, hyphens and \
+             underscores, starting with a letter or digit"
+        )
+    })
+}
+
 /// Claude Code's provider id, for both of its kinds.
 pub const CLAUDE: &str = "claude";
 /// Codex's provider id.

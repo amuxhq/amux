@@ -106,8 +106,9 @@ reached`, or the daemon's own message.
 ### agents
 
 Every agent in the fleet, own and replicated from paired hosts. Each row has
-`name` (the id in hex when the agent has no name), `id`, `kind` (`claude` or
-`codex`, however Claude is driven), `host` (the host's name), `live`, and `phase`
+`name` (the id in hex when the agent has no name), `id`, `kind` (the agent
+program's provider id: `claude` however Claude is driven, `codex`, or an ACP
+agent's id such as `opencode`), `host` (the host's name), `live`, and `phase`
 (`starting`, `idle`, `working` or `needs_you`); and, when they apply,
 `working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
 its own words when it has any, as `finished`, `stopped` or
@@ -120,8 +121,10 @@ messaged. Both read-only tools are marked with MCP's
 
 ### hosts
 
-The hosts this profile trusts, one row each with `name` and `presence`
-(`online` or `offline`), and `this_host: true` on the caller's host. Discovery
+The hosts this profile trusts, one row each with `name`, `presence`
+(`online` or `offline`), `agents` (the provider ids the host lists itself as
+offering: `claude`, `codex` and each ACP agent installed there, what a
+`spawn` there can name), and `this_host: true` on the caller's host. Discovery
 candidates are left out: a model spawns only on hosts a person has paired.
 Agents and hosts are separate tools so each answers one question.
 
@@ -144,12 +147,15 @@ tool's description tells it to reply with `send` to that agent's name.
 
 ### spawn
 
-Starts a child agent of `kind` (`claude` or `codex`) with `prompt` as its
-first input. A Claude child is always headless Claude (`claude_sdk`): people
-read a child in amux's chat, so how its Claude is driven is not the parent's
-choice. The create
-carries it as a prompt submission, which can hold nothing but a prompt, and
-names the kind by its arm with that kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
+Starts a child agent of `kind` (a provider id: `claude`, `codex`, or an ACP
+agent's id from `hosts`) with `prompt` as its first input. A Claude child is
+always headless Claude (`claude_sdk`): people read a child in amux's chat, so
+how its Claude is driven is not the parent's choice. Any other well-formed id
+is created as that ACP agent, and the host it runs on refuses one it does not
+offer, in its own words; an id no agent can have is refused by the tool. The
+create carries the first input as a prompt submission, which can hold nothing
+but a prompt, and names the kind by its arm with that kind's default
+settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
 resolves it, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on, where `~` and a path not from the root start at
 that host's home: omitted on the caller's host (named or not, by

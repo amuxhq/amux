@@ -31,7 +31,7 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::{
     Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Envelope, ExitCause,
-    FileAgentRequest, Filing, HostEntry, HostRef, Kind, Lifecycle, PromptInput, PromptSubmission,
+    FileAgentRequest, Filing, HostEntry, HostRef, Lifecycle, PromptInput, PromptSubmission,
     ResolveAgentRequest, attachment, create_agent_request, inventory_event,
 };
 
@@ -77,15 +77,16 @@ pub(crate) fn unasked() -> impl Iterator<Item = &'static str> {
 }
 
 const AGENTS: &str = "List the amux fleet: every agent the person has not settled, with its \
-name, kind, host, whether it is live, what it is doing and working on, its parent, and which \
-one is you.";
+name, kind (the agent program it runs: claude, codex or another agent's id), host, whether it \
+is live, what it is doing and working on, its parent, and which one is you.";
 const HOSTS: &str = "List the hosts this fleet trusts: each one's name, whether it is online, \
-and which one is this host. Spawn on another host by its name.";
+which one is this host, and the agents each offers to spawn. Spawn on another host by its \
+name.";
 const SEND: &str = "Send a message to another amux agent by name. It answers once the \
 recipient's provider has the message, or says why it could not. When a message reaches you \
 from an amux agent, reply with this tool to that agent's name.";
-const SPAWN: &str = "Start a child agent with a first prompt: claude or codex. It runs on \
-this host unless you name \
+const SPAWN: &str = "Start a child agent with a first prompt: claude, codex, or another \
+agent the host offers, by the id hosts lists. It runs on this host unless you name \
 another trusted host, in your working directory unless you give one. On another host, give \
 a folder there: ask the person which one if you do not know one. The child does \
 its work and stops. When it finishes, its last message arrives as a new message in the main \
@@ -106,7 +107,8 @@ file.";
 /// for it would use, and stay short, since Claude caps them.
 const INSTRUCTIONS: &str = "amux runs a fleet of coding agents, and you are one. Use these \
 tools to work with other agents: send a message to another agent, or reply to one that \
-messaged you (send); start a child agent, claude or codex, on this or another host (spawn); \
+messaged you (send); start a child agent, claude, codex or another a host offers, on this or \
+another host (spawn); \
 stop a child agent (stop); list the agents in the fleet (agents) and the hosts they run on \
 (hosts); say what you are working on (status); and attach a file to your reply (attach).";
 
@@ -283,7 +285,7 @@ impl Server {
                 let mut row = json!({
                     "name": agent.name,
                     "id": interpret::to_hex(&agent.agent_id),
-                    "kind": kind_word(agent.kind()),
+                    "kind": kind_word(agent),
                     "host": host_name(&agent.host_id),
                     "live": agent.lifecycle() == Lifecycle::Live,
                     "phase": word(agent.phase().as_str_name(), "PHASE_"),
@@ -321,9 +323,18 @@ impl Server {
                     Some(wire::trusted::Reach::Away(_)) => "away",
                     _ => "offline",
                 };
+                // What the host lists itself is what a spawn there can
+                // name: Claude and Codex, and the ACP agents installed
+                // there.
+                let offers: Vec<&str> = host
+                    .providers
+                    .iter()
+                    .map(|provider| provider.provider.as_str())
+                    .collect();
                 let mut row = json!({
                     "name": host.name(),
                     "presence": presence,
+                    "agents": offers,
                 });
                 if here.as_deref() == Some(host.host_id()) {
                     row["this_host"] = json!(true);
@@ -384,11 +395,7 @@ impl Server {
     /// not in the request: the daemon sets it from the socket the agent
     /// process's call comes in on, as it sets a message's sender.
     async fn spawn(&self, arguments: &Value) -> Answer {
-        let kind = required(arguments, "kind")?;
-        let Some(kind) = kind_named(&kind) else {
-            let [first, last] = SPAWNABLE.map(kind_word);
-            return Err(format!("no agent kind {kind:?}; use {first} or {last}").into());
-        };
+        let agent = agent_named(&required(arguments, "kind")?)?;
         let prompt = required(arguments, "prompt")?;
         let name = optional(arguments, "name");
         // The daemon resolves the name against the hosts it trusts.
@@ -410,7 +417,7 @@ impl Server {
             name,
             parent: None,
             cwd,
-            agent: create_agent_request::Agent::defaults(kind),
+            agent: Some(agent),
             initial_prompt: Some(PromptSubmission {
                 input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 prompt: Some(prompt),
@@ -745,27 +752,19 @@ fn plain(status: &Status) -> String {
     }
 }
 
-/// The kinds an agent may spawn. A Claude child runs headless: people read
-/// a child in amux's chat, so how its Claude is driven is no business of
-/// the parent's.
-const SPAWNABLE: [Kind; 2] = [Kind::ClaudeSdk, Kind::Codex];
-
 /// An enum value as the tools say it: its protobuf name without the enum's
 /// prefix, in lowercase, so the tools' words are the wire's own.
 fn word(name: &str, prefix: &str) -> String {
     name.trim_start_matches(prefix).to_ascii_lowercase()
 }
 
-/// A kind as the tools say it: `claude` or `codex`. Both ways of driving
-/// Claude are `claude`, for the same reason a parent cannot pick one.
-fn kind_word(kind: Kind) -> String {
-    match kind {
-        Kind::Unspecified => "unknown".to_owned(),
-        Kind::ClaudePty | Kind::ClaudeSdk => "claude".to_owned(),
-        Kind::Codex => "codex".to_owned(),
-        // Every ACP agent is named by its own id, which the row does not
-        // carry yet; none is spawnable from here.
-        Kind::Acp => "acp".to_owned(),
+/// The agent program a row runs, as the tools say it: its provider id, the
+/// one a spawn names. Both ways of driving Claude are `claude`, for the same
+/// reason a parent cannot pick one.
+fn kind_word(agent: &Agent) -> String {
+    match agent.provider_id() {
+        "" => "unknown".to_owned(),
+        id => id.to_owned(),
     }
 }
 
@@ -792,9 +791,25 @@ fn exit_words(agent: &Agent) -> Option<String> {
     }
 }
 
-/// The kind an agent named in a spawn call.
-fn kind_named(word: &str) -> Option<Kind> {
-    SPAWNABLE.into_iter().find(|kind| kind_word(*kind) == word)
+/// The agent a spawn call names by its provider id. A Claude child runs
+/// headless: people read a child in amux's chat, so how its Claude is
+/// driven is no business of the parent's. Any other id is an ACP agent's,
+/// which only the host it runs on knows whether it offers, so that host
+/// refuses one it does not; an id no agent can have is refused here.
+fn agent_named(id: &str) -> Result<create_agent_request::Agent, Refusal> {
+    use create_agent_request::Agent;
+    match id {
+        wire::agents::CLAUDE => Ok(Agent::ClaudeSdk(wire::ClaudeCreateConfig::default())),
+        wire::agents::CODEX => Ok(Agent::Codex(wire::CodexCreateConfig::default())),
+        _ if wire::agents::shape_problem(id).is_none() => Ok(Agent::Acp(wire::AcpCreateConfig {
+            agent: id.to_owned(),
+            ..Default::default()
+        })),
+        _ => Err(format!(
+            "no agent {id:?}; use claude, codex or another agent a host offers, by the id hosts lists"
+        )
+        .into()),
+    }
 }
 
 fn required(arguments: &Value, name: &str) -> Result<String, Refusal> {
@@ -870,7 +885,7 @@ fn definitions() -> Value {
             "context": { "type": "string", "description": "An optional thread label the recipient sees with the message." },
           }), &["to", "text"]) },
         { "name": wire::SPAWN_TOOL, "description": SPAWN, "inputSchema": object(json!({
-            "kind": { "type": "string", "enum": SPAWNABLE.map(kind_word) },
+            "kind": { "type": "string", "description": "The agent to start: claude, codex, or the id of another agent the host offers (hosts lists them)." },
             "prompt": { "type": "string" },
             "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
             "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },

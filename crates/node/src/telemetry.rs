@@ -69,21 +69,29 @@ impl analytics::Accounts for Profiles {
     }
 }
 
-pub(crate) fn kind(kind: wire::Kind) -> Option<Kind> {
+/// The analytics kind of an agent of `kind` running `provider`'s program.
+/// An ACP agent is named by its built-in id; one a person added is
+/// `custom`, since its id is theirs to choose and may say anything.
+pub(crate) fn kind(kind: wire::Kind, provider: &str) -> Option<Kind> {
     match kind {
         wire::Kind::ClaudePty => Some(Kind::ClaudePty),
         wire::Kind::ClaudeSdk => Some(Kind::ClaudeSdk),
         wire::Kind::Codex => Some(Kind::Codex),
-        // Analytics names no ACP agent yet: an agent's id is the person's
-        // own for one they added, so none is counted until built-in ids
-        // can be told from theirs.
-        wire::Kind::Acp | wire::Kind::Unspecified => None,
+        wire::Kind::Acp => Some(match provider {
+            "antigravity" => Kind::Antigravity,
+            "opencode" => Kind::Opencode,
+            "grok" => Kind::Grok,
+            _ => Kind::Custom,
+        }),
+        wire::Kind::Unspecified => None,
     }
 }
 
 /// The analytics kind for a kind's wire integer, as a row keeps it.
-pub(crate) fn kind_coded(code: i32) -> Option<Kind> {
-    wire::Kind::try_from(code).ok().and_then(kind)
+pub(crate) fn kind_coded(code: i32, provider: &str) -> Option<Kind> {
+    wire::Kind::try_from(code)
+        .ok()
+        .and_then(|known| kind(known, provider))
 }
 
 /// What a person's input is, as analytics counts it: a prompt or an answer
@@ -125,7 +133,8 @@ impl InputShape {
     /// Read from a decoded copy of the body. An input whose body this
     /// daemon cannot decode, of a kind or arm it does not know, is not
     /// counted; it is still delivered, since the agent alone decides it.
-    pub(crate) fn of(input: &wire::Input) -> Option<Self> {
+    /// `provider` is the agent's, which names an ACP agent's kind.
+    pub(crate) fn of(input: &wire::Input, provider: &str) -> Option<Self> {
         use wire::KindInput;
         Some(match input.decode_body()? {
             KindInput::ClaudePty(input) => {
@@ -152,8 +161,15 @@ impl InputShape {
                     _ => return None,
                 }
             }
-            // Not counted, as `kind` says.
-            KindInput::Acp(_) => return None,
+            KindInput::Acp(input) => {
+                use wire::acp_input::Of;
+                let kind = kind(wire::Kind::Acp, provider)?;
+                match input.of? {
+                    Of::Prompt(prompt) => Self::Prompt(kind, pages(&prompt)),
+                    Of::Answer(answer) => Self::Answer(kind, acp_ask(&answer)?),
+                    _ => return None,
+                }
+            }
         })
     }
 
@@ -215,6 +231,16 @@ fn codex_ask(answer: &wire::CodexAnswer) -> Option<Ask> {
     })
 }
 
+fn acp_ask(answer: &wire::AcpAnswer) -> Option<Ask> {
+    use wire::acp_answer::Of;
+    Some(match answer.of.as_ref()? {
+        Of::Option(_) => Ask::Permission,
+        Of::Form(_) => Ask::Form,
+        Of::Link(_) => Ask::Link,
+        Of::Reply(_) => Ask::Question,
+    })
+}
+
 /// When a profile last checked in, or None before its first.
 pub(crate) fn last_check_in(profile_dir: &Path) -> Option<i64> {
     std::fs::read_to_string(profile_dir.join(CHECKED_IN))
@@ -255,7 +281,7 @@ impl ProfileRuntime {
                 .unwrap_or_default();
             let own = self.host().as_bytes().to_vec();
             for row in rows.iter().filter(|row| row.agent.host == own) {
-                let Some(kind) = kind_coded(row.kind) else {
+                let Some(kind) = kind_coded(row.kind, row.provider_id()) else {
                     continue;
                 };
                 let running =
@@ -356,7 +382,7 @@ mod tests {
                 ],
             })),
         });
-        let shape = InputShape::of(&prompt).unwrap();
+        let shape = InputShape::of(&prompt, "").unwrap();
         assert_eq!(
             shape.page_reviews(),
             [
@@ -377,7 +403,7 @@ mod tests {
                 wire::PromptInput::default(),
             )),
         });
-        assert_eq!(InputShape::of(&words).unwrap().page_reviews(), []);
+        assert_eq!(InputShape::of(&words, "").unwrap().page_reviews(), []);
     }
 
     #[test]
@@ -386,7 +412,7 @@ mod tests {
             of: Some(wire::codex_input::Of::Prompt(wire::PromptInput::default())),
         });
         assert_eq!(
-            InputShape::of(&prompt).map(|shape| shape.event(On::ThisHost, true)),
+            InputShape::of(&prompt, "").map(|shape| shape.event(On::ThisHost, true)),
             Some(Event::PromptSent {
                 kind: Kind::Codex,
                 on: On::ThisHost,
@@ -401,7 +427,7 @@ mod tests {
         });
         let peer = HostId::from_u128(3);
         assert_eq!(
-            InputShape::of(&answer).map(|shape| shape.event(On::PairedHost(peer), false)),
+            InputShape::of(&answer, "").map(|shape| shape.event(On::PairedHost(peer), false)),
             Some(Event::AskAnswered {
                 kind: Kind::ClaudeSdk,
                 on: On::PairedHost(peer),
@@ -417,12 +443,49 @@ mod tests {
             })),
         });
         assert_eq!(
-            InputShape::of(&approve),
+            InputShape::of(&approve, ""),
             Some(InputShape::Answer(Kind::Codex, Ask::Permission))
         );
         let key = input(wire::ClaudePtyInput {
             of: Some(wire::claude_pty_input::Of::Interrupt(wire::Interrupt {})),
         });
-        assert_eq!(InputShape::of(&key), None);
+        assert_eq!(InputShape::of(&key, ""), None);
+    }
+
+    /// An ACP agent is counted by its built-in id, and one a person added
+    /// as `custom`, never by the id they gave it.
+    #[test]
+    fn an_acp_agent_is_counted_by_its_built_in_id_or_as_custom() {
+        let prompt = input(wire::AcpInput {
+            of: Some(wire::acp_input::Of::Prompt(wire::PromptInput::default())),
+        });
+        assert_eq!(
+            InputShape::of(&prompt, "opencode"),
+            Some(InputShape::Prompt(Kind::Opencode, Vec::new()))
+        );
+        assert_eq!(
+            InputShape::of(&prompt, "my-secret-project-agent"),
+            Some(InputShape::Prompt(Kind::Custom, Vec::new()))
+        );
+        let answer = input(wire::AcpInput {
+            of: Some(wire::acp_input::Of::Answer(wire::AcpAnswer {
+                ask_key: "k".into(),
+                of: Some(wire::acp_answer::Of::Option("allow".into())),
+            })),
+        });
+        assert_eq!(
+            InputShape::of(&answer, "grok"),
+            Some(InputShape::Answer(Kind::Grok, Ask::Permission))
+        );
+        // Every built-in has its own token.
+        for agent in wire::agents::BUILT_INS {
+            assert_ne!(
+                kind(wire::Kind::Acp, agent.id),
+                Some(Kind::Custom),
+                "{} has no token of its own",
+                agent.id
+            );
+        }
+        assert_eq!(kind(wire::Kind::ClaudeSdk, "claude"), Some(Kind::ClaudeSdk));
     }
 }

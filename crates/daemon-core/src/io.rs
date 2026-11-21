@@ -572,6 +572,8 @@ pub struct Ingested {
     pub turn_ends: u32,
     /// The agent's kind, as the wire numbers it.
     pub kind: i32,
+    /// The agent's provider id, beside its kind; empty with it.
+    pub provider: String,
     pub end: IngestEnd,
     /// How far the step found the agent's journal, as a global offset:
     /// the journal cut here reads as the step read it.

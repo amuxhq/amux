@@ -25,10 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The ids amux keeps for the agents it runs through their own
 /// integrations; an entry cannot take one.
-pub const RESERVED: [&str; 2] = ["claude", "codex"];
-
-/// The most characters an agent's id has.
-pub const ID_MOST: usize = 64;
+pub const RESERVED: [&str; 2] = [wire::agents::CLAUDE, wire::agents::CODEX];
 
 /// The fields an entry reads.
 const FIELDS: [&str; 4] = ["name", "command", "args", "env"];
@@ -123,20 +120,7 @@ pub fn id_problem(id: &str) -> Option<String> {
             }
         ));
     }
-    let characters = id.bytes().all(|byte| {
-        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
-    });
-    let starts = id
-        .bytes()
-        .next()
-        .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit());
-    if !characters || !starts || id.len() > ID_MOST {
-        return Some(format!(
-            "an agent's id is at most {ID_MOST} lowercase letters, digits, hyphens and \
-             underscores, starting with a letter or digit"
-        ));
-    }
-    None
+    wire::agents::shape_problem(id)
 }
 
 fn entry(id: &str, value: &toml::Value) -> Result<AgentEntry, String> {

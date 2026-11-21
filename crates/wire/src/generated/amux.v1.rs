@@ -7445,7 +7445,7 @@ pub struct Input {
     pub input_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(enumeration = "Kind", tag = "2")]
     pub kind: i32,
-    /// ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+    /// ClaudePtyInput, ClaudeSdkInput, CodexInput or AcpInput, as `kind` names.
     #[prost(bytes = "vec", tag = "3")]
     pub body: ::prost::alloc::vec::Vec<u8>,
 }

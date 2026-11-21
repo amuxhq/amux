@@ -40,11 +40,17 @@ macro_rules! tokens {
 }
 
 tokens! {
-    /// Which interpreter an agent runs under.
+    /// Which agent an agent is: Claude by how it is driven, Codex, or an ACP
+    /// agent by its built-in id. An ACP agent a person added is `custom`,
+    /// since its id is theirs to choose and may say anything about them.
     Kind {
         ClaudePty => "claude_pty",
         ClaudeSdk => "claude_sdk",
         Codex => "codex",
+        Antigravity => "antigravity",
+        Opencode => "opencode",
+        Grok => "grok",
+        Custom => "custom",
     }
 }
 
@@ -639,6 +645,8 @@ impl Event {
         check_in.agents_running.add(Kind::Codex, 1);
         check_in.agents_created_24h.add(Kind::ClaudePty, 2);
         check_in.turns_24h.add(Kind::ClaudePty, 7);
+        check_in.turns_24h.add(Kind::Opencode, 3);
+        check_in.agents_running.add(Kind::Custom, 1);
         check_in.hosts_by_route.add(Route::Relay, 1);
         check_in.hosts_by_route.add(Route::Direct, 1);
         vec![

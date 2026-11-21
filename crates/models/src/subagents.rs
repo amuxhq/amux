@@ -146,6 +146,7 @@ mod tests {
                 frames: 1,
                 turn_ends: 0,
                 kind: 0,
+                provider: String::new(),
                 end: IngestEnd::Read,
                 seen: 0,
                 skipped: 0,

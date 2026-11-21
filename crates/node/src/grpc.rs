@@ -318,7 +318,7 @@ impl AgentService for ClientApi {
         let kind = request
             .agent
             .as_ref()
-            .and_then(|agent| telemetry::kind(agent.kind()));
+            .and_then(|agent| telemetry::kind(agent.kind(), agent.provider_id()));
         let first = kind
             .zip(request.initial_prompt.as_ref())
             .map(|(kind, prompt)| {
@@ -443,7 +443,7 @@ impl AgentService for ClientApi {
                 .await
                 .ok()
                 .flatten()
-                .and_then(|row| telemetry::kind_coded(row.kind))
+                .and_then(|row| telemetry::kind_coded(row.kind, row.provider_id()))
                 .map(|kind| {
                     InputShape::Prompt(
                         kind,
@@ -729,7 +729,22 @@ impl SessionService for ClientApi {
             "an agent sends input only to its own children",
         )
         .await?;
-        let shape = request.input.as_ref().and_then(InputShape::of);
+        // An ACP agent's kind is counted by its program, which its row
+        // names; the other kinds' inputs name theirs.
+        let provider = match request.input.as_ref().map(wire::Input::kind) {
+            Some(wire::Kind::Acp) => runtime
+                .row_by_id(&request.agent_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|row| row.provider_id().to_owned())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let shape = request
+            .input
+            .as_ref()
+            .and_then(|input| InputShape::of(input, &provider));
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let forwarded = runtime.on_peer(host, request).await;
             return match forwarded {

@@ -182,9 +182,9 @@ mod tests {
             (
                 "checked_in",
                 json!({
-                    "agents_running": {"codex": 1},
+                    "agents_running": {"codex": 1, "custom": 1},
                     "agents_created_24h": {"claude_pty": 2},
-                    "turns_24h": {"claude_pty": 7},
+                    "turns_24h": {"claude_pty": 7, "opencode": 3},
                     "paired_hosts": 2,
                     "hosts_by_route": {"direct": 1, "relay": 1},
                     "relay_carrier": "quic",

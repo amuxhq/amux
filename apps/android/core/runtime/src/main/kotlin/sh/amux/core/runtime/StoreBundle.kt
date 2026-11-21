@@ -27,6 +27,27 @@ import sh.amux.values.PendingPair
 import sh.amux.values.SignInOfferView
 
 /**
+ * A balanced viewer lease on an open [ChatModel] in [StoreBundle].
+ *
+ * Call [release] when the UI surface displaying [agent] leaves composition;
+ * releasing is idempotent and never disturbs other routes displaying the same
+ * agent (such as transitioning between Conversation and Changes).
+ */
+class ChatLease internal constructor(
+    val agent: AgentKey,
+    val model: ChatModel,
+    private val onRelease: () -> Unit,
+) {
+    private var released = false
+
+    fun release() {
+        if (released) return
+        released = true
+        onRelease()
+    }
+}
+
+/**
  * Everything one account's screens draw over the [Profile] serving it.
  *
  * The fleet opens whole on [attach], then moves by incremental [FleetEvent]
@@ -38,6 +59,7 @@ class StoreBundle(
     val clock: () -> Long = System::currentTimeMillis,
     val sessionRetentionMs: Long = DEFAULT_SESSION_RETENTION_MS,
     private val chatBridge: ChatBridge = NativeChatBridge,
+    private val attachmentDir: File = File(System.getProperty("java.io.tmpdir", "/tmp"), "amux-attachments"),
     private val opener: ((AgentKey) -> OpenChat)? = null,
     private val acting: (suspend (AgentAct, AgentKey) -> Result<Unit>)? = null,
     private val warning: (suspend (AgentKey) -> Result<DeleteWarning?>)? = null,
@@ -55,6 +77,9 @@ class StoreBundle(
     private val _profileReady = MutableStateFlow(false)
     val profileReady: StateFlow<Boolean> = _profileReady.asStateFlow()
 
+    private val _profileVersion = MutableStateFlow(0)
+    val profileVersion: StateFlow<Int> = _profileVersion.asStateFlow()
+
     var profile: Profile? = null
         private set
 
@@ -71,7 +96,7 @@ class StoreBundle(
     private var hostsShown = false
     private val chats = mutableMapOf<Long, Pair<OpenChat, (ChatDelta) -> Unit>>()
     private val models = mutableMapOf<AgentKey, CachedChat>()
-    private val shown = mutableSetOf<AgentKey>()
+    private val shownCounts = mutableMapOf<AgentKey, Int>()
     private val warming = mutableSetOf<AgentKey>()
     private val viewedAtMs = mutableMapOf<AgentKey, Long>()
     private val expiryJobs = mutableMapOf<AgentKey, Job>()
@@ -135,6 +160,7 @@ class StoreBundle(
         } else {
             apply(profile.fleetOpening())
         }
+        _profileVersion.value += 1
     }
 
     /** Applies one event stepped out of the runtime for this profile. */
@@ -215,14 +241,31 @@ class StoreBundle(
     }
 
     /**
-     * Returns the cached [ChatModel] for [agent], opening it once and keeping
-     * it open while shown on screen (plus [sessionRetentionMs] after leaving).
+     * Returns the cached [ChatModel] for [agent] and increments its active
+     * viewer count; pair every [enter] / [chat] call with a matching [leave],
+     * or prefer [acquireChat] for automatic balanced release.
      */
     @Throws(RuntimeFailure::class)
-    fun chat(agent: AgentKey): ChatModel {
-        shown.add(agent)
+    fun enter(agent: AgentKey): ChatModel {
+        val model = cachedModel(agent)
+        shownCounts[agent] = (shownCounts[agent] ?: 0) + 1
         expiryJobs.remove(agent)?.cancel()
-        return cachedModel(agent)
+        return model
+    }
+
+    /** Alias for [enter]. */
+    @Throws(RuntimeFailure::class)
+    fun chat(agent: AgentKey): ChatModel = enter(agent)
+
+    /** Acquires a balanced [ChatLease] keeping [agent]'s session active until released. */
+    @Throws(RuntimeFailure::class)
+    fun acquireChat(agent: AgentKey): ChatLease {
+        val model = enter(agent)
+        return ChatLease(agent = agent, model = model) {
+            if (models[agent]?.model === model) {
+                leave(agent)
+            }
+        }
     }
 
     @Throws(RuntimeFailure::class)
@@ -235,6 +278,7 @@ class StoreBundle(
             source = opened,
             scope = scope,
             bridge = chatBridge,
+            attachmentDir = attachmentDir,
         )
         models[agent] = CachedChat(chat = opened, model = model)
         return model
@@ -243,12 +287,28 @@ class StoreBundle(
     /** Whether an open chat session is cached for [agent], shown or retained. */
     fun holds(agent: AgentKey): Boolean = agent in models
 
+    /** Whether at least one UI surface is currently displaying [agent]. */
+    fun isShown(agent: AgentKey): Boolean = (shownCounts[agent] ?: 0) > 0
+
+    /** Number of active UI surfaces currently holding a viewer lease for [agent]. */
+    fun activeViewers(agent: AgentKey): Int = shownCounts[agent] ?: 0
+
     /**
-     * Marks [agent]'s chat screen as no longer shown. The session stays cached
-     * for [sessionRetentionMs] so returning is instant, then closes cleanly.
+     * Releases one active viewer for [agent]. When the last active viewer
+     * leaves, the session stays cached for [sessionRetentionMs] so returning
+     * is instant, then closes cleanly.
      */
     fun leave(agent: AgentKey) {
-        shown.remove(agent)
+        if (agent !in models) {
+            shownCounts.remove(agent)
+            return
+        }
+        val remaining = (shownCounts[agent] ?: 0) - 1
+        if (remaining > 0) {
+            shownCounts[agent] = remaining
+            return
+        }
+        shownCounts.remove(agent)
         viewedAtMs[agent] = clock()
         expiryJobs.remove(agent)?.cancel()
         if (sessionRetentionMs <= 0L) {
@@ -271,7 +331,7 @@ class StoreBundle(
         val now = clock()
         val toClose = mutableListOf<AgentKey>()
         for (agent in models.keys) {
-            if (agent in shown || agent in warming) continue
+            if ((shownCounts[agent] ?: 0) > 0 || agent in warming) continue
             val lastViewed = viewedAtMs[agent]
             if (lastViewed != null && now - lastViewed < sessionRetentionMs) continue
             toClose.add(agent)
@@ -309,7 +369,7 @@ class StoreBundle(
 
     private fun evictCachedChat(agent: AgentKey) {
         expiryJobs.remove(agent)?.cancel()
-        shown.remove(agent)
+        shownCounts.remove(agent)
         warming.remove(agent)
         viewedAtMs.remove(agent)
         val cached = models.remove(agent) ?: return
@@ -325,7 +385,7 @@ class StoreBundle(
         }
         val openModels = models.values.map { it.model }
         models.clear()
-        shown.clear()
+        shownCounts.clear()
         warming.clear()
         viewedAtMs.clear()
         for (model in openModels) {

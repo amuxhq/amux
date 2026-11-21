@@ -314,4 +314,31 @@ class ReviewModelTest {
         assertTrue(badResult.isFailure)
         assertEquals(ReviewModel.MISSING_LISTED_FILES, badResult.exceptionOrNull()?.failureDescription)
     }
+
+    @Test
+    fun loadReviewDoesNotReuseExistingReviewWhenPatchHashIsNull() = runTest {
+        val nullPatchWorking = FrozenReview(
+            diff = frozenWorking.diff.copy(patch = null),
+            patch = samplePatch,
+        )
+        val nullPatchBranch = FrozenReview(
+            diff = frozenBranch.diff.copy(patch = null),
+            patch = branchPatch,
+        )
+        val source = ReviewSource(
+            mutableMapOf(
+                Comparison.Uncommitted to Result.success(nullPatchWorking),
+                Comparison.OnBranch to Result.success(nullPatchBranch),
+            ),
+        )
+        val chat = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+        val first = chat.loadReview().getOrThrow()!!
+        assertEquals(listOf("src/pairing/errors.rs", "tests/errors.rs", "docs/PAIRING.md"), first.doc.files.map { it.path })
+
+        chat.compare(Comparison.OnBranch)
+        val second = chat.loadReview().getOrThrow()!!
+        assertFalse("null patch hashes must not falsely reuse previous review", first === second)
+        assertEquals(listOf("README.md"), second.doc.files.map { it.path })
+    }
 }

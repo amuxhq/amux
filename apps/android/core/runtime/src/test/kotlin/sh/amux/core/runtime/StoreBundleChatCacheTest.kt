@@ -135,7 +135,10 @@ class StoreBundleChatCacheTest {
         val childKey = AgentKey(host, UUID.randomUUID())
 
         val parentModel = bundle.chat(parentKey)
-        assertSame(parentModel, bundle.chat(parentKey))
+        val duplicateParent = bundle.chat(parentKey)
+        assertSame(parentModel, duplicateParent)
+        bundle.leave(parentKey)
+        assertEquals(1, bundle.activeViewers(parentKey))
         assertEquals("remembered", parentModel.draft)
         assertEquals(1, opened.size)
         assertTrue(bundle.holds(parentKey))
@@ -255,4 +258,63 @@ class StoreBundleChatCacheTest {
         assertFalse("unshown warmed chat closes once warm finishes", bundle.holds(agentB))
         assertTrue(chatB.closed)
     }
+
+    @Test
+    fun overlappingRouteLeasesKeepChatShownAcrossTransitionAndEvictOnlyAfterLastLeaves() =
+        runTest(StandardTestDispatcher()) {
+            var nowMs = 5_000L
+            var nextId = 1L
+            val opened = mutableListOf<FakeOpenChat>()
+
+            val bundle = StoreBundle(
+                account = AccountId("ada"),
+                scope = this,
+                clock = { nowMs },
+                sessionRetentionMs = StoreBundle.DEFAULT_SESSION_RETENTION_MS,
+                opener = { key ->
+                    FakeOpenChat(id = nextId++, agent = key).also { opened.add(it) }
+                },
+            )
+
+            val agent = AgentKey(host, UUID.randomUUID())
+
+            // Route A (Conversation) acquires lease, then Route B (Changes) acquires lease
+            // during route transition before Route A disposes.
+            val chatLease = bundle.acquireChat(agent)
+            val reviewLease = bundle.acquireChat(agent)
+            assertSame(chatLease.model, reviewLease.model)
+            assertEquals(1, opened.size)
+            assertEquals(2, bundle.activeViewers(agent))
+            assertTrue(bundle.isShown(agent))
+
+            // Route A disposes; Route B still holds the agent open.
+            chatLease.release()
+            chatLease.release() // idempotent
+            assertEquals(1, bundle.activeViewers(agent))
+            assertTrue(bundle.isShown(agent))
+
+            // Advancing far past sessionRetentionMs must NEVER evict while Route B is active.
+            nowMs += StoreBundle.DEFAULT_SESSION_RETENTION_MS * 3
+            advanceTimeBy(StoreBundle.DEFAULT_SESSION_RETENTION_MS * 3)
+            runCurrent()
+            assertTrue("chat must stay held while review route holds a lease", bundle.holds(agent))
+            assertFalse("chat must stay open while review route holds a lease", opened[0].closed)
+
+            // Route B releases -> retention timer starts and evicts after 5 minutes.
+            reviewLease.release()
+            assertEquals(0, bundle.activeViewers(agent))
+            assertFalse(bundle.isShown(agent))
+            assertTrue("still retained right after last viewer leaves", bundle.holds(agent))
+
+            nowMs += StoreBundle.DEFAULT_SESSION_RETENTION_MS
+            advanceTimeBy(StoreBundle.DEFAULT_SESSION_RETENTION_MS)
+            runCurrent()
+            assertFalse("evicted after retention window elapses", bundle.holds(agent))
+            assertTrue(opened[0].closed)
+
+            // Detaching profile bumps profileVersion so routes know to re-evaluate lifecycle.
+            val versionBefore = bundle.profileVersion.value
+            bundle.attach(null)
+            assertEquals(versionBefore + 1, bundle.profileVersion.value)
+        }
 }

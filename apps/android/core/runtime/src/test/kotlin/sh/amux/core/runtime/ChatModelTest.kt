@@ -128,6 +128,9 @@ class ChatModelTest {
         var reviews = 0
         val listings = mutableListOf<Comparison>()
         var files: Changes? = null
+        var overviewGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+        var overviewFailure: RuntimeFailure? = null
+        val draftEvents = mutableListOf<String>()
         var cap = Int.MAX_VALUE
         val follows = mutableListOf<Boolean>()
         var following = true
@@ -343,6 +346,7 @@ class ChatModelTest {
         override suspend fun resend(inputId: List<Int>): SendOutcome? = null
 
         override fun discard(inputId: List<Int>) {
+            draftEvents.add("discard")
             discarded.add(inputId)
             current = current.copy(
                 underway = current.underway.filterNot { it.inputId == inputId },
@@ -409,13 +413,18 @@ class ChatModelTest {
 
         override suspend fun openOverview(comparison: Comparison): Result<Overview> {
             listings.add(comparison)
+            overviewGate?.await()
+            overviewFailure?.let { return Result.failure(it) }
             val updated = (facts ?: Overview(emptyList(), emptyList(), null, null, null)).copy(changes = files)
             facts = updated
             return Result.success(updated)
         }
 
         override fun keptDraft(): Draft? = initialKeptDraft
-        override fun keep(draft: Draft) { keptDrafts.add(draft) }
+        override fun keep(draft: Draft) {
+            draftEvents.add("keep:${draft.words}")
+            keptDrafts.add(draft)
+        }
 
         private fun drawn(frame: ChatFrame): ChatFrame {
             val activity = frame.composer.activity
@@ -786,7 +795,17 @@ class ChatModelTest {
 
         // Successful upload adds chip and send puts U+FFFC placeholders in text.
         source.blobFailure = null
-        model.attach(PickedAttachment.fromFile("png".encodeToByteArray(), "red.png"))!!.join()
+        val pngHeader = byteArrayOf(
+            0x89.toByte(),
+            0x50,
+            0x4E,
+            0x47,
+            0x0D,
+            0x0A,
+            0x1A,
+            0x0A,
+        )
+        model.attach(PickedAttachment.fromFile(pngHeader, "red.png"))!!.join()
         model.attach(PickedAttachment.fromFile("hello".encodeToByteArray(), "notes.txt"))!!.join()
         assertEquals(2, model.attachments.size)
         assertTrue(model.attachments[0] is DraftAttachment.Image)
@@ -1197,5 +1216,228 @@ class ChatModelTest {
         source.deliver(model)
         assertFalse(model.snapshot.loadingHint)
         model.close()
+    }
+
+    @Test
+    fun askAnswersRejectStaleExpectedKeyAndDispatchMatchingKey() = runTest {
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
+        source.card = AskCard(
+            kind = Kind.ClaudeSdk,
+            key = "ask:new",
+            itemKey = "item:2",
+            position = 1L,
+            count = 1L,
+            body = AskBody.Question(emptyList()),
+            choices = emptyList(),
+            questionNote = true,
+            questionSkip = true,
+            questionReply = true,
+            stopsTurn = true,
+            defaultToNo = false,
+            state = CardState.Open,
+        )
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+        // Stale ask key must be rejected silently without dispatching to source.
+        assertNull(model.answer(choice = 0, note = "old", expectedKey = "ask:old"))
+        assertNull(model.answerPermission(choice = 0, expectedKey = "ask:old"))
+        assertNull(model.answerQuestions(emptyList(), expectedKey = "ask:old"))
+        assertNull(model.replyInstead("old", emptyList(), expectedKey = "ask:old"))
+        assertNull(model.submitForm(emptyList(), expectedKey = "ask:old"))
+        assertTrue(source.answeredChoices.isEmpty())
+        assertTrue(source.responded.isEmpty())
+        assertTrue(source.replied.isEmpty())
+        assertTrue(source.submittedForms.isEmpty())
+
+        // Matching ask key dispatches cleanly.
+        model.answer(choice = 0, note = "ok", expectedKey = "ask:new")!!.join()
+        assertEquals(listOf(Triple("ask:new", 0, "ok")), source.answeredChoices)
+    }
+
+    @Test
+    fun openingRefusedPromptPersistsCombinedDraftBeforeDiscarding() {
+        val refusingFrame = chatFrame().copy(
+            refused = listOf(
+                RefusedPrompt(
+                    inputId = listOf(42),
+                    reason = Refusal(reason = RefusalReason.HostUnreachable, detail = null),
+                ),
+            ),
+        )
+        val source = FakeChat(emptyList(), refusingFrame)
+        source.initialKeptDraft = draftOf("already typed")
+        source.drafts[listOf(42)] = draftOf("refused prompt")
+
+        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+
+        assertEquals("refused prompt\nalready typed", model.draft)
+        assertEquals(listOf("keep:refused prompt\nalready typed", "discard"), source.draftEvents)
+        assertEquals(1, source.keptDrafts.size)
+        assertEquals(listOf(listOf(42)), source.discarded)
+    }
+
+    @Test
+    fun unarrivedKeyLookupDoesNotCacheNullRowAndPopulatesOnEdgeArrival() {
+        val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
+        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+
+        // Look up a key before it arrives in the held window (e.g. ActivityKind.Running).
+        assertNull(model.rowOrNull("cmd-late"))
+        assertNull(model.cell("cmd-late").row)
+
+        // Key arrives as a new edge key without row payload in delta.rows.
+        source.ordered.add(proseRow("cmd-late", 2, "running cargo test"))
+        source.pending.keys.add("cmd-late")
+        source.deliver(model)
+
+        // First draw reads the arrived row instead of reusing a cached null cell.
+        val cell = model.cell("cmd-late")
+        assertEquals("cmd-late", cell.row?.id)
+        assertEquals(proseRow("cmd-late", 2, "running cargo test").kind, cell.row?.kind)
+    }
+
+    @Test
+    fun middleOfSentencePastePreservesPositionOnSendEditAndReopen() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+        model.type("Start  end")
+        val bigPaste = (1..10).joinToString("\n") { "line $it" }
+        model.type("Start ${bigPaste} end")
+
+        assertEquals("Start  end", model.draft)
+        assertEquals(1, model.attachments.size)
+        val kept = source.keptDrafts.last()
+        assertEquals("Start \uFFFC end", kept.text)
+        assertEquals("Start  end", kept.words)
+
+        // Editing before the paste shifts its offset so the placeholder stays in place.
+        model.type("Hey! Start  end")
+        assertEquals("Hey! Start \uFFFC end", source.keptDrafts.last().text)
+
+        // Reopening the persisted draft in a fresh ChatModel preserves the position.
+        val reopenedSource = FakeChat(emptyList(), chatFrame())
+        reopenedSource.initialKeptDraft = source.keptDrafts.last()
+        val reopened = ChatModel(source = reopenedSource, scope = this, loadingHintAfterMs = -1L)
+        assertEquals("Hey! Start  end", reopened.draft)
+        reopened.send()!!.join()
+        assertEquals("Hey! Start \uFFFC end", reopenedSource.sent.single().text)
+    }
+
+    @Test
+    fun overviewListingCancelsPriorJobTracksComparisonAndRetriesAfterFailure() =
+        runTest(StandardTestDispatcher()) {
+            val git = Git(
+                baseBranch = "main",
+                branch = "fix",
+                uncommitted = ChangeTotals(files = 1, added = 2, removed = 0),
+                onBranch = ChangeTotals(files = 2, added = 9, removed = 1),
+            )
+            val source = FakeChat(emptyList(), chatFrame().copy(git = git))
+            source.files = Changes(
+                totals = ChangeTotals(1, 2, 0),
+                folders = listOf(Folder("", listOf(ChangedFile("a.kt", "a.kt", 2, 0, FileStatus.Modified, false)))),
+            )
+            source.overviewGate = kotlinx.coroutines.CompletableDeferred()
+            val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+            model.showOverview(true)
+            val firstJob = model.listingJob
+            assertNotNull(firstJob)
+            assertTrue(model.snapshot.overviewChangesLoading)
+
+            // Switching comparison cancels the prior in-flight listing job immediately.
+            model.compare(Comparison.OnBranch)
+            assertTrue(firstJob!!.isCancelled)
+            assertEquals(Comparison.OnBranch, model.snapshot.comparison)
+            assertNull(model.snapshot.overviewChangesComparison)
+
+            // Simulate failure on OnBranch -> error exposed and listed cleared for retry.
+            source.overviewFailure = RuntimeFailure("host away")
+            source.overviewGate!!.complete(Unit)
+            runCurrent()
+            assertFalse(model.snapshot.overviewChangesLoading)
+            assertEquals("host away", model.snapshot.overviewChangesError)
+            assertNull(model.snapshot.overviewChangesComparison)
+
+            // Retrying succeeds and binds overviewChangesComparison to OnBranch.
+            source.overviewFailure = null
+            source.overviewGate = null
+            model.retryChangedFiles()
+            runCurrent()
+            assertFalse(model.snapshot.overviewChangesLoading)
+            assertNull(model.snapshot.overviewChangesError)
+            assertEquals(Comparison.OnBranch, model.snapshot.overviewChangesComparison)
+            assertEquals(source.files, model.currentOverview?.changes)
+        }
+
+    @Test
+    fun blobCacheEvictsLeastRecentlyUsedWithinByteBudget() {
+        val source = FakeChat(emptyList(), chatFrame())
+        source.landed[listOf(1)] = ByteArray(6) { 1 }
+        source.landed[listOf(2)] = ByteArray(4) { 2 }
+        source.landed[listOf(3)] = ByteArray(5) { 3 }
+        source.landed[listOf(4)] = ByteArray(12) { 4 }
+        val model = ChatModel(
+            source = source,
+            loadingHintAfterMs = -1L,
+            blobCacheMaxBytes = 10L,
+        )
+
+        assertNotNull(model.blob(listOf(1)))
+        assertNotNull(model.blob(listOf(2)))
+        assertEquals(10L, model.blobCacheBytes)
+
+        // Touch key 1 so key 2 becomes least recently used.
+        assertNotNull(model.blob(listOf(1)))
+        // Adding key 3 (5B) evicts key 2 (4B), leaving 1 (6B) + 3 (5B) -> also evicts 1 -> 5B.
+        assertNotNull(model.blob(listOf(3)))
+        assertTrue(model.blobCacheBytes <= 10L)
+
+        // Oversized blob (> budget) is returned without exceeding budget.
+        assertNotNull(model.blob(listOf(4)))
+        assertTrue(model.blobCacheBytes <= 10L)
+    }
+
+    @Test
+    fun runCommandSendStillDispatchesOriginalTypedDraftIfDraftChanged() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        source.commandOutcome = CommandOutcome.Send
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+        model.setDraft("/compact")
+        val job = model.send()!!
+        // User begins typing a new draft before command coroutine finishes.
+        model.setDraft("next prompt")
+        job.join()
+
+        assertEquals(listOf("/compact"), source.sent.map { it.text })
+        assertEquals("next prompt", model.draft)
+    }
+
+    @Test
+    fun nativeImageSnifferDetectsMagicBytesAndRejectsMisnamedFiles() {
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00)
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        val gif87 = "GIF87a...".encodeToByteArray()
+        val gif89 = "GIF89a...".encodeToByteArray()
+        val webp = "RIFF1234WEBP....".encodeToByteArray()
+        val heic = byteArrayOf(0, 0, 0, 24) + "ftypheic".encodeToByteArray()
+        val fakePng = "not actually a png".encodeToByteArray()
+
+        assertEquals("image/png", PickedAttachment.sniffNativeImageMime(png))
+        assertEquals("image/jpeg", PickedAttachment.sniffNativeImageMime(jpeg))
+        assertEquals("image/gif", PickedAttachment.sniffNativeImageMime(gif87))
+        assertEquals("image/gif", PickedAttachment.sniffNativeImageMime(gif89))
+        assertEquals("image/webp", PickedAttachment.sniffNativeImageMime(webp))
+        assertNull(PickedAttachment.sniffNativeImageMime(heic))
+        assertNull(PickedAttachment.sniffNativeImageMime(fakePng))
+
+        val misnamed = PickedAttachment.fromFile(fakePng, "fake.png", "image/png")
+        assertFalse("misnamed PNG must be classified as non-image file", misnamed.image)
+
+        val realJpeg = PickedAttachment.fromFile(jpeg, "photo.bin", "application/octet-stream")
+        assertTrue(realJpeg.image)
+        assertEquals("image/jpeg", realJpeg.mime)
     }
 }

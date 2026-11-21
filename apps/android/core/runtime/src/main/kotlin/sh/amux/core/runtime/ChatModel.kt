@@ -220,6 +220,9 @@ data class ChatUiState(
     val sending: Boolean = false,
     val notice: String? = null,
     val comparison: Comparison = Comparison.Uncommitted,
+    val overviewChangesComparison: Comparison? = null,
+    val overviewChangesLoading: Boolean = false,
+    val overviewChangesError: String? = null,
     val asks: ChatAsk? = null,
     val openedAttachment: File? = null,
     val dictation: DictationState = DictationState(),
@@ -290,6 +293,7 @@ class ChatModel(
     private val bridge: ChatBridge = NativeChatBridge,
     private val attachmentDir: File = File(System.getProperty("java.io.tmpdir", "/tmp"), "amux-attachments"),
     loadingHintAfterMs: Long = LOADING_HINT_DELAY_MS,
+    blobCacheMaxBytes: Long = DEFAULT_BLOB_CACHE_BYTES,
 ) {
     private val mutableKeys = mutableListOf<String>()
     private val places = mutableMapOf<String, Int>()
@@ -304,6 +308,9 @@ class ChatModel(
     private var frame: ChatFrame? = null
     private var ask: AskCard? = null
     private var overview: Overview? = null
+    private var overviewChangesComparison: Comparison? = null
+    private var overviewChangesLoading: Boolean = false
+    private var overviewChangesError: String? = null
     private var settings: SettingsView? = null
     private var openedAgents: Map<List<Int>, OpenedAgent> = emptyMap()
     private var liveSubagents: GroupState = EMPTY_GROUP_STATE
@@ -316,7 +323,7 @@ class ChatModel(
     private var toNewest: Int = 0
 
     private var draftText: String = ""
-    private val draftAttachments = mutableListOf<DraftAttachment>()
+    private val positionedAttachments = mutableListOf<PositionedAttachment>()
     private var uploading: Int = 0
     private var sending: Boolean = false
     private var notice: String? = null
@@ -343,7 +350,10 @@ class ChatModel(
     private var pasted: PastedRun? = null
 
     private var loadingHintJob: Job? = null
-    private val blobCache = mutableMapOf<List<Int>, ByteArray>()
+    private val blobCache = BlobLruCache(maxBytes = blobCacheMaxBytes)
+
+    internal val blobCacheBytes: Long
+        get() = blobCache.totalBytes
 
     /**
      * Called each time the draft or attachments change so drafts persist with
@@ -362,7 +372,7 @@ class ChatModel(
     val currentOverview: Overview? get() = overview
     val currentSettings: SettingsView? get() = settings
     val draft: String get() = draftText
-    val attachments: List<DraftAttachment> get() = draftAttachments.toList()
+    val attachments: List<DraftAttachment> get() = positionedAttachments.map { it.attachment }
     val isFollowing: Boolean get() = following
     val arrivalsHeld: Boolean get() = _state.value.arrivalsHeld
     val newActivity: Boolean get() = _state.value.newActivity
@@ -376,11 +386,11 @@ class ChatModel(
         if (openingKeys is KeysMoved.Reload) {
             holdKeys(openingKeys.value)
         }
-        show(opening)
-        if (frame?.ended == null) {
+        if (opening.frame?.ended == null) {
             source.keptDraft()?.let { restoreWithoutSaving(it) }
             keeping = { draft -> source.keep(draft) }
         }
+        show(opening)
         recomputeSlashMatches()
         publish()
         if (mutableKeys.isEmpty() && loadingHintAfterMs >= 0L) {
@@ -421,9 +431,35 @@ class ChatModel(
         publish()
     }
 
+    /**
+     * Reads the current [Row] for [id] without caching a missing-row cell for
+     * keys that are not yet in the held window.
+     */
+    fun rowOrNull(id: String): Row? {
+        cells[id]?.row?.let { return it }
+        if (id !in places) {
+            return source.rowsFor(listOf(id)).firstOrNull()
+        }
+        return cell(id).row
+    }
+
     /** The keyed [RowCell] for [id], reading its [Row] from [source] lazily on first draw. */
     fun cell(id: String): RowCell {
-        cells[id]?.let { return it }
+        cells[id]?.let { existing ->
+            if (existing.row != null || id !in places) {
+                return existing
+            }
+            val row = source.rowsFor(listOf(id)).firstOrNull()
+            if (row != null) {
+                existing.updateRow(
+                    row = row,
+                    revision = revision,
+                    openedAgent = openedBy(row),
+                    groupState = row.group?.let(::stateOf),
+                )
+            }
+            return existing
+        }
         val row = source.rowsFor(listOf(id)).firstOrNull()
         val cell = RowCell(
             id = id,
@@ -432,7 +468,9 @@ class ChatModel(
             initialOpenedAgent = row?.let(::openedBy),
             initialGroupState = row?.group?.let(::stateOf),
         )
-        cells[id] = cell
+        if (row != null || id in places) {
+            cells[id] = cell
+        }
         return cell
     }
 
@@ -523,9 +561,9 @@ class ChatModel(
 
     /** Cached or runtime-held attachment bytes for [hash]. */
     fun blob(hash: List<Int>): ByteArray? {
-        blobCache[hash]?.let { return it }
+        blobCache.get(hash)?.let { return it }
         val loaded = source.blob(hash) ?: return null
-        blobCache[hash] = loaded
+        blobCache.put(hash, loaded)
         return loaded
     }
 
@@ -606,6 +644,13 @@ class ChatModel(
             moved = true
         }
         if (moved) {
+            val nullArrivals = (below + above).filter { key ->
+                val existing = cells[key]
+                existing != null && existing.row == null
+            }
+            if (nullArrivals.isNotEmpty()) {
+                refresh(nullArrivals)
+            }
             sequenceChanged()
         }
     }
@@ -725,7 +770,25 @@ class ChatModel(
                 formKept = null
             }
         }
-        delta.overview?.let { overview = it }
+        delta.overview?.let { incomingOverview ->
+            if (incomingOverview.changes != null) {
+                overview = incomingOverview
+                overviewChangesComparison = comparison
+                overviewChangesLoading = false
+                overviewChangesError = null
+            } else {
+                val keepChanges = overview?.changes?.takeIf {
+                    overviewChangesComparison == comparison &&
+                        listed == Listed(comparison = comparison, totals = totals(comparison))
+                }
+                overview = if (keepChanges != null) {
+                    incomingOverview.copy(changes = keepChanges)
+                } else {
+                    overviewChangesComparison = null
+                    incomingOverview
+                }
+            }
+        }
         delta.settings?.let { settings = it }
         delta.agents?.let { holdAgents(it) }
         if (frame?.git != before?.git) {
@@ -844,6 +907,7 @@ class ChatModel(
     fun compare(comparison: Comparison) {
         if (this.comparison == comparison) return
         this.comparison = comparison
+        overviewChangesError = null
         listChangedFiles()
         publish()
     }
@@ -853,19 +917,50 @@ class ChatModel(
         overviewShown = shown
         if (shown) {
             listed = null
+            overviewChangesError = null
             listChangedFiles()
+        } else {
+            listingJob?.cancel()
+            listingJob = null
+            if (overviewChangesLoading) {
+                overviewChangesLoading = false
+                publish()
+            }
         }
+    }
+
+    /** Retries loading the changed-file list for the active comparison. */
+    fun retryChangedFiles() {
+        listed = null
+        overviewChangesError = null
+        listChangedFiles()
+        publish()
     }
 
     /** Explicitly fetches the [Overview] (with changed files) for [comparison]. */
     fun openOverview(comparison: Comparison = this.comparison): Deferred<Result<Overview>> {
+        listingJob?.cancel()
+        if (this.comparison == comparison) {
+            overviewChangesLoading = true
+            overviewChangesError = null
+            publish()
+        }
         val deferred = scope.async {
             val result = source.openOverview(comparison)
-            result.onSuccess { fetched ->
-                if (this@ChatModel.comparison == comparison && overview != fetched) {
-                    overview = fetched
-                    publish()
-                }
+            if (this@ChatModel.comparison == comparison) {
+                overviewChangesLoading = false
+                result.fold(
+                    onSuccess = { fetched ->
+                        overview = fetched
+                        overviewChangesComparison = comparison
+                        overviewChangesError = null
+                    },
+                    onFailure = { failure ->
+                        listed = null
+                        overviewChangesError = failure.failureDescription
+                    },
+                )
+                publish()
             }
             result
         }
@@ -878,12 +973,26 @@ class ChatModel(
         val asked = Listed(comparison = comparison, totals = totals(comparison))
         if (asked == listed) return
         listed = asked
+        listingJob?.cancel()
+        overviewChangesLoading = true
+        overviewChangesError = null
+        publish()
         listingJob = scope.launch {
-            val fetched = source.openOverview(asked.comparison).getOrNull() ?: return@launch
-            if (comparison == asked.comparison && overview != fetched) {
-                overview = fetched
-                publish()
-            }
+            val result = source.openOverview(asked.comparison)
+            if (comparison != asked.comparison) return@launch
+            overviewChangesLoading = false
+            result.fold(
+                onSuccess = { fetched ->
+                    overview = fetched
+                    overviewChangesComparison = asked.comparison
+                    overviewChangesError = null
+                },
+                onFailure = { failure ->
+                    listed = null
+                    overviewChangesError = failure.failureDescription
+                },
+            )
+            publish()
         }
     }
 
@@ -909,38 +1018,47 @@ class ChatModel(
     fun formProblems(fields: List<FormField>, values: List<FormValue>): List<FormProblem> =
         bridge.formProblems(fields, values).orEmpty()
 
-    fun answer(choice: Int, note: String? = null): Job? {
+    fun answer(choice: Int, note: String? = null, expectedKey: String? = null): Job? {
         val current = ask ?: return null
+        if (expectedKey != null && current.key != expectedKey) return null
         return act(body = { it.answer(current.key, choice, note) })
     }
 
-    fun answerPermission(choice: Int, note: String? = null): Job? = answer(choice, note)
+    fun answerPermission(choice: Int, note: String? = null, expectedKey: String? = null): Job? =
+        answer(choice, note, expectedKey)
 
-    fun answerQuestions(responses: List<QuestionResponse>): Job? {
+    fun answerQuestions(responses: List<QuestionResponse>, expectedKey: String? = null): Job? {
         val current = ask ?: return null
+        if (expectedKey != null && current.key != expectedKey) return null
         return act(body = { it.answerQuestions(current.key, responses) })
     }
 
-    fun answerQuestion(responses: List<QuestionResponse>): Job? = answerQuestions(responses)
+    fun answerQuestion(responses: List<QuestionResponse>, expectedKey: String? = null): Job? =
+        answerQuestions(responses, expectedKey)
 
-    fun replyInstead(text: String, soFar: List<QuestionResponse>): Job? {
+    fun replyInstead(text: String, soFar: List<QuestionResponse>, expectedKey: String? = null): Job? {
         val current = ask ?: return null
+        if (expectedKey != null && current.key != expectedKey) return null
         return act(body = { it.replyInstead(current.key, text, soFar) })
     }
 
-    fun submitForm(values: List<FormValue>): Job? {
+    fun submitForm(values: List<FormValue>, expectedKey: String? = null): Job? {
         val current = ask ?: return null
+        if (expectedKey != null && current.key != expectedKey) return null
         return act(body = { it.answerForm(current.key, values) })
     }
 
-    fun answerForm(values: List<FormValue>): Job? = submitForm(values)
+    fun answerForm(values: List<FormValue>, expectedKey: String? = null): Job? =
+        submitForm(values, expectedKey)
 
-    fun resendAnswer(): Job? {
+    fun resendAnswer(expectedKey: String? = null): Job? {
+        if (expectedKey != null && ask?.key != expectedKey) return null
         val input = frame?.askInput ?: return null
         return resend(input)
     }
 
-    fun discardAnswer() {
+    fun discardAnswer(expectedKey: String? = null) {
+        if (expectedKey != null && ask?.key != expectedKey) return
         val input = frame?.askInput ?: return
         discard(input)
     }
@@ -948,10 +1066,11 @@ class ChatModel(
     // --- Drafting, Slash Commands, Pastes & Attachments --------------------
 
     private val composed: Draft
-        get() = draftOf(draftText, draftAttachments)
+        get() = positionedDraftOf(draftText, positionedAttachments)
 
     fun setDraft(text: String) {
         if (draftText == text) return
+        shiftAttachmentOffsets(draftText, text)
         draftText = text
         keepDraft()
         recomputeSlashMatches()
@@ -959,9 +1078,9 @@ class ChatModel(
     }
 
     fun clearDraft() {
-        val changed = draftText.isNotEmpty() || draftAttachments.isNotEmpty()
+        val changed = draftText.isNotEmpty() || positionedAttachments.isNotEmpty()
         draftText = ""
-        draftAttachments.clear()
+        positionedAttachments.clear()
         pasted = null
         if (changed) {
             keepDraft()
@@ -1049,8 +1168,13 @@ class ChatModel(
             inserted = inserted.dropLast(1)
             after = " $after"
         }
-        draftText = before + after
-        draftAttachments.add(DraftAttachment.Text(name = "Pasted text", text = inserted))
+        val nextText = before + after
+        shiftAttachmentOffsets(old, nextText)
+        draftText = nextText
+        insertPositionedAttachment(
+            attachment = DraftAttachment.Text(name = "Pasted text", text = inserted),
+            offset = before.length,
+        )
         pasted = PastedRun(at = before.length, text = inserted)
         keepDraft()
         recomputeSlashMatches()
@@ -1064,7 +1188,12 @@ class ChatModel(
     fun paste(text: String) {
         val normalized = text.replace("\r\n", "\n").replace("\r", "\n")
         if (bridge.pastesAsAttachment(normalized)) {
-            draftAttachments.add(DraftAttachment.Text(name = "Pasted text", text = normalized))
+            positionedAttachments.add(
+                PositionedAttachment(
+                    attachment = DraftAttachment.Text(name = "Pasted text", text = normalized),
+                    offset = null,
+                ),
+            )
             keepDraft()
             publish()
         } else {
@@ -1174,8 +1303,13 @@ class ChatModel(
             uploading -= 1
             stored.fold(
                 onSuccess = { blob ->
-                    blobCache[blob.hash] = bytes
-                    draftAttachments.add(if (image) DraftAttachment.Image(blob) else DraftAttachment.File(blob))
+                    blobCache.put(blob.hash, bytes)
+                    positionedAttachments.add(
+                        PositionedAttachment(
+                            attachment = if (image) DraftAttachment.Image(blob) else DraftAttachment.File(blob),
+                            offset = null,
+                        ),
+                    )
                     keepDraft()
                 },
                 onFailure = { failure ->
@@ -1187,8 +1321,8 @@ class ChatModel(
     }
 
     fun removeAttachment(index: Int) {
-        if (index !in draftAttachments.indices) return
-        draftAttachments.removeAt(index)
+        if (index !in positionedAttachments.indices) return
+        positionedAttachments.removeAt(index)
         keepDraft()
         publish()
     }
@@ -1206,13 +1340,16 @@ class ChatModel(
     suspend fun loadReview(): Result<ReviewModel?> {
         val frozen = source.review(comparison).getOrElse { return Result.failure(it) }
         val existing = reviewing
-        if (existing != null && existing.review.diff.patch?.hash == frozen.diff.patch?.hash) {
+        val existingHash = existing?.review?.diff?.patch?.hash
+        val incomingHash = frozen.diff.patch?.hash
+        if (existing != null && existingHash != null && existingHash == incomingHash) {
             return Result.success(existing)
         }
         val doc = ReviewModel.document(frozen, emptyList(), bridge::reviewDoc)
             ?: return Result.failure(RuntimeFailure(ReviewModel.COULD_NOT_READ_DIFF))
         if (doc.files.isEmpty()) {
             return if (frozen.diff.files.isEmpty()) {
+                reviewing = null
                 Result.success(null)
             } else {
                 Result.failure(RuntimeFailure(ReviewModel.MISSING_LISTED_FILES))
@@ -1231,10 +1368,11 @@ class ChatModel(
     /** Attaches a written [ReviewModel] to the draft, replacing any earlier review of the same patch. */
     fun attach(review: ReviewModel) {
         val patchHash = review.review.diff.patch?.hash
-        draftAttachments.removeAll { existing ->
-            existing is DraftAttachment.Review && existing.diff.patch?.hash == patchHash
+        positionedAttachments.removeAll { existing ->
+            existing.attachment is DraftAttachment.Review &&
+                existing.attachment.diff.patch?.hash == patchHash
         }
-        draftAttachments.add(review.attachment)
+        positionedAttachments.add(PositionedAttachment(review.attachment, offset = null))
         keepDraft()
         publish()
     }
@@ -1263,11 +1401,8 @@ class ChatModel(
             sending = false
             when (outcome) {
                 CommandOutcome.Send -> {
-                    if (composed == typed) {
-                        publish()
-                        sendAsTyped().join()
-                        return@launch
-                    }
+                    sendDraft(sent = typed, clearCurrentDraft = composed == typed).join()
+                    return@launch
                 }
                 is CommandOutcome.Pick -> {
                     if (composed == typed) clearDraftInternal()
@@ -1311,9 +1446,12 @@ class ChatModel(
         }
     }
 
-    private fun sendAsTyped(): Job {
-        val sent = composed
-        clearDraftInternal()
+    private fun sendAsTyped(): Job = sendDraft(sent = composed, clearCurrentDraft = true)
+
+    private fun sendDraft(sent: Draft, clearCurrentDraft: Boolean): Job {
+        if (clearCurrentDraft) {
+            clearDraftInternal()
+        }
         sending = true
         notice = null
         setFollowing(true)
@@ -1417,9 +1555,9 @@ class ChatModel(
     // --- Draft helpers -----------------------------------------------------
 
     private fun clearDraftInternal() {
-        val changed = draftText.isNotEmpty() || draftAttachments.isNotEmpty()
+        val changed = draftText.isNotEmpty() || positionedAttachments.isNotEmpty()
         draftText = ""
-        draftAttachments.clear()
+        positionedAttachments.clear()
         pasted = null
         if (changed) {
             keepDraft()
@@ -1428,7 +1566,7 @@ class ChatModel(
     }
 
     private fun keepDraft() {
-        keeping?.invoke(draftOf(draftText, draftAttachments))
+        keeping?.invoke(positionedDraftOf(draftText, positionedAttachments))
     }
 
     private fun restore(sent: Draft) {
@@ -1439,14 +1577,70 @@ class ChatModel(
 
     private fun restoreWithoutSaving(sent: Draft) {
         val words = sent.words
+        val prefixShift = when {
+            draftText.isEmpty() -> 0
+            words.isEmpty() -> 0
+            else -> words.length + 1
+        }
+        if (prefixShift > 0) {
+            for (i in positionedAttachments.indices) {
+                val entry = positionedAttachments[i]
+                val offset = entry.offset ?: continue
+                positionedAttachments[i] = entry.copy(offset = offset + prefixShift)
+            }
+        }
         draftText = when {
             draftText.isEmpty() -> words
             words.isEmpty() -> draftText
             else -> "$words\n$draftText"
         }
-        val restoredAttachments = sent.attachments
+        val restoredAttachments = sent.positionedAttachments()
         if (restoredAttachments.isNotEmpty()) {
-            draftAttachments.addAll(0, restoredAttachments)
+            positionedAttachments.addAll(0, restoredAttachments)
+        }
+    }
+
+    private fun insertPositionedAttachment(attachment: DraftAttachment, offset: Int) {
+        val entry = PositionedAttachment(attachment, offset = offset)
+        val insertAt = positionedAttachments.indexOfFirst { existing ->
+            val existingOffset = existing.offset
+            existingOffset == null || existingOffset > offset
+        }
+        if (insertAt < 0) {
+            positionedAttachments.add(entry)
+        } else {
+            positionedAttachments.add(insertAt, entry)
+        }
+    }
+
+    private fun shiftAttachmentOffsets(old: String, updated: String) {
+        if (positionedAttachments.none { it.offset != null }) return
+        var head = 0
+        while (head < old.length && head < updated.length && old[head] == updated[head]) {
+            head += 1
+        }
+        var tail = 0
+        while (
+            tail < old.length - head &&
+            tail < updated.length - head &&
+            old[old.length - 1 - tail] == updated[updated.length - 1 - tail]
+        ) {
+            tail += 1
+        }
+        val oldEnd = old.length - tail
+        val newEnd = updated.length - tail
+        val delta = updated.length - old.length
+        for (i in positionedAttachments.indices) {
+            val entry = positionedAttachments[i]
+            val offset = entry.offset ?: continue
+            val nextOffset = when {
+                offset <= head -> offset
+                offset >= oldEnd -> (offset + delta).coerceIn(0, updated.length)
+                else -> newEnd.coerceIn(0, updated.length)
+            }
+            if (nextOffset != offset) {
+                positionedAttachments[i] = entry.copy(offset = nextOffset)
+            }
         }
     }
 
@@ -1466,6 +1660,9 @@ class ChatModel(
             frame = frame,
             ask = ask,
             overview = overview,
+            overviewChangesComparison = overviewChangesComparison,
+            overviewChangesLoading = overviewChangesLoading,
+            overviewChangesError = overviewChangesError,
             settings = settings,
             openedAgents = openedAgents,
             liveSubagents = liveSubagents,
@@ -1476,7 +1673,7 @@ class ChatModel(
             following = following,
             toNewest = toNewest,
             draft = draftText,
-            attachments = draftAttachments.toList(),
+            attachments = positionedAttachments.map { it.attachment },
             uploading = uploading,
             sending = sending,
             notice = notice,
@@ -1486,6 +1683,33 @@ class ChatModel(
             dictation = dictation,
             slashMatches = slashMatches,
         )
+    }
+
+    private class BlobLruCache(private val maxBytes: Long) {
+        private val entries = LinkedHashMap<List<Int>, ByteArray>(16, 0.75f, true)
+        var totalBytes: Long = 0L
+            private set
+
+        fun get(key: List<Int>): ByteArray? = entries[key]
+
+        fun put(key: List<Int>, value: ByteArray) {
+            val size = value.size.toLong()
+            entries.remove(key)?.let { previous ->
+                totalBytes -= previous.size.toLong()
+            }
+            if (maxBytes <= 0L || size > maxBytes) {
+                return
+            }
+            entries[key] = value
+            totalBytes += size
+            val iterator = entries.entries.iterator()
+            while (totalBytes > maxBytes && iterator.hasNext()) {
+                val eldest = iterator.next()
+                if (eldest.key == key && entries.size == 1) break
+                totalBytes -= eldest.value.size.toLong()
+                iterator.remove()
+            }
+        }
     }
 
     companion object {
@@ -1500,6 +1724,12 @@ class ChatModel(
 
         /** Maximum slash-command or skill autocomplete suggestions shown at once. */
         const val SLASH_ROWS: Int = 5
+
+        /** Standard attachment byte cap (64 MiB), matching the Rust runtime limit. */
+        const val ATTACHMENT_LIMIT_BYTES: Long = 64L * 1024L * 1024L
+
+        /** Default in-memory LRU cache budget for fetched attachment blobs (32 MiB). */
+        const val DEFAULT_BLOB_CACHE_BYTES: Long = 32L * 1024L * 1024L
 
         const val NOT_CONFIRMED: String = "The connection dropped before the agent answered."
         const val CLOSED: String = "This chat is closed."

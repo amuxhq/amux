@@ -64,11 +64,58 @@ data class PickedAttachment(
 
         fun isNativeImageMime(mime: String): Boolean = mime.lowercase() in NATIVE_IMAGE_MIMES
 
+        /**
+         * Returns the native image MIME type (`image/png`, `image/jpeg`,
+         * `image/gif`, or `image/webp`) detected from magic bytes, or `null`
+         * for any other content. Matches `attachments::native_image` in Rust.
+         */
+        fun sniffNativeImageMime(bytes: ByteArray): String? = when {
+            bytes.size >= 8 &&
+                bytes[0] == 0x89.toByte() &&
+                bytes[1] == 0x50.toByte() &&
+                bytes[2] == 0x4E.toByte() &&
+                bytes[3] == 0x47.toByte() &&
+                bytes[4] == 0x0D.toByte() &&
+                bytes[5] == 0x0A.toByte() &&
+                bytes[6] == 0x1A.toByte() &&
+                bytes[7] == 0x0A.toByte() -> "image/png"
+            bytes.size >= 3 &&
+                bytes[0] == 0xFF.toByte() &&
+                bytes[1] == 0xD8.toByte() &&
+                bytes[2] == 0xFF.toByte() -> "image/jpeg"
+            bytes.size >= 6 &&
+                bytes[0] == 'G'.code.toByte() &&
+                bytes[1] == 'I'.code.toByte() &&
+                bytes[2] == 'F'.code.toByte() &&
+                bytes[3] == '8'.code.toByte() &&
+                (bytes[4] == '7'.code.toByte() || bytes[4] == '9'.code.toByte()) &&
+                bytes[5] == 'a'.code.toByte() -> "image/gif"
+            bytes.size >= 12 &&
+                bytes[0] == 'R'.code.toByte() &&
+                bytes[1] == 'I'.code.toByte() &&
+                bytes[2] == 'F'.code.toByte() &&
+                bytes[3] == 'F'.code.toByte() &&
+                bytes[8] == 'W'.code.toByte() &&
+                bytes[9] == 'E'.code.toByte() &&
+                bytes[10] == 'B'.code.toByte() &&
+                bytes[11] == 'P'.code.toByte() -> "image/webp"
+            else -> null
+        }
+
         fun fromFile(
             data: ByteArray,
             name: String,
             mime: String? = null,
         ): PickedAttachment {
+            val sniffed = sniffNativeImageMime(data)
+            if (sniffed != null) {
+                return PickedAttachment(
+                    data = data,
+                    name = name,
+                    mime = sniffed,
+                    image = true,
+                )
+            }
             val ext = name.substringAfterLast('.', "").lowercase()
             val resolvedMime = mime?.takeIf { it.isNotBlank() }
                 ?: MIME_BY_EXTENSION[ext]
@@ -77,7 +124,7 @@ data class PickedAttachment(
                 data = data,
                 name = name,
                 mime = resolvedMime,
-                image = isNativeImageMime(resolvedMime),
+                image = false,
             )
         }
     }
@@ -213,15 +260,74 @@ data class QuestionDraft(
     }
 }
 
+/**
+ * An attachment carried by a composer draft along with its optional character
+ * insertion offset inside the draft's words (`null` places it after all text).
+ */
+data class PositionedAttachment(
+    val attachment: DraftAttachment,
+    val offset: Int? = null,
+)
+
 /** Words followed by attachments, matching the composer's chip-above-field shape. */
-fun draftOf(words: String, attachments: List<DraftAttachment> = emptyList()): Draft {
+fun draftOf(words: String, attachments: List<DraftAttachment> = emptyList()): Draft =
+    positionedDraftOf(
+        words = words,
+        attachments = attachments.map { PositionedAttachment(it, offset = null) },
+    )
+
+/**
+ * Builds a positioned [Draft] placing each attachment with a non-null offset
+ * at its character position in [words], and any unpositioned (`offset == null`)
+ * attachments at the end in order.
+ */
+fun positionedDraftOf(
+    words: String,
+    attachments: List<PositionedAttachment> = emptyList(),
+): Draft {
+    val positioned = attachments
+        .filter { it.offset != null }
+        .sortedBy { it.offset!!.coerceIn(0, words.length) }
+    val trailing = attachments.filter { it.offset == null }
     val parts = buildList {
-        if (words.isNotEmpty()) add(DraftPart.Text(words))
-        for (attachment in attachments) {
-            add(DraftPart.Attachment(attachment))
+        var cursor = 0
+        for (entry in positioned) {
+            val pos = entry.offset!!.coerceIn(cursor, words.length)
+            if (pos > cursor) {
+                add(DraftPart.Text(words.substring(cursor, pos)))
+                cursor = pos
+            }
+            add(DraftPart.Attachment(entry.attachment))
+        }
+        if (cursor < words.length) {
+            add(DraftPart.Text(words.substring(cursor)))
+        }
+        for (entry in trailing) {
+            add(DraftPart.Attachment(entry.attachment))
         }
     }
     return Draft(parts = parts)
+}
+
+/**
+ * Extracts each attachment with its character offset in [Draft.words], keeping
+ * trailing attachments (after all text) unpositioned (`offset = null`) so later
+ * typing stays ahead of picked files while mid-text pastes preserve their place.
+ */
+fun Draft.positionedAttachments(): List<PositionedAttachment> {
+    val lastTextIndex = parts.indexOfLast { it is DraftPart.Text && it.value.isNotEmpty() }
+    var cursor = 0
+    return buildList {
+        parts.forEachIndexed { index, part ->
+            when (part) {
+                is DraftPart.Text -> cursor += part.value.length
+                is DraftPart.Attachment -> {
+                    val offset = if (index < lastTextIndex) cursor else null
+                    add(PositionedAttachment(part.value, offset = offset))
+                }
+            }
+        }
+    }
 }
 
 /**

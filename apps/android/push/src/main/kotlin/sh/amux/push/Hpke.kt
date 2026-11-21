@@ -1,12 +1,10 @@
 package sh.amux.push
 
-import java.math.BigInteger
 import java.security.GeneralSecurityException
 import java.security.KeyFactory
 import java.security.SecureRandom
-import java.security.spec.NamedParameterSpec
-import java.security.spec.XECPrivateKeySpec
-import java.security.spec.XECPublicKeySpec
+import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.Mac
@@ -47,7 +45,20 @@ internal object Hpke {
 
     private val EMPTY = ByteArray(0)
     private val ZERO_SALT = ByteArray(HASH_SIZE)
-    private val X25519_BASEPOINT = BigInteger.valueOf(9)
+
+    // RFC 8410 DER headers for X25519 keys (OID 1.3.101.110).
+    // PKCS8EncodedKeySpec / X509EncodedKeySpec work portably on both host
+    // OpenJDK (SunEC) and Android Conscrypt (OpenSSLXDHKeyFactory), whereas
+    // XECPrivateKeySpec / XECPublicKeySpec are rejected by Conscrypt.
+    private val X25519_PKCS8_PREFIX = byteArrayOf(
+        0x30, 0x2E, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06,
+        0x03, 0x2B, 0x65, 0x6E, 0x04, 0x22, 0x04, 0x20,
+    )
+    private val X25519_X509_PREFIX = byteArrayOf(
+        0x30, 0x2A, 0x30, 0x05, 0x06, 0x03, 0x2B, 0x65,
+        0x6E, 0x03, 0x21, 0x00,
+    )
+    private val X25519_BASEPOINT = ByteArray(KEY_SIZE).apply { this[0] = 9 }
     private val LABEL_EAE_PRK = "eae_prk".toByteArray(Charsets.US_ASCII)
     private val LABEL_SHARED_SECRET = "shared_secret".toByteArray(Charsets.US_ASCII)
     private val LABEL_PSK_ID_HASH = "psk_id_hash".toByteArray(Charsets.US_ASCII)
@@ -66,8 +77,8 @@ internal object Hpke {
     fun deriveX25519PublicKey(privateKey: ByteArray): ByteArray {
         require(privateKey.size == KEY_SIZE) { "X25519 private key must be $KEY_SIZE bytes" }
         val keyFactory = KeyFactory.getInstance("X25519")
-        val priv = keyFactory.generatePrivate(XECPrivateKeySpec(NamedParameterSpec.X25519, privateKey))
-        val base = keyFactory.generatePublic(XECPublicKeySpec(NamedParameterSpec.X25519, X25519_BASEPOINT))
+        val priv = keyFactory.generatePrivate(PKCS8EncodedKeySpec(concat(X25519_PKCS8_PREFIX, privateKey)))
+        val base = keyFactory.generatePublic(X509EncodedKeySpec(concat(X25519_X509_PREFIX, X25519_BASEPOINT)))
         val agreement = KeyAgreement.getInstance("X25519")
         agreement.init(priv)
         agreement.doPhase(base, true)
@@ -142,8 +153,8 @@ internal object Hpke {
 
     private fun x25519(privateKey: ByteArray, peerPublicKey: ByteArray): ByteArray {
         val keyFactory = KeyFactory.getInstance("X25519")
-        val priv = keyFactory.generatePrivate(XECPrivateKeySpec(NamedParameterSpec.X25519, privateKey))
-        val pub = keyFactory.generatePublic(XECPublicKeySpec(NamedParameterSpec.X25519, decodeUCoordinate(peerPublicKey)))
+        val priv = keyFactory.generatePrivate(PKCS8EncodedKeySpec(concat(X25519_PKCS8_PREFIX, privateKey)))
+        val pub = keyFactory.generatePublic(X509EncodedKeySpec(concat(X25519_X509_PREFIX, peerPublicKey)))
         val agreement = KeyAgreement.getInstance("X25519")
         agreement.init(priv)
         agreement.doPhase(pub, true)
@@ -157,19 +168,6 @@ internal object Hpke {
             throw GeneralSecurityException("X25519 produced an all-zero shared secret")
         }
         return secret
-    }
-
-    /**
-     * Converts a 32-byte RFC 7748 little-endian X25519 u-coordinate to Java's
-     * positive big-endian [BigInteger], masking bit 255 per RFC 7748 §5.
-     */
-    private fun decodeUCoordinate(littleEndian: ByteArray): BigInteger {
-        val bigEndian = ByteArray(KEY_SIZE)
-        for (i in 0 until KEY_SIZE) {
-            bigEndian[KEY_SIZE - 1 - i] = littleEndian[i]
-        }
-        bigEndian[0] = (bigEndian[0].toInt() and 0x7F).toByte()
-        return BigInteger(1, bigEndian)
     }
 
     private fun extractAndExpand(dh: ByteArray, kemContext: ByteArray): ByteArray {

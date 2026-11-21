@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ask card -->
+    <string name="ask_needs_answer">Needs your answer</string>
+    <string name="ask_sending">Sending your answer · %1$s</string>
+    <string name="ask_rejected">Not sent · %1$s</string>
+    <string name="ask_not_confirmed">Your answer was not confirmed. The connection dropped before the agent replied.</string>
+    <string name="ask_dismissed">The agent exited with this open. Resume it to carry on.</string>
+    <string name="ask_interrupt">Interrupt</string>
+    <string name="ask_resend">Resend</string>
+    <string name="ask_discard">Discard</string>
+    <string name="ask_deny_ellipsis">Deny…</string>
+    <string name="ask_note_why_optional">Tell it why (optional)</string>
+    <string name="ask_note_what_should_change">What should change</string>
+    <string name="ask_note_placeholder">Add a note</string>
+    <string name="ask_command_in_cwd">in %1$s</string>
+    <string name="ask_diff_show_whole">Show the whole diff</string>
+    <string name="ask_diff_show_less">Show less</string>
+    <string name="ask_diff_line_start">Line %1$d</string>
+    <string name="ask_diff_hunk_ellipsis">⋯</string>
+    <string name="ask_plan_as_work_starts">As the work starts</string>
+    <string name="ask_plan_approve">Approve</string>
+    <string name="ask_plan_approve_and_switch">Yes, and switch to %1$s</string>
+    <string name="ask_link_local_page">This page is on the agent’s computer. Open the link in a browser there.</string>
+    <string name="ask_link_open">Open Link</string>
+    <string name="ask_access_write_to">Write to</string>
+    <string name="ask_access_read">Read</string>
+    <string name="ask_access_network">Network access</string>
+    <string name="ask_access_any_host">Any host</string>
+    <string name="ask_access_grant_turn">Grant for Turn</string>
+    <string name="ask_access_grant_session">Grant for Session</string>
+    <string name="ask_unanswerable_default">The agent is showing a menu this build can’t read. Attach from a terminal to answer it, or interrupt the turn.</string>
+    <string name="ask_form_choose">Choose</string>
+    <string name="ask_form_submit">Submit</string>
+    <string name="ask_form_required_label">%1$s *</string>
+    <string name="ask_question_step_number">Question %1$d</string>
+    <string name="ask_question_review_step">Review</string>
+    <string name="ask_question_recommended">RECOMMENDED</string>
+    <string name="ask_question_something_else_ellipsis">Something else…</string>
+    <string name="ask_question_something_else">Something else</string>
+    <string name="ask_question_add_note">Add a note</string>
+    <string name="ask_question_note_placeholder">A note on this answer</string>
+    <string name="ask_question_skip">Skip</string>
+    <string name="ask_question_send">Send</string>
+    <string name="ask_question_next">Next</string>
+    <string name="ask_question_send_selected">Send · %1$d selected</string>
+    <string name="ask_question_next_selected">Next · %1$d selected</string>
+    <string name="ask_question_send_answers">Send Answers</string>
+    <string name="ask_question_skipped">Skipped</string>
+    <string name="ask_question_not_answered">Not answered</string>
+    <string name="ask_question_answered_hidden">answered (hidden)</string>
+    <string name="ask_question_note_prefix">Note: %1$s</string>
+    <string name="ask_question_reply_instead">Reply instead</string>
+    <string name="ask_question_reply_title">Reply in your own words</string>
+    <string name="ask_question_reply_send">Send Reply</string>
+
+    <!-- Refusal reasons -->
+    <string name="ask_refusal_exited">it had exited</string>
+    <string name="ask_refusal_exiting">it was exiting</string>
+    <string name="ask_refusal_agent_closed">it is settled</string>
+    <string name="ask_refusal_draining">its host is shutting down</string>
+    <string name="ask_refusal_host_unreachable">its host is away</string>
+    <string name="ask_refusal_unsupported">this agent can’t take it</string>
+    <string name="ask_refusal_closed_ask">the ask had already closed</string>
+    <string name="ask_refusal_not_queued">it was no longer queued</string>
+    <string name="ask_refusal_conversation_elsewhere">Claude’s own view switched to another conversation</string>
+    <string name="ask_refusal_too_long">it is longer than the agent takes</string>
+    <string name="ask_refusal_unspecified">it was refused</string>
+
+    <!-- Chat overview sheet & strip -->
+    <string name="overview_label_host">Host</string>
+    <string name="overview_label_directory">Directory</string>
+    <string name="overview_label_branch">Branch</string>
+    <string name="overview_label_address">Address</string>
+    <string name="overview_section_tasks">Tasks</string>
+    <string name="overview_section_background">Background</string>
+    <string name="overview_section_servers">Tool servers</string>
+    <string name="overview_section_usage">Usage</string>
+    <string name="overview_section_context">Context</string>
+    <string name="overview_section_changes">Changes</string>
+    <string name="overview_stop">Stop</string>
+    <string name="overview_stop_job_description">Stop %1$s</string>
+    <string name="overview_usage_blocked">limit reached</string>
+    <string name="overview_usage_near_limit">near a limit</string>
+    <string name="overview_usage_credits">Credits %1$s</string>
+    <string name="overview_context_percent">%1$d%%</string>
+    <string name="overview_review_changes">Review Changes</string>
+    <string name="overview_changes_listing">Listing the changed files…</string>
+    <string name="overview_changes_none">Nothing changed</string>
+    <string name="overview_strip_open">Open Overview</string>
+    <string name="overview_strip_spoken">%1$s, %2$s</string>
+    <string name="overview_strip_failed_one">1 tool server failed</string>
+    <string name="overview_strip_failed_many">%1$d tool servers failed</string>
+    <string name="overview_strip_usage_near">Near usage limit</string>
+
+    <!-- Chat settings sheet -->
+    <string name="chat_settings_title">Agent Settings</string>
+    <string name="chat_settings_section_model">Model</string>
+    <string name="chat_settings_section_effort">Effort</string>
+    <string name="chat_settings_section_mode">Mode</string>
+    <string name="chat_settings_section_context">Context</string>
+    <string name="chat_settings_section_commands">Commands</string>
+    <string name="chat_settings_default_effort">Default %1$s</string>
+    <string name="chat_settings_reported_by_agent">Reported by the agent</string>
+    <string name="chat_settings_cycle">Cycle</string>
+    <string name="chat_settings_permission_by_typing">To change permission, type %1$s in the composer.</string>
+    <string name="chat_settings_mode_by_typing">To change mode, type %1$s in the composer.</string>
+
+    <!-- Diff review page -->
+    <string name="review_title">Changes</string>
+    <string name="review_send_count">Send Review (%1$d)</string>
+    <string name="review_add_to_review">Add to Review</string>
+    <string name="review_save_comment">Save</string>
+    <string name="review_delete_comment">Delete</string>
+    <string name="review_edit_comment_title">Edit Comment</string>
+    <string name="review_comment_on_line">Comment on line %1$d</string>
+    <string name="review_comment_on_old_line">Comment on removed line %1$d</string>
+    <string name="review_comment_on_file">Comment on file</string>
+    <string name="review_comment_placeholder">Write a comment</string>
+    <string name="review_file_comment_button">Comment</string>
+    <string name="review_binary_file">Binary file</string>
+    <string name="review_empty_title">No changes</string>
+    <string name="review_empty_detail">There are no changes to review right now.</string>
+    <string name="review_diff_added">+%1$d</string>
+    <string name="review_diff_removed">−%1$d</string>
+</resources>

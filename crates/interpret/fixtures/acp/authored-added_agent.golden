@@ -4,9 +4,9 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 agent=? session=? asks=
 snapshot STARTING queue=[] working_on=- at=1800000000000 agent=my-own-agent session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=LOAD
 ## 2 fact {"channel":"rpc","json":{"id":"agent-session","jsonrpc":"2.0","result":{"modes":{"availableModes":[{"id":"ask","name":"Ask"},{"id":"code","name":"Code"}],"currentModeId":"ask"},"sessionId":"s1"}}}
 effect session "s1"
-effect catalogue 06e4a042 models=[] commands=0 permissions=[] modes=[ask,code]
+effect catalogue 7ec4ca40 models=[] commands=0 permissions=[] modes=[ask,code]
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot catalogue 06e4a042
+snapshot catalogue 7ec4ca40
 snapshot IDLE queue=[] working_on=- at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=ask context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
 ## 3 input {"id":"i1","mode":{"value":"code"}}
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_mode\",\"params\":{\"modeId\":\"code\",\"sessionId\":\"s1\"}}"

@@ -66,7 +66,7 @@
 == overview Overview { tasks: Some(TasksView { done: 0, total: 2, current: "Run the tests", entries: [TaskLine { subject: "Run the tests", mark: Current }, TaskLine { subject: "Report", mark: Todo }] }), jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 1200, window_tokens: Some(200000), percent: Some(0), near_full: false }) sign-in None
 == settings
-  mode  "ask" "Ask"
+  mode  "ask" "Ask" normal
   mode* "code" "Code"
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode Pick
   command /rename source="" hint="<name>" "Rename the agent"

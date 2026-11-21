@@ -43,7 +43,7 @@
   effort* low
   effort  medium
   effort  high
-  mode* "default" "Default"
+  mode* "default" "Default" normal
   mode  "accept-edits" "Accept edits"
   mode  "auto" "Auto"
   mode  "plan" "Plan"
@@ -64,4 +64,4 @@
   command /antigravity-guide source="" hint="" "Provides a comprehensive guide, quick reference, and sitemap for Google Antigravity (AGY), including the Antigravity CLI (agy), Antigravity 2.0, Antigravity IDE, Python SDK, slash commands, keybindings, and customizations (skills, rules, MCP, sidecars). Activate this skill when the user asks questions about how to use, configure, or customize Antigravity, AGY, the agy CLI, the Antigravity IDE, or…
   command /run-workflow source="" hint="" "How to write and run a dynamic workflow script with the `run_workflow` tool: a Python script that orchestrates many agents with `agent`, `parallel`, `pipeline`, and `phase`. Use when a task splits into many independent or staged pieces of agent work (fan out over files, modules, bugs, or review angles, then aggregate), or when the user asks for a workflow. Don't use for a single delegated task (u…
   command /swarm source="" hint="" "(Preview & Quota Heavy) Run a swarm: several agents working in parallel on one task, each in its own conversation, collaborating through a shared message board. Use when the work splits into pieces that can be done at the same time, or when a second pair of eyes should check the first pair's work."
-  controls: model=Some("Gemini 3.8 Flash") effort=Some("low") permission=None mode=Some("default")
+  controls: model=Some("Gemini 3.8 Flash") effort=Some("low") permission=None mode=None

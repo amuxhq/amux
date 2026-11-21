@@ -736,6 +736,10 @@ impl State {
     }
 
     fn catalogue(&self) -> Catalogue {
+        // ACP names no normal mode. The one the first session started in is
+        // the agent's own default, from its own settings, so clients leave
+        // it unsaid, as they do Claude's and Codex's normal modes.
+        let normal = self.starting.get(&Category::Mode);
         Catalogue {
             models: self.offered_models(),
             commands: self.commands.clone(),
@@ -748,7 +752,7 @@ impl State {
                         .map(|value| OfferedMode {
                             value: value.value.clone(),
                             display_name: value.name.clone(),
-                            normal: false,
+                            normal: normal == Some(&value.value),
                             settable: true,
                         })
                         .collect()

@@ -39,7 +39,7 @@
   effort  high
   effort  max
   effort  default
-  mode* "build" "build"
+  mode* "build" "build" normal
   mode  "plan" "plan"
   changes: model Pick · effort Pick · permission NotOffered · mode Pick
   command /model source="" hint="[model]" "Choose the model the agent runs"
@@ -68,4 +68,4 @@
   command /review source="" hint="" "review changes [commit|branch|pr], defaults to uncommitted"
   command /skill-creator source="" hint="" "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy."
   command /xlsx source="" hint="" "Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .xltx, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new spreadsheet from scratch or from other data sources; or convert between tabular file formats. Trigger …
-  controls: model=Some("OpenCode/DeepSeek V4.1 Flash Free") effort=Some("low") permission=None mode=Some("build")
+  controls: model=Some("OpenCode/DeepSeek V4.1 Flash Free") effort=Some("low") permission=None mode=None

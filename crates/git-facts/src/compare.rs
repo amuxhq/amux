@@ -504,7 +504,9 @@ pub struct Shown<'a> {
 /// own change, a line put back or a file it made and then deleted, is
 /// shown, though all changes no longer lists it. A file stays when either
 /// lists it; one whose hunks all go goes with them, and one either lists
-/// with nothing to compare (a binary file, a rename alone) stays whole.
+/// with nothing to compare since the round (a binary file, a rename alone)
+/// stays whole. A file the agent only renamed changed no line, so no hunk
+/// of it since the round is the agent's.
 pub async fn since_last(
     cwd: &Path,
     store: &ObjectStore,
@@ -577,8 +579,11 @@ fn limited(
             if now.is_none() && held.is_none() {
                 return None;
             }
-            let whole = |spans: Option<&Vec<(u32, u32)>>| spans.is_some_and(Vec::is_empty);
-            if file.hunks.is_empty() || whole(now) || whole(held) {
+            // Nothing to compare (a binary file, a rename alone) stays
+            // whole. A side that changed no line (the agent only renamed the
+            // file) holds no change for a hunk to sit on, so it keeps none:
+            // a hunk such a file has since the round came from elsewhere.
+            if file.hunks.is_empty() {
                 return Some(file);
             }
             let (now, held) = (

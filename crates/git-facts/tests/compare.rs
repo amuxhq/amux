@@ -519,6 +519,71 @@ async fn since_the_last_review_shows_the_agent_undoing_its_own_change() {
     assert_eq!(changed_lines(&asked), changed_lines(&every[1..]));
 }
 
+/// A file the agent only renamed changes no line of its own, so an edit
+/// the base brought to it later, and the merge carried along the rename,
+/// is no part of what changed since the last review; the rename itself,
+/// made since the last round, is.
+#[tokio::test]
+async fn since_the_last_review_keeps_no_upstream_edit_to_a_file_the_agent_only_renamed() {
+    let text = numbered(40);
+    let repo = repository(&[("a.txt", &text), ("b.txt", &text)]);
+    let dir = repo.path();
+    let (_held, store) = store();
+    git(dir, &["switch", "-q", "-c", "work"]);
+    let round_base = git(dir, &["rev-parse", "main"]);
+    git(dir, &["mv", "a.txt", "c.txt"]);
+    commit_all(dir, "the agent renames a.txt");
+    let round = snapshot(dir, store.dir());
+    // The base edits the file the agent renamed; the merge follows the
+    // rename. Then the agent renames another file, changing nothing in it.
+    git(dir, &["switch", "-q", "main"]);
+    std::fs::write(dir.join("a.txt"), replaced(&text, 30, "base thirty")).unwrap();
+    commit_all(dir, "the base moves on");
+    git(dir, &["switch", "-q", "work"]);
+    git(dir, &["merge", "-q", "--no-edit", "main"]);
+    assert!(
+        std::fs::read_to_string(dir.join("c.txt"))
+            .unwrap()
+            .contains("base thirty"),
+        "the merge carried the base's edit into the renamed file"
+    );
+    git(dir, &["mv", "b.txt", "d.txt"]);
+    let now = snapshot(dir, store.dir());
+    let base = compare::base_for_review(dir, None, None, None)
+        .await
+        .unwrap()
+        .commit
+        .unwrap();
+
+    let since = compare::since_last(
+        dir,
+        &store,
+        Shown {
+            base: &round_base,
+            snapshot: &round,
+        },
+        Shown {
+            base: &base,
+            snapshot: &now,
+        },
+        None,
+        3,
+    )
+    .await
+    .unwrap();
+    let listed: Vec<(&str, Option<&str>, usize)> = since
+        .iter()
+        .map(|file| {
+            (
+                file.path.as_str(),
+                file.old_path.as_deref(),
+                file.hunks.len(),
+            )
+        })
+        .collect();
+    assert_eq!(listed, [("d.txt", Some("b.txt"), 0)]);
+}
+
 /// Thousands of long paths, more bytes of them than a command line holds
 /// on any platform, are compared all the same: the whole tree's since-last
 /// names no path to git, and where only some files are wanted they are

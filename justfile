@@ -332,6 +332,11 @@ docs-check:
 typed-provider-check:
     {{bounded}} 60 scripts/py scripts/typed-provider-check.py
 
+# Fail if a client crate decides something by an agent's kind or a
+# provider's name outside the places its list allows.
+client-kind-check:
+    {{bounded}} 60 scripts/py scripts/client-kind-check.py
+
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
 no-update-flags:
@@ -345,7 +350,7 @@ no-update-flags:
 # too (`just test-crate`), and leave the whole suite, the phone's snapshots
 # and the other platforms to CI (docs/CI.md, "`just premerge`").
 # Run the quick checks a change passes before it reaches main.
-premerge: no-update-flags fmt-check codegen-check store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests lint
+premerge: no-update-flags fmt-check codegen-check store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests lint
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
@@ -353,7 +358,7 @@ premerge: no-update-flags fmt-check codegen-check store-check dependency-policy 
     if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags lint fmt-check codegen-check store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
+ci: no-update-flags lint fmt-check codegen-check store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests test doctest release-check mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

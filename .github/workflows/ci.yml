@@ -171,6 +171,8 @@ jobs:
         run: just cores-check
       - name: Check provider messages go through the protocol crates
         run: just typed-provider-check
+      - name: Check client crates decide by capabilities, not by kind
+        run: just client-kind-check
       - name: Check the test suite catalogue
         run: just tests-check
       - name: Run the scripts' own unit tests

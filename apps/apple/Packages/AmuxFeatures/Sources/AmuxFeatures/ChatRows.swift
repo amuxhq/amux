@@ -906,9 +906,13 @@ struct PromptBubble: View {
             }
         }
         // Combining drops the children that are buttons, as a sent review's
-        // chip is, so the words are said here whole, every chip among them.
+        // chip is, so the words are said here whole, every chip among them,
+        // and the caption under a steered prompt after them.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(ChatWords.spoken(of: text))
+        .accessibilityLabel(
+            steered
+                ? "\(ChatWords.spoken(of: text)), \(String(localized: "steered"))"
+                : ChatWords.spoken(of: text))
         .identified(
             "chat.row.prompt", label: ChatWords.text(of: text), value: steered ? "steered" : nil)
     }

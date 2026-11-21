@@ -1,0 +1,27 @@
+shell |  |  | 0,0,411,923
+screen.conversation |  |  | 0,0,411,923
+chat.feed |  |  | 0,119,411,478
+chat.row.<id> |  |  | 16,131,379,52
+chat.row.kind.prompt |  |  | 16,131,379,40
+markdown.root | Add a settings screen. |  | 220,141,162,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,183,379,228
+chat.row.kind.question | Answered, 2 of 3 questions, Layout, Stacked, Entry, “From the help panel”, Order, Skipped |  | 16,183,379,216
+chat.row.msg_fake<run>0000000000000005:0 |  |  | 16,411,379,32
+chat.row.kind.prose |  |  | 16,411,379,20
+markdown.root | Thanks, I'll build it that way. |  | 16,411,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,443,379,28
+chat.row.turn-end | Worked for <t> |  | 16,443,81,16
+chat.row.<id> |  |  | 16,472,379,52
+chat.row.kind.prompt |  |  | 16,472,379,40
+markdown.root | Pick the palette too. |  | 235,482,146,20
+chat.row.toolu_fake<run>0000000000000008 |  |  | 16,523,379,41
+chat.row.kind.question | Asking |  | 16,523,379,29
+ask | Needs your answer, Question, More Options, Reply in your own words, Back, Send Reply |  | 12,605,387,286
+ask.more | More Options |  | 335,621,48,48
+ask.reply.back | Back |  | 325,681,58,48
+ask.reply.text | Reply in your own words | Let me see both palettes on the desk first. | 28,741,355,74
+ask.reply.send | Send Reply |  | 28,827,355,48
+chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
+nav.back | Back |  | 4,62,48,48
+chat.title | asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.more | More Options |  | 359,62,48,48

@@ -1,0 +1,14 @@
+shell |  |  | 0,0,411,923
+screen.conversation |  |  | 0,0,411,923
+chat.feed |  |  | 0,119,411,592
+chat.composer | Reply, Attach, Dictate, Send |  | 12,719,387,172
+chat.field | Reply |  | 28,733,355,28
+chat.controls | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,355,48
+chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,268,48
+chat.attach | Attach |  | 28,831,48,48
+chat.dictate | Dictate |  | 283,831,48,48
+chat.send | Send |  | 335,831,48,48 (disabled)
+chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
+nav.back | Back |  | 4,62,48,48
+chat.title | decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, /p/t/a/n/d/work · desk |  | 56,55,299,62
+chat.more | More Options |  | 359,62,48,48

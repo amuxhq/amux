@@ -1,0 +1,13 @@
+shell | Agents, Computers |  | 0,0,411,923
+hosts | Computers |  | 0,0,411,818
+hosts.list | FOUND |  | 0,0,411,818
+hosts.found.desk | Pair with desk?, Enter the code amux shows there, Pair |  | 16,167,379,72
+hosts.pair.desk | Pair |  | 318,179,61,48
+tab.agents | Agents |  | 0,819,202,80
+tab.hosts | Computers |  | 210,819,202,80
+pairing.sheet | Close, Pair desk, On this network, Pair with desk?, on this network, You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires in <t>., Fingerprint, <key>, Pair, Not Now |  | 0,434,411,441
+pairing.close | Close |  | 8,438,48,48
+pairing.title | Pair with desk? |  | 16,508,179,32
+pairing.fingerprint | <volatile>
+pairing.confirm | Pair |  | 16,755,379,48
+pairing.cancel | Not Now |  | 16,811,379,48

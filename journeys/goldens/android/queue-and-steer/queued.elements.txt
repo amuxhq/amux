@@ -1,0 +1,30 @@
+shell |  |  | 0,0,411,923
+screen.conversation |  |  | 0,0,411,923
+chat.feed |  |  | 0,119,411,427
+chat.row.<id> |  |  | 16,131,379,52
+chat.row.kind.prompt |  |  | 16,131,379,40
+markdown.root | Run the soak. |  | 283,141,98,20
+chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,183,379,32
+chat.row.kind.prose |  |  | 16,183,379,20
+markdown.root | Starting the long run. |  | 16,183,379,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,215,379,59
+chat.row.kind.command | Soak, running, $ scripts/soak --for <t> |  | 16,215,379,47
+chat.composer | Running Soak · <t>, Running, Soak, <t>, Queue a message, Attach, Dictate, Interrupt |  | 12,555,387,337
+chat.queued.strip |  |  | 12,555,387,129
+chat.queued.0 | Also log the peak., queued, Send Now, Withdraw |  | 28,563,367,48
+chat.queued.0.sendNow | Send Now |  | 291,563,48,48
+chat.queued.0.withdraw | Withdraw |  | 347,563,48,48
+chat.queued.1 | And email me., queued, Send Now, Withdraw |  | 28,628,367,48
+chat.queued.1.sendNow | Send Now |  | 291,628,48,48
+chat.queued.1.withdraw | Withdraw |  | 347,628,48,48
+chat.activity | <volatile>
+chat.field | Queue a message |  | 28,742,355,20
+chat.controls | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,355,48
+chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,196,48
+chat.attach | Attach |  | 28,831,48,48
+chat.dictate | Dictate |  | 283,831,48,48
+chat.stop | Interrupt |  | 335,831,48,48
+chat.topBar | Back, worker, /p/t/a/n/d/work · desk, Open Overview, worker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
+nav.back | Back |  | 4,62,48,48
+chat.title | worker, /p/t/a/n/d/work · desk, Open Overview, worker, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.more | More Options |  | 359,62,48,48

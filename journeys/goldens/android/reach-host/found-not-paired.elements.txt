@@ -1,0 +1,6 @@
+shell | Agents, Computers |  | 0,0,411,923
+hosts | Computers |  | 0,0,411,818
+hosts.list | FOUND |  | 0,0,411,818
+hosts.found.desk | desk is nearby, Open amux on desk to pair |  | 16,167,379,64
+tab.agents | Agents |  | 0,819,202,80
+tab.hosts | Computers |  | 210,819,202,80

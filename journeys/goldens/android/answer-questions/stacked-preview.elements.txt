@@ -1,0 +1,28 @@
+shell |  |  | 0,0,411,923
+screen.conversation |  |  | 0,0,411,923
+chat.feed |  |  | 0,119,411,244
+chat.row.<id> |  |  | 16,131,379,52
+chat.row.kind.prompt |  |  | 16,131,379,40
+markdown.root | Add a settings screen. |  | 220,141,162,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,183,379,41
+chat.row.kind.question | Asking, 3 questions |  | 16,183,379,29
+ask | Needs your answer, 3 questions, More Options, Layout, Entry, Order, Review, How should the settings screen be laid out?, Sidebar, Sections on the left, the chosen one on the right., Stacked, One scrolling page, a heading per section., Something else…, Add a note, Next, Skip, Reply instead |  | 12,371,387,520
+ask.more | More Options |  | 335,387,48,48
+ask.step.0 | Layout |  | 28,448,65,48
+ask.step.1 | Entry |  | 98,448,57,48
+ask.step.2 | Order |  | 159,448,60,48
+ask.step.review | Review |  | 223,448,66,48
+ask.question | How should the settings screen be laid out? |  | 28,508,317,20
+ask.preview | Stacked |  | 28,540,355,115
+ask.subject | Relay ──────────\n  Address  relay.amux.dev\nTheme ──────────\n  Palette  terminal |  | 40,568,331,79
+ask.option.0 | Sidebar, Sections on the left, the chosen one on the right. |  | 28,667,355,76
+ask.option.1 | Stacked, One scrolling page, a heading per section. |  | 28,751,355,4
+ask.option.other | Something else… |  | 0,0,0,0
+ask.addNote.0 | Add a note |  | 0,0,0,0
+ask.next | Next |  | 28,767,173,48
+ask.skip | Skip |  | 210,767,174,48
+ask.reply | Reply instead |  | 28,827,110,48
+chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
+nav.back | Back |  | 4,62,48,48
+chat.title | asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.more | More Options |  | 359,62,48,48

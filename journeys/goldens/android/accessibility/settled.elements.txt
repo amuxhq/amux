@@ -1,0 +1,24 @@
+shell |  |  | 0,0,411,923
+screen.conversation |  |  | 0,0,411,923
+chat.feed |  |  | 0,119,411,592
+chat.row.<id> |  |  | 16,131,379,60
+chat.row.kind.prompt |  |  | 16,131,379,48
+markdown.root | Check the deployment once. |  | 81,141,301,28
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,192,379,60
+chat.row.run | Ran 1 command, Expand, Ran 1 command |  | 16,192,379,60
+chat.row.msg_fake<run>0000000000000005:0 |  |  | 16,252,379,40
+chat.row.kind.prose |  |  | 16,252,379,28
+markdown.root | The deploy check passed. |  | 16,252,379,28
+chat.row.turn:1 | Worked for <t> |  | 16,292,379,37
+chat.row.turn-end | <volatile>
+chat.composer | Reply, Attach, Dictate, Send |  | 12,719,387,172
+chat.field | Reply |  | 28,733,355,28
+chat.controls | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,355,48
+chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,268,48
+chat.attach | Attach |  | 28,831,48,48
+chat.dictate | Dictate |  | 283,831,48,48
+chat.send | Send |  | 335,831,48,48 (disabled)
+chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
+nav.back | Back |  | 4,62,48,48
+chat.title | decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, /p/t/a/n/d/work · desk |  | 56,55,299,62
+chat.more | More Options |  | 359,62,48,48

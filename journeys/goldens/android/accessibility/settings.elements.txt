@@ -1,0 +1,23 @@
+shell |  |  | 0,0,411,923
+screen.settings | Back, Settings |  | 0,0,411,923
+settings.scroll | ACCOUNTS, APPEARANCE, NOTIFICATIONS, PRIVACY & DIAGNOSTICS, Share Usage Counts, Counts and choices, never what you type, your code, or file names., Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Report a Problem, Export Diagnostics, Contact Support, A report includes a screenshot and this phone’s diagnostic dump., THIS PHONE, Fingerprint, Tap to copy, <key> |  | 0,119,411,780
+settings.accounts.signed-out | Sign in to reach your computers anywhere, An account connects this phone to your paired computers over the cloud relay. Computers on this network work without one., Sign In |  | 16,176,379,279
+settings.accounts.sign-in | Sign In |  | 32,386,347,53
+settings.appearance | Theme, Light, Dark, System |  | 16,507,379,233
+settings.appearance.light | Light |  | 36,568,339,48
+settings.appearance.dark | Dark |  | 36,620,339,48
+settings.appearance.system | System |  | 36,672,339,48
+settings.notifications | Notifications, Not enabled, Background push delivery is coming in a future update. Local alerts show while amux is open., Enable Notifications |  | 16,793,379,106
+settings.notifications.status | Not enabled |  | 32,842,128,28
+settings.notifications.action | Enable Notifications |  | 0,0,0,0
+settings.privacy.share-usage | Share Usage Counts, Counts and choices, never what you type, your code, or file names. |  | 0,0,0,0
+settings.privacy.share-usage.switch |  |  | 0,0,0,0
+settings.privacy.auto-reports | Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 0,0,0,0
+settings.privacy.auto-reports.switch |  |  | 0,0,0,0
+settings.diagnostics.report | Report a Problem |  | 0,0,0,0
+settings.diagnostics.export | Export Diagnostics |  | 0,0,0,0
+settings.diagnostics.support | Contact Support |  | 0,0,0,0
+settings.phone.name | <volatile>
+settings.phone.fingerprint | <volatile>
+settings.phone.version | <volatile>
+nav.back | Back |  | 4,62,48,48

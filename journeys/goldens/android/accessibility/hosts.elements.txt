@@ -1,0 +1,7 @@
+shell | Agents, Computers |  | 0,0,411,923
+hosts | Computers, 1 reachable |  | 0,0,411,818
+hosts.list | ON THIS NETWORK, desk, macOS · direct |  | 0,0,411,818
+hosts.row.desk | desk, macOS · direct |  | 16,168,379,82
+hosts.subtitle | 1 reachable |  | 16,91,101,24
+tab.agents | Agents |  | 0,819,202,80
+tab.hosts | Computers |  | 210,819,202,80

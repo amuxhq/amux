@@ -1,0 +1,33 @@
+shell |  |  | 0,0,411,923
+screen.settings | Back, Settings |  | 0,0,411,923
+settings.scroll | ACCOUNTS, AD, ada, Signed out, Pro, Add Account, ADA, Manage Subscription, amux.sh, Remove from This Phone, Delete Account, APPEARANCE, NOTIFICATIONS, PRIVACY & DIAGNOSTICS, Share Usage Counts, Counts and choices, never what you type, your code, or file names., Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Report a Problem, Export Diagnostics, Contact Support, A report includes a screenshot and this phone’s diagnostic dump., THIS PHONE, Fingerprint, Tap to copy, <key> |  | 0,119,411,780
+settings.account.row.ada@example.com | AD, ada, Signed out, Pro |  | 16,168,379,72
+settings.account.sign-in-again.ada@example.com | Sign In Again |  | 277,180,102,48
+settings.accounts.add | Add Account |  | 16,241,379,48
+settings.account.subscription | Manage Subscription, amux.sh |  | 16,333,379,48
+settings.account.remove | Remove from This Phone |  | 16,382,379,48
+settings.account.delete | Delete Account |  | 16,432,379,48
+settings.appearance | Theme, Light, Dark, System |  | 16,524,379,120
+settings.appearance.light | Light |  | 36,576,110,48
+settings.appearance.dark | Dark |  | 151,576,110,48
+settings.appearance.system | System |  | 265,576,110,48
+settings.notifications | Notifications, Not enabled, Background push delivery is coming in a future update. Local alerts show while amux is open., Enable Notifications |  | 16,688,379,163
+settings.notifications.status | Not enabled |  | 290,704,90,20
+settings.notifications.action | Enable Notifications |  | 32,787,347,48
+settings.privacy.share-usage | Share Usage Counts, Counts and choices, never what you type, your code, or file names. |  | 16,895,379,4
+settings.privacy.share-usage.switch |  |  | 0,0,0,0
+settings.privacy.auto-reports | Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 0,0,0,0
+settings.privacy.auto-reports.switch |  |  | 0,0,0,0
+settings.diagnostics.report | Report a Problem |  | 0,0,0,0
+settings.diagnostics.export | Export Diagnostics |  | 0,0,0,0
+settings.diagnostics.support | Contact Support |  | 0,0,0,0
+settings.phone.name | <volatile>
+settings.phone.fingerprint | <volatile>
+settings.phone.version | <volatile>
+nav.back | Back |  | 4,62,48,48
+account.sign-in-result.dialog | Signed in as another account, You signed in as grace@example.com, not ada@example.com., Try Again, Continue as grace@example.com, Cancel |  | 46,335,320,283
+account.sign-in-result.title | Signed in as another account |  | 70,359,227,21
+account.sign-in-result.body | You signed in as grace@example.com, not ada@example.com. |  | 70,384,272,38
+account.sign-in-result.try-again | Try Again |  | 70,434,272,48
+account.sign-in-result.keep | Continue as grace@example.com |  | 70,490,272,48
+account.sign-in-result.dismiss | Cancel |  | 70,546,272,48

@@ -1,0 +1,24 @@
+shell |  |  | 0,0,411,923
+screen.conversation |  |  | 0,0,411,923
+chat.feed |  |  | 0,119,411,600
+chat.row.prompt:<id> |  |  | 16,131,379,52
+chat.row.kind.prompt |  |  | 16,131,379,40
+markdown.root | Check the deployment once. |  | 171,141,210,20
+chat.row.exec-<run>0000000000000002 |  |  | 16,183,379,60
+chat.row.run | Ran 1 command, Expand, Ran 1 command |  | 16,183,379,60
+chat.row.msg_<run>0000000000000003 |  |  | 16,243,379,32
+chat.row.kind.prose |  |  | 16,243,379,20
+markdown.root | The deploy check passed. |  | 16,243,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,275,379,28
+chat.row.turn-end | <volatile>
+chat.composer | Reply, Attach, Dictate, Send |  | 12,728,387,164
+chat.field | Reply |  | 28,742,355,20
+chat.controls | Chat Settings, gpt-fake · medium, gpt-fake · medium |  | 28,773,355,48
+chat.model | Chat Settings, gpt-fake · medium, gpt-fake · medium |  | 28,773,167,48
+chat.attach | Attach |  | 28,831,48,48
+chat.dictate | Dictate |  | 283,831,48,48
+chat.send | Send |  | 335,831,48,48 (disabled)
+chat.topBar | Back, decision-codex, /p/t/a/n/d/work · desk, Open Overview, decision-codex, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
+nav.back | Back |  | 4,62,48,48
+chat.title | decision-codex, /p/t/a/n/d/work · desk, Open Overview, decision-codex, /p/t/a/n/d/work · desk |  | 56,63,299,46
+chat.more | More Options |  | 359,62,48,48

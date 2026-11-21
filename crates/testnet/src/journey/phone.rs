@@ -362,6 +362,7 @@ pub(crate) struct Drawn {
 
 impl Drawn {
     /// Every element seen, for a list with no screen beneath a page.
+    #[cfg(test)]
     pub(crate) fn of(elements: &[Value]) -> Drawn {
         Self::on(elements, None)
     }

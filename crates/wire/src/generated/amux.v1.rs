@@ -11408,8 +11408,7 @@ pub struct Experiment {
     /// The daemon runs it otherwise than the config now says: the switch, or
     /// while it is on its own settings, moved since the daemon started, and the
     /// daemon restarts to apply that once its work under way settles. A client
-    /// shows the switch as being applied. False from builds before it, which
-    /// applied a change at their next start.
+    /// shows the switch as being applied.
     #[prost(bool, tag = "5")]
     pub applying: bool,
 }

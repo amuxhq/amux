@@ -1173,8 +1173,7 @@ the config switches it on (`enabled`) and whether the daemon is still
 restarting to apply that (`applying`), and `UpdateSettingsRequest.experiments`
 replaces the list of names switched on, keeping any the build does not
 know. A client shows an experiment that is `applying` as neither on nor off,
-and reads the settings again once the daemon is back: a build from before
-`applying` sends false, and applied a switch only at its next start.
+and reads the settings again once the daemon is back.
 
 A person switches an experiment by its **name** (`workspaces`: lowercase
 letters only, so a store table's name says whose it is). A build implements

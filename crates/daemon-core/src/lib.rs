@@ -136,16 +136,13 @@ pub struct StartOptions {
     /// journal gives no cause for is recorded only after a grace, and after
     /// a restart of the machine each agent found gone is suspended or
     /// continued. Rows already suspended are handled with it off too.
-    #[serde(default)]
     pub suspension: bool,
     /// The daemon runs the reviews experiment (`reviews/1`): each own
     /// agent may have a review of its working tree, written through the
     /// core and told to every client on the agent's row.
-    #[serde(default)]
     pub reviews: bool,
     /// The machine has booted since the daemon before this one started: an
     /// agent this start finds gone ended with the machine, not by a fault.
-    #[serde(default)]
     pub rebooted: bool,
 }
 

@@ -189,9 +189,12 @@ fn kept_unsent(drawn: &Drawn, text: &str) -> bool {
     drawn.value("chat.field") == text && !drawn.enabled("chat.send")
 }
 
-/// The chat is current: the empty composer offers to message the agent.
-fn current(drawn: &Drawn, agent: &str) -> bool {
-    drawn.label("chat.field") == format!("Message {agent}")
+/// The chat is current: its header says its machine is linked and the
+/// composer sends. A chat still dialling its machine reads "Reply" too, but
+/// its header says it is detached.
+fn current(drawn: &Drawn) -> bool {
+    drawn.value("chat.header") == "live"
+        && matches!(drawn.label("chat.field"), "Reply" | "Queue a message")
 }
 
 /// The prompts waiting under the feed, oldest first: each one's words and
@@ -1580,6 +1583,23 @@ const SECOND: &str = "A second turn arrived while you were away.";
 const THIRD: &str = "Back after the restart.";
 const DRAFT: &str = "Pick up where we left off.";
 
+/// The open chat says the desk is out of reach: its own field and header.
+/// Any label saying so is not enough, as the fleet under the chat still
+/// reports its elements, and its offer to sign in names the desk out of
+/// reach while the chat itself still reads as connecting.
+fn desk_out_of_reach(drawn: &Drawn) -> bool {
+    drawn.label("chat.field") == "desk is out of reach · your draft is kept"
+        && drawn.label("chat.header") == "desk · away"
+}
+
+/// The open chat's own head says its agent stopped while amux was stopped.
+fn stopped_with_amux(drawn: &Drawn) -> bool {
+    drawn.label("chat.exited") == "Stopped · while amux was stopped"
+}
+
+/// The story reads the chat's own rows (`replies`) and head, never any
+/// label on screen: the fleet under the chat still reports its elements,
+/// and its row for the agent shows the agent's last words.
 fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     // A real first run makes the phone's replica of the desk's agent.
     journey.launch(Launch::plain())?;
@@ -1616,8 +1636,11 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     let row = format!("home.row.{keeper}");
     journey.wait_for(&[&row])?;
     journey.tap(&row)?;
+    // The desk reads as connecting until the phone's dial to it fails, at
+    // the daemon's ten-second limit: the chat is waited on until its own
+    // field and header say it is out of reach.
     let drawn = journey.wait(
-        |drawn| labelled(drawn, FIRST) && labelled(drawn, "out of reach"),
+        |drawn| replies(drawn, FIRST) > 0 && desk_out_of_reach(drawn),
         "the cached chat, out of reach",
     )?;
     if labelled(&drawn, SECOND) {
@@ -1628,11 +1651,13 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         |drawn| drawn.value("chat.field") == DRAFT,
         "the draft written",
     )?;
-    if current(&drawn, "keeper") {
+    if current(&drawn) {
         return Err("the chat reads current with the desk out of reach".to_owned());
     }
-    let detached = reopen(journey, &keeper, |drawn| drawn.value("chat.field") == DRAFT)?;
-    if !labelled(&detached, "out of reach") || labelled(&detached, SECOND) {
+    let detached = reopen(journey, &keeper, |drawn| {
+        drawn.value("chat.field") == DRAFT && desk_out_of_reach(drawn)
+    })?;
+    if replies(&detached, FIRST) == 0 || labelled(&detached, SECOND) {
         return Err("the chat opened again is not the cached tail out of reach".to_owned());
     }
     journey.screen("cached-offline", &["chat.row.turn-end"])?;
@@ -1647,10 +1672,10 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     let deadline = Instant::now() + Duration::from_secs(60);
     let drawn = loop {
         let drawn = journey.elements()?;
-        if current(&drawn, "keeper") && !labelled(&drawn, SECOND) {
+        if current(&drawn) && replies(&drawn, SECOND) == 0 {
             return Err("the chat read current before the missed turn arrived".to_owned());
         }
-        if current(&drawn, "keeper") {
+        if current(&drawn) {
             break drawn;
         }
         if Instant::now() > deadline {
@@ -1663,11 +1688,15 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         .actions
         .push("reached the missed turn, then a current chat".to_owned());
     if replies(&drawn, SECOND) != 1 || drawn.value("chat.field") != DRAFT {
-        return Err("the missed turn did not append once with the draft kept".to_owned());
+        return Err(format!(
+            "the missed turn did not append once with the draft kept: {} rows of it, the field holding {:?}",
+            replies(&drawn, SECOND),
+            drawn.value("chat.field")
+        ));
     }
     journey.tap("chat.send")?;
     journey.wait(
-        |drawn| labelled(drawn, THIRD),
+        |drawn| replies(drawn, THIRD) > 0,
         "the reply to the kept draft",
     )?;
     let after = journey.wait_chat(
@@ -1678,7 +1707,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     )?;
     reflected_once(&after, DRAFT)?;
     let control = negative_control(reflected_once(&after, &format!("{DRAFT} (a wrong draft)")))?;
-    reopen(journey, &keeper, |drawn| labelled(drawn, THIRD))?;
+    reopen(journey, &keeper, |drawn| replies(drawn, THIRD) > 0)?;
     journey.screen("reconciled", &["chat.row.turn-end"])?;
 
     // The desk loses power back to a checkpoint: the phone's replica is
@@ -1697,15 +1726,15 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         None,
     )?;
     // A restored drive has no running processes, so the rebuilt chat reads
-    // the agent exited: it swaps in under the rows on screen, which never
+    // the agent stopped: it swaps in under the rows on screen, which never
     // leave in between.
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let drawn = journey.elements()?;
-        if !(labelled(&drawn, FIRST) && labelled(&drawn, THIRD)) {
+        if replies(&drawn, FIRST) == 0 || replies(&drawn, THIRD) == 0 {
             return Err("rows left the screen during the Reset".to_owned());
         }
-        if labelled(&drawn, "Exited") {
+        if stopped_with_amux(&drawn) {
             break;
         }
         if Instant::now() > deadline {
@@ -1718,7 +1747,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         .actions
         .push("the rows stayed on screen until the rebuilt chat swapped in".to_owned());
     reopen(journey, &keeper, |drawn| {
-        labelled(drawn, THIRD) && labelled(drawn, "Exited")
+        replies(drawn, THIRD) > 0 && stopped_with_amux(drawn)
     })?;
     journey.screen("after-reset", &["chat.row.turn-end"])?;
     Ok(vec![
@@ -1727,7 +1756,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         "when the desk came back the missed turn appeared once, and only then did the chat read current".to_owned(),
         "the kept draft reached the desk once and was answered".to_owned(),
         control,
-        "rows stayed on screen through the desk's rewind and Reset until the rebuilt chat swapped in, reading the agent exited".to_owned(),
+        "rows stayed on screen through the desk's rewind and Reset until the rebuilt chat swapped in, reading the agent stopped".to_owned(),
     ])
 }
 

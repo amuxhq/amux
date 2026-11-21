@@ -238,7 +238,7 @@ enum StoryFleet {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
-            candidate: candidate, reach: .online(.direct),
+            candidate: candidate, reach: .online(.direct), link: 0,
             addrs: candidate && !relayOnly ? ["192.168.1.\(index):4433"] : [], relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: [ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: true)],
             claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)
@@ -269,7 +269,7 @@ enum StoryFleet {
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
                 members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
                 topLevel: !native, native: native,
-                branch: branch, exitCause: exit, repository: nil, workspaceGoes: nil),
+                branch: branch, exitCause: exit, repository: nil),
             depth: native ? 1 : 0, expanded: expanded, secondLine: second, loud: nil)
     }
 }
@@ -320,7 +320,8 @@ struct StoryApp: View {
                 let chat = ScriptedChat(
                     rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: chatPhase),
                     strip: ScriptedChat.strip(model: "opus 4.6", git: CatalogFixtures.git))
-                chat.working = CatalogFixtures.review
+                chat.reviewOnOpening = ReviewStory.page()
+                chat.roundOnOpening = ReviewStory.round()
                 return chat
             })
         bundle.fleet.show(invented.view, hosts: invented.hostViews)
@@ -334,12 +335,14 @@ struct StoryApp: View {
 
     var body: some View {
         shell.environment(\.design, Design.app)
+            .environment(\.codeHighlighting, .bridge)
     }
 
     /// The settings sheet alone, as it is drawn over the app: a capture
     /// leaves out what the app presents.
     var settings: some View {
         shell.settings.environment(\.design, Design.app)
+            .environment(\.codeHighlighting, .bridge)
     }
 
     private var shell: Shell {

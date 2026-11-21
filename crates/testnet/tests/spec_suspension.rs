@@ -251,17 +251,14 @@ async fn typed(
     id: &[u8],
     text: &str,
 ) -> wire::SendInputResponse {
-    use wire::session_service_server::SessionService as _;
     let at = net.agent(agent).unwrap();
-    net.client(host)
-        .unwrap()
-        .send_input(tonic::Request::new(wire::SendInputRequest {
-            agent_id: at.id.as_bytes().to_vec(),
-            input: Some(testnet::prompt(at.kind, id, text)),
-        }))
+    net.person(host)
         .await
         .unwrap()
-        .into_inner()
+        .agent(at)
+        .send_input(testnet::prompt(at.kind, id, text))
+        .await
+        .unwrap()
 }
 
 /// A person's message wakes a suspended agent, typed on its own host or on

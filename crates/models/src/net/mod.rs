@@ -659,7 +659,7 @@ impl Machine for ComposedNet {
                 next.used.stops += 1;
                 next.net.client_call(
                     origin,
-                    ClientRequest::FileAgent {
+                    ClientRequest::SetFiling {
                         agent,
                         filing: daemon_core::Filing::Closed,
                     },

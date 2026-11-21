@@ -48,7 +48,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, AgentRow, CommitClock, Dump, Marker, Sqlite};
-use wire::{Item, Phase, SessionEvent, Snapshot, Step, session_event};
+use wire::{FollowSessionRequest, Item, Phase, SessionEvent, Snapshot, Step, session_event};
 
 use crate::held::{Held, Slot};
 use crate::single_daemon::{EARLY_AFTER_ACCEPT, REPLAY_CHANGES_NOTHING};
@@ -405,7 +405,7 @@ impl Machine for Replication {
             let Some((inventory, request)) = follow.iter().find_map(|output| match output {
                 Output::Call {
                     call,
-                    request: request @ PeerRequest::SubscribeInventory,
+                    request: request @ PeerRequest::FollowAgents,
                     ..
                 } => Some((*call, request.clone())),
                 _ => None,
@@ -646,15 +646,14 @@ impl Transition<'_> {
                     unreachable!("answered without an ask")
                 };
                 let call = *call;
-                let request = wire::SubscribeSessionRequest::decode(request.as_slice())
-                    .expect("a request decodes");
+                let request =
+                    FollowSessionRequest::decode(request.as_slice()).expect("a request decodes");
                 self.next.link = Link::Open {
                     call,
                     queue: Vec::new(),
                     live: true,
                 };
-                let answered =
-                    self.serve(ORIGIN_LINK, call, PeerRequest::SubscribeSession(request));
+                let answered = self.serve(ORIGIN_LINK, call, PeerRequest::FollowSession(request));
                 let (events, ended) = answers_to(call, &answered);
                 let Link::Open { queue, live, .. } = &mut self.next.link else {
                     unreachable!("the stream was just opened")
@@ -861,6 +860,9 @@ impl Transition<'_> {
     /// `link`, which its core must list to the replica. What the core lists
     /// after the step is what it listed before: a call moves no route.
     fn serve(&mut self, link: LinkId, call: CallId, request: PeerRequest) -> Vec<Output> {
+        let request = request
+            .read()
+            .expect("a replica asks its origin only to read");
         let input = Input::PeerCall {
             from: REPLICA,
             call,
@@ -895,8 +897,7 @@ impl Transition<'_> {
         let Link::Asked { request, .. } = &self.next.link else {
             unreachable!("only an opening in flight is replayed")
         };
-        let request =
-            wire::SubscribeSessionRequest::decode(request.as_slice()).expect("a request decodes");
+        let request = FollowSessionRequest::decode(request.as_slice()).expect("a request decodes");
         self.next.replays += 1;
         let before = (
             self.next.origin.store.clone(),
@@ -905,11 +906,7 @@ impl Transition<'_> {
         );
         let out = self.origin(resumed_up(REPLAY_LINK));
         if !out.contains(&Output::RefuseResumed { link: REPLAY_LINK }) {
-            self.serve(
-                REPLAY_LINK,
-                REPLAYED,
-                PeerRequest::SubscribeSession(request),
-            );
+            self.serve(REPLAY_LINK, REPLAYED, PeerRequest::FollowSession(request));
             self.origin(Input::CallCancelled { call: REPLAYED });
         }
         self.origin(Input::LinkDown {
@@ -943,7 +940,7 @@ impl Transition<'_> {
             match output {
                 Output::Call {
                     call,
-                    request: PeerRequest::SubscribeSession(request),
+                    request: PeerRequest::FollowSession(request),
                     ..
                 } => {
                     if let Some(old) = self.next.link.call() {

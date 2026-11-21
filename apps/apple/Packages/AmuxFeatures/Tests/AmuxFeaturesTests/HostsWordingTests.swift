@@ -13,7 +13,7 @@ final class HostsWordingTests: XCTestCase {
     ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "studio", local: false, trusted: true, candidate: false,
-            reach: reach, addrs: addrs, relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil,
+            reach: reach, link: 0, addrs: addrs, relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil,
             platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
@@ -120,7 +120,7 @@ final class HostsWordingTests: XCTestCase {
     ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "nova", local: false, trusted: false, candidate: true,
-            reach: .online(.unspecified), addrs: addrs, relayOnly: relayOnly, pairingOpen: open, current: false,
+            reach: .online(.unspecified), link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: open, current: false,
             providers: [], claudeKind: nil, lastDialError: nil, platform: .linux, signedIn: nil, through: through,
             version: nil)
     }

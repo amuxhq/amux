@@ -31,10 +31,14 @@ public enum RegisteredLeaves: String, CaseIterable, Sendable {
     /// is SwiftUI's own and nothing needs a run of text to be atomic. Inline
     /// tokens would reopen it.
     case tokenTextField
-    /// Measured by argument rather than by a workload, and answered the same
-    /// way: rows report their own frames as they lay out and a drag looks a
-    /// point up among them, so nothing here needs a second layout system.
-    /// `docs/IOS.md` has the reasoning and what would reopen it.
+    /// Built, and measured by driving the review page in the simulator:
+    /// SwiftUI's hold handed over to a drag selected lines, but on the
+    /// list's content it kept every swipe that began on a line from
+    /// scrolling the page, attached as the content's gesture or beside the
+    /// scroll view's. The leaf is UIKit's long press, which fails when the
+    /// finger moves first and follows it once held; the lines still report
+    /// their own frames and the finger's place is looked up among them.
+    /// `docs/IOS.md` has the detail.
     case diffSelection
     /// Built, and measured by the live accessibility audit rather than a
     /// frame time: SwiftUI's `Menu` presents through a UIKit button that

@@ -144,9 +144,9 @@ impl ProcessHost {
         Ok(InstallationServiceClient::new(channel))
     }
 
-    /// The client service on the host's one profile, as the CLI and the
-    /// terminal client reach it.
-    pub(crate) async fn client(&self) -> Result<wire::ClientStubs, String> {
+    /// A person's client of the host's one profile, as the CLI and the
+    /// terminal client reach it: over the profile's socket.
+    pub(crate) async fn client(&self) -> Result<client::Client, String> {
         // A daemon between a crash and its supervisor's next start answers
         // nothing for a moment; a person's client would retry, and so does
         // this one, for as long as such a start takes.
@@ -160,7 +160,7 @@ impl ProcessHost {
         }
     }
 
-    async fn connect(&self) -> Result<wire::ClientStubs, String> {
+    async fn connect(&self) -> Result<client::Client, String> {
         let profile = self
             .front_door()
             .await?
@@ -172,10 +172,9 @@ impl ProcessHost {
             .into_iter()
             .next()
             .ok_or("the host has no profile")?;
-        let channel = local_channel(Path::new(&profile.socket_path))
+        client::Client::connect(Path::new(&profile.socket_path), client::Surface::Terminal)
             .await
-            .map_err(|error| format!("the profile socket does not answer: {error}"))?;
-        Ok(wire::client_stubs(channel))
+            .map_err(|error| format!("the profile socket does not answer: {error}"))
     }
 }
 

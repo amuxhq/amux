@@ -18,7 +18,6 @@ use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, HostDecl, Net, PATIENCE, Topology, observe, until};
 use wire::begin_pair_request;
-use wire::session_service_server::SessionService as _;
 
 use crate::support;
 
@@ -388,16 +387,15 @@ async fn route_lan_signing_out_keeps_the_direct_link_and_the_session() {
     chat.observe_until(observe::caught_up, PATIENCE)
         .await
         .unwrap();
-    net.client("laptop")
+    net.person("laptop")
+        .await
         .unwrap()
-        .send_input(tonic::Request::new(wire::SendInputRequest {
-            agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            input: Some(testnet::prompt(
-                testnet::FakeKind::ClaudeSdk,
-                uuid::Uuid::new_v4().as_bytes(),
-                "go",
-            )),
-        }))
+        .agent(net.agent("worker").unwrap())
+        .send_input(testnet::prompt(
+            testnet::FakeKind::ClaudeSdk,
+            uuid::Uuid::new_v4().as_bytes(),
+            "go",
+        ))
         .await
         .unwrap();
     chat.observe_until(|events| says(events, said), PATIENCE)

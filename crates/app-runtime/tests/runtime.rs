@@ -8,15 +8,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome,
+    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome, ReviewChange,
+    ReviewOutcome,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
-use client::{Client, InProcess, SystemClock};
+use client::SystemClock;
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
 use ui_state::{AgentKey, InputState, PhaseView, Refusal};
-use ui_view::{AskBody, ChoiceOutcome, Comparison, QuestionResponse, RowKind, SettingChange};
+use ui_view::{
+    AskBody, ChoiceOutcome, Comparison, QuestionResponse, ReviewBanner, RowKind, SettingChange,
+};
 
 const PATIENCE: Duration = Duration::from_secs(20);
 
@@ -87,16 +90,13 @@ async fn open(net: &Net) -> (AppRuntime, Host) {
 
 /// The runtime, with home not yet opened.
 async fn connect(net: &Net) -> (AppRuntime, Host) {
-    let client: Arc<dyn Client> = Arc::new(
-        InProcess::new(net.client("desk").unwrap())
-            .with_admin(Arc::new(net.profile_admin("desk").unwrap())),
-    );
     let (sender, wakes) = mpsc::unbounded_channel();
     let wake = Arc::new(move |wake: Wake| {
         let _ = sender.send(wake);
     });
     let local = net.host("desk").unwrap().host_id.as_bytes().to_vec();
-    let runtime = AppRuntime::open(client, Arc::new(SystemClock), local, wake)
+    let node = client::Client::in_memory(net.entrance("desk").unwrap(), client::Surface::Ios);
+    let runtime = AppRuntime::open(node, Arc::new(SystemClock), local, wake)
         .await
         .unwrap();
     (
@@ -762,14 +762,115 @@ async fn opening_the_overview_lists_the_changed_files_by_folder() {
         Some(changes.totals),
         "the overview keeps what it fetched"
     );
+    assert_eq!(
+        changes.base, None,
+        "the uncommitted work has no base branch"
+    );
+    let on_branch = chat
+        .open_overview(Comparison::OnBranch)
+        .await
+        .unwrap()
+        .changes
+        .expect("the files were fetched");
+    // On its base branch with no upstream, the host's rule counts the
+    // uncommitted work alone, from HEAD, and reports no base branch.
+    assert_eq!(on_branch.totals, changes.totals, "{on_branch:?}");
+    assert_eq!(on_branch.base, None, "{on_branch:?}");
     until(&mut host, &chat, "the agent's branch", |chat| {
         chat.frame()
             .git
             .is_some_and(|git| git.branch.as_deref() == Some("main"))
     })
     .await;
-    let review = chat.review(Comparison::Uncommitted).await.unwrap();
-    assert!(review.patch.contains("README.md"), "{}", review.patch);
+    net.shutdown().await.unwrap();
+}
+
+/// Runs git in `dir` as a committer named amux.
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let ran = std::process::Command::new("git")
+        .args(["-c", "user.name=amux", "-c", "user.email=amux@example.com"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(ran.status.success(), "git {args:?}: {ran:?}");
+}
+
+/// The worker's folder on desk, on `main` with an upstream it was pushed
+/// to (README.md) and one commit not pushed yet (plan.md).
+fn main_ahead_of_its_upstream(net: &Net) {
+    let work = net.host("desk").unwrap().work.clone();
+    let folder = work.join("project");
+    std::fs::write(folder.join("README.md"), "hello\n").unwrap();
+    git(&folder, &["add", "README.md"]);
+    git(&folder, &["commit", "--quiet", "-m", "pushed"]);
+    git(&work, &["init", "--quiet", "--bare", "remote.git"]);
+    git(&folder, &["remote", "add", "origin", "../remote.git"]);
+    git(&folder, &["push", "--quiet", "-u", "origin", "main"]);
+    std::fs::write(folder.join("plan.md"), "one\ntwo\n").unwrap();
+    git(&folder, &["add", "plan.md"]);
+    git(&folder, &["commit", "--quiet", "-m", "not pushed"]);
+}
+
+/// An agent working on its base branch, with commits not yet pushed to
+/// the branch's upstream: the host counts the branch from the upstream,
+/// and the overview lists the commits not pushed yet.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_overview_lists_what_is_not_pushed_on_a_branch_with_an_upstream() {
+    let topology = Topology::new().host("desk").agent(
+        AgentDecl::new("worker", "desk")
+            .kind(FakeKind::ClaudeSdk)
+            .cwd("project")
+            .branch("main")
+            .steps(vec![text("turn one"), Step::TurnEnd])
+            .prompt("go"),
+    );
+    let net = Net::start(topology).await.unwrap();
+    main_ahead_of_its_upstream(&net);
+
+    let (runtime, mut host) = open(&net).await;
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    until(&mut host, &chat, "the first turn", |chat| {
+        chat.frame().caught_up && says(chat, "turn one")
+    })
+    .await;
+    let listed = chat
+        .open_overview(Comparison::OnBranch)
+        .await
+        .unwrap()
+        .changes
+        .expect("the files were fetched");
+    assert_eq!(listed.base.as_deref(), Some("origin/main"), "{listed:?}");
+    let paths: Vec<&str> = listed
+        .folders
+        .iter()
+        .flat_map(|folder| folder.files.iter().map(|file| file.path.as_str()))
+        .collect();
+    assert_eq!(paths, vec!["plan.md"]);
+    net.shutdown().await.unwrap();
+}
+
+/// A delete's warning is the agent's host's preview: an agent in a folder
+/// of its own takes no workspace with it, and one whose host cannot be
+/// asked gets a warning that says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_warning_is_the_hosts_preview() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, _host) = open(&net).await;
+    assert_eq!(
+        runtime.delete_warning(&worker(&net)).await,
+        None,
+        "a folder of its own stays"
+    );
+    let elsewhere = AgentKey {
+        host: vec![7; 16],
+        agent: worker(&net).agent,
+    };
+    assert_eq!(
+        runtime.delete_warning(&elsewhere).await,
+        Some(ui_state::DeleteWarning::Unknown),
+        "a host that cannot be asked"
+    );
     net.shutdown().await.unwrap();
 }
 
@@ -968,5 +1069,59 @@ async fn a_chat_hands_over_how_the_subagents_its_rows_open_stand() {
         "{:?}",
         delta.rows
     );
+    net.shutdown().await.unwrap();
+}
+
+/// The review page through a chat, on a host that does not offer reviews:
+/// the page comes with the chat's deltas and says so, and neither an edit
+/// nor a send with the review reaches the agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_page_on_a_host_without_reviews_says_so_and_sends_nothing() {
+    let net = Net::start(topology()).await.unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let chat = opened(&runtime, &worker(&net), 50).await;
+    until(&mut host, &chat, "the first turn to end", |chat| {
+        chat.frame().caught_up && says(chat, "TurnEnd")
+    })
+    .await;
+    host.settle(&chat);
+    assert_eq!(chat.frame().review_chip, None, "the row has no review");
+
+    assert_eq!(
+        chat.open_review(None, false).await,
+        ReviewOutcome::Unavailable
+    );
+    let page = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Some(page) = host.turn(&chat).await.and_then(|delta| delta.review) {
+                return page;
+            }
+        }
+    })
+    .await
+    .expect("a delta carries the page");
+    assert_eq!(page.banners, vec![ReviewBanner::NotOffered], "{page:?}");
+    assert!(page.header.is_none() && page.rows.is_empty() && !page.opening);
+    let open = chat.review_page().expect("the page is open");
+    assert_eq!(open.anchor(0, 0), None, "no row to comment on");
+    assert_eq!(
+        chat.edit_review(vec![ReviewChange::DiscardDrafts]).await,
+        ReviewOutcome::Unavailable
+    );
+
+    let keys = chat.keys();
+    let refused = chat.send_with_review(&Draft::words("see the review")).await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(chat.frame().underway.is_empty(), "nothing was sent");
+    assert_eq!(chat.keys(), keys);
+
+    chat.close_review();
+    assert!(chat.review_page().is_none());
+    assert!(
+        chat.opening().review.is_none(),
+        "a closed page is not handed over"
+    );
+    drop(open);
+    drop(chat);
     net.shutdown().await.unwrap();
 }

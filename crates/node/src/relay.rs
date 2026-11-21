@@ -10,9 +10,7 @@
 
 use std::time::Duration;
 
-use daemon_core::payload::{
-    CallError, ClientRequest, MessageFrom, MessageRefusal, Status as CoreStatus,
-};
+use daemon_core::payload::{CallError, ClientRequest, MessageRefusal, Status as CoreStatus};
 use store::StoreError;
 use tokio::sync::oneshot;
 use uuid::Uuid;
@@ -23,7 +21,7 @@ use wire::{
 };
 
 use crate::driver::{Ask, Delivered};
-use crate::runtime::{AgentId, ProfileRuntime, Sent, core_agent, ms};
+use crate::runtime::{AgentId, ProfileRuntime, Sent, ms};
 
 /// How long an input waits for the agent to be connected.
 const CONNECT_PATIENCE: Duration = Duration::from_secs(5);
@@ -54,8 +52,6 @@ pub enum RelayError {
     /// host, so the recipient could not open it; the message is not sent.
     #[error("the message's attachment {name} could not be brought to the recipient: {why}")]
     Attachment { name: String, why: String },
-    #[error(transparent)]
-    Forwarded(#[from] crate::forward::ForwardError),
     #[error("the store: {0}")]
     Store(#[from] StoreError),
     /// The core could not take the message, in its words.
@@ -76,7 +72,6 @@ impl RelayError {
             // tells a sending host to drop its outbox row as surely as a
             // deleted recipient does.
             Self::Stale => ErrorCode::NotFound,
-            Self::Forwarded(error) => return error.to_wire(),
             Self::Wake(error) => return error.to_wire(),
             Self::Attachment { .. } => ErrorCode::FailedPrecondition,
             Self::Resume(_) | Self::Store(_) | Self::Core(_) => ErrorCode::Internal,
@@ -230,8 +225,8 @@ impl ProfileRuntime {
     /// Relays a person's input and returns the interpreter's verdict. An
     /// exited agent is answered here; one that refuses as exiting is from
     /// then on treated as leaving, so a resume waits for it. Every way a
-    /// person sends input comes here, from this host's clients or forwarded
-    /// by another's, so this is where input to an agent with no process,
+    /// person sends input comes here, from this host's clients or carried
+    /// from another's, so this is where input to an agent with no process,
     /// or to one leaving of its own accord, wakes it if it is or ends up
     /// suspended (see [`Self::wake_with`]).
     pub async fn send_input(
@@ -291,8 +286,11 @@ impl ProfileRuntime {
     /// prompt is the next incarnation's first input, so the answer is that
     /// it was taken; any other input goes to the new process once it is
     /// connected. The core decides: it waits out an exit the agent chose
-    /// and then wakes it only if the exit left it suspended, else the
-    /// input is refused as exited; an agent the daemon is stopping is
+    /// (one it refused an input for, or whose row already carries the
+    /// cause its journal's last step put there, so a row read as suspended
+    /// is never one whose process is handed the input) and then wakes it
+    /// only if the exit left it suspended, else
+    /// the input is refused as exited; an agent the daemon is stopping is
     /// answered at once with the refusal the input had.
     async fn wake_with(
         &self,
@@ -319,8 +317,9 @@ impl ProfileRuntime {
                         })),
                     });
                 }
-                // Running: started by something else first, still on its way
-                // out, or woken for an input that is not a prompt.
+                // Running: started by something else first, or woken for an
+                // input that is not a prompt. A process on its way out is
+                // not one: the wake waits for it to go.
                 Ok(_) | Err(RegistryError::Live(_)) => {
                     let verdict = self
                         .relay(
@@ -438,67 +437,79 @@ impl ProfileRuntime {
         }
     }
 
-    /// Sends a message a person or one of this host's agents submitted.
-    /// `caller` is the agent whose tools socket the call came in on, else
-    /// the person; the envelope's sender is set from it, whatever the
-    /// envelope says. Answers once the recipient has accepted.
-    pub async fn send_message(
+    /// Sends one of this host's agents a message from `caller`, as
+    /// AgentService's SendMessage asks. The stored sender is the caller,
+    /// since the request has nowhere to name one: an agent, of this host or
+    /// of the paired host it called from, or a person. Who the sender is
+    /// also says who may wake the recipient: a person or its parent always,
+    /// another agent unless it is closed. A person reads the same wherever
+    /// they are, so a person at a paired host is stored and woken with as a
+    /// person here is. Answers once the recipient has accepted.
+    pub(crate) async fn send_message_by(
         &self,
-        envelope: Envelope,
-        caller: Option<AgentId>,
+        request: wire::SendMessageRequest,
+        caller: &crate::api::Caller,
     ) -> Result<SendMessageResponse, RelayError> {
-        let from = caller.map_or(MessageFrom::Person, |caller| {
-            MessageFrom::Agent(core_agent(caller))
-        });
-        self.send_message_from(envelope, from).await
-    }
-
-    /// A message a paired host sends on behalf of one of its agents, or of
-    /// the person. The sending daemon stamped the sender from its own
-    /// caller, so it is taken as given; one that names no agent is the
-    /// person's.
-    pub async fn send_peer_message(
-        &self,
-        envelope: Envelope,
-    ) -> Result<SendMessageResponse, RelayError> {
-        let from = match envelope.from.clone().and_then(|from| from.value) {
-            Some(sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
-            _ => MessageFrom::PeerPerson,
+        use crate::api::Caller;
+        let from = match caller {
+            Caller::Person { .. } => sender::Value::Human(Human {}),
+            Caller::Agent { agent, name } => sender::Value::Agent(AgentSender {
+                agent: Some(AgentRef {
+                    host_id: agent.host.as_bytes().to_vec(),
+                    agent_id: agent.agent.as_bytes().to_vec(),
+                }),
+                name: name.clone(),
+            }),
         };
-        self.send_message_from(envelope, from).await
+        let envelope = Envelope {
+            from: Some(Sender { value: Some(from) }),
+            id: request.id,
+            to: Some(AgentRef {
+                host_id: self.host().as_bytes().to_vec(),
+                agent_id: request.agent_id,
+            }),
+            body: request.message.map(envelope::Body::Message),
+            context: request.context,
+        };
+        self.send_envelope(envelope).await
     }
 
-    async fn send_message_from(
+    /// Hands a child's report from `from`, the paired host whose daemon
+    /// delivered it, to its parent here, as a message from the child. The
+    /// child is the link's peer's, whoever that daemon is, so a daemon
+    /// reports only for its own agents.
+    pub(crate) async fn deliver_report(
+        &self,
+        from: crate::HostId,
+        report: wire::DeliverReportRequest,
+    ) -> Result<SendMessageResponse, RelayError> {
+        let envelope =
+            daemon_core::payload::report_envelope(from.as_bytes(), self.host().as_bytes(), report);
+        self.send_envelope(envelope).await
+    }
+
+    /// Sends a message, its sender set by whoever took the call, to one of
+    /// this host's agents.
+    async fn send_envelope(
         &self,
         mut envelope: Envelope,
-        from: MessageFrom,
     ) -> Result<SendMessageResponse, RelayError> {
         let to = envelope.to.clone().ok_or(RelayError::NoAgent)?;
         if envelope.id.is_empty() {
             envelope.id = Uuid::new_v4().as_bytes().to_vec();
         }
-        if to.host_id != self.host().as_bytes() {
-            return self.forward_message(envelope, from, &to.host_id).await;
-        }
         let id = self.own_agent(&to.agent_id).await?;
         readable(&envelope)?;
-        let sender = match &from {
-            MessageFrom::Agent(caller) => {
-                Some((self.host().as_bytes().to_vec(), caller.0.to_vec()))
-            }
-            MessageFrom::Peer(sender) => {
-                let agent = sender.agent.clone().unwrap_or_default();
-                Some((agent.host_id, agent.agent_id))
-            }
-            MessageFrom::Person | MessageFrom::PeerPerson => None,
-        };
-        if let Some((host, agent)) = sender {
-            self.bring_attachments(id, &host, &agent, &envelope).await?;
+        if let Some(sender::Value::Agent(sender)) =
+            envelope.from.as_ref().and_then(|from| from.value.as_ref())
+        {
+            let agent = sender.agent.clone().unwrap_or_default();
+            self.bring_attachments(id, &agent.host_id, &agent.agent_id, &envelope)
+                .await?;
         }
         let envelope_id = envelope.id.clone();
         let request = ClientRequest::SendMessage {
             envelope: Box::new(envelope),
-            from,
         };
         let mut answers = self.driver().call(Ask::Ready(request), 1).await;
         loop {
@@ -522,37 +533,13 @@ impl ProfileRuntime {
         }
     }
 
-    /// A message for another host's agent: the sender is set here, from
-    /// who called, and the recipient's own daemon does the rest. A message
-    /// that arrived from a peer is not passed on.
-    async fn forward_message(
-        &self,
-        mut envelope: Envelope,
-        from: MessageFrom,
-        host: &[u8],
-    ) -> Result<SendMessageResponse, RelayError> {
-        let host = Uuid::from_slice(host).map_err(|_| RelayError::NoAgent)?;
-        envelope.from = Some(match from {
-            MessageFrom::Person => Sender {
-                value: Some(sender::Value::Human(Human {})),
-            },
-            MessageFrom::Agent(caller) => {
-                let caller = Uuid::from_bytes(caller.0);
-                let key = self.key(caller);
-                let row = self.read_rows(move |store| store.agent(&key)).await?;
-                self.agent_sender(caller, row.as_ref())
-            }
-            MessageFrom::Peer(_) | MessageFrom::PeerPerson => return Err(RelayError::OtherHost),
-        });
-        Ok(self.on_peer(host, envelope).await?)
-    }
-
     /// Puts the bytes of every file a message carries into the recipient's
     /// own blobs, from the sending agent's: copied when it runs on this
-    /// host, fetched from its host otherwise. The recipient then reads each
-    /// file at a path on its own host, exactly as a person's attachment. A
-    /// message from a person carries files already stored with the
-    /// recipient.
+    /// host, fetched from its host's peer service otherwise, since only
+    /// the host an agent runs on holds its files. The recipient then reads
+    /// each file at a path on its own host, exactly as a person's
+    /// attachment. A message from a person carries files already stored
+    /// with the recipient.
     async fn bring_attachments(
         &self,
         recipient: AgentId,
@@ -577,11 +564,11 @@ impl ProfileRuntime {
             if blobs.join(crate::blobs::hex(&blob.hash)).is_file() {
                 continue;
             }
-            let request = wire::GetBlobRequest {
-                agent_id: sender_agent.to_vec(),
-                hash: blob.hash.clone(),
-            };
             let bytes = if sender_host == self.host().as_bytes() {
+                let request = wire::GetBlobRequest {
+                    agent_id: sender_agent.to_vec(),
+                    hash: blob.hash.clone(),
+                };
                 self.get_blob(request)
                     .await
                     .map_err(|error| failed(error.to_string()))?
@@ -589,10 +576,9 @@ impl ProfileRuntime {
             } else {
                 let host = Uuid::from_slice(sender_host)
                     .map_err(|_| failed("its sender names no host".to_owned()))?;
-                self.on_peer(host, request)
+                self.peer_blob(host, sender_agent, &blob.hash)
                     .await
                     .map_err(|error| failed(error.to_string()))?
-                    .bytes
             };
             use sha2::Digest as _;
             if sha2::Sha256::digest(&bytes)[..] != blob.hash[..] {
@@ -609,18 +595,6 @@ impl ProfileRuntime {
                 .map_err(|error| failed(error.to_string()))?;
         }
         Ok(())
-    }
-
-    pub(crate) fn agent_sender(&self, id: AgentId, row: Option<&store::AgentRow>) -> Sender {
-        Sender {
-            value: Some(sender::Value::Agent(AgentSender {
-                agent: Some(AgentRef {
-                    host_id: self.host().as_bytes().to_vec(),
-                    agent_id: id.as_bytes().to_vec(),
-                }),
-                name: row.map(|row| row.name.clone()).unwrap_or_default(),
-            })),
-        }
     }
 
     /// Whether an input to the agent is in hand: written to its process

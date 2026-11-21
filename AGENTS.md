@@ -4,9 +4,10 @@ amux is released. From 0.9.0 on, builds of different versions meet, and a
 build reads what an earlier one left on disk. Five things are promises, and
 a change keeps them:
 
-- **The protocol.** `amux.v1` only adds, as `proto/amux/v1/README.md` says
-  (reserve a retired number; never renumber, retype or rename), which
-  `just proto-compat` checks. `docs/WIRE.md` has the steps for a new field.
+- **The protocol.** From 0.11.0 on, `amux.v1` only adds, as
+  `proto/amux/v1/README.md` says (reserve a retired number; never renumber,
+  retype or rename), which `just proto-compat` checks. `docs/WIRE.md` has
+  the steps for a new field.
   `amux.dump` and `amux.experimental` are exempt.
 - **The store.** It changes by appending a migration that only adds; a
   released migration is never edited. `just store-check` checks both, and

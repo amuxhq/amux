@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/records.proto";
+
+// The code changes in the working tree of one of a host's agents.
+//
+// A host service: answered by the host the call is addressed to, and only
+// for its own agents, since only the owner has the working tree. A person
+// may ask about any agent; an agent only about its own direct children.
+
+service ReviewService {
+  // What changed in the agent's working tree against a base, and which
+  // base that was. Stores nothing.
+  rpc GetChanges(GetChangesRequest) returns (GetChangesResponse);
+}
+
+message GetChangesRequest {
+  bytes agent_id = 1;
+  // Absent, the default rule, which reviews share so the two never
+  // disagree about what an agent changed:
+  // 1. The agent has a branch of its own: everything on it since it left
+  //    its base branch, commits and uncommitted work together. The base
+  //    branch is the one the worktree was made from, as the agent's spec
+  //    records it; else what origin/HEAD names; else init.defaultBranch;
+  //    else main or master, whichever exists.
+  // 2. The agent works on the base branch itself: everything since the
+  //    merge base of the branch and its upstream, so commits not yet
+  //    pushed count.
+  // 3. It does so with no upstream: the uncommitted work against HEAD.
+  oneof base {
+    // The uncommitted work alone, against HEAD.
+    Empty head = 2;
+    // Everything since the merge base with this branch.
+    string branch = 3;
+  }
+}
+
+message GetChangesResponse {
+  // The branch the comparison was made against: the one asked for, the
+  // upstream when the default rule ran from it, or the base branch. Empty
+  // only when HEAD was asked for, or when no base branch was found.
+  string base_branch = 1;
+  // The commit the comparison ran from: the merge base with base_branch,
+  // or HEAD. Empty in a repository with no commits, where every file is
+  // created.
+  string base_commit = 2;
+  // By path.
+  repeated ChangedFile files = 3;
+}
+
+// One file that differs between the base and the working tree, untracked
+// files included. Renames are detected.
+message ChangedFile {
+  string path = 1;
+  // Where a renamed file was at the base; absent for any other status.
+  optional string old_path = 2;
+  FileStatus status = 3;
+  // Lines added and removed; none for a binary file.
+  uint32 added = 4;
+  uint32 removed = 5;
+  bool binary = 6;
+  // The language its code is highlighted as, by the lowercase name a code
+  // fence names it with ("rust", "tsx"); empty when none is known for it.
+  string language = 7;
+  // What a reader may want to pass over.
+  repeated FileFlag flags = 8;
+}
+
+enum FileStatus {
+  FILE_STATUS_UNSPECIFIED = 0;
+  FILE_STATUS_CHANGED = 1;
+  FILE_STATUS_CREATED = 2;
+  FILE_STATUS_DELETED = 3;
+  // Moved from old_path, with or without changes.
+  FILE_STATUS_RENAMED = 4;
+}
+
+enum FileFlag {
+  FILE_FLAG_UNSPECIFIED = 0;
+  // Written by a tool rather than by hand.
+  FILE_FLAG_GENERATED = 1;
+  // A package manager's lock file.
+  FILE_FLAG_LOCKFILE = 2;
+  // Another project's code kept in this repository.
+  FILE_FLAG_VENDORED = 3;
+  // Over 1 MiB at the base or in the working tree, too big to show
+  // without asking.
+  FILE_FLAG_LARGE = 4;
+}

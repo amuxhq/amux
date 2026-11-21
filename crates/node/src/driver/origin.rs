@@ -1,5 +1,6 @@
-//! The streams the core opens of its peers: a replica's Subscribe to its
-//! origin and a host's SubscribeInventory. Each runs on a task of its own
+//! The streams the core opens of its peers, on their peer service: a
+//! replica's FollowSession to its origin and a host's FollowAgents. Each
+//! runs on a task of its own
 //! that reads the stream and hands every event to the core as it comes,
 //! then how the stream ended; the core decides everything about what it
 //! read. A stream ends when the core hangs up on it.
@@ -8,6 +9,7 @@ use std::sync::Weak;
 
 use daemon_core::payload::{Answer, PeerFailure, PeerRequest};
 use daemon_core::{CallId, HostId, Input};
+use wire::{FollowAgentsRequest, FollowSessionRequest};
 
 use super::feed;
 use crate::link::EarlyAnswer;
@@ -25,13 +27,13 @@ pub(super) async fn stream(
 ) {
     let answer = |answer| feed(&inputs, Input::PeerAnswer { call, answer });
     let ended = match request {
-        PeerRequest::SubscribeSession(request) => {
+        PeerRequest::FollowSession(request) => {
             session(&runtime, host, request, |event| {
                 answer(Answer::Session(event))
             })
             .await
         }
-        PeerRequest::SubscribeInventory => {
+        PeerRequest::FollowAgents => {
             inventory(&runtime, host, |event| answer(Answer::Inventory(event))).await
         }
         other => {
@@ -42,11 +44,11 @@ pub(super) async fn stream(
     answer(ended).await;
 }
 
-/// A replica's Subscribe to its origin.
+/// A replica's FollowSession to its origin.
 async fn session<F: Future<Output = ()>>(
     runtime: &Weak<ProfileRuntime>,
     host: HostId,
-    request: wire::SubscribeSessionRequest,
+    request: FollowSessionRequest,
     mut answer: impl FnMut(wire::SessionEvent) -> F,
 ) -> Answer {
     let Some(edge) = runtime.upgrade().and_then(|me| me.edge()) else {
@@ -55,13 +57,15 @@ async fn session<F: Future<Output = ()>>(
     let peer = host_from_core(host);
     let early = edge
         .first_flights()
-        .take(peer, &PeerRequest::SubscribeSession(request.clone()))
+        .take(peer, &PeerRequest::FollowSession(request.clone()))
         .await;
     let opened = match early {
         // The launch's first flight carried this call.
         Some(taken) => match taken.reply.await {
             Ok(EarlyAnswer::Session(stream)) => Ok(stream),
-            Ok(_) => Err(tonic::Status::internal("a Subscribe answered otherwise")),
+            Ok(_) => Err(tonic::Status::internal(
+                "a FollowSession answered otherwise",
+            )),
             Err(status) => Err(status),
         },
         None => {
@@ -71,8 +75,8 @@ async fn session<F: Future<Output = ()>>(
             };
             drop(edge);
             client
-                .sessions
-                .subscribe_session(request)
+                .peer
+                .follow_session(request)
                 .await
                 .map(|response| response.into_inner())
         }
@@ -94,7 +98,7 @@ async fn session<F: Future<Output = ()>>(
     }
 }
 
-/// A host's SubscribeInventory.
+/// A host's FollowAgents.
 async fn inventory<F: Future<Output = ()>>(
     runtime: &Weak<ProfileRuntime>,
     host: HostId,
@@ -106,16 +110,14 @@ async fn inventory<F: Future<Output = ()>>(
     };
     let early = edge
         .first_flights()
-        .take(peer, &PeerRequest::SubscribeInventory)
+        .take(peer, &PeerRequest::FollowAgents)
         .await;
     let (opened, mut catch_up) = match early {
         // The launch's first flight carried this call.
         Some(taken) => (
             match taken.reply.await {
-                Ok(EarlyAnswer::Inventory(stream)) => Ok(stream),
-                Ok(_) => Err(tonic::Status::internal(
-                    "a SubscribeInventory answered otherwise",
-                )),
+                Ok(EarlyAnswer::Agents(stream)) => Ok(stream),
+                Ok(_) => Err(tonic::Status::internal("a FollowAgents answered otherwise")),
                 Err(status) => Err(status),
             },
             taken.catch_up,
@@ -131,8 +133,8 @@ async fn inventory<F: Future<Output = ()>>(
             drop(edge);
             (
                 client
-                    .agents
-                    .subscribe_inventory(wire::SubscribeInventoryRequest {})
+                    .peer
+                    .follow_agents(FollowAgentsRequest {})
                     .await
                     .map(|response| response.into_inner()),
                 None,

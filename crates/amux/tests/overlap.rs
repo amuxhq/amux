@@ -113,8 +113,8 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
         until(
             &format!("{name} finishes a turn under the new daemon"),
             || {
-                let mut chats = chats.clone();
-                async move { says(&chat(&mut chats, id).await, "finished", 2) }
+                let chats = chats.clone();
+                async move { says(&chat(&chats, id).await, "finished", 2) }
             },
         )
         .await
@@ -215,8 +215,8 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
     term.type_keys(b"q").await;
     term.exits().await;
 
-    let mut chats = client(&desk.socket).await;
-    let chat = chat(&mut chats, &agent).await;
+    let chats = client(&desk.socket).await;
+    let chat = chat(&chats, &agent).await;
     assert_eq!(count(&chat, "answered after the update"), 1);
     desk.run(&["settle", "helper"]).await;
 }
@@ -312,18 +312,18 @@ async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared()
     assert!(!lock_held(&desk.data.join(node::INSTALLATION_LOCK)));
 
     desk.run(&["server", "start"]).await;
-    let mut chats = client(&desk.socket).await;
-    let before = chat(&mut chats, &agent).await;
+    let chats = client(&desk.socket).await;
+    let before = chat(&chats, &agent).await;
     assert_eq!(count(&before, "finished"), 1, "{:?}", texts(&before));
     desk.run(&["resume", "headless", "second", "task"]).await;
     until("the previous build finishes a new turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let agent = &agent;
-        async move { says(&chat(&mut chats, agent).await, "finished", 2) }
+        async move { says(&chat(&chats, agent).await, "finished", 2) }
     })
     .await
     .unwrap();
-    let after = chat(&mut chats, &agent).await;
+    let after = chat(&chats, &agent).await;
     for item in &before {
         assert!(after.contains(item), "{item:?} is still in the store");
     }
@@ -448,9 +448,9 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
     );
     let chats = client(&desk.socket).await;
     until("the agent is mid-turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let agent = &agent;
-        async move { says(&chat(&mut chats, agent).await, "started", 1) }
+        async move { says(&chat(&chats, agent).await, "started", 1) }
     })
     .await
     .unwrap();
@@ -487,9 +487,9 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
     .unwrap();
     let chats = client(&desk.socket).await;
     until("the turn finishes into the store", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let agent = &agent;
-        async move { says(&chat(&mut chats, agent).await, "finished", 1) }
+        async move { says(&chat(&chats, agent).await, "finished", 1) }
     })
     .await
     .unwrap();

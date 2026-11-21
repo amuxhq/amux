@@ -51,7 +51,6 @@ public protocol ChatSource: AnyObject, Sendable {
     func blob(_ hash: [UInt8]) -> Data?
     func blobFailed(_ hash: [UInt8]) -> Bool
     func fetchBlob(_ hash: [UInt8])
-    func review(_ comparison: Comparison) async -> Result<FrozenReview, RuntimeFailure>
     /// Fetches the files changed for `comparison`; the overview lists them
     /// from then on.
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure>
@@ -65,6 +64,37 @@ public protocol ChatSource: AnyObject, Sendable {
     func keptDraft() -> Draft?
     /// Keeps the draft as it now stands, past the chat and the app.
     func keep(_ draft: Draft)
+
+    // The agent's review, read and changed at the agent's host. The page
+    // open on the chat moves in the deltas' `review`.
+
+    /// Sends the draft with the review's drafts after its words, naming
+    /// exactly those comments; nothing goes when the review holds none.
+    func sendWithReview(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure>
+    /// Opens the review page on the chat, or opens the open one again:
+    /// `baseBranch` picks the base anew, `refresh` takes a snapshot even
+    /// with drafts, moving them onto it.
+    func openReview(baseBranch: String?, refresh: Bool) async -> ReviewOutcome?
+    /// Fetches these files' bodies for the view the page shows.
+    func reviewFiles(_ paths: [String]) async -> ReviewOutcome?
+    /// Loads the lines one of a gap's asks names.
+    func reviewContext(_ ask: ReviewContextAsk) async -> ReviewOutcome?
+    /// Makes changes to the review, all or none; with no page open too.
+    func editReview(_ changes: [ReviewChange]) async -> ReviewOutcome?
+    /// A choice made on the page; the next delta carries the page drawn so.
+    func chooseInReview(_ choice: ReviewChoice)
+    /// The page open on the chat, as handed over from now; nil with none.
+    func reviewPage() -> ReviewPage?
+    /// The lines a selection of the handed page's rows, from one index to
+    /// another, would be commented on; nil for a selection with no line or
+    /// across files.
+    func reviewAnchor(from: Int, to: Int) -> ReviewAnchor?
+    /// Closes the page: no delta carries it again.
+    func closeReview()
+    /// The page of the round a review sent into the chat closed, read from
+    /// the agent's host apart from any page open on the chat; nil once the
+    /// host holds none of it, when the text the agent read is what shows.
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage?
 }
 
 extension ChatSource {
@@ -80,6 +110,41 @@ extension ChatSource {
     public func blobFailed(_ hash: [UInt8]) -> Bool { false }
     public func fetchBlob(_ hash: [UInt8]) {}
     public func keep(_ draft: Draft) {}
+    /// A source whose agent has no review: its host offers none, so there
+    /// is never a page, a chip or drafts to send.
+    public func sendWithReview(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
+        .failure(RuntimeFailure(String(localized: "This agent has no review to send.")))
+    }
+    public func openReview(baseBranch: String?, refresh: Bool) async -> ReviewOutcome? { .unavailable }
+    public func reviewFiles(_ paths: [String]) async -> ReviewOutcome? { .unavailable }
+    public func reviewContext(_ ask: ReviewContextAsk) async -> ReviewOutcome? { .unavailable }
+    public func editReview(_ changes: [ReviewChange]) async -> ReviewOutcome? { .unavailable }
+    public func chooseInReview(_ choice: ReviewChoice) {}
+    public func reviewPage() -> ReviewPage? { nil }
+    public func reviewAnchor(from: Int, to: Int) -> ReviewAnchor? { nil }
+    public func closeReview() {}
+    public func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? { nil }
+}
+
+/// A review sent into the chat, as its chip names it, for opening its
+/// round.
+public struct SentRound: Identifiable, Equatable, Sendable {
+    public let sent: SentReviewRef
+    /// What the agent read, shown when its host no longer holds the round.
+    public let text: String
+
+    public init(sent: SentReviewRef, text: String) {
+        self.sent = sent
+        self.text = text
+    }
+
+    /// The review and the input that sent it name one message's round for
+    /// good: the host records the round with the input whose taking closed
+    /// it.
+    public var id: String {
+        let named = [sent.reviewId, sent.inputId]
+        return named.map { $0.map { String(format: "%02x", $0) }.joined() }.joined(separator: "/")
+    }
 }
 
 /// What a client command asks of the screen: a picker or the rename card.
@@ -256,9 +321,15 @@ public final class ChatModel {
     /// then, and again when the comparison or its totals move.
     @ObservationIgnored private var overviewShown = false
     @ObservationIgnored private var listed: Listed?
-    /// The review being written on this agent's changes, kept while the
-    /// chat is open so leaving the page loses no comment.
-    public private(set) var reviewing: ReviewModel?
+    /// The agent's review page while it is open on the chat: the review
+    /// read and written at the agent's host, which every client of the
+    /// agent sees.
+    public private(set) var reviewPage: ReviewSession?
+    /// The chip a send carried the review's drafts under, held back until
+    /// the agent's row says something new of them: the host marks the drafts
+    /// sent as it accepts the message, and the chip would otherwise offer
+    /// them again for the moment before the row says so.
+    private var sentChip: ReviewChip?
     /// Dictation into the draft; the app's speech recogniser drives it.
     public var dictation = DictationState()
     /// The field's text when a paste last left it, and when.
@@ -291,6 +362,7 @@ public final class ChatModel {
         }
         fill(delta.rows)
         show(delta)
+        if let page = delta.review { reviewPage?.apply(page) }
         // A row changes when an attachment it shows lands or fails.
         if !delta.rows.isEmpty { openIfLanded() }
     }
@@ -562,6 +634,7 @@ public final class ChatModel {
                 frame.refused = []
             }
             self.frame = frame
+            if sentChip != nil, frame.reviewChip != sentChip { sentChip = nil }
         }
         if let moved = delta.ask {
             ask = moved.card
@@ -610,8 +683,17 @@ public final class ChatModel {
         totals(comparison).flatMap { $0.files > 0 || $0.added + $0.removed > 0 ? $0 : nil }
     }
 
-    /// The branch everything on the agent's branch is counted against.
+    /// The branch everything on the agent's branch is counted against, as
+    /// the agent's row names it: what the review page compares with.
     public var base: String? { frame?.git?.baseBranch }
+
+    /// The branch the overview's list of everything on the branch was
+    /// counted against, as the agent's host reported it; the row's base
+    /// until the host has listed the branch. The host picks it, and can
+    /// differ from the row, as by counting from the branch's upstream when
+    /// the agent works on its base branch.
+    public var listedBase: String? { hostBase ?? base }
+    private var hostBase: String?
 
     /// The comparisons there are: everything on the branch only once its
     /// base is known.
@@ -654,9 +736,12 @@ public final class ChatModel {
         listed = asked
         listing = Task { [weak self] in
             guard let self, case .success(let overview) = await self.source.openOverview(asked.comparison),
-                  self.comparison == asked.comparison, self.overview != overview
+                  self.comparison == asked.comparison
             else { return }
-            self.overview = overview
+            if asked.comparison == .onBranch, let reported = overview.changes?.base, self.hostBase != reported {
+                self.hostBase = reported
+            }
+            if self.overview != overview { self.overview = overview }
         }
     }
 
@@ -745,7 +830,7 @@ public final class ChatModel {
     /// never does. A chat that is not current sends nothing: the draft stays
     /// in the composer, which says why, until the chat is current again.
     public var canSend: Bool {
-        guard let frame, !sending, uploading == 0, hasDraft else { return false }
+        guard let frame, !sending, uploading == 0, hasMessage else { return false }
         return frame.composer.mode == .send && frame.caughtUp
     }
 
@@ -756,6 +841,19 @@ public final class ChatModel {
 
     public var hasDraft: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
+    /// Something to send: the draft, or the review's drafts under the chip,
+    /// which go with or without words.
+    public var hasMessage: Bool { hasDraft || reviewChip != nil }
+
+    /// The composer's chip while the agent's review holds drafts: "Review ·
+    /// 3 comments". From the agent's row, so it shows on every client of
+    /// the agent, and the next send carries the drafts. Its ✕ discards them,
+    /// once the person confirms; there is no sending without them.
+    public var reviewChip: ReviewChip? {
+        guard let chip = frame?.reviewChip, chip != sentChip else { return nil }
+        return chip
     }
 
     /// The draft as it is sent. The chips sit apart from the field, and a
@@ -851,17 +949,30 @@ public final class ChatModel {
 
     private func sendAsTyped() -> Task<Void, Never> {
         let sent = composed
+        let chip = reviewChip
         clearDraft()
         sending = true
         notice = nil
         setFollowing(true)
         toNewest += 1
+        if chip != nil { sentChip = chip }
         return Task {
-            let outcome = await source.send(sent)
+            let outcome = chip == nil ? await source.send(sent) : await source.sendWithReview(sent)
             sending = false
-            if case .failure(let failure) = outcome {
+            switch outcome {
+            case .failure(let failure):
                 restore(sent)
                 notice = failure.description
+                if chip != nil { sentChip = nil }
+            case .success(let outcome):
+                // Refused, or not known to have landed: the drafts are still
+                // the review's on the agent's computer, which marks them sent
+                // only once the agent takes the message, so the chip shows
+                // them again rather than hiding what may never have gone.
+                switch outcome.state {
+                case .rejected, .uncertain: if chip != nil { sentChip = nil }
+                case .sent, .queued, .settled: break
+                }
             }
         }
     }
@@ -1036,44 +1147,51 @@ public final class ChatModel {
         }
     }
 
-    /// The review page's model for the chosen comparison, as the agent's
-    /// host freezes it now: the one already being written when it is on the
-    /// same patch, else a new one. Nil when nothing changed; a failure when
-    /// the changes could not be read, which is never said as nothing
-    /// changed.
-    public func openReview() async -> Result<ReviewModel?, RuntimeFailure> {
-        switch await source.review(comparison) {
-        case .failure(let failure): return .failure(failure)
-        case .success(let frozen):
-            if let reviewing, reviewing.review.diff.patch?.hash == frozen.diff.patch?.hash {
-                return .success(reviewing)
-            }
-            guard let doc = ReviewModel.document(frozen, comments: []) else {
-                return .failure(RuntimeFailure(String(localized: "this app could not read the host’s diff")))
-            }
-            if doc.files.isEmpty {
-                // The host's list of changed files is its word on whether
-                // anything changed; a patch showing none of them was not
-                // read whole.
-                return frozen.diff.files.isEmpty
-                    ? .success(nil)
-                    : .failure(RuntimeFailure(String(localized: "the host’s patch is missing the files it lists")))
-            }
-            let review = ReviewModel(review: frozen)
-            reviewing = review
-            return .success(review)
-        }
+    // MARK: - The agent's review
+
+    /// Opens the agent's review page for a look, on the page already open
+    /// on the chat when there is one. The page moves with the chat's deltas
+    /// until `closeReviewPage`.
+    @discardableResult
+    public func openReviewPage() -> ReviewSession {
+        let page = reviewPage.flatMap { $0.closed ? nil : $0 } ?? ReviewSession(source: source)
+        reviewPage = page
+        page.open()
+        return page
     }
 
-    /// Puts a written review into the draft as one token, replacing the
-    /// token of an earlier review of the same patch.
-    public func attach(_ review: ReviewModel) {
-        let patch = review.review.diff.patch?.hash
-        attachments.removeAll { attachment in
-            if case .review(let diff, _) = attachment { return diff.patch?.hash == patch }
-            return false
+    /// The review page left the screen: the chat stops following the
+    /// review for it. The review, its drafts and the chip stay.
+    public func closeReviewPage() {
+        reviewPage?.close()
+        reviewPage = nil
+    }
+
+    /// The round of a review sent into the chat, opened from its chip; the
+    /// screen raises it and clears this.
+    public var roundOpened: SentRound?
+
+    public func open(round: SentRound) {
+        roundOpened = round
+    }
+
+    /// The page of a sent review's round, read from the agent's host apart
+    /// from the page open on the chat; nil once the host holds none of it.
+    public func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? {
+        await source.reviewRound(sent)
+    }
+
+    /// The chip's ✕, once the person confirmed it: deletes the review's
+    /// drafts at the agent's host, with or without its page open. The chip
+    /// goes when the agent's row says they did.
+    @discardableResult
+    public func discardReviewDrafts() -> Task<Void, Never> {
+        notice = nil
+        let source = self.source
+        return Task {
+            let outcome = await source.editReview([.discardDrafts])
+            notice = ChatWords.reviewNotice(outcome)
         }
-        attachments.append(review.attachment)
     }
 
     public func removeAttachment(at index: Int) {
@@ -1082,12 +1200,20 @@ public final class ChatModel {
     }
 
     /// Takes a queued prompt back; its words and attachments return to the
-    /// draft. What it held is read before it leaves the queue.
+    /// draft. What it held is read before it leaves the queue. A review it
+    /// carried does not come back with it: withdrawn, it closed no round,
+    /// so its comments are drafts still, the chip shows them again, and the
+    /// next send reads them as they are then.
     @discardableResult
     public func withdraw(_ queued: QueuedRow) -> Task<Void, Never>? {
         let taken = source.draft(of: queued.inputId)
+        let carriedReview = queued.text.contains { segment in
+            if case .attachment(.sentReview) = segment { return true }
+            return false
+        }
         return act({ await $0.withdraw(queued.inputId) }) { [weak self] in
             if let taken { self?.restore(taken) }
+            if carriedReview { self?.sentChip = nil }
         }
     }
 
@@ -1114,6 +1240,8 @@ public final class ChatModel {
     /// said: its words and attachments to change and send again.
     private func takeBack(_ refused: RefusedPrompt) {
         if let sent = source.draft(of: refused.inputId) { restore(sent) }
+        // A refused prompt marked nothing sent: the chip is back.
+        sentChip = nil
         notice = Self.notSent(refused.reason)
         source.discard(refused.inputId)
     }

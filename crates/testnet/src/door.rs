@@ -259,6 +259,12 @@ pub enum Control {
         host: String,
         agent: String,
     },
+    /// The agent's review as its host holds it: its rounds and its
+    /// comments, each with the round it was sent in. In-process hosts only.
+    Review {
+        host: String,
+        agent: String,
+    },
     ProviderInput {
         agent: String,
     },
@@ -969,6 +975,36 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             items.sort_by_key(|item| item["order"].as_u64());
             json!({ "items": items, "phase": phase, "model": model, "asks": asks })
         }
+        Control::Review { host, agent } => {
+            let id = net.agent(&agent)?.id;
+            let stored = net
+                .runtime(&host)?
+                .read_store(move |store| store.review(id.as_bytes()))
+                .await
+                .map_err(|_| NetError::Down(host.clone()))?
+                .map_err(|error| NetError::Host {
+                    host: host.clone(),
+                    error: error.to_string(),
+                })?;
+            match stored {
+                None => Value::Null,
+                Some(review) => json!({
+                    "id": hex(&review.id),
+                    "rounds": review.rounds.iter().map(|round| json!({
+                        "n": round.n,
+                        "snapshot": round.snapshot,
+                    })).collect::<Vec<_>>(),
+                    "comments": review.comments.iter().map(|comment| json!({
+                        "id": hex(&comment.id),
+                        "path": comment.anchor.path,
+                        "commit": comment.anchor.commit,
+                        "lines": [comment.anchor.start, comment.anchor.end],
+                        "text": comment.text,
+                        "round": comment.round,
+                    })).collect::<Vec<_>>(),
+                }),
+            }
+        }
         Control::ProviderInput { agent } => json!({ "lines": net.provider_input(&agent)? }),
         Control::Shutdown => unreachable!("the connection handles shutdown"),
     })
@@ -1073,7 +1109,9 @@ fn faults(
 }
 
 /// An attachment as a journey checks it: what it is, its name, and the
-/// bytes or the hash that identify its content.
+/// bytes or the hash that identify its content. A sent review is text the
+/// agent reads, with the review it closes beside it: the review's id, the
+/// round, the snapshot and the ids of the comments it sends.
 fn attachment(attachment: &wire::Attachment) -> Value {
     use wire::attachment::Of;
     let blob = |kind: &str, blob: &wire::BlobRef| {
@@ -1088,19 +1126,16 @@ fn attachment(attachment: &wire::Attachment) -> Value {
     match &attachment.of {
         Some(Of::Image(image)) => blob("image", image),
         Some(Of::File(file)) => blob("file", file),
-        Some(Of::Text(text)) => json!({ "kind": "text", "name": text.name, "text": text.text }),
-        Some(Of::Review(review)) => {
-            let patch = review.diff.as_ref().and_then(|diff| diff.patch.as_ref());
-            json!({
-                "kind": "review",
-                "patch": patch.map(|patch| hex(&patch.hash)),
-                "comments": review.comments.iter().map(|comment| json!({
-                    "path": comment.path,
-                    "line": comment.line,
-                    "old_line": comment.old_line,
-                    "text": comment.text,
-                })).collect::<Vec<_>>(),
-            })
+        Some(Of::Text(text)) => {
+            let mut observed = json!({ "kind": "text", "name": text.name, "text": text.text });
+            if let Some(review) = wire::experimental::SENT_REVIEW.get(&attachment.experimental) {
+                observed["review"] = json!({
+                    "id": hex(&review.review_id),
+                    "round": review.round,
+                    "comments": review.comments.iter().map(|comment| hex(&comment.id)).collect::<Vec<_>>(),
+                });
+            }
+            observed
         }
         Some(Of::Page(page)) => json!({
             "kind": "page",
@@ -1118,7 +1153,8 @@ fn attachment(attachment: &wire::Attachment) -> Value {
                 })
             }).collect::<Vec<_>>(),
         }),
-        None => json!({ "kind": "none" }),
+        // No content, or a kind a journey does not check.
+        _ => json!({ "kind": "none" }),
     }
 }
 

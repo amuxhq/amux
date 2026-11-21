@@ -2,7 +2,7 @@
 title: Running amux on a server
 description: Put amux on an always-on computer, such as a Linux box or a Mac mini, so your agents keep working while your laptop sleeps.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 amux runs just as well on a computer you never sit at: a Linux server, a cloud

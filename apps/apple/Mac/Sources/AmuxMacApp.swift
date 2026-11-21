@@ -1,6 +1,7 @@
 import AmuxCore
 import AmuxMacScreens
 import AmuxValues
+import AmuxWords
 import SwiftUI
 
 /// The Mac app: a client of the amux daemon on this Mac and nothing more.
@@ -26,6 +27,7 @@ struct AmuxMacApp: App {
         WindowGroup("amux") {
             AppWindow(model: model)
                 .frame(minWidth: MainWindowSize.least.width, minHeight: MainWindowSize.least.height)
+                .environment(\.codeHighlighting, .bridge)
         }
         .windowResizability(.contentMinSize)
         .commands { AppCommands(model: model) }

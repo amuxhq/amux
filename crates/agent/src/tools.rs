@@ -3,17 +3,25 @@
 //!
 //! Its identity is its agent's directory. Four fleet tools (agents, hosts,
 //! send, stop) dial the daemon at `<dir>/tools.sock`, the socket the
-//! daemon listens on for this agent alone, so the daemon knows who is
-//! calling from the connection and nothing in a request claims an id.
+//! daemon listens on for this agent alone, so whoever answers knows the
+//! caller is this agent from the connection, and nothing in a request
+//! claims an id. What the tools read (the fleet, and the agent or host a
+//! name means) the daemon answers from what it holds. What they do (a
+//! message, a stop) is addressed to the host that owns the agent it acts
+//! on, by that host's id as the call's authority: the daemon answers a
+//! call for its own host and passes any other on, unread, to the host it
+//! names, which applies every rule about the caller against its own row.
+//!
 //! Spawn asks the agent process instead, on `<dir>/private/agent.sock`,
-//! and the agent process makes the same call to the daemon on the same
+//! naming the host by the id the daemon resolved its name to, and the
+//! agent process makes the create, addressed to that host, on the same
 //! socket ([`create`]): an agent waits for the children it asked for, and
-//! this way its process knows of each one before the daemon does. The
-//! other two never reach the daemon: status returns ok and is observed by
-//! the interpreter as the provider's tool-call fact, and attach writes the
-//! file into `<dir>/blobs/` and returns the element the model puts in its
-//! reply. Nothing here writes the journal; the agent process is its one
-//! writer.
+//! this way its process knows of each one before any daemon does, even one
+//! made on another host. The other two never reach the daemon: status
+//! returns ok and is observed by the interpreter as the provider's
+//! tool-call fact, and attach writes the file into `<dir>/blobs/` and
+//! returns the element the model puts in its reply. Nothing here writes
+//! the journal; the agent process is its one writer.
 //!
 //! A fleet call made while the daemon is being replaced retries for a few
 //! seconds; with no daemon at all it says so plainly, and so does a spawn
@@ -29,10 +37,14 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
+use uuid::Uuid;
+use wire::agent_service_client::AgentServiceClient;
+use wire::inventory_service_client::InventoryServiceClient;
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Envelope, ExitCause,
-    FileAgentRequest, Filing, HostEntry, HostRef, Kind, Lifecycle, PromptInput, PromptSubmission,
-    ResolveAgentRequest, attachment, create_agent_request, inventory_event,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry, Kind,
+    Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, ResolveHostRequest,
+    SendMessageRequest, SetFilingRequest, SubscribeInventoryRequest, attachment,
+    create_agent_request, inventory_event,
 };
 
 use crate::dir;
@@ -51,6 +63,14 @@ pub const RETRY_WINDOW: Duration = Duration::from_secs(5);
 
 /// What a call answers when the daemon's answer holds no agent row.
 const NO_AGENT: &str = "the daemon's answer named no agent";
+
+/// What a call answers when the daemon's answer names no host it could be
+/// addressed to.
+const NO_HOST: &str = "the daemon's answer named no host";
+
+/// The authority of a call answered by the daemon serving the socket, for
+/// itself: anything that is not a host id is.
+const HERE: &str = "amux-tools";
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -335,12 +355,14 @@ impl Server {
     }
 
     /// `{"id": "<hex>"}` once the recipient's provider has the message: the
-    /// shape the interpreters read the send's envelope id from.
+    /// shape the interpreters read the send's envelope id from. The message
+    /// goes to the recipient's host, and names no sender: the caller is.
     async fn send(&self, arguments: &Value) -> Answer {
         let to = required(arguments, "to")?;
         let text = required(arguments, "text")?;
         let context = arguments["context"].as_str().map(|context| context.into());
         let recipient = self.resolve(&to).await?;
+        let host = host_of(&recipient.host_id)?;
         // A file the model attached (the attach tool's element) travels as
         // an attachment, not as text naming a path on this host: the
         // recipient's host fetches its bytes and its agent reads them at a
@@ -351,25 +373,24 @@ impl Server {
         for attachment in &positioned.attachments {
             self.within_limit(attachment)?;
         }
-        let request = Envelope {
-            id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            from: None,
-            to: Some(AgentRef {
-                host_id: recipient.host_id,
-                agent_id: recipient.agent_id,
-            }),
+        let request = SendMessageRequest {
+            id: Uuid::new_v4().as_bytes().to_vec(),
+            agent_id: recipient.agent_id,
             context,
-            body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            message: Some(wire::MessageBody {
                 text: positioned.text,
                 attachments: positioned.attachments,
-            })),
+            }),
         };
-        let sent = once(&self.dir, format!("the message to {to}"), |mut client| {
-            let request = wire::SendMessageRequest {
-                envelope: Some(request.clone()),
-            };
-            async move { client.agents.send_message(request).await }
-        })
+        let sent = once(
+            &self.dir,
+            To::Host(host),
+            format!("the message to {to}"),
+            |mut stubs| {
+                let request = request.clone();
+                async move { stubs.agents.send_message(request).await }
+            },
+        )
         .await
         .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
         let id = if sent.envelope_id.is_empty() {
@@ -380,9 +401,9 @@ impl Server {
         Ok(json!({ "id": interpret::to_hex(&id) }).to_string())
     }
 
-    /// Asked of the agent process, which asks the daemon. The parent is
-    /// not in the request: the daemon sets it from the socket the agent
-    /// process's call comes in on, as it sets a message's sender.
+    /// Asked of the agent process, which asks the child's host. The parent
+    /// is not in the request: the host sets it from the caller, this agent,
+    /// as it sets a message's sender.
     async fn spawn(&self, arguments: &Value) -> Answer {
         let kind = required(arguments, "kind")?;
         let Some(kind) = kind_named(&kind) else {
@@ -391,10 +412,14 @@ impl Server {
         };
         let prompt = required(arguments, "prompt")?;
         let name = optional(arguments, "name");
-        // The daemon resolves the name against the hosts it trusts.
-        let host = optional(arguments, "host");
+        // A name is never an address: the daemon resolves it against this
+        // host and the hosts it trusts, and the create goes to the id.
+        let host = match optional(arguments, "host") {
+            Some(name) => Some(self.resolve_host(&name).await?),
+            None => None,
+        };
         let cwd = optional(arguments, "cwd").unwrap_or_else(|| match host {
-            // A named host may be this one or another; the daemon decides:
+            // A named host may be this one or another, and the host decides:
             // this agent's directory here, a refusal asking for a folder
             // elsewhere.
             Some(_) => String::new(),
@@ -406,9 +431,7 @@ impl Server {
         };
         let request = CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host: host.map(HostRef::named),
             name,
-            parent: None,
             cwd,
             agent: create_agent_request::Agent::defaults(kind),
             initial_prompt: Some(PromptSubmission {
@@ -417,7 +440,8 @@ impl Server {
             }),
             ..CreateAgentRequest::default()
         };
-        let agent = match agent_sock::spawn(&self.dir, &request).await {
+        let host = host.map_or_else(Vec::new, |host| host.as_bytes().to_vec());
+        let agent = match agent_sock::spawn(&self.dir, &host, &request).await {
             Ok(Spawned::Created(response)) => response.agent.ok_or(NO_AGENT)?,
             Ok(Spawned::Refused(why)) => return Err(Refusal(why)),
             Err(agent_sock::AskError::NotListening(_)) => return Err(NOT_TAKING_SPAWNS.into()),
@@ -435,20 +459,26 @@ impl Server {
     }
 
     /// A real stop, as a person's close: the child ends now, filed away as
-    /// done with, and the daemon closes its descendants on every host with
-    /// it. Only a direct child: the daemon checks the lineage and refuses
-    /// the rest. Answers once the child has ended.
+    /// done with, and its host closes its descendants on every host with
+    /// it. Only a direct child: the child's host checks the lineage against
+    /// its own row and refuses the rest. Answers once the child has ended.
     async fn stop(&self, arguments: &Value) -> Answer {
         let name = required(arguments, "name")?;
         let child = self.resolve(&name).await?;
-        let request = FileAgentRequest {
+        let host = host_of(&child.host_id)?;
+        let request = SetFilingRequest {
             agent_id: child.agent_id.clone(),
             filing: Filing::Closed as i32,
         };
-        once(&self.dir, format!("the stop for {name}"), |mut client| {
-            let request = request.clone();
-            async move { client.agents.file_agent(request).await }
-        })
+        once(
+            &self.dir,
+            To::Host(host),
+            format!("the stop for {name}"),
+            |mut stubs| {
+                let request = request.clone();
+                async move { stubs.agents.set_filing(request).await }
+            },
+        )
         .await
         .map_err(|refusal| {
             refusal.or_else(|status| Refusal(format!("{name} did not stop: {}", plain(&status))))
@@ -460,9 +490,9 @@ impl Server {
         let request = ResolveAgentRequest {
             name: name.to_owned(),
         };
-        self.daemon(|mut client| {
+        self.daemon(|mut stubs| {
             let request = request.clone();
-            async move { client.agents.resolve_agent(request).await }
+            async move { stubs.inventory.resolve_agent(request).await }
         })
         .await
         .map_err(|status| refused(&status, name))?
@@ -470,12 +500,31 @@ impl Server {
         .ok_or_else(|| NO_AGENT.into())
     }
 
+    /// The host a person's name for it means, among this host and the
+    /// hosts the daemon trusts. The daemon's refusal names the hosts it
+    /// knows.
+    async fn resolve_host(&self, name: &str) -> Result<Uuid, Refusal> {
+        let request = ResolveHostRequest {
+            name: name.to_owned(),
+        };
+        let host = self
+            .daemon(|mut stubs| {
+                let request = request.clone();
+                async move { stubs.inventory.resolve_host(request).await }
+            })
+            .await
+            .map_err(|status| Refusal(plain(&status)))?
+            .host
+            .ok_or(NO_HOST)?;
+        host_of(host.host_id())
+    }
+
     /// The inventory read to CaughtUp: every host entry and agent row.
     async fn inventory(&self) -> Result<(Vec<HostEntry>, Vec<Agent>), Refusal> {
-        self.daemon(|mut client| async move {
-            let mut stream = client
-                .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        self.daemon(|mut stubs| async move {
+            let mut stream = stubs
+                .inventory
+                .subscribe_inventory(SubscribeInventoryRequest {})
                 .await?
                 .into_inner();
             let (mut hosts, mut agents) = (Vec::<HostEntry>::new(), Vec::<Agent>::new());
@@ -516,15 +565,15 @@ impl Server {
         .map_err(|status| Refusal(plain(&status)))
     }
 
-    /// Runs a read against the daemon, dialling afresh each attempt. A
-    /// daemon that is not there, or goes away mid-call, is retried until
+    /// Runs a read of what the daemon holds, dialling afresh each attempt.
+    /// A daemon that is not there, or goes away mid-call, is retried until
     /// the window closes; then the call reports that no daemon is running.
     async fn daemon<T, F, Fut>(&self, call: F) -> Result<T, Status>
     where
-        F: Fn(wire::ClientStubs) -> Fut,
+        F: Fn(Stubs) -> Fut,
         Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
     {
-        dial(&self.dir, call, true)
+        dial(&self.dir, To::Here, call, true)
             .await
             .map_err(|(status, _)| status)
     }
@@ -571,6 +620,7 @@ impl Server {
             } else {
                 attachment::Of::File(blob)
             }),
+            ..Default::default()
         };
         let stored = self.dir.join(dir::BLOBS).join(interpret::to_hex(&hash));
         Ok(attachments::element(&attachment, Some(&stored)))
@@ -617,23 +667,41 @@ fn status(arguments: &Value) -> Answer {
     }
 }
 
-/// The agent process's half of a spawn: asks the daemon serving the agent
-/// in `dir` for the child its tool server asked the process for, under the
-/// rule of any call the daemon acts on. The answer is the tool server's, in
-/// the words the model reads; beside it, what the agent's core is to hear
-/// of the child.
-pub(crate) async fn create(dir: &Path, request: CreateAgentRequest) -> (Spawned, Spawn) {
-    let made = once(dir, "the new agent".to_owned(), |mut client| {
+/// The agent process's half of a spawn: makes the child its tool server
+/// asked the process for, addressed to the host the ask names by id (this
+/// one when it names none) on the socket of the agent in `dir`, under the
+/// rule of any call that acts. The daemon passes a create for another host
+/// on to it, so the answer comes from the child's own host, which makes the
+/// caller, this agent, its parent. The answer is the tool server's, in the
+/// words the model reads; beside it, what the agent's core is to hear of
+/// the child.
+pub(crate) async fn create(
+    dir: &Path,
+    host_id: &[u8],
+    request: CreateAgentRequest,
+) -> (Spawned, Spawn) {
+    let to = if host_id.is_empty() {
+        To::Here
+    } else {
+        match host_of(host_id) {
+            Ok(host) => To::Host(host),
+            Err(Refusal(why)) => return (Spawned::Refused(why), Spawn::Refused),
+        }
+    };
+    let made = once(dir, to, "the new agent".to_owned(), |mut stubs| {
         let request = request.clone();
-        async move { client.agents.create_agent(request).await }
+        async move { stubs.agents.create_agent(request).await }
     })
     .await;
     match made {
-        Ok(response) => match response.agent.as_ref().map(|agent| agent.incarnation) {
-            Some(incarnation) => (
-                Spawned::Created(Box::new(response)),
-                Spawn::Created { incarnation },
-            ),
+        Ok(response) => match &response.agent {
+            Some(agent) => {
+                let incarnation = agent.incarnation;
+                (
+                    Spawned::Created(Box::new(response)),
+                    Spawn::Created { incarnation },
+                )
+            }
             None => (Spawned::Refused(NO_AGENT.to_owned()), Spawn::Refused),
         },
         Err(Settled::Refused(status)) => (Spawned::Refused(plain(&status)), Spawn::Refused),
@@ -641,16 +709,49 @@ pub(crate) async fn create(dir: &Path, request: CreateAgentRequest) -> (Spawned,
     }
 }
 
-/// Runs a call the daemon acts on (a send, spawn or stop) at most once.
-/// Only dialling is retried over the window: once the call has gone out,
-/// the daemon may have acted on it even if the answer never came, so it is
-/// never made again on the model's behalf.
-async fn once<T, F, Fut>(dir: &Path, what: String, call: F) -> Result<T, Settled>
+/// The host an id names, as a call to it is addressed.
+fn host_of(host_id: &[u8]) -> Result<Uuid, Refusal> {
+    Uuid::from_slice(host_id).map_err(|_| NO_HOST.into())
+}
+
+/// Whom a call on the tools socket is addressed to.
+#[derive(Clone, Copy, Debug)]
+enum To {
+    /// The daemon serving the socket, for what it holds and for its own
+    /// host.
+    Here,
+    /// A host by its id: the daemon's own answers it, and any other is
+    /// passed the call by the daemon.
+    Host(Uuid),
+}
+
+impl To {
+    fn authority(self) -> String {
+        match self {
+            To::Here => HERE.to_owned(),
+            To::Host(host) => wire::authority(&host),
+        }
+    }
+}
+
+/// The services a tool calls, on one connection to the tools socket whose
+/// calls are all addressed to one host.
+#[derive(Clone, Debug)]
+struct Stubs {
+    inventory: InventoryServiceClient<Channel>,
+    agents: AgentServiceClient<Channel>,
+}
+
+/// Runs a call that acts (a send, spawn or stop) at most once. Only
+/// dialling is retried over the window: once the call has gone out, the
+/// daemon or the host it passed the call to may have acted on it even if
+/// the answer never came, so it is never made again on the model's behalf.
+async fn once<T, F, Fut>(dir: &Path, to: To, what: String, call: F) -> Result<T, Settled>
 where
-    F: Fn(wire::ClientStubs) -> Fut,
+    F: Fn(Stubs) -> Fut,
     Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
 {
-    match dial(dir, call, false).await {
+    match dial(dir, to, call, false).await {
         Ok(answer) => Ok(answer),
         Err((status, true)) if lost(&status) => Err(Settled::Unconfirmed(format!(
             "the daemon went away before confirming {what}; it may have taken it, so the call was not made again"
@@ -660,21 +761,28 @@ where
 }
 
 /// Dials the daemon serving the agent in `dir` afresh each attempt, until
-/// the window closes. The error says whether the call reached the daemon.
-async fn dial<T, F, Fut>(dir: &Path, call: F, resend: bool) -> Result<T, (Status, bool)>
+/// the window closes, and makes `call` addressed `to`. The error says
+/// whether the call reached the daemon.
+async fn dial<T, F, Fut>(dir: &Path, to: To, call: F, resend: bool) -> Result<T, (Status, bool)>
 where
-    F: Fn(wire::ClientStubs) -> Fut,
+    F: Fn(Stubs) -> Fut,
     Fut: std::future::Future<Output = Result<tonic::Response<T>, Status>>,
 {
     let deadline = tokio::time::Instant::now() + RETRY_WINDOW;
     let mut backoff = Duration::from_millis(50);
     loop {
-        let failed = match connect(&dir.join(TOOLS_SOCK)).await {
-            Ok(channel) => match call(wire::client_stubs(channel)).await {
-                Ok(response) => return Ok(response.into_inner()),
-                Err(status) if resend && lost(&status) => (status, true),
-                Err(status) => return Err((status, true)),
-            },
+        let failed = match connect(&dir.join(TOOLS_SOCK), to).await {
+            Ok(channel) => {
+                let stubs = Stubs {
+                    inventory: wire::inventory_service_client(channel.clone()),
+                    agents: wire::agent_service_client(channel),
+                };
+                match call(stubs).await {
+                    Ok(response) => return Ok(response.into_inner()),
+                    Err(status) if resend && lost(&status) => (status, true),
+                    Err(status) => return Err((status, true)),
+                }
+            }
             Err(_) => (Status::unavailable(NOT_RUNNING), false),
         };
         if tokio::time::Instant::now() + backoff > deadline {
@@ -685,9 +793,13 @@ where
     }
 }
 
-async fn connect(sock: &Path) -> std::io::Result<Channel> {
+/// A connection to the socket at `sock` whose calls are addressed `to`.
+/// A channel gives every call on it the authority it was built for, so a
+/// call to another host takes a channel of its own on the same socket.
+async fn connect(sock: &Path, to: To) -> std::io::Result<Channel> {
     let sock = sock.to_owned();
-    Endpoint::from_static("http://amux-tools")
+    Endpoint::from_shared(format!("http://{}", to.authority()))
+        .map_err(std::io::Error::other)?
         .connect_with_connector(tower::service_fn(move |_| {
             let sock = sock.clone();
             async move {

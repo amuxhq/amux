@@ -9,11 +9,9 @@ use serde::Serialize;
 pub use ui_state::JobStop;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    BackgroundKind, Diff, DiffBase, DiffFileChange, Kind, Limit, TaskListStatus, UsageMeter,
-    UsageState, diff_base,
+    BackgroundKind, GetChangesResponse, Kind, Limit, TaskListStatus, UsageMeter, UsageState,
+    get_changes_request,
 };
-
-use crate::review::FileStatus;
 
 /// Everything the overview lists; each part is empty or None when there is
 /// nothing to show.
@@ -119,6 +117,12 @@ pub enum UsageLabel {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Changes {
+    /// The branch the agent's host compared against, as it reported it:
+    /// none for the uncommitted work alone, or when it found no base
+    /// branch. It can differ from the base the agent's row names, as when
+    /// an agent works on its base branch and the host counts from its
+    /// upstream.
+    pub base: Option<String>,
     pub totals: ChangeTotals,
     /// Files at the root first, under the folder "", then each folder by
     /// path.
@@ -142,6 +146,8 @@ pub struct Folder {
 pub struct ChangedFile {
     /// From the repository's root.
     pub path: String,
+    /// Where a renamed file was at the base, from the repository's root.
+    pub old_path: Option<String>,
     /// Inside its folder.
     pub name: String,
     /// Lines; none for a binary file.
@@ -149,6 +155,20 @@ pub struct ChangedFile {
     pub removed: u32,
     pub status: FileStatus,
     pub binary: bool,
+    /// The language its code is highlighted as, as the agent's host named
+    /// it ("rust", "tsx"); empty when none is known for it.
+    pub language: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum FileStatus {
+    #[default]
+    Modified,
+    Added,
+    Deleted,
+    /// Moved from its old path, with or without changes.
+    Renamed,
 }
 
 /// What the changed files are counted against.
@@ -162,29 +182,43 @@ pub enum Comparison {
     OnBranch,
 }
 
-/// The Diff base for a comparison; None on the branch when the agent's row
-/// names no base branch, and None for a provider subagent, which has no
-/// folder of its own: what changed there is its host's to show.
-pub fn diff_base(state: &SessionState, comparison: Comparison) -> Option<DiffBase> {
-    if state.native() {
-        return None;
+impl Comparison {
+    /// What the agent's host is asked to compare with: HEAD for the
+    /// uncommitted work alone; nothing on the branch, so the host's own
+    /// rule picks the base. Only the host has the repository, so only it
+    /// knows the branch's upstream, and a review on the same host uses the
+    /// same rule, so the two never disagree about what an agent changed.
+    pub fn base(self) -> Option<get_changes_request::Base> {
+        match self {
+            Comparison::Uncommitted => Some(get_changes_request::Base::Head(wire::Empty {})),
+            Comparison::OnBranch => None,
+        }
     }
-    let base = match comparison {
-        Comparison::Uncommitted => diff_base::Base::Head(wire::Empty {}),
-        Comparison::OnBranch => diff_base::Base::Branch(
-            state
+
+    /// Whether a chat offers this comparison: everything on the branch only
+    /// once the agent's row names a base branch to count it against.
+    pub fn offered(self, state: &SessionState) -> bool {
+        match self {
+            Comparison::Uncommitted => true,
+            Comparison::OnBranch => state
                 .agent()
                 .git
                 .as_ref()
-                .and_then(|git| git.base_branch.clone())?,
-        ),
-    };
-    Some(DiffBase { base: Some(base) })
+                .is_some_and(|git| git.base_branch.is_some()),
+        }
+    }
 }
 
-/// The overview of a session, with the changed files of `diff` when they
-/// were fetched.
-pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
+/// Whether a chat's overview lists changed files: not for a provider
+/// subagent, which has no folder of its own; what changed there is its
+/// parent's to show.
+pub fn lists_changes(state: &SessionState) -> bool {
+    !state.native()
+}
+
+/// The overview of a session, with the changed files its agent's host
+/// answered when they were fetched.
+pub fn overview(state: &SessionState, changed: Option<&GetChangesResponse>) -> Overview {
     let agent = state.agent_state();
     let tasks = agent.tasks.known.then(|| {
         let total = agent.tasks.entries.len() as u32;
@@ -295,29 +329,34 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
         jobs,
         failed_servers,
         usage_near_limit,
-        changes: diff.map(changes),
+        changes: changed.map(changes),
     }
 }
 
-/// A Diff's files by folder: files at the root first, then each folder by
-/// path, each folder's files by name.
-pub fn changes(diff: &Diff) -> Changes {
-    let mut files: Vec<ChangedFile> = diff
+/// The host's changed files by folder: files at the root first, then each
+/// folder by path, each folder's files by name.
+pub fn changes(changed: &GetChangesResponse) -> Changes {
+    let mut files: Vec<ChangedFile> = changed
         .files
         .iter()
         .map(|file| {
             let cut = file.path.rfind('/').map_or(0, |at| at + 1);
             ChangedFile {
                 path: file.path.clone(),
+                old_path: file.old_path.clone(),
                 name: file.path[cut..].to_owned(),
                 added: file.added,
                 removed: file.removed,
-                status: match file.change() {
-                    DiffFileChange::Changed | DiffFileChange::Unspecified => FileStatus::Modified,
-                    DiffFileChange::Created => FileStatus::Added,
-                    DiffFileChange::Deleted => FileStatus::Deleted,
+                status: match file.status() {
+                    wire::FileStatus::Changed | wire::FileStatus::Unspecified => {
+                        FileStatus::Modified
+                    }
+                    wire::FileStatus::Created => FileStatus::Added,
+                    wire::FileStatus::Deleted => FileStatus::Deleted,
+                    wire::FileStatus::Renamed => FileStatus::Renamed,
                 },
                 binary: file.binary,
+                language: file.language.clone(),
             }
         })
         .collect();
@@ -342,7 +381,11 @@ pub fn changes(diff: &Diff) -> Changes {
             }),
         }
     }
-    Changes { totals, folders }
+    Changes {
+        base: Some(changed.base_branch.clone()).filter(|base| !base.is_empty()),
+        totals,
+        folders,
+    }
 }
 
 /// Every usage window the provider reported, in its order.

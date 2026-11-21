@@ -73,6 +73,21 @@ checkpoint, which heads the segment, so the checkpoint and the ring together are
 every agent's journal from the newest checkpoint's cursor on, and at least the last two segments, so a report's core
 record always has every frame the recorded inputs read.
 
+A call the daemon carries to another host for one of its clients (a prompt, a message, a stop for an agent there)
+passes through no state machine, so the core's record never shows it. The link log does: when each carried call
+ends, one INFO line under the `amux::link` target in `daemon.log` (the phone's `runtime.log`) names the host it was
+carried to, by id, the method's path, how it ended (`answered`, `unreachable`, `payment_required`, `revoked`,
+`aborted`, or `dropped` when the caller let go of it first), the gRPC status code the caller was given, and how
+long it took:
+
+```text
+INFO amux::link: carried host=<this host> peer=<the host it went to> method=/amux.v1.AgentService/SendInput outcome=answered code=0 ms=41
+```
+
+The same log has a line each time a link comes up, goes down or changes path, which is where to look when a
+carried call was `unreachable` or `aborted`. A call that arrived from a paired host is in that host's log, not
+this one's.
+
 **A client** keeps, in memory only, a driver trace per open chat and for the fleet: the session state as it stood
 when the trace's older segment began, then every message and driver event since (subscribed, stream ended,
 reopened with a tail, backoff, page, get, blob) in the order this client saw them. It holds between 200 and 400

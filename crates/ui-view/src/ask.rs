@@ -10,7 +10,7 @@ use wire::{ClaudeAnswer, CodexAnswer, Decision as CodexDecision, ask, claude_ans
 
 use crate::form::{FormField, form_fields};
 use crate::rows::{
-    EditLine, change_lines, codex_file, counts, first_change, plan_parts, replaced_lines,
+    FilePatch, change_hunks, codex_file, counts, first_change, plan_parts, replaced_hunks,
 };
 use crate::text::within;
 
@@ -76,15 +76,16 @@ pub enum AskBody {
         reason: String,
         description: String,
     },
-    /// The patch's lines, and the new file's line its first change lands
-    /// on when the patch says (a Claude edit's does not: it is only the
-    /// text replaced and the text replacing it).
+    /// The patch, file by file and each file as its hunks, and the new
+    /// file's line its first change lands on when the patch says (a Claude
+    /// edit's does not: it is only the text replaced and the text
+    /// replacing it).
     Edit {
         path: String,
         files: u32,
         added: u32,
         removed: u32,
-        lines: Vec<EditLine>,
+        patch: Vec<FilePatch>,
         line: Option<u32>,
         reason: String,
         /// Whether the file is new: true "Wants to create", false "Wants
@@ -461,8 +462,8 @@ fn permission_body(p: &wire::PermissionAsk) -> AskBody {
             },
         },
         Some(Of::Edit(edit)) => {
-            let lines = replaced_lines(edit);
-            let (added, removed) = counts(&lines);
+            let hunks = replaced_hunks(edit);
+            let (added, removed) = counts(&hunks);
             // A notebook edit says which cell and what happens to it, as
             // Claude's own dialog does: the patch alone cannot tell a
             // replaced cell from a new one.
@@ -476,8 +477,8 @@ fn permission_body(p: &wire::PermissionAsk) -> AskBody {
                 files: 1,
                 added,
                 removed,
-                line: first_change(&lines),
-                lines,
+                line: first_change(&hunks),
+                patch: vec![FilePatch { file: None, hunks }],
                 reason,
                 created: (!edit.write).then_some(false),
             }
@@ -770,22 +771,20 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
             decision_choices(c.allow_prefix.clone(), c.network_hosts.clone(), vec![]),
         ),
         Some(codex_ask::Body::FileChange(f)) => {
-            // A patch of several files marks where each file's lines start,
+            // A patch of several files names the file each part is in,
             // with what happens to it, so no file reads as holding the
             // others' lines.
             let cwd = &state.agent().cwd;
             let several = f.changes.len() > 1;
-            let lines: Vec<EditLine> = f
+            let patch: Vec<FilePatch> = f
                 .changes
                 .iter()
-                .flat_map(|change| {
-                    several
-                        .then(|| EditLine::File(codex_file(cwd, change, true)))
-                        .into_iter()
-                        .chain(change_lines(change))
+                .map(|change| FilePatch {
+                    file: several.then(|| codex_file(cwd, change, true)),
+                    hunks: change_hunks(change),
                 })
                 .collect();
-            let (added, removed) = counts(&lines);
+            let (added, removed) = counts(patch.iter().flat_map(|file| &file.hunks));
             // Codex's "don't ask again" on a patch covers its files.
             let files = f
                 .changes
@@ -802,8 +801,8 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     files: f.changes.len() as u32,
                     added,
                     removed,
-                    line: first_change(&lines),
-                    lines,
+                    line: patch.first().and_then(|file| first_change(&file.hunks)),
+                    patch,
                     reason: f.reason.clone(),
                     created: Some(
                         f.changes.len() == 1 && f.changes[0].kind() == wire::FileChangeKind::Add,
@@ -1055,7 +1054,7 @@ fn elsewhere(home: &str, cwd: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::LineKind;
+    use crate::code::LineKind;
 
     fn words(of: &[&str]) -> Vec<String> {
         of.iter().map(|word| (*word).to_owned()).collect()
@@ -1074,15 +1073,14 @@ mod tests {
             )),
             ..Default::default()
         });
-        let AskBody::Edit { lines, reason, .. } = body else {
+        let AskBody::Edit { patch, reason, .. } = body else {
             panic!("not an edit card: {body:?}");
         };
-        let lines = lines
+        let lines = patch
             .into_iter()
-            .filter_map(|line| match line {
-                EditLine::Line(line) => Some((line.kind, line.text)),
-                _ => None,
-            })
+            .flat_map(|file| file.hunks)
+            .flat_map(|hunk| hunk.lines)
+            .map(|line| (line.kind, line.text))
             .collect();
         (lines, reason)
     }

@@ -83,16 +83,12 @@ pub async fn uninstall(
         }
     }
     for (client, agents) in running {
-        let mut client = client;
         for agent in agents {
             client
-                .agents
-                .file_agent(wire::FileAgentRequest {
-                    agent_id: agent.agent_id.clone(),
-                    filing: wire::Filing::Closed as i32,
-                })
+                .agent(&agent)
+                .set_filing(wire::Filing::Closed)
                 .await
-                .map_err(crate::plain)
+                .map_err(crate::refused)
                 .with_context(|| format!("stopping {}", agent.name))?;
             println!("Stopped {}.", agent.name);
         }
@@ -205,7 +201,7 @@ pub(crate) fn install_dir() -> Result<PathBuf> {
 /// none when amux is not running.
 async fn running_agents(
     config: &InstallationConfig,
-) -> Result<Vec<(wire::ClientStubs, Vec<wire::Agent>)>> {
+) -> Result<Vec<(client::Client, Vec<wire::Agent>)>> {
     let Some(door) = connect::front_door_now(config).await else {
         return Ok(Vec::new());
     };
@@ -225,8 +221,8 @@ async fn running_agents(
             .into_inner()
             .identity;
         let own = crate::held(own)?.host_id;
-        let mut client = connect::client_of(&profile).await?;
-        let (_, agents) = crate::verbs::inventory(&mut client).await?;
+        let client = connect::client_of(&profile).await?;
+        let (_, agents) = crate::verbs::inventory(&client).await?;
         let live: Vec<wire::Agent> = agents
             .into_iter()
             .filter(|agent| {

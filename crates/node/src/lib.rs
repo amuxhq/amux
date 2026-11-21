@@ -11,9 +11,12 @@
 //! shutdown that marks the installation clean.
 
 mod activation;
+mod api;
 mod auth;
 mod awake;
 mod blobs;
+mod carry;
+mod changes;
 mod connection;
 mod daemon;
 pub mod discovery;
@@ -21,7 +24,6 @@ mod dispatcher;
 mod driver;
 mod dump;
 mod edge;
-mod forward;
 mod front_door;
 pub use front_door::{FrontDoor, info as profile_info};
 mod generation;
@@ -38,9 +40,11 @@ mod offers;
 mod onboarding;
 mod outbox;
 mod pairing;
+mod peer_calls;
 mod plain_paths;
 mod profile_admin;
 mod profiles;
+mod reach;
 mod registry;
 mod relay;
 pub mod release;
@@ -49,6 +53,7 @@ mod reports;
 mod repositories;
 mod resource_limits;
 mod retention;
+mod reviews;
 mod routing;
 mod runtime;
 mod seal;
@@ -65,8 +70,9 @@ mod window;
 mod workspaces;
 
 pub use activation::{ActivationError, ActivationPipe, InheritedPipe, PIPE_ENV, PREPARED};
+pub use api::Owner;
 pub use auth::oauth::CLI_CLIENT_ID;
-pub use blobs::{BlobError, PATCH_MIME};
+pub use blobs::BlobError;
 pub use daemon::{
     Daemon, RESTART_DEBOUNCE, RESTART_SETTLE_WITHIN, RestartWanted, STOP_TARGET, StartError,
     StartOptions, start,
@@ -88,9 +94,8 @@ pub use edge::{
     RelayCarrier, RelayIdentity, RelayQuic, RelayServing, SubstrateFor, UDP_BLOCKED_MEMORY,
     test_interfaces,
 };
-pub use forward::Owner;
 pub use generation::{Generation, boot_id};
-pub use grpc::{ClientApi, SURFACE_HEADER, status};
+pub use grpc::{SURFACE_HEADER, status};
 pub use identity::LinkLiveness;
 pub use install::{
     AGENTS, CORE_RING, GENERATION, INSTALLATION_LOCK, LockError, PROFILES, REPLICAS, REPORTS,
@@ -127,12 +132,14 @@ pub use workspaces::WORKTREES;
 pub mod harness {
     pub use agent_dir::SystemClock;
 
+    pub use crate::api::testing::{Calling, InMemory, Served, served_as};
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
     pub use crate::identity::{device_key_path, load_or_create_device_identity_in};
     pub use crate::link::ByteStream;
     pub use crate::link::relay_host::RelayHost;
     pub use crate::link::run::{AuthenticatedLinkUser, LinkTokenAuthenticator};
+    pub use crate::reviews::files::files_highlighted;
     pub use crate::routing::LiveRoute;
     pub use crate::transport::{
         relay_quic_client_config_with_roots, relay_quic_server_config_from_der,

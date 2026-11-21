@@ -27,6 +27,9 @@ ALLOWED_LOCAL = {
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
+    # Syntax highlighting over tree-sitter's grammars: a leaf, so the host
+    # colouring a diff and every client colouring a chat share one engine.
+    "highlight": set(),
     # The pure per-kind step, and the per-kind body redactor beside it;
     # core-ring for the check type its every-step checks report as, and for
     # reading the facts ring an agent's record is built from.
@@ -46,7 +49,9 @@ ALLOWED_LOCAL = {
     # never the agent or interpret crates, so the phone hosts a runtime with
     # no interpreter or provider-protocol crates in its graph. redaction walks
     # wire descriptors and redacts free text without touching interpret.
-    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    # highlight for the language of each file an agent changed, named by the
+    # same rule the clients colour it by.
+    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask
@@ -67,7 +72,14 @@ ALLOWED_LOCAL = {
     # phone bridge share, from which the Swift mirrors are generated. Those
     # hold the wire's own enums (a refusal reason) rather than copies.
     "ui-state": {"wire"},
+    # The view values, code coloured by kind of token among them, with no
+    # highlighter: tree-sitter's grammars are C, and a client that draws no
+    # code (the browser extension) builds the views without a C compiler.
     "ui-view": {"attachments", "preview", "ui-state", "wire"},
+    # The colouring of those values: each client colours the code it parses
+    # out of a chat itself, and an edit card's hunks, through these
+    # functions.
+    "ui-code": {"highlight", "ui-view"},
     "ui-runtime": {"client", "ui-state", "ui-view", "wire"},
     # The browser extension's WebAssembly: the pure client crates, with no
     # runtime, socket or driver, since the extension does its own I/O.
@@ -79,10 +91,11 @@ ALLOWED_LOCAL = {
     # The C ABI over both.
     # The installer only off the phone, for a desktop app's first call.
     "app-ffi": {
-        "app-embedded", "app-runtime", "client", "installer", "node", "ui-state", "ui-view", "wire",
+        "app-embedded", "app-runtime", "client", "installer", "node", "ui-code", "ui-state", "ui-view",
+        "wire",
     },
     # The terminal client composes the views over the drivers' state.
-    "tui": {"attachments", "client", "settings", "ui-runtime", "ui-state", "ui-view", "wire"},
+    "tui": {"attachments", "client", "settings", "ui-code", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},
@@ -112,7 +125,7 @@ CORES_ALLOWED_LOCAL = {
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
 # (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
-UI_CRATES = {"client", "ui-state", "ui-view", "ui-runtime", "tui", "app-runtime"}
+UI_CRATES = {"client", "ui-state", "ui-view", "ui-code", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
     "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
 }
@@ -142,9 +155,11 @@ SUPPORT_ALLOWED_LOCAL = {
     # supervised hosts, and draws the terminal client's screens through shot.
     # Its simulated mode holds every daemon and agent core in one process,
     # the agents on the test kind's interpreter. Each host's daemon starts
-    # from its own config file, read as the amux binary reads it.
+    # from its own config file, read as the amux binary reads it. It acts
+    # on hosts through the client library, as a person's client and an
+    # agent's tools do.
     "testnet": {
-        "agent-dir", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "patience",
         "provider-fakes", "release", "settings", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
@@ -163,7 +178,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
-    "shot": {"interpret", "settings", "tui", "ui-state", "ui-view", "wire"},
+    "shot": {"interpret", "settings", "tui", "ui-code", "ui-state", "ui-view", "wire"},
     # Replays a report's records with the models' properties judged at every
     # step: the daemon core from its checkpoint over its store, and each
     # chat's record through the session model. A debugging tool: nothing

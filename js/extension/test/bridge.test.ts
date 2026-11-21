@@ -50,7 +50,7 @@ describe("the native port", () => {
     const ports = fakeChrome();
     const { Bridge } = await import("../src/background/bridge.ts");
     const bridge = new Bridge("sh.amux.browser");
-    const answered = bridge.unary("installation", "/amux.v1.InstallationService/ListProfiles", "");
+    const answered = bridge.unary("installation", "amux.local", "/amux.v1.InstallationService/ListProfiles", "");
     ports[0]!.deliver({ id: 1, message: "" });
     ports[0]!.deliver({ id: 1, end: { code: 0, message: "", details: "" } });
     await answered;
@@ -64,7 +64,8 @@ describe("the native port", () => {
     bridge.hold(true);
     const cancel = bridge.stream(
       "installation",
-      "/amux.v1.AgentService/SubscribeInventory",
+      "amux.local",
+      "/amux.v1.InventoryService/SubscribeInventory",
       "",
       () => {},
       () => {},
@@ -74,5 +75,40 @@ describe("the native port", () => {
     expect(ports[0]!.disconnected).toBe(false);
     bridge.hold(false);
     expect(ports[0]!.disconnected).toBe(true);
+  });
+
+  it("sends every call at once with the authority it names", async () => {
+    const ports = fakeChrome();
+    const { Bridge, NODE } = await import("../src/background/bridge.ts");
+    const bridge = new Bridge("sh.amux.browser");
+    bridge.hold(true);
+    bridge.stream(
+      "installation",
+      NODE,
+      "/amux.v1.InstallationService/ListProfiles",
+      "",
+      () => {},
+      () => {},
+    );
+    bridge.stream(
+      "ab01",
+      "far",
+      "/amux.v1.AgentService/SendInput",
+      "AA==",
+      () => {},
+      () => {},
+    );
+    expect(ports[0]!.sent).toEqual([
+      {
+        id: 1,
+        call: {
+          target: "installation",
+          method: "/amux.v1.InstallationService/ListProfiles",
+          body: "",
+          authority: NODE,
+        },
+      },
+      { id: 2, call: { target: "ab01", method: "/amux.v1.AgentService/SendInput", body: "AA==", authority: "far" } },
+    ]);
   });
 });

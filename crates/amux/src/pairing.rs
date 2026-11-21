@@ -367,12 +367,7 @@ pub async fn cancel(mut admin: Admin) -> Result<()> {
 /// its person reads out, or with a host over SSH. A host only the relay
 /// reaches is refused before the PIN on the free plan, since no PIN gets a
 /// pairing through.
-pub async fn pair(
-    admin: Admin,
-    client: &mut wire::ClientStubs,
-    target: Target,
-    free: bool,
-) -> Result<()> {
+pub async fn pair(admin: Admin, client: &client::Client, target: Target, free: bool) -> Result<()> {
     let (host_id, addrs) = match target {
         Target::Ssh(target) => return pair_over_ssh(admin, target).await,
         Target::Addr(addr) => (Vec::new(), vec![addr.to_string()]),
@@ -611,7 +606,7 @@ pub async fn relay(profile: &wire::Profile) -> Result<()> {
 
 /// The trusted hosts and the hosts that could be paired: found nearby, or
 /// announced by the relay or a paired host.
-pub async fn hosts(mut admin: Admin, client: &mut wire::ClientStubs, free: bool) -> Result<()> {
+pub async fn hosts(mut admin: Admin, client: &client::Client, free: bool) -> Result<()> {
     let trusted = admin
         .list_peers(wire::ListPeersRequest {})
         .await

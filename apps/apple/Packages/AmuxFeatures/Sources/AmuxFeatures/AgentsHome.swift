@@ -1738,9 +1738,10 @@ enum Confirming: Identifiable {
     /// the dialog drew, never what the fleet says since.
     case delete(FleetRow, warning: DeleteWarning?)
 
-    /// A delete's dialog as it opens: checking, when a workspace goes.
+    /// A delete's dialog as it opens: checking with the agent's host what
+    /// the delete takes with it.
     static func deleting(_ row: FleetRow) -> Confirming {
-        .delete(row, warning: DeleteWords.asking(row.card.workspaceGoes))
+        .delete(row, warning: .checking)
     }
 
     var id: String {

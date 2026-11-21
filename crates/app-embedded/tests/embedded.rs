@@ -98,7 +98,7 @@ fn loopback() -> EdgeOverrides {
 async fn app(embedded: &EmbeddedRuntime, profile: ProfileId) -> AppRuntime {
     let wake = Arc::new(|_: Wake| {});
     AppRuntime::open(
-        embedded.client(profile).unwrap(),
+        embedded.node(profile).unwrap(),
         Arc::new(SystemClock),
         embedded.host_id(profile).unwrap(),
         wake,
@@ -496,8 +496,6 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
 /// its worktree goes.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phone_keeps_the_workspace_a_desks_row_says() {
-    use wire::agent_service_server::AgentService as _;
-
     let net = Net::start_with(
         Topology::new().host_decl(HostDecl {
             name: "desk".into(),
@@ -543,21 +541,23 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
 
     let site = desk.work.with_file_name("repositories").join("site");
     let created = net
-        .client("desk")
+        .person("desk")
+        .await
         .unwrap()
-        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+        .host(desk.host_id.as_bytes())
+        .agents()
+        .create(wire::CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name: Some("fix-header".into()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
+                Default::default(),
+            )),
             new_workspace: true,
-            ..wire::CreateAgentRequest::default()
-        }))
+            ..Default::default()
+        })
         .await
-        .unwrap()
-        .into_inner()
-        .agent
-        .expect("a created agent is answered");
+        .unwrap();
     let agent = ui_state::agent_key(&created);
     let made = |app: &AppRuntime| {
         app.fleet()
@@ -573,14 +573,11 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
     let workspace = made(&app).unwrap();
     assert_eq!(workspace.kind(), wire::experimental::WorkspaceKind::Git);
     assert!(workspace.made_by_amux);
+    let warning = app.delete_warning(&agent).await;
     assert!(
-        app.fleet()
-            .state()
-            .delete_removes_workspace(&agent)
-            .is_some(),
-        "the phone warns that the worktree goes"
+        matches!(warning, Some(ui_state::DeleteWarning::Goes(_))),
+        "the desk tells the phone the worktree goes: {warning:?}"
     );
-    assert!(app.delete_warning(&agent).await.is_some());
 
     drop(app);
     embedded.shutdown().await.unwrap();
@@ -598,7 +595,7 @@ async fn listed(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
 }
 
 // The profile calls the app makes, through the installation's front door
-// in process, as a desktop client makes them over the daemon's socket.
+// in memory, as a desktop client makes them over the daemon's socket.
 
 async fn profiles(embedded: &EmbeddedRuntime) -> Vec<ProfileView> {
     let installation = embedded.installation().unwrap();
@@ -647,7 +644,13 @@ async fn bind(
 }
 
 async fn sign_out(embedded: &EmbeddedRuntime, profile: ProfileId) -> ProfileView {
-    embedded.client(profile).unwrap().sign_out().await.unwrap();
+    embedded
+        .node(profile)
+        .unwrap()
+        .admin()
+        .sign_out()
+        .await
+        .unwrap();
     listed(embedded, profile).await
 }
 
@@ -902,7 +905,7 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
             (
                 host,
                 analytics::Event::ClientOpened {
-                    client: analytics::Client::Phone
+                    client: analytics::Client::Ios
                 }
             ),
             (
@@ -1111,8 +1114,8 @@ async fn a_phone_paired_with_a_signed_in_desk_takes_its_offered_account() {
     .unwrap();
     eventually(&app, "the desk online", || desk_online(&app)).await;
 
-    let client = embedded.client(phone).unwrap();
-    let mut offers = client.subscribe_sign_in_offers().await.unwrap();
+    let admin = embedded.node(phone).unwrap().admin();
+    let mut offers = admin.subscribe_sign_in_offers().await.unwrap();
     net.admin("desk")
         .await
         .unwrap()
@@ -1134,7 +1137,7 @@ async fn a_phone_paired_with_a_signed_in_desk_takes_its_offered_account() {
     assert_eq!(offer.host_name, "desk");
     assert_eq!(offer.email, "ada@example.com");
 
-    let profile = client
+    let profile = admin
         .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
             host_id: offer.host_id,
             accept: true,

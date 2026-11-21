@@ -15,7 +15,6 @@ use std::sync::Arc;
 use node::Launch;
 use prost::Message as _;
 use testnet::{HostDecl, Net, NetOptions, PATIENCE, Topology, until};
-use wire::agent_service_server::AgentService as _;
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::inventory_event;
 
@@ -70,22 +69,23 @@ fn options(on: bool, homes: PathBuf) -> NetOptions {
 async fn create(net: &Net, name: &str) -> wire::Agent {
     let desk = net.host("desk").unwrap();
     let site = desk.work.with_file_name("repositories").join("site");
-    net.client("laptop")
-        .unwrap()
-        .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+    let laptop = net.person("laptop").await.unwrap();
+    let desk = laptop.inventory().resolve_host("desk").await.unwrap();
+    laptop
+        .host(desk.host_id())
+        .agents()
+        .create(wire::CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host: Some(wire::HostRef::named("desk")),
             name: Some(name.to_owned()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
+                Default::default(),
+            )),
             new_workspace: true,
             ..wire::CreateAgentRequest::default()
-        }))
+        })
         .await
         .unwrap()
-        .into_inner()
-        .agent
-        .expect("a created agent is answered")
 }
 
 fn entry(agent: &wire::Agent) -> Option<AgentWorkspace> {
@@ -175,8 +175,8 @@ async fn a_new_worktree_from_another_host_is_answered_first_and_replicated_with_
 }
 
 /// The desk runs the experiment and the laptop does not: the laptop still
-/// keeps and serves the workspace the desk's row says, so a client of the
-/// laptop warns that deleting the agent takes its worktree.
+/// keeps and serves the workspace the desk's row says, and a client of the
+/// laptop asking the desk what a delete takes is told the worktree goes.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_without_the_experiment_keeps_a_replicas_workspace_for_its_clients() {
     let homes = tempfile::tempdir().unwrap();
@@ -212,15 +212,20 @@ async fn a_host_without_the_experiment_keeps_a_replicas_workspace_for_its_client
     assert_eq!(on_laptop.experimental, on_desk.experimental);
     assert_eq!(entry(&on_laptop).unwrap().kind(), WorkspaceKind::Git);
 
-    let mut fleet = ui_state::FleetState::new();
-    fleet.update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
-        of: Some(inventory_event::Of::Agent(on_laptop.clone())),
-    })));
+    let preview = net
+        .person("laptop")
+        .await
+        .unwrap()
+        .agent(&wire::AgentRef {
+            host_id: on_laptop.host_id.clone(),
+            agent_id: on_laptop.agent_id.clone(),
+        })
+        .preview_delete()
+        .await
+        .expect("the desk previews the delete for the laptop's client");
     assert!(
-        fleet
-            .delete_removes_workspace(&ui_state::agent_key(&on_laptop))
-            .is_some(),
-        "the laptop's client warns that the worktree goes"
+        preview.removes_workspace,
+        "the laptop's client is told the worktree goes: {preview:?}"
     );
 
     net.shutdown().await.unwrap();
@@ -305,12 +310,11 @@ async fn without_the_experiment_a_new_workspace_from_another_host_is_a_plain_wor
 /// The laptop deletes an agent on the desk whose worktree has work nobody
 /// committed, saying `discard`.
 async fn delete_from_laptop(net: &Net, agent: &wire::Agent, discard: bool) {
-    net.client("laptop")
+    net.person("laptop")
+        .await
         .unwrap()
-        .delete_agent(tonic::Request::new(wire::DeleteAgentRequest {
-            agent_id: agent.agent_id.clone(),
-            discard_workspace_changes: discard,
-        }))
+        .agent(agent)
+        .delete(discard)
         .await
         .unwrap();
 }

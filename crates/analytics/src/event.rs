@@ -49,12 +49,20 @@ tokens! {
 }
 
 tokens! {
-    /// Which client opened, or which one an onboarding step was on.
+    /// Which client opened, which one an onboarding step was on, or which
+    /// one a person acted from. Each of amux's apps is named for itself,
+    /// so the iPhone and Android apps count apart. A word a build does not
+    /// know reads as [`Client::Other`], so a client added later is counted
+    /// as another client by the daemons released before it, not dropped.
     Client {
         Terminal => "terminal",
-        Phone => "phone",
         Mac => "mac",
+        Ios => "ios",
+        Android => "android",
         Browser => "browser",
+        /// A client that names none of these, or names nothing: one
+        /// somebody else built on the protocol.
+        Other => "other",
     }
 }
 
@@ -80,12 +88,13 @@ tokens! {
     }
 }
 
-tokens! {
-    /// Who asked for an agent: a person, or another agent through its tools.
-    By {
-        Person => "person",
-        Agent => "agent",
-    }
+/// Who asked for an agent: a person, on the client they asked from, or
+/// another agent through its tools. An agent has no client, so only a
+/// person's request says which one it came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum By {
+    Person(Client),
+    Agent,
 }
 
 tokens! {
@@ -270,11 +279,14 @@ impl CheckId {
     }
 }
 
-/// Where an act happened: on this host, or on a paired host, which is then
-/// named so a person's hosts can be joined without an account.
+/// Where an act came from, as the host it was done on records it: a person
+/// or an agent here, or one at a paired host, which is then named so a
+/// person's hosts can be joined without an account. Every act is counted by
+/// the host that does it, the only one that sees it, so the counting host
+/// says where it came from rather than where it went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum On {
-    ThisHost,
+pub enum Origin {
+    Here,
     PairedHost(HostId),
 }
 
@@ -367,17 +379,22 @@ pub enum Event {
     },
     AgentCreated {
         kind: Kind,
-        on: On,
+        from: Origin,
         by: By,
     },
+    /// A person's prompt was accepted. `surface` is the client they sent
+    /// it from, which may be on another host than the one counting it.
     PromptSent {
         kind: Kind,
-        on: On,
+        from: Origin,
+        surface: Client,
         queued: bool,
     },
+    /// A person's answer to an ask was accepted, from `surface`.
     AskAnswered {
         kind: Kind,
-        on: On,
+        from: Origin,
+        surface: Client,
         ask: Ask,
     },
     PairingStarted {
@@ -543,19 +560,37 @@ impl Event {
                 }
             }
             Event::ClientOpened { client } => put("surface", token(*client)),
-            Event::AgentCreated { kind, on, by } => {
+            Event::AgentCreated { kind, from, by } => {
                 put("kind", token(*kind));
-                where_(&mut put, *on);
-                put("by", token(*by));
+                origin(&mut put, *from);
+                match by {
+                    By::Person(surface) => {
+                        put("by", json!("person"));
+                        put("surface", token(*surface));
+                    }
+                    By::Agent => put("by", json!("agent")),
+                }
             }
-            Event::PromptSent { kind, on, queued } => {
+            Event::PromptSent {
+                kind,
+                from,
+                surface,
+                queued,
+            } => {
                 put("kind", token(*kind));
-                where_(&mut put, *on);
+                origin(&mut put, *from);
+                put("surface", token(*surface));
                 put("queued", json!(queued));
             }
-            Event::AskAnswered { kind, on, ask } => {
+            Event::AskAnswered {
+                kind,
+                from,
+                surface,
+                ask,
+            } => {
                 put("kind", token(*kind));
-                where_(&mut put, *on);
+                origin(&mut put, *from);
+                put("surface", token(*surface));
                 put("ask", token(*ask));
             }
             Event::PairingStarted { role, method } => {
@@ -660,17 +695,19 @@ impl Event {
             },
             Event::AgentCreated {
                 kind: Kind::ClaudeSdk,
-                on: On::ThisHost,
-                by: By::Person,
+                from: Origin::Here,
+                by: By::Person(Client::Mac),
             },
             Event::PromptSent {
                 kind: Kind::Codex,
-                on: On::PairedHost(host),
+                from: Origin::PairedHost(host),
+                surface: Client::Ios,
                 queued: false,
             },
             Event::AskAnswered {
                 kind: Kind::ClaudePty,
-                on: On::PairedHost(host),
+                from: Origin::PairedHost(host),
+                surface: Client::Ios,
                 ask: Ask::Permission,
             },
             Event::PairingStarted {
@@ -733,11 +770,11 @@ fn token<T: Token>(value: T) -> Value {
     json!(value.as_str())
 }
 
-fn where_(put: &mut impl FnMut(&str, Value), on: On) {
-    match on {
-        On::ThisHost => put("on", json!("this_host")),
-        On::PairedHost(host) => {
-            put("on", json!("paired_host"));
+fn origin(put: &mut impl FnMut(&str, Value), from: Origin) {
+    match from {
+        Origin::Here => put("from", json!("here")),
+        Origin::PairedHost(host) => {
+            put("from", json!("paired_host"));
             put("remote_host", json!(host.to_string()));
         }
     }

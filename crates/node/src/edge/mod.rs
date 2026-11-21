@@ -1099,9 +1099,9 @@ impl Edge {
             .identity
             .quic_server_config(other.trust.clone(), &other.tickets)
             .map_err(|error| error.to_string())?;
-        let connecting = StreamEndpoint::new(near, FramedKind::InProcess, None)
+        let connecting = StreamEndpoint::new(near, FramedKind::Loopback, None)
             .map_err(|error| error.to_string())?;
-        let accepting = StreamEndpoint::new(far, FramedKind::InProcess, Some(server))
+        let accepting = StreamEndpoint::new(far, FramedKind::Loopback, Some(server))
             .map_err(|error| error.to_string())?;
         let endpoints = [connecting.endpoint.clone(), accepting.endpoint.clone()];
         let (accepted_tx, accepted) = watch::channel(None);

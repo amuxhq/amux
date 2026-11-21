@@ -18,11 +18,13 @@ them is on [the iPhone page](IOS.md).
 ## The dependency rule
 
 Nothing in `app-runtime` reaches the daemon. It talks to its runtime only
-through `client::Client`, the same trait the terminal uses, which has two
-implementations: `GrpcClient` over a profile's local socket, and `InProcess`,
-the profile's client service called directly. Profiles are managed through
-`client::Installation` the same way: `GrpcInstallation` over the daemon's
-front door, `InProcessInstallation` over the embedded one. A desktop app
+through the client library's `Client`, the same one the terminal uses: the
+generated stubs over a profile's local socket on a desktop, and over the
+profile's routes called in memory on the phone, where the node's router
+carries a call addressed to another host to it just as the daemon behind a
+socket does. Profiles are managed through the library's `Installation` the
+same way: over the daemon's front door socket, or over the embedded front
+door's service called in memory. A desktop app
 attaches to the daemon on its machine (`amux_runtime_attach`): the same
 library, with `Phone` started without an installation (`Phone::attached`),
 so there are no cores to step and the step only hands over what the
@@ -56,7 +58,7 @@ and simulator targets.
 ## What a client reuses
 
 - **Views.** Rows, ask cards, the overview, the composer, fleet cards and the
-  review document are `ui-view` values, the same ones the terminal renders.
+  review page are `ui-view` values, the same ones the terminal renders.
   A client draws them; it does not recompute grouping or phases. See
   [the chat vocabulary](CHAT_VOCABULARY.md) for what each one means.
 - **Session and fleet drivers.** `ui-runtime`'s `Session` and `Fleet` hold the
@@ -216,9 +218,10 @@ that ticket; nothing in the library calls into the client.
 | --- | --- | --- |
 | `amux_install` | none | A desktop app's first call: finds amux, installs the app's copy or a checked download when it is missing, and starts it ([the installer](../crates/installer/src/lib.rs)); blocks |
 | `amux_runtime_*` | `AmuxRuntime` | The installation: start (hosted) or attach (a daemon on this machine) and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending, network changed), the profile list, the registry (create, delete, bind, sign out), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
-| `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
+| `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents, where a host offers to start one and pinning its folders, a host's catalogue, renaming, stopping and deleting agents and the host's delete warning, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
-| `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |
+| `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging and blobs; the composer's review chip comes with the frame, and a send with it is an act |
+| `amux_review_*` | `AmuxChat` | The review page open on a chat: open (or open again, picking the base or refreshing), fetching file bodies, more context, edits made all or none, choosing a view or folding, the page as it is now, the anchor a selection of rows comments on, closing it, and opening a sent review's round; the page itself moves in the chat's deltas |
 
 The lifecycle nests: start the runtime, open a profile, open chats on it;
 close every chat before its profile and every profile before stopping the

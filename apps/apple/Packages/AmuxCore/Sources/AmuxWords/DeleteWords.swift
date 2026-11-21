@@ -5,17 +5,12 @@ import Foundation
 /// client's confirmation uses, and whether confirming agrees to lose
 /// uncommitted changes.
 ///
-/// A confirmation opens on what the agent's row says goes, and asks the
-/// runtime for current facts: the uncommitted changes of an agent with no
-/// process are known only to its host, and so are the commits its branch
-/// holds that no other branch does. It says it is checking until the answer
-/// comes, and confirming before then keeps a worktree with changes on disk,
-/// because nothing it drew named them.
+/// Only the agent's host knows whether its workspace goes with it, and what
+/// that holds now, so a confirmation opens checking and asks the runtime,
+/// which asks the host. It says it is checking until the answer comes, and
+/// confirming before then keeps a worktree with changes on disk, because
+/// nothing it drew named them.
 public enum DeleteWords {
-    /// What a confirmation draws on opening, from what the row says goes:
-    /// checking, when a workspace goes at all.
-    public static func asking(_ goes: WorkspaceGoes?) -> DeleteWarning? { goes.map(DeleteWarning.checking) }
-
     /// Whether a confirmation drawing `warning` is waiting on an answer.
     public static func awaitsAnswer(_ warning: DeleteWarning?) -> Bool {
         if case .checking? = warning { true } else { false }
@@ -23,32 +18,31 @@ public enum DeleteWords {
 
     /// What a confirmation draws once its question is answered. Only one
     /// still checking takes the answer; an answer that is a failure reads as
-    /// a host that could not say.
+    /// a host that could not be asked.
     public static func answered<Failure: Error>(
         _ drawn: DeleteWarning?, with answer: Result<DeleteWarning?, Failure>
     ) -> DeleteWarning? {
-        guard case .checking(let asked)? = drawn else { return drawn }
+        guard case .checking? = drawn else { return drawn }
         switch answer {
         case .success(let warning): return warning
-        case .failure: return .unknown(asked)
+        case .failure: return .unknown
         }
     }
 
     /// What a confirmation says of the workspace: its line, the branch's
-    /// line when it names one and whether the branch stays, and whether
-    /// what it says is settled rather than still being checked. Nil when the
-    /// workspace stays.
+    /// line when the host named one and whether the branch stays, and
+    /// whether the host has said the worktree goes, which makes the line a
+    /// loss rather than an open question. Nil when the workspace stays.
     public static func lines(
         for warning: DeleteWarning?
     ) -> (workspace: String, branch: String?, branchKept: Bool, settled: Bool)? {
         switch warning {
         case nil: nil
         case .goes(let goes)?: (workspace(goes), branch(goes), branchKept(goes), true)
-        case .checking(let goes)?:
-            (String(localized: "Checking its worktree for uncommitted changes…"), branch(goes), branchKept(goes), false)
-        case .unknown(let goes)?:
-            (String(localized: "Its worktree is removed too, but stays on disk if it has uncommitted changes, which couldn’t be checked."),
-             branch(goes), branchKept(goes), true)
+        case .checking?: (String(localized: "Checking whether its worktree is removed too…"), nil, true, false)
+        case .unknown?:
+            (String(localized: "Its worktree couldn’t be checked. If it’s removed too, it stays on disk while it has uncommitted changes."),
+             nil, true, false)
         }
     }
 
@@ -71,10 +65,10 @@ public enum DeleteWords {
         }
     }
 
-    /// What becomes of the branch the row names: the host deletes one with
-    /// no commits of its own and keeps any other. "The branch fix-scroll
-    /// keeps its 3 commits.", or "goes too, since nothing was committed to
-    /// it."; until the host has counted them, words true either way.
+    /// What becomes of the workspace's branch: the host deletes one with no
+    /// commits of its own and keeps any other. "The branch fix-scroll keeps
+    /// its 3 commits.", or "goes too, since nothing was committed to it.";
+    /// when the host could not count them, words true either way.
     public static func branch(_ goes: WorkspaceGoes) -> String? {
         guard let branch = goes.branch else { return nil }
         switch goes.branchCommits {
@@ -104,7 +98,7 @@ public enum DeleteWords {
     }
 
     /// Whether confirming agrees to lose uncommitted changes: only when the
-    /// confirmation drew them from current facts. A delete without that
+    /// confirmation drew them from the host's answer. A delete without that
     /// consent keeps such a workspace on disk.
     public static func discards(_ warning: DeleteWarning?) -> Bool {
         if case .goes(let goes)? = warning { goes.uncommitted != nil } else { false }

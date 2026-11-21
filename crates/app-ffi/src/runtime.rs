@@ -45,11 +45,10 @@ pub fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime
     let phone = Phone::attached().map_err(|error| error.to_string())?;
     let door = front_door.to_owned();
     let installation = phone
-        .wait(async move { client::GrpcInstallation::connect(&door).await })
+        .wait(async move { client::Installation::connect(&door, client::Surface::Mac).await })
         .ok_or("the runtime has stopped")?
-        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?
-        .naming("mac");
-    serve(phone, Arc::new(installation), tail)
+        .map_err(|error| format!("amux is not answering on {}: {error}", front_door.display()))?;
+    serve(phone, installation, tail)
 }
 
 /// How soon a stream from the daemon is opened again after it ends,
@@ -87,7 +86,7 @@ where
 /// again whenever the installation's profile stream says it moved.
 fn serve(
     phone: Phone,
-    installation: Arc<dyn client::Installation>,
+    installation: client::Installation,
     tail: u32,
 ) -> Result<Box<AmuxRuntime>, String> {
     let outbox = Arc::new(Outbox {
@@ -176,11 +175,14 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
                 .iter()
                 .find(|listed| listed.id == profile.as_bytes())
                 .ok_or_else(|| format!("the installation hosts no profile {profile}"))?;
+            // The phone's installation opens its hosted node in memory; the
+            // Mac's dials the profile's socket, as the Mac app.
             let client = installation
                 .open_profile(described)
                 .await
                 .map_err(|error| error.to_string())?;
             let host = client
+                .admin()
                 .get_device_identity()
                 .await
                 .map_err(|error| error.to_string())?
@@ -194,7 +196,7 @@ pub fn open_profile(runtime: &AmuxRuntime, profile: ProfileId) -> Result<Box<Amu
     shared
         .outbox
         .opened(fleet, 0, View::Fleet(Arc::downgrade(&app)));
-    let (watching, posting) = (app.client().clone(), shared.outbox.clone());
+    let (watching, posting) = (app.client().admin(), shared.outbox.clone());
     let offers = shared.phone.handle().spawn(async move {
         follow(
             || watching.subscribe_sign_in_offers(),
@@ -396,6 +398,71 @@ pub unsafe extern "C" fn amux_command_matches(
     let draft = unsafe { text(draft) }.unwrap_or_default();
     guard(std::ptr::null_mut(), || match commands {
         Some(commands) => owned(&ui_view::command_matches(&commands, draft)),
+        None => std::ptr::null_mut(),
+    })
+}
+
+/// A fenced code block coloured by kind of token, as the shared view
+/// colours it for every client: the code, the fence's info string (its
+/// first word names the language) and whether this is the block still
+/// being written, the last of a message still streaming whose closing
+/// fence has not arrived. Answers a `HighlightedCode` as JSON, one line
+/// for each of the code's lines; null only when the code is not UTF-8.
+/// The caller frees the answer.
+///
+/// A result that is not `settled` is drawn as it is and asked for again
+/// soon (within a tenth of a second): a grammar is being built, or a
+/// streaming block's completed lines are being passed over, in the
+/// background. Callable from any thread; finished code is kept by content,
+/// so asking again for the same block costs a lookup.
+///
+/// # Safety
+/// The strings are NUL-terminated; `info` may be null for no language.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_highlight_block(
+    code: *const c_char,
+    info: *const c_char,
+    streaming: bool,
+) -> *mut c_char {
+    // SAFETY: the caller's contract.
+    let code = unsafe { text(code) };
+    // SAFETY: the caller's contract.
+    let info = unsafe { text(info) }.unwrap_or_default();
+    guard(std::ptr::null_mut(), || match code {
+        Some(code) => owned(&ui_code::highlight_block(
+            ui_code::Highlighter::shared(),
+            code,
+            info,
+            streaming,
+        )),
+        None => std::ptr::null_mut(),
+    })
+}
+
+/// A file's change coloured as the file at `path` is, from its hunks as
+/// an edit ask's card carries them (a `FilePatch`'s `[PatchHunk]` as JSON),
+/// each hunk coloured as a fragment of its own. Answers a `HighlightedCode`
+/// as JSON with one line for each of the hunks' lines, hunk after hunk;
+/// null when the hunks do not parse. Settles and frees as
+/// `amux_highlight_block` does.
+///
+/// # Safety
+/// The strings are NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_highlight_patch(
+    path: *const c_char,
+    hunks: *const c_char,
+) -> *mut c_char {
+    // SAFETY: the caller's contract.
+    let path = unsafe { text(path) }.unwrap_or_default();
+    // SAFETY: the caller's contract.
+    let hunks: Option<Vec<ui_view::PatchHunk>> = unsafe { parse(hunks) };
+    guard(std::ptr::null_mut(), || match hunks {
+        Some(hunks) => owned(&ui_code::highlight_patch(
+            ui_code::Highlighter::shared(),
+            path,
+            &hunks,
+        )),
         None => std::ptr::null_mut(),
     })
 }
@@ -897,6 +964,7 @@ pub unsafe extern "C" fn amux_runtime_sign_out(
                 installation
                     .open_profile(described)
                     .await?
+                    .admin()
                     .sign_out()
                     .await?;
                 let listed = installation.list_profiles().await?;

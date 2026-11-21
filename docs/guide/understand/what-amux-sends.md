@@ -59,13 +59,18 @@ Nothing is written to disk to be sent later.
 |---|---|
 | `installation_id` | A random id made the first time amux starts on a computer (or the app on a phone) and kept in the installation's directory. It counts installs. |
 | `host_id` | The random id of one profile on that computer, the same one its paired computers know it by. Every event is filed under it. |
-| `remote_host` | The computer id of *another* computer: the one a prompt, an answer or a new agent went to, or the one this computer just paired with. |
+| `remote_host` | The computer id of *another* computer: the one a prompt, an answer or a new agent came from, or the one this computer just paired with. |
+
+A prompt, an answer or a new agent is counted once, by the computer the
+agent runs on, under that computer's setting for usage counts. When you use
+your laptop or your phone to send a prompt to an agent on your desktop, the
+desktop counts it and the laptop or phone does not, and its `surface` says
+which app you sent it from.
 
 `remote_host` is how we tell that two computers belong to the same person
-without an account: when your laptop sends a prompt to your desktop, the
-laptop's event names the desktop's computer id. That is a map of which of your
-computers talk to each other, by random ids only. It never includes a
-computer's name or address.
+without an account: in that case the desktop's event names the laptop's or
+the phone's id. That is a map of which of your computers talk to each other,
+by random ids only. It never includes a computer's name or address.
 
 A reinstall makes new ids. Deleting the installation's directory, or the
 app, forgets them.
@@ -94,10 +99,10 @@ a field for free text.
 | `updated` | amux starts on a newer version than last time. | `from_version`, `to_version` |
 | `update_rolled_back` | amux starts on an older version than last time, because the newer one was put back. | `from_version`, `to_version` |
 | `daemon_crashed` | amux starts and finds that its last run stopped without shutting down, with the computer still up. | `crashed_version`: the version that stopped. |
-| `client_opened` | The terminal client starts, the Mac app opens, the iPhone app comes to the front, or the browser extension connects; at most once an hour. | `surface`: `terminal`, `mac`, `phone` or `browser`. |
-| `agent_created` | A new agent is started. | `kind`; `on`: `this_host` or `paired_host`, with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper). |
-| `prompt_sent` | A prompt you sent is accepted. | `kind`; `on` and `remote_host` as above; `queued`: whether it waits behind a turn already running. |
-| `ask_answered` | Your answer to an agent's question or request is accepted. | `kind`; `on` and `remote_host` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
+| `client_opened` | The terminal client starts, the Mac app opens, the iPhone app comes to the front, or the browser extension connects; at most once an hour. | `surface`: the app, `terminal`, `mac`, `ios` (the iPhone app, which sent `phone` before), `android` (kept for an Android app), `browser`, or `other` for a client someone else built. |
+| `agent_created` | A new agent is started on this computer. | `kind`; `from`: `here` (asked for on this computer) or `paired_host` (asked for from a paired computer or device), with `remote_host` for a paired one; `by`: `person` or `agent` (an agent starting a helper); `surface`: for a person, the app they asked from, one of the words `client_opened` lists, even when it runs on another computer. An agent's helper has no `surface`. |
+| `prompt_sent` | A prompt you sent to one of this computer's agents is accepted. | `kind`; `from` and `remote_host` as above; `surface`: the app you sent it from, as above; `queued`: whether it waits behind a turn already running. |
+| `ask_answered` | Your answer to a question or request from one of this computer's agents is accepted. | `kind`; `from`, `remote_host` and `surface` as above; `ask`: `question`, `permission`, `plan`, `form`, `link` or `grant`. |
 | `pairing_started` | This computer shows a pairing code, or enters one. | `role`: `offerer` (showed the code) or `joiner` (entered it); `method`: `pin`, `qr` or `ssh` (a window showing both a PIN and a QR code counts as `pin`; the pairing's success or failure says which was used). |
 | `pairing_succeeded` | A pairing finished and each computer trusts the other. | `role`, `method`, and `remote_host`: the computer paired with. |
 | `pairing_failed` | A pairing did not finish. | `role`, `method`, and `reason`: `wrong_secret`, `no_window`, `unreachable`, `timed_out`, `abandoned`, `self_pairing` or `other`. |
@@ -108,14 +113,14 @@ a field for free text.
 | `relay_refused` | The relay refused to carry traffic because the account is on the free tier; at most once an hour. | — |
 | `paywall_viewed` | The iPhone app's subscription page opens. | `from`: the tab it was opened from, `agents`, `hosts` or `you`. |
 | `purchase_started` | The iPhone app starts a purchase with the App Store. | `interval`: `monthly` or `yearly`. |
-| `onboarding_step` | A step of the first-run setup is shown, confirmed or skipped. | `step`: `pair_phone`, `keep_reachable`, `sign_in`, `repositories`, `improve` or `first_agent`. `outcome`: `shown`, `done` or `skipped`. `surface`: `terminal`, `mac` or `phone`. |
+| `onboarding_step` | A step of the first-run setup is shown, confirmed or skipped. | `step`: `pair_phone`, `keep_reachable`, `sign_in`, `repositories`, `improve` or `first_agent`. `outcome`: `shown`, `done` or `skipped`. `surface`: the app the step was on, one of the words `client_opened` lists. |
 | `repositories_chosen` | The repositories step is confirmed. | `kept`: how many folders were kept; `suggested`: how many were suggested. Numbers only, never the folders. |
 | `page_review_sent` | Comments on a web page, made in the browser extension, are sent to an agent. | `comments`: how many comments; `quotes`: how many were on selected text; `regions`: how many were on a dragged box. Numbers only, never the page, its address or the comments. |
 | `check_failed` | One of amux's internal checks broke: a rule the daemon, an agent process, the relay or a connection's path choice holds after every step failed, a step took longer than allowed, or a chat's transcript failed its own check on a client. At most once per check every ten minutes. | `core`: `daemon`, `agent`, `relay`, `path` or `transcript`. `check`: which check, as the name amux's code gives it, such as `daemon.generation_fell`. `cause`: `invariant` or `over_budget`. `held_back`: how many more times the same check broke since the last one was sent. |
 
 A prompt or answer sent to another computer's agent is counted once, by the
-computer where you sent it; the computer that runs the agent does not count
-it again. Prompts typed straight into an agent's own terminal never pass
+computer that runs the agent, as its `from` and `remote_host` say; the
+computer or device where you sent it does not count it too. Prompts typed straight into an agent's own terminal never pass
 through amux's client, so they show up only in `turns_24h`. SSH pairing is
 counted once the daemon trusts the other computer; an SSH exchange that fails
 before that is not counted.

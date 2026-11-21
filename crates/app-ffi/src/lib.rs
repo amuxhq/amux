@@ -39,11 +39,11 @@ use app_runtime::{AppRuntime, Chat};
 use serde::Serialize;
 use tokio::runtime::Handle;
 
-// The tests drive real agent processes, which run on Unix.
 mod fleet;
 mod helpers;
 mod outbox;
 mod profile;
+mod review;
 mod runtime;
 mod session;
 
@@ -52,6 +52,7 @@ pub use profile::*;
 pub use runtime::*;
 pub use session::*;
 
+// The tests drive real agent processes, which run on Unix.
 #[cfg(all(test, unix))]
 mod tests;
 
@@ -96,7 +97,7 @@ pub(crate) struct Shared {
     pub(crate) phone: Phone,
     /// The profiles, managed the same way whether the installation is
     /// hosted here or is a daemon this app attached to.
-    pub(crate) installation: Arc<dyn client::Installation>,
+    pub(crate) installation: client::Installation,
     pub(crate) outbox: Arc<Outbox>,
 }
 
@@ -207,7 +208,7 @@ impl Shared {
         let outbox = self.outbox.clone();
         self.act(async move {
             let answer = act.await;
-            outbox.post_profiles(installation.as_ref()).await;
+            outbox.post_profiles(&installation).await;
             answer
         })
     }

@@ -4,4 +4,5 @@
 mod conformance;
 mod explore;
 mod retention;
+mod reviews;
 mod sqlite;

@@ -13,6 +13,12 @@ accent          #0071C2  #3B90DF
 onAccent        #FFFFFF  #FFFFFF
 added           #29854F  #70C78C
 removed         #A8333D  #E68080
+keyword         #873A9A  #D49CE6
+string          #964220  #E89F7A
+number          #755600  #D9B65C
+type            #1A636C  #72C3CC
+function        #4A4FA3  #A8ACF2
+comment         #5A5A61  #9B9BA2
 
 metric           value
 cardRadius      16

@@ -125,7 +125,8 @@ fn a_page_review_is_sent_in_the_agents_kind() {
     assert_eq!(
         prompt.attachments,
         [wire::Attachment {
-            of: Some(wire::attachment::Of::Page(page))
+            of: Some(wire::attachment::Of::Page(page)),
+            ..Default::default()
         }]
     );
 }
@@ -150,6 +151,22 @@ fn a_new_agent_is_the_kind_its_host_publishes() {
     ));
     assert_eq!(request.cwd, "~/site");
     assert!(request.initial_prompt.is_none());
+}
+
+/// A call to a host is addressed by the authority every client writes for
+/// it; an id that is not one is refused rather than sent somewhere else.
+#[test]
+fn a_host_is_addressed_by_its_authority() {
+    let host = "0192f0c87a517c3e9d2f3b1c5e6a7d80";
+    assert_eq!(
+        call(json!({"op": "authority", "host": host})),
+        "0192f0c8-7a51-7c3e-9d2f-3b1c5e6a7d80"
+    );
+    let short: Value = serde_json::from_str(&handle(
+        &json!({"op": "authority", "host": "ab"}).to_string(),
+    ))
+    .unwrap();
+    assert!(short["error"].as_str().unwrap().contains("not a host id"));
 }
 
 #[test]

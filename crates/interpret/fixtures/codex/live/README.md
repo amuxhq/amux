@@ -53,6 +53,7 @@ recorded it, except `turn_round_trip` (the `respond` scenario) and
 | `permission` | the agent made read-only from amux |
 | `mode` | the agent put in plan mode from amux |
 | `attach` | Codex's own app attached before any turn: its prompt, and the approval it led to answered from amux |
+| `review_attachment` | a review sent as the client sends one, with code holding `<`, `>` and `&`: the commented code quoted as written, and the review's diff command against the snapshot run inside Codex's default read-only sandbox without asking (recorded on Codex CLI 0.170.0) |
 
 A scenario that needs a setting amux names none for writes it into the
 scratch Codex home's `config.toml` for as long as it runs, as a person's

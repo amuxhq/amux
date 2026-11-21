@@ -388,20 +388,13 @@ pub(crate) fn branch_start(folder: &Path) -> (Option<String>, Option<String>) {
 }
 
 /// Deletes `branch` from the repository at `main` when it has no commits of
-/// its own: its tip is reachable from another ref. wt records no start
-/// point and the base moves, so reachability is the only test that works.
+/// its own, by the rule a delete's warning also counts with
+/// ([`git_facts::branch_own_commits`]): its tip is reachable from another
+/// ref. Neither git nor wt records where a branch started, and the base
+/// moves, so reachability is the only test that works.
 pub(crate) fn delete_if_empty(main: &Path, branch: &str) -> Result<bool, String> {
-    let own = format!("refs/heads/{branch}");
-    let tip = git(main, &["rev-parse", "--verify", "--quiet", &own])?;
-    let upstream = git(main, &["for-each-ref", "--format=%(upstream)", &own])?;
-    let containing = git(
-        main,
-        &["for-each-ref", "--format=%(refname)", "--contains", &tip],
-    )?;
-    let elsewhere = containing
-        .lines()
-        .any(|name| name != own && name != upstream && name != "refs/stash");
-    if !elsewhere {
+    let own = git_facts::branch_own_commits(main, branch).map_err(|error| error.to_string())?;
+    if !git_facts::branch_goes(own) {
         return Ok(false);
     }
     git(main, &["branch", "-D", branch])?;

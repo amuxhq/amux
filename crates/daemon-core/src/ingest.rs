@@ -41,6 +41,9 @@ pub struct Journals {
 enum IngestError {
     Store(store::StoreError),
     Journal(std::io::Error),
+    /// A round the committed items close could not be written, so neither
+    /// were they.
+    Review(String),
 }
 
 impl From<store::StoreError> for IngestError {
@@ -60,6 +63,7 @@ impl std::fmt::Display for IngestError {
         match self {
             IngestError::Store(error) => write!(f, "the store: {error}"),
             IngestError::Journal(error) => write!(f, "the journal: {error}"),
+            IngestError::Review(error) => write!(f, "closing a review's round: {error}"),
         }
     }
 }
@@ -163,7 +167,23 @@ impl Daemon {
                 now_ms: self.timers.now_ms as i64,
                 notify_delay_ms: self.settings.notify_delay_ms,
             };
-            let committed = self.store.commit(&key, &batch.frames, clock)?;
+            // The rounds the prompts and messages the agent took send close
+            // in the commit that takes them.
+            let reviews = self.options.reviews;
+            let (committed, reviewed) =
+                self.store
+                    .commit_reviewed(
+                        &key,
+                        &batch.frames,
+                        clock,
+                        |committed, writer| match reviews {
+                            true => {
+                                crate::reviews::rounds_delivered(writer, committed, clock.now_ms)
+                                    .map_err(IngestError::Review)
+                            }
+                            false => Ok(false),
+                        },
+                    )?;
             self.committed(agent);
             report.turn_ends = batch
                 .frames
@@ -177,6 +197,7 @@ impl Daemon {
                 // It may have committed or reverted what other agents in
                 // its checkout count as their changes.
                 self.turn_ended_beside(agent, out);
+                self.review_turn_ended(agent, out);
             }
             // Only now, with the transaction committed: a subscriber never
             // sees a revision the store could not serve it.
@@ -221,6 +242,13 @@ impl Daemon {
                         self.touched.foreign_parts.push((key.clone(), named));
                     }
                 }
+            }
+            // After the items: a subscriber hears of the prompt before its
+            // round closing on the row.
+            if reviewed == Some(true)
+                && let Err(error) = self.publish_row(&key, out)
+            {
+                tracing::warn!(%error, "publishing an agent's review failed");
             }
             self.touched.after_end.extend(committed.after_end);
             self.subagents_committed(&key, &made, committed.changes, out)?;
@@ -489,6 +517,100 @@ mod tests {
             answered(&again, call),
             vec!["k999"],
             "CaughtUp is answered once per Hello"
+        );
+    }
+
+    /// The step that ends an incarnation as suspended is committed while
+    /// its process is still connected, and the row then reads suspended to
+    /// every client. A person's input typed on that row asks for a wake,
+    /// which must wait for the process to go and then start the next
+    /// incarnation with the input first. Refused as live, it was handed to
+    /// the closing process instead, which exits without answering it.
+    #[test]
+    fn a_wake_after_the_suspension_is_committed_waits_for_the_exit() {
+        let mut rig = rig();
+        let key = AgentKey::new(OWN, AGENT.0);
+        let mut row = rig.daemon.store.agent(&key).unwrap().unwrap();
+        row.incarnation = 1;
+        rig.daemon.store.put_agent(&row).unwrap();
+        step(&mut rig.daemon, Input::Swept);
+        step(&mut rig.daemon, Input::AgentHello { agent: AGENT });
+        rig.journal
+            .append(&Step {
+                incarnation_end: Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::Suspended as i32,
+                    detail: None,
+                }),
+                ..Step::default()
+            })
+            .expect("the journal takes a step");
+        step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        let row = rig.daemon.store.agent(&key).unwrap().unwrap();
+        assert_eq!(row.exit_cause, wire::ExitCause::Suspended as i32);
+
+        let call = CallId(1);
+        let wake = crate::families::Resume {
+            agent: AGENT,
+            bootstrap: Some(wire::Bootstrap {
+                of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                    input_id: b"typed".to_vec(),
+                    prompt: Some(wire::PromptInput {
+                        text: "carry on".into(),
+                        attachments: Vec::new(),
+                    }),
+                })),
+            }),
+            if_suspended: true,
+        };
+        let out = step(
+            &mut rig.daemon,
+            Input::ClientCall {
+                call,
+                request: ClientRequest::ResumeAgent(Box::new(wake)),
+            },
+        );
+        assert!(
+            !out.iter().any(
+                |output| matches!(output, Output::EndCall { call: ended, .. } if *ended == call)
+            ),
+            "the wake waits for the exit rather than finding the agent live: {out:?}"
+        );
+
+        let gone = step(
+            &mut rig.daemon,
+            Input::ControlClosed {
+                agent: AGENT,
+                ended: crate::Ended::Exited,
+            },
+        );
+        let unlock = gone.iter().find_map(|output| match output {
+            Output::Job {
+                id,
+                op: crate::Job::AwaitUnlocked { agent, .. },
+            } if *agent == AGENT => Some(*id),
+            _ => None,
+        });
+        let unlock = unlock.unwrap_or_else(|| panic!("the wake goes on once it is gone: {gone:?}"));
+        let unlocked = step(
+            &mut rig.daemon,
+            Input::JobDone {
+                job: unlock,
+                result: crate::payload::JobResult::Done,
+            },
+        );
+        let asked = unlocked.iter().find_map(|output| match output {
+            Output::Job {
+                op: crate::Job::NextSpec { bootstrap, .. },
+                ..
+            } => Some(bootstrap.clone()),
+            _ => None,
+        });
+        assert!(
+            matches!(
+                asked.flatten().and_then(|bootstrap| bootstrap.of),
+                Some(wire::bootstrap::Of::Prompt(prompt)) if prompt.input_id == b"typed"
+            ),
+            "the next incarnation starts with the input: {unlocked:?}"
         );
     }
 

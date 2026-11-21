@@ -28,6 +28,7 @@ models = { workspace = true }
 provider-fakes = { workspace = true }
 serde_json = { workspace = true }
 testnet = { workspace = true }
+tonic = { workspace = true }
 
 [[test]]
 name = "integration"

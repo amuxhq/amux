@@ -170,9 +170,6 @@ struct Process {
     leaving: bool,
     /// Its live direct children with their incarnations, as last told.
     told: Vec<(Vec<u8>, u32)>,
-    /// Children on other hosts this host forwarded its creates for, by
-    /// agent id with their incarnations, until their hosts list them.
-    forwarded: BTreeMap<Vec<u8>, u32>,
     /// It is gone, and how the driver knows; its exit is recorded once its
     /// journal has been read to the end.
     ended: Option<Ended>,
@@ -1133,7 +1130,11 @@ impl Daemon {
             // A cause on a live row with a process is its journal's last
             // step, written as the agent begins to exit: it is on its way
             // out though it may have refused nothing yet, and once it
-            // finishes it no longer reads input.
+            // finishes it no longer reads input. The cause is committed
+            // with the step that makes the row read as suspended, so a
+            // wake for a row a client saw suspended always finds it here;
+            // read from the row rather than kept beside the process, it
+            // holds for a process adopted by a restarted daemon too.
             let journal_ended = row.exit_cause != ExitCause::Unspecified as i32;
             let leaving = process.leaving
                 || process.stopping.is_some()
@@ -2310,33 +2311,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// A call this host forwarded to another host was answered with an
-    /// agent: the one a create made, or a resume or rename touched. When
-    /// that agent is a live child of one of this host's running agents,
-    /// the parent hears of it now: its host lists it only later, and a
-    /// one-shot parent whose turn ends in between would exit without
-    /// waiting for it.
-    pub(crate) fn forwarded_agent(&mut self, child: &Agent, out: &mut Vec<Output>) {
-        let Some(parent) = &child.parent else {
-            return;
-        };
-        if parent.host_id != self.store.own_host() || child.lifecycle != Lifecycle::Live as i32 {
-            return;
-        }
-        let Some(parent) = AgentId::from_slice(&parent.agent_id) else {
-            return;
-        };
-        let Some(process) = self.families.processes.get_mut(&parent) else {
-            return;
-        };
-        process
-            .forwarded
-            .insert(child.agent_id.clone(), child.incarnation);
-        if let Err(error) = self.tell_children(parent, out) {
-            tracing::warn!(%error, "telling a parent of its forwarded child failed");
-        }
-    }
-
     /// Tells a running agent which agents directly below it are now live,
     /// when that changed: a one-shot agent waits for the last report of
     /// every child incarnation it was told of.
@@ -2363,10 +2337,10 @@ impl Daemon {
 
     /// The live agents directly below `agent` on any host with their
     /// incarnations, in agent id order so two lists compare equal when
-    /// nothing changed: what the store holds, and the children its creates
-    /// were forwarded for that their hosts have not listed yet. A listed
-    /// child is the store's to say from then on.
-    fn children_of(&mut self, agent: AgentId) -> Result<Vec<(Vec<u8>, u32)>, StoreError> {
+    /// nothing changed. A child on another host is here once its host lists
+    /// it; until then the agent's own process holds it, having carried the
+    /// create itself, and a list from here only ever adds to what it holds.
+    fn children_of(&self, agent: AgentId) -> Result<Vec<(Vec<u8>, u32)>, StoreError> {
         let rows = self.store.agents_of_parent(&self.own_key(agent))?;
         // A provider subagent sends no report, so a parent told of one would
         // wait for it forever; the parent's own process follows those it
@@ -2376,17 +2350,6 @@ impl Daemon {
             .filter(|row| row.lifecycle == Lifecycle::Live as i32 && row.native.is_none())
             .map(|row| (row.agent.agent.clone(), row.incarnation))
             .collect();
-        if let Some(process) = self.families.processes.get_mut(&agent) {
-            process
-                .forwarded
-                .retain(|child, _| !rows.iter().any(|row| row.agent.agent == *child));
-            children.extend(
-                process
-                    .forwarded
-                    .iter()
-                    .map(|(child, incarnation)| (child.clone(), *incarnation)),
-            );
-        }
         children.sort();
         Ok(children)
     }
@@ -2476,8 +2439,8 @@ mod tests {
     use store::Sqlite;
 
     use super::*;
-    use crate::payload::{Answer, ClientRequest, PeerReply, PeerRequest};
-    use crate::{HostId, Input, StartOptions};
+    use crate::payload::ClientRequest;
+    use crate::{Input, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
     const PARENT: AgentId = AgentId(*b"parent-000000000");
@@ -2682,7 +2645,7 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.live(CHILD, "helper", Some(PARENT));
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2707,12 +2670,12 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.live(CHILD, "helper", Some(PARENT));
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: CHILD,
             filing: Filing::Pinned,
         });
         assert_eq!(refusal_of(&out, call), Some(Refusal::HasParent));
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Pinned,
         });
@@ -2726,7 +2689,7 @@ mod tests {
     fn a_resume_files_a_closed_agent_active_again() {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2815,7 +2778,7 @@ mod tests {
         said(b"model a");
         rig.step(Input::Nudge { agent: PARENT });
 
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -2894,78 +2857,6 @@ mod tests {
         })
     }
 
-    /// A running agent's create of a child on another host is forwarded to
-    /// that host; its answer is the child's row. The parent hears of the
-    /// child then, not only once the child's host lists it: a one-shot
-    /// parent whose turn ends between the two would otherwise exit without
-    /// waiting for it.
-    #[test]
-    fn a_parent_hears_of_a_far_child_when_the_create_it_forwarded_is_answered() {
-        const FAR: HostId = HostId(*b"far-host-0000000");
-        let mut rig = rig();
-        rig.live(PARENT, "lead", None);
-        let request = wire::CreateAgentRequest {
-            agent_id: CHILD.0.to_vec(),
-            parent: Some(wire::AgentRef {
-                host_id: OWN.to_vec(),
-                agent_id: PARENT.0.to_vec(),
-            }),
-            ..Default::default()
-        };
-        let (_, out) = rig.call(ClientRequest::Forward {
-            host: FAR,
-            request: Box::new(PeerRequest::CreateAgent(request)),
-        });
-        let made = out
-            .iter()
-            .find_map(|output| match output {
-                Output::Call { call, host, .. } if *host == FAR => Some(*call),
-                _ => None,
-            })
-            .expect("the create is made of the child's host");
-        let child = Agent {
-            agent_id: CHILD.0.to_vec(),
-            host_id: FAR.0.to_vec(),
-            parent: Some(wire::AgentRef {
-                host_id: OWN.to_vec(),
-                agent_id: PARENT.0.to_vec(),
-            }),
-            lifecycle: Lifecycle::Live as i32,
-            incarnation: 1,
-            ..Agent::default()
-        };
-        let answered = rig.step(Input::PeerAnswer {
-            call: made,
-            answer: Answer::Reply(Box::new(PeerReply::Agent(child.clone()))),
-        });
-        assert_eq!(
-            children_told(&answered, PARENT),
-            Some(vec![CHILD.0.to_vec()]),
-            "{answered:?}"
-        );
-
-        // The child's host lists it, live: nothing new to tell. Listed as
-        // exited, the parent hears it has no live child.
-        let mut row = AgentRow::new(AgentKey::new(FAR.0, CHILD.0), wire::Kind::Codex, "/src");
-        row.parent = Some(rig.daemon.own_key(PARENT));
-        rig.daemon.store.put_agent(&row).unwrap();
-        let mut listed = Vec::new();
-        let parent = Some(rig.daemon.own_key(PARENT));
-        rig.daemon
-            .recount_from(parent.clone(), &mut listed)
-            .unwrap();
-        assert_eq!(children_told(&listed, PARENT), None, "{listed:?}");
-        row.lifecycle = Lifecycle::Exited as i32;
-        rig.daemon.store.put_agent(&row).unwrap();
-        let mut exited = Vec::new();
-        rig.daemon.recount_from(parent, &mut exited).unwrap();
-        assert_eq!(
-            children_told(&exited, PARENT),
-            Some(Vec::new()),
-            "{exited:?}"
-        );
-    }
-
     /// A process the daemon has just started is told nothing of children
     /// it cannot have. One that says Hello with no start waiting on it was
     /// found running, as a restarted daemon finds it: it is told it has
@@ -3038,7 +2929,7 @@ mod tests {
         // A daemon that started again adopts the process, whose Hello makes
         // the next read to the journal's end announce its CaughtUp.
         rig.step(Input::AgentHello { agent: PARENT });
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -3101,7 +2992,7 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.suspend(PARENT);
-        let (call, out) = rig.call(ClientRequest::FileAgent {
+        let (call, out) = rig.call(ClientRequest::SetFiling {
             agent: PARENT,
             filing: Filing::Closed,
         });
@@ -3307,7 +3198,7 @@ mod tests {
         rig.live(CHILD, "scout", None);
         rig.step(Input::Exiting { agent: CHILD });
         let (first, _) = rig.call(wake(CHILD, "go on"));
-        rig.call(ClientRequest::FileAgent {
+        rig.call(ClientRequest::SetFiling {
             agent: CHILD,
             filing: Filing::Closed,
         });

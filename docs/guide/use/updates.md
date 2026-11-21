@@ -2,7 +2,7 @@
 title: Updates and channels
 description: How amux keeps itself up to date without interrupting your agents, and how to choose between stable and preview releases.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 amux updates itself. About once an hour it checks for a new release, and when
@@ -30,6 +30,37 @@ it to start. If you're already up to date, it says so.
 
 A terminal app you opened before an update keeps working. It shows
 `restart to update` at the top of home until you quit and run `amux` again.
+
+## Updating to 0.11.0
+
+amux 0.11.0 changes how your computers and your phone talk to each other, so
+update all of them to it together: every computer you've paired, and the
+iPhone app from the App Store. Until they match, a computer or phone on 0.11.0
+and one on an earlier version can still show each other as online, but
+neither keeps up with the other's agents, and neither can start, message or
+stop agents on the other. Updating
+the one left behind fixes it: run `amux update` on that computer, or update
+the app. From 0.11.0 on, newer and older versions work together again.
+
+An agent that was running when its computer updated carries on with its
+conversation and its work, but its amux tools stop working: it can't list
+the fleet, message another agent, or start or settle subagents. It gets them
+back when it's resumed, so settle it and resume it:
+
+```sh
+amux settle <agent>
+amux resume <agent>
+```
+
+It picks up the same conversation where it left off. An agent that has
+already stopped needs nothing: it starts with its tools the next time it
+resumes.
+
+The browser extension updates itself from the Chrome Web Store, a little
+after amux does. Until its update arrives, an extension too old for your
+amux says "this version of amux needs a newer amux browser extension" and
+does nothing else. To update it at once, open `chrome://extensions`, turn on
+Developer mode and click Update.
 
 ## Channels
 

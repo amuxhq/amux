@@ -64,7 +64,7 @@ fn loopback() -> EdgeOverrides {
 async fn app(embedded: &EmbeddedRuntime, profile: ProfileId) -> AppRuntime {
     let wake = Arc::new(|_: Wake| {});
     AppRuntime::open(
-        embedded.client(profile).unwrap(),
+        embedded.node(profile).unwrap(),
         Arc::new(SystemClock),
         embedded.host_id(profile).unwrap(),
         wake,

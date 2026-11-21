@@ -12,7 +12,7 @@ use crate::editor::Editor;
 const WIDE: u16 = 44;
 const TALL: u16 = 24;
 /// A line of the patch the review tests open.
-const REVIEW_CODE: &str = "let c = 4;";
+const REVIEW_CODE: &str = "pub read_only: bool,";
 
 fn agent_says(order: u64, words: &str) -> Item {
     use wire::claude_item::Kind as K;
@@ -252,7 +252,7 @@ fn a_drag_held_past_the_top_of_the_feed_reaches_rows_scrolled_in() {
 fn the_review_page_copies_code_without_its_gutter() {
     let state = chat(replies(1, 3));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
+    open_review(&mut view);
     let drawn = rows(&mut view, &state);
     let row = drawn
         .iter()
@@ -265,11 +265,13 @@ fn the_review_page_copies_code_without_its_gutter() {
         (0, row as u16),
         (end.0 + REVIEW_CODE.len() as u16 - 1, row as u16),
     );
-    assert_eq!(copied(&effects), REVIEW_CODE);
-    assert!(view.review_open);
+    // From the left edge: the line's own indentation, not its number or
+    // its sign.
+    assert_eq!(copied(&effects), format!("    {REVIEW_CODE}"));
+    assert!(view.review_page_open);
     view.key(&state, key(KeyCode::Esc), theme());
     assert!(
-        view.review_open,
+        view.review_page_open,
         "esc let go of the selection, not the page"
     );
 }
@@ -465,7 +467,7 @@ fn pane_with_a_file() -> (SessionState, ChatView, (u16, u16)) {
             .wants_changes(&state)
             .expect("the pane wants its files")
             .0,
-        diff: working_tree_diff(),
+        changes: working_tree_changes(),
     });
     let (buffer, _) = draw(&mut view, &state, 0, 110, TALL, theme());
     let drawn: Vec<String> = text(&buffer).lines().map(str::to_owned).collect();
@@ -511,7 +513,7 @@ fn a_drag_from_a_side_pane_item_selects_it_instead_of_opening_it() {
 fn a_shorter_terminal_lets_a_review_selection_go_without_a_crash() {
     let state = chat(replies(1, 3));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.open_review_at(working_tree_diff(), PATCH.into(), None);
+    open_review(&mut view);
     let drawn = rows(&mut view, &state);
     let (x, y) = find(&drawn, REVIEW_CODE);
     drag(&mut view, &state, (x, y), (x + 4, y));

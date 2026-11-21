@@ -74,11 +74,7 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         ManualClock::new(0),
     ));
     let (request, feed) = calls.subscribe_session().await;
-    assert_eq!(
-        request.from,
-        Some(wire::subscribe_session_request::From::Tail(40)),
-        "a client asks for a tail"
-    );
+    assert_eq!(request.tail, 40, "a client asks for a tail");
     feed.send(snapshot(KIND, 7, &[]));
     feed.send(ev(text_item(KIND, 6, 6, "older")));
     feed.send(ev(text_item(KIND, 7, 7, "newest")));
@@ -126,10 +122,7 @@ async fn lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap() {
     let (session, mut calls, feed) = open_caught_up(&clock, 3).await;
     feed.send(lagged());
     let (request, feed) = calls.subscribe_session().await;
-    assert_eq!(
-        request.from,
-        Some(wire::subscribe_session_request::From::Tail(40))
-    );
+    assert_eq!(request.tail, 40);
     assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
     assert!(!session.state().caught_up());
     assert_eq!(session.state().connection(), Connection::Live);
@@ -192,7 +185,7 @@ async fn an_uncertain_input_is_settled_from_the_queue_or_the_items_and_otherwise
     // The connection dropping with the input in flight, and the daemon
     // saying it handed the input on and lost the agent's answer, are the
     // same uncertainty.
-    for (lost, found) in ["transport", "answer lost"]
+    for (lost, found) in ["transport", "answer lost", "carried and lost"]
         .into_iter()
         .flat_map(|lost| ["queue", "items", "nowhere"].map(|found| (lost, found)))
     {
@@ -206,6 +199,9 @@ async fn an_uncertain_input_is_settled_from_the_queue_or_the_items_and_otherwise
         let id = request.input.unwrap().input_id;
         let error = match lost {
             "transport" => transport(),
+            // The node carried it to the agent's host, and the link failed
+            // or no answer began in time.
+            "carried and lost" => aborted(),
             _ => RpcError::Refused(wire::Error {
                 code: ErrorCode::Aborted as i32,
                 message: "the agent's answer was lost; the input may or may not have arrived"
@@ -818,10 +814,7 @@ async fn a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_rel
     // window on screen until the fresh one is caught up.
     session.follow(true);
     let (request, fresh) = calls.subscribe_session().await;
-    assert_eq!(
-        request.from,
-        Some(wire::subscribe_session_request::From::Tail(3))
-    );
+    assert_eq!(request.tail, 3);
     assert!(feed.is_closed(), "the old stream is dropped");
     fresh.send(snapshot(KIND, 9, &[]));
     for order in 7..=9 {
@@ -945,6 +938,55 @@ async fn an_input_refused_because_the_host_was_unreachable_is_refused_and_never_
             panic!("{act}: the refused input went again: {request:?}");
         }
         drop(feed);
+    }
+}
+
+/// An input the node could not carry to its agent's host never left, for
+/// either reason: no link reached the host, or only the relay does and the
+/// plan lapsed. Both read as the host being away, which the composer
+/// holds: refused, never uncertain, the lapse in its own words so the chat
+/// says why. The input was addressed to the agent's host, named by the row.
+#[tokio::test]
+async fn an_input_that_never_left_for_its_host_is_held_for_either_reason() {
+    for (why, error) in [("unreachable", host_unreachable()), ("lapsed", lapsed())] {
+        let clock = ManualClock::new(0);
+        let (session, mut calls, _feed) = open_caught_up(&clock, 2).await;
+        let sending = tokio::spawn({
+            let session = session.clone();
+            async move { session.send_prompt("hello", Vec::new()).await }
+        });
+        let (request, reply) = calls.send_input().await;
+        assert_eq!(request.agent_id, agent(KIND).agent_id, "{why}");
+        let id = request.input.unwrap().input_id;
+        let detail = (why == "lapsed").then(|| error.to_string());
+        reply.send(Err(error)).ok();
+        let sent = sending.await.unwrap();
+        let held = wire::Rejected {
+            refusal: wire::Refusal::HostUnreachable as i32,
+            detail: detail.clone(),
+        };
+        assert_eq!(
+            sent.outcome,
+            InputOutcome::Reply(wire::SendInputResponse {
+                of: Some(wire::send_input_response::Of::Rejected(held)),
+            }),
+            "{why}"
+        );
+        assert_eq!(
+            session.state().input_state(&id),
+            Some(InputState::Rejected(Refusal {
+                reason: wire::Refusal::HostUnreachable,
+                detail,
+            })),
+            "{why}"
+        );
+        assert_eq!(session.state().not_confirmed().count(), 0, "{why}");
+        let host = uuid::Uuid::from_slice(HOST_A).unwrap();
+        assert_eq!(
+            calls.addressed("SendInput"),
+            [wire::authority(&host)],
+            "{why}: the input is addressed to the agent's host"
+        );
     }
 }
 

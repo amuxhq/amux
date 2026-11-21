@@ -20,7 +20,7 @@ public struct ChatPane: View {
     public var body: some View {
         VStack(spacing: 0) {
             Feed(chat: chat, host: host, openChanges: actions.openChanges, openAgent: actions.openAgent)
-            Footer(chat: chat, row: row, host: host)
+            Footer(chat: chat, row: row, host: host, openReview: actions.openChanges)
         }
     }
 
@@ -59,7 +59,7 @@ private struct Feed: View {
                 }
                 ForEach(Array(chat.landing.enumerated()), id: \.offset) { _, prompt in
                     VStack(alignment: .trailing, spacing: 2) {
-                        PromptBubble(text: ChatWords.text(of: prompt.text), steered: false)
+                        PromptBubble(segments: prompt.text, steered: false)
                         Text(ChatWords.underway(prompt.underway, host: host))
                             .font(.ui(.caption))
                             .foregroundStyle(Palette.textTertiary)
@@ -68,6 +68,9 @@ private struct Feed: View {
                 }
                 ActivityLine(chat: chat)
             }
+            .environment(
+                \.reviewRounds,
+                ReviewRounds(read: { [chat] in await chat.reviewRound($0) }, openReview: openChanges))
             .frame(maxWidth: Metrics.reading)
             .padding(.horizontal, Metrics.gutter)
             .padding(.top, 24)
@@ -211,6 +214,15 @@ extension ActivityKind {
 extension EnvironmentValues {
     /// The activity, for the one row it names as at work.
     @Entry var liveStep: Activity?
+    /// How a review sent into the chat opens its round.
+    @Entry var reviewRounds = ReviewRounds()
+}
+
+/// What a sent review's chip opens: its round, read from the agent's host,
+/// and from there the review as it is now.
+struct ReviewRounds {
+    var read: @MainActor (SentReviewRef) async -> ReviewPage? = { _ in nil }
+    var openReview: @MainActor () -> Void = {}
 }
 
 /// The time a step has been at work, counting.
@@ -275,6 +287,7 @@ private struct Footer: View {
     let chat: any ChatSurface
     let row: FleetRow?
     let host: String
+    let openReview: @MainActor () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
@@ -305,7 +318,9 @@ private struct Footer: View {
                     if let frame = chat.frame, !frame.queue.isEmpty {
                         QueueList(chat: chat, queue: frame.queue)
                     }
-                    Composer(chat: chat, name: row?.name ?? chat.frame?.name ?? "agent", host: host, reach: row?.hostReach)
+                    Composer(
+                        chat: chat, name: row?.name ?? chat.frame?.name ?? "agent", host: host, reach: row?.hostReach,
+                        openReview: openReview)
                 }
             }
         }

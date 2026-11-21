@@ -9,10 +9,10 @@ use ui_view::{AskBody, AskCard, Changeable, ClientCommand, Slash};
 use super::ask::AskAction;
 use super::composer::QueueEntry;
 use super::layout::Anchor;
-use super::review::ReviewAction;
 use super::{
     ASK_ARMS_MS, ChatEffect, ChatView, Hint, Selection, StopAsk, commands, composer, has_draft,
-    keys, next_control, pane, refused_command_words, unchangeable_words, withdraw_effect,
+    keys, next_control, pane, refused_command_words, review, review_counter, unchangeable_words,
+    withdraw_effect,
 };
 use crate::text;
 use crate::theme::Theme;
@@ -63,15 +63,41 @@ impl ChatView {
             self.editor.remove_chars(from, to);
             return vec![];
         }
-        if self.review_open
-            && let Some(page) = &mut self.review
-        {
-            match page.key(key) {
-                ReviewAction::None => {}
-                ReviewAction::Close => self.review_open = false,
-                ReviewAction::Comments => self.sync_review_token(),
+        if let Some(mut ask) = self.discard_ask.take() {
+            return match ask.key(key) {
+                Some(true) => vec![ChatEffect::ReviewEdit {
+                    edits: vec![ask.edit()],
+                    reopen: false,
+                }],
+                Some(false) => vec![],
+                None => {
+                    self.discard_ask = Some(ask);
+                    vec![]
+                }
+            };
+        }
+        if let Some((_, page)) = &mut self.round {
+            if page.key(key) == review::ReviewAction::Close {
+                self.round = None;
             }
             return vec![];
+        }
+        if self.review_page_open
+            && let Some(page) = &mut self.review_page
+        {
+            return match page.key(key) {
+                review::ReviewAction::None => vec![],
+                review::ReviewAction::Close => {
+                    self.review_page_open = false;
+                    vec![]
+                }
+                review::ReviewAction::Open { refresh } => vec![ChatEffect::ReviewOpen { refresh }],
+                review::ReviewAction::Edit { edits, reopen } => {
+                    vec![ChatEffect::ReviewEdit { edits, reopen }]
+                }
+                review::ReviewAction::Context(ask) => vec![ChatEffect::ReviewContext(ask)],
+                review::ReviewAction::Notice(words) => vec![ChatEffect::Notice(words.into())],
+            };
         }
         if key.code == KeyCode::Char('o') && ctrl {
             self.pane_toggle_key();
@@ -421,8 +447,12 @@ impl ChatView {
     /// exited agent with the draft, and otherwise keep the draft.
     pub(super) fn submit(&mut self, state: &SessionState) -> Vec<ChatEffect> {
         // Enter on an exited agent resumes it, with or without a message.
-        // A draft of only blanks is no message: it would spend a turn.
-        let blank = self.editor.attachments().is_empty() && self.editor.text().trim().is_empty();
+        // A draft of only blanks is no message: it would spend a turn. The
+        // review chip's drafts are one.
+        let reviewed = self.review_chip(state).is_some();
+        let blank = self.editor.attachments().is_empty()
+            && self.editor.text().trim().is_empty()
+            && !reviewed;
         if blank && state.composer() != Composer::Resume {
             return vec![];
         }
@@ -444,12 +474,16 @@ impl ChatView {
                 ))]
             }
             Composer::Send => {
-                if let Some(effects) = self.slash_command(state) {
+                if !reviewed && let Some(effects) = self.slash_command(state) {
                     return effects;
                 }
                 let (text, attachments) = self.editor.take_prompt();
                 self.not_sent = None;
                 self.follow();
+                if reviewed {
+                    self.review_sent = review_counter(state);
+                    return vec![ChatEffect::PromptWithReview { text, attachments }];
+                }
                 vec![ChatEffect::Prompt { text, attachments }]
             }
             Composer::Resume => {
@@ -836,7 +870,9 @@ impl ChatView {
 
     /// Whether keys typed now reach the composer.
     fn composer_has_keys(&self, state: &SessionState) -> bool {
-        !self.review_open
+        !self.review_page_open
+            && self.round.is_none()
+            && self.discard_ask.is_none()
             && self.picker.is_none()
             && !self.setting_prefix
             && self.tray.is_none()

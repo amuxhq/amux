@@ -19,6 +19,7 @@ members = [
     "crates/daemon-core",
     "crates/fake-amux",
     "crates/git-facts",
+    "crates/highlight",
     "crates/installer",
     "crates/interpret",
     "crates/ios-tools",
@@ -43,6 +44,7 @@ members = [
     "crates/testnet",
     "crates/tui",
     "crates/ui-runtime",
+    "crates/ui-code",
     "crates/ui-state",
     "crates/ui-view",
     "crates/release",
@@ -90,7 +92,9 @@ settings = { path = "crates/settings" }
 attachments = { path = "crates/attachments" }
 preview = { path = "crates/preview" }
 git-facts = { path = "crates/git-facts" }
+highlight = { path = "crates/highlight" }
 ui-runtime = { path = "crates/ui-runtime" }
+ui-code = { path = "crates/ui-code" }
 ui-state = { path = "crates/ui-state" }
 ui-view = { path = "crates/ui-view" }
 tui = { path = "crates/tui" }
@@ -126,12 +130,18 @@ protoc-bin-vendored = "3"
 tonic = { version = "0.14", features = ["transport"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
-tower = "0.5"
+# steer: the router in front of a client entry's handlers; util: boxing the
+# services it picks between.
+tower = { version = "0.5", features = ["steer", "util"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 hyper = { version = "1", features = ["http1", "server"] }
 http-body-util = "0.1"
+http-body = "1"
 thiserror = "2"
-uuid = { version = "1", features = ["v4", "v5", "serde"] }
+# Without `v4` or `v5`: a crate that makes ids turns on the kind it makes, so
+# one that only reads them (wire) links no source of randomness, which the
+# browser extension's WebAssembly has none of.
+uuid = { version = "1", features = ["serde"] }
 futures-util = "0.3"
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
@@ -167,10 +177,30 @@ ratatui = { version = "0.30", default-features = false, features = ["crossterm"]
 ratatui-image = { version = "11.1", default-features = false, features = ["crossterm"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 pulldown-cmark = { version = "0.13", default-features = false }
-# Grammars only (no themes: the terminal's palette colours the tokens), with
-# the pure-Rust regex engine so no C library is linked.
-syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "regex-fancy"] }
 shell-words = "1"
+# Syntax highlighting: tree-sitter's parser and highlighter, and one grammar
+# crate per language the highlight crate colours. Every grammar crate depends
+# only on tree-sitter-language's ABI type, not on tree-sitter itself, so they
+# all load into the one tree-sitter version here.
+tree-sitter = "0.27.2"
+tree-sitter-highlight = "0.27.2"
+tree-sitter-language = "0.1.9"
+tree-sitter-bash = "0.25.1"
+tree-sitter-c = "0.24.2"
+tree-sitter-cpp = "0.23.4"
+tree-sitter-css = "0.25.0"
+tree-sitter-go = "0.25.0"
+tree-sitter-html = "0.23.2"
+tree-sitter-java = "0.23.5"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-json = "0.24.8"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-swift = "0.7.4"
+tree-sitter-toml-ng = "0.7.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-yaml = "0.7.2"
+tree-sitter-md = "0.5.4"
 bytes = "1"
 qrcode = { version = "0.14", default-features = false }
 rusqlite = { version = "0.41.1", default-features = false, features = ["hooks", "cache"] }

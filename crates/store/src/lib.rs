@@ -25,6 +25,7 @@ pub mod experiments;
 mod explore;
 pub mod redact;
 mod retention;
+pub mod reviews;
 
 pub use blobs::BlobLru;
 #[cfg(feature = "explore")]
@@ -403,6 +404,9 @@ pub enum StoreError {
     /// Whoever owned the store let it go: nothing reads or writes it now.
     #[error("the store is closed")]
     Closed,
+    /// The experiment whose tables a write needs is off, by its version.
+    #[error("the {0} experiment is off")]
+    ExperimentOff(&'static str),
 }
 
 /// Encodes an attachment list for its column.

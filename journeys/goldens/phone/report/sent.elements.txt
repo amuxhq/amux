@@ -23,13 +23,13 @@ report.cancel | Close |  | 20,66,40,36
  | Working |  | 262,198,124,32
  | Working |  | 296,205,57,18
  | Search |  | 16,197,370,0
- | Agents |  | 111,795,94,54
+ | Agents |  | 110,795,95,54
  | Agents |  | 140,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 229,830,29,12
- | Agents |  | 111,795,94,54
- | Agents |  | 141,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 230,830,29,12
- | Agents | selected | 111,795,94,54
- | Hosts |  | 197,795,94,54
+ | Computers |  | 197,795,95,54
+ | Computers |  | 216,830,56,12
+ | Agents |  | 110,795,95,54
+ | Agents |  | 140,830,35,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 217,830,55,12
+ | Agents | selected | 110,795,95,54
+ | Computers |  | 197,795,95,54

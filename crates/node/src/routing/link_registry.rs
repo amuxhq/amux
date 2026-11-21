@@ -887,7 +887,7 @@ mod tests {
     /// pair, marked as carried through `through`.
     async fn carried_through(through: LinkId) -> Arc<QuicCarrier> {
         let (near, _far) =
-            crate::link::quic::stream_pair(crate::link::framed::FramedKind::InProcess).await;
+            crate::link::quic::stream_pair(crate::link::framed::FramedKind::Loopback).await;
         let near = Arc::try_unwrap(near).unwrap_or_else(|_| panic!("one holder"));
         Arc::new(near.carried_through(Some(through.core())))
     }

@@ -35,7 +35,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 zstd = { workspace = true }
 

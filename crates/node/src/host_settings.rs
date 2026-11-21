@@ -820,7 +820,8 @@ mod tests {
             listed,
             [
                 ("workspaces", "workspaces/1", false),
-                ("suspension", "suspension/1", false)
+                ("suspension", "suspension/1", false),
+                ("reviews", "reviews/1", false)
             ]
         );
         assert!(wire.experiments.iter().all(|e| !e.description.is_empty()));
@@ -864,16 +865,20 @@ mod tests {
             .collect::<Vec<_>>()
         };
         // Started with neither, both are being applied; with one, the other.
-        assert_eq!(applying(&[]), [(true, true), (true, true)]);
+        // The one left off and not running is not being applied.
+        assert_eq!(applying(&[]), [(true, true), (true, true), (false, false)]);
         assert_eq!(
             applying(&[&settings::experiments::SUSPENSION]),
-            [(true, true), (true, false)]
+            [(true, true), (true, false), (false, false)]
         );
         let both = [
             &settings::experiments::WORKSPACES,
             &settings::experiments::SUSPENSION,
         ];
-        assert_eq!(applying(&both), [(true, false), (true, false)]);
+        assert_eq!(
+            applying(&both),
+            [(true, false), (true, false), (false, false)]
+        );
 
         // Off again; the name this build does not know stays.
         let config = settings.update(&switch(&[])).unwrap();
@@ -883,7 +888,10 @@ mod tests {
                 &config,
                 "desk",
                 false,
-                &InEffect::of(&Enabled::of(&both), &config.experiments)
+                &InEffect::of(
+                    &Enabled::of(settings::experiments::EXPERIMENTS),
+                    &config.experiments
+                )
             )
             .experiments
             .iter()

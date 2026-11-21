@@ -5,7 +5,7 @@ package amux.v1;
 import "amux/v1/link.proto";
 import "amux/v1/records.proto";
 
-// The inventory: hosts and agent rows, as AgentService.SubscribeInventory
+// The inventory: hosts and agent rows, as InventoryService.SubscribeInventory
 // streams them.
 
 // Hosts and agent rows: the current set, CaughtUp, then deltas. A listing is

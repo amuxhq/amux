@@ -31,7 +31,7 @@ What the design holds itself to:
    history only if it needs it. There is no replay protocol.
 4. **Every surface tolerates version skew by field discipline,** because
    paired machines, pinned agent processes and long-lived clients never
-   update together; from 0.9.0 `just proto-compat` holds the protocol to it
+   update together; from 0.11.0 `just proto-compat` holds the protocol to it
    against the latest release ([the wire](WIRE.md#compatibility)).
 5. **Lean on the operating system.** Files, file locks, sockets closing on
    process death and inodes surviving a binary swap do the work before any
@@ -196,21 +196,30 @@ addresses change. See [embedding](EMBEDDED.md).
 
 ## Who dials the daemon
 
-![Everyone who needs something from the daemon uses its amux protocol, the MCP server included; the agent process itself never dials it, because its directory and journal are its whole interface. ctl.sock and the journal remain the daemon's way in to an agent. Both surfaces live by the same field discipline; the only difference is that ctl.sock has no version integer at all.](figures/who-dials-daemon.svg)
+![Everyone who needs something from the daemon uses its amux protocol, the MCP server included; the agent process itself dials it only for a spawn, because its directory and journal are otherwise its whole interface. ctl.sock and the journal remain the daemon's way in to an agent. Both surfaces live by the same field discipline; the only difference is that ctl.sock has no version integer at all.](figures/who-dials-daemon.svg)
 
 | Caller | Where | What it speaks |
 |---|---|---|
-| CLI, terminal client, Mac app and any [other client](guide/build/build-a-client.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; `AgentService`, `SessionService` and `ProfileAdminService` on the profile socket |
-| phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `AgentService` and `SessionService` calls |
-| paired daemon | a link stream, after a pinned mutual-TLS handshake | `AgentService` and `SessionService`, answered only for this host's own agents |
-| an agent's tool server, and its agent process for a spawn | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `AgentService` and `SessionService`; the socket it arrived on is the caller's identity |
+| CLI, terminal client, Mac app and any [other client](guide/build/build-a-client.md) | the front door (`<root>/amux.sock`), then the profile's `profiles/<id>/sock` | `InstallationService` on the front door; on the profile socket the local services (`InventoryService`, `SessionService`, `DraftService`), the host services (`AgentService`, `HostService`, `ReviewService`) and `ProfileAdminService` |
+| phone UI | in memory, through [`client::Client::in_memory`](../crates/client/src/lib.rs) and the phone's entry | the same services as the profile socket |
+| paired daemon | a link stream, after a pinned mutual-TLS handshake | the host services, carried for its people and agents and answered only for this host's own agents, and `PeerService`, asking for itself |
+| an agent's tool server, and its agent process for a spawn | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | the local and host services, without administration; the socket it arrived on is the caller's identity |
+
+A client reads from the daemon it is attached to, which answers from its own
+agents and its copies of other hosts', and addresses every act to the host
+that owns what it acts on, by that host's id. The daemon answers a call
+addressed to itself and carries any other, unread, over its link to the host
+it names: one hop, since a link's server passes nothing on. A paired daemon
+never calls a local service; it keeps its copy through the peer service.
 
 The daemon dials in the other direction exactly once per agent: it connects
 to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
-and writes inputs and stops. The agent never dials the daemon.
+and writes inputs and stops. The agent dials the daemon only to make the
+spawns its tool server asks it for, on its own `tools.sock`.
 
 Every surface is protobuf, and none carries a version integer. From 0.9.0 the
-schemas change only by adding; [the wire](WIRE.md) has the calls, the records
+schemas change only by adding, and the services from 0.11.0, the release that
+gave them their present shape; [the wire](WIRE.md) has the calls, the records
 and the rule.
 
 ## Inside the daemon
@@ -295,6 +304,8 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   journal/0001048576          the next segment (1 MiB by default)
   pty/0000000000              raw terminal bytes, named the same way (terminal Claude only; the newest four kept)
   blobs/<sha256>              bytes the agent references, and what it offers as an encoded Catalogue the snapshot names, each named by its hash
+  review/objects/             the reviews experiment's snapshots of the working tree, as git objects kept out of the repository
+  review/indexes/<commit>     a git index of each snapshot the review keeps, which the diff command a sent review names reads
   private/                    the agent's own state; the daemon never reads it
     facts/                    the ring of recent provider facts and interpreter checkpoints
     provider-session          the provider's session or thread id, so a resume continues it
@@ -323,8 +334,9 @@ the agent's directory.
 | `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |
 | `pty/*` | agent | agent | terminal clients, by position | agent, oldest first |
-| `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
+| `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
 | `private/*` | agent | agent | agent, and its part of a debug bundle | with the directory |
+| `review/*` | daemon | daemon, while the reviews experiment is on | git, with the store as an alternate object directory: the daemon, and the agent running the command its sent review names | daemon: with the directory, when the review is started over, and at the next profile open with the experiment off; never in a debug bundle |
 
 ### Everything else on disk
 
@@ -604,7 +616,7 @@ every message a provider sends or is sent.
 
 | Crate | What it is |
 |---|---|
-| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and the agent, session, pairing, profile-administration and installation services. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature, and `schemars` sits behind its `schema` feature: crates that only speak the messages take neither tokio nor schemars from `wire`. |
+| [`wire`](../crates/wire/src/lib.rs) | Committed protobuf types for every boundary: the journal's records, the agent spec and control frames, and every service: the local, host and peer services, pairing, profile administration and the installation. Sources in `proto/` (the public contract) and `crates/wire/proto/` (the dump schema only amux reads). The services and tonic sit behind its `grpc` feature, and `schemars` sits behind its `schema` feature: crates that only speak the messages take neither tokio nor schemars from `wire`. |
 | [`attachments`](../crates/attachments/src/lib.rs) | Attachments as positioned text, and the `<amux-attachment>` element the model sees. |
 | [`preview`](../crates/preview/src/lib.rs) | The one line a fleet row quotes from a reply: the interpreter writes it onto the agent's record, and the views read it from a chat they hold, so both say the same line. |
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
@@ -612,6 +624,7 @@ every message a provider sends or is sent.
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
 | [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, and starts it. Does not link the daemon. |
+| [`highlight`](../crates/highlight/src/lib.rs) | Syntax highlighting over tree-sitter's grammars: code and its language in, lines of runs tagged with a kind of token out, which each client maps to its own palette. Grammars are built in the background on first use, and a block still streaming is passed over at a bounded rate. The same grammars give a file's definitions, from which a diff says where a hunk sits and what a change touches. The view layer colours chat code and edit cards through it, and the agent's host a review's diffs. See [highlighting](HIGHLIGHTING.md). |
 | [`analytics`](../crates/analytics/src/lib.rs) | The usage events a device may send, typed so nothing but enums, numbers and ids fits; the per-profile handle and the installation's uploader. See [what amux sends](guide/understand/what-amux-sends.md). |
 
 **The agent side** — everything that reads a provider.
@@ -622,7 +635,7 @@ every message a provider sends or is sent.
 | [`journal`](../crates/journal/src/lib.rs) | Append-only journal segments: writer, reader and reclaiming. |
 | [`interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters (`claude_pty`, `claude_sdk`, `codex`), their shared core, the agent's record, the structure walker a report's core record is written with, and the golden harness. See [interpreters](INTERPRETERS.md). |
 | [`agent`](../crates/agent/src/lib.rs) | The agent process (`amux internal agent <dir>`) and the tool server (`amux internal mcp <dir>`), with each provider's host in a module of its own: [`claude`](../crates/agent/src/claude.rs) (launch settings, hook forwarding, the messaging socket, session files and the version probe) and [`codex`](../crates/agent/src/codex.rs) (Codex's app server started on a socket other clients can join, its messages carried as bytes). |
-| [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch and change totals, read by running git; shared by the agent process and the daemon. |
+| [`git-facts`](../crates/git-facts/src/lib.rs) | An agent folder's branch, base branch, change totals and changed files, and the commits a branch holds alone, read by running git under one pinned configuration; shared by the agent process and the daemon. Also the reviews experiment's snapshots of a working tree, kept in a store outside the repository, and the comparisons between them (see [reviews](REVIEWS.md)). |
 | [`claude-protocol`](../crates/claude-protocol/src/lib.rs) | Claude Code's headless stream, transcript rows and hook payloads as types, with a tolerant decoder. See [provider crates](PROVIDER_CRATES.md). |
 | [`codex-protocol`](../crates/codex-protocol/src/lib.rs) | Codex's app-server messages as types, with a tolerant decoder. |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal process hosting. |
@@ -652,9 +665,10 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 
 | Crate | What it is |
 |---|---|
-| [`client`](../crates/client/src/lib.rs) | The one seam both clients call the local runtime through: gRPC over the profile socket, or in process on the phone. |
+| [`client`](../crates/client/src/lib.rs) | The client library every client calls its node through: the generated stubs over the profile socket, or in memory on the phone. |
 | [`ui-state`](../crates/ui-state/src/lib.rs) | The pure session and fleet model clients reduce their streams into, with the thin per-kind layer that decodes snapshot bodies, and the plain values the views and the phone bridge share ([`model.rs`](../crates/ui-state/src/model.rs)), from which the Swift mirrors are generated. |
-| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review document. |
+| [`ui-view`](../crates/ui-view/src/lib.rs) | Pure content values: chat rows, ask cards, the overview, the fleet, the review page, and code coloured by kind of token as the values a client draws. No highlighter, so it builds without a C compiler. |
+| [`ui-code`](../crates/ui-code/src/lib.rs) | The colouring of those code values, for the code each client draws itself: a chat's fenced blocks and an edit card's hunks, through `highlight`. Linked by the clients that draw code, not by the browser extension. |
 | [`ui-runtime`](../crates/ui-runtime/src/lib.rs) | The session and fleet drivers: the only place a chat does I/O. |
 
 **Clients and binaries.**
@@ -666,6 +680,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`app-runtime`](../crates/app-runtime/src/lib.rs) | The phone's chats and fleet over the local runtime, with changes gathered for the host's next turn. |
 | [`app-embedded`](../crates/app-embedded/src/lib.rs) | The daemon's profile runtime hosted in the phone's process. |
 | [`app-ffi`](../crates/app-ffi/README.md) | The C ABI the iPhone app calls, with view values as JSON. See [embedding](EMBEDDED.md). |
+| [`browser-core`](../crates/browser-core/src/lib.rs) | The client crates the browser extension runs, compiled to WebAssembly: the fleet model, the rows its agent picker draws, and the `amux.v1` messages it sends and reads, behind one JSON entry point. |
 
 **Verification and tools** — never linked by production code.
 
@@ -698,7 +713,7 @@ workspace crates, and ignores dev-dependencies. Its rules:
    `qualification`, `provider-fakes`, `fake-amux`, `shot`, `models` and
    `replay-support` may be depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `client`, `ui-state`,
-   `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
+   `ui-view`, `ui-code`, `ui-runtime`, `tui` and `app-runtime` may not
    reach `node`, `store`, `interpret`, `agent`, `claude-protocol`,
    `codex-protocol` or `pty-host`, directly or through any chain of
    dependencies.
@@ -718,8 +733,8 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `settings`, `log-file`, `release`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
-| `journal`, `store`, `agent-dir`, `attachments`, `redaction` | `wire` | |
+| `wire`, `log-file`, `release`, `analytics`, `git-facts`, `highlight`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
+| `journal`, `store`, `agent-dir`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `preview`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
@@ -731,13 +746,14 @@ The allowed sets encode the layering above:
 | `supervisor-core` | at most `core-ring`, `release` | reads release manifests and version stamps, and shares the cores' step budget and dump reasons from the ring's crate |
 | `workspace-core` | nothing in the workspace | the daemon core composes it and runs it inside its own step, so it needs no budget or dump reason of its own |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `journal`, `log-file`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`) |
+| `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `journal`, `log-file`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`); `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
-| `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
-| `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
+| `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-code` → `highlight`, `ui-view`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; `ui-view` holds no highlighter, since tree-sitter's grammars are C and the browser extension builds the views to WebAssembly without a C compiler; each client that draws code colours what it parses out of a chat through `ui-code` |
+| `tui` | `attachments`, `client`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `node`, `ui-state`, `ui-view` | the C ABI over both |
+| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer`, `node`, `ui-code`, `ui-state`, `ui-view`, `wire` | the C ABI over both; the installer only off the phone, for a desktop app's first call |
+| `browser-core` | `attachments`, `ui-state`, `ui-view`, `wire` | the pure client crates, with no runtime, socket or driver, since the extension does its own I/O |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire`, `workspace-core` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |

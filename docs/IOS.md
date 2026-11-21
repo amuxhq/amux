@@ -5,8 +5,8 @@
 The iPhone app is native SwiftUI, iPhone only, with iOS 26.0 as its minimum.
 It is a full amux installation in its own process: the daemon runs in the
 app, with one profile per account, and the chats and fleet are read from
-that in-process runtime through the same client service the terminal dials
-over a socket. The phone runs no agents of its own. It pairs with the
+that in-process runtime through the same services and the same client
+library the terminal uses over a socket. The phone runs no agents of its own. It pairs with the
 machines that do, reaches them directly on the local network or through the
 relay, and keeps replica rows of their agents in its own store so a chat
 draws before any machine answers.
@@ -120,8 +120,9 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   what a Reset's swap and the reload of a head that moved on do: the rows on
   screen stay until the rebuilt transcript replaces them, and the cells kept
   are read again in place.
-- It keeps the head ask's unsent answers and a review in progress for as
-  long as the chat is open, so leaving the page loses none of them. The
+- It keeps the head ask's unsent answers for as long as the chat is open,
+  so leaving the page loses none of them; a review's comments are saved on
+  the agent's host as they are written. The
   draft and its attachments last longer: the chat hands each one, as it
   changes, to the profile's own daemon on the phone, as the terminal hands
   its drafts to its machine's (docs/CLIENT.md), so a draft outlives its
@@ -184,6 +185,24 @@ thread. A chat is a `ChatModel` over an open `Chat`:
 
 A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.
+
+Code is coloured by the shared view's highlighting, the terminal's own:
+fenced blocks in the agent's markdown and the patch on an edit card. The
+phone parses markdown itself (`AmuxWords`), so each block asks the bridge
+for its runs (`CodeHighlighting`, read from the environment, which the app
+and the catalogue set to the bridge's) away from the main thread, and draws
+them in the design's `syntax` colours (`Design.ink(_:)`, in `AmuxFeatures`:
+the design package holds the colours and no bridge values). Only the open fence
+of a message still streaming is asked for as streaming, which the shared
+view colours at a bounded rate. An answer that is not settled yet (a grammar
+building on first use, a streaming pass under way) is drawn as it is and
+asked for again 50 ms later; settled answers are kept by content, so a
+block scrolled back into view draws coloured at once, and while a newer
+answer is on its way the last one keeps colouring the lines that still read
+the same. `SyntaxContrastTests` holds every token colour to 4.5:1 on the
+code well and under an edit card's green and red; the Mac's palette is held
+to the same rule, by the same checking code (`CodeContrast`), in the Mac's
+own tests.
 
 ## Accounts and profiles
 
@@ -579,9 +598,11 @@ top, the tabs and each sheet, carries `surface()`, which hands its
 elements to the door as well as drawing the report over the top one; a
 named element is looked for on the top surface first.
 
-Three gestures have no in-process way in: drawing a box on a report,
-scrubbing the review page's file strip, and swiping back from the screen's
-edge. They have no accessibility action either, so they are checked by eye.
+Two gestures have no in-process way in: drawing a box on a report, and
+swiping back from the screen's edge. They have no accessibility action
+either, so they are checked by eye. A range on the review page is
+selected in process through each line's "Select line" action, which acts as
+a tap does.
 
 `open` goes where a person would tap to: a tab (`home`, `hosts`, `you`), or
 a page (`conversation`, `pin`, `new-agent`, ...) about a machine or agent the
@@ -804,13 +825,13 @@ package may contain UIKit. A leaf is one file under `Leaves/`, wrapped in one
 representable, named there and justified by a written measurement or
 argument; `feature-lint.sh` refuses UIKit anywhere else. A name with no file
 behind it is a candidate: the question was asked and answered without a
-leaf. There are five names and three leaves.
+leaf. There are five names and four leaves.
 
 | Name | Status | Why |
 | --- | --- | --- |
 | `transcriptList` | Leaf, `Leaves/TranscriptList.swift` | A SwiftUI stack placed every drawn row again on every arrival, about 60 ms a frame under the stream; a lazy one could not hold the reader's place. Its heights are its own: UIKit's self-sizing cost most of a frame per arrival too |
 | `tokenTextField` | Candidate | Attachments are chips beside the field, so the field is SwiftUI's own |
-| `diffSelection` | Candidate | Line frames and a point lookup select a range without a second layout system |
+| `diffSelection` | Leaf, `Leaves/DiffSelection.swift` | SwiftUI's hold-then-drag on the review's lines kept a swipe that began on a line from scrolling the page |
 | `menuButton` | Leaf, `Leaves/MenuButton.swift` | SwiftUI's `Menu` does not pass its name or identifier to the button VoiceOver reaches |
 | `workingMotion` | Leaf, `Leaves/WorkingMotion.swift` | The activity line's rule and the working marks, animated by SwiftUI, kept a phone's main thread about 16% busy with nothing arriving and froze while it was busy |
 
@@ -936,26 +957,38 @@ text editors bind a `String` or an `AttributedString`, and neither has an
 attribute that makes a run atomic to the caret or renders an
 `NSTextAttachment`, so inline tokens would need a `UITextView` leaf.
 
-### Selecting a range in a diff is SwiftUI
+### Selecting a range in a diff is a UIKit hold
 
-The review page lets a finger draw across a run of lines to comment on them.
-A leaf would be bought for the hit test: while a finger drags, the page has
-to say which line it is over on every movement, and the worry is that SwiftUI
-would either walk the whole patch per update or need a layout system of its
-own. It does neither. Each line reports its frame in the list's named
+The review page lets a finger draw across a run of lines to comment on them,
+as text is selected: a line held for 0.3 s starts the selection, the
+selection follows the finger through the lines of the file it began in, and a
+finger held in the 56-point band at the list's top or bottom edge runs the
+list under it, faster the deeper in, stretching the selection as lines come
+under it. A tap selects one line and a tap on another line of the file
+stretches it; VoiceOver selects with an action on a line.
+
+The hit test is SwiftUI's. Each line reports its frame in the list's named
 coordinate space through a preference key as it lays out, into a dictionary
-keyed by line; the drag looks its point up in that dictionary. Because the
-stack is lazy, that is the screenful plus whatever the reader has scrolled
-past, not the patch.
+keyed by row that the page holds without observing; the finger's place is
+looked up there. Because the stack is lazy, that is the screenful plus
+whatever the reader has scrolled past, not the whole change. The edge run moves the
+list through `ScrollPosition`, whose `scrollTo(y:)` measures from the top of
+what the list shows under the bar rather than from its content offset.
 
-The gesture is a 0.3 s long press that hands over to a zero-distance drag. That
-is the system's own way to start a selection and what tells the scroll view
-to let go: a bare drag scrolls the page, and a tap has one end where a range
-needs two. VoiceOver selects with an action on a line instead.
+The gesture is UIKit's. SwiftUI's `LongPressGesture` sequenced before a
+zero-distance `DragGesture` selected, but driven in the simulator it kept a
+swipe that began on a line from scrolling the page at all, whether attached
+as the content's gesture or as a simultaneous one, and it reports no place
+until the finger moves, so a still hold selected nothing. A
+`UILongPressGestureRecognizer` brought in through
+`UIGestureRecognizerRepresentable` fails as soon as the finger moves before
+the hold is up, which leaves the touch to the scroll view, and once held it
+reports where the finger is until it lifts. It recognizes alongside every
+recognizer but the scroll view's pan, so holding a file's head still opens
+its menu.
 
-This is an argument, not a measurement: no performance workload covers the
-review page. What would reopen it: a real patch on a real phone dropping
-frames under a finger.
+What would reopen it: SwiftUI's sequenced gesture leaving a scroll view's
+pan alone, which a swipe from a line on the review page shows at once.
 
 ### Menus are presented by a UIKit button
 

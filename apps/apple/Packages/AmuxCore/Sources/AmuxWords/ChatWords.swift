@@ -310,7 +310,7 @@ public enum ChatWords {
         case .image(let blob), .file(let blob): (blob.name, bytes(blob.size))
         case .text(let name, let lines, _):
             (name, lines == 1 ? String(localized: "1 line") : String(localized: "\(lines) lines"))
-        case .review(let comments, _):
+        case .sentReview(let comments, _, _):
             (String(localized: "Review"),
              comments == 1 ? String(localized: "1 comment") : String(localized: "\(comments) comments"))
         case .page(let title, let comments, _):
@@ -324,7 +324,7 @@ public enum ChatWords {
         case .image: "photo"
         case .file: "doc"
         case .text: "doc.plaintext"
-        case .review: "text.bubble"
+        case .sentReview: "text.bubble"
         case .page: "globe"
         case .empty: "paperclip"
         }
@@ -355,6 +355,18 @@ public enum ChatWords {
             case .attachment(let view): "[\(chip(view))]"
             }
         }.joined()
+    }
+
+    /// Segments as a sentence to hear: the words, and each chip by its
+    /// name, in order, a pause between.
+    public static func spoken(of segments: [Segment]) -> String {
+        segments.compactMap { segment -> String? in
+            let said = switch segment {
+            case .text(let text): text.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .attachment(let view): chip(view)
+            }
+            return said.isEmpty ? nil : said
+        }.joined(separator: ", ")
     }
 
     // MARK: - The activity line
@@ -518,22 +530,6 @@ public enum ChatWords {
         String(localized: "\(Self.files(files)), \(added) added, \(removed) removed")
     }
 
-    public static func attachReview(_ count: Int) -> String {
-        count == 1
-            ? String(localized: "Attach Review · 1 comment")
-            : String(localized: "Attach Review · \(count) comments")
-    }
-
-    /// "Added line 12, Refused(String),": a diff line as VoiceOver reads it.
-    public static func spoken(_ line: DiffLine) -> String {
-        let text = line.text.trimmingCharacters(in: .whitespaces)
-        switch line.kind {
-        case .added: return String(localized: "Added line \(line.newLine ?? 0), \(text)")
-        case .removed: return String(localized: "Removed line \(line.oldLine ?? 0), \(text)")
-        case .context: return String(localized: "Line \(line.newLine ?? line.oldLine ?? 0), \(text)")
-        }
-    }
-
     /// "1 line", "12 lines".
     public static func lines(_ count: UInt32) -> String {
         count == 1 ? String(localized: "1 line") : String(localized: "\(count) lines")
@@ -541,6 +537,220 @@ public enum ChatWords {
 
     public static func commentOn(lines: Int) -> String {
         lines == 1 ? String(localized: "Comment on 1 line") : String(localized: "Comment on \(lines) lines")
+    }
+
+    // MARK: - The agent's review
+
+    /// "Review · 3 comments": the composer's chip while the agent's review
+    /// holds drafts, which the next send carries.
+    public static func reviewChip(_ chip: ReviewChip) -> String {
+        String(localized: "Review · \(comments(Int(chip.comments)))")
+    }
+
+    /// Beside the chip when the agent changed code after the drafts were
+    /// written on it.
+    public static let reviewChipMoved = String(localized: "Written on older code")
+
+    /// The chip's ✕ asks this before the drafts go.
+    public static func discardDrafts(_ count: UInt32) -> String {
+        count == 1
+            ? String(localized: "Discard 1 draft?")
+            : String(localized: "Discard \(count) drafts?")
+    }
+
+    public static let discardDraftsDetail = String(
+        localized: "Comments not yet sent are deleted. Sent comments stay.")
+
+    public static let startOverQuestion = String(localized: "Start the review over?")
+
+    public static let startOverDetail = String(
+        localized: "Every comment on it is deleted, sent or not, and the next look is a first look. The chat keeps what was sent.")
+
+    /// A view's name on the switch between them.
+    public static func reviewView(_ view: ReviewView) -> String {
+        switch view {
+        case .all: String(localized: "All changes")
+        case .sinceLast: String(localized: "Since your last review")
+        }
+    }
+
+    /// What the view shown compares against: "Since main", "Uncommitted",
+    /// "Since your last review".
+    public static func reviewAgainst(_ header: ReviewHeader) -> String {
+        switch header.view {
+        case .sinceLast: String(localized: "Since your last review")
+        case .all where header.baseBranch.isEmpty: String(localized: "Uncommitted")
+        case .all: String(localized: "Since \(header.baseBranch)")
+        }
+    }
+
+    /// "3 files · +12 −4 · 2 drafts · 1 sent": the view's counts and the
+    /// review's comments.
+    public static func reviewCounts(_ header: ReviewHeader) -> String {
+        let lines = "+\(header.added) \u{2212}\(header.removed)"
+        var parts = [files(Int(header.files)), lines]
+        if header.drafts > 0 {
+            parts.append(
+                header.drafts == 1
+                    ? String(localized: "1 draft") : String(localized: "\(header.drafts) drafts"))
+        }
+        if header.sent > 0 { parts.append(String(localized: "\(header.sent) sent")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Said above the files.
+    public static func reviewBanner(_ banner: ReviewBanner) -> String {
+        switch banner {
+        case .changedSinceYouStarted:
+            String(localized: "Changed since you started. Refreshing moves your drafts to the code as it is now.")
+        case .changedSince: String(localized: "The agent changed code since this snapshot.")
+        case .movedDrafts(let count):
+            count == 1
+                ? String(localized: "Refreshing moved 1 draft. If its lines were edited, it is now on its file.")
+                : String(localized: "Refreshing moved \(count) drafts. Any whose lines were edited are now on their files.")
+        case .mergeUnderway:
+            String(localized: "A merge or rebase was under way, so conflicted files hold their markers.")
+        case .notOffered:
+            String(localized: "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews.")
+        case .notARepository: String(localized: "This agent’s folder isn’t a git repository, so it has no review.")
+        case .roundGone:
+            String(localized: "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them.")
+        case .snapshotFailed(let message):
+            String(localized: "Couldn’t take a snapshot of the working tree: \(message)")
+        case .unreachable:
+            String(localized: "This agent’s computer can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back.")
+        }
+    }
+
+    /// What a banner offers to do about it, when anything.
+    public static func reviewBannerAction(_ banner: ReviewBanner) -> String? {
+        switch banner {
+        case .changedSinceYouStarted, .changedSince: String(localized: "Refresh")
+        case .snapshotFailed: String(localized: "Try Again")
+        default: nil
+        }
+    }
+
+    public static let reviewOpening = String(localized: "Opening the review…")
+
+    public static func reviewEmpty(_ empty: ReviewEmpty) -> String {
+        switch empty {
+        case .nothing: String(localized: "Nothing to review: no changes and no comments.")
+        case .nothingSince: String(localized: "Nothing changed since your last review.")
+        }
+    }
+
+    public static func reviewNoLines(_ why: ReviewNoLines) -> String {
+        switch why {
+        case .binary: String(localized: "A binary file, with no lines to show")
+        case .tooLarge: String(localized: "Too large a change to show here")
+        }
+    }
+
+    /// Why a file starts folded.
+    public static func reviewFlag(_ flag: ReviewFileFlag) -> String {
+        switch flag {
+        case .generated: String(localized: "Generated")
+        case .lockfile: String(localized: "Lock file")
+        case .vendored: String(localized: "Vendored")
+        case .large: String(localized: "Large")
+        }
+    }
+
+    /// "Draft", "Sent in round 2".
+    public static func reviewCommentState(_ state: ReviewCommentState) -> String {
+        switch state {
+        case .draft: String(localized: "Draft")
+        case .sent(let round): String(localized: "Sent in round \(round)")
+        }
+    }
+
+    /// Where a comment sits, when it is not under its lines: nil for one
+    /// that is.
+    public static func reviewCommentAt(_ at: ReviewCommentAt) -> String? {
+        switch at {
+        case .lines: nil
+        case .file: String(localized: "On the file")
+        case .outdated: String(localized: "Outdated")
+        }
+    }
+
+    /// Beside a sent comment whose code nearby changed since it was sent.
+    public static let reviewChangedNear = String(localized: "The code near it changed")
+
+    /// "Line 41", "Lines 41–42".
+    public static func reviewLines(start: UInt32, end: UInt32) -> String {
+        start == end ? String(localized: "Line \(start)") : String(localized: "Lines \(start)–\(end)")
+    }
+
+    /// What a gap holds: "12 hidden lines", or after the file's last hunk,
+    /// "The rest of the file".
+    public static func reviewGap(_ gap: ReviewGap) -> String {
+        guard let hidden = gap.hidden else { return String(localized: "The rest of the file") }
+        return hidden == 1 ? String(localized: "1 hidden line") : String(localized: "\(hidden) hidden lines")
+    }
+
+    /// What one of a gap's asks loads: "Up to fn open", "Down to the end of
+    /// fn open", or "20 lines up".
+    public static func reviewMore(_ ask: ReviewContextAsk, up: Bool) -> String {
+        let count = ask.end >= ask.start ? ask.end - ask.start + 1 : 0
+        switch (ask.definition, up) {
+        case (let label?, true): return String(localized: "Up to \(label)")
+        case (let label?, false): return String(localized: "Down to the end of \(label)")
+        case (nil, true): return String(localized: "\(lines(count)) up")
+        case (nil, false): return String(localized: "\(lines(count)) down")
+        }
+    }
+
+    /// The foot of a page holding drafts, which goes back to the chat whose
+    /// next message sends them: "Done · 3 drafts".
+    public static func reviewDone(drafts: UInt32) -> String {
+        drafts == 1 ? String(localized: "Done · 1 draft") : String(localized: "Done · \(drafts) drafts")
+    }
+
+    /// A selection nothing can be written on: across files, or with no line.
+    public static let reviewOneFile = String(localized: "Select lines in one file")
+
+    /// Under a renamed file's path.
+    public static func reviewRenamedFrom(_ old: String) -> String {
+        String(localized: "Renamed from \(old)")
+    }
+
+    /// Under a file listed only for the comments on it.
+    public static let reviewOutsideChange = String(localized: "No longer part of the change")
+
+    /// Under a file that changed since the last round was sent.
+    public static let reviewChangedSinceLast = String(localized: "Changed since your last review")
+
+    /// A sent review's round, as its sheet is titled: "Round 2".
+    public static func reviewRound(_ number: UInt32) -> String {
+        String(localized: "Round \(number)")
+    }
+
+    /// Above a sent review's text, when the agent's computer no longer holds
+    /// its round.
+    public static let reviewRoundGone = String(
+        localized: "The agent’s computer no longer holds this round, so this is what the agent read.")
+
+    /// Above a sent review's text, when the agent's computer can't be
+    /// reached and none of its round was loaded.
+    public static let reviewRoundUnreachable = String(
+        localized: "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read.")
+
+    /// From a sent review's round to the review as it is now.
+    public static let reviewOpenReview = String(localized: "Open the Review")
+
+    /// What an act on the review came to, when the page does not say it
+    /// itself: nil once done, or when a banner on the page already says why.
+    public static func reviewNotice(_ outcome: ReviewOutcome?) -> String? {
+        switch outcome {
+        case .done?, .unavailable?: nil
+        case .unreachable?: String(localized: "This agent’s computer can’t be reached, so nothing changed.")
+        case .notConfirmed?:
+            String(localized: "The connection dropped before the agent’s computer answered. The page shows what it says next.")
+        case .failed(let reason)?: reason
+        case nil: String(localized: "This chat is closed.")
+        }
     }
 
     // MARK: - Around the composer
@@ -730,6 +940,21 @@ public enum ChatWords {
         case .uncommitted: String(localized: "Uncommitted")
         case .onBranch: base.map { String(localized: "vs \($0)") } ?? String(localized: "On branch")
         }
+    }
+
+    /// A changed file's row under its folder: its name, and where it came
+    /// from when it was renamed ("old/path.rs → name.rs"), so the row's head
+    /// is what a narrow row cuts.
+    public static func changedFile(_ file: ChangedFile) -> String {
+        guard file.status == .renamed, let old = file.oldPath else { return file.name }
+        return "\(old) \u{2192} \(file.name)"
+    }
+
+    /// A changed file as a whole path, renamed from where it was:
+    /// "src/new.rs, renamed from src/old.rs".
+    public static func changedPath(_ file: ChangedFile) -> String {
+        guard file.status == .renamed, let old = file.oldPath else { return file.path }
+        return String(localized: "\(file.path), renamed from \(old)")
     }
 
     /// A file's counts with a zero side left out: "+20", "−12", "+25 −8".

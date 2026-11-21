@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package amux.v1;
+
+import "amux/v1/inventory.proto";
+import "amux/v1/records.proto";
+import "amux/v1/session.proto";
+
+// What one daemon asks a paired daemon for itself: everything it needs to
+// keep its copy of that host, and the one thing it hands back, a child's
+// report to its parent.
+//
+// A peer service: served on link streams only, never on a socket or the
+// phone's entry, and answered for this host's own entry and agents only,
+// never for its copies of others. The caller is the paired daemon the
+// link's handshake authenticated, asking for itself. A call that carries
+// a caller header is a call carried for a person or an agent, and is
+// refused here; so a client cannot reach this service through the node
+// it is attached to.
+//
+// Each of a node's local reads has its feed here: the inventory from
+// FollowAgents, a conversation from FollowSession, older pages from
+// ListItems and files from GetBlob. FollowAgents and FollowSession are the
+// only calls that may go out on a link before its handshake finishes.
+
+service PeerService {
+  // This host's own entry and its own agents, never what it knows of
+  // others: the current set, CaughtUp, then changes.
+  rpc FollowAgents(FollowAgentsRequest) returns (stream FollowAgentsResponse);
+  // One of this host's conversations, from a tail or from the cursor the
+  // caller's copy holds.
+  rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
+  // Older items of one of this host's conversations, a page at a time.
+  rpc ListItems(PeerServiceListItemsRequest) returns (PeerServiceListItemsResponse);
+  // A file in one of this host's agents' directories; never one this host
+  // holds as a copy of another's.
+  rpc GetBlob(PeerServiceGetBlobRequest) returns (PeerServiceGetBlobResponse);
+  // A child's report to its parent here. The child is one of the calling
+  // host's agents: that host is whoever the link authenticated. A report is
+  // for one incarnation of its parent, dropped for any other, and never
+  // wakes the parent.
+  rpc DeliverReport(DeliverReportRequest) returns (DeliverReportResponse);
+}
+
+message FollowAgentsRequest {}
+
+message FollowAgentsResponse {
+  InventoryEvent event = 1;
+}
+
+message FollowSessionRequest {
+  bytes agent_id = 1;
+  oneof from {
+    // The newest rows, for a copy that holds no cursor yet.
+    uint32 tail = 2;
+    // From the cursor the copy holds.
+    After after = 3;
+  }
+}
+
+message FollowSessionResponse {
+  SessionEvent event = 1;
+}
+
+message PeerServiceListItemsRequest {
+  bytes agent_id = 1;
+  // Items before this order; absent, the newest.
+  optional uint64 before_order = 2;
+  uint32 page_size = 3;
+}
+
+// By order, newest first; exhausted means no older history exists.
+message PeerServiceListItemsResponse {
+  repeated Item items = 1;
+  bool exhausted = 2;
+}
+
+message PeerServiceGetBlobRequest {
+  bytes agent_id = 1;
+  // The SHA-256 a BlobRef names.
+  bytes hash = 2;
+}
+
+// The file's bytes alone; the caller checks them against the hash.
+message PeerServiceGetBlobResponse {
+  bytes bytes = 1;
+}
+
+message DeliverReportRequest {
+  // The report's id, the same each time it is resent, so the parent's host
+  // keeps one.
+  bytes id = 1;
+  // The child, one of the calling host's agents, and its name there.
+  bytes child_agent_id = 2;
+  string child_name = 3;
+  // The parent, one of this host's agents.
+  bytes parent_agent_id = 4;
+  // Carries the parent's incarnation it is for.
+  ChildReport report = 5;
+}
+
+message DeliverReportResponse {}

@@ -59,9 +59,9 @@ async fn terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches() {
     let scout = create(&desk, "claude", "native", "scout").await;
     let chats = client(&desk.socket).await;
     until("the first turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let scout = &scout;
-        async move { says(&chat(&mut chats, scout).await, "hello from the agent", 1) }
+        async move { says(&chat(&chats, scout).await, "hello from the agent", 1) }
     })
     .await
     .unwrap();
@@ -103,9 +103,9 @@ async fn codex_attaches_in_stream_mode_and_the_fleet_returns_to_the_same_view() 
     let coder = create(&desk, "codex", "native", "coder").await;
     let chats = client(&desk.socket).await;
     until("the codex turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let coder = &coder;
-        async move { says(&chat(&mut chats, coder).await, "codex was here", 1) }
+        async move { says(&chat(&chats, coder).await, "codex was here", 1) }
     })
     .await
     .unwrap();
@@ -171,9 +171,9 @@ async fn leaving_a_raw_attach_gives_the_shell_its_own_screen_back() {
     let scout = create(&desk, "claude", "native", "scout").await;
     let chats = client(&desk.socket).await;
     until("the first turn", || {
-        let mut chats = chats.clone();
+        let chats = chats.clone();
         let scout = &scout;
-        async move { says(&chat(&mut chats, scout).await, "hello from the agent", 1) }
+        async move { says(&chat(&chats, scout).await, "hello from the agent", 1) }
     })
     .await
     .unwrap();

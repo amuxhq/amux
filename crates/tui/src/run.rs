@@ -8,7 +8,6 @@
 //! shell; only the passthrough's fleet chord returns to the fleet.
 
 use std::io;
-use std::sync::Arc;
 
 use anyhow::Result;
 use client::{Client, SystemClock};
@@ -42,12 +41,11 @@ enum Leave {
     Attach(Box<Agent>),
 }
 
-/// Runs the terminal client until the person quits.
-/// Runs the terminal client until the person quits. With the
-/// installation's front door, it also runs onboarding and the settings
-/// screen.
+/// Runs the terminal client on `client`'s node until the person quits.
+/// With the installation's front door, it also runs onboarding and the
+/// settings screen.
 pub async fn run(
-    client: Arc<dyn Client>,
+    client: Client,
     config: TuiConfig,
     desk: Option<crate::app::DeskConfig>,
     mut attach: AttachFn,

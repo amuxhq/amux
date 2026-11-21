@@ -3,10 +3,122 @@
 //! and control frames, and the client, pairing, profile and installation
 //! services.
 
+/// A sized client and server constructor for each service that carries
+/// attachments: every message may be as large as the largest attachment.
+/// The generic form builds its client on any service from a request to a
+/// response, so a caller in the same process as its node calls the router
+/// with no socket between them.
+macro_rules! sized_service {
+    ($client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $client_fn(
+            channel: tonic::transport::Channel,
+        ) -> $client_mod::$client<tonic::transport::Channel> {
+            $client_mod::$client::new(channel)
+                .max_decoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+
+        sized_service!(@server $server_fn, $server_mod, $server, $service);
+    };
+    (generic $client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $client_fn<T>(inner: T) -> $client_mod::$client<T>
+        where
+            T: tonic::client::GrpcService<tonic::body::Body>,
+            T::Error: Into<tonic::codegen::StdError>,
+            T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
+            <T::ResponseBody as tonic::codegen::Body>::Error:
+                Into<tonic::codegen::StdError> + Send,
+        {
+            $client_mod::$client::new(inner)
+                .max_decoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+
+        sized_service!(@server $server_fn, $server_mod, $server, $service);
+    };
+    (@server $server_fn:ident, $server_mod:ident, $server:ident, $service:ident) => {
+        #[cfg(feature = "grpc")]
+        pub fn $server_fn<T>(service: T) -> $server_mod::$server<T>
+        where
+            T: $server_mod::$service,
+        {
+            $server_mod::$server::new(service)
+                .max_decoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+                .max_encoding_message_size($crate::CHANNEL_MESSAGE_SIZE_LIMIT)
+        }
+    };
+}
+
 pub mod amux {
     pub mod v1 {
         #![allow(dead_code, clippy::enum_variant_names, clippy::large_enum_variant)]
         include!("generated/amux.v1.rs");
+
+        sized_service!(
+            generic inventory_service_client,
+            inventory_service_server,
+            inventory_service_client,
+            InventoryServiceClient,
+            inventory_service_server,
+            InventoryServiceServer,
+            InventoryService
+        );
+        sized_service!(
+            generic session_service_client,
+            session_service_server,
+            session_service_client,
+            SessionServiceClient,
+            session_service_server,
+            SessionServiceServer,
+            SessionService
+        );
+        sized_service!(
+            generic draft_service_client,
+            draft_service_server,
+            draft_service_client,
+            DraftServiceClient,
+            draft_service_server,
+            DraftServiceServer,
+            DraftService
+        );
+        sized_service!(
+            generic agent_service_client,
+            agent_service_server,
+            agent_service_client,
+            AgentServiceClient,
+            agent_service_server,
+            AgentServiceServer,
+            AgentService
+        );
+        sized_service!(
+            generic host_service_client,
+            host_service_server,
+            host_service_client,
+            HostServiceClient,
+            host_service_server,
+            HostServiceServer,
+            HostService
+        );
+        sized_service!(
+            generic review_service_client,
+            review_service_server,
+            review_service_client,
+            ReviewServiceClient,
+            review_service_server,
+            ReviewServiceServer,
+            ReviewService
+        );
+        sized_service!(
+            generic peer_service_client,
+            peer_service_server,
+            peer_service_client,
+            PeerServiceClient,
+            peer_service_server,
+            PeerServiceServer,
+            PeerService
+        );
     }
 
     /// What a client writes into a dump, read back only by the build that
@@ -32,6 +144,25 @@ pub mod amux {
         /// The suspension experiment's entry in an agent's spec:
         /// `AgentSpec.experimental["suspension/1"]`.
         pub const SUSPENSION: Entry<SuspensionSpec> = Entry::new("suspension/1");
+
+        /// The reviews experiment's entry on an agent's row:
+        /// `Agent.experimental["reviews/1"]`.
+        pub const REVIEW_ROW: Entry<ReviewRowEntry> = Entry::new("reviews/1");
+
+        /// The reviews experiment's entry on a sent review's attachment:
+        /// `Attachment.experimental["reviews/1"]`. The same version keys a
+        /// different message on each map.
+        pub const SENT_REVIEW: Entry<SentReview> = Entry::new("reviews/1");
+
+        sized_service!(
+            generic reviews1_client,
+            reviews1_server,
+            reviews1_client,
+            Reviews1Client,
+            reviews1_server,
+            Reviews1Server,
+            Reviews1
+        );
     }
 }
 
@@ -47,6 +178,8 @@ pub mod google {
 
 pub use google::rpc;
 
+mod authority;
+mod caller_header;
 pub mod codex;
 mod continued;
 mod entry;
@@ -56,6 +189,8 @@ mod host_name;
 mod pinned;
 mod said;
 pub use amux::v1::*;
+pub use authority::{authority, host_of_authority};
+pub use caller_header::CallerHeaderError;
 pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
@@ -80,54 +215,17 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 /// at the attachment limit still fits in one message.
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
-/// A sized client and server constructor for each service that carries
-/// attachments: every message may be as large as the largest attachment.
-macro_rules! sized_service {
-    ($client_fn:ident, $server_fn:ident, $client_mod:ident, $client:ident, $server_mod:ident, $server:ident, $service:ident) => {
-        #[cfg(feature = "grpc")]
-        pub fn $client_fn(
-            channel: tonic::transport::Channel,
-        ) -> $client_mod::$client<tonic::transport::Channel> {
-            $client_mod::$client::new(channel)
-                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        }
-
-        #[cfg(feature = "grpc")]
-        pub fn $server_fn<T>(service: T) -> $server_mod::$server<T>
-        where
-            T: $server_mod::$service,
-        {
-            $server_mod::$server::new(service)
-                .max_decoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-                .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
-        }
-    };
-}
-
-sized_service!(
-    agent_service_client,
-    agent_service_server,
-    agent_service_client,
-    AgentServiceClient,
-    agent_service_server,
-    AgentServiceServer,
-    AgentService
-);
-sized_service!(
-    session_service_client,
-    session_service_server,
-    session_service_client,
-    SessionServiceClient,
-    session_service_server,
-    SessionServiceServer,
-    SessionService
-);
-
 /// The request header a client of a profile socket names itself in, for
-/// the usage count of clients opened: `mac` for the Mac app. The terminal
-/// sends none.
+/// the usage counts only: `terminal`, `mac`, `phone` or `browser`. It is
+/// optional: a client that sends none, or a word amux doesn't know, is
+/// counted as `other`.
 pub const SURFACE_HEADER: &str = "amux-surface";
+
+/// The request header a node writes beside a call it carries to another
+/// host, naming the person or agent the call is for: a `Caller`, encoded,
+/// as gRPC writes a binary header. A host reads it only on a link, where
+/// the host it speaks for is the one the link's handshake authenticated.
+pub const CALLER_HEADER: &str = "amux-caller-bin";
 
 /// The detail an incarnation's end gives when its provider died of a signal
 /// the agent did not send: amux's own stops and kills end with causes of
@@ -160,23 +258,6 @@ pub fn provider_signalled(detail: Option<&str>) -> bool {
 /// to an unknown method has no words, and a caller's "could not start the
 /// agent: " would end at the colon.
 pub const HOST_NEEDS_UPDATE: &str = "that host needs updating to do this";
-
-/// The client services' stubs on one profile or tools socket: what a
-/// caller that speaks gRPC directly holds.
-#[cfg(feature = "grpc")]
-#[derive(Clone, Debug)]
-pub struct ClientStubs {
-    pub agents: agent_service_client::AgentServiceClient<tonic::transport::Channel>,
-    pub sessions: session_service_client::SessionServiceClient<tonic::transport::Channel>,
-}
-
-#[cfg(feature = "grpc")]
-pub fn client_stubs(channel: tonic::transport::Channel) -> ClientStubs {
-    ClientStubs {
-        agents: agent_service_client(channel.clone()),
-        sessions: session_service_client(channel),
-    }
-}
 
 /// A person's input as its kind's own message: what a client builds and
 /// what the agent of that kind decodes from [`Input::body`].
@@ -294,13 +375,6 @@ impl HostRef {
     pub fn id(host_id: impl Into<Vec<u8>>) -> Self {
         Self {
             of: Some(host_ref::Of::HostId(host_id.into())),
-        }
-    }
-
-    /// A host as a person names it.
-    pub fn named(name: impl Into<String>) -> Self {
-        Self {
-            of: Some(host_ref::Of::Name(name.into())),
         }
     }
 }
@@ -550,7 +624,7 @@ mod tests {
     fn enums(set: &FileDescriptorSet) -> BTreeMap<String, Vec<(String, i32)>> {
         set.file
             .iter()
-            .filter(|file| file.package.as_deref() == Some("amux.v1"))
+            .filter(|file| file.package() == "amux.v1")
             .flat_map(|file| file.enum_type.iter())
             .map(|enumeration| {
                 let values = enumeration
@@ -674,11 +748,14 @@ mod tests {
             // A client encodes its session history into DumpRequest.sessions.
             .chain([".amux.dump.ClientSessionHistory".to_owned()])
             // Each experiment's values are encoded into an `experimental`
-            // map entry.
+            // map entry, and a carried call's caller into its header.
             .chain(
                 [
                     ".amux.experimental.AgentWorkspace",
                     ".amux.experimental.SuspensionSpec",
+                    ".amux.experimental.ReviewRowEntry",
+                    ".amux.experimental.SentReview",
+                    ".amux.v1.Caller",
                 ]
                 .map(str::to_owned),
             )
@@ -765,6 +842,68 @@ mod tests {
         );
         // The map encodes in key order, so a row encodes the same each time.
         assert_eq!(read.encode_to_vec(), agent.encode_to_vec());
+    }
+
+    /// The reviews experiment keeps one entry on an agent's row and one on
+    /// a sent review's attachment, under the same version, and each comes
+    /// back whole through its message's encoding.
+    #[test]
+    fn the_review_entries_round_trip_through_a_row_and_an_attachment() {
+        assert_eq!(experimental::REVIEW_ROW.version(), "reviews/1");
+        assert_eq!(experimental::SENT_REVIEW.version(), "reviews/1");
+        let entry = experimental::ReviewRowEntry {
+            drafts: 3,
+            counter: 41,
+            moved: true,
+            review_id: b"review".to_vec(),
+        };
+        let mut agent = Agent {
+            agent_id: b"agent".to_vec(),
+            ..Default::default()
+        };
+        experimental::REVIEW_ROW.put(&mut agent.experimental, &entry);
+        let read = Agent::decode(agent.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(
+            experimental::REVIEW_ROW.get(&read.experimental),
+            Some(entry)
+        );
+
+        let sent = experimental::SentReview {
+            review_id: b"review".to_vec(),
+            round: 2,
+            snapshot: "4f2a".into(),
+            base_commit: "9c1e".into(),
+            comments: vec![
+                experimental::ReviewSentComment {
+                    id: b"first".to_vec(),
+                    revision: 1,
+                    anchor: Some(experimental::ReviewAnchor {
+                        commit: "4f2a".into(),
+                        path: "src/store.rs".into(),
+                        lines: Some(experimental::ReviewLineRange { start: 3, end: 4 }),
+                    }),
+                },
+                experimental::ReviewSentComment {
+                    id: b"second".to_vec(),
+                    revision: 3,
+                    anchor: None,
+                },
+            ],
+        };
+        let mut attachment = Attachment {
+            of: Some(attachment::Of::Text(InlineText {
+                name: "review".into(),
+                text: "Two comments.".into(),
+            })),
+            ..Default::default()
+        };
+        experimental::SENT_REVIEW.put(&mut attachment.experimental, &sent);
+        let read = Attachment::decode(attachment.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(read, attachment);
+        assert_eq!(
+            experimental::SENT_REVIEW.get(&read.experimental),
+            Some(sent)
+        );
     }
 
     /// Top-level enum values share one namespace in the package, so each

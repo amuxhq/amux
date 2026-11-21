@@ -1024,11 +1024,6 @@ fn references(item: &Item, hash: &[u8]) -> bool {
         .iter()
         .any(|attachment| match &attachment.of {
             Some(Of::Image(blob) | Of::File(blob)) => blob.hash == hash,
-            Some(Of::Review(review)) => review
-                .diff
-                .as_ref()
-                .and_then(|diff| diff.patch.as_ref())
-                .is_some_and(|patch| patch.hash == hash),
             Some(Of::Page(page)) => page
                 .comments
                 .iter()

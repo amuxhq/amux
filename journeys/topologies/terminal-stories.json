@@ -2,6 +2,7 @@
   "hosts": [
     {
       "name": "desk",
+      "experiments": ["reviews"],
       "script": {"steps": [{"text": {"chunks": ["Ready when you are."]}}, "turn_end"]}
     },
     {"name": "laptop"}

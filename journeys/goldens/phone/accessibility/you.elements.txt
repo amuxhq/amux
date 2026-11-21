@@ -3,20 +3,20 @@ home |  | signed-out | 0,333,402,458
 hosts |  | 1 reachable | 0,221,402,570
 you |  | none | 0,132,402,708
 you.signIn | Sign In |  | 16,176,370,69
-you.signIn.caption |  |  | 16,253,344,177
-you.appearance |  | system | 16,491,370,121
-you.appearance.light | Light | not chosen | 32,544,89,66
-you.appearance.dark | Dark | not chosen | 121,544,84,66
-you.appearance.system | System | chosen | 204,544,120,66
-you.shareUsage |  | on | 16,612,370,133
-you.autoReports |  | off | 16,746,370,246
-you.notifications | Notifications | Off | 16,993,370,114
+you.signIn.caption |  |  | 16,253,342,212
+you.appearance |  | system | 16,527,370,121
+you.appearance.light | Light | not chosen | 32,580,89,66
+you.appearance.dark | Dark | not chosen | 121,580,84,66
+you.appearance.system | System | chosen | 204,580,120,66
+you.shareUsage |  | on | 16,648,370,133
+you.autoReports |  | off | 16,781,370,246
+you.notifications | Notifications | Off | 16,1028,370,114
 you.name | <volatile>
 you.fingerprint | <volatile>
-you.support | Contact Support |  | 16,1510,370,69
-you.report | Report a Problem |  | 16,1580,370,69
-you.dump | Export Diagnostics |  | 16,1650,370,112
-you.help.caption |  |  | 16,1769,366,106
+you.support | Contact Support |  | 16,1546,370,69
+you.report | Report a Problem |  | 16,1615,370,69
+you.dump | Export Diagnostics |  | 16,1685,370,112
+you.help.caption |  |  | 16,1804,366,106
 you.close | Close |  | 342,82,40,36
  | decision-sdk, Idle, The deploy check passed., desk, /private/tmp/amux-phone-journey/net/desk/work, <age> |  | 0,333,402,150
  | Agents |  | 16,124,174,62
@@ -30,33 +30,33 @@ you.close | Close |  | 342,82,40,36
  | Needs you |  | 164,342,73,18
  | Working |  | 262,335,124,32
  | Working |  | 296,342,57,18
- | Agents |  | 111,795,94,54
+ | Agents |  | 110,795,95,54
  | Agents |  | 140,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 229,830,29,12
- | Agents |  | 111,795,94,54
- | Agents |  | 141,830,35,12
- | Hosts |  | 197,795,94,54
- | Hosts |  | 230,830,29,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 216,830,56,12
+ | Agents |  | 110,795,95,54
+ | Agents |  | 140,830,35,12
+ | Computers |  | 197,795,95,54
+ | Computers |  | 217,830,55,12
  | ACCOUNTS |  | 18,132,164,36
  | Sign In |  | 16,176,370,69
- | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 30,253,316,177
- | THIS PHONE |  | 18,448,175,36
- | Appearance |  | 30,500,197,43
- | Light |  | 32,544,89,66
- | Dark |  | 121,544,84,66
- | System |  | 204,544,120,66
- | Share Usage, Counts and choices, never what you type | 1 | 30,622,342,115
- | Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. | 0 | 30,755,342,228
- | Notifications, Off |  | 16,993,370,114
- | Name, <device> |  | 16,1107,370,114
- | Fingerprint, <key> |  | 30,1234,342,203
- | HELP |  | 18,1467,76,36
- | Contact Support |  | 16,1511,370,69
- | Report a Problem |  | 16,1580,370,69
- | Export Diagnostics |  | 16,1650,370,112
- | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1769,338,106
+ | An account lets this phone reach your computers from anywhere, and a subscription bought on amux.sh carries over. |  | 30,253,314,212
+ | THIS PHONE |  | 18,483,175,36
+ | Appearance |  | 30,536,197,43
+ | Light |  | 32,580,89,66
+ | Dark |  | 121,580,84,66
+ | System |  | 204,580,120,66
+ | Share Usage, Counts and choices, never what you type | 1 | 30,657,342,115
+ | Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. | 0 | 30,790,342,228
+ | Notifications, Off |  | 16,1028,370,114
+ | Name, <device> |  | 16,1143,370,114
+ | Fingerprint, <key> |  | 30,1269,342,203
+ | HELP |  | 18,1502,76,36
+ | Contact Support |  | 16,1546,370,69
+ | Report a Problem |  | 16,1615,370,69
+ | Export Diagnostics |  | 16,1685,370,112
+ | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1804,338,106
  | Settings |  | 161,88,80,25
  | Close |  | 342,82,40,36
- | Agents | selected | 111,795,94,54
- | Hosts |  | 197,795,94,54
+ | Agents | selected | 110,795,95,54
+ | Computers |  | 197,795,95,54

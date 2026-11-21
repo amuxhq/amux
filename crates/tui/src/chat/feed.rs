@@ -25,8 +25,8 @@ use ui_view::{
 use wire::BlobRef;
 
 use super::rows::{
-    self, GroupLine, RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_copy,
-    markdown_linked, patch_gutter, patch_lines, segment_rows, state_meta,
+    self, GroupLine, RowFacts, RowShape, call_verb, chip, detail, explore_verb, markdown_linked,
+    patch_gutter, patch_lines, segment_rows, state_meta,
 };
 use super::selection::{Join, LineText};
 use crate::text::{self, first_line, pad_to, push, push_right};
@@ -52,6 +52,12 @@ pub enum FeedHit {
     Link(String),
     /// Open an attachment in its own app.
     Attachment(BlobRef),
+    /// Open the round a sent review closed; `text` is what the agent read,
+    /// shown when its host no longer holds the round.
+    Round {
+        review: ui_view::SentReviewRef,
+        text: String,
+    },
     /// One line of an image's thumbnail, `row` lines below its top.
     Thumbnail { blob: BlobRef, row: u16 },
     /// Open the chat of the agent a call started.
@@ -173,7 +179,13 @@ fn thumbnail_lines(blob: &BlobRef, column: usize) -> Vec<(Line<'static>, LineHit
 fn chip_hits(opening: rows::OpeningChips) -> LineHits {
     opening
         .into_iter()
-        .map(|(from, to, blob)| (Some((from, to)), FeedHit::Attachment(blob)))
+        .map(|(from, to, opened)| {
+            let hit = match opened {
+                rows::Opened::Attachment(blob) => FeedHit::Attachment(blob),
+                rows::Opened::Round { review, text } => FeedHit::Round { review, text },
+            };
+            (Some((from, to)), hit)
+        })
         .collect()
 }
 
@@ -585,7 +597,7 @@ fn message_lines(
                 .collect();
             match words {
                 Some(source) => out.extend(
-                    crate::markdown::markdown_lines(&source, room, theme)
+                    crate::markdown::markdown_lines(&source, false, room, theme)
                         .iter()
                         .map(|line| {
                             let shape = RowShape {
@@ -870,9 +882,8 @@ fn prose_words(drawn: &mut Drawn, source: &str, streaming: bool, width: usize, t
     } else {
         source
     };
-    let lines = markdown_linked(source, width.saturating_sub(2), theme);
-    let copied = markdown_copy(source, width.saturating_sub(2), theme);
-    for ((line, links), (from, join, exact)) in lines.into_iter().zip(copied) {
+    let lines = markdown_linked(source, streaming, width.saturating_sub(2), theme);
+    for (line, links, (from, join, exact)) in lines {
         drawn.copy.insert(
             drawn.lines.len(),
             LineText {
@@ -1831,7 +1842,7 @@ fn step(
             .enumerate()
         {
             let code_from = patch
-                .filter(|patch| at < patch.lines.len())
+                .filter(|patch| at < patch.lines().count())
                 .map(patch_gutter);
             let mut railed = Line::default();
             pad_to(&mut railed, EDGE);
@@ -1908,10 +1919,14 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
             ));
             lines
         }
-        RowKind::FileChange { .. } => facts
+        RowKind::FileChange { files, .. } => facts
             .patch
             .as_ref()
-            .map(|patch| patch_lines(patch, true, facts.leader, width, theme))
+            .map(|patch| {
+                // The patch is the first file's.
+                let path = files.first().map_or("", |file| file.path.as_str());
+                patch_lines(patch, path, true, facts.leader, width, theme)
+            })
             .unwrap_or_default(),
         RowKind::ToolCall { result, .. } if !result.is_empty() => {
             detail(result, width, theme.muted(), DETAIL_LINES, theme)

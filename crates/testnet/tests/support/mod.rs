@@ -97,12 +97,13 @@ pub fn carrier(net: &Net, host: &str) -> Option<RelayCarrier> {
     }
 }
 
-/// Reads a peer's inventory to its CaughtUp and returns the hosts it named.
+/// Reads a peer's inventory to its CaughtUp, as `from`'s daemon follows
+/// it, and returns the hosts it named.
 pub async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Result<Vec<Vec<u8>>, tonic::Status> {
     let mut client = from.peer(to).await.map_err(|error| error.status())?;
     let mut events = client
-        .agents
-        .subscribe_inventory(wire::SubscribeInventoryRequest {})
+        .peer
+        .follow_agents(wire::FollowAgentsRequest {})
         .await?
         .into_inner();
     let mut hosts = Vec::new();
@@ -237,16 +238,16 @@ pub async fn open_session(
     from: &Edge,
     host: Uuid,
     agent: Uuid,
-) -> Result<tonic::Streaming<wire::SubscribeSessionResponse>, tonic::Status> {
+) -> Result<tonic::Streaming<wire::FollowSessionResponse>, tonic::Status> {
     let mut client = from
         .session_peer(host)
         .await
         .map_err(|error| error.status())?;
     let mut events = client
-        .sessions
-        .subscribe_session(wire::SubscribeSessionRequest {
+        .peer
+        .follow_session(wire::FollowSessionRequest {
             agent_id: agent.as_bytes().to_vec(),
-            from: Some(wire::subscribe_session_request::From::Tail(10)),
+            from: Some(wire::follow_session_request::From::Tail(10)),
         })
         .await?
         .into_inner();
@@ -287,7 +288,7 @@ pub fn tier(net: &Net, host: &str) -> Option<node::Tier> {
 
 /// Reads a session until an item with `text` arrives, failing on Lagged,
 /// on the stream's end, or after the patience.
-pub async fn until_item(stream: &mut tonic::Streaming<wire::SubscribeSessionResponse>, text: &str) {
+pub async fn until_item(stream: &mut tonic::Streaming<wire::FollowSessionResponse>, text: &str) {
     let deadline = tokio::time::Instant::now() + PATIENCE;
     loop {
         let event = tokio::time::timeout_at(deadline, stream.message())

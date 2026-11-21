@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package amux.v1;
+
+// The caller: who a call is for, when a node carries it to another host.
+//
+// A node that passes a call on to the host it is addressed to writes the
+// caller beside it, encoded, in the `amux-caller-bin` header, the way a
+// proxy says whom it passes a request on for. The node takes the caller
+// from the connection the call came in on, replacing any header a client
+// sent, so a client cannot say who it is.
+//
+// The caller's host is not in here: it is whoever the link's handshake
+// authenticated, so a host speaks only for its own people and its own
+// agents. A call on a link with this header is a host-service call made
+// for that person or agent. A call on a link without it is the paired
+// daemon asking for itself, which only PeerService answers; a host service
+// refuses it, and PeerService refuses a call that carries the header.
+
+message Caller {
+  oneof of {
+    Person person = 1;
+    AgentCaller agent = 2;
+  }
+}
+
+// A person at the calling host.
+message Person {
+  // The client the person is using: "terminal", "mac", "ios", "android"
+  // or "browser", as the client names itself to its own node. The iPhone
+  // app wrote "phone" before it wrote "ios", and that word still reads as
+  // the iPhone app. A word this build does not know reads as another
+  // client.
+  string surface = 1;
+}
+
+// One of the calling host's own agents.
+message AgentCaller {
+  bytes agent_id = 1;
+  // Its name on its host, as the answering host writes it beside what the
+  // agent sends.
+  string name = 2;
+}

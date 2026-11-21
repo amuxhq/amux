@@ -44,10 +44,22 @@ graph-check:
 rust *ARGS:
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py "$@"
 
+# Build the Rust tools the Android journey recipes drive.
+tools:
+    {{bounded}} 900 cargo build --locked -p testnet -p amux -p provider-fakes --bins
+
+# Boot and pin the Android emulator AVD (`amux-android-1`).
+emulator *ARGS:
+    {{bounded}} 600 {{python}} -B apps/android/tools/android_emulator.py "$@"
+
 # Build the debug Android APK.
 build *ARGS:
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py
     {{bounded}} 1800 {{gradle}} :app:assembleDebug "$@"
+
+# Drive the Android app on the pinned emulator against real daemons and a real relay.
+journey *ARGS: build tools
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 target/debug/testnet journey android "$@"
 
 # Run all JVM and Android Robolectric unit test suites.
 unit *ARGS:

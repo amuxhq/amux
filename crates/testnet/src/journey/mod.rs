@@ -7,6 +7,7 @@
 //! recorded. Results land in `target/journeys/`.
 
 mod accessibility;
+mod android;
 mod common;
 mod device;
 mod frame;
@@ -50,6 +51,9 @@ enum Suite {
         native: bool,
         stories: Vec<String>,
     },
+    /// The Android app on the pinned emulator: the named stories, or every
+    /// one written for Android, one after another.
+    Android { stories: Vec<String> },
     /// Every control on the app's live pages audited by a UI test for a
     /// name VoiceOver can read and at least 44 pt to hit.
     Accessibility,
@@ -117,6 +121,7 @@ pub fn main(arguments: Vec<String>) -> ExitCode {
         Suite::Terminal { story } if story == "all" => terminal_stories::run_all(),
         Suite::Terminal { story } => terminal_stories::run(&story),
         Suite::Phone { native, stories } => phone_stories::run(native, stories),
+        Suite::Android { stories } => android::run(stories),
         Suite::Accessibility => accessibility::run(),
         Suite::Perf {
             describe,

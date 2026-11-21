@@ -1557,6 +1557,10 @@ pub(crate) struct Printing {
 }
 
 impl Printing {
+    pub(crate) fn new(child: Child, lines: mpsc::Receiver<String>) -> Self {
+        Self { child, lines }
+    }
+
     /// The first printed line `matches` reads something from, within
     /// `timeout`; None once the command ends or the time is up.
     pub(crate) fn find<T>(

@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import sh.amux.words.PaywallWords
 
 data class PaywallState(
     val plans: List<Plan> = emptyList(),
@@ -91,7 +92,7 @@ class PaywallStore(
                 current.copy(
                     plans = loaded,
                     phase = if (loaded.isEmpty() && !keepEntitled) {
-                        Phase.Failed("No subscription plans are available right now.")
+                        Phase.Failed(PaywallWords.NO_PLANS)
                     } else {
                         current.phase
                     },
@@ -159,7 +160,7 @@ class PaywallStore(
             }
             PurchaseOutcome.NothingToRestore -> {
                 _state.update {
-                    it.copy(phase = Phase.Failed("There is nothing on this account to restore."))
+                    it.copy(phase = Phase.Failed(PaywallWords.NOTHING_TO_RESTORE))
                 }
             }
         }

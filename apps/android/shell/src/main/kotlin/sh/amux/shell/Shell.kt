@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,7 +42,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -74,6 +77,7 @@ import sh.amux.core.runtime.SignInState
 import sh.amux.core.runtime.SignInStore
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.core.runtime.asNewAgentSource
+import sh.amux.core.runtime.RuntimeFailure
 import sh.amux.core.runtime.failureDescription
 import sh.amux.core.runtime.id
 import sh.amux.design.AmuxGround
@@ -1071,23 +1075,61 @@ private fun NewAgentRouteContent(
     )
 }
 
+/**
+ * One route's hold on an agent's chat, a lease taken when remembered and
+ * released when forgotten or abandoned, so a composition that never commits
+ * leaves no chat held open.
+ *
+ * A chat already open is leased at once, so coming back to it draws without
+ * a blank frame. One that is not opens on the core thread once the route is
+ * on screen; until it does, [held] is null and the route draws its ground.
+ */
+private class ChatHold(
+    private val stores: StoreBundle,
+    private val agent: AgentKey,
+    private val scope: CoroutineScope,
+) : RememberObserver {
+    var held: Result<ChatLease>? by mutableStateOf(stores.leaseCached(agent)?.let { Result.success(it) })
+        private set
+
+    private var opening: Job? = null
+
+    override fun onRemembered() {
+        if (held != null) return
+        opening = scope.launch {
+            held = try {
+                Result.success(stores.acquireChat(agent))
+            } catch (f: RuntimeFailure) {
+                Result.failure(f)
+            }
+        }
+    }
+
+    override fun onForgotten() = release()
+
+    override fun onAbandoned() = release()
+
+    private fun release() {
+        // A cancelled open closes what it opened.
+        opening?.cancel()
+        opening = null
+        held?.getOrNull()?.release()
+    }
+}
+
 @Composable
 private fun rememberChatLease(
     stores: StoreBundle,
     agent: AgentKey,
     retryNonce: Int = 0,
-): Result<ChatLease> {
+): Result<ChatLease>? {
     val profileReady by stores.profileReady.collectAsState()
     val profileVersion by stores.profileVersion.collectAsState()
-    val opened = remember(stores, agent, profileReady, profileVersion, retryNonce) {
-        runCatching { stores.acquireChat(agent) }
+    val scope = rememberCoroutineScope()
+    val hold = remember(stores, agent, profileReady, profileVersion, retryNonce) {
+        ChatHold(stores = stores, agent = agent, scope = scope)
     }
-    DisposableEffect(opened) {
-        onDispose {
-            opened.getOrNull()?.release()
-        }
-    }
-    return opened
+    return hold.held
 }
 
 @Composable
@@ -1103,6 +1145,10 @@ private fun ConversationRouteContent(
     val coroutineScope = rememberCoroutineScope()
 
     val opened = rememberChatLease(stores = stores, agent = agent)
+    if (opened == null) {
+        AmuxGround(modifier = Modifier.fillMaxSize().testTag(TestTags.SCREEN_CONVERSATION)) {}
+        return
+    }
     val model = opened.getOrNull()?.model
     if (model == null) {
         val fleetRow = fleetState.row(agent)
@@ -1434,6 +1480,10 @@ private fun ChangesRouteContent(
     val coroutineScope = rememberCoroutineScope()
     var retryNonce by remember(stores, agent) { mutableIntStateOf(0) }
     val opened = rememberChatLease(stores = stores, agent = agent, retryNonce = retryNonce)
+    if (opened == null) {
+        AmuxGround(modifier = Modifier.fillMaxSize()) {}
+        return
+    }
     val model = opened.getOrNull()?.model
     if (model == null) {
         ReviewPage(

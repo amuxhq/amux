@@ -12,6 +12,9 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.AnnotatedString
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -159,11 +162,14 @@ class ShellTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    // Stores live on the main thread, as the app's do.
+    private val shellScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     @Test
     fun switchesTabsPushesSettingsHidingBottomBarAndPopsBack() {
         val router = Router()
-        val accounts = AccountRegistry()
-        val stores = StoreBundle(account = AccountId("signed-out"))
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val stores = StoreBundle(account = AccountId("signed-out"), scope = shellScope)
         stores.fleet.show(FleetView(sections = emptyList(), needYou = 0, working = 0), hosts = emptyList())
 
         composeRule.setContent {
@@ -205,8 +211,8 @@ class ShellTest {
     @Test
     fun autoRaisesPairingForOpenWindowAndDeclinesOnDismiss() {
         val router = Router()
-        val accounts = AccountRegistry()
-        val stores = StoreBundle(account = AccountId("signed-out"))
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val stores = StoreBundle(account = AccountId("signed-out"), scope = shellScope)
         val laptopId = HostId(UUID.fromString("44444444-4444-4444-4444-444444444444"))
         val laptop = HostView(
             hostId = laptopId.bytes,
@@ -298,10 +304,11 @@ class ShellTest {
     @Test
     fun closingConfirmingPairingSheetAbandonsPendingPair() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val abandoned = java.util.concurrent.CopyOnWriteArrayList<sh.amux.values.PendingPair>()
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             abandonPairOp = { pending ->
                 abandoned += pending
                 Result.success(Unit)
@@ -404,9 +411,10 @@ class ShellTest {
         val fakeChat = FakeShellChat(agent = agentKey)
         val fakeBridge = FakeShellChatBridge()
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             chatBridge = fakeBridge,
             opener = { fakeChat },
         )
@@ -481,9 +489,7 @@ class ShellTest {
 
         // Back on ChatScreen with Review attached in composer (without calling stores.chat!)
         composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
-        assertTrue(stores.holds(agentKey))
-        assertTrue(stores.isShown(agentKey))
-        assertEquals(1, stores.activeViewers(agentKey))
+        assertFalse(fakeChat.closed)
         composeRule.onNodeWithTag(ChatComposerTags.ATTACHMENTS_ROW).assertIsDisplayed()
 
         // Deliver an AskCard via runtime event stream and answer it
@@ -525,8 +531,6 @@ class ShellTest {
         composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.HOME_SCREEN).assertIsDisplayed()
-        assertEquals(0, stores.activeViewers(agentKey))
-        assertFalse(stores.isShown(agentKey))
     }
 
     private fun sampleDeskHost(uuid: String): Pair<HostId, HostView> {
@@ -578,7 +582,7 @@ class ShellTest {
     @Test
     fun conversationToChangesTransitionKeepsSessionAlivePastRetention() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val (hostId, desk) = sampleDeskHost("88888888-8888-8888-8888-888888888888")
         val agentKey = AgentKey(
             host = hostId.bytes,
@@ -634,7 +638,6 @@ class ShellTest {
         composeRule.onNodeWithTag(TestTags.homeRow("desk-review")).performClick()
         composeRule.waitForIdle()
         assertEquals(1, openCount)
-        assertEquals(1, stores.activeViewers(agentKey))
         assertFalse(fakeChat.closed)
 
         // Transition Conversation -> Changes: session stays active past retention window
@@ -645,8 +648,6 @@ class ShellTest {
         testScope.advanceTimeBy(10_000L)
         testScope.runCurrent()
         assertFalse("Session must not close while viewing Changes", fakeChat.closed)
-        assertTrue(stores.holds(agentKey))
-        assertEquals(1, stores.activeViewers(agentKey))
         assertEquals(1, openCount)
 
         // Transition Changes -> Conversation: session still active past retention window
@@ -657,31 +658,29 @@ class ShellTest {
         testScope.advanceTimeBy(10_000L)
         testScope.runCurrent()
         assertFalse("Session must not close after returning to Conversation", fakeChat.closed)
-        assertTrue(stores.holds(agentKey))
-        assertEquals(1, stores.activeViewers(agentKey))
         assertEquals(1, openCount)
 
         // Leave Conversation -> AgentsHome: lease drops to 0 and expires after retention
         composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
         composeRule.waitForIdle()
-        assertEquals(0, stores.activeViewers(agentKey))
         nowMs += 6_000L
         testScope.advanceTimeBy(6_000L)
         testScope.runCurrent()
         assertTrue("Session should close after retention once no route shows it", fakeChat.closed)
-        assertFalse(stores.holds(agentKey))
+        assertNull("an evicted chat is not held", stores.leaseCached(agentKey))
     }
 
     @Test
     fun conversationReopensAutomaticallyWhenProfileVersionAdvances() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val (hostId, _) = sampleDeskHost("99999999-9999-9999-9999-999999999999")
         val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 9 })
         var ready = false
         val fakeChat = FakeShellChat(agentKey)
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             chatBridge = FakeShellChatBridge(),
             opener = {
                 if (!ready) {
@@ -718,12 +717,13 @@ class ShellTest {
     @Test
     fun askActionsBindToRenderedAskKey() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val (hostId, _) = sampleDeskHost("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
         val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 10 })
         val fakeChat = FakeShellChat(agentKey)
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             chatBridge = FakeShellChatBridge(),
             opener = { fakeChat },
         )
@@ -779,7 +779,7 @@ class ShellTest {
     @Test
     fun changesRouteRetryReacquiresChatLeaseAfterInitialFailure() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val (hostId, _) = sampleDeskHost("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
         val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 11 })
         var ready = false
@@ -787,6 +787,7 @@ class ShellTest {
         val fakeChat = FakeShellChat(agentKey)
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             chatBridge = FakeShellChatBridge(),
             opener = {
                 openAttempts += 1
@@ -826,11 +827,12 @@ class ShellTest {
         val (hostId, desk) = sampleDeskHost("cccccccc-cccc-cccc-cccc-cccccccccccc")
         val createdKey = AgentKey(host = hostId.bytes, agent = List(16) { 21 })
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val createdRequests = mutableListOf<NewAgent>()
         val fakeChat = FakeShellChat(createdKey)
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             chatBridge = FakeShellChatBridge(),
             opener = { fakeChat },
         )
@@ -908,8 +910,8 @@ class ShellTest {
     fun hostPageShowsRosterFingerprintPairsAgainAndRevokes() {
         val (hostId, desk) = sampleDeskHost("dddddddd-dddd-dddd-dddd-dddddddddddd")
         val router = Router()
-        val accounts = AccountRegistry()
-        val stores = StoreBundle(account = AccountId("signed-out"))
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val stores = StoreBundle(account = AccountId("signed-out"), scope = shellScope)
         stores.hosts.show(listOf(desk))
         stores.hosts.showRoster(
             Roster(
@@ -961,9 +963,10 @@ class ShellTest {
         val liveRow = sampleFleetRow(AgentKey(hostId.bytes, List(16) { 34 }), "active-job")
         val acts = mutableListOf<Pair<AgentAct, AgentKey>>()
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             acting = { act, key ->
                 acts += act to key
                 Result.success(Unit)
@@ -1007,7 +1010,7 @@ class ShellTest {
     @Test
     fun settingsPaywallAccountSheetsAndReportOverlayEmitActionsAndOverlayRoutes() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         accounts.show(
             listOf(
                 ProfileView(
@@ -1025,7 +1028,7 @@ class ShellTest {
                 ),
             ),
         )
-        val stores = StoreBundle(account = AccountId("sub-ada"))
+        val stores = StoreBundle(account = AccountId("sub-ada"), scope = shellScope)
         stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = emptyList())
         stores.hosts.showRoster(
             Roster(
@@ -1048,7 +1051,7 @@ class ShellTest {
                 manageUrl = "https://billing.example.com/portal",
             ),
         )
-        val report = ReportStore()
+        val report = ReportStore(redactor = { frame, _ -> frame.png })
         val actions = mutableListOf<ShellAction>()
 
         router.push(Route.Settings)
@@ -1116,10 +1119,11 @@ class ShellTest {
     @Test
     fun signInOfferSheetRendersIncomingOfferAndEmitsAcceptAndDecline() {
         val router = Router()
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         val answered = mutableListOf<Pair<String, Boolean>>()
         val stores = StoreBundle(
             account = AccountId("signed-out"),
+            scope = shellScope,
             answerSignInOfferOp = { offer, accept ->
                 answered += offer.email to accept
                 Result.success(SignInOfferOutcome.Declined)
@@ -1178,8 +1182,8 @@ class ShellTest {
     @Test
     fun signInResultDialogRendersMismatchAndEmitsKeep() {
         val router = Router()
-        val accounts = AccountRegistry()
-        val stores = StoreBundle(account = AccountId("signed-out"))
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
+        val stores = StoreBundle(account = AccountId("signed-out"), scope = shellScope)
         stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = emptyList())
         val signIn = SignInStore(
             initialPhase = SignInStore.Phase.Mismatched(
@@ -1210,7 +1214,7 @@ class ShellTest {
 
     @Test
     fun deleteAccountStateIncludesBillingRenewalWarningWhenSubscriptionRenews() {
-        val accounts = AccountRegistry()
+        val accounts = AccountRegistry(makeStores = { StoreBundle(account = it, scope = shellScope) })
         accounts.show(
             listOf(
                 ProfileView(
@@ -1307,7 +1311,7 @@ class ShellTest {
             ),
         )
 
-        val report = ReportStore()
+        val report = ReportStore(redactor = { frame, _ -> frame.png })
         val actions = mutableListOf<ShellAction>()
 
         composeRule.setContent {

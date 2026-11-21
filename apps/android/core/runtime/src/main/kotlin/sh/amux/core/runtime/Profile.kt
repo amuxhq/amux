@@ -2,6 +2,7 @@ package sh.amux.core.runtime
 
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import sh.amux.values.AgentAct
 import sh.amux.values.AgentKey
@@ -196,11 +197,15 @@ class Profile internal constructor(
 
     // --- Chats -------------------------------------------------------------
 
+    /**
+     * Opens [agent]'s chat on the core thread without holding the caller's
+     * thread. A caller cancelled meanwhile has the chat closed.
+     */
     @Throws(RuntimeFailure::class)
-    fun openChat(agent: AgentKey, tail: Int = 0): Chat {
+    suspend fun openChat(agent: AgentKey, tail: Int = 0): Chat {
         val agentJson = AmuxJson.json.encodeToString(agent)
         return try {
-            loop.blocking {
+            loop.runOnCore(dispose = Chat::close) {
                 val chatHandle = withOpen(0L) { live ->
                     NativeBridge.sessionOpen(live, agentJson, tail)
                 }
@@ -209,10 +214,10 @@ class Profile internal constructor(
                 }
                 Chat(handle = chatHandle, loop = loop)
             }
+        } catch (c: CancellationException) {
+            throw c
         } catch (f: RuntimeFailure) {
             throw f
-        } catch (e: BridgeException) {
-            throw RuntimeFailure(e.message ?: "the chat did not open")
         } catch (t: Throwable) {
             throw RuntimeFailure(t.message ?: "the chat did not open")
         }
@@ -225,6 +230,8 @@ class Profile internal constructor(
     ): Result<T> {
         val raw = try {
             loop.awaitAct { withOpen(0L, start) }
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
             return Result.failure(RuntimeFailure(t.failureDescription))
         }
@@ -236,6 +243,8 @@ class Profile internal constructor(
     ): Result<T?> {
         val raw = try {
             loop.awaitAct { withOpen(0L, start) }
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
             return Result.failure(RuntimeFailure(t.failureDescription))
         }
@@ -245,6 +254,8 @@ class Profile internal constructor(
     private suspend fun actUnit(start: (Long) -> Long): Result<Unit> {
         val raw = try {
             loop.awaitAct { withOpen(0L, start) }
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
             return Result.failure(RuntimeFailure(t.failureDescription))
         }

@@ -15,7 +15,7 @@ import javax.crypto.spec.SecretKeySpec
  * Pure JVM RFC 9180 HPKE Base-mode implementation for the suite used by amux pushes:
  * DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / ChaCha20-Poly1305.
  */
-internal object Hpke {
+object Hpke {
     const val KEY_SIZE: Int = 32
     const val NONCE_SIZE: Int = 12
     const val TAG_SIZE: Int = 16

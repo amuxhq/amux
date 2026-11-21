@@ -10,14 +10,10 @@ import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import sh.amux.values.Found
 
 /** Local-network discovery seam for [RuntimeCoordinator]. */
 interface DiscoverySource {
-    val permission: StateFlow<LocalNetworkPermission>
     fun start()
     fun stop()
 }
@@ -184,9 +180,6 @@ class AndroidLocalDiscovery(
     private val wifiManager: WifiManager? =
         appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
 
-    private val _permission = MutableStateFlow(LocalNetworkPermission.Granted)
-    override val permission: StateFlow<LocalNetworkPermission> = _permission.asStateFlow()
-
     private val lock = Any()
     private val executor: Executor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "amux-nsd").apply { isDaemon = true }
@@ -224,9 +217,7 @@ class AndroidLocalDiscovery(
             acquireMulticastLock()
 
             val listener = object : NsdManager.DiscoveryListener {
-                override fun onDiscoveryStarted(regType: String) {
-                    _permission.value = LocalNetworkPermission.Granted
-                }
+                override fun onDiscoveryStarted(regType: String) = Unit
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     registerInfoCallback(serviceInfo, generation)

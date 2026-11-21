@@ -111,10 +111,10 @@ class ScriptedChatTest {
         model.send()!!.join()
         assertEquals(listOf("hello"), scripted.sent.map { it.text })
 
-        model.answerPermission(choice = 0)!!.join()
+        model.answer(choice = 0)!!.join()
         assertEquals(1, scripted.answers.size)
 
-        model.setSetting(SettingChange.Effort("high"))!!.join()
+        model.change(SettingChange.Effort("high"))!!.join()
         assertEquals(listOf(SettingChange.Effort("high")), scripted.changed)
 
         model.openOverview(Comparison.Uncommitted).await()

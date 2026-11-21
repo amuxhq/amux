@@ -1,8 +1,5 @@
 package sh.amux.core.runtime
 
-import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,13 +20,17 @@ import sh.amux.values.ProfileView
 import sh.amux.values.StartConfig
 import sh.amux.values.UsageEvent
 
-/** Starts an installation and delivers profile updates on [onProfilesMoved]. */
+/**
+ * Starts an installation, delivering profile updates on [onProfilesMoved] and,
+ * should the runtime stop by itself, why on [onStopped].
+ */
 fun interface RuntimeStarter {
     @Throws(RuntimeFailure::class)
     fun start(
         config: StartConfig,
         dispatch: (() -> Unit) -> Unit,
         onProfilesMoved: (List<ProfileView>) -> Unit,
+        onStopped: (String) -> Unit,
     ): Runtime
 }
 
@@ -48,13 +49,18 @@ data class CoordinatorState(
  * active profile's [StoreBundle], source policy, ordered lifecycle feeds,
  * local discovery forwarding, entitlement refreshes, analytics toggles, and
  * store-failure relaunch recovery.
+ *
+ * [scope] runs on the main thread: everything the coordinator holds is read
+ * and written there. Native work that can take a while, starting and
+ * stopping the runtime and opening a profile, runs on the core thread or
+ * [ioDispatcher] while the screens draw what they last held.
  */
 class RuntimeCoordinator(
     val registry: AccountRegistry,
     val installationDir: File,
     val deviceName: String,
     val signedOutStores: StoreBundle,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val dispatch: (() -> Unit) -> Unit = { it() },
     private val options: Options = Options(),
@@ -62,11 +68,12 @@ class RuntimeCoordinator(
     var discovery: DiscoverySource? = null,
     var entitlementWatch: EntitlementWatch? = null,
     var pushRegistrar: PushRegistrar = NoOpPushRegistrar(),
-    private val starter: RuntimeStarter = RuntimeStarter { config, disp, onProfilesMoved ->
+    private val starter: RuntimeStarter = RuntimeStarter { config, disp, onProfilesMoved, onStopped ->
         Runtime.start(
             config = config,
             dispatch = disp,
             onProfilesMoved = onProfilesMoved,
+            onStopped = onStopped,
         )
     },
 ) {
@@ -112,6 +119,13 @@ class RuntimeCoordinator(
     private var launchGeneration: Int = 0
     private var startingJob: Job? = null
     private var lastFedJob: Job? = null
+    private var opening: Job? = null
+    private var openingTarget: Pair<String, StoreBundle>? = null
+
+    // Stopping the native runtime joins its threads, which can take seconds,
+    // so it runs here; the next start waits for it, as both use one store.
+    private val teardownScope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    private var teardown: Job? = null
     private val waiterLock = Any()
     private val startWaiters = mutableListOf<CompletableDeferred<Runtime?>>()
 
@@ -156,14 +170,18 @@ class RuntimeCoordinator(
             telemetry = currentState.shareUsage,
         )
         val job = scope.launch(start = CoroutineStart.LAZY) {
+            teardown?.join()
             var startedRuntime: Runtime? = null
             try {
                 val result: Result<Runtime> = withContext(ioDispatcher) {
                     try {
                         dir.mkdirs()
-                        val created = starter.start(config, dispatch) { listed ->
-                            profilesMoved(listed, expectedLaunch)
-                        }
+                        val created = starter.start(
+                            config,
+                            dispatch,
+                            { listed -> profilesMoved(listed, expectedLaunch) },
+                            { reason -> stoppedByItself(reason, expectedLaunch) },
+                        )
                         startedRuntime = created
                         Result.success(created)
                     } catch (f: RuntimeFailure) {
@@ -265,8 +283,12 @@ class RuntimeCoordinator(
         }
     }
 
-    /** Stops the installation cleanly, closing any open profile and chats first. */
-    fun stop() {
+    /**
+     * Stops the installation, closing any open profile and chats first. The
+     * screens let go of the runtime at once; the native stop finishes on
+     * [ioDispatcher], and the returned job completes when it has.
+     */
+    fun stop(): Job {
         closeProfile()
         val jobToCancel: Job?
         val runtimeToStop: Runtime?
@@ -281,8 +303,14 @@ class RuntimeCoordinator(
         completeWaiters(null)
         networkWatch.stop()
         discovery?.stop()
-        runtimeToStop?.stop()
         _state.update { it.copy(profiles = emptyList(), activeProfileId = null) }
+        val previous = teardown
+        val job = teardownScope.launch {
+            previous?.join()
+            runtimeToStop?.stop()
+        }
+        teardown = job
+        return job
     }
 
     /** Recovers from a store failure by clearing the error, stopping, and starting afresh. */
@@ -290,6 +318,18 @@ class RuntimeCoordinator(
         updateFailures(failure = null, storeFailure = null)
         stop()
         start()
+    }
+
+    /**
+     * The runtime stopped without being asked to: its bridge failed or it
+     * went away. Every act would fail from here, so the screens show the
+     * failure and offer to relaunch rather than draw a fleet that no longer
+     * moves.
+     */
+    private fun stoppedByItself(reason: String, expectedLaunch: Int) {
+        if (expectedLaunch != launchGeneration) return
+        stop()
+        updateFailures(failure = reason, storeFailure = reason)
     }
 
     private fun updateFailures(failure: String?, storeFailure: String?) {
@@ -322,24 +362,38 @@ class RuntimeCoordinator(
         val activeStores = stores
         _storesFlow.value = activeStores
 
-        if (profile?.id != profileId || fedBundle !== activeStores) {
+        val target = profileId to activeStores
+        val placed = profile?.id == profileId && fedBundle === activeStores
+        if (!placed && openingTarget != target) {
             closeProfile()
             openingGeneration += 1
             val expectedOpening = openingGeneration
-            try {
-                val opened = activeRuntime.openProfile(profileId) { event ->
-                    if (openingGeneration == expectedOpening) {
-                        activeStores.moved(event)
+            openingTarget = target
+            opening = scope.launch {
+                val opened = try {
+                    activeRuntime.openProfile(profileId) { event ->
+                        if (openingGeneration == expectedOpening) {
+                            activeStores.moved(event)
+                        }
                     }
+                } catch (f: RuntimeFailure) {
+                    if (openingGeneration == expectedOpening) {
+                        openingTarget = null
+                        _state.update { it.copy(failure = f.description) }
+                    }
+                    return@launch
                 }
+                if (openingGeneration != expectedOpening || runtime !== activeRuntime) {
+                    opened.close()
+                    return@launch
+                }
+                openingTarget = null
                 profile = opened
                 fedBundle = activeStores
                 _state.update { it.copy(activeProfileId = profileId) }
-                discovery?.permission?.value?.let { activeStores.hosts.sawLocalNetwork(it) }
                 activeStores.hosts.explainedNetwork(true)
                 activeStores.attach(opened)
-            } catch (f: RuntimeFailure) {
-                _state.update { it.copy(failure = f.description) }
+                applySourcePolicy()
             }
         }
         _state.value.profiles.firstOrNull { it.id == profileId }?.let { view ->
@@ -357,6 +411,10 @@ class RuntimeCoordinator(
 
     private fun closeProfile() {
         openingGeneration += 1
+        // A cancelled open closes the profile it opened on the core thread.
+        opening?.cancel()
+        opening = null
+        openingTarget = null
         fedBundle?.closeChats()
         fedBundle?.attach(null)
         fedBundle = null
@@ -478,16 +536,19 @@ class RuntimeCoordinator(
         activeRuntime.deleteProfile(entry.profile)
     }
 
+    /** Puts an account trusting [host] on screen, answering whether its profile is open. */
     suspend fun bringForward(host: HostId): Boolean {
         val trustingProfiles = trusting(host)
         val onScreen = registry.profile
         if (onScreen != null && onScreen in trustingProfiles) {
+            opening?.join()
             return profile?.id == onScreen
         }
         val matchingAccounts = registry.accounts.filter { it.profile in trustingProfiles }
         val chosen = matchingAccounts.firstOrNull { it.signedIn } ?: matchingAccounts.firstOrNull()
             ?: return false
         registry.select(chosen.id)
+        opening?.join()
         return profile?.id == chosen.profile
     }
 
@@ -532,47 +593,6 @@ class RuntimeCoordinator(
                     entitlement = entry.entitlement,
                 ),
             )
-        }
-    }
-
-    companion object {
-        /** Creates a production [RuntimeCoordinator] wired to Android system services. */
-        fun create(
-            context: Context,
-            registry: AccountRegistry,
-            deviceName: String,
-            signedOutStores: StoreBundle,
-            scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
-            options: Options = Options(),
-            entitlementWatch: EntitlementWatch? = null,
-            pushRegistrar: PushRegistrar = NoOpPushRegistrar(),
-        ): RuntimeCoordinator {
-            val mainHandler = Handler(Looper.getMainLooper())
-            val mainDispatch: (() -> Unit) -> Unit = { block ->
-                if (Looper.myLooper() == Looper.getMainLooper()) {
-                    block()
-                } else {
-                    mainHandler.post(block)
-                }
-            }
-            val coordinator = RuntimeCoordinator(
-                registry = registry,
-                installationDir = InstallationPaths.installationDir(context),
-                deviceName = deviceName,
-                signedOutStores = signedOutStores,
-                scope = scope,
-                dispatch = mainDispatch,
-                options = options,
-                networkWatch = AndroidNetworkWatch(context, scope = scope),
-                entitlementWatch = entitlementWatch,
-                pushRegistrar = pushRegistrar,
-            )
-            coordinator.discovery = AndroidLocalDiscovery(
-                context = context,
-                dispatch = mainDispatch,
-                handOver = { coordinator.discovered(it) },
-            )
-            return coordinator
         }
     }
 }

@@ -2,9 +2,7 @@ package sh.amux.core.runtime
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -251,7 +249,7 @@ data class NewAgentState(
  */
 class NewAgentStore(
     private val source: NewAgentSource? = null,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope,
     private val bridge: NewAgentBridge = NativeNewAgentBridge,
     private val searchDebounceMs: Long = DEFAULT_SEARCH_DEBOUNCE_MS,
 ) {
@@ -268,24 +266,11 @@ class NewAgentStore(
         val capped: Boolean,
     )
 
-    private data class ConfirmedPinBaseline(
-        val entry: Directory,
-        val pinned: Boolean,
-        val inRecent: Boolean,
-        val inHistory: Boolean,
-        val confirmedAtGen: Int,
-    )
-
     private var worked: Map<HostId, List<Directory>> = emptyMap()
     private var unfilteredListing: UnfilteredListing? = null
     private var directoryGeneration: Int = 0
     private var offerGeneration: Int = 0
     private val offerAsked: MutableMap<NewAgentProvider, Int> = mutableMapOf()
-    private val pinGenerations: MutableMap<String, Int> = mutableMapOf()
-    private val confirmedPinBaselines: MutableMap<String, ConfirmedPinBaseline> = mutableMapOf()
-    private val inFlightPinCounts: MutableMap<String, Int> = mutableMapOf()
-    private val latestPinFailed: MutableSet<String> = mutableSetOf()
-    private var pinGenerationCounter: Int = 0
     private var machineOnline: Boolean? = null
     private var providerPicked: Boolean = false
     private var providerSeeded: Boolean = false
@@ -311,7 +296,6 @@ class NewAgentStore(
         providerPicked = false
         providerSeeded = false
         unfilteredListing = null
-        clearPinTracking()
 
         _state.value = NewAgentState(
             hosts = hosts,
@@ -448,7 +432,6 @@ class NewAgentStore(
         val hostView = _state.value.hosts.firstOrNull { it.id == host }
         machineOnline = hostView?.online
         unfilteredListing = null
-        clearPinTracking()
 
         _state.update { state ->
             state.copy(
@@ -558,108 +541,30 @@ class NewAgentStore(
         }
     }
 
-    /** Optimistically pins or unpins [directory] and sends the change to the chosen host. */
+    /**
+     * Moves [directory] in or out of the repositories at once, ahead of the
+     * host saying so, and sends the change to the chosen host. A refusal says
+     * why and lists the host's folders again, which puts the folder back
+     * where the host keeps it.
+     */
     fun pinFolder(directory: Directory, pinned: Boolean) {
         val host = _state.value.machine ?: return
-        val path = directory.path
-        val before = _state.value
-        if (path !in confirmedPinBaselines) {
-            val inRepos = before.repositories.any { it.path == path }
-            val inRecent = before.recent.any { it.path == path }
-            val inHistory = before.history.any { it.path == path }
-            val priorEntry = before.repositories.firstOrNull { it.path == path }
-                ?: before.recent.firstOrNull { it.path == path }
-                ?: before.history.firstOrNull { it.path == path }
-                ?: directory
-            confirmedPinBaselines[path] = ConfirmedPinBaseline(
-                entry = priorEntry,
-                pinned = inRepos,
-                inRecent = inRecent,
-                inHistory = inHistory,
-                confirmedAtGen = 0,
-            )
-        }
-        pinGenerationCounter += 1
-        val pinGen = pinGenerationCounter
-        pinGenerations[path] = pinGen
-        latestPinFailed.remove(path)
-
         applyPinOptimistically(directory, pinned)
-        val runtimeSource = source ?: run {
-            confirmedPinBaselines.remove(path)
-            return
-        }
-        inFlightPinCounts[path] = (inFlightPinCounts[path] ?: 0) + 1
+        val runtimeSource = source ?: return
         scope.launch {
-            var completedNormally = false
-            try {
-                val result = try {
-                    runtimeSource.pinFolder(host, path, pinned)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    Result.failure(RuntimeFailure(t.failureDescription))
-                }
-                completedNormally = true
-                if (_state.value.machine != host) return@launch
-                val remaining = ((inFlightPinCounts[path] ?: 1) - 1).coerceAtLeast(0)
-                if (remaining == 0) {
-                    inFlightPinCounts.remove(path)
-                } else {
-                    inFlightPinCounts[path] = remaining
-                }
-
-                result.fold(
-                    onSuccess = {
-                        val existing = confirmedPinBaselines[path]
-                        if (existing != null && pinGen >= existing.confirmedAtGen) {
-                            confirmedPinBaselines[path] = ConfirmedPinBaseline(
-                                entry = existing.entry,
-                                pinned = pinned,
-                                inRecent = if (pinned) false else existing.inRecent,
-                                inHistory = if (pinned) false else existing.inHistory,
-                                confirmedAtGen = pinGen,
-                            )
-                        }
-                        if (remaining == 0 && path in latestPinFailed) {
-                            confirmedPinBaselines[path]?.let { baseline ->
-                                reconcilePinToBaseline(baseline = baseline, failure = null)
-                            }
-                        }
-                    },
-                    onFailure = { error ->
-                        val baseline = confirmedPinBaselines[path]
-                        if (pinGenerations[path] == pinGen) {
-                            latestPinFailed.add(path)
-                            if (baseline != null) {
-                                reconcilePinToBaseline(
-                                    baseline = baseline,
-                                    failure = error.failureDescription,
-                                )
-                            } else {
-                                _state.update { it.copy(failure = error.failureDescription) }
-                            }
-                        } else if (remaining == 0 && path in latestPinFailed && baseline != null) {
-                            reconcilePinToBaseline(baseline = baseline, failure = null)
-                        }
-                    },
-                )
-
-                if (remaining == 0) {
-                    confirmedPinBaselines.remove(path)
-                    latestPinFailed.remove(path)
-                }
-            } finally {
-                if (!completedNormally && _state.value.machine == host) {
-                    val remaining = ((inFlightPinCounts[path] ?: 1) - 1).coerceAtLeast(0)
-                    if (remaining == 0) {
-                        inFlightPinCounts.remove(path)
-                        confirmedPinBaselines.remove(path)
-                        latestPinFailed.remove(path)
-                    } else {
-                        inFlightPinCounts[path] = remaining
-                    }
-                }
+            val result = try {
+                runtimeSource.pinFolder(host, directory.path, pinned)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Result.failure(RuntimeFailure(t.failureDescription))
+            }
+            if (_state.value.machine != host) return@launch
+            result.onFailure { error ->
+                _state.update { it.copy(failure = error.failureDescription) }
+                val current = _state.value
+                val query = if (current.searchesTheMachine) current.query.trim() else ""
+                fetchDirectories(host, query = query, quiet = true)
             }
         }
     }
@@ -922,68 +827,6 @@ class NewAgentStore(
                 history = cached.history,
                 directory = directory,
                 pinned = pinned,
-            )
-            unfilteredListing = cached.copy(
-                repositories = nextRepos,
-                recent = nextRecent,
-                history = nextHistory,
-            )
-        }
-    }
-
-    private fun clearPinTracking() {
-        pinGenerations.clear()
-        confirmedPinBaselines.clear()
-        inFlightPinCounts.clear()
-        latestPinFailed.clear()
-    }
-
-    private fun reconcilePinToBaseline(
-        baseline: ConfirmedPinBaseline,
-        failure: String?,
-    ) {
-        fun restoreLists(
-            repositories: List<Directory>,
-            recent: List<Directory>,
-            history: List<Directory>,
-        ): Triple<List<Directory>, List<Directory>, List<Directory>> {
-            val path = baseline.entry.path
-            val nextRepos = if (baseline.pinned) {
-                if (repositories.any { it.path == path }) repositories else repositories + baseline.entry
-            } else {
-                repositories.filterNot { it.path == path }
-            }
-            val nextRecent = if (!baseline.pinned && baseline.inRecent) {
-                if (recent.any { it.path == path }) recent else listOf(baseline.entry) + recent
-            } else {
-                recent.filterNot { it.path == path }
-            }
-            val nextHistory = if (!baseline.pinned && !baseline.inRecent && baseline.inHistory) {
-                if (history.any { it.path == path }) history else listOf(baseline.entry) + history
-            } else {
-                history.filterNot { it.path == path }
-            }
-            return Triple(nextRepos, nextRecent, nextHistory)
-        }
-
-        _state.update { current ->
-            val (nextRepos, nextRecent, nextHistory) = restoreLists(
-                current.repositories,
-                current.recent,
-                current.history,
-            )
-            current.copy(
-                repositories = nextRepos,
-                recent = nextRecent,
-                history = nextHistory,
-                failure = failure ?: current.failure,
-            )
-        }
-        unfilteredListing?.let { cached ->
-            val (nextRepos, nextRecent, nextHistory) = restoreLists(
-                cached.repositories,
-                cached.recent,
-                cached.history,
             )
             unfilteredListing = cached.copy(
                 repositories = nextRepos,

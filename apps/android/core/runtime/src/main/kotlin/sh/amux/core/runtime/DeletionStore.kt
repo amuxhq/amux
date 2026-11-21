@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import sh.amux.words.CloudWords
 
 data class DeletionState(
     val account: AccountId? = null,
@@ -107,10 +108,10 @@ class DeletionStore(
     companion object {
         fun phaseAfter(error: CloudError): Phase = when (error) {
             CloudError.Cancelled -> Phase.Asking
-            CloudError.Unauthenticated -> Phase.Failed("amux.sh no longer recognises this account")
+            CloudError.Unauthenticated -> Phase.Failed(CloudWords.ACCOUNT_NOT_RECOGNISED)
             is CloudError.Refused -> Phase.Failed(error.reason)
             is CloudError.Network -> Phase.Failed(error.message)
-            CloudError.Timeout -> Phase.Failed("amux.sh did not answer")
+            CloudError.Timeout -> Phase.Failed(CloudWords.DID_NOT_ANSWER)
         }
     }
 }

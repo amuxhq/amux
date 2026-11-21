@@ -9,9 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -29,8 +26,6 @@ class RuntimeCoordinatorTest {
         System.getProperty("os.name").orEmpty().lowercase().contains("win")
 
     private class FakeDiscovery : DiscoverySource {
-        private val _permission = MutableStateFlow(LocalNetworkPermission.Granted)
-        override val permission: StateFlow<LocalNetworkPermission> = _permission.asStateFlow()
         var starts = 0
         var stops = 0
         override fun start() { starts += 1 }
@@ -156,12 +151,12 @@ class RuntimeCoordinatorTest {
                     coordinator.fedLifecycles,
                 )
 
-                coordinator.stop()
+                coordinator.stop().join()
                 assertNull(coordinator.runtime)
                 assertNull(coordinator.profile)
             }
         } finally {
-            coordinator.stop()
+            runBlocking { coordinator.stop().join() }
             scope.cancel()
             mainExecutor.shutdownNow()
             tempDir.deleteRecursively()
@@ -193,12 +188,12 @@ class RuntimeCoordinatorTest {
             ioDispatcher = Dispatchers.IO,
             dispatch = dispatch,
             options = RuntimeCoordinator.Options(lan = false),
-            starter = RuntimeStarter { config, disp, onProfilesMoved ->
+            starter = RuntimeStarter { config, disp, onProfilesMoved, onStopped ->
                 if (failFirst) {
                     failFirst = false
                     throw RuntimeFailure("corrupt store")
                 }
-                Runtime.start(config, dispatch = disp, onProfilesMoved = onProfilesMoved)
+                Runtime.start(config, dispatch = disp, onProfilesMoved = onProfilesMoved, onStopped = onStopped)
             },
         )
 
@@ -213,10 +208,10 @@ class RuntimeCoordinatorTest {
                 assertNotNull("relaunch should start embedded runtime", recovered)
                 assertNull(coordinator.snapshot.storeFailure)
 
-                coordinator.stop()
+                coordinator.stop().join()
             }
         } finally {
-            coordinator.stop()
+            runBlocking { coordinator.stop().join() }
             scope.cancel()
             mainExecutor.shutdownNow()
             tempDir.deleteRecursively()
@@ -251,10 +246,10 @@ class RuntimeCoordinatorTest {
             ioDispatcher = Dispatchers.IO,
             dispatch = dispatch,
             options = RuntimeCoordinator.Options(lan = false),
-            starter = RuntimeStarter { config, disp, onProfilesMoved ->
+            starter = RuntimeStarter { config, disp, onProfilesMoved, onStopped ->
                 enteredStart.complete(Unit)
                 releaseStart.await(5, java.util.concurrent.TimeUnit.SECONDS)
-                Runtime.start(config, dispatch = disp, onProfilesMoved = onProfilesMoved)
+                Runtime.start(config, dispatch = disp, onProfilesMoved = onProfilesMoved, onStopped = onStopped)
                     .also { createdRef.set(it) }
             },
         )
@@ -289,7 +284,78 @@ class RuntimeCoordinatorTest {
             }
         } finally {
             releaseStart.countDown()
-            coordinator.stop()
+            runBlocking { coordinator.stop().join() }
+            scope.cancel()
+            mainExecutor.shutdownNow()
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aRuntimeThatStopsByItselfRaisesTheStoreFailureAndClearsTheRuntime() {
+        val tempDir = Files.createTempDirectory("amux-coordinator-died").toFile()
+        val mainExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "test-died-main").apply { isDaemon = true }
+        }
+        val mainDispatcher = mainExecutor.asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + mainDispatcher)
+        val dispatch: (() -> Unit) -> Unit = { block -> mainExecutor.execute(block) }
+
+        val die = java.util.concurrent.CountDownLatch(1)
+        val stops = java.util.concurrent.atomic.AtomicInteger(0)
+        val bridge = object : CoreLoopBridge {
+            override fun runtimeStart(configJson: String): Long = 4242L
+            override fun runtimeStop(handle: Long) {
+                stops.incrementAndGet()
+            }
+            override fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int {
+                die.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                throw BridgeException("the runtime went away")
+            }
+            override fun runtimeInterruptWake(handle: Long) = die.countDown()
+            override fun runtimeStep(handle: Long): String? = null
+        }
+
+        val registry = AccountRegistry(makeStores = { id -> StoreBundle(account = id, scope = scope) })
+        val coordinator = RuntimeCoordinator(
+            registry = registry,
+            installationDir = tempDir,
+            deviceName = "Died Test",
+            signedOutStores = StoreBundle(account = AccountId("signed-out"), scope = scope),
+            scope = scope,
+            ioDispatcher = Dispatchers.IO,
+            dispatch = dispatch,
+            options = RuntimeCoordinator.Options(lan = false),
+            starter = RuntimeStarter { config, disp, onProfilesMoved, onStopped ->
+                Runtime.start(
+                    config,
+                    CoreLoop(
+                        dispatch = disp,
+                        onProfilesMoved = onProfilesMoved,
+                        onStopped = onStopped,
+                        bridge = bridge,
+                    ),
+                )
+            },
+        )
+
+        try {
+            runBlocking(mainDispatcher) {
+                coordinator.start()
+                assertNotNull(withTimeout(10_000L) { coordinator.awaitStarted() })
+                assertNull(coordinator.snapshot.storeFailure)
+
+                die.countDown()
+                val failed = withTimeout(10_000L) {
+                    coordinator.state.first { it.storeFailure != null }
+                }
+                assertEquals("the runtime went away", failed.storeFailure)
+                assertNull("a stopped runtime is let go", coordinator.runtime)
+                assertNull(coordinator.profile)
+                assertEquals(1, stops.get())
+            }
+        } finally {
+            runBlocking { coordinator.stop().join() }
             scope.cancel()
             mainExecutor.shutdownNow()
             tempDir.deleteRecursively()

@@ -32,7 +32,7 @@ class EntitlementWatchTest {
         var reads = 0
         var relinks = 0
 
-        val registry = AccountRegistry()
+        val registry = AccountRegistry(makeStores = { StoreBundle(account = it, scope = this) })
         val ada = AccountId("ada")
         registry.show(listOf(profile("ada", pro = false)))
         registry.stores?.showAccount(profile("ada", pro = false).account)

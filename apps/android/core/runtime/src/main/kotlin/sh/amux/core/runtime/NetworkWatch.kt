@@ -2,13 +2,9 @@ package sh.amux.core.runtime
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.LinkProperties
 import android.net.Network
-import android.net.NetworkCapabilities
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -25,9 +21,12 @@ object NoOpNetworkWatcher : NetworkWatcher {
 }
 
 /**
- * Pure filter and debouncer that suppresses the initial default-network
- * registration burst, ignores RSSI / link-bandwidth jitter on an unchanged
- * network + transport set, and coalesces genuine handovers within [debounceMs].
+ * Tells of every change of the default network after the one the watch
+ * started on: Wi-Fi to cellular, another Wi-Fi network, the network going or
+ * coming back. A handover arrives as a burst of callbacks, so they are
+ * coalesced: the first change of a burst is told [debounceMs] later, once.
+ *
+ * Callbacks arrive on the system's thread; [onChange] runs on [scope].
  */
 class NetworkChangeDebouncer(
     private val scope: CoroutineScope,
@@ -35,135 +34,50 @@ class NetworkChangeDebouncer(
 ) {
     private val lock = Any()
     private var generation = 0
-    private var baselineNetworkId: Long? = null
-    private var baselineTransports: Int? = null
-    private var baselineLinkSignature: String? = null
-    private var pendingJob: Job? = null
+    private var current: Long? = null
+    private var pending: Job? = null
     private var onChange: (() -> Unit)? = null
 
-    fun start(initiallyOffline: Boolean = false, onChange: () -> Unit) {
+    /** Starts watching from [network], the default network now, or `null` with none. */
+    fun start(network: Long?, onChange: () -> Unit) {
         synchronized(lock) {
             stopLocked()
+            current = network
             this.onChange = onChange
-            if (initiallyOffline) {
-                baselineNetworkId = NO_NETWORK
-                baselineTransports = 0
-                baselineLinkSignature = ""
-            }
         }
     }
 
     fun stop() {
-        synchronized(lock) {
-            stopLocked()
-        }
+        synchronized(lock) { stopLocked() }
     }
 
-    fun onAvailable(networkId: Long) {
+    /** The default network is now [network]; registering repeats the one already current. */
+    fun available(network: Long) {
         synchronized(lock) {
-            if (onChange == null) return
-            val existing = baselineNetworkId
-            if (existing == null) {
-                // First callback after registration seeds the active network.
-                baselineNetworkId = networkId
-                baselineTransports = null
-                baselineLinkSignature = null
-                return
-            }
-            if (existing == networkId) {
-                return
-            }
-            baselineNetworkId = networkId
-            baselineTransports = null
-            baselineLinkSignature = null
+            if (onChange == null || current == network) return
+            current = network
             scheduleLocked()
         }
     }
 
-    fun onCapabilitiesChanged(networkId: Long, transports: Int) {
+    /** [network] stopped being the default network. */
+    fun lost(network: Long) {
         synchronized(lock) {
-            if (onChange == null) return
-            val existing = baselineNetworkId
-            if (existing == null) {
-                baselineNetworkId = networkId
-                baselineTransports = transports
-                baselineLinkSignature = null
-                return
-            }
-            if (existing == networkId) {
-                val knownTransports = baselineTransports
-                if (knownTransports == null) {
-                    // Initial capabilities snapshot for the network we just seeded.
-                    baselineTransports = transports
-                    return
-                }
-                if (knownTransports == transports) {
-                    // Same network and same transport set (e.g. RSSI / bandwidth jitter).
-                    return
-                }
-                baselineTransports = transports
-                scheduleLocked()
-                return
-            }
-            baselineNetworkId = networkId
-            baselineTransports = transports
-            baselineLinkSignature = null
-            scheduleLocked()
-        }
-    }
-
-    fun onLinkPropertiesChanged(networkId: Long, linkSignature: String) {
-        synchronized(lock) {
-            if (onChange == null) return
-            val existing = baselineNetworkId
-            if (existing == null) {
-                baselineNetworkId = networkId
-                baselineLinkSignature = linkSignature
-                return
-            }
-            if (existing == networkId) {
-                val known = baselineLinkSignature
-                if (known == null) {
-                    baselineLinkSignature = linkSignature
-                    return
-                }
-                if (known == linkSignature) {
-                    return
-                }
-                baselineLinkSignature = linkSignature
-                scheduleLocked()
-                return
-            }
-            baselineNetworkId = networkId
-            baselineTransports = null
-            baselineLinkSignature = linkSignature
-            scheduleLocked()
-        }
-    }
-
-    fun onLost(networkId: Long) {
-        synchronized(lock) {
-            if (onChange == null) return
-            if (baselineNetworkId != networkId) return
-            baselineNetworkId = NO_NETWORK
-            baselineTransports = 0
-            baselineLinkSignature = ""
+            if (onChange == null || current != network) return
+            current = null
             scheduleLocked()
         }
     }
 
     private fun scheduleLocked() {
-        if (pendingJob?.isActive == true) return
+        if (pending?.isActive == true) return
         val mine = generation
-        pendingJob = scope.launch {
+        pending = scope.launch {
             delay(debounceMs)
             val callback = synchronized(lock) {
-                if (mine != generation) {
-                    null
-                } else {
-                    pendingJob = null
-                    onChange
-                }
+                if (mine != generation) return@launch
+                pending = null
+                onChange
             }
             callback?.invoke()
         }
@@ -171,118 +85,56 @@ class NetworkChangeDebouncer(
 
     private fun stopLocked() {
         generation += 1
-        baselineNetworkId = null
-        baselineTransports = null
-        baselineLinkSignature = null
+        current = null
         onChange = null
-        pendingJob?.cancel()
-        pendingJob = null
+        pending?.cancel()
+        pending = null
     }
 
     companion object {
         const val DEFAULT_DEBOUNCE_MS: Long = 250L
-        private const val NO_NETWORK: Long = -1L
     }
 }
 
-/** Android [ConnectivityManager.NetworkCallback] implementation of [NetworkWatcher]. */
+/** [NetworkWatcher] over the system's default-network callback. */
 class AndroidNetworkWatch(
     context: Context,
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    scope: CoroutineScope,
     debounceMs: Long = NetworkChangeDebouncer.DEFAULT_DEBOUNCE_MS,
 ) : NetworkWatcher {
     private val connectivityManager: ConnectivityManager? =
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE)
             as? ConnectivityManager
     private val debouncer = NetworkChangeDebouncer(scope = scope, debounceMs = debounceMs)
-    private val lock = Any()
     private var callback: ConnectivityManager.NetworkCallback? = null
 
     override fun start(onChange: () -> Unit) {
         val manager = connectivityManager ?: return
         stop()
-        debouncer.start(initiallyOffline = manager.activeNetwork == null, onChange = onChange)
+        debouncer.start(network = manager.activeNetwork?.networkHandle, onChange = onChange)
         val registered = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                debouncer.onAvailable(network.networkHandle)
-            }
+            override fun onAvailable(network: Network) = debouncer.available(network.networkHandle)
 
-            override fun onLost(network: Network) {
-                debouncer.onLost(network.networkHandle)
-            }
-
-            override fun onCapabilitiesChanged(
-                network: Network,
-                networkCapabilities: NetworkCapabilities,
-            ) {
-                debouncer.onCapabilitiesChanged(
-                    networkId = network.networkHandle,
-                    transports = transportMask(networkCapabilities),
-                )
-            }
-
-            override fun onLinkPropertiesChanged(
-                network: Network,
-                linkProperties: LinkProperties,
-            ) {
-                val iface = linkProperties.interfaceName.orEmpty()
-                val addrs = linkProperties.linkAddresses
-                    .mapNotNull { it.address?.hostAddress?.substringBefore('%') }
-                    .sorted()
-                    .joinToString(",")
-                debouncer.onLinkPropertiesChanged(
-                    networkId = network.networkHandle,
-                    linkSignature = "$iface|$addrs",
-                )
-            }
+            override fun onLost(network: Network) = debouncer.lost(network.networkHandle)
         }
-        synchronized(lock) {
-            callback = registered
-        }
-        runCatching {
+        try {
             manager.registerDefaultNetworkCallback(registered)
-        }.onFailure {
-            synchronized(lock) {
-                if (callback === registered) callback = null
-            }
+            callback = registered
+        } catch (_: RuntimeException) {
+            // The system refuses a callback past its per-app limit; the
+            // runtime then learns of a handover when its links fail instead.
             debouncer.stop()
         }
     }
 
     override fun stop() {
-        val manager = connectivityManager
-        val current = synchronized(lock) {
-            val existing = callback
-            callback = null
-            existing
-        }
         debouncer.stop()
-        if (manager != null && current != null) {
-            runCatching { manager.unregisterNetworkCallback(current) }
-        }
-    }
-
-    companion object {
-        private val TRACKED_TRANSPORTS = intArrayOf(
-            NetworkCapabilities.TRANSPORT_CELLULAR,
-            NetworkCapabilities.TRANSPORT_WIFI,
-            NetworkCapabilities.TRANSPORT_BLUETOOTH,
-            NetworkCapabilities.TRANSPORT_ETHERNET,
-            NetworkCapabilities.TRANSPORT_VPN,
-            NetworkCapabilities.TRANSPORT_WIFI_AWARE,
-            NetworkCapabilities.TRANSPORT_LOWPAN,
-            NetworkCapabilities.TRANSPORT_USB,
-            NetworkCapabilities.TRANSPORT_SATELLITE,
-        )
-
-        internal fun transportMask(capabilities: NetworkCapabilities): Int {
-            var mask = 0
-            for (transport in TRACKED_TRANSPORTS) {
-                if (capabilities.hasTransport(transport)) {
-                    mask = mask or (1 shl transport)
-                }
-            }
-            return mask
+        val current = callback ?: return
+        callback = null
+        try {
+            connectivityManager?.unregisterNetworkCallback(current)
+        } catch (_: IllegalArgumentException) {
+            // Already unregistered.
         }
     }
 }

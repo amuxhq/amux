@@ -1,15 +1,27 @@
 package sh.amux.core.runtime
 
 import java.io.File
+import java.io.IOException
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import sh.amux.values.AccountBinding
 import sh.amux.values.ProfileView
+import sh.amux.words.AccountWords
 
 /** One signed-in or signed-out account listed on this phone. */
 @Serializable
@@ -28,26 +40,13 @@ data class AccountEntry(
         get() = account.displayName ?: account.email
 
     val line: String
-        get() {
-            if (!signedIn) return "Signed out"
-            val count = hosts
-            if (count == null || count <= 0) return account.email
-            return if (count == 1) "1 host" else "$count hosts"
-        }
-}
-
-/** Whether the active fleet can reach paired hosts through the cloud relay. */
-enum class FleetGate {
-    Ready,
-    SignedOut,
-    Unsubscribed,
+        get() = AccountWords.line(signedIn = signedIn, computers = hosts, email = account.email)
 }
 
 data class AccountRegistryState(
     val accounts: List<AccountEntry> = emptyList(),
     val selected: AccountId? = null,
     val unbound: String? = null,
-    val persistenceFailed: Boolean = false,
 ) {
     val selectedAccount: AccountEntry?
         get() = accounts.firstOrNull { it.id == selected }
@@ -60,10 +59,16 @@ data class AccountRegistryState(
 /**
  * Tracks every account profile on this phone, which account is currently on
  * screen, and cached per-account host/attention counts and entitlements.
+ *
+ * Read and changed on the main thread. What it remembers is written to [file]
+ * on [ioDispatcher] once changes pause for [persistDelayMs], since counts can
+ * move on every fleet delta.
  */
 class AccountRegistry(
     private val file: File? = null,
-    private val makeStores: (AccountId) -> StoreBundle = { StoreBundle(account = it) },
+    private val makeStores: (AccountId) -> StoreBundle,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val persistDelayMs: Long = PERSIST_DELAY_MS,
 ) {
     @Serializable
     private data class Seen(
@@ -86,6 +91,10 @@ class AccountRegistry(
 
     private val seen = mutableMapOf<AccountId, Seen>()
     private var awaited: AccountId? = null
+
+    private val writer = CoroutineScope(SupervisorJob() + ioDispatcher)
+    private val writing = Mutex()
+    private var pendingWrite: Job? = null
 
     private val _state = MutableStateFlow(AccountRegistryState())
     val state: StateFlow<AccountRegistryState> = _state.asStateFlow()
@@ -124,7 +133,9 @@ class AccountRegistry(
         val loaded = file?.takeIf { it.isFile }?.let { path ->
             try {
                 AmuxJson.json.decodeFromString<Remembered>(path.readText(StandardCharsets.UTF_8))
-            } catch (_: Throwable) {
+            } catch (_: IOException) {
+                null
+            } catch (_: SerializationException) {
                 null
             }
         }
@@ -138,21 +149,6 @@ class AccountRegistry(
             persist()
         }
     }
-
-    val gate: FleetGate
-        get() {
-            val entry = selectedAccount
-            if (entry == null || !entry.signedIn) return FleetGate.SignedOut
-            return when (stores?.hosts?.snapshot?.account?.pro) {
-                true -> FleetGate.Ready
-                false -> FleetGate.Unsubscribed
-                null -> if (entry.entitlement is Entitlement.Active) {
-                    FleetGate.Ready
-                } else {
-                    FleetGate.Unsubscribed
-                }
-            }
-        }
 
     /** Applies the latest profile list from the embedded runtime. */
     fun show(profiles: List<ProfileView>) {
@@ -302,23 +298,39 @@ class AccountRegistry(
 
     private fun persist() {
         val target = file ?: return
+        val keyed = seen.entries
+            .map { (account, value) -> Keyed(account, value) }
+            .sortedBy { it.account.value }
+        val json = AmuxJson.json.encodeToString(
+            Remembered(selected = _state.value.selected, seen = keyed),
+        )
+        pendingWrite?.cancel()
+        pendingWrite = writer.launch {
+            delay(persistDelayMs)
+            // One write at a time, so an older one never lands over a newer.
+            writing.withLock { write(target, json) }
+        }
+    }
+
+    private fun write(target: File, json: String) {
         try {
             target.parentFile?.mkdirs()
-            val keyed = seen.entries
-                .map { (account, value) -> Keyed(account, value) }
-                .sortedBy { it.account.value }
-            val json = AmuxJson.json.encodeToString(
-                Remembered(selected = _state.value.selected, seen = keyed),
-            )
             val tmp = File(target.parentFile, "${target.name}.tmp")
             tmp.writeText(json, StandardCharsets.UTF_8)
             if (!tmp.renameTo(target)) {
                 target.writeText(json, StandardCharsets.UTF_8)
                 tmp.delete()
             }
-            _state.update { it.copy(persistenceFailed = false) }
-        } catch (_: Throwable) {
-            _state.update { it.copy(persistenceFailed = true) }
+        } catch (_: IOException) {
+            // The next change writes everything again. Until then a lost write
+            // costs which account opens first next launch and the counts an
+            // account row shows before its fleet opens; the runtime holds the
+            // accounts themselves.
         }
+    }
+
+    companion object {
+        /** How long changes must pause before the remembered accounts are written. */
+        const val PERSIST_DELAY_MS: Long = 500L
     }
 }

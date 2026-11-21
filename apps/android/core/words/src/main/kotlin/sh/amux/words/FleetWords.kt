@@ -6,6 +6,7 @@ import sh.amux.values.ActivityKind
 import sh.amux.values.ActivityLine
 import sh.amux.values.ExitCause
 import sh.amux.values.Kind
+import sh.amux.values.RelayLink
 import sh.amux.values.SecondLine
 import java.time.Instant
 import java.time.ZoneId
@@ -115,5 +116,23 @@ object FleetWords {
         Kind.ClaudeSdk, Kind.ClaudePty -> "Claude"
         Kind.Codex -> "Codex"
         Kind.Unspecified -> "the provider"
+    }
+
+    /** What home says under its title: who needs you, else how many work. */
+    fun subtitle(needYou: Int, working: Int, agents: Int): String {
+        if (needYou <= 0) return "Nothing needs you · $working working"
+        val noun = if (agents == 1) "agent" else "agents"
+        return "$needYou need you · $agents $noun"
+    }
+
+    /** Why the relay cannot reach this account's computers, when the person can fix it. */
+    fun relayTrouble(relay: RelayLink): String? = when (relay) {
+        RelayLink.SignInAgain -> "Sign in again to reach your computers from anywhere"
+        RelayLink.VersionMismatch -> "Update amux to reach your computers from anywhere"
+        RelayLink.Off,
+        RelayLink.Connecting,
+        RelayLink.Retrying,
+        RelayLink.Connected,
+        -> null
     }
 }

@@ -69,7 +69,7 @@ Retrofit), with OkHttp and `kotlinx.serialization` behind plain interfaces.
 | --- | --- | --- |
 | `:core:values` | Pure JVM | Generated `Values.kt` mirroring every Rust value that crosses the bridge, produced by `cargo run -p ios-tools -- kotlin-types`; never edited by hand, zero Android imports |
 | `:core:words` | Pure JVM | Wording and markdown parsing (`ChatWords`, `FleetWords`, `FleetRow`, `DeleteWords`, `SignInWords`, `PlaceNames`, `Elapsed`, `Markdown`, `RowState`, `RunPlacement`, `Subagents`); zero Android imports, runs on the JVM |
-| `:push` | Pure JVM | HPKE decryption (`X25519` + `HKDF-SHA256` + `ChaCha20-Poly1305`, info `amux push 1`, RFC 8410 DER key import verified against Android Conscrypt), generated `Said.kt`, `PushWords` and `PushAlert`; zero Rust and zero Android UI |
+| `:push` | Pure JVM | Generated `Said.kt`, `OpenedPush`, `PushWords` and `PushAlert`; its test fixtures hold the HPKE opener (`X25519` + `HKDF-SHA256` + `ChaCha20-Poly1305`, info `amux push 1`) and key store, which only the debug door and tests link; zero Rust and zero Android UI |
 | `:core:runtime` | Android library | JNI `NativeBridge`, `CoreLoop`, `Runtime`, `Profile`, `Chat`, `RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `ReviewModel`, `FleetStore`, `HostsStore`, `PairingStore`, `NewAgentStore`, `AccountRegistry`, `SignInStore`, `SignInOffers`, `RemovalStore`, `DeletionStore`, `EntitlementWatch`, `AndroidLocalDiscovery`, `AndroidNetworkWatch`, `AppLifecycleObserver`, `AmuxCloudService`, `ReportStore` / `ReportAssembly`, and the `PushRegistrar` and `BillingStoreFront` seams |
 | `:design` | Android library (Compose) | Light and dark neutral grey ramp (`ground`, `raised`, `sunken`, `hairline`, `ink`, `inkMuted`, `inkFaint`), single chromatic attention accent, muted diff tones, bundled `InstrumentSans` and `GeistMono` fonts, tonal surfaces with `1.dp` hairlines (Material You Dynamic Color explicitly disabled), spacing, motion and 48 dp touch-target helper (`thumbTarget`) |
 | `:features` | Android library (Compose) | Pure `@Composable` screens and components (`AgentsHome`, `FirstRun`, `HostsTab`, `HostPage`, `PairingSheet`, `ChatScreen`, `ChatRows`, `ChatComposer`, `AskCardView`, `ChatOverviewSheet`, `ChatSettingsSheet`, `ReviewPage`, `NewAgentScreen`, `SettledScreen`, `SettingsScreen`, `PaywallScreen`, `AccountSheets`, `ReportSheet`, `StoreFailureScreen`) taking immutable state and action callbacks |
@@ -117,7 +117,16 @@ Kotlin owns the loop (`CoreLoop` in `:core:runtime`):
   state, pairing updates, profile list changes and ticketed act answers off the
   main thread, then delivers deltas and answers together in one ordered
   dispatch onto `Dispatchers.Main.immediate`. Any caller awaiting an act
-  therefore always observes the post-delta UI state.
+  therefore always observes the post-delta UI state. The answers are read
+  apart from the deltas, so a delta this build cannot read is logged and its
+  step skipped, as on iPhone, while every act waiting on that step still
+  answers.
+- When the bridge itself fails and the runtime stops without being asked,
+  `CoreLoop` tells `RuntimeCoordinator`, which lets the runtime go and raises
+  the store failure, so the app shows the failure screen with Relaunch rather
+  than a fleet that no longer moves.
+- Nothing on the main thread waits for the core thread: opening a profile or
+  a chat suspends, and stopping the runtime finishes off the main thread.
 
 `StoreBundle` manages the open `FleetStore`, `HostsStore`, `PairingStore`,
 `NewAgentStore`, `SignInOffers` and open `ChatModel` instances for one account.
@@ -126,9 +135,11 @@ state, top-edge paging, reset reloads, per-key row invalidation, persisted
 drafts, 64 MB attachment checks, slash-command autocomplete (`command_matches`),
 paste-as-attachment, `switch_back`, held stops, subagent status stamping from
 `ChatAgents` and the working-tree `ReviewModel`. Active chats are retained
-through refcounted viewer leases (`DisposableEffect` in `Shell`) plus a
-five-minute cache so moving between a chat and its Changes view never evicts a
-live chat.
+through refcounted viewer leases plus a five-minute cache so moving between a
+chat and its Changes view never evicts a live chat. A route takes its lease in a `RememberObserver`, so a composition
+that is abandoned before it commits releases it; a chat already open is leased
+at once, and one that is not opens on the core thread while the route draws
+its ground.
 
 ## Visual design and Android conventions
 

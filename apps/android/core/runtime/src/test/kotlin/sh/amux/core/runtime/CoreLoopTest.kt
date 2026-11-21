@@ -1,5 +1,6 @@
 package sh.amux.core.runtime
 
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -107,13 +108,16 @@ class CoreLoopTest {
             }
         }
 
+        val stoppedBecause = CompletableFuture<String>()
         val loop = CoreLoop(
             onError = { err -> reportedError.compareAndSet(null, err) },
+            onStopped = { reason -> stoppedBecause.complete(reason) },
             bridge = bridge,
         )
         assertEquals(77L, loop.start(dummyConfig))
 
         assertTrue("fatal step error must release native runtime", stoppedLatch.await(5, TimeUnit.SECONDS))
+        assertEquals("native runtime panicked", stoppedBecause.get(5, TimeUnit.SECONDS))
         loop.awaitWatcherExit(5_000L)
         assertTrue(reportedError.get() is BridgeException)
         assertEquals(0L, loop.handle)
@@ -123,5 +127,66 @@ class CoreLoopTest {
 
         loop.stop()
         assertEquals(1, stopCalls.get())
+    }
+
+    @Test
+    fun aStepWhoseDeltasCannotBeReadStillAnswersItsTicketsAndTheLoopGoesOn() {
+        val firstWake = CountDownLatch(1)
+        val secondWake = CountDownLatch(1)
+        val stopRang = CountDownLatch(1)
+        val waits = AtomicInteger(0)
+        val steps = AtomicInteger(0)
+        val errors = mutableListOf<Throwable>()
+        val stopped = AtomicReference<String?>(null)
+
+        val bridge = object : CoreLoopBridge {
+            override fun runtimeStart(configJson: String): Long = 5L
+            override fun runtimeStop(handle: Long) = Unit
+
+            override fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int {
+                val gate = when (waits.incrementAndGet()) {
+                    1 -> firstWake
+                    2 -> secondWake
+                    else -> stopRang
+                }
+                assertTrue(gate.await(5, TimeUnit.SECONDS))
+                return 1
+            }
+
+            override fun runtimeInterruptWake(handle: Long) {
+                stopRang.countDown()
+            }
+
+            override fun runtimeStep(handle: Long): String? = when (steps.incrementAndGet()) {
+                // The step start() takes.
+                1 -> null
+                // A fleet delta this build cannot read, beside an answer it can.
+                2 -> """{"fleets":[{"fleet":1,"delta":{"hosts":"not a list"}}],""" +
+                    """"answers":[{"ticket":99,"json":"{\"Ok\":null}"}]}"""
+                else -> """{"answers":[{"ticket":100,"json":"{\"Ok\":1}"}]}"""
+            }
+        }
+
+        val loop = CoreLoop(
+            onError = { synchronized(errors) { errors.add(it) } },
+            onStopped = { stopped.set(it) },
+            bridge = bridge,
+        )
+        loop.start(dummyConfig)
+
+        val first = loop.submitAct { 99L }
+        firstWake.countDown()
+        assertEquals("""{"Ok":null}""", first.get(5, TimeUnit.SECONDS))
+        assertTrue(loop.isRunning())
+        assertTrue(synchronized(errors) { errors.single() } is CoreLoop.UnreadableStep)
+
+        // The loop steps again after the step it skipped.
+        val second = loop.submitAct { 100L }
+        secondWake.countDown()
+        assertEquals("""{"Ok":1}""", second.get(5, TimeUnit.SECONDS))
+
+        loop.stop()
+        assertFalse(loop.isRunning())
+        assertEquals("a stop asked for is not a stop by itself", null, stopped.get())
     }
 }

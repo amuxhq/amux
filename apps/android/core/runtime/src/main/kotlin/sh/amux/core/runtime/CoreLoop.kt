@@ -6,12 +6,18 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
 import sh.amux.values.ChatDelta
 import sh.amux.values.FleetDelta
 import sh.amux.values.OnboardingState
@@ -63,23 +69,25 @@ private object NativeCoreLoopBridge : CoreLoopBridge {
 class CoreLoop internal constructor(
     private val dispatch: (() -> Unit) -> Unit = { it() },
     private val onProfilesMoved: (List<ProfileView>) -> Unit = {},
-    private val onError: (Throwable) -> Unit = { error ->
-        System.err.println("CoreLoop watcher error: $error")
-        error.printStackTrace(System.err)
-    },
+    private val onError: (Throwable) -> Unit = ::logWatcherError,
+    private val onStopped: (String) -> Unit = {},
     private val bridge: CoreLoopBridge,
 ) : AutoCloseable {
+    /**
+     * [onStopped] hears, through [dispatch], that the runtime stopped by
+     * itself (the bridge failed or the runtime went away), never a [stop]
+     * asked for here.
+     */
     constructor(
         dispatch: (() -> Unit) -> Unit = { it() },
         onProfilesMoved: (List<ProfileView>) -> Unit = {},
-        onError: (Throwable) -> Unit = { error ->
-            System.err.println("CoreLoop watcher error: $error")
-            error.printStackTrace(System.err)
-        },
+        onError: (Throwable) -> Unit = ::logWatcherError,
+        onStopped: (String) -> Unit = {},
     ) : this(
         dispatch = dispatch,
         onProfilesMoved = onProfilesMoved,
         onError = onError,
+        onStopped = onStopped,
         bridge = NativeCoreLoopBridge,
     )
 
@@ -149,19 +157,29 @@ class CoreLoop internal constructor(
 
     /**
      * Runs [block] on the single core thread without blocking the caller's thread.
+     *
+     * A caller cancelled while [block] runs never sees its value, so a value
+     * that owns a native handle passes [dispose] to close it then.
      */
-    suspend fun <T> runOnCore(block: () -> T): T {
+    suspend fun <T> runOnCore(dispose: ((T) -> Unit)? = null, block: () -> T): T {
         if (coreThreadRef.get() == true) {
             return block()
         }
         return suspendCancellableCoroutine { cont ->
             try {
                 executor.execute {
-                    try {
-                        val value = block()
-                        if (cont.isActive) cont.resume(value)
+                    val value = try {
+                        block()
                     } catch (t: Throwable) {
                         if (cont.isActive) cont.resumeWithException(t)
+                        return@execute
+                    }
+                    if (dispose == null) {
+                        if (cont.isActive) cont.resume(value)
+                    } else {
+                        // Called when the caller was cancelled before or while
+                        // this resumes it, so nothing else will close the value.
+                        cont.resume(value) { _, dropped, _ -> dispose(dropped) }
                     }
                 }
             } catch (e: RejectedExecutionException) {
@@ -298,55 +316,39 @@ class CoreLoop internal constructor(
     private fun startWatcher(handle: Long) {
         val thread = Thread(
             {
+                var cause: Throwable? = null
                 try {
-                    var consecutiveErrors = 0
                     while (!stopping.get()) {
-                        val ready = try {
-                            bridge.runtimeWaitWake(handle, -1)
-                        } catch (t: Throwable) {
-                            if (!stopping.get()) {
-                                reportError(t)
-                            }
-                            break
-                        }
+                        val ready = bridge.runtimeWaitWake(handle, -1)
+                        // A stop rings the wake descriptor, so a wait that
+                        // returns while stopping is the stop, not work.
                         if (ready < 0 || stopping.get()) {
                             break
                         }
                         if (ready > 0) {
+                            // A step that cannot be read is skipped inside
+                            // stepOnCore; what reaches here is the bridge or
+                            // the runtime failing, after which no step can run.
                             try {
                                 executor.submit { stepOnCore() }.get()
-                                consecutiveErrors = 0
-                            } catch (e: RejectedExecutionException) {
-                                if (!stopping.get()) {
-                                    reportError(e)
-                                }
-                                break
                             } catch (e: ExecutionException) {
-                                val cause = e.cause ?: e
-                                if (!stopping.get()) {
-                                    reportError(cause)
-                                }
-                                consecutiveErrors += 1
-                                if (cause is Error || cause is BridgeException || consecutiveErrors >= MAX_CONSECUTIVE_WATCHER_ERRORS) {
-                                    break
-                                }
-                            } catch (e: InterruptedException) {
-                                if (!stopping.get()) {
-                                    Thread.currentThread().interrupt()
-                                    reportError(e)
-                                }
-                                break
-                            } catch (t: Throwable) {
-                                if (!stopping.get()) {
-                                    reportError(t)
-                                }
-                                break
+                                throw e.cause ?: e
                             }
                         }
+                    }
+                } catch (t: Throwable) {
+                    if (t is InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                    if (!stopping.get()) {
+                        cause = t
+                        reportError(t)
                     }
                 } finally {
                     if (stopping.compareAndSet(false, true)) {
                         releaseResources()
+                        val reason = cause?.failureDescription ?: Bridge.STOPPED_REASON
+                        dispatch { onStopped(reason) }
                     }
                     watcherThread = null
                 }
@@ -365,50 +367,89 @@ class CoreLoop internal constructor(
         }
     }
 
+    /**
+     * Steps the runtime once and hands what moved to [dispatch].
+     *
+     * The answers are read apart from the deltas: an answer is only a ticket
+     * and a string, so it reads whatever this build makes of the rest, and
+     * every act waiting on the step resumes. Deltas this build cannot read are
+     * skipped, as the iPhone app skips them; the next opening or delta brings
+     * the stores current again.
+     */
     private fun stepOnCore() {
         val live = runtimeHandle
         if (live == 0L) {
             return
         }
         val raw = bridge.runtimeStep(live) ?: return
-        val stepped = AmuxJson.json.decodeFromString<Stepped>(raw)
+        val whole = try {
+            AmuxJson.json.parseToJsonElement(raw).jsonObject
+        } catch (e: IllegalArgumentException) {
+            reportError(UnreadableStep(e))
+            return
+        }
+        val answers = readAnswers(whole["answers"])
+        val stepped = try {
+            AmuxJson.json.decodeFromJsonElement<Stepped>(whole)
+        } catch (e: IllegalArgumentException) {
+            reportError(UnreadableStep(e))
+            null
+        }
 
-        val hasWork = stepped.profiles != null ||
-            stepped.fleets.isNotEmpty() ||
-            stepped.chats.isNotEmpty() ||
-            stepped.signInOffers.isNotEmpty() ||
-            stepped.onboarding.isNotEmpty() ||
-            stepped.pairing.isNotEmpty() ||
-            stepped.answers.isNotEmpty()
+        val hasWork = answers.isNotEmpty() || (
+            stepped != null && (
+                stepped.profiles != null ||
+                    stepped.fleets.isNotEmpty() ||
+                    stepped.chats.isNotEmpty() ||
+                    stepped.signInOffers.isNotEmpty() ||
+                    stepped.onboarding.isNotEmpty() ||
+                    stepped.pairing.isNotEmpty()
+                )
+            )
 
         if (hasWork) {
             dispatch {
                 try {
-                    for (moved in stepped.fleets) {
-                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Fleet(moved.delta))
+                    if (stepped != null) {
+                        for (moved in stepped.fleets) {
+                            fleetListeners[moved.fleet]?.invoke(FleetEvent.Fleet(moved.delta))
+                        }
+                        for (moved in stepped.chats) {
+                            fleetListeners[moved.fleet]?.invoke(FleetEvent.Chat(moved.delta))
+                        }
+                        for (moved in stepped.signInOffers) {
+                            fleetListeners[moved.fleet]?.invoke(FleetEvent.SignInOffers(moved.offers))
+                        }
+                        for (moved in stepped.onboarding) {
+                            fleetListeners[moved.fleet]?.invoke(FleetEvent.Onboarding(moved.onboarding))
+                        }
+                        for (moved in stepped.pairing) {
+                            fleetListeners[moved.fleet]?.invoke(FleetEvent.Pairing(moved.status))
+                        }
+                        stepped.profiles?.let(onProfilesMoved)
                     }
-                    for (moved in stepped.chats) {
-                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Chat(moved.delta))
-                    }
-                    for (moved in stepped.signInOffers) {
-                        fleetListeners[moved.fleet]?.invoke(FleetEvent.SignInOffers(moved.offers))
-                    }
-                    for (moved in stepped.onboarding) {
-                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Onboarding(moved.onboarding))
-                    }
-                    for (moved in stepped.pairing) {
-                        fleetListeners[moved.fleet]?.invoke(FleetEvent.Pairing(moved.status))
-                    }
-                    stepped.profiles?.let(onProfilesMoved)
                 } catch (t: Throwable) {
-                    for (answer in stepped.answers) {
+                    for (answer in answers) {
                         waitingTickets.remove(answer.ticket)?.completeExceptionally(t)
                     }
                     throw t
                 }
-                for (answer in stepped.answers) {
+                for (answer in answers) {
                     waitingTickets.remove(answer.ticket)?.complete(answer.json)
                 }
+            }
+        }
+    }
+
+    /** Reads each answer on its own, so one this build cannot read loses only itself. */
+    private fun readAnswers(element: JsonElement?): List<StepAnswer> {
+        val listed = element as? JsonArray ?: return emptyList()
+        return listed.mapNotNull { item ->
+            try {
+                AmuxJson.json.decodeFromJsonElement<StepAnswer>(item)
+            } catch (e: IllegalArgumentException) {
+                reportError(UnreadableStep(e))
+                null
             }
         }
     }
@@ -430,7 +471,6 @@ class CoreLoop internal constructor(
         @SerialName("sign_in_offers") val signInOffers: List<SignInOffersMoved> = emptyList(),
         @SerialName("onboarding") val onboarding: List<OnboardingMoved> = emptyList(),
         @SerialName("pairing") val pairing: List<PairingMoved> = emptyList(),
-        @SerialName("answers") val answers: List<StepAnswer> = emptyList(),
     )
 
     @Serializable
@@ -469,9 +509,18 @@ class CoreLoop internal constructor(
         @SerialName("json") val json: String,
     )
 
+    /** A step the runtime handed back that this build could not read. */
+    class UnreadableStep(cause: Throwable) : Exception("a runtime step could not be read: ${cause.message}", cause)
+
     companion object {
         const val STOPPED_ANSWER: String = """{"Err":"the runtime has stopped"}"""
         private const val WATCHER_JOIN_MS: Long = 5_000L
-        private const val MAX_CONSECUTIVE_WATCHER_ERRORS: Int = 3
     }
+}
+
+private val runtimeLog: Logger = Logger.getLogger("sh.amux.core.runtime")
+
+/** Where the bridge's own failures go: logcat on Android, standard error on the JVM. */
+internal fun logWatcherError(error: Throwable) {
+    runtimeLog.log(Level.WARNING, "core loop: ${error.message ?: error}", error)
 }

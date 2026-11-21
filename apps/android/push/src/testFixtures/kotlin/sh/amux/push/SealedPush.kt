@@ -1,23 +1,12 @@
 package sh.amux.push
 
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.Base64
 
 /**
- * What a push says once it is opened: which agent on which host, its name,
- * and what it wants of the person.
- */
-@Serializable
-data class OpenedPush(
-    val host: String,
-    val agent: String,
-    val name: String,
-    val notice: Said,
-)
-
-/**
- * Opening what a daemon sealed to this phone.
+ * Opening what a daemon sealed to this phone, for the debug build's door and
+ * the tests. Shipping builds will open pushes through the Rust library when
+ * push lands, so none of this ships.
  *
  * HPKE in base mode: the 32-byte encapsulated key, then the ciphertext, as
  * base64. A push the wrong key or a stale key cannot open comes back null,

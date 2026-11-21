@@ -428,14 +428,31 @@ class NewAgentStoreTest {
         store.close()
     }
 
+    /** The host's own folders: [sampleDirectories] with whatever it has pinned among the repositories. */
+    private fun hostListing(pinned: Set<String>): Directories {
+        val all = (sampleDirectories.repositories + sampleDirectories.recent + sampleDirectories.history.orEmpty())
+            .distinctBy { it.path }
+        return Directories(
+            recent = sampleDirectories.recent.filter { it.path !in pinned },
+            repositories = all.filter { it.path in pinned },
+            history = sampleDirectories.history.orEmpty().filter { it.path !in pinned },
+        )
+    }
+
     @Test
-    fun folderPinningUpdatesOptimisticallyAndRollsBackOnFailure() = runTest {
+    fun folderPinningMovesAtOnceAndARefusalSettlesOnTheHostsListing() = runTest {
         var failNextPin = false
+        val hostPinned = mutableSetOf("/src/web", "/src/relay")
         val source = FakeNewAgentSource().apply {
-            directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
+            directoriesHandler = { _, _, _ -> Result.success(hostListing(hostPinned)) }
             catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
-            pinHandler = { _, _, _ ->
-                if (failNextPin) Result.failure(RuntimeFailure("disk read-only")) else Result.success(Unit)
+            pinHandler = { _, path, pinned ->
+                if (failNextPin) {
+                    Result.failure(RuntimeFailure("disk read-only"))
+                } else {
+                    if (pinned) hostPinned.add(path) else hostPinned.remove(path)
+                    Result.success(Unit)
+                }
             }
         }
         val store = NewAgentStore(source = source, scope = this)
@@ -446,11 +463,11 @@ class NewAgentStoreTest {
         assertFalse(store.snapshot.isPinned(notes.path))
         store.pinFolder(notes, pinned = true)
         assertTrue(store.snapshot.isPinned(notes.path))
-        assertTrue(store.snapshot.history.isEmpty())
+        assertTrue(store.snapshot.history.none { it.path == notes.path })
         advanceUntilIdle()
         assertEquals(listOf(Triple(deskId, "/src/notes", true)), source.pinCalls)
 
-        // Failing unpin rolls back and surfaces failure message.
+        // A refused unpin says why, and the host's listing puts the folder back.
         failNextPin = true
         store.pinFolder(notes, pinned = false)
         assertFalse(store.snapshot.isPinned(notes.path))
@@ -683,14 +700,17 @@ class NewAgentStoreTest {
     }
 
     @Test
-    fun concurrentPinFailureRollsBackOnlyTheFailedPath() = runTest {
+    fun aRefusedPinAmongSeveralSettlesOnlyWhereTheHostKeptIt() = runTest {
         val firstGate = CompletableDeferred<Result<Unit>>()
         val secondGate = CompletableDeferred<Result<Unit>>()
+        val hostPinned = mutableSetOf("/src/web", "/src/relay")
         val source = FakeNewAgentSource().apply {
-            directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
+            directoriesHandler = { _, _, _ -> Result.success(hostListing(hostPinned)) }
             catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
             pinHandler = { _, path, _ ->
-                if (path == "/src/notes") firstGate.await() else secondGate.await()
+                val answer = if (path == "/src/notes") firstGate.await() else secondGate.await()
+                if (answer.isSuccess) hostPinned.add(path)
+                answer
             }
         }
         val store = NewAgentStore(source = source, scope = this)
@@ -706,7 +726,7 @@ class NewAgentStoreTest {
         assertTrue(store.snapshot.isPinned("/src/notes"))
         assertTrue(store.snapshot.isPinned("/src/scratch"))
 
-        // Second pin succeeds, then first pin fails.
+        // Second pin succeeds, then first pin is refused.
         secondGate.complete(Result.success(Unit))
         runCurrent()
         firstGate.complete(Result.failure(RuntimeFailure("notes read-only")))
@@ -716,48 +736,6 @@ class NewAgentStoreTest {
         assertTrue(store.snapshot.isPinned("/src/scratch"))
         assertTrue(store.snapshot.history.any { it.path == "/src/notes" })
         assertEquals("notes read-only", store.snapshot.failure)
-        store.close()
-    }
-
-    @Test
-    fun overlappingPinAndUnpinFailingOutOfOrderReconcilesToConfirmedUnpinnedState() = runTest {
-        val pinGate = CompletableDeferred<Result<Unit>>()
-        val unpinGate = CompletableDeferred<Result<Unit>>()
-        val source = FakeNewAgentSource().apply {
-            directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
-            catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
-            pinHandler = { _, _, pinned ->
-                if (pinned) pinGate.await() else unpinGate.await()
-            }
-        }
-        val store = NewAgentStore(source = source, scope = this)
-        store.open(hosts = listOf(hostView(deskId, "desk")))
-        advanceUntilIdle()
-
-        val notes = Directory(path = "/src/notes", name = "notes")
-        assertFalse(store.snapshot.isPinned(notes.path))
-        assertTrue(store.snapshot.history.any { it.path == notes.path })
-
-        // Rapidly pin then unpin while both requests are in flight.
-        store.pinFolder(notes, pinned = true)
-        assertTrue(store.snapshot.isPinned(notes.path))
-        store.pinFolder(notes, pinned = false)
-        assertFalse(store.snapshot.isPinned(notes.path))
-        runCurrent()
-
-        // Unpin fails FIRST, then pin fails SECOND.
-        unpinGate.complete(Result.failure(RuntimeFailure("unpin failed")))
-        runCurrent()
-        assertFalse(
-            "unpin rollback must reconcile against confirmed host state, not failed optimistic pin",
-            store.snapshot.isPinned(notes.path),
-        )
-
-        pinGate.complete(Result.failure(RuntimeFailure("pin failed")))
-        advanceUntilIdle()
-        assertFalse(store.snapshot.isPinned(notes.path))
-        assertTrue(store.snapshot.history.any { it.path == notes.path })
-        assertEquals("unpin failed", store.snapshot.failure)
         store.close()
     }
 

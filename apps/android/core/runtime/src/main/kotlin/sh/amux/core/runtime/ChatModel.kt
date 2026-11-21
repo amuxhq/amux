@@ -1,9 +1,12 @@
 package sh.amux.core.runtime
 
 import java.io.File
-import kotlinx.coroutines.CompletableDeferred
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import sh.amux.values.ActOutcome
 import sh.amux.values.AskCard
 import sh.amux.values.BlobRef
@@ -42,8 +46,6 @@ import sh.amux.values.Overview
 import sh.amux.values.PageOutcome
 import sh.amux.values.QuestionResponse
 import sh.amux.values.QueuedRow
-import sh.amux.values.Refusal
-import sh.amux.values.RefusalReason
 import sh.amux.values.RefusedPrompt
 import sh.amux.values.ReviewComment
 import sh.amux.values.ReviewDoc
@@ -57,6 +59,7 @@ import sh.amux.values.SettingsView
 import sh.amux.values.SubagentGroup
 import sh.amux.values.TurnPart
 import sh.amux.values.TurnPlace
+import sh.amux.words.ChatNotices
 import sh.amux.words.EMPTY_GROUP_STATE
 
 /**
@@ -105,13 +108,6 @@ sealed interface ChatPaging {
     data object Unreachable : ChatPaging
 
     data class Failed(val reason: String) : ChatPaging
-
-    val message: String?
-        get() = when (this) {
-            Idle, Fetching -> null
-            Unreachable -> "Older history is on its host, which is away."
-            is Failed -> reason
-        }
 }
 
 /** Observable state of one row cell, keyed by row id. */
@@ -286,15 +282,31 @@ data class ChatUiState(
  * paging, daemon-backed draft persistence, attachment validation, paste-as-
  * attachment, slash-command autocomplete and client commands, ask unsent state,
  * overview changed-file listings, and in-progress diff reviews.
+ *
+ * [scope] must run on the main thread, where the model's state is read and
+ * written. The model's work runs in a scope of its own on the same thread,
+ * cancelled by [close] or with [scope], so sends, uploads and listings stop
+ * with the chat.
  */
 class ChatModel(
     val source: ChatSource,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    scope: CoroutineScope,
     private val bridge: ChatBridge = NativeChatBridge,
     private val attachmentDir: File = File(System.getProperty("java.io.tmpdir", "/tmp"), "amux-attachments"),
     loadingHintAfterMs: Long = LOADING_HINT_DELAY_MS,
     blobCacheMaxBytes: Long = DEFAULT_BLOB_CACHE_BYTES,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    private val work: Job = SupervisorJob()
+
+    // Cancelled with the scope it was given, without being its child: a child
+    // job stays active until completed, which would hold that scope open.
+    private val cancelledWithParent: DisposableHandle? =
+        scope.coroutineContext[Job]?.invokeOnCompletion { work.cancel() }
+
+    // Initialised from the constructor's scope, which it shadows from here on.
+    private val scope: CoroutineScope = CoroutineScope(scope.coroutineContext + work)
+
     private val mutableKeys = mutableListOf<String>()
     private val places = mutableMapOf<String, Int>()
     private var firstPlace: Int = 0
@@ -331,6 +343,7 @@ class ChatModel(
     private var asks: ChatAsk? = null
     private var openedAttachment: File? = null
     private var openingBlob: BlobRef? = null
+    private var savingAttachment: Job? = null
     private var dictation: DictationState = DictationState()
     private var slashMatches: List<CommandMatch> = emptyList()
 
@@ -404,13 +417,14 @@ class ChatModel(
         keeping = null
     }
 
-    /** Cancels background hint/listing timers owned by this model without cancelling [scope]. */
+    /** Stops everything this model started: sends, uploads, listings and timers. */
     fun close() {
-        loadingHintJob?.cancel()
         loadingHintJob = null
         listingGeneration += 1
-        listingJob?.cancel()
         listingJob = null
+        savingAttachment = null
+        cancelledWithParent?.dispose()
+        work.cancel()
     }
 
     // --- Reading & Deltas --------------------------------------------------
@@ -593,6 +607,8 @@ class ChatModel(
     fun clearOpenedAttachment() {
         openedAttachment = null
         openingBlob = null
+        savingAttachment?.cancel()
+        savingAttachment = null
         publish()
     }
 
@@ -601,7 +617,14 @@ class ChatModel(
         val data = blob(target.hash)
         if (data != null) {
             openingBlob = null
-            openedAttachment = saveAttachmentFile(data, target)
+            savingAttachment?.cancel()
+            // An attachment runs to 64 MB, too much to write on the main thread.
+            savingAttachment = scope.launch {
+                val saved = withContext(ioDispatcher) { saveAttachmentFile(data, target) }
+                savingAttachment = null
+                openedAttachment = saved
+                publish()
+            }
         } else if (source.blobFailed(target.hash)) {
             openingBlob = null
         }
@@ -617,7 +640,9 @@ class ChatModel(
             folder.mkdirs()
             file.writeBytes(data)
             file
-        } catch (_: Throwable) {
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
             null
         }
     }
@@ -880,7 +905,7 @@ class ChatModel(
                 is PageOutcome.Arrived -> ChatPaging.Idle
                 PageOutcome.OriginUnreachable -> ChatPaging.Unreachable
                 is PageOutcome.Failed -> ChatPaging.Failed(outcome.value)
-                null -> ChatPaging.Failed("the chat is closed")
+                null -> ChatPaging.Failed(ChatNotices.PAGING_CLOSED)
             }
             publish()
         }
@@ -1037,17 +1062,11 @@ class ChatModel(
         return act(body = { it.answer(current.key, choice, note) })
     }
 
-    fun answerPermission(choice: Int, note: String? = null, expectedKey: String? = null): Job? =
-        answer(choice, note, expectedKey)
-
     fun answerQuestions(responses: List<QuestionResponse>, expectedKey: String? = null): Job? {
         val current = ask ?: return null
         if (expectedKey != null && current.key != expectedKey) return null
         return act(body = { it.answerQuestions(current.key, responses) })
     }
-
-    fun answerQuestion(responses: List<QuestionResponse>, expectedKey: String? = null): Job? =
-        answerQuestions(responses, expectedKey)
 
     fun replyInstead(text: String, soFar: List<QuestionResponse>, expectedKey: String? = null): Job? {
         val current = ask ?: return null
@@ -1060,9 +1079,6 @@ class ChatModel(
         if (expectedKey != null && current.key != expectedKey) return null
         return act(body = { it.answerForm(current.key, values) })
     }
-
-    fun answerForm(values: List<FormValue>, expectedKey: String? = null): Job? =
-        submitForm(values, expectedKey)
 
     fun resendAnswer(expectedKey: String? = null): Job? {
         if (expectedKey != null && ask?.key != expectedKey) return null
@@ -1125,8 +1141,6 @@ class ChatModel(
         setDraft(match.picked)
     }
 
-    fun acceptCommandMatch(match: CommandMatch) = pick(match)
-
     private fun recomputeSlashMatches() {
         val commands = settings?.commands.orEmpty()
         slashMatches = if (commands.isEmpty() || (!draftText.contains('/') && !draftText.contains('$'))) {
@@ -1185,7 +1199,7 @@ class ChatModel(
         shiftAttachmentOffsets(old, nextText)
         draftText = nextText
         insertPositionedAttachment(
-            attachment = DraftAttachment.Text(name = "Pasted text", text = inserted),
+            attachment = DraftAttachment.Text(name = ChatNotices.PASTED_TEXT, text = inserted),
             offset = before.length,
         )
         pasted = PastedRun(at = before.length, text = inserted)
@@ -1203,7 +1217,7 @@ class ChatModel(
         if (bridge.pastesAsAttachment(normalized)) {
             positionedAttachments.add(
                 PositionedAttachment(
-                    attachment = DraftAttachment.Text(name = "Pasted text", text = normalized),
+                    attachment = DraftAttachment.Text(name = ChatNotices.PASTED_TEXT, text = normalized),
                     offset = null,
                 ),
             )
@@ -1289,7 +1303,7 @@ class ChatModel(
         val limit = bridge.attachmentLimit
         if (size <= limit) return true
         val megabytes = limit / (1024L * 1024L)
-        notice = "$name is not attached because it is over the $megabytes MB limit for attachments."
+        notice = ChatNotices.overLimit(name, megabytes)
         publish()
         return false
     }
@@ -1328,9 +1342,12 @@ class ChatModel(
         return scope.launch {
             val bytes = try {
                 readBytes()
+            } catch (c: CancellationException) {
+                uploading -= 1
+                throw c
             } catch (t: Throwable) {
                 uploading -= 1
-                notice = "$name is not attached: ${t.failureDescription}"
+                notice = ChatNotices.notAttached(name, t.failureDescription)
                 publish()
                 return@launch
             }
@@ -1353,7 +1370,7 @@ class ChatModel(
                     keepDraft()
                 },
                 onFailure = { failure ->
-                    notice = "$name is not attached: ${failure.failureDescription}"
+                    notice = ChatNotices.notAttached(name, failure.failureDescription)
                 },
             )
             publish()
@@ -1455,9 +1472,9 @@ class ChatModel(
                 is CommandOutcome.Acted -> {
                     when (val acted = outcome.value) {
                         ActOutcome.Done -> if (composed == typed) clearDraftInternal()
-                        is ActOutcome.Rejected -> notice = notSent(acted.value)
+                        is ActOutcome.Rejected -> notice = ChatNotices.notSent(acted.value)
                         is ActOutcome.Failed -> notice = acted.value
-                        ActOutcome.NotConfirmed -> notice = NOT_CONFIRMED
+                        ActOutcome.NotConfirmed -> notice = ChatNotices.NOT_CONFIRMED
                     }
                 }
                 is CommandOutcome.Sent -> {
@@ -1466,7 +1483,7 @@ class ChatModel(
                     toNewest += 1
                 }
                 is CommandOutcome.Refused -> {
-                    notice = refusedCommand(
+                    notice = ChatNotices.refusedCommand(
                         command = outcome.command,
                         offered = outcome.offered,
                         hint = outcome.hint,
@@ -1474,13 +1491,13 @@ class ChatModel(
                     )
                 }
                 is CommandOutcome.Unknown -> {
-                    notice = unknownCommand(
+                    notice = ChatNotices.unknownCommand(
                         command = outcome.command,
                         value = outcome.value,
                         offered = outcome.offered,
                     )
                 }
-                null -> notice = CLOSED
+                null -> notice = ChatNotices.CLOSED
             }
             publish()
         }
@@ -1525,10 +1542,10 @@ class ChatModel(
                     setFollowing(true)
                     toNewest += 1
                 }
-                is ActOutcome.Rejected -> notice = notSent(outcome.value)
+                is ActOutcome.Rejected -> notice = ChatNotices.notSent(outcome.value)
                 is ActOutcome.Failed -> notice = outcome.value
-                ActOutcome.NotConfirmed -> notice = NOT_CONFIRMED
-                null -> notice = CLOSED
+                ActOutcome.NotConfirmed -> notice = ChatNotices.NOT_CONFIRMED
+                null -> notice = ChatNotices.CLOSED
             }
             publish()
         }
@@ -1568,8 +1585,6 @@ class ChatModel(
 
     fun change(setting: SettingChange): Job? = act(body = { it.changeSetting(setting) })
 
-    fun setSetting(setting: SettingChange): Job? = change(setting)
-
     private fun act(
         body: suspend (ChatSource) -> ActOutcome?,
         onDone: (() -> Unit)? = null,
@@ -1579,14 +1594,14 @@ class ChatModel(
         return scope.launch {
             when (val outcome = body(source)) {
                 ActOutcome.Done -> onDone?.invoke()
-                is ActOutcome.Rejected -> notice = notSent(outcome.value)
+                is ActOutcome.Rejected -> notice = ChatNotices.notSent(outcome.value)
                 is ActOutcome.Failed -> notice = outcome.value
                 ActOutcome.NotConfirmed -> {
                     if (ask?.state != CardState.NotConfirmed) {
-                        notice = NOT_CONFIRMED
+                        notice = ChatNotices.NOT_CONFIRMED
                     }
                 }
-                null -> notice = CLOSED
+                null -> notice = ChatNotices.CLOSED
             }
             publish()
         }
@@ -1693,7 +1708,7 @@ class ChatModel(
 
     private fun takeBack(refused: RefusedPrompt) {
         source.draftOf(refused.inputId)?.let { restore(it) }
-        notice = notSent(refused.reason)
+        notice = ChatNotices.notSent(refused.reason)
         source.discard(refused.inputId)
     }
 
@@ -1778,77 +1793,11 @@ class ChatModel(
         /** Default in-memory LRU cache budget for fetched attachment blobs (32 MiB). */
         const val DEFAULT_BLOB_CACHE_BYTES: Long = 32L * 1024L * 1024L
 
-        const val NOT_CONFIRMED: String = "The connection dropped before the agent answered."
-        const val CLOSED: String = "This chat is closed."
-
         /** Lines as the chat counts them: a trailing newline ends a line rather than starting one. */
         fun lines(text: String): Int {
             val parts = text.split('\n')
             val count = if (parts.lastOrNull()?.isEmpty() == true) parts.size - 1 else parts.size
             return count
-        }
-
-        fun notSent(refused: Refusal): String = "Not sent: ${refusal(refused)}"
-
-        fun refusal(refused: Refusal): String {
-            refused.detail?.let { return it }
-            return when (refused.reason) {
-                RefusalReason.Exited -> "it had exited"
-                RefusalReason.Exiting -> "it was exiting"
-                RefusalReason.AgentClosed -> "it is settled"
-                RefusalReason.Draining -> "its host is shutting down"
-                RefusalReason.HostUnreachable -> "its host is away"
-                RefusalReason.Unsupported -> "this agent can’t take it"
-                RefusalReason.ClosedAsk -> "the ask had already closed"
-                RefusalReason.NotQueued -> "it was no longer queued"
-                RefusalReason.ConversationElsewhere ->
-                    "Claude’s own view switched to another conversation"
-                RefusalReason.TooLong -> "it is longer than the agent takes"
-                RefusalReason.Unspecified -> "it was refused"
-            }
-        }
-
-        fun refusedCommand(
-            command: String,
-            offered: List<String>,
-            hint: String? = null,
-            kind: Kind? = null,
-        ): String {
-            val name = if (command.startsWith("/")) command else "/$command"
-            val agent = if (kind == Kind.Codex) "Codex" else "This agent"
-            if (hint != null) {
-                return "$agent takes a skill as a mention: type $hint."
-            }
-            val runs = offered.map { item ->
-                if (item.startsWith("/") || item.startsWith("$")) item else "/$item"
-            }
-            return if (runs.isEmpty()) {
-                "$agent does not run $name here."
-            } else {
-                "$agent does not run $name here. It runs ${runs.joinToString(", ")}."
-            }
-        }
-
-        fun unknownCommand(
-            command: ClientCommand,
-            value: String,
-            offered: List<String>,
-        ): String {
-            val list = offered.joinToString(", ")
-            return when (command) {
-                ClientCommand.Effort -> if (offered.isEmpty()) {
-                    "No effort level named $value."
-                } else {
-                    "No effort level named $value. It offers $list."
-                }
-                ClientCommand.Model,
-                ClientCommand.Rename,
-                -> if (offered.isEmpty()) {
-                    "No model named $value."
-                } else {
-                    "No model named $value. It offers $list."
-                }
-            }
         }
     }
 }

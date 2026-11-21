@@ -16,13 +16,6 @@ import sh.amux.values.PairingWindowView
 import sh.amux.values.Reach
 import sh.amux.values.Roster
 
-/** Whether the system allows local-network discovery. */
-enum class LocalNetworkPermission {
-    Unknown,
-    Granted,
-    Denied,
-}
-
 /** Delegate wired by [StoreBundle] for host management actions. */
 interface HostActions {
     fun unpair(host: HostId)
@@ -36,7 +29,6 @@ data class HostsState(
     val discovered: List<HostView> = emptyList(),
     val local: HostView? = null,
     val roster: Roster? = null,
-    val localNetwork: LocalNetworkPermission = LocalNetworkPermission.Granted,
     val networkExplained: Boolean = true,
     val account: AccountView? = null,
     val declinedWindows: Set<HostId> = emptySet(),
@@ -221,10 +213,6 @@ class HostsStore(
 
     fun showAccount(account: AccountView?) {
         _state.update { it.copy(account = account) }
-    }
-
-    fun sawLocalNetwork(permission: LocalNetworkPermission) {
-        _state.update { it.copy(localNetwork = permission) }
     }
 
     fun wentOfflineAtMs(id: HostId): Long? = departures[id]

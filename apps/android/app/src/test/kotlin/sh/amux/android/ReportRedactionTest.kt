@@ -1,4 +1,4 @@
-package sh.amux.core.runtime
+package sh.amux.android
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -13,6 +13,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import sh.amux.core.runtime.AccountId
+import sh.amux.core.runtime.FrozenFrame
+import sh.amux.core.runtime.ReportCapture
+import sh.amux.core.runtime.ReportMark
+import sh.amux.core.runtime.ReportStore
+import sh.amux.core.runtime.ReportUpload
 import sh.amux.values.ReportSent
 
 @RunWith(RobolectricTestRunner::class)
@@ -33,7 +39,7 @@ class ReportRedactionTest {
             frame = FrozenFrame(png = originalPng, widthDp = 100.0, heightDp = 200.0, scale = 2.0),
             account = AccountId("ada"),
         )
-        val store = ReportStore()
+        val store = ReportStore(redactor = BitmapReportImageRedactor)
         assertTrue(store.begin { capture })
         // Mark 0: redacted area at dp (10..50, 20..60) -> px (20..100, 40..120)
         store.mark(ReportMark(x = 10.0, y = 20.0, width = 40.0, height = 40.0, note = "token", redact = true))

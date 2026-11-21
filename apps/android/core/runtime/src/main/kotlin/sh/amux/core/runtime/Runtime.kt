@@ -1,9 +1,8 @@
 package sh.amux.core.runtime
 
-import java.util.Collections
-import java.util.WeakHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import sh.amux.values.Bearer
 import sh.amux.values.Found
@@ -29,7 +28,10 @@ class Runtime private constructor(
 ) : AutoCloseable {
     private val lock = ReentrantLock()
     private var running = true
-    private val openedProfiles = Collections.newSetFromMap(WeakHashMap<Profile, Boolean>())
+
+    // Held strongly: a profile nobody references still owns a native handle,
+    // and only closing it here, before the runtime stops, releases it.
+    private val openedProfiles = LinkedHashSet<Profile>()
 
     /**
      * Stops the runtime and flushes every profile's store, closing every
@@ -184,6 +186,8 @@ class Runtime private constructor(
                     }
                 }
             }
+        } catch (c: CancellationException) {
+            throw c
         } catch (f: RuntimeFailure) {
             Result.failure(f)
         } catch (t: Throwable) {
@@ -209,13 +213,14 @@ class Runtime private constructor(
     // --- Profiles ----------------------------------------------------------
 
     /**
-     * Opens [profileId]'s fleet on the core thread, registering [onEvent] before
-     * any subsequent step so no delta is missed.
+     * Opens [profileId]'s fleet on the core thread without holding the
+     * caller's thread, registering [onEvent] before any later step so no
+     * delta is missed. A caller cancelled meanwhile has the profile closed.
      */
     @Throws(RuntimeFailure::class)
-    fun openProfile(profileId: String, onEvent: (FleetEvent) -> Unit): Profile {
+    suspend fun openProfile(profileId: String, onEvent: (FleetEvent) -> Unit): Profile {
         return try {
-            loop.blocking {
+            loop.runOnCore(dispose = Profile::close) {
                 val live = withLive(0L) { it }
                 if (live == 0L) {
                     throw RuntimeFailure(Bridge.STOPPED_REASON)
@@ -238,10 +243,10 @@ class Runtime private constructor(
                 loop.watchFleet(opened.fleetId, onEvent)
                 opened
             }
+        } catch (c: CancellationException) {
+            throw c
         } catch (f: RuntimeFailure) {
             throw f
-        } catch (e: BridgeException) {
-            throw RuntimeFailure(e.message ?: "the profile did not open")
         } catch (t: Throwable) {
             throw RuntimeFailure(t.message ?: "the profile did not open")
         }
@@ -254,6 +259,8 @@ class Runtime private constructor(
     ): Result<T> {
         val raw = try {
             loop.awaitAct(start)
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
             return Result.failure(RuntimeFailure(t.failureDescription))
         }
@@ -263,6 +270,8 @@ class Runtime private constructor(
     private suspend fun actUnit(start: (Long) -> Long): Result<Unit> {
         val raw = try {
             loop.awaitAct(start)
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
             return Result.failure(RuntimeFailure(t.failureDescription))
         }
@@ -273,22 +282,28 @@ class Runtime private constructor(
         /**
          * Starts the embedded runtime on [CoreLoop]'s core thread. Blocks until
          * every profile's store is open and the initial step has run.
+         *
+         * [onStopped] hears, on [dispatch], why the runtime stopped when it
+         * stops by itself rather than through [stop].
          */
         @Throws(RuntimeFailure::class)
         fun start(
             config: StartConfig,
             dispatch: (() -> Unit) -> Unit = { it() },
             onProfilesMoved: (List<ProfileView>) -> Unit = {},
-            onError: (Throwable) -> Unit = { error ->
-                System.err.println("CoreLoop watcher error: $error")
-                error.printStackTrace(System.err)
-            },
-        ): Runtime {
-            val loop = CoreLoop(
+            onStopped: (String) -> Unit = {},
+        ): Runtime = start(
+            config = config,
+            loop = CoreLoop(
                 dispatch = dispatch,
                 onProfilesMoved = onProfilesMoved,
-                onError = onError,
-            )
+                onStopped = onStopped,
+            ),
+        )
+
+        /** Starts a runtime on [loop], which tests build over a scripted bridge. */
+        @Throws(RuntimeFailure::class)
+        internal fun start(config: StartConfig, loop: CoreLoop): Runtime {
             return try {
                 val handle = loop.start(config)
                 if (handle == 0L) {

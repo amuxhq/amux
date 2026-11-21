@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -69,12 +70,24 @@ internal class ReportFreezer(
         )
         if (framePngDeferred != null) {
             comp.scope.launch {
-                val png = runCatching { framePngDeferred.await() }.getOrDefault(ByteArray(0))
+                val png = try {
+                    framePngDeferred.await()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    ByteArray(0)
+                }
                 comp.report.updateFramePng(capture, png)
             }
         }
         comp.scope.launch {
-            val dumpReady = runCatching { dump.await().isSuccess }.getOrDefault(false)
+            val dumpReady = try {
+                dump.await().isSuccess
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                false
+            }
             comp.report.updateDumpState(capture, dumpReady)
         }
         return capture

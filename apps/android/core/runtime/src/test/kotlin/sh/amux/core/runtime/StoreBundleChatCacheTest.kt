@@ -134,14 +134,14 @@ class StoreBundleChatCacheTest {
         val parentKey = AgentKey(host, UUID.randomUUID())
         val childKey = AgentKey(host, UUID.randomUUID())
 
-        val parentModel = bundle.chat(parentKey)
-        val duplicateParent = bundle.chat(parentKey)
-        assertSame(parentModel, duplicateParent)
-        bundle.leave(parentKey)
-        assertEquals(1, bundle.activeViewers(parentKey))
+        val parentLease = bundle.acquireChat(parentKey)
+        val parentModel = parentLease.model
+        val duplicateParent = bundle.acquireChat(parentKey)
+        assertSame(parentModel, duplicateParent.model)
+        duplicateParent.release()
         assertEquals("remembered", parentModel.draft)
         assertEquals(1, opened.size)
-        assertTrue(bundle.holds(parentKey))
+        assertFalse(opened[0].closed)
 
         // Delta delivered through FleetEvent.Chat reaches the cached ChatModel.
         bundle.moved(
@@ -156,40 +156,37 @@ class StoreBundleChatCacheTest {
         assertEquals(listOf("r1"), parentModel.keys)
 
         // Opening a child keeps the parent open too.
-        val childModel = bundle.chat(childKey)
-        assertTrue(bundle.holds(parentKey))
-        assertTrue(bundle.holds(childKey))
+        bundle.acquireChat(childKey)
+        assertFalse(opened[0].closed)
         assertEquals(2, opened.size)
 
         // Leaving parent retains it during the 5-minute window.
-        bundle.leave(parentKey)
+        parentLease.release()
         nowMs += 4 * 60_000L
         advanceTimeBy(4 * 60_000L)
         runCurrent()
-        assertTrue("still retained within 5-minute window", bundle.holds(parentKey))
-        assertFalse(opened[0].closed)
+        assertFalse("still retained within 5-minute window", opened[0].closed)
 
-        // Re-entering before expiry reuses the same ChatModel and cancels eviction.
-        assertSame(parentModel, bundle.chat(parentKey))
+        // Coming back before expiry leases the same ChatModel without opening, and cancels eviction.
+        val again = bundle.leaseCached(parentKey)
+        assertSame(parentModel, again?.model)
         nowMs += 2 * 60_000L
         advanceTimeBy(2 * 60_000L)
         runCurrent()
-        assertTrue("re-shown chat is never evicted", bundle.holds(parentKey))
-        assertFalse(opened[0].closed)
+        assertFalse("re-shown chat is never evicted", opened[0].closed)
+        assertEquals(2, opened.size)
 
         // Leaving again and passing 5 minutes closes and evicts it cleanly.
-        bundle.leave(parentKey)
+        again!!.release()
         nowMs += StoreBundle.DEFAULT_SESSION_RETENTION_MS
         advanceTimeBy(StoreBundle.DEFAULT_SESSION_RETENTION_MS)
         runCurrent()
-        assertFalse(bundle.holds(parentKey))
         assertTrue(opened[0].closed)
-        assertTrue("still-shown child remains open", bundle.holds(childKey))
-        assertFalse(opened[1].closed)
+        assertEquals("an evicted chat is not held", null, bundle.leaseCached(parentKey))
+        assertFalse("still-shown child remains open", opened[1].closed)
 
         // Detaching profile closes all remaining chats cleanly.
         bundle.attach(null)
-        assertFalse(bundle.holds(childKey))
         assertTrue(opened[1].closed)
     }
 
@@ -215,7 +212,7 @@ class StoreBundleChatCacheTest {
         )
 
         val agentA = AgentKey(host, UUID.randomUUID())
-        val modelA = bundle.chat(agentA)
+        val modelA = bundle.acquireChat(agentA).model
         modelA.setDraft("before delete")
         assertEquals(1, opened[agentA]!!.keptDrafts.size)
 
@@ -226,7 +223,6 @@ class StoreBundleChatCacheTest {
 
         // Deleting agent stops draft persistence and closes its cached chat.
         assertTrue(bundle.delete(agentA).isSuccess)
-        assertFalse(bundle.holds(agentA))
         assertTrue(opened[agentA]!!.closed)
         modelA.setDraft("after delete")
         assertEquals("deleted agent must never save drafts", 1, opened[agentA]!!.keptDrafts.size)
@@ -238,9 +234,9 @@ class StoreBundleChatCacheTest {
             warmResult = bundle.warm(agentB, timeoutMs = 5_000L)
         }
         runCurrent()
-        assertTrue(bundle.holds(agentB))
+        assertFalse(opened[agentB]!!.closed)
         bundle.keepSessions()
-        assertTrue("warming chat survives keepSessions()", bundle.holds(agentB))
+        assertFalse("warming chat survives keepSessions()", opened[agentB]!!.closed)
 
         // Deliver caught-up frame -> warm completes and evicts unshown chat.
         val chatB = opened[agentB]!!
@@ -255,8 +251,7 @@ class StoreBundleChatCacheTest {
         )
         warmJob.join()
         assertTrue(warmResult)
-        assertFalse("unshown warmed chat closes once warm finishes", bundle.holds(agentB))
-        assertTrue(chatB.closed)
+        assertTrue("unshown warmed chat closes once warm finishes", chatB.closed)
     }
 
     @Test
@@ -284,33 +279,26 @@ class StoreBundleChatCacheTest {
             val reviewLease = bundle.acquireChat(agent)
             assertSame(chatLease.model, reviewLease.model)
             assertEquals(1, opened.size)
-            assertEquals(2, bundle.activeViewers(agent))
-            assertTrue(bundle.isShown(agent))
 
             // Route A disposes; Route B still holds the agent open.
             chatLease.release()
             chatLease.release() // idempotent
-            assertEquals(1, bundle.activeViewers(agent))
-            assertTrue(bundle.isShown(agent))
 
             // Advancing far past sessionRetentionMs must NEVER evict while Route B is active.
             nowMs += StoreBundle.DEFAULT_SESSION_RETENTION_MS * 3
             advanceTimeBy(StoreBundle.DEFAULT_SESSION_RETENTION_MS * 3)
             runCurrent()
-            assertTrue("chat must stay held while review route holds a lease", bundle.holds(agent))
             assertFalse("chat must stay open while review route holds a lease", opened[0].closed)
 
             // Route B releases -> retention timer starts and evicts after 5 minutes.
             reviewLease.release()
-            assertEquals(0, bundle.activeViewers(agent))
-            assertFalse(bundle.isShown(agent))
-            assertTrue("still retained right after last viewer leaves", bundle.holds(agent))
+            runCurrent()
+            assertFalse("still retained right after last viewer leaves", opened[0].closed)
 
             nowMs += StoreBundle.DEFAULT_SESSION_RETENTION_MS
             advanceTimeBy(StoreBundle.DEFAULT_SESSION_RETENTION_MS)
             runCurrent()
-            assertFalse("evicted after retention window elapses", bundle.holds(agent))
-            assertTrue(opened[0].closed)
+            assertTrue("evicted after retention window elapses", opened[0].closed)
 
             // Detaching profile bumps profileVersion so routes know to re-evaluate lifecycle.
             val versionBefore = bundle.profileVersion.value

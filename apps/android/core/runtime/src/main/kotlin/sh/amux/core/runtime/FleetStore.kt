@@ -14,6 +14,7 @@ import sh.amux.values.FleetView
 import sh.amux.values.HostView
 import sh.amux.values.RelayLink
 import sh.amux.values.SectionKind
+import sh.amux.words.FleetWords
 
 /** Delegate wired by [StoreBundle] so screens can invoke fleet actions through [FleetStore]. */
 interface FleetActions {
@@ -52,26 +53,14 @@ data class FleetState(
 
     val subtitle: String
         get() {
-            if (needYou <= 0) {
-                return "Nothing needs you · $working working"
-            }
             val agents = rows
                 .filter { !it.closed }
                 .sumOf { row -> if (row.expanded) 1 else row.card.members }
-            val noun = if (agents == 1) "agent" else "agents"
-            return "$needYou need you · $agents $noun"
+            return FleetWords.subtitle(needYou = needYou, working = working, agents = agents)
         }
 
     val relayTrouble: String?
-        get() = when (relay) {
-            RelayLink.SignInAgain -> "Sign in again to reach your computers from anywhere"
-            RelayLink.VersionMismatch -> "Update amux to reach your computers from anywhere"
-            RelayLink.Off,
-            RelayLink.Connecting,
-            RelayLink.Retrying,
-            RelayLink.Connected,
-            -> null
-        }
+        get() = FleetWords.relayTrouble(relay)
 
     val awayHost: String?
         get() = machines.filter { it.group == HostGroup.Away }.map { it.name }.sorted().firstOrNull()

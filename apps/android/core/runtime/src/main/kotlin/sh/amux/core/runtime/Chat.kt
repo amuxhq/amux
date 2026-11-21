@@ -2,6 +2,7 @@ package sh.amux.core.runtime
 
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import sh.amux.values.ActOutcome
 import sh.amux.values.BlobRef
@@ -234,6 +235,8 @@ class Chat internal constructor(
     ): Result<T> {
         val raw = try {
             loop.awaitAct { withOpen(0L, start) }
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
             return Result.failure(RuntimeFailure(t.failureDescription))
         }
@@ -244,9 +247,14 @@ class Chat internal constructor(
         val actJson = AmuxJson.json.encodeToString<ChatAct>(act)
         val raw = try {
             loop.awaitAct { withOpen(0L) { live -> NativeBridge.sessionAct(live, actJson) } }
+        } catch (c: CancellationException) {
+            throw c
         } catch (_: Throwable) {
             return null
         }
+        // A closed chat or stopped runtime answers an error, which callers
+        // hear as null: the chat is closed.
+        if (Bridge.isErrAnswer(raw)) return null
         return Bridge.decodeNullable<T>(raw)
     }
 }

@@ -1,24 +1,17 @@
 package sh.amux.core.runtime
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import sh.amux.values.ReportSent
+import sh.amux.words.ReportWords
 
 /** Frozen picture of the screen a report is about, with logical dimensions. */
 data class FrozenFrame(
@@ -81,56 +74,6 @@ data class ReportMark(
  */
 fun interface ReportImageRedactor {
     suspend fun redact(frame: FrozenFrame, marks: List<ReportMark>): ByteArray
-}
-
-/**
- * Default Android [ReportImageRedactor] that burns solid black rectangles over
- * every redacted [ReportMark] on a background dispatcher.
- */
-object BitmapReportImageRedactor : ReportImageRedactor {
-    override suspend fun redact(frame: FrozenFrame, marks: List<ReportMark>): ByteArray {
-        val redactedMarks = marks.filter { it.redact }
-        if (redactedMarks.isEmpty() || frame.png.isEmpty()) return frame.png
-        return withContext(Dispatchers.Default) {
-            val decoded = BitmapFactory.decodeByteArray(frame.png, 0, frame.png.size)
-                ?: throw IllegalStateException("Could not decode screenshot to apply redactions.")
-            val mutable = try {
-                decoded.copy(Bitmap.Config.ARGB_8888, true)
-                    ?: throw IllegalStateException("Could not allocate bitmap to apply redactions.")
-            } finally {
-                decoded.recycle()
-            }
-            try {
-                val canvas = Canvas(mutable)
-                val paint = Paint().apply {
-                    style = Paint.Style.FILL
-                    color = Color.BLACK
-                    isAntiAlias = false
-                }
-                val scaleX = if (frame.widthDp > 0.0) mutable.width / frame.widthDp else frame.scale
-                val scaleY = if (frame.heightDp > 0.0) mutable.height / frame.heightDp else frame.scale
-                val maxW = mutable.width.toFloat()
-                val maxH = mutable.height.toFloat()
-                for (mark in redactedMarks) {
-                    val left = (mark.x * scaleX).toFloat().coerceIn(0f, maxW)
-                    val top = (mark.y * scaleY).toFloat().coerceIn(0f, maxH)
-                    val right = ((mark.x + mark.width) * scaleX).toFloat().coerceIn(0f, maxW)
-                    val bottom = ((mark.y + mark.height) * scaleY).toFloat().coerceIn(0f, maxH)
-                    if (right > left && bottom > top) {
-                        canvas.drawRect(left, top, right, bottom, paint)
-                    }
-                }
-                ByteArrayOutputStream().use { out ->
-                    if (!mutable.compress(Bitmap.CompressFormat.PNG, 100, out)) {
-                        throw IllegalStateException("Could not encode redacted screenshot.")
-                    }
-                    out.toByteArray()
-                }
-            } finally {
-                mutable.recycle()
-            }
-        }
-    }
 }
 
 /** What the person has written about the frozen frame so far. */
@@ -213,10 +156,12 @@ data class ReportState(
 
 /**
  * Holds the single in-progress problem report across screenshot preview
- * transitions and retries.
+ * transitions and retries. [redactor] burns redacted marks into the frame
+ * before it leaves the phone.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReportStore(
+    private val redactor: ReportImageRedactor,
     initial: ReportState = ReportState(),
 ) {
     private val stateLock = Any()
@@ -443,17 +388,6 @@ class ReportStore(
         }
     }
 
-    fun setMarkRedacted(index: Int, redacted: Boolean) {
-        synchronized(stateLock) {
-            _state.update { current ->
-                if (index !in current.draft.marks.indices) return@update current
-                val updated = current.draft.marks.toMutableList()
-                updated[index] = updated[index].copy(redact = redacted)
-                current.copy(draft = current.draft.copy(marks = updated))
-            }
-        }
-    }
-
     fun toggleMarkRedacted(index: Int) {
         synchronized(stateLock) {
             _state.update { current ->
@@ -482,7 +416,6 @@ class ReportStore(
         build: String,
         gitSha: String = "",
         nowMs: Long = System.currentTimeMillis(),
-        redactor: ReportImageRedactor = BitmapReportImageRedactor,
     ) {
         val claimed: Triple<UUID, ReportState, ReportSubmitting> = synchronized(stateLock) {
             val current = _state.value
@@ -493,7 +426,7 @@ class ReportStore(
             if (account == null) {
                 _state.value = current.copy(
                     sending = ReportSending.Failed(
-                        "Sign in to the account this report is about, then send it again.",
+                        ReportWords.SIGN_IN_FIRST,
                     ),
                 )
                 return
@@ -501,7 +434,7 @@ class ReportStore(
             if (capture.account != null && capture.account != account) {
                 _state.value = current.copy(
                     sending = ReportSending.Failed(
-                        "This report was captured under a different account. Switch back or dismiss it to start a new one.",
+                        ReportWords.OTHER_ACCOUNT,
                     ),
                 )
                 return
@@ -509,7 +442,7 @@ class ReportStore(
             if (submitter == null) {
                 _state.value = current.copy(
                     sending = ReportSending.Failed(
-                        "amux is not running on this phone yet. Try again in a moment.",
+                        ReportWords.NOT_RUNNING,
                     ),
                 )
                 return
@@ -526,7 +459,6 @@ class ReportStore(
                 build = build,
                 gitSha = gitSha,
                 nowMs = nowMs,
-                redactor = redactor,
             )
         } catch (e: CancellationException) {
             synchronized(stateLock) {
@@ -599,25 +531,11 @@ class ReportStore(
         }
     }
 
-    suspend fun assembled(
-        build: String,
-        gitSha: String = "",
-        nowMs: Long = System.currentTimeMillis(),
-        redactor: ReportImageRedactor = BitmapReportImageRedactor,
-    ): ReportUpload? = assembleUpload(
-        snapshot = synchronized(stateLock) { _state.value },
-        build = build,
-        gitSha = gitSha,
-        nowMs = nowMs,
-        redactor = redactor,
-    )
-
     private suspend fun assembleUpload(
         snapshot: ReportState,
         build: String,
         gitSha: String,
         nowMs: Long,
-        redactor: ReportImageRedactor,
     ): ReportUpload? {
         snapshot.sealed?.let { return it }
         val capture = snapshot.capture ?: return null

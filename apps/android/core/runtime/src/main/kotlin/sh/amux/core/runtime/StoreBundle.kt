@@ -2,9 +2,7 @@ package sh.amux.core.runtime
 
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,10 +51,13 @@ class ChatLease internal constructor(
  *
  * The fleet opens whole on [attach], then moves by incremental [FleetEvent]
  * deltas. Actions go through [Profile] and update the observable stores.
+ *
+ * [scope] must run on the main thread, as every caller does: the bundle's
+ * maps and the stores it feeds are read and written there without locks.
  */
 class StoreBundle(
     val account: AccountId,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope,
     val clock: () -> Long = System::currentTimeMillis,
     val sessionRetentionMs: Long = DEFAULT_SESSION_RETENTION_MS,
     private val chatBridge: ChatBridge = NativeChatBridge,
@@ -225,44 +226,45 @@ class StoreBundle(
     // --- Chats -------------------------------------------------------------
 
     @Throws(RuntimeFailure::class)
-    fun openChat(agent: AgentKey, onDelta: (ChatDelta) -> Unit): OpenChat {
-        val opened = if (opener != null) {
-            opener.invoke(agent)
-        } else {
-            val activeProfile = profile
-                ?: throw RuntimeFailure("nothing is running for this account")
-            activeProfile.openChat(agent)
+    private suspend fun openChat(agent: AgentKey): OpenChat {
+        if (opener != null) return opener.invoke(agent)
+        val activeProfile = profile
+            ?: throw RuntimeFailure("nothing is running for this account")
+        val opened = activeProfile.openChat(agent)
+        // The profile can be detached while the chat opens on the core thread.
+        if (profile !== activeProfile) {
+            opened.close()
+            throw RuntimeFailure("nothing is running for this account")
         }
-        chats[opened.id] = opened to onDelta
         return opened
     }
 
-    fun closeChat(chat: OpenChat) {
+    private fun closeChat(chat: OpenChat) {
         chats.remove(chat.id)
         chat.close()
     }
 
     /**
-     * Returns the cached [ChatModel] for [agent] and increments its active
-     * viewer count; pair every [enter] / [chat] call with a matching [leave],
-     * or prefer [acquireChat] for automatic balanced release.
+     * A lease on [agent]'s chat if it is already open here, taken without
+     * reaching the core thread, so a route coming back to a chat draws it at
+     * once. Otherwise `null`, and [acquireChat] opens it.
      */
-    @Throws(RuntimeFailure::class)
-    fun enter(agent: AgentKey): ChatModel {
-        val model = cachedModel(agent)
-        shownCounts[agent] = (shownCounts[agent] ?: 0) + 1
-        expiryJobs.remove(agent)?.cancel()
-        return model
+    fun leaseCached(agent: AgentKey): ChatLease? {
+        val model = models[agent]?.model ?: return null
+        return lease(agent, model)
     }
 
-    /** Alias for [enter]. */
+    /**
+     * Opens [agent]'s chat if it is not open yet and takes a lease keeping it
+     * open until released. The open runs on the core thread; the caller's
+     * thread draws meanwhile.
+     */
     @Throws(RuntimeFailure::class)
-    fun chat(agent: AgentKey): ChatModel = enter(agent)
+    suspend fun acquireChat(agent: AgentKey): ChatLease = lease(agent, cachedModel(agent))
 
-    /** Acquires a balanced [ChatLease] keeping [agent]'s session active until released. */
-    @Throws(RuntimeFailure::class)
-    fun acquireChat(agent: AgentKey): ChatLease {
-        val model = enter(agent)
+    private fun lease(agent: AgentKey, model: ChatModel): ChatLease {
+        shownCounts[agent] = (shownCounts[agent] ?: 0) + 1
+        expiryJobs.remove(agent)?.cancel()
         return ChatLease(agent = agent, model = model) {
             if (models[agent]?.model === model) {
                 leave(agent)
@@ -271,11 +273,15 @@ class StoreBundle(
     }
 
     @Throws(RuntimeFailure::class)
-    private fun cachedModel(agent: AgentKey): ChatModel {
+    private suspend fun cachedModel(agent: AgentKey): ChatModel {
         models[agent]?.let { return it.model }
-        val opened = openChat(agent) { delta ->
-            models[agent]?.model?.apply(delta)
+        val opened = openChat(agent)
+        // Two routes can open one chat at once; the first to land keeps it.
+        models[agent]?.let { cached ->
+            opened.close()
+            return cached.model
         }
+        chats[opened.id] = opened to { delta -> models[agent]?.model?.apply(delta) }
         val model = ChatModel(
             source = opened,
             scope = scope,
@@ -286,21 +292,12 @@ class StoreBundle(
         return model
     }
 
-    /** Whether an open chat session is cached for [agent], shown or retained. */
-    fun holds(agent: AgentKey): Boolean = agent in models
-
-    /** Whether at least one UI surface is currently displaying [agent]. */
-    fun isShown(agent: AgentKey): Boolean = (shownCounts[agent] ?: 0) > 0
-
-    /** Number of active UI surfaces currently holding a viewer lease for [agent]. */
-    fun activeViewers(agent: AgentKey): Int = shownCounts[agent] ?: 0
-
     /**
      * Releases one active viewer for [agent]. When the last active viewer
      * leaves, the session stays cached for [sessionRetentionMs] so returning
      * is instant, then closes cleanly.
      */
-    fun leave(agent: AgentKey) {
+    private fun leave(agent: AgentKey) {
         if (agent !in models) {
             shownCounts.remove(agent)
             return

@@ -1,5 +1,8 @@
 package sh.amux.core.runtime
 
+import java.util.logging.Level
+import java.util.logging.Logger
+import kotlin.reflect.typeOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -20,6 +23,9 @@ import sh.amux.values.ReviewComment
 import sh.amux.values.ReviewDoc
 import sh.amux.values.SettingsView
 import sh.amux.values.SetupStep
+
+@PublishedApi
+internal val bridgeLog: Logger = Logger.getLogger("sh.amux.core.runtime.Bridge")
 
 /** Why the embedded Rust library did not do what it was asked, in its own words. */
 class RuntimeFailure(val description: String) : Exception(description) {
@@ -120,14 +126,32 @@ object Bridge {
         return decodeNullable(raw)
     }
 
+    /**
+     * Decodes a value the library returned. Only a JSON `null` means none;
+     * anything this build cannot read is logged as the bug it is, and the
+     * caller draws what it had.
+     */
     internal inline fun <reified T> decodeNullable(raw: String): T? {
         val trimmed = raw.trim()
-        if (trimmed.isEmpty() || trimmed == "null") return null
+        if (trimmed == "null") return null
         return try {
             AmuxJson.json.decodeFromString<T>(trimmed)
-        } catch (_: Throwable) {
+        } catch (e: IllegalArgumentException) {
+            unreadable(typeOf<T>().toString(), e)
             null
         }
+    }
+
+    @PublishedApi
+    internal fun unreadable(type: String, error: IllegalArgumentException) {
+        bridgeLog.log(Level.WARNING, "the library returned a $type this build cannot read", error)
+    }
+
+    /** Whether an act answered `{"Err": …}`, as every act does once its chat or runtime is gone. */
+    internal fun isErrAnswer(raw: String): Boolean = try {
+        (AmuxJson.json.parseToJsonElement(raw) as? JsonObject)?.containsKey("Err") == true
+    } catch (_: IllegalArgumentException) {
+        false
     }
 
     internal inline fun <reified T> decodeAnswer(raw: String): Result<T> {

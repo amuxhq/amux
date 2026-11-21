@@ -2,9 +2,12 @@ package sh.amux.core.runtime
 
 import java.nio.file.Files
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -92,6 +95,9 @@ import sh.amux.words.subagentGroupState
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatModelTest {
+    // Runs what a model launches at once, for tests that never wait on it.
+    private val idle = CoroutineScope(Dispatchers.Unconfined)
+
     private data class ChatChanges(
         val keys: MutableList<String> = mutableListOf(),
         var reloaded: Boolean = false,
@@ -121,6 +127,9 @@ class ChatModelTest {
         val submittedForms = mutableListOf<List<FormValue>>()
         val drafts = mutableMapOf<List<Int>, Draft>()
         var interrupts = 0
+
+        /** When set, an interrupt waits for this before it answers. */
+        var interruptAnswer: CompletableDeferred<ActOutcome?>? = null
         var switchBacks = 0
         val stopped = mutableListOf<String>()
         var agents = ChatAgents(emptyList(), emptyList(), EMPTY_GROUP_STATE)
@@ -357,9 +366,10 @@ class ChatModelTest {
             )
         }
 
-        override suspend fun interrupt(): ActOutcome {
+        override suspend fun interrupt(): ActOutcome? {
             interrupts += 1
-            return ActOutcome.Done
+            val gate = interruptAnswer ?: return ActOutcome.Done
+            return gate.await()
         }
 
         override suspend fun stopJob(key: String): ActOutcome {
@@ -570,7 +580,7 @@ class ChatModelTest {
     @Test
     fun openingReadsKeysLazilyAndDeltaUpdatesSingleKeyedCell() {
         val source = FakeChat(listOf(proseRow("a", 1), proseRow("b", 2), proseRow("c", 3)), chatFrame())
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
 
         assertEquals(listOf("a", "b", "c"), model.keys)
         assertTrue("no row is read before its cell is drawn", source.fetched.isEmpty())
@@ -614,7 +624,7 @@ class ChatModelTest {
     @Test
     fun resetReloadSwapsSequenceInPlaceAndRestoresFollowing() {
         val source = FakeChat(listOf(proseRow("a", 1), proseRow("b", 2)), chatFrame())
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
         val cellB = model.cell("b")
         model.reading(atNewest = false)
         val beforeToNewest = model.snapshot.toNewest
@@ -675,7 +685,7 @@ class ChatModelTest {
     fun followingUnderFloodDropsOldestKeysWithoutPaging() {
         val source = FakeChat(numbered(801..1000), chatFrame(hasOlder = true))
         source.cap = 200
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
 
         for (n in 1001..1300) {
             source.arrive(listOf(proseRow("m$n", n.toLong())))
@@ -711,7 +721,6 @@ class ChatModelTest {
         source.pageOutcomeOverride = PageOutcome.OriginUnreachable
         model.reachedTop()!!.join()
         assertEquals(ChatPaging.Unreachable, model.snapshot.paging)
-        assertNotNull(model.snapshot.paging.message)
 
         // Collapsed open-below run asks for its step count clamped to LARGEST_PAGE.
         val bigRun = Run(
@@ -743,7 +752,7 @@ class ChatModelTest {
     fun draftPersistenceReadsOnOpenSavesInOrderAndStopsWhenAgentDeleted() {
         val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
         source.initialKeptDraft = draftOf("kept earlier")
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
 
         assertEquals("kept earlier", model.draft)
         assertTrue("reading keptDraft on open does not immediately echo a keep", source.keptDrafts.isEmpty())
@@ -882,7 +891,7 @@ class ChatModelTest {
 
         model.setDraft("please use \$auto")
         assertEquals(listOf("autopilot"), model.snapshot.slashMatches.map { it.command.name })
-        model.acceptCommandMatch(model.snapshot.slashMatches.first())
+        model.pick(model.snapshot.slashMatches.first())
         assertEquals("please use \$autopilot ", model.draft)
         assertTrue(model.snapshot.slashMatches.isEmpty())
 
@@ -950,7 +959,7 @@ class ChatModelTest {
         val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
 
         // Permission/choice answer records choice + note.
-        model.answerPermission(choice = 1, note = "only read-only")!!.join()
+        model.answer(choice = 1, note = "only read-only")!!.join()
         assertEquals(listOf(Triple("ask:1", 1, "only read-only")), source.answeredChoices)
 
         // Question draft preserves multi-select picks + "Something else" + note.
@@ -976,7 +985,7 @@ class ChatModelTest {
             ),
             encoded,
         )
-        model.answerQuestion(encoded)!!.join()
+        model.answerQuestions(encoded)!!.join()
         assertEquals(listOf(encoded), source.responded)
         model.replyInstead("Hold off", encoded)!!.join()
         assertEquals(listOf("Hold off"), source.replied)
@@ -991,7 +1000,7 @@ class ChatModelTest {
         assertTrue(model.formProblems(fields, validValues).isEmpty())
         model.keepFormDraft("ask:1", validValues)
         assertEquals(validValues, model.formDraft("ask:1"))
-        model.answerForm(validValues)!!.join()
+        model.submitForm(validValues)!!.join()
         assertEquals(listOf(validValues), source.submittedForms)
 
         // When head ask changes to ask:2, unsent drafts for ask:1 clear permanently.
@@ -1020,7 +1029,7 @@ class ChatModelTest {
             groups = listOf(GroupView(first = "c1", state = initialStanding)),
             live = initialStanding,
         )
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
 
         val proseCell = model.cell("p1")
         val callCell = model.cell("c1")
@@ -1110,7 +1119,7 @@ class ChatModelTest {
         assertEquals(listOf(listOf(7)), source.sentNow)
 
         // Settings change sends SettingChange and waits for agent delta.
-        model.setSetting(SettingChange.Model("sonnet"))!!.join()
+        model.change(SettingChange.Model("sonnet"))!!.join()
         assertEquals(listOf(SettingChange.Model("sonnet")), source.changed)
         model.interrupt()!!.join()
         assertEquals(1, source.interrupts)
@@ -1167,6 +1176,7 @@ class ChatModelTest {
                 scope = this,
                 attachmentDir = tempDir,
                 loadingHintAfterMs = -1L,
+                ioDispatcher = UnconfinedTestDispatcher(testScheduler),
             )
 
             // Failed attachment fetch retries on openAttachment.
@@ -1181,6 +1191,7 @@ class ChatModelTest {
             source.failedFetches.clear()
             source.landed[shot.hash] = "png!".encodeToByteArray()
             model.openAttachment(shot)
+            runCurrent()
             val opened = model.snapshot.openedAttachment
             assertNotNull(opened)
             assertEquals("screen.png", opened!!.name)
@@ -1243,7 +1254,6 @@ class ChatModelTest {
 
         // Stale ask key must be rejected silently without dispatching to source.
         assertNull(model.answer(choice = 0, note = "old", expectedKey = "ask:old"))
-        assertNull(model.answerPermission(choice = 0, expectedKey = "ask:old"))
         assertNull(model.answerQuestions(emptyList(), expectedKey = "ask:old"))
         assertNull(model.replyInstead("old", emptyList(), expectedKey = "ask:old"))
         assertNull(model.submitForm(emptyList(), expectedKey = "ask:old"))
@@ -1271,7 +1281,7 @@ class ChatModelTest {
         source.initialKeptDraft = draftOf("already typed")
         source.drafts[listOf(42)] = draftOf("refused prompt")
 
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
 
         assertEquals("refused prompt\nalready typed", model.draft)
         assertEquals(listOf("keep:refused prompt\nalready typed", "discard"), source.draftEvents)
@@ -1282,7 +1292,7 @@ class ChatModelTest {
     @Test
     fun unarrivedKeyLookupDoesNotCacheNullRowAndPopulatesOnEdgeArrival() {
         val source = FakeChat(listOf(proseRow("a", 1)), chatFrame())
-        val model = ChatModel(source = source, loadingHintAfterMs = -1L)
+        val model = ChatModel(source = source, scope = idle, loadingHintAfterMs = -1L)
 
         // Look up a key before it arrives in the held window (e.g. ActivityKind.Running).
         assertNull(model.rowOrNull("cmd-late"))
@@ -1383,6 +1393,7 @@ class ChatModelTest {
         source.landed[listOf(4)] = ByteArray(12) { 4 }
         val model = ChatModel(
             source = source,
+            scope = idle,
             loadingHintAfterMs = -1L,
             blobCacheMaxBytes = 10L,
         )
@@ -1644,5 +1655,25 @@ class ChatModelTest {
         val responses = draft.toResponses()
         assertEquals("  secret  ", responses[0].other)
         assertNull(responses[1].other)
+    }
+
+    @Test
+    fun anActCancelledByClosingTheChatSetsNoNotice() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        val answer = CompletableDeferred<ActOutcome?>()
+        source.interruptAnswer = answer
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+
+        val interrupting = model.interrupt()!!
+        runCurrent()
+        assertEquals(1, source.interrupts)
+
+        // Closing the chat cancels the act; a closed chat's answer must not
+        // read as "This chat is closed." over whatever the person sees next.
+        model.close()
+        answer.complete(null)
+        runCurrent()
+        assertTrue(interrupting.isCancelled)
+        assertNull(model.snapshot.notice)
     }
 }

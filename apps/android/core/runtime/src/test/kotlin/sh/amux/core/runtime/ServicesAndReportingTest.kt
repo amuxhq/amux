@@ -105,40 +105,41 @@ class ServicesAndReportingTest {
     }
 
     @Test
-    fun networkChangeDebouncerSuppressesInitialBurstAndRssiJitter() = runTest {
+    fun networkChangeDebouncerTellsDefaultNetworkChangesOncePerBurst() = runTest {
         var notifications = 0
         val debouncer = NetworkChangeDebouncer(scope = this, debounceMs = 250L)
-        debouncer.start { notifications += 1 }
+        debouncer.start(network = 100L) { notifications += 1 }
 
-        val wifiMask = 1 shl 1
-        val cellMask = 1 shl 0
-
-        // Entire initial registration burst (onAvailable + initial capabilities) is suppressed.
-        debouncer.onAvailable(networkId = 100L)
-        debouncer.onCapabilitiesChanged(networkId = 100L, transports = wifiMask)
+        // Registering repeats the network the watch started on.
+        debouncer.available(network = 100L)
         advanceTimeBy(500L)
         assertEquals(0, notifications)
 
-        // Repeated capabilities with identical network + transports (RSSI/bandwidth jitter) are ignored.
-        debouncer.onCapabilitiesChanged(networkId = 100L, transports = wifiMask)
-        debouncer.onCapabilitiesChanged(networkId = 100L, transports = wifiMask)
-        advanceTimeBy(500L)
-        assertEquals(0, notifications)
-
-        // Real transport handover (Wi-Fi -> cellular on new network) coalesces into 1 notification.
-        debouncer.onLost(networkId = 100L)
+        // A handover (lost, then another network) is told once.
+        debouncer.lost(network = 100L)
         advanceTimeBy(50L)
-        debouncer.onAvailable(networkId = 200L)
-        debouncer.onCapabilitiesChanged(networkId = 200L, transports = cellMask)
+        debouncer.available(network = 200L)
         advanceTimeBy(300L)
         assertEquals(1, notifications)
 
-        // Adding VPN transport on the same network counts as a transport change.
-        debouncer.onCapabilitiesChanged(networkId = 200L, transports = cellMask or (1 shl 4))
+        // Losing a network that is not the default tells nothing.
+        debouncer.lost(network = 100L)
+        advanceTimeBy(300L)
+        assertEquals(1, notifications)
+
+        // Coming back after none is a change.
+        debouncer.lost(network = 200L)
         advanceTimeBy(300L)
         assertEquals(2, notifications)
+        debouncer.available(network = 300L)
+        advanceTimeBy(300L)
+        assertEquals(3, notifications)
 
+        // Nothing is told after a stop, even a burst already waiting.
+        debouncer.lost(network = 300L)
         debouncer.stop()
+        advanceTimeBy(300L)
+        assertEquals(3, notifications)
     }
 
     @Test
@@ -216,7 +217,7 @@ class ServicesAndReportingTest {
             dump = CompletableDeferred(Result.success(dumpDir)),
             route = "agents",
         )
-        val store = ReportStore()
+        val store = ReportStore(redactor = { frame, _ -> frame.png })
         assertTrue(store.offer { capture })
         assertTrue(store.state.value.offering)
         assertFalse(store.state.value.open)
@@ -280,7 +281,13 @@ class ServicesAndReportingTest {
             account = AccountId("account-a"),
             profileId = "profile-a",
         )
-        val store = ReportStore()
+        var redactedMarksSeen: List<ReportMark> = emptyList()
+        val store = ReportStore(
+            redactor = { _, marks ->
+                redactedMarksSeen = marks
+                redactedPng
+            },
+        )
         assertTrue(store.offer { capture })
         store.accept()
         store.mark(ReportMark(10.0, 20.0, 80.0, 40.0, note = "secret", redact = true))
@@ -296,21 +303,15 @@ class ServicesAndReportingTest {
             submitter = submitter,
             account = AccountId("account-b"),
             build = "0.10.0",
-            redactor = { _, _ -> redactedPng },
         )
         assertTrue(store.state.value.sending is ReportSending.Failed)
         assertTrue(uploads.isEmpty())
 
         // Submitting under the original account applies redaction and uploads redacted bytes.
-        var redactedMarksSeen: List<ReportMark> = emptyList()
         store.send(
             submitter = submitter,
             account = AccountId("account-a"),
             build = "0.10.0",
-            redactor = { _, marks ->
-                redactedMarksSeen = marks
-                redactedPng
-            },
         )
         assertTrue(store.state.value.sending is ReportSending.Sent)
         assertEquals(1, uploads.size)
@@ -329,7 +330,7 @@ class ServicesAndReportingTest {
             framePng = frameDeferred,
             route = "chat",
         )
-        val store = ReportStore()
+        val store = ReportStore(redactor = { frame, _ -> frame.png })
         assertTrue(store.offer { capture })
         assertEquals(ReportScreenshotState.Pending, store.state.value.screenshotState)
         assertEquals(ReportDumpState.Pending, store.state.value.dumpState)
@@ -373,7 +374,7 @@ class ServicesAndReportingTest {
             route = "chat",
             account = AccountId("ada"),
         )
-        val store = ReportStore()
+        val store = ReportStore(redactor = { frame, _ -> frame.png })
         assertTrue(store.begin { firstCapture })
 
         val uploads = mutableListOf<ReportUpload>()

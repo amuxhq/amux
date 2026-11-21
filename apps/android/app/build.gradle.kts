@@ -72,6 +72,8 @@ dependencies {
     implementation(project(":shell"))
 
     debugImplementation(project(":test-support"))
+    // The debug door checks it can open a sealed push.
+    debugImplementation(testFixtures(project(":push")))
     testImplementation(project(":test-support"))
 
     implementation(platform(libs.androidx.compose.bom))

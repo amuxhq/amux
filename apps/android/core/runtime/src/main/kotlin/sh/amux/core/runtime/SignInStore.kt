@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import sh.amux.words.CloudWords
 
 /** Immutable UI snapshot of an in-flight or completed browser sign-in flow. */
 data class SignInState(
@@ -90,6 +91,8 @@ class SignInStore(
         _state.update { it.copy(phase = Phase.Ready) }
         try {
             cloud.forgetSession(mismatched.got.id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Throwable) {
             // Discarding an unkept session is best-effort.
         }
@@ -111,10 +114,10 @@ class SignInStore(
     companion object {
         fun phaseAfter(error: CloudError): Phase = when (error) {
             CloudError.Cancelled -> Phase.Ready
-            CloudError.Unauthenticated -> Phase.Failed("amux.sh did not recognise this sign-in")
+            CloudError.Unauthenticated -> Phase.Failed(CloudWords.SIGN_IN_NOT_RECOGNISED)
             is CloudError.Refused -> Phase.Failed(error.reason)
             is CloudError.Network -> Phase.Failed(error.message)
-            CloudError.Timeout -> Phase.Failed("amux.sh did not answer")
+            CloudError.Timeout -> Phase.Failed(CloudWords.DID_NOT_ANSWER)
         }
     }
 }

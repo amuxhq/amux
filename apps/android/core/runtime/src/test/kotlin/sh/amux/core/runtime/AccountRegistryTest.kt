@@ -2,6 +2,8 @@ package sh.amux.core.runtime
 
 import java.nio.file.Files
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,6 +22,14 @@ import sh.amux.values.SignInOfferOutcome
 import sh.amux.values.SignInOfferView
 
 class AccountRegistryTest {
+    // Writes land before the next line, so a reload reads them.
+    private fun registry(file: java.io.File): AccountRegistry = AccountRegistry(
+        file = file,
+        makeStores = { StoreBundle(account = it, scope = CoroutineScope(Dispatchers.Unconfined)) },
+        ioDispatcher = Dispatchers.Unconfined,
+        persistDelayMs = 0L,
+    )
+
     private fun profileView(
         id: String,
         subject: String = "",
@@ -46,7 +56,7 @@ class AccountRegistryTest {
         val dir = Files.createTempDirectory("amux-registry-test").toFile()
         try {
             val file = dir.resolve("accounts.json")
-            val registry = AccountRegistry(file = file)
+            val registry = registry(file)
 
             val unbound = profileView(id = "p0")
             val ada = profileView(id = "p1", subject = "ada", email = "ada@example.com", name = "Ada")
@@ -62,14 +72,12 @@ class AccountRegistryTest {
             registry.show(listOf(unbound))
             assertNull(registry.selected)
             assertEquals("p0", registry.profile)
-            assertEquals(FleetGate.SignedOut, registry.gate)
 
             // Awaited selection takes effect as soon as the profile appears.
             registry.select(AccountId("ada"))
             registry.show(listOf(ada, grace))
             assertEquals(AccountId("ada"), registry.selected)
             assertEquals("p1", registry.profile)
-            assertEquals(FleetGate.Unsubscribed, registry.gate)
 
             // Update cached hosts/attention and entitlement -> persisted to disk.
             registry.saw(hosts = 2, attention = 1, forAccount = AccountId("ada"))
@@ -77,8 +85,7 @@ class AccountRegistryTest {
                 Entitlement.Active(Grant.Purchased(EntitlementSource.Web), null),
                 forAccount = AccountId("ada"),
             )
-            assertEquals(FleetGate.Ready, registry.gate)
-            assertEquals("2 hosts", registry.selectedAccount?.line)
+            assertEquals("2 computers", registry.selectedAccount?.line)
 
             // Late answer for non-selected account is dropped.
             assertNull(registry.accept("stale", forAccount = AccountId("grace")))
@@ -86,7 +93,7 @@ class AccountRegistryTest {
             assertEquals("fresh", registry.accept("fresh", forAccount = AccountId("ada")))
 
             // Reload from disk preserves selected account and cached summary.
-            val reloaded = AccountRegistry(file = file)
+            val reloaded = registry(file)
             reloaded.show(listOf(ada, grace))
             assertEquals(AccountId("ada"), reloaded.selected)
             assertEquals(2, reloaded.selectedAccount?.hosts)

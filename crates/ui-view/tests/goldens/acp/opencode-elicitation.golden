@@ -14,7 +14,7 @@
      1 boundary:1 Hidden collapsed
      2 prompt:70312d32 Prompt { text: [Text("Call the ask_the_operator tool from the spec tool server with the word kiwi, then reply with exactly what it returned.")], steered: false }
      3 thought:1 Thinking { text: "The user wants me to call the ask_the_operator tool with the word kiwi. I have spec_ask_the_operator.", open: false, duration_ms: Some(1712) }
-     4 tool:call_4daf4850d511414993f6f173 ToolCall { server: "", tool: "spec_ask_the_operator", fact: "", state: Succeeded, result: "elicitation failed: {\"code\":-32601,\"message\":\"Method not found\"}" } run[tool:call_4daf4850d511414993f6f173..tool:call_4daf4850d511414993f6f173 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1 }]
+     4 tool:call_4daf4850d511414993f6f173 ToolCall { server: "", tool: "spec_ask_the_operator", fact: "", state: Succeeded, result: "elicitation failed: {\"code\":-32601,\"message\":\"Method not found\"}" } run[tool:call_4daf4850d511414993f6f173..tool:call_4daf4850d511414993f6f173 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1, deni…
      5 message:2 Prose { text: [Text("The tool returned: `elicitation failed: {\"code\":-32601,\"message\":\"Method not found\"}`")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(3614), failed: false }
      7 boundary:2 Hidden collapsed

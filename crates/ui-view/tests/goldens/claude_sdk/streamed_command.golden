@@ -10,7 +10,7 @@
      1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("push")], steered: false }
      3 toolu_a Command { command: "git push origin main\nsleep 1", description: "Push both repos", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_a..toolu_b x2 recent=1 live shown]
-     4 toolu_b Command { command: "ls", description: "List files", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_a..toolu_b x2 recent=0 live shown RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+     4 toolu_b Command { command: "ls", description: "List files", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_a..toolu_b x2 recent=0 live shown RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }]
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 2, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

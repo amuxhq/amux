@@ -46,7 +46,7 @@
      1 boundary:1 Hidden collapsed
      2 agent-message:6d31 AgentMessage { from: "reviewer", kind: Message, text: [Text("Please check the tests.")], to: "", sent: Unspecified, rejection: "" }
      3 message:1 Prose { text: [Text("Checking.")], streaming: false, working_note: false }
-     4 tool:c1 Command { command: "Run cargo test", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[tool:c1..tool:c1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: None, note: Non…
+     4 tool:c1 Command { command: "Run cargo test", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[tool:c1..tool:c1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }] decision=Decision { outcome: Dismissed, granted: None…
      5 message:2 Prose { text: [Text(" Stopping.")], streaming: false, working_note: false }
      6 turn:1 Stopped
      7 prompt:7031 Prompt { text: [Text("Write the summary.")], steered: false }
@@ -58,7 +58,7 @@
     13 error:5 Error { error_kind: "-32603", message: "model overloaded", attempts: 0, gave_up: true } attention
     14 turn:3 TurnEnd { duration_ms: Some(0), failed: true }
     15 prompt:7034 Prompt { text: [Text("Last try.")], steered: false }
-    16 tool:c2 FileChange { files: [FileRow { path: "/work/notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: Some(1) }], state: Succeeded } run[tool:c2..tool:c2 x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+    16 tool:c2 FileChange { files: [FileRow { path: "/work/notes.md", change: Created { lines: 1 }, added: 1, removed: 0, line: Some(1) }], state: Succeeded } run[tool:c2..tool:c2 x1 recent=0 RunCounts { commands: 0, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }]
     17 notice:6 Notice { reason: MaxTokens, severity: Warning, title: "", text: "" }
     18 turn:4 TurnEnd { duration_ms: Some(0), failed: false }
     19 ask:ask-2 Ask(Link { server: "my-own-agent", message: "Sign in to the docs server.", url: "https://example.com/sign-in", resolution: Answered })

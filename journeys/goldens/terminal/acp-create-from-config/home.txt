@@ -31,4 +31,4 @@
 
 
 
-  enter open   a attach   / filter   n new   ? keys
+  enter open   / filter   n new   ? keys

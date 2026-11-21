@@ -226,7 +226,11 @@ fn file_rows(cwd: &str, tool: &wire::AcpTool, view: CallPhase) -> Vec<FileRow> {
     tool.diffs
         .iter()
         .map(|diff| {
-            let lines = diff_lines(diff.old_text.as_deref(), &diff.new_text);
+            let lines = diff_lines(
+                diff.old_text.as_deref(),
+                &diff.new_text,
+                line_at(tool, &diff.path),
+            );
             let (added, removed) = counts(&lines);
             let change = match (&diff.old_text, tool.kind()) {
                 (_, AcpToolKind::Delete) => FileChangeView::Deleted,
@@ -245,12 +249,18 @@ fn file_rows(cwd: &str, tool: &wire::AcpTool, view: CallPhase) -> Vec<FileRow> {
         .collect()
 }
 
-/// A change an ACP agent gives as the file's whole text before and after,
-/// as patch lines: what the two share at their start and end is left out,
-/// and what lies between is removed then added, each line numbered in the
-/// file it belongs to, under the hunk that says where. A new file's every
-/// line is added.
-pub(crate) fn diff_lines(old: Option<&str>, new: &str) -> Vec<EditLine> {
+/// A change an ACP agent gives as text before and after, as patch lines:
+/// what the two share at their start and end is left out, and what lies
+/// between is removed then added. A new file's every line is added.
+///
+/// ACP's texts carry no place in the file, and agents differ: OpenCode sends
+/// the whole file, Antigravity and Grok only the fragment they replace. So
+/// lines are numbered only where the place is known: a new file from its
+/// first line, otherwise from `at`, the line the call's location gives for
+/// the file, as the first changed line. Without either the lines go
+/// unnumbered and no line is claimed.
+pub(crate) fn diff_lines(old: Option<&str>, new: &str, at: Option<u32>) -> Vec<EditLine> {
+    let created = old.is_none();
     let old: Vec<&str> = old.map(|old| old.lines().collect()).unwrap_or_default();
     let new: Vec<&str> = new.lines().collect();
     let start = old
@@ -264,25 +274,37 @@ pub(crate) fn diff_lines(old: Option<&str>, new: &str) -> Vec<EditLine> {
         .zip(new[start..].iter().rev())
         .take_while(|(old, new)| old == new)
         .count();
-    let line = |number: usize, kind, text: &str| {
+    let first = if created { Some(1) } else { at };
+    let line = |offset: usize, kind, text: &str| {
         EditLine::Line(PatchLine {
-            number: Some(number as u32 + 1),
+            number: first.map(|first| first + offset as u32),
             kind,
             text: text.to_owned(),
         })
     };
     // Where the change starts, so a removal alone still says its line.
-    let mut lines = vec![EditLine::Hunk {
-        old_start: start as u32 + 1,
-        new_start: start as u32 + 1,
-    }];
-    for (at, text) in old[start..old.len() - end].iter().enumerate() {
-        lines.push(line(start + at, LineKind::Removed, text));
+    let mut lines: Vec<EditLine> = first
+        .map(|first| EditLine::Hunk {
+            old_start: first,
+            new_start: first,
+        })
+        .into_iter()
+        .collect();
+    for (offset, text) in old[start..old.len() - end].iter().enumerate() {
+        lines.push(line(offset, LineKind::Removed, text));
     }
-    for (at, text) in new[start..new.len() - end].iter().enumerate() {
-        lines.push(line(start + at, LineKind::Added, text));
+    for (offset, text) in new[start..new.len() - end].iter().enumerate() {
+        lines.push(line(offset, LineKind::Added, text));
     }
     lines
+}
+
+/// The line the call's location gives for `path`, where its change is.
+pub(crate) fn line_at(tool: &wire::AcpTool, path: &str) -> Option<u32> {
+    tool.locations
+        .iter()
+        .find(|location| location.path == path)
+        .and_then(|location| location.line)
 }
 
 /// The command a call runs and what the agent said it is for. Agents name
@@ -359,7 +381,11 @@ pub(super) fn subject(tool: &wire::AcpTool) -> String {
 /// The first lines of the patch a landed change made: its first file's.
 pub(super) fn patch(tool: &wire::AcpTool) -> Option<Vec<EditLine>> {
     let diff = tool.diffs.first()?;
-    Some(diff_lines(diff.old_text.as_deref(), &diff.new_text))
+    Some(diff_lines(
+        diff.old_text.as_deref(),
+        &diff.new_text,
+        line_at(tool, &diff.path),
+    ))
 }
 
 #[cfg(test)]
@@ -376,24 +402,41 @@ mod tests {
             .collect()
     }
 
-    /// A whole-file change reads as the lines it changed, numbered where
-    /// they are, not as the whole file removed and written again.
+    /// A change reads as the lines it changed, not as the whole text
+    /// removed and written again; numbered from where the call's location
+    /// puts it, and a new file from its first line.
     #[test]
-    fn a_whole_file_change_reads_as_the_lines_it_changed() {
-        let lines = diff_lines(Some("a\nb\nc\nd\n"), "a\nB\nc\nd\n");
+    fn a_change_reads_as_the_lines_it_changed() {
+        let lines = diff_lines(Some("a\nb\nc\nd\n"), "a\nB\nc\nd\n", Some(7));
         assert_eq!(
             kinds(&lines),
             [
-                (Some(2), LineKind::Removed, "b".to_owned()),
-                (Some(2), LineKind::Added, "B".to_owned()),
+                (Some(7), LineKind::Removed, "b".to_owned()),
+                (Some(7), LineKind::Added, "B".to_owned()),
             ]
         );
-        assert_eq!(first_change(&lines), Some(2));
-        let made = diff_lines(None, "one\ntwo\n");
+        assert_eq!(first_change(&lines), Some(7));
+        let made = diff_lines(None, "one\ntwo\n", None);
         assert_eq!(counts(&made), (2, 0));
         assert_eq!(first_change(&made), Some(1));
-        let grown = diff_lines(Some("a\n"), "a\nb\n");
+        let grown = diff_lines(Some("a\n"), "a\nb\n", Some(2));
         assert_eq!(kinds(&grown), [(Some(2), LineKind::Added, "b".to_owned())]);
+    }
+
+    /// Antigravity sends only the fragment it replaces, with no line: the
+    /// change is shown without numbers and claims no line, where counting
+    /// from the fragment's start would say line 1 for a change further down.
+    #[test]
+    fn a_change_with_no_place_in_the_file_claims_no_line() {
+        let lines = diff_lines(Some("Line two."), "Line two, edited.", None);
+        assert_eq!(
+            kinds(&lines),
+            [
+                (None, LineKind::Removed, "Line two.".to_owned()),
+                (None, LineKind::Added, "Line two, edited.".to_owned()),
+            ]
+        );
+        assert_eq!(first_change(&lines), None);
     }
 
     /// The usual names agents give a command's field are read, and the

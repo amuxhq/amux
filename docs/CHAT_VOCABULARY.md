@@ -252,7 +252,9 @@ agent says each one is:
   fetch the first place the call names, else its title; a title that only repeats the tool's name, as agents
   title a call just begun, is left off); an execute is `Command`, its command read from the call's input, else its
   title; an edit, delete or move is `FileChange` from the call's diffs, else the places it names; anything else is
-  `ToolCall` under its title. amux's own tools, which agents name in several ways, are amux's rows (`Child` and
+  `ToolCall` under its title. An ACP diff's texts carry no place in the file (OpenCode sends the whole file,
+  Antigravity and Grok the fragment they replace), so its lines are numbered, and the edit names a line, only
+  where the call's location gives one or the file is new. amux's own tools, which agents name in several ways, are amux's rows (`Child` and
   the rest), as for the other kinds.
 - **A notice** is `Notice { reason, severity, title, text }`: what the agent says about its session (`Agent`), or
   why a turn stopped short (`Refusal`, `MaxTokens`, `MaxTurnRequests`), as a note, a warning or an error. An error
@@ -286,7 +288,7 @@ Once settled, an ask leaves one of two things behind, because rows are one per i
 - **An ask that is the work is its own row**, `RowKind::Ask(AskRow)`, which resolves in place: `Question`
   (Claude's question tool: its questions, then each `AnswerView` with the picks, what was typed and whether it was
   hidden, whether it was skipped, and the note), `Questions` (Codex), `Plan` with its title, body, `PlanVerdict`, the permission an approval switched to (`mode`, `mode_name`) and send-back note, `Form` with the
-  fields sent, `Link`, `Grant` with what was `Granted` and for how long, and `Unanswerable`. Each carries a
+  fields sent by their titles (the name where the form gives none), `Link`, `Grant` with what was `Granted` and for how long, and `Unanswerable`. Each carries a
   `Resolution`: `Open`, `Answered`, `Declined`, `Cancelled` or `Dismissed`.
 
 The attention ink is reserved for what needs you and for failures: `Row.attention` is set when an open ask points at the

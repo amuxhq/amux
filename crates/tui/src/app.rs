@@ -2024,7 +2024,13 @@ impl App {
                     && self
                         .leader_since
                         .is_none_or(|since| since.elapsed() >= PANEL_AFTER);
-                chat.view.panel = panel_due.then(panel_entries);
+                let attach = {
+                    let fleet = self.fleet.state();
+                    fleet.agent(&chat.agent).is_some_and(|agent| {
+                        terminal_elsewhere(&fleet, agent, &self.config).is_none()
+                    })
+                };
+                chat.view.panel = panel_due.then(|| panel_entries(attach));
                 chat.view.covered = self.report.is_some();
                 let page = {
                     let state = chat.session.state();
@@ -2208,8 +2214,11 @@ impl App {
     }
 }
 
-/// The leader's panel in a chat: every chord and what it does.
-fn panel_entries() -> Vec<crate::chat::PanelEntry> {
+/// The leader's panel in a chat: every chord and what it does. Attach is
+/// listed only where the agent has a terminal of its own here (`attach`):
+/// an ACP agent, headless Claude, a subagent or an agent on another
+/// computer has none, and the chord would only say so.
+pub(crate) fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
     let entry =
         |group: &'static str, key: &str, label: &str, chord: char| crate::chat::PanelEntry {
             group,
@@ -2218,7 +2227,7 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
             chord,
         };
     // What is about amux first, then what is about this chat.
-    vec![
+    let mut entries = vec![
         entry("amux", "s", "home", 's'),
         entry("amux", "n", "new agent", 'n'),
         entry("amux", "h", "devices", 'h'),
@@ -2251,7 +2260,11 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
             OPEN_AGENT_CHORD,
         ),
         entry("this chat", "y", "copy the focused row", 'y'),
-    ]
+    ];
+    if !attach {
+        entries.retain(|entry| entry.chord != 'a');
+    }
+    entries
 }
 
 pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {

@@ -371,3 +371,179 @@ fn a_new_acp_agents_permission_key_picks_its_mode() {
     assert!(screen.contains("╭─ Mode"), "{screen}");
     assert!(screen.contains("plan"), "{screen}");
 }
+
+/// New Agent on a host that knows no models for the agent yet (an ACP
+/// agent before its first conversation there): Ctrl+S offers no model, and
+/// pressing m opens no list, rather than an empty one to type into.
+#[test]
+fn a_new_agent_with_no_models_known_offers_no_model_list() {
+    use crate::setup::Item;
+    let mut fleet = home_fleet();
+    let mut studio = host(b"a", "studio", Reads::Online);
+    if let wire::inventory_event::Of::Host(entry) = &mut studio {
+        entry
+            .providers
+            .push(offered("antigravity", "Antigravity", Kind::Acp));
+    }
+    inventory(&mut fleet, studio);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let setup = home.open_setup().unwrap();
+    setup.pick(Item::Kind, "antigravity");
+    setup.offer(b"a", "antigravity", &[3; 32], &wire::Catalogue::default());
+    home.key(
+        &fleet,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    );
+    let screen = home_screen(&mut home, &fleet, theme());
+    let keys = screen
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap();
+    assert!(
+        keys.contains("n name") && keys.contains("d folder"),
+        "{screen}"
+    );
+    assert!(
+        !keys.contains("m model") && !keys.contains("e effort"),
+        "{screen}"
+    );
+    home.key(&fleet, key(KeyCode::Char('m')));
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(!screen.contains("╭─ Model"), "{screen}");
+    assert!(!screen.contains("type a name"), "{screen}");
+}
+
+/// An agent with nothing for Shift+Tab to step (Grok: models, no modes and
+/// no permissions) is not offered Shift+Tab in New Agent, nor p.
+#[test]
+fn a_new_agent_with_nothing_to_step_offers_no_shift_tab() {
+    use crate::setup::Item;
+    let mut fleet = home_fleet();
+    let mut studio = host(b"a", "studio", Reads::Online);
+    if let wire::inventory_event::Of::Host(entry) = &mut studio {
+        entry.providers.push(offered("grok", "Grok", Kind::Acp));
+    }
+    inventory(&mut fleet, studio);
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let setup = home.open_setup().unwrap();
+    setup.pick(Item::Kind, "grok");
+    let models_only = wire::Catalogue {
+        modes: Vec::new(),
+        ..acp_offer()
+    };
+    setup.offer(b"a", "grok", &[3; 32], &models_only);
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("enter start"), "{screen}");
+    assert!(!screen.contains("shift+tab"), "{screen}");
+    home.key(
+        &fleet,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    );
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("m model"), "{screen}");
+    assert!(
+        !screen.contains("p permission") && !screen.contains("p mode"),
+        "{screen}"
+    );
+
+    // With modes, Shift+Tab steps them and p says so.
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    let setup = home.open_setup().unwrap();
+    setup.pick(Item::Kind, "grok");
+    setup.offer(b"a", "grok", &[3; 32], &acp_offer());
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("shift+tab mode"), "{screen}");
+    home.key(
+        &fleet,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    );
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("p mode"), "{screen}");
+}
+
+/// An ACP agent has no terminal of its own: home's keys offer no attach on
+/// its row, and a chat's leader panel lists none, while a terminal Claude
+/// on this machine keeps both.
+#[test]
+fn an_agent_with_no_terminal_is_offered_no_attach() {
+    let mut fleet = home_fleet();
+    let mut studio = host(b"a", "studio", Reads::Online);
+    if let wire::inventory_event::Of::Host(entry) = &mut studio {
+        entry.providers.push(offered("grok", "Grok", Kind::Acp));
+    }
+    inventory(&mut fleet, studio);
+    let mut row = home_agent(b"g", "grok-agent", Phase::Idle, None, 0);
+    if let wire::inventory_event::Of::Agent(agent) = &mut row {
+        agent.kind = Kind::Acp as i32;
+        agent.provider = "grok".into();
+    }
+    inventory(&mut fleet, row);
+    let mut home = new_home();
+    let grok = fleet
+        .agents()
+        .find(|agent| agent.name == "grok-agent")
+        .map(ui_state::agent_key)
+        .unwrap();
+    home.select(grok);
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("enter open"), "{screen}");
+    assert!(!screen.contains("a attach"), "{screen}");
+    let planner = fleet
+        .agents()
+        .find(|agent| agent.name == "planner")
+        .map(ui_state::agent_key)
+        .unwrap();
+    home.select(planner);
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("a attach"), "{screen}");
+
+    let chords = |attach| -> Vec<char> {
+        crate::app::panel_entries(attach)
+            .iter()
+            .map(|entry| entry.chord)
+            .collect()
+    };
+    assert!(chords(true).contains(&'a'));
+    assert!(!chords(false).contains(&'a'));
+}
+
+/// The newest frame of a recorded ACP session, drawn as a chat.
+fn last_screen(fixture: &str) -> String {
+    let (_, state, _) = fixtures::frames(Kind::Acp, fixture).pop().unwrap();
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    feed(&mut view, &state).0
+}
+
+/// A command the person denied folds as denied, not as a command run.
+#[test]
+fn a_denied_command_folds_as_denied() {
+    let screen = last_screen("agy-deny");
+    assert!(screen.contains("Denied 1 step"), "{screen}");
+    assert!(!screen.contains("Ran 1 command"), "{screen}");
+}
+
+/// An answered form names what was sent by the form's own titles:
+/// Antigravity's question, not its field's name.
+#[test]
+fn an_answered_form_names_its_fields_by_title() {
+    let screen = last_screen("agy-question");
+    assert!(screen.contains("Sent the form to Antigravity"), "{screen}");
+    assert!(screen.contains("Do you prefer tea or coffee?"), "{screen}");
+    assert!(!screen.contains("q1"), "{screen}");
+}
+
+/// Antigravity sends only the text it replaces, with no line: its edit ask
+/// names the file and claims no line.
+#[test]
+fn an_edit_with_no_place_in_the_file_claims_no_line() {
+    let (state, now) = asking("agy-edit", |body| matches!(body, AskBody::Edit { .. }));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let (buffer, _) = draw(&mut view, &state, now, W, H, theme());
+    let screen = text(&buffer);
+    assert!(screen.contains("Wants to edit"), "{screen}");
+    assert!(!screen.contains("· line"), "{screen}");
+}

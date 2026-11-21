@@ -817,13 +817,17 @@ fn an_empty_rename_says_why_enter_does_nothing() {
 }
 
 /// At 80 columns the new agent's settings line keeps "a agent", the only
-/// way to choose Codex, and "esc back", or marks that it cut them.
+/// way to choose Codex, and "esc back", or marks that it cut them: with
+/// every setting offered, its longest.
 #[test]
 fn the_new_agents_settings_line_keeps_its_keys_at_80_columns() {
     let fleet = home_fleet();
     let mut home = new_home();
     home_at(&mut home, &fleet, 80, 24);
     home.key(&fleet, key(KeyCode::Char('n')));
+    home.open_setup()
+        .unwrap()
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     home_at(&mut home, &fleet, 80, 24);
     home.key(&fleet, ctrl('s'));
     let screen = home_at(&mut home, &fleet, 80, 24);

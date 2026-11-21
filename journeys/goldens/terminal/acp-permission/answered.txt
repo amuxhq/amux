@@ -21,7 +21,7 @@
     Clean the build folder.                                                                          hh:mm
 
 
-  ▸ Used 1 tool
+  ▸ Denied 1 step
 
     I left the build folder alone.
 

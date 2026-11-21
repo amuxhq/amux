@@ -1117,6 +1117,9 @@ impl Home {
         } else {
             item
         };
+        if !setup.offers(item) {
+            return;
+        }
         if item == Setting::Worktree {
             setup.pick(Setting::Worktree, "");
             return;
@@ -1382,10 +1385,9 @@ impl Home {
             }
         }
         laid.resize_with(height - 1, Laid::default);
-        // A provider subagent has no terminal, so no attach is offered on it.
-        let native =
-            matches!(&self.selected, Some(Target::Agent(agent)) if is_native(fleet, agent));
-        let (hint, at) = self.hint_line(footer, width, theme, section_folded, native);
+        let attach = matches!(&self.selected, Some(Target::Agent(agent))
+            if offers_attach(fleet, &self.place.local_host, agent));
+        let (hint, at) = self.hint_line(footer, width, theme, section_folded, attach);
         if let Some(col) = at {
             cursor = Some((col, height - 1));
         }
@@ -1969,7 +1971,7 @@ impl Home {
                 }
             }
         }
-        let stepped = if setup.cycles() == "mode" {
+        let stepped = if setup.cycles() == Some("mode") {
             Setting::Mode
         } else {
             Setting::Permission
@@ -2022,14 +2024,15 @@ impl Home {
     /// else the keys for what is highlighted. Returns the cursor's column
     /// while the rename field has the keys.
     /// `section_folded`: the highlighted section heading's section is
-    /// folded.
+    /// folded. `attach`: the highlighted agent has a terminal of its own
+    /// here to attach to.
     fn hint_line(
         &self,
         footer: Option<Line<'static>>,
         width: usize,
         theme: Theme,
         section_folded: bool,
-        native: bool,
+        attach: bool,
     ) -> (Laid, Option<usize>) {
         let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
         let key = |code| Hit::Key(plain_key(code));
@@ -2095,35 +2098,51 @@ impl Home {
                     .collect(),
                 // In the edge's order; the worktree, not on the edge until
                 // it is on, gives way first.
-                (None, true) => [
-                    ("n", "name", key(KeyCode::Char('n'))),
-                    ("a", "agent", key(KeyCode::Char('a'))),
-                    ("m", "model", key(KeyCode::Char('m'))),
-                    ("e", "effort", key(KeyCode::Char('e'))),
-                    ("p", "permission", key(KeyCode::Char('p'))),
-                    ("d", "folder", key(KeyCode::Char('d'))),
-                    ("h", "computer", key(KeyCode::Char('h'))),
-                    ("w", "worktree", key(KeyCode::Char('w'))),
-                    ("esc", "back", key(KeyCode::Esc)),
-                ]
-                .into(),
-                (None, false) => vec![
-                    ("enter", "start", key(KeyCode::Enter)),
-                    (
-                        "ctrl+s",
-                        "settings",
-                        Hit::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
-                    ),
-                    (
-                        "shift+tab",
-                        self.draft
-                            .setup
-                            .as_ref()
-                            .map_or("permission", |setup| setup.cycles()),
-                        key(KeyCode::BackTab),
-                    ),
-                    ("esc", "back", key(KeyCode::Esc)),
-                ],
+                (None, true) => {
+                    let setup = self.draft.setup.as_ref();
+                    let offers = |item| setup.is_none_or(|setup| setup.offers(item));
+                    // An agent whose modes stand for its permissions has
+                    // p open its modes, so the key says so.
+                    let permission = if setup.is_some_and(Setup::modes_stand_for_permissions) {
+                        "mode"
+                    } else {
+                        "permission"
+                    };
+                    [
+                        ("n", "name", Setting::Name),
+                        ("a", "agent", Setting::Kind),
+                        ("m", "model", Setting::Model),
+                        ("e", "effort", Setting::Effort),
+                        ("p", permission, Setting::Permission),
+                        ("d", "folder", Setting::Folder),
+                        ("h", "computer", Setting::Host),
+                        ("w", "worktree", Setting::Worktree),
+                    ]
+                    .into_iter()
+                    .filter(|(_, _, item)| offers(*item))
+                    .map(|(letter, words, _)| {
+                        let code = KeyCode::Char(letter.chars().next().unwrap_or(' '));
+                        (letter, words, key(code))
+                    })
+                    .chain([("esc", "back", key(KeyCode::Esc))])
+                    .collect()
+                }
+                (None, false) => {
+                    let mut hints = vec![
+                        ("enter", "start", key(KeyCode::Enter)),
+                        (
+                            "ctrl+s",
+                            "settings",
+                            Hit::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+                        ),
+                    ];
+                    // Shift+Tab is named only where it steps something.
+                    if let Some(stepped) = self.draft.setup.as_ref().and_then(|s| s.cycles()) {
+                        hints.push(("shift+tab", stepped, key(KeyCode::BackTab)));
+                    }
+                    hints.push(("esc", "back", key(KeyCode::Esc)));
+                    hints
+                }
             },
             None if self.filtering => vec![
                 ("enter", "keep", key(KeyCode::Enter)),
@@ -2143,7 +2162,7 @@ impl Home {
                     Some(Target::Section(_)) => vec![("enter", "hide", key(KeyCode::Enter))],
                     _ => vec![("enter", "open", key(KeyCode::Enter))],
                 };
-                if matches!(self.selected, Some(Target::Agent(_))) && !native {
+                if attach {
                     hints.push(("a", "attach", key(KeyCode::Char('a'))));
                 }
                 if self.needle().is_some() {
@@ -2278,6 +2297,19 @@ fn close_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
 }
 
 /// Whether `agent` is a subagent its parent's provider runs.
+/// Whether `agent` has a terminal of its own on this machine to attach to:
+/// not a provider subagent, which runs inside its parent; on this machine,
+/// since raw attach reads the agent's directory; and of a provider that has
+/// one (an ACP agent has none, nor does headless Claude). Attach is offered
+/// only then; pressing it otherwise says why and points at the chat.
+fn offers_attach(fleet: &FleetState, local_host: &[u8], agent: &AgentKey) -> bool {
+    fleet.agent(agent).is_some_and(|entry| {
+        entry.native.is_none()
+            && entry.host_id == local_host
+            && ui_state::offered_capabilities(fleet.host(&entry.host_id), entry).attachable
+    })
+}
+
 fn is_native(fleet: &FleetState, agent: &AgentKey) -> bool {
     fleet
         .agent(agent)

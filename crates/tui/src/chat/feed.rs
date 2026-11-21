@@ -211,6 +211,7 @@ pub fn counts_words(counts: &RunCounts, steps: u32, open_below: bool) -> String 
         part(counts.fetches, "fetched", "page", "pages"),
         part(counts.other, "used", "tool", "tools"),
         part(counts.subagents, "started", "subagent", "subagents"),
+        part(counts.denied, "denied", "step", "steps"),
     ]
     .into_iter()
     .flatten()

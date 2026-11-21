@@ -55,7 +55,7 @@
     10 1766db2c-bfb5-4d6e-9c61-24de64c9bd14 Hidden collapsed
     11 msg_011Ch6cUgSUoLzHXMFqADsjR:0 Thinking { text: "", open: false, duration_ms: None }
     12 msg_011Ch6cUgSUoLzHXMFqADsjR:1 Prose { text: [Text("The notification says the agent was stopped before it finished, so I don't believe it's still running. I'll try to reach it anyway, since you asked me to. First I need to load the SendMessage schema.")], streaming: false, working_note: false }
-    13 toolu_01CBKBX2CAKnaxSKPgMDsQkX Explore { verb: Search, subject: "select:SendMessage", state: Succeeded, result: "" } run[toolu_01CBKBX2CAKnaxSKPgMDsQkX..toolu_01CBKBX2CAKnaxSKPgMDsQkX x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+    13 toolu_01CBKBX2CAKnaxSKPgMDsQkX Explore { verb: Search, subject: "select:SendMessage", state: Succeeded, result: "" } run[toolu_01CBKBX2CAKnaxSKPgMDsQkX..toolu_01CBKBX2CAKnaxSKPgMDsQkX x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }]
     14 422e2b74-87b6-4a1c-9b8f-46de28eb7565 Hidden collapsed
     15 toolu_01KJ1SozFVSeMr46dJHvHAa1 [opens=sub-b7ece70b] Subagent { description: "BACK", continued: true, state: Running, answer: "", duration_ms: None }
     16 e307a1f1-fba0-4ff1-9ea7-5e66d4f483c2 Hidden collapsed

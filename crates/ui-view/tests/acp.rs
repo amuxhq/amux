@@ -391,3 +391,17 @@ fn a_new_acp_agent_starts_on_its_own_mode_unless_one_is_picked() {
     );
     assert_eq!(picked.mode.as_deref(), Some("plan"));
 }
+
+/// Before an agent's first conversation on a host, its host knows no models
+/// for it (most ACP agents list them only in a session): a new agent then
+/// offers no model or effort to pick, rather than an empty list, and starts
+/// on the agent's own.
+#[test]
+fn a_new_acp_agent_with_no_catalogue_yet_offers_no_model_or_effort() {
+    let view = new_agent_settings(&wire::Catalogue::default(), &NewAgentChoices::default());
+    assert!(view.models.is_empty() && view.efforts.is_empty());
+    assert_eq!(view.changeable.model, Changeable::NotOffered);
+    assert_eq!(view.changeable.effort, Changeable::NotOffered);
+    assert_eq!(view.changeable.permission, Changeable::NotOffered);
+    assert_eq!(view.changeable.mode, Changeable::NotOffered);
+}

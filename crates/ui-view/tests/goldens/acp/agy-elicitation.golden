@@ -19,7 +19,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:70312d33 Prompt { text: [Text("Call the ask_the_operator tool from the spec tool server with the word kiwi, then reply with exactly what it returned.")], steered: false }
-     3 tool:call_920775116176871237 ToolCall { server: "", tool: "Run mcp_spec_ask_the_operator", fact: "", state: Succeeded, result: "" } run[tool:call_920775116176871237..tool:call_920775116176871237 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: false …
+     3 tool:call_920775116176871237 ToolCall { server: "", tool: "Run mcp_spec_ask_the_operator", fact: "", state: Succeeded, result: "" } run[tool:call_920775116176871237..tool:call_920775116176871237 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1, denied: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewh…
      4 message:1 Prose { text: [Text("Created At: 2026-11-20T20:16:20+01:00\nCompleted At: 2026-11-20T20:16:20+01:00\nelicitation cancel")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(4724), failed: false }
      6 boundary:2 Hidden collapsed

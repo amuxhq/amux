@@ -373,13 +373,30 @@ impl Setup {
     pub fn takes_typed(&self, item: Item) -> bool {
         match item {
             Item::Folder => true,
-            Item::Model => self.view().changeable.model != Changeable::Pick,
+            Item::Model => self.offered.is_none(),
             _ => false,
         }
     }
 
-    /// What Shift+Tab steps, as its hint names it: the mode when the agent
-    /// offers modes, else the permission.
+    /// Whether `item` has anything to pick, so Ctrl+S offers it. A model is
+    /// typed by name while the host has not said; once it has, a model,
+    /// effort, permission or mode it offers none of is not offered at all
+    /// (an ACP agent before its first conversation, Grok's modes), rather
+    /// than an empty list.
+    pub fn offers(&self, item: Item) -> bool {
+        let view = self.view();
+        match item {
+            Item::Model => self.offered.is_none() || view.changeable.model == Changeable::Pick,
+            Item::Effort => view.changeable.effort == Changeable::Pick,
+            Item::Permission => {
+                view.changeable.permission == Changeable::Pick
+                    || view.changeable.mode == Changeable::Pick
+            }
+            Item::Mode => view.changeable.mode == Changeable::Pick,
+            Item::Name | Item::Kind | Item::Folder | Item::Host | Item::Worktree => true,
+        }
+    }
+
     /// The agent says how much it may do only through its modes (an ACP
     /// agent's `default`, `plan` and the like) and offers no permissions:
     /// what asks for its permission picks its mode instead.
@@ -387,10 +404,12 @@ impl Setup {
         crate::chat::modes_stand_for_permissions(&self.view())
     }
 
-    pub fn cycles(&self) -> &'static str {
-        match crate::chat::next_control(&self.view()) {
-            Some(SettingChange::Mode(_)) => "mode",
-            _ => "permission",
+    /// What Shift+Tab steps, as its hint names it; None where the agent
+    /// has nothing to step, as Grok, with no modes and no permissions.
+    pub fn cycles(&self) -> Option<&'static str> {
+        match crate::chat::next_control(&self.view())? {
+            SettingChange::Mode(_) => Some("mode"),
+            _ => Some("permission"),
         }
     }
 

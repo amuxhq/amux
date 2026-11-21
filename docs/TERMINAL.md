@@ -152,7 +152,10 @@ chats with their agents, the installation's `ui.chat_in`:
   signing in (`not signed in · Run codex login.`). Long lists filter as you type; the folder's panel lists the
   host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's or an ACP agent's mode,
   or Claude's permissions that still ask, as in a chat; an ACP agent starts on its own mode until one is picked.
-  An ACP agent's modes stand for its permissions, so for one that offers modes `p` opens its modes.
+  An ACP agent's modes stand for its permissions, so for one that offers modes `p` opens its modes. Once the host
+  has said, a setting it offers nothing for is left out of the letters and opens nothing: no model list for an ACP
+  agent before its first conversation on that host, which starts on its own model, and no Shift+Tab in the key line
+  for an agent with nothing to step, such as Grok.
   Each agent is created as the kind its host runs it as: Claude headless or in its terminal as the host says, Codex
   on its app server, an ACP agent over ACP.
 - **In each agent's own interface** (`native`): a small window over home with the name, the agent (every agent
@@ -498,7 +501,7 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | ↑ ↓ or `k` `j` | Move the highlight |
 | Home End or `g` `G` | First or last |
 | Enter | Open the chat; on a section heading, fold or unfold it |
-| `a` or Ctrl+Enter | Attach to the agent's own terminal (agents on this machine only) |
+| `a` or Ctrl+Enter | Attach to the agent's own terminal (agents on this machine only); the key line offers it only for an agent that has one |
 | `/` | Filter by name, folder or host |
 | → ← or Space | Show or hide a family's agents |
 | `n` | A new agent |
@@ -598,7 +601,7 @@ clicked.
 | `<leader> d` | Leave for the shell; agents keep running |
 | `<leader> ?` | Every key |
 | `<leader> r` | Review the working tree; comments go in the draft |
-| `<leader> a` | Attach to the agent's own terminal, when it is on this machine |
+| `<leader> a` | Attach to the agent's own terminal, when it has one on this machine (the panel lists it only then: an ACP agent, headless Claude, a subagent or an agent on another computer has none) |
 | `<leader> k`, `<leader> j` | Focus an older or newer row |
 | `<leader> o` | Open or close the focused row, run or group of subagents |
 | `<leader> enter` | Open the chat of the agent the focused row started; on a folded group, open the group |

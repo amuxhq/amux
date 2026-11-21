@@ -315,7 +315,9 @@ pub enum AskRow {
     Form {
         server: String,
         message: String,
-        /// The names of the fields sent.
+        /// The fields sent, by the titles the form gave them (Antigravity
+        /// names its questions `q1`, titling them with the question), else
+        /// by name.
         fields: Vec<String>,
         resolution: Resolution,
     },
@@ -427,15 +429,20 @@ impl CallPhase {
 impl Row {
     /// The call's phase, for a row that is a call with one.
     pub fn call_phase(&self) -> Option<CallPhase> {
-        match &self.kind {
-            RowKind::ToolCall { state, .. }
-            | RowKind::Child { state, .. }
-            | RowKind::Subagent { state, .. }
-            | RowKind::FileChange { state, .. }
-            | RowKind::Command { state, .. }
-            | RowKind::Explore { state, .. } => Some(*state),
-            _ => None,
-        }
+        phase_of(&self.kind)
+    }
+}
+
+/// The call's phase, for a kind of row that is a call with one.
+pub(crate) fn phase_of(kind: &RowKind) -> Option<CallPhase> {
+    match kind {
+        RowKind::ToolCall { state, .. }
+        | RowKind::Child { state, .. }
+        | RowKind::Subagent { state, .. }
+        | RowKind::FileChange { state, .. }
+        | RowKind::Command { state, .. }
+        | RowKind::Explore { state, .. } => Some(*state),
+        _ => None,
     }
 }
 
@@ -914,12 +921,21 @@ fn ask_row(item: &wire::AskItem) -> RowKind {
                 resolution,
             }
         }
-        Some(Ask::Form(form)) => AskRow::Form {
-            server: form.server.clone(),
-            message: form.message.clone(),
-            fields: closed.fields,
-            resolution,
-        },
+        Some(Ask::Form(form)) => {
+            let titled = crate::form::form_fields(&form.schema_json);
+            let title = |name: String| {
+                titled
+                    .iter()
+                    .find(|field| field.name == name)
+                    .map_or(name, |field| field.title.clone())
+            };
+            AskRow::Form {
+                server: form.server.clone(),
+                message: form.message.clone(),
+                fields: closed.fields.into_iter().map(title).collect(),
+                resolution,
+            }
+        }
         Some(Ask::Link(link)) => AskRow::Link {
             server: link.server.clone(),
             message: link.message.clone(),

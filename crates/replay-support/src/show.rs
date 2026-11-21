@@ -486,8 +486,8 @@ fn id(bytes: &[u8]) -> String {
 
 /// Milliseconds since the epoch, with the UTC time they name.
 fn time(ms: i64) -> String {
-    match chrono::DateTime::from_timestamp_millis(ms) {
-        Some(at) if ms != 0 => format!("{ms} ({})", at.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
+    match jiff::Timestamp::from_millisecond(ms) {
+        Ok(at) if ms != 0 => format!("{ms} ({})", at.strftime("%Y-%m-%dT%H:%M:%S%.3fZ")),
         _ => ms.to_string(),
     }
 }

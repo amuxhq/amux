@@ -31,3 +31,6 @@ path = "src/main.rs"
 [[bin]]
 name = "amux-storybook"
 path = "src/storybook.rs"
+
+[lints]
+workspace = true

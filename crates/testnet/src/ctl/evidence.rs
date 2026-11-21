@@ -562,7 +562,7 @@ fn closest<'a>(news: &[&'a Found], title: &str) -> Vec<&'a Found> {
 fn append(kind: &str, fields: Value) -> Result<Value, String> {
     let file = ledger_file()?;
     let mut entry = json!({
-        "time": chrono::Utc::now().to_rfc3339(),
+        "time": jiff::Timestamp::now().to_string(),
         "tester": std::env::var(TESTER_ENV).unwrap_or_else(|_| "someone".to_owned()),
         "kind": kind,
     });

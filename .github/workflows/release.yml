@@ -10,6 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
   # The public halves of the release signing key and its offline backup,
   # comma-separated. The signing seed lives only in the release Mac's
   # release keychain and the backup's off it (docs/RELEASE.md, "The release
@@ -20,6 +21,7 @@ jobs:
   build:
     name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       matrix:
         include:
@@ -41,17 +43,15 @@ jobs:
       attestations: write
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
-        with:
-          targets: ${{ matrix.target }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # No Rust cache: a tag's run restores caches main's CI jobs saved, so
       # whatever those jobs run could reach the binaries this job ships, and
       # a cache a tag saves is never read by another tag.
-
-      - uses: ./.github/actions/setup-just
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{ matrix.target }}
+          cache: "false"
 
       - name: Build release
         run: just release-check -- --target ${{ matrix.target }}
@@ -72,7 +72,7 @@ jobs:
           subject-path: out/${{ matrix.artifact }}${{ runner.os == 'Windows' && '.exe' || '' }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: out/
@@ -81,12 +81,13 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
 
@@ -97,7 +98,7 @@ jobs:
         run: sha256sum amux-linux-x86_64 amux-macos-arm64 amux-windows-x86_64.exe > checksums.txt
 
       - name: Create release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             amux-linux-x86_64

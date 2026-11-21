@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
-use chrono::Utc;
+use jiff::Timestamp;
 use node::Launch;
 use provider_fakes::script::{Script, Step};
 use testnet::observe::{self, Mark, marks};
@@ -239,7 +239,7 @@ fn drifting(name: &'static str, statistic: Statistic, budget: f64, unit: Unit) -
 struct Recording {
     metric: Metric,
     samples: Vec<Sample>,
-    started_at: chrono::DateTime<Utc>,
+    started_at: Timestamp,
 }
 
 impl Recording {
@@ -247,7 +247,7 @@ impl Recording {
         Self {
             metric,
             samples: Vec::new(),
-            started_at: Utc::now(),
+            started_at: Timestamp::now(),
         }
     }
 
@@ -265,7 +265,7 @@ impl Recording {
             metric: self.metric,
             samples: self.samples,
             started_at: self.started_at,
-            ended_at: Utc::now(),
+            ended_at: Timestamp::now(),
         }
     }
 }

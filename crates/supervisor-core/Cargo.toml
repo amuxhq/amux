@@ -12,3 +12,6 @@ release = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
+
+[lints]
+workspace = true

@@ -5,10 +5,15 @@ Reads the files a push or pull request changed (`--base` and `--head`, two
 commits) and prints one `name=true|false` line per group of jobs, the form
 GitHub reads as a job's outputs:
 
-  tests       Clippy, formatting and the workspace tests. Everything but a
-              change to documentation alone.
-  product     The terminal journeys, the simulated stories and doctests. Not documentation, and not the phone app alone,
-              which the iOS gate judges.
+  tests       Clippy, formatting and the workspace tests. Runs for any Rust
+              change or a file a Rust test reads, not for documentation,
+              Swift-only phone edits, or unrelated workflows/manual scripts.
+  ios_tools   The ios-tools crate's tests alone, when only the phone app
+              changed (Swift mirrors and verification CLI), leaving the full
+              workspace tests unrun and the phone's rest to the iOS gate.
+  product     The terminal journeys, the simulated stories and doctests:
+              a crate amux or testnet is built from (not leaf tools like
+              ios-tools, browser-core, qualification or xtask).
   models      The protocol models: a crate the models crate is built from.
   sanitizers  The sanitizers: a crate whose tests they run. Not the crates
               those are built from, which is nearly every crate: the
@@ -20,12 +25,13 @@ GitHub reads as a job's outputs:
               TypeScript under js/, a crate its WebAssembly is built from,
               or the amux binary, whose bridge it starts.
 
-The policy job is not here: it is a minute, holds the documentation check,
-and always runs.
+The policy job is not here: it is a minute, holds the documentation and script
+checks, and always runs.
 
-A file is documentation, the phone app, the browser extension's, one
+A file is documentation, another workflow or manual script (covered by the
+policy job or its own workflow), the phone app, the browser extension's, one
 crate's, or anything else.
-Anything else (a manifest, a script, a workflow, a journey, a schema) can
+Anything else (a manifest, a CI script, ci.yml, a journey, a schema) can
 reach every job, so all of them run. Which crates a crate is built from is
 read from the manifests, not from cargo, so this needs no toolchain. When the
 two commits cannot be compared, every job runs.
@@ -48,15 +54,45 @@ except ModuleNotFoundError:  # Apple's command-line tools still ship Python 3.9.
     from pip._vendor import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-GROUPS = ["tests", "product", "models", "sanitizers", "bridge", "browser"]
+GROUPS = ["tests", "ios_tools", "product", "models", "sanitizers", "bridge", "browser"]
 
 # Documentation: nothing built or tested reads it, but for READS.
 DOCS = ("docs/", "images/", "marketing/")
-# A file under DOCS that a crate's test reads, and that crate.
-READS = {"docs/guide/understand/what-amux-sends.md": "analytics"}
+# Workflows other than ci.yml have their own triggers or run on schedules/tags,
+# and manual/release scripts are never run by ci.yml (their unit tests still run
+# in the always-on policy job).
+IGNORED_PREFIXES = (
+    "scripts/hooks/",
+    "scripts/install/",
+    "scripts/tests/",
+)
+IGNORED_FILES = {
+    "scripts/browser-dev-host.sh",
+    "scripts/browser_release.py",
+    "scripts/coverage.py",
+    "scripts/env.py",
+    "scripts/flaky.sh",
+    "scripts/fuzz-smoke.py",
+    "scripts/logo.py",
+    "scripts/offline-check.sh",
+    "scripts/qa.py",
+    "scripts/qa_cloud.py",
+    "scripts/qa-cloud-signin.py",
+    "scripts/qa-sandbox-purchase.py",
+    "scripts/release.py",
+    "scripts/release-policy-check.sh",
+    "scripts/release-symbols.sh",
+}
+# A file outside crates/ (under DOCS or PHONE) that a crate's test reads, and
+# that crate.
+READS = {
+    "docs/guide/understand/what-amux-sends.md": "analytics",
+    "apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json": "node",
+}
 PHONE = "apps/apple/"
 JS = "js/"
 
+PRODUCT = ["amux", "testnet"]
 MODELS = ["models"]
 BRIDGE = ["app-ffi"]
 BROWSER = ["browser-core"]
@@ -101,14 +137,19 @@ def built_from(names: list[str], crates: dict[str, dict]) -> set[str]:
     A crate's own test dependencies count; those of the crates beneath it
     do not, since cargo builds none of them.
     """
-    found = set(names)
-    queue = [dep for name in names for dep in crates[name]["built"] | crates[name]["tests"]]
+    present = [name for name in names if name in crates]
+    found = set(present)
+    queue = [dep for name in present for dep in crates[name]["built"] | crates[name]["tests"]]
     while queue:
         name = queue.pop()
         if name in crates and name not in found:
             found.add(name)
             queue.extend(crates[name]["built"])
     return found
+
+
+def is_other_workflow(file: str) -> bool:
+    return file.startswith(".github/workflows/") and file != ".github/workflows/ci.yml"
 
 
 def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -> dict[str, bool]:
@@ -119,7 +160,13 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
         parts = file.split("/")
         if file in READS:
             changed.add(READS[file])
-        elif file.startswith(DOCS) or ("/" not in file and file.endswith(".md")):
+        elif (
+            file.startswith(DOCS)
+            or ("/" not in file and file.endswith(".md"))
+            or is_other_workflow(file)
+            or file in IGNORED_FILES
+            or file.startswith(IGNORED_PREFIXES)
+        ):
             continue
         elif file.startswith(PHONE):
             phone = True
@@ -129,14 +176,15 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
             changed.add(by_folder[parts[1]])
         else:
             everything = True
-    product = everything or bool(changed)
+    tests = everything or bool(changed)
 
     def reaches(names: list[str]) -> bool:
         return everything or bool(changed & built_from(names, crates))
 
     return {
-        "tests": product or phone,
-        "product": product,
+        "tests": tests,
+        "ios_tools": phone and not tests,
+        "product": reaches(PRODUCT),
         "models": reaches(MODELS),
         "sanitizers": everything or bool(changed & set(sanitizers)),
         "bridge": reaches(BRIDGE),

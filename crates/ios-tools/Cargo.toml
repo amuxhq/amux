@@ -8,11 +8,11 @@ publish = false
 autotests = false
 
 [dependencies]
-app-runtime = { workspace = true }
-ui-state = { workspace = true }
+app-runtime = { workspace = true, features = ["schema"] }
+ui-state = { workspace = true, features = ["schema"] }
 schemars = { workspace = true }
-ui-view = { workspace = true }
-wire = { workspace = true }
+ui-view = { workspace = true, features = ["schema"] }
+wire = { workspace = true, features = ["schema"] }
 serde_json = { workspace = true }
 
 [dev-dependencies]
@@ -21,3 +21,6 @@ tempfile = { workspace = true }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

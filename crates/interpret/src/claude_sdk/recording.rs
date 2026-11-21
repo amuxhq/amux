@@ -190,9 +190,11 @@ fn timestamp_ms(line: &Line) -> Option<i64> {
         Line::Stdout(Output::Message(Message::UserReplay(message))) => &message.timestamp,
         _ => return None,
     };
-    chrono::DateTime::parse_from_rfc3339(stamp.as_deref()?)
+    stamp
+        .as_deref()?
+        .parse::<jiff::Timestamp>()
         .ok()
-        .map(|at| at.timestamp_millis())
+        .map(jiff::Timestamp::as_millisecond)
 }
 
 /// The answer a recorded control response gave to the request it answers.

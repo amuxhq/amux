@@ -455,70 +455,10 @@ struct Overrides {
     mode: Option<String>,
 }
 
-/// A permission Codex offers: amux's name for one combination of Codex's
-/// own settings. Settings that match none read as custom.
-pub struct NamedPermission {
-    pub value: &'static str,
-    pub display_name: &'static str,
-    pub approval_policy: &'static str,
-    pub sandbox: &'static str,
-    /// Who answers approvals: the person, or Codex's reviewer model.
-    pub approvals_reviewer: &'static str,
-    normal: bool,
-    never_asks: bool,
-}
-
-const fn named(
-    value: &'static str,
-    display_name: &'static str,
-    approval_policy: &'static str,
-    sandbox: &'static str,
-    approvals_reviewer: &'static str,
-) -> NamedPermission {
-    NamedPermission {
-        value,
-        display_name,
-        approval_policy,
-        sandbox,
-        approvals_reviewer,
-        normal: false,
-        never_asks: false,
-    }
-}
-
-/// Codex's permissions, from the least it may do alone to the most.
-pub const PERMISSIONS: [NamedPermission; 4] = [
-    named("read-only", "Read only", "on-request", "read-only", "user"),
-    NamedPermission {
-        normal: true,
-        ..named("default", "Ask", "on-request", "workspace-write", "user")
-    },
-    named(
-        "auto",
-        "Auto",
-        "on-request",
-        "workspace-write",
-        "auto_review",
-    ),
-    NamedPermission {
-        never_asks: true,
-        ..named(
-            "full-access",
-            "Full access",
-            "never",
-            "danger-full-access",
-            "user",
-        )
-    },
-];
+pub use wire::codex::{NamedPermission, PERMISSIONS, permission};
 
 /// Codex's modes: its collaboration modes, value and name.
 const MODES: [(&str, &str); 2] = [("default", "Normal"), ("plan", "Plan")];
-
-/// The permission a catalogue value names.
-pub fn permission(value: &str) -> Option<&'static NamedPermission> {
-    PERMISSIONS.iter().find(|named| named.value == value)
-}
 
 /// The permission Codex's settings make, if any; a reviewer Codex has not
 /// named is the person.

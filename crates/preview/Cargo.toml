@@ -10,3 +10,6 @@ publish = false
 attachments = { workspace = true }
 pulldown-cmark = { workspace = true }
 wire = { workspace = true }
+
+[lints]
+workspace = true

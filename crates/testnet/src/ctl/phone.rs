@@ -573,7 +573,7 @@ pub(crate) fn shot(folder: &Folder) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let path = dir.join(format!(
         "phone-{}.png",
-        chrono::Utc::now().format("%H%M%S%3f")
+        jiff::Timestamp::now().strftime("%H%M%S%3f")
     ));
     let mut previous = Vec::new();
     for _ in 0..STILL_TRIES {

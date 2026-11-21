@@ -23,7 +23,6 @@ pub mod codex;
 mod golden;
 mod notice;
 pub mod record;
-pub mod redact;
 pub mod ring;
 mod serde_pb;
 pub mod shape;
@@ -41,7 +40,6 @@ pub use golden::{
     acp_input, check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script,
     render_item, render_steps, replay, run_golden, run_until,
 };
-pub use redact::{redact_text, structure_message};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};

@@ -2276,7 +2276,7 @@ fn count(text: &str) -> bool {
 }
 
 fn timestamp(text: &str) -> bool {
-    text.len() <= 40 && chrono::DateTime::parse_from_rfc3339(text).is_ok()
+    text.len() <= 40 && text.parse::<jiff::Timestamp>().is_ok()
 }
 
 /// A version as a provider prints one: digits and dots, with a short tag.

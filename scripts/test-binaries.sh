@@ -13,12 +13,18 @@
 
 set -eu
 
-if [ -n "${TESTNET_BINARIES-}" ]; then
+if [ -n "${TESTNET_BINARIES-}" ] || [ "${TESTNET_MODE-}" = simulated ]; then
     exit 0
 fi
 
-cargo build --locked \
-    -p amux -p provider-fakes -p fake-amux -p agent --bins --example amux_stand_in
+# --workspace unifies features with `cargo nextest run --workspace`, so the
+# test run reuses the rlibs it already compiled instead of rebuilding the graph
+# a second time for these binaries.
+cargo build --locked --workspace \
+    --bin amux \
+    --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex \
+    --bin fake-amux \
+    --example amux_stand_in
 
 # The tests read the directory as a native path: on Windows, Git's sh
 # spells the working directory /d/a/..., which a Windows process cannot

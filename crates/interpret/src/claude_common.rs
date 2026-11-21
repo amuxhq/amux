@@ -213,9 +213,10 @@ pub(crate) fn plan_switch(offers_auto: bool, never_ask: bool) -> &'static str {
 
 /// An RFC 3339 timestamp, as Claude writes them, in milliseconds.
 pub(crate) fn timestamp_ms(stamp: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(stamp)
+    stamp
+        .parse::<jiff::Timestamp>()
         .ok()
-        .map(|at| at.timestamp_millis())
+        .map(jiff::Timestamp::as_millisecond)
 }
 
 pub(crate) fn compact_json(value: &Value) -> String {

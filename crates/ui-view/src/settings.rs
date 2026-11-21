@@ -8,6 +8,7 @@
 //! Everything offered comes from a catalogue; a client never supplies a
 //! list of its own, and every value here is a typed fact each client words.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_state::SessionState;
@@ -42,7 +43,8 @@ const TERMINAL_ONLY_COMMANDS: &[&str] = &[
     "vim",
 ];
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SettingsView {
     /// The offered models, then a current model the catalogue does not
     /// list.
@@ -61,7 +63,8 @@ pub struct SettingsView {
 }
 
 /// How each of an agent's settings changes from a client.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Changeability {
     pub model: Changeable,
     pub effort: Changeable,
@@ -76,7 +79,8 @@ pub struct Changeability {
 /// the composer as any prompt (terminal Claude's model and effort).
 /// `NotOffered`: nothing to pick from, as the agent offers none yet, or
 /// none of this setting at all.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Changeable {
     Pick,
     Cycle,
@@ -85,7 +89,8 @@ pub enum Changeable {
     NotOffered,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ModelChoice {
     /// What a model input names.
     pub value: String,
@@ -103,7 +108,8 @@ pub struct ModelChoice {
     pub unlisted: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct EffortChoice {
     pub value: String,
     pub current: bool,
@@ -113,7 +119,8 @@ pub struct EffortChoice {
 }
 
 /// A permission: how much the agent may do without asking.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PermissionChoice {
     /// What a permission input names. Empty when `custom`.
     pub value: String,
@@ -134,7 +141,8 @@ pub struct PermissionChoice {
 }
 
 /// A mode: how the agent works (Codex's default or plan).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ModeChoice {
     /// What a mode input names.
     pub value: String,
@@ -152,7 +160,8 @@ pub struct ModeChoice {
 /// The permission is not said until the agent's catalogue is held, which
 /// says which one is normal; a reported mode the catalogue does not list is
 /// said as it is.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ControlsSummary {
     /// None until the agent says which model runs.
     pub model: Option<String>,
@@ -162,7 +171,8 @@ pub struct ControlsSummary {
 }
 
 /// A person's pick on the settings view.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum SettingChange {
     Model(String),
     Effort(String),
@@ -174,7 +184,8 @@ pub enum SettingChange {
     CyclePermission,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CommandView {
     pub name: String,
     pub description: String,
@@ -191,7 +202,8 @@ pub struct CommandView {
 
 /// A command the client runs itself, on every kind, and never sends to the
 /// agent: amux's model and effort pickers and amux's rename.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ClientCommand {
     Model,
     Effort,
@@ -399,7 +411,8 @@ pub fn typed_setting(change: &SettingChange) -> Option<String> {
 /// What a new agent will start with, by catalogue values. None leaves the
 /// model, effort and permission to the host's defaults, and starts in the
 /// agent's normal mode.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NewAgentChoices {
     pub model: Option<String>,
     pub effort: Option<String>,
@@ -408,7 +421,8 @@ pub struct NewAgentChoices {
 }
 
 /// A person's pick for a new agent; None goes back to the host's default.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum NewAgentPick {
     Model(Option<String>),
     Effort(Option<String>),

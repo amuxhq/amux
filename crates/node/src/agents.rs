@@ -1,5 +1,5 @@
 //! The agent programs this host can run as ACP agents: the built-in ones
-//! (`interpret::acp::BUILT_INS`) merged with a person's `[agents.<id>]`
+//! (`wire::agents::BUILT_INS`) merged with a person's `[agents.<id>]`
 //! entries, and which of them the host offers, which is the ones whose
 //! command is found.
 //!
@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use interpret::acp::BUILT_INS;
+use wire::agents::BUILT_INS;
 use settings::agents::AgentEntry;
 
 /// An agent program the host knows how to start.
@@ -66,7 +66,7 @@ pub fn programs(entries: &[AgentEntry]) -> (Vec<AgentProgram>, Vec<String>) {
         })
         .collect();
     for entry in entries {
-        if interpret::acp::built_in(&entry.id).is_some() {
+        if wire::agents::built_in(&entry.id).is_some() {
             continue;
         }
         let Some(command) = entry.command.clone() else {

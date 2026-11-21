@@ -17,9 +17,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use client::Client;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use jiff::Timestamp;
 use ratatui::Frame as Paint;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
@@ -59,7 +59,7 @@ pub struct Report {
     /// The palette the frozen cells were drawn in, which names what a
     /// cell left at the terminal's default looked like.
     theme: Theme,
-    at: DateTime<Utc>,
+    at: Timestamp,
     marks: Vec<Mark>,
     /// Where a drag started, and where it is now.
     drag: Option<(Position, Position)>,
@@ -78,7 +78,7 @@ impl Report {
         Report {
             frozen,
             theme,
-            at: Utc::now(),
+            at: Timestamp::now(),
             marks: Vec::new(),
             drag: None,
             note: Editor::default(),
@@ -245,7 +245,7 @@ impl Report {
         };
         let mut header = json!({
             "build": build,
-            "created_at": self.at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            "created_at": self.at.strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
             "note": self.note.text().trim(),
             // Marks and the viewport are in cells: a terminal frame has no
             // pixels.

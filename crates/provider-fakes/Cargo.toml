@@ -9,7 +9,7 @@ autotests = false
 
 [dependencies]
 acp-protocol.workspace = true
-chrono = { workspace = true }
+jiff = { workspace = true }
 claude-protocol.workspace = true
 codex-protocol.workspace = true
 futures-util = { workspace = true }
@@ -48,3 +48,6 @@ patience = { workspace = true }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

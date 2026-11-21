@@ -20,6 +20,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{
@@ -34,7 +35,8 @@ use crate::turn::bounds_turn;
 
 /// The calls in one turn that opened more than one agent, stated on each
 /// of them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SubagentGroup {
     /// The group's oldest held call, where its one row draws, folded or
     /// open. It moves as the window's low edge does, so it names no group:
@@ -50,7 +52,8 @@ pub struct SubagentGroup {
 }
 
 /// The agent a call opens, as its fleet row has it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct OpenedAgent {
     /// The chat a client opens from the row.
     pub agent: AgentKey,
@@ -64,7 +67,8 @@ pub struct OpenedAgent {
 
 /// What the agents of a group come to, by where each stands: "2 running ·
 /// 1 waiting on you".
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct GroupState {
     /// How many agents the group opened.
     pub agents: u32,
@@ -84,7 +88,8 @@ pub struct GroupState {
 /// The agents a chat's held rows open, with each group's combined state:
 /// what a client that keeps rows apart from the fleet redraws when the
 /// fleet moves, since no row changes then.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ChatAgents {
     /// Each agent a held row opens and the fleet holds, once, oldest call
     /// first.
@@ -99,7 +104,8 @@ pub struct ChatAgents {
     pub live: GroupState,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct GroupView {
     pub first: Key,
     pub state: GroupState,

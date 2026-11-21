@@ -14,9 +14,9 @@ attachments = { workspace = true }
 analytics = { workspace = true }
 git-facts = { workspace = true }
 async-trait = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 bytes = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 core-ring = { workspace = true }
 daemon-core = { workspace = true }
 relay-core = { workspace = true }
@@ -35,9 +35,7 @@ tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }
 tower = { workspace = true }
 webpki-roots = { workspace = true }
-# The dump path's redactor: the one place the daemon decodes a body.
 hpke = { workspace = true }
-interpret = { workspace = true }
 redaction = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }
@@ -80,14 +78,19 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [dev-dependencies]
+interpret = { workspace = true }
 release = { workspace = true, features = ["test-key"] }
 journal = { workspace = true, features = ["synthetic"] }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
 replay-support = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }
 
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

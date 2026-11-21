@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
@@ -21,7 +22,8 @@ fn workspace_of(agent: &Agent) -> Option<AgentWorkspace> {
 /// What a delete removes with the agent: its workspace, and with it the
 /// uncommitted changes the row last reported. A client says so before
 /// confirming, and sends the delete with consent to discard them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct WorkspaceGoes {
     /// Its uncommitted changes, when it has any.
     pub uncommitted: Option<ChangeTotals>,
@@ -43,7 +45,8 @@ pub struct WorkspaceGoes {
 /// the branch has commits of its own the host is always asked, since a
 /// merge made anywhere else can take them away
 /// ([`DeleteWarning::asks_host`]).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DeleteWarning {
     /// What goes, from facts that are current: the row's while a process
     /// keeps them so, else the host's answer.

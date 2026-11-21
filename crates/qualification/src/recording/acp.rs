@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use redaction::{Redaction, RedactionSummary};
 use semver::Version;
 use serde_json::{Value, json};
@@ -192,7 +192,7 @@ pub fn join(
             provider: provider.to_owned(),
             version: facts.version,
             model: facts.model,
-            at: Utc::now(),
+            at: Timestamp::now(),
         },
     )?;
     manifest.session_ids = facts.session_ids;

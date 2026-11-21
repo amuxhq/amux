@@ -18,7 +18,6 @@
 //! running prompt's answer, and only an agent known to fold one in is sent
 //! one early.
 
-mod agents;
 mod facts;
 mod offer;
 mod recording;
@@ -38,7 +37,7 @@ use acp_protocol::{
     ClientMessage, ClientNotification, ClientRequest, ClientResponse, ContentBlock, Empty, Extra,
     RequestId, RpcError,
 };
-pub use agents::{BUILT_INS, BuiltIn, built_in};
+pub use wire::agents::{BUILT_INS, BuiltIn, built_in};
 pub use offer::{HostOffer, host_offer};
 use prost::Message as _;
 use serde::{Deserialize, Serialize};

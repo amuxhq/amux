@@ -1,0 +1,85 @@
+# Sets up a pinned Rust toolchain, optional cargo cache, `just`, optional
+# `cargo-nextest`, and optional `sccache` in one place so every workflow shares
+# the same pins.
+name: Set up Rust
+description: Install the pinned Rust toolchain, Rust cache, just, and optional test/cache tools.
+inputs:
+  toolchain:
+    description: "'stable' (pinned release) or 'nightly' (pinned nightly for rustfmt/miri/sanitizers)."
+    required: false
+    default: "stable"
+  components:
+    description: "Comma-separated rustup components to install."
+    required: false
+    default: ""
+  targets:
+    description: "Comma-separated rustup targets to install."
+    required: false
+    default: ""
+  cache:
+    description: "Whether to restore/save target/ and ~/.cargo via Swatinem/rust-cache."
+    required: false
+    default: "true"
+  shared-key:
+    description: "Swatinem/rust-cache shared-key (replaces automatic job key)."
+    required: false
+    default: ""
+  key:
+    description: "Swatinem/rust-cache extra key suffix."
+    required: false
+    default: ""
+  save-if:
+    description: "Whether Swatinem/rust-cache saves the cache at the end of the job."
+    required: false
+    default: "true"
+  just:
+    description: "Whether to install the pinned just binary."
+    required: false
+    default: "true"
+  nextest:
+    description: "Whether to install the pinned cargo-nextest binary."
+    required: false
+    default: "false"
+  sccache:
+    description: "Whether to install sccache and route rustc through it."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - if: inputs.toolchain == 'stable'
+      uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      with:
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+
+    - if: inputs.toolchain == 'nightly'
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+      with:
+        toolchain: nightly-2026-08-30
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+
+    - if: inputs.cache == 'true'
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: ${{ inputs.shared-key }}
+        key: ${{ inputs.key }}
+        save-if: ${{ inputs.save-if }}
+
+    - if: inputs.just == 'true'
+      uses: ./.github/actions/setup-just
+
+    - if: inputs.nextest == 'true'
+      uses: ./.github/actions/setup-nextest
+
+    - if: inputs.sccache == 'true'
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+    - if: inputs.sccache == 'true'
+      name: Compile through sccache
+      shell: bash
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"

@@ -11,10 +11,13 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 attachments = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }
+
+[lints]
+workspace = true

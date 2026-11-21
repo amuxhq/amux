@@ -123,16 +123,28 @@ pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Erro
         _ => return Err("usage: ios-tools swift-types [--check]".into()),
     };
     let definitions = definitions();
-    for (output, generated) in [
+    let files = [
         (OUTPUT, generate(&definitions)?),
         (PUSH_OUTPUT, generate_push(&definitions)?),
-    ] {
+    ];
+    write_or_check("swift-types", &files, check)
+}
+
+/// Writes each generated file under the repository, or with `check` fails on
+/// the first committed file that differs, naming the `command` that
+/// regenerates it.
+pub(crate) fn write_or_check(
+    command: &str,
+    files: &[(&str, String)],
+    check: bool,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    for (output, generated) in files {
         let path = repository().join(output);
         if check {
             let committed = std::fs::read_to_string(&path).unwrap_or_default();
-            if committed != generated {
+            if committed != *generated {
                 return Err(format!(
-                    "{} differs from the Rust definitions; run `cargo run -p ios-tools -- swift-types` \
+                    "{} differs from the Rust definitions; run `cargo run -p ios-tools -- {command}` \
                      and commit the result (the file is generated: never edit it by hand)",
                     path.display()
                 )
@@ -779,10 +791,13 @@ fn identifier(name: &str) -> String {
     }
 }
 
+/// The doc comment a schema's Rust docs carry, if any.
+pub(crate) fn description(schema: &Value) -> Option<&str> {
+    schema.get("description").and_then(Value::as_str)
+}
+
 fn docs(schema: &Value, indent: &str) -> String {
-    schema
-        .get("description")
-        .and_then(Value::as_str)
+    description(schema)
         .map(|text| doc_lines(text, indent))
         .unwrap_or_default()
 }

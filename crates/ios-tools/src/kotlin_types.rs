@@ -18,7 +18,9 @@ use std::fmt::Write as _;
 
 use serde_json::{Map, Value};
 
-use crate::swift_types::{PUSH_VALUES, camel, definitions, repository, upper_first};
+use crate::swift_types::{
+    PUSH_VALUES, camel, definitions, description, upper_first, write_or_check,
+};
 
 /// Where the main mirrors live, from the repository root.
 pub const OUTPUT: &str = "apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt";
@@ -38,31 +40,11 @@ pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Erro
         _ => return Err("usage: ios-tools kotlin-types [--check]".into()),
     };
     let definitions = definitions();
-    for (output, generated) in [
+    let files = [
         (OUTPUT, generate(&definitions)?),
         (PUSH_OUTPUT, generate_push(&definitions)?),
-    ] {
-        let path = repository().join(output);
-        if check {
-            let committed = std::fs::read_to_string(&path).unwrap_or_default();
-            if committed != generated {
-                return Err(format!(
-                    "{} differs from the Rust definitions; run `cargo run -p ios-tools -- kotlin-types` \
-                     and commit the result (the file is generated: never edit it by hand)",
-                    path.display()
-                )
-                .into());
-            }
-            println!("{} matches the Rust definitions", path.display());
-        } else {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&path, generated)?;
-            println!("wrote {}", path.display());
-        }
-    }
-    Ok(())
+    ];
+    write_or_check("kotlin-types", &files, check)
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -954,9 +936,7 @@ fn identifier(name: &str) -> String {
 }
 
 fn docs(schema: &Value, indent: &str) -> String {
-    schema
-        .get("description")
-        .and_then(Value::as_str)
+    description(schema)
         .map(|text| kdoc(text, indent))
         .unwrap_or_default()
 }
@@ -1018,7 +998,8 @@ mod tests {
             (OUTPUT, generate(&defs).unwrap()),
             (PUSH_OUTPUT, generate_push(&defs).unwrap()),
         ] {
-            let committed = std::fs::read_to_string(repository().join(output)).unwrap_or_default();
+            let committed = std::fs::read_to_string(crate::swift_types::repository().join(output))
+                .unwrap_or_default();
             assert!(
                 committed == generated,
                 "{output} differs from Rust definitions; run `cargo run -p ios-tools -- kotlin-types` and commit the result"

@@ -33,10 +33,10 @@ scope = "{{name}}"
 create = "just build"
 # No start hook: most trees never use their daemon, and the first `amux`
 # command in a tree starts it. Stopping still stops it, so a daemon never
-# outlives its tree, and also sweeps target/ of build output unused for a
-# week (`just sweep`): well under a second with nothing to clean, a second
-# or two when a few gigabytes go.
-stop = "amux server stop && just sweep"
+# outlives its tree, and also drops target/*/incremental/ and caps deps/
+# (`just sweep --cold`): suspended trees keep compiled third-party deps
+# without carrying gigabytes of stale incremental caches.
+stop = "amux server stop && just sweep --cold"
 
 # The pinned iPhones this Mac owns. A recipe leases one and gets it clean;
 # a tree prefers the one it used last, so a series of recipes reuses a booted

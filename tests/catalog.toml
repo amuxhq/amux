@@ -295,7 +295,7 @@ cargo = [
 [[suite]]
 name = "provider-fake-behaviour"
 contract = "Each scripted fake provider speaks its real protocol as a host sees it: every frame it composes has a recorded shape, it echoes, queues, folds, steers, interrupts and blocks on asks the way its provider does, and every journey script loads on every fake."
-paths = ["crates/provider-fakes/src", "crates/provider-fakes/tests/codex.rs", "crates/provider-fakes/tests/pty.rs", "crates/provider-fakes/tests/sdk.rs", "crates/provider-fakes/tests/scripts.rs"]
+paths = ["crates/provider-fakes/src", "crates/provider-fakes/tests/acp.rs", "crates/provider-fakes/tests/codex.rs", "crates/provider-fakes/tests/pty.rs", "crates/provider-fakes/tests/sdk.rs", "crates/provider-fakes/tests/scripts.rs"]
 recipe = "just suite provider-fake-behaviour"
 boundary = "Provider adapter"
 oracle = "Frames, transcript rows and hook payloads checked against recorded shapes, and exit codes."
@@ -308,14 +308,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "provider-fakes", kind = "lib", targets = ["provider_fakes"], features = [] },
-  { package = "provider-fakes", kind = "bin", targets = ["fake-claude-pty", "fake-claude-sdk", "fake-codex"], features = [] },
-  { package = "provider-fakes", modules = ["codex", "pty", "scripts", "sdk"], features = [] },
+  { package = "provider-fakes", kind = "bin", targets = ["fake-acp", "fake-claude-pty", "fake-claude-sdk", "fake-codex"], features = [] },
+  { package = "provider-fakes", modules = ["acp", "codex", "pty", "scripts", "sdk"], features = [] },
 ]
 
 [[suite]]
 name = "provider-fake-conformance"
 contract = "Every recording in the Claude and Codex corpora plays back through its fake byte for byte, and each fake's script engine reproduces the ordered frame kinds its provider recorded for the same scenario."
-paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/interpret/fixtures/claude_sdk/live", "crates/interpret/fixtures/claude_pty/live", "crates/interpret/fixtures/codex/live"]
+paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/interpret/fixtures/claude_sdk/live", "crates/interpret/fixtures/claude_pty/live", "crates/interpret/fixtures/codex/live", "crates/interpret/fixtures/acp/live"]
 recipe = "just suite provider-fake-conformance"
 boundary = "Provider adapter"
 oracle = "Byte-for-byte playback and the recorded sequence of frame kinds, one test per recording."

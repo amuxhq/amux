@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MarkdownView -->
+    <string name="markdown_copy_code">Copy Code</string>
+    <string name="markdown_code_copied">Copied</string>
+    <string name="markdown_streaming">Streaming</string>
+
+    <!-- ChatRows: shared -->
+    <string name="chat_row_expand">Expand</string>
+    <string name="chat_row_collapse">Collapse</string>
+    <string name="chat_row_open_agent">Open Agent</string>
+    <string name="chat_row_show_answer">Show Answer</string>
+    <string name="chat_row_hide_answer">Hide Answer</string>
+    <string name="chat_row_steered">steered</string>
+    <string name="chat_row_failed">failed</string>
+    <string name="chat_row_running">running</string>
+    <string name="chat_row_finished">finished</string>
+    <string name="chat_row_sending">sending</string>
+    <string name="chat_row_in_background">In background</string>
+    <string name="chat_row_in_background_running">in background · running</string>
+    <string name="chat_row_in_background_finished">in background · finished</string>
+    <string name="chat_row_attachment_remove">Remove Attachment</string>
+    <string name="chat_row_attachment_open">Open Attachment</string>
+    <string name="chat_row_attachment_open_named">Open Attachment, %1$s</string>
+    <string name="chat_row_image_open">Open Image</string>
+    <string name="chat_row_image_open_named">Open Image, %1$s</string>
+    <string name="chat_row_quoted">“%1$s”</string>
+    <string name="chat_row_image_label">Image</string>
+    <string name="chat_row_image_generated">Generated image</string>
+    <string name="chat_row_image_no_preview">No preview</string>
+
+    <!-- ChatRows: tool, command, child, subagent, file -->
+    <string name="chat_row_tool_wants">Wants to use</string>
+    <string name="chat_row_tool_using">Using</string>
+    <string name="chat_row_tool_used">Used</string>
+    <string name="chat_row_command_wants">Wants to run</string>
+    <string name="chat_row_command_running">Running</string>
+    <string name="chat_row_command_ran">Ran</string>
+    <string name="chat_row_command_exit">exit %1$d</string>
+    <string name="chat_row_command_trimmed">··· earlier output trimmed</string>
+    <string name="chat_row_command_more_one">··· 1 more line</string>
+    <string name="chat_row_command_more_many">··· %1$d more lines</string>
+    <string name="chat_row_child_could_not_start">Could not start</string>
+    <string name="chat_row_child_could_not_stop">Could not stop</string>
+    <string name="chat_row_child_wants_start">Wants to start</string>
+    <string name="chat_row_child_starting">Starting</string>
+    <string name="chat_row_child_started">Started</string>
+    <string name="chat_row_child_wants_stop">Wants to stop</string>
+    <string name="chat_row_child_stopping">Stopping</string>
+    <string name="chat_row_child_stopped">Stopped</string>
+    <string name="chat_row_child_fallback_name">a subagent</string>
+    <string name="chat_row_child_on_host">%1$s on %2$s</string>
+    <string name="chat_row_subagent_verb">Subagent</string>
+    <string name="chat_row_subagent_continued">Continued</string>
+    <string name="chat_row_file_editing">Editing</string>
+    <string name="chat_row_file_created">Created</string>
+    <string name="chat_row_file_deleted">Deleted</string>
+    <string name="chat_row_file_moved">Moved</string>
+    <string name="chat_row_file_writing">Writing</string>
+    <string name="chat_row_file_moved_path">%1$s → %2$s</string>
+    <string name="chat_row_file_open_diff">Open diff for %1$s</string>
+
+    <!-- ChatRows: session events & agent messages -->
+    <string name="chat_row_stopped">You stopped it</string>
+    <string name="chat_row_error_tries">%1$d tries</string>
+    <string name="chat_row_error_gave_up">gave up after %1$d tries</string>
+    <string name="chat_row_model_switched">Switched to</string>
+    <string name="chat_row_agent_from">From</string>
+    <string name="chat_row_agent_to">To</string>
+    <string name="chat_row_agent_not_delivered">not delivered · %1$s</string>
+    <string name="chat_row_agent_not_delivered_plain">not delivered</string>
+    <string name="chat_row_auto_review_risk">%1$s risk</string>
+    <string name="chat_row_unrecognized">Unreadable</string>
+
+    <!-- ChatRows: resolved asks -->
+    <string name="chat_row_ask_answered">Answered</string>
+    <string name="chat_row_ask_skipped">Skipped</string>
+    <string name="chat_row_ask_questions_count">%1$d questions</string>
+    <string name="chat_row_ask_questions_of">%1$d of %2$d questions</string>
+    <string name="chat_row_ask_note">Note: %1$s</string>
+    <string name="chat_row_ask_replied">Replied: %1$s</string>
+    <string name="chat_row_ask_plan_proposed">Plan proposed</string>
+    <string name="chat_row_ask_plan_approved">Plan approved</string>
+    <string name="chat_row_ask_plan_sent_back">Plan sent back</string>
+    <string name="chat_row_ask_plan_dismissed">Plan dismissed</string>
+    <string name="chat_row_ask_plan_switched">switched to %1$s</string>
+    <string name="chat_row_ask_form_sent_one">Sent 1 field to</string>
+    <string name="chat_row_ask_form_sent_many">Sent %1$d fields to</string>
+    <string name="chat_row_ask_form_needs_details">%1$s needs details</string>
+    <string name="chat_row_ask_form_other">%1$s %2$s’s form</string>
+    <string name="chat_row_ask_link_opened">Opened link from</string>
+    <string name="chat_row_ask_link_from">Link from</string>
+    <string name="chat_row_ask_grant_granted">Granted</string>
+    <string name="chat_row_ask_grant_wants">Wants access</string>
+    <string name="chat_row_ask_grant_denied">Denied</string>
+    <string name="chat_row_ask_grant_session">this session</string>
+    <string name="chat_row_ask_grant_turn">this turn</string>
+    <string name="chat_row_ask_access_write">write %1$s</string>
+    <string name="chat_row_ask_access_read">read %1$s</string>
+    <string name="chat_row_ask_access_network">network</string>
+    <string name="chat_row_ask_access_network_hosts">network %1$s</string>
+    <string name="chat_row_ask_unanswerable_open">Can’t answer this here</string>
+    <string name="chat_row_ask_unanswerable_resolved">%1$s a dialog this build can’t read</string>
+
+    <!-- ChatComposer -->
+    <string name="chat_composer_switched_away">Claude’s own view switched to another conversation</string>
+    <string name="chat_composer_switch_back">Switch Back</string>
+    <string name="chat_composer_attach">Attach</string>
+    <string name="chat_composer_attach_photo">Photo</string>
+    <string name="chat_composer_attach_file">File</string>
+    <string name="chat_composer_attaching">Attaching…</string>
+    <string name="chat_composer_send">Send</string>
+    <string name="chat_composer_queue">Queue</string>
+    <string name="chat_composer_resume">Resume</string>
+    <string name="chat_composer_interrupt">Interrupt</string>
+    <string name="chat_composer_dictate">Dictate</string>
+    <string name="chat_composer_stop_dictation">Stop Dictation</string>
+    <string name="chat_composer_send_now">Send Now</string>
+    <string name="chat_composer_withdraw">Withdraw</string>
+    <string name="chat_composer_resend">Resend</string>
+    <string name="chat_composer_discard">Discard</string>
+    <string name="chat_composer_dismiss">Dismiss</string>
+    <string name="chat_composer_overview">Overview</string>
+    <string name="chat_composer_settings">Chat Settings</string>
+    <string name="chat_composer_settings_named">Chat Settings, %1$s</string>
+    <string name="chat_composer_native_stop">Stop</string>
+    <string name="chat_composer_native_stopping">Stopping…</string>
+    <string name="chat_composer_refused_prefix">Not sent · %1$s</string>
+    <string name="chat_composer_refusal_host_unreachable">its host is away</string>
+    <string name="chat_composer_refusal_exited">the agent ended</string>
+    <string name="chat_composer_refusal_exiting">the agent is stopping</string>
+    <string name="chat_composer_refusal_draining">the agent is shutting down</string>
+    <string name="chat_composer_refusal_closed_ask">that ask is already closed</string>
+    <string name="chat_composer_refusal_not_queued">it is no longer queued</string>
+    <string name="chat_composer_refusal_unsupported">this agent can’t take that input</string>
+    <string name="chat_composer_refusal_elsewhere">the terminal switched to another conversation</string>
+    <string name="chat_composer_refusal_too_long">the message is too long</string>
+    <string name="chat_composer_refusal_closed">this agent is settled</string>
+    <string name="chat_composer_refusal_generic">the agent refused it</string>
+</resources>

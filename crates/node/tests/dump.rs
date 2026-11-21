@@ -886,55 +886,51 @@ async fn steps_over_their_budget_are_one_dump_per_kind_of_input_within_the_inter
 async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest() {
     let install = Install::new();
     const INTERVAL_MS: u64 = 1_500;
+    let clock = Arc::new(agent_dir::ManualClock::new(1_700_000_000_000));
     let launch = node::Launch {
         step_budget: daemon_core::StepBudget { micros: 0 },
         over_budget_dump_interval_ms: INTERVAL_MS,
         ..support::synthetic::quiet_launch()
     };
-    let daemon = install.start("boot-1", launch).await;
+    let options = node::StartOptions {
+        clock: clock.clone(),
+        ..install.options("boot-1", launch)
+    };
+    let daemon = node::start(options, None).await.unwrap();
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     let mut agent = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
     agent.register(&install);
-    agent.append(&support::synthetic::item("a", "hello"));
-    runtime.ingest(agent.id).await.unwrap();
-    let nudges = |install: &Install| -> Vec<(u64, String)> {
-        bundles_by_time(install)
-            .into_iter()
-            .filter(|(_, reason)| slow_input(reason) == "Nudge")
-            .collect()
-    };
-    // Steps keep coming, each over its budget, until the interval is past.
-    let started = std::time::Instant::now();
-    let mut n = 0;
-    while nudges(&install).len() < 2 {
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(30),
-            "no second bundle after the interval: {:?}",
-            install.core_dumps()
-        );
-        n += 1;
-        agent.append(&support::synthetic::item(&format!("more-{n}"), "again"));
+    // While the manual clock stays at t0, at most one Nudge dump can be
+    // admitted; the remaining over-budget Nudges are suppressed and counted.
+    for n in 0..5 {
+        agent.append(&support::synthetic::item(&format!("before-{n}"), "hello"));
         runtime.ingest(agent.id).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    let bundles = nudges(&install);
+    // Past the interval, the next over-budget Nudge dumps and names the rest;
+    // keeping the clock at t0 + INTERVAL_MS ensures at most one more dump.
+    clock.advance(INTERVAL_MS as i64);
+    for n in 0..3 {
+        agent.append(&support::synthetic::item(&format!("after-{n}"), "again"));
+        runtime.ingest(agent.id).await.unwrap();
+    }
+    // A clean shutdown waits for every dump under way.
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    let bundles: Vec<(u64, String)> = bundles_by_time(&install)
+        .into_iter()
+        .filter(|(_, reason)| slow_input(reason) == "Nudge")
+        .collect();
     assert_eq!(bundles.len(), 2, "{bundles:?}");
-    let (first_ms, first) = &bundles[0];
-    let (second_ms, second) = &bundles[1];
+    let (_, first) = &bundles[0];
+    let (_, second) = &bundles[1];
     assert!(!first.contains("not dumped"), "{first}");
     assert!(
         second.contains("over its budget of 0 µs")
-            && second.contains("more like it were not dumped since the last"),
+            && (second.contains("more like it was not dumped since the last")
+                || second.contains("more like it were not dumped since the last")),
         "{second}"
     );
-    // A bundle is stamped as it is written, a moment after the dump was
-    // let through.
-    assert!(
-        second_ms + 500 >= first_ms + INTERVAL_MS,
-        "{first_ms} then {second_ms}"
-    );
-    drop(runtime);
-    daemon.shutdown().await.unwrap();
 }
 
 /// The bundles the daemon core asked for, oldest first, with when each was

@@ -42,6 +42,8 @@ pub(crate) struct Tail {
     path: PathBuf,
     cursor: PathBuf,
     state: Arc<Mutex<State>>,
+    #[cfg(test)]
+    wake: Option<Arc<Notify>>,
 }
 
 struct State {
@@ -70,6 +72,19 @@ impl Tail {
                 read: Vec::new(),
                 sent: 0,
             })),
+            #[cfg(test)]
+            wake: None,
+        }
+    }
+
+    /// A tail whose [`Watch`] is woken by `wake` instead of the OS watcher,
+    /// for paused-clock tests that verify timing without racing a background
+    /// OS notify thread.
+    #[cfg(test)]
+    pub(crate) fn with_wake(cursor: PathBuf, path: PathBuf, wake: Arc<Notify>) -> Self {
+        Self {
+            wake: Some(wake),
+            ..Self::new(cursor, path)
         }
     }
 
@@ -80,6 +95,10 @@ impl Tail {
 
     /// A watch on the followed file.
     pub(crate) fn watch(&self) -> Watch {
+        #[cfg(test)]
+        if let Some(wake) = &self.wake {
+            return Watch::manual(self.path.clone(), Arc::clone(wake));
+        }
         Watch::new(self.path.clone())
     }
 
@@ -215,12 +234,28 @@ enum Held {
     File(#[allow(dead_code)] Subscription),
     /// A folder, on a watcher of its own.
     Folder(#[allow(dead_code)] notify::RecommendedWatcher),
+    /// Driven by a test's `Notify` instead of an OS watcher.
+    #[cfg(test)]
+    Manual,
 }
 
 impl Watch {
     /// Watches `path`, reporting from now on what changes it.
     pub(crate) fn new(path: PathBuf) -> Self {
         Self::with_fallback(path, FALLBACK_POLL)
+    }
+
+    /// A watch driven by `wake` (plus [`FALLBACK_POLL`]) instead of an OS
+    /// watcher, for deterministic paused-clock tests.
+    #[cfg(test)]
+    pub(crate) fn manual(path: PathBuf, wake: Arc<Notify>) -> Self {
+        Self {
+            path,
+            wake,
+            fallback: FALLBACK_POLL,
+            watched: None,
+            _held: Held::Manual,
+        }
     }
 
     /// A watch that waits up to `fallback` for a report.
@@ -249,6 +284,10 @@ impl Watch {
 
     /// Watches what the file calls for now; true when that moved.
     fn settle(&mut self) -> bool {
+        #[cfg(test)]
+        if matches!(self._held, Held::Manual) {
+            return false;
+        }
         let target = if self.path.exists() {
             Some(self.path.clone())
         } else {
@@ -517,5 +556,23 @@ mod tests {
         let started = tokio::time::Instant::now();
         watch.changed().await;
         assert_eq!(started.elapsed(), FALLBACK_POLL);
+    }
+
+    /// On a real file, the platform's watcher wakes `changed()` without
+    /// waiting for a long fallback poll.
+    #[tokio::test]
+    async fn a_watch_reports_a_grown_file_before_the_fallback() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("s1.jsonl");
+        std::fs::write(&path, "one\n").unwrap();
+        let long_fallback = Duration::from_secs(10);
+        let mut watch = Watch::with_fallback(path.clone(), long_fallback);
+        let started = std::time::Instant::now();
+        append(&path, "two\n");
+        watch.changed().await;
+        assert!(
+            started.elapsed() < long_fallback,
+            "watch waited for the fallback instead of the platform event"
+        );
     }
 }

@@ -148,12 +148,26 @@ impl Desk {
     /// Runs a verb that must succeed, printing it and what it said.
     pub async fn run(&self, args: &[&str]) -> String {
         let output = self.amux(args).await;
-        assert!(
-            output.status.success(),
-            "amux {args:?} failed: {}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        if !output.status.success() {
+            let mut logs = String::new();
+            for name in ["daemon-startup.log", "daemon.log"] {
+                if let Ok(text) = std::fs::read_to_string(self.data.join(name))
+                    && !text.is_empty()
+                {
+                    let tail: Vec<&str> = text.lines().rev().take(40).collect();
+                    logs.push_str(&format!("\n--- {name} (tail) ---\n"));
+                    for line in tail.into_iter().rev() {
+                        logs.push_str(line);
+                        logs.push('\n');
+                    }
+                }
+            }
+            panic!(
+                "amux {args:?} failed: {}{}{logs}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         let said = String::from_utf8(output.stdout).unwrap();
         let root = self.root.path().to_string_lossy().into_owned();
         say(format!("$ amux {}", args.join(" ")).replace(&root, "$DESK"));

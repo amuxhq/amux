@@ -630,87 +630,33 @@ fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
 /// Android SELinux denies `link(2)` (`fs::hard_link`) on `app_data_file` for
 /// untrusted apps, so publish the synced temporary file with `renameat2`
 /// (`RENAME_NOREPLACE`) to keep atomic create-without-overwrite semantics.
+/// Bionic has exported `renameat2` since API 30, below the app's minimum SDK.
 #[cfg(target_os = "android")]
 fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    const RENAME_NOREPLACE: libc::c_long = 1;
-
-    let from = CString::new(tmp.as_os_str().as_bytes()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "interior NUL in temp path",
-        )
-    })?;
-    let to = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "interior NUL in target path",
-        )
-    })?;
+    let nul = |what| std::io::Error::new(std::io::ErrorKind::InvalidInput, what);
+    let from =
+        CString::new(tmp.as_os_str().as_bytes()).map_err(|_| nul("interior NUL in temp path"))?;
+    let to = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| nul("interior NUL in target path"))?;
+    // SAFETY: `from` and `to` are NUL-terminated strings that outlive the call,
+    // and `AT_FDCWD` resolves both relative to the working directory.
     let rc = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD as libc::c_long,
+        libc::renameat2(
+            libc::AT_FDCWD,
             from.as_ptr(),
-            libc::AT_FDCWD as libc::c_long,
+            libc::AT_FDCWD,
             to.as_ptr(),
-            RENAME_NOREPLACE,
+            libc::RENAME_NOREPLACE as _,
         )
     };
     if rc == 0 {
-        return Ok(());
-    }
-    let error = std::io::Error::last_os_error();
-    if matches!(
-        error.raw_os_error(),
-        Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)
-    ) {
-        return publish_new_file_locked(tmp, path);
-    }
-    Err(error)
-}
-
-/// Serializes the existence check and rename under an OS-managed advisory lock
-/// (`flock(LOCK_EX)`) when `renameat2(RENAME_NOREPLACE)` is unavailable on the
-/// kernel or filesystem, so concurrent first-run initializers never overwrite
-/// an already-published `device.key` and a crash cannot leave a stale lock.
-#[cfg(any(target_os = "android", all(unix, test)))]
-fn publish_new_file_locked(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("amux-data");
-    let lock_path = path.with_file_name(format!(".{file_name}.lock"));
-
-    let mut options = private_write_options();
-    options.create(true);
-    let lock_file = options.open(&lock_path)?;
-    loop {
-        // SAFETY: `lock_file` is an open file descriptor owned by this function.
-        let rc = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) };
-        if rc == 0 {
-            break;
-        }
-        let err = std::io::Error::last_os_error();
-        if err.kind() != std::io::ErrorKind::Interrupted {
-            return Err(err);
-        }
-    }
-
-    let result = if path.try_exists()? {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::AlreadyExists,
-            "target file already exists",
-        ))
+        Ok(())
     } else {
-        fs::rename(tmp, path)
-    };
-    drop(lock_file);
-    result
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 pub(crate) fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {
@@ -1049,47 +995,5 @@ mod tests {
             fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
             0o700
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn locked_publish_fallback_preserves_first_writer_under_contention() {
-        let dir = temp_data_dir();
-        // Simulate a stale lockfile left behind by a crashed/force-stopped process.
-        fs::write(dir.path().join(".device.key.lock"), b"").unwrap();
-        let target = Arc::new(dir.path().join(DEVICE_KEY_FILE));
-        let barrier = Arc::new(Barrier::new(8));
-        let handles = (0..8_u8)
-            .map(|idx| {
-                let target = target.clone();
-                let barrier = barrier.clone();
-                std::thread::spawn(move || {
-                    let tmp = temp_path_for(&target);
-                    fs::write(&tmp, [idx; 32]).unwrap();
-                    barrier.wait();
-                    let result = publish_new_file_locked(&tmp, &target);
-                    if result.is_err() {
-                        let _ = fs::remove_file(&tmp);
-                    }
-                    (idx, result)
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let outcomes = handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap())
-            .collect::<Vec<_>>();
-        let winners: Vec<u8> = outcomes
-            .iter()
-            .filter_map(|(idx, res)| res.is_ok().then_some(*idx))
-            .collect();
-        assert_eq!(winners.len(), 1, "exactly one writer must publish");
-        for (_, res) in &outcomes {
-            if let Err(err) = res {
-                assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
-            }
-        }
-        assert_eq!(fs::read(&*target).unwrap(), vec![winners[0]; 32]);
     }
 }

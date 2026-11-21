@@ -13,6 +13,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | --- | --- | --- | --- |
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows; only the jobs the change can affect run |
 | iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
+| Android gate | [`android.yml`](../.github/workflows/android.yml) | Pushes to `main` and pull requests into `main` that touch Android's paths, and by hand | Android lint, script tests, bridge graph check, host JNI build and Gradle JVM/Robolectric unit tests on `ubuntu-latest` |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
@@ -48,6 +49,7 @@ every other job but the policy job runs only if the change can reach it:
 | --- | --- |
 | Documentation, another workflow or a manual script (`docs/`, `images/`, `marketing/`, top-level `*.md`, non-CI workflows, manual scripts) | The policy job, which holds the documentation and script checks: about a minute |
 | The phone app only (`apps/apple/`) | Only `ios-tools` tests (Swift mirrors and verification CLI) unless a fixture read by another Rust test changed; the iOS gate judges the rest |
+| The Android app only (`apps/android/`) | Only `ios-tools` tests (Kotlin mirror parity); the Android gate judges the rest |
 | The browser extension only (`js/`) | The browser extension's job |
 | A crate | Format, Clippy and the workspace tests; the journeys and simulated stories when `amux` or `testnet` is built from that crate; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
 | Anything else: a manifest, a CI script, `ci.yml`, a journey, a schema | Every job |
@@ -257,6 +259,25 @@ shipping stages (`ios package`, `ios scope-audit`). It refuses to start if
 any stage names a recipe the justfiles no longer declare. `just ios captures`
 and `just ios shipping` run those halves alone.
 
+### The Android gate
+
+The Android gate ([`android.yml`](../.github/workflows/android.yml)) is its own
+workflow on `ubuntu-latest` so that it runs only when a push or pull request
+touches Android or its bridge: `apps/android`, `crates/app-jni`,
+`crates/app-bridge`, `crates/app-embedded`, `crates/app-runtime`,
+`crates/ios-tools`, the Cargo manifests, the toolchain pin, the shared runner
+scripts (`scripts/bounded`, `scripts/no-update-flags.sh`, `scripts/py`), the
+`setup-just` and `setup-rust` actions, or `android.yml` itself.
+
+The job installs the pinned Rust toolchain with `aarch64-linux-android` through
+`.github/actions/setup-rust`, sets up Temurin JDK 21 with Gradle caching, and
+restores the host JNI bridge from the Actions cache keyed by
+`android-rust.py --host --fingerprint` (which hashes only `app-jni`'s
+transitive workspace crate closure, so Kotlin-only or unrelated-crate edits
+skip compiling Rust). It then runs `just android lint`,
+`just android script-tests`, `just android graph-check`, and
+`just android unit --no-daemon`.
+
 ### iOS captures
 
 Run by hand, the workflow boots the golden simulator on `macos-26` and runs
@@ -293,7 +314,7 @@ journey or baseline that does not exist.
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` on every push, on all three platforms |
 | `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `test-store-ios` in `just ios captures` |
-| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
+| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `android script-tests` and `android lint` in the Android gate; `ios scope-audit` before every app release |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys job and the system journey inside `just test` on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 
@@ -306,7 +327,7 @@ before it reaches main. It takes about a minute and a half on a warm tree, so th
 run every time: every check of `just ci` that takes seconds (formatting,
 generated code, the schema and store checks, dependency policy, advisories,
 the typed-provider check, the docs and catalogue checks, the scripts' own
-tests), Clippy, the phone's writing lint and script tests, and every terminal
+tests), Clippy, the iOS and Android writing lints and script tests, and every terminal
 journey. The journeys run several at once, each in a scratch folder of its
 own, and share those folders with every other checkout on the machine.
 

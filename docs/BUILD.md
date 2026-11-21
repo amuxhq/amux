@@ -27,6 +27,7 @@ Other tools a full checkout uses:
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
+- JDK 21, the Android SDK/NDK, and `cargo-ndk` build the Android app (`just --list android`).
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds and tests the browser extension under
   `js/` (`just browser build`, `just browser test`). Biome formats and lints it
@@ -73,9 +74,9 @@ Five profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml):
 | Profile | Purpose |
 | --- | --- |
 | `dev` | Routine builds and tests: incremental, no debug information, and unwinding panics |
-| `release` | What ships, for the desktop binary and the iPhone app alike, and what `just perf` measures: fat LTO, one codegen unit, line tables, aborting panics, and no incremental compilation |
+| `release` | What ships, for the desktop binary and the mobile apps alike, and what `just perf` measures: fat LTO, one codegen unit, line tables, aborting panics, and no incremental compilation |
 | `full-debug` | A `dev` build with complete debug information for debugger sessions |
-| `phone-dev` | The bridge every development build of the iPhone app links: `release` without LTO or debug information |
+| `phone-dev` | The bridge every development build of the iPhone and Android apps links: `release` without LTO or debug information |
 | `wasm` | The browser extension's WebAssembly: `release` optimised for size, without debug information |
 
 `release` builds are slow, since whole-program optimisation runs over the
@@ -104,8 +105,10 @@ tables, loadable extensions).
 ## Recipes
 
 The root [`justfile`](../justfile) is the task contract, and `just --list`
-shows every recipe. The iPhone app's recipes are a module:
-`just --list ios`, `just ios build`, `just ios verify`. Every recipe runs its
+shows every recipe. The iPhone and Android apps' recipes are modules:
+`just --list ios` (`just ios build`, `just ios verify`) and
+`just --list android` (`just android lint`, `just android unit`,
+`just android build`). Every recipe runs its
 command under `scripts/bounded`, a wall-clock bound that uses GNU `timeout`
 where present and a small fallback elsewhere; a firing bound is a hang to
 diagnose, not a slow machine. `AMUX_GIT_SHA` is exported from the current
@@ -128,6 +131,11 @@ The recipes a build or change usually needs:
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
 | `just mobile-check` | Check the provider-free client graph for iOS |
+| `just android check` | Check the provider-free client and JNI bridge graph for Android (`cargo-ndk`) |
+| `just android lint` | Check Android writing rules, string inventory, and generated Kotlin mirrors |
+| `just android graph-check` | Prove the `app-jni` graph carries no provider, host, schema, or test crate |
+| `just android unit` | Build the host JNI library and run all Android JVM and Robolectric unit suites |
+| `just android build` | Build the Android JNI library and debug APK |
 | `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 
@@ -155,11 +163,15 @@ lints the schemas with buf, and fails when they no longer read what the latest
 release wrote: a field removed without reserving its number, a number reused
 or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.
 
-**Swift value types.** The Swift mirrors of the view values the phone reads,
-`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`, are generated
-from the Rust definitions by `cargo run -p ios-tools -- swift-types`. A unit test
-in the `ios-tools` crate, run by `just test`, fails when the committed file
-differs from what the generator writes.
+**Swift and Kotlin value types.** The Swift mirrors of the view values the
+iPhone app reads (`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`)
+and the Kotlin mirrors the Android app reads
+(`apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt`,
+`apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`) are generated from
+the same Rust definitions by `cargo run -p ios-tools -- swift-types` and
+`cargo run -p ios-tools -- kotlin-types`. Unit tests in the `ios-tools` crate,
+run by `just test`, fail when the committed files differ from what the
+generators write.
 
 ## Worktrees
 

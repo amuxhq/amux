@@ -272,7 +272,8 @@ shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
 
 # Prune dead incremental caches and cap Cargo deps in target/ (and
-# target/ios/rust-cargo when present) without evicting active build caches.
+# target/ios/rust-cargo and target/android/rust-cargo when present) without
+# evicting active build caches.
 # Pass `--cold` (as .wt.toml's stop hook does on suspend) to drop incremental/
 # completely, or `--dry-run` to preview. Needs `cargo install --locked
 # cargo-sweep@0.8.0` for the deps pass; incremental pruning still runs without it.
@@ -351,6 +352,8 @@ no-update-flags:
 premerge: no-update-flags fmt-check codegen-check store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests lint
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
+    {{just_executable()}} android lint
+    {{just_executable()}} android script-tests
     {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
     {{just_executable()}} journey terminal all
     if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi

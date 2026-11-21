@@ -232,7 +232,7 @@ final class AppModel {
         guard let agent, let stores else { return }
         do {
             let model = try stores.chat(agent)
-            let host = self.row(agent).map { PlaceNames.host($0.hostName) } ?? "its computer"
+            let host = self.row(agent).map { PlaceNames.host($0.hostName) } ?? "its device"
             chat = MacChat(model: model, host: host)
         } catch {
             problem = error.description

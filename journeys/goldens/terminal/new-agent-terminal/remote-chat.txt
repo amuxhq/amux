@@ -31,4 +31,4 @@
   │ › Message desk-notes                                                                                   │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────── Fake 1 ─╯
 
-  its terminal is on another computer; its chat opens instead
+  its terminal is on another device; its chat opens instead

@@ -145,14 +145,14 @@
         }
       }
     },
-    "%@ could not say what %@ offers. The agent starts with the computer’s defaults." : {
+    "%@ could not say what %@ offers. The agent starts with the device’s defaults." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ could not say what %@ offers. The agent starts with the computer’s defaults."
+            "value" : "%@ could not say what %@ offers. The agent starts with the device’s defaults."
           }
         }
       }
@@ -277,14 +277,14 @@
         }
       }
     },
-    "%@ hosts" : {
+    "%@ devices" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AccountRegistry.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ hosts"
+            "value" : "%@ devices"
           }
         }
       }
@@ -1105,14 +1105,14 @@
         }
       }
     },
-    "1 host" : {
+    "1 device" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AccountRegistry.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 host"
+            "value" : "1 device"
           }
         }
       }
@@ -1249,14 +1249,14 @@
         }
       }
     },
-    "An account lets this phone reach your computers from anywhere, and a subscription bought on %@ carries over." : {
+    "With an account, this phone can reach your devices through the relay, and a subscription bought on %@ carries over." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An account lets this phone reach your computers from anywhere, and a subscription bought on %@ carries over."
+            "value" : "With an account, this phone can reach your devices through the relay, and a subscription bought on %@ carries over."
           }
         }
       }
@@ -1273,38 +1273,38 @@
         }
       }
     },
-    "Computer" : {
+    "Device" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computer"
+            "value" : "Device"
           }
         }
       }
     },
-    "Computer, %@" : {
+    "Device, %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computer, %@"
+            "value" : "Device, %@"
           }
         }
       }
     },
-    "Computers" : {
+    "Devices" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxShell/Sources/AmuxShell/Route.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Computers"
+            "value" : "Devices"
           }
         }
       }
@@ -1321,14 +1321,14 @@
         }
       }
     },
-    "Get a new one from the computer." : {
+    "Get a new one from the device." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Get a new one from the computer."
+            "value" : "Get a new one from the device."
           }
         }
       }
@@ -1369,14 +1369,14 @@
         }
       }
     },
-    "Its invitation names no address here, so it can only be reached over the internet. Sign in and this phone can take it up." : {
+    "Its invitation names no address here, so only a relayed connection reaches it. Sign in and this phone can take it up." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Its invitation names no address here, so it can only be reached over the internet. Sign in and this phone can take it up."
+            "value" : "Its invitation names no address here, so only a relayed connection reaches it. Sign in and this phone can take it up."
           }
         }
       }
@@ -1465,14 +1465,14 @@
         }
       }
     },
-    "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro." : {
+    "It’s online, but only a relayed connection reaches it, and relayed connections need Pro." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro."
+            "value" : "It’s online, but only a relayed connection reaches it, and relayed connections need Pro."
           }
         }
       }
@@ -1489,50 +1489,50 @@
         }
       }
     },
-    "Look for Computers" : {
+    "Look for Devices" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Look for Computers"
+            "value" : "Look for Devices"
           }
         }
       }
     },
-    "No computers yet" : {
+    "No devices yet" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No computers yet"
+            "value" : "No devices yet"
           }
         }
       }
     },
-    "No matching folders on this computer." : {
+    "No matching folders on this device." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No matching folders on this computer."
+            "value" : "No matching folders on this device."
           }
         }
       }
     },
-    "Nothing has started on this computer yet. Type a path below." : {
+    "Nothing has started on this device yet. Type a path below." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing has started on this computer yet. Type a path below."
+            "value" : "Nothing has started on this device yet. Type a path below."
           }
         }
       }
@@ -1561,74 +1561,62 @@
         }
       }
     },
-    "Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app." : {
+    "Open amux on a device on this network to pair it, or scan the code it shows with the Camera app." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app."
+            "value" : "Open amux on a device on this network to pair it, or scan the code it shows with the Camera app."
           }
         }
       }
     },
-    "Over the internet" : {
+    "Relayed" : {
+      "comment" : "English app copy. A device reached through amux’s relay. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, NewAgent.swift and Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relayed"
+          }
+        }
+      }
+    },
+    "Pair a Device" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Over the internet"
+            "value" : "Pair a Device"
           }
         }
       }
     },
-    "over the internet" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "over the internet"
-          }
-        }
-      }
-    },
-    "Pair a Computer" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pair a Computer"
-          }
-        }
-      }
-    },
-    "Pair a computer before starting an agent." : {
+    "Pair a device before starting an agent." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair a computer before starting an agent."
+            "value" : "Pair a device before starting an agent."
           }
         }
       }
     },
-    "Pair your first computer" : {
+    "Pair your first device" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair your first computer"
+            "value" : "Pair your first device"
           }
         }
       }
@@ -1657,62 +1645,62 @@
         }
       }
     },
-    "Pro reaches your computers from anywhere. Computers on this network work without it." : {
+    "Pro relays connections when your phone and device aren’t on the same network. Devices on the same network connect without it." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pro reaches your computers from anywhere. Computers on this network work without it."
+            "value" : "Pro relays connections when your phone and device aren’t on the same network. Devices on the same network connect without it."
           }
         }
       }
     },
-    "Reachable over the internet" : {
+    "Connected · Relayed" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reachable over the internet"
+            "value" : "Connected · Relayed"
           }
         }
       }
     },
-    "reachable over the internet" : {
+    "connected, relayed" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "reachable over the internet"
+            "value" : "connected, relayed"
           }
         }
       }
     },
-    "reaching it from another network needs Pro" : {
+    "relayed connections need Pro" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "reaching it from another network needs Pro"
+            "value" : "relayed connections need Pro"
           }
         }
       }
     },
-    "Reading this computer’s repositories…" : {
+    "Reading this device’s repositories…" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reading this computer’s repositories…"
+            "value" : "Reading this device’s repositories…"
           }
         }
       }
@@ -1729,74 +1717,74 @@
         }
       }
     },
-    "Run %@ on the computer to get one." : {
+    "Run %@ on the device to get one." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Run %@ on the computer to get one."
+            "value" : "Run %@ on the device to get one."
           }
         }
       }
     },
-    "Sign in again to reach your computers from anywhere" : {
+    "Sign in again for relayed connections" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in again to reach your computers from anywhere"
+            "value" : "Sign in again for relayed connections"
           }
         }
       }
     },
-    "Start an agent on a computer and it appears here." : {
+    "Start an agent on a device and it appears here." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start an agent on a computer and it appears here."
+            "value" : "Start an agent on a device and it appears here."
           }
         }
       }
     },
-    "That code didn’t work. Get a new one from the computer." : {
+    "That code didn’t work. Get a new one from the device." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "That code didn’t work. Get a new one from the computer."
+            "value" : "That code didn’t work. Get a new one from the device."
           }
         }
       }
     },
-    "That computer is not on this network" : {
+    "That device is not on this network" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "That computer is not on this network"
+            "value" : "That device is not on this network"
           }
         }
       }
     },
-    "That computer is offline. Open amux on it, then try again." : {
+    "That device is offline. Open amux on it, then try again." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "That computer is offline. Open amux on it, then try again."
+            "value" : "That device is offline. Open amux on it, then try again."
           }
         }
       }
@@ -4513,14 +4501,14 @@
         }
       }
     },
-    "Nobody let amux look at the network this phone is on, so no host on it can be found. Turn on Local Network for amux in Settings." : {
+    "Nobody let amux look at the network this phone is on, so no device on it can be found. Turn on Local Network for amux in Settings." : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nobody let amux look at the network this phone is on, so no host on it can be found. Turn on Local Network for amux in Settings."
+            "value" : "Nobody let amux look at the network this phone is on, so no device on it can be found. Turn on Local Network for amux in Settings."
           }
         }
       }
@@ -4717,14 +4705,14 @@
         }
       }
     },
-    "On this network" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+    "Local" : {
+      "comment" : "English app copy. How this phone would reach a device it is pairing with that discovery found on this network. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On this network"
+            "value" : "Local"
           }
         }
       }
@@ -5113,14 +5101,14 @@
         }
       }
     },
-    "Pro reaches it from anywhere" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+    "Relayed connections need Pro" : {
+      "comment" : "English app copy. Where the free plan blocks reaching a device through the relay. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AccountCalls.swift, AgentsHome.swift and HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pro reaches it from anywhere"
+            "value" : "Relayed connections need Pro"
           }
         }
       }
@@ -5221,26 +5209,14 @@
         }
       }
     },
-    "Reach your agents from anywhere" : {
-      "comment" : "Headline of the offer to subscribe, wherever a host the relay can see cannot be reached. Used in AccountCalls.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reach your agents from anywhere"
-          }
-        }
-      }
-    },
-    "Reachable on this network, direct" : {
+    "Connected · Direct" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reachable on this network, direct"
+            "value" : "Connected · Direct"
           }
         }
       }
@@ -5641,14 +5617,14 @@
         }
       }
     },
-    "Signed out of its provider · sign in on its host" : {
+    "Signed out of its provider · sign in on its device" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxPush/Sources/AmuxPush/PushWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Signed out of its provider · sign in on its host"
+            "value" : "Signed out of its provider · sign in on its device"
           }
         }
       }
@@ -5953,14 +5929,14 @@
         }
       }
     },
-    "Sign in to reach it from anywhere" : {
+    "Sign in to reach it through the relay" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to reach it from anywhere"
+            "value" : "Sign in to reach it through the relay"
           }
         }
       }
@@ -6553,14 +6529,14 @@
         }
       }
     },
-    "the computer" : {
+    "the device" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "the computer"
+            "value" : "the device"
           }
         }
       }
@@ -6589,26 +6565,26 @@
         }
       }
     },
-    "The relay can see %@ and cannot carry its agents to this phone. A subscription opens the tunnel. Hosts on this network never need one." : {
+    "Pro relays connections when this phone and %@ aren’t on the same network. Devices on this network connect without it." : {
       "comment" : "English app copy. Substituted values appear as %@. Why a named host cannot be reached and what would reach it. Used in AccountCalls.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The relay can see %@ and cannot carry its agents to this phone. A subscription opens the tunnel. Hosts on this network never need one."
+            "value" : "Pro relays connections when this phone and %@ aren’t on the same network. Devices on this network connect without it."
           }
         }
       }
     },
-    "The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one." : {
+    "Pro relays connections when this phone and this device aren’t on the same network. Devices on this network connect without it." : {
       "comment" : "Why a host cannot be reached and what would reach it, where the host is not named. Used in AccountCalls.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one."
+            "value" : "Pro relays connections when this phone and this device aren’t on the same network. Devices on this network connect without it."
           }
         }
       }
@@ -6685,26 +6661,26 @@
         }
       }
     },
-    "This computer could not list its repositories." : {
+    "This device could not list its repositories." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This computer could not list its repositories."
+            "value" : "This device could not list its repositories."
           }
         }
       }
     },
-    "This computer is no longer paired with this phone." : {
+    "This device is no longer paired with this phone." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This computer is no longer paired with this phone."
+            "value" : "This device is no longer paired with this phone."
           }
         }
       }
@@ -6721,14 +6697,14 @@
         }
       }
     },
-    "This page is on the agent’s computer. Open the link in a browser there." : {
+    "This page is on the agent’s device. Open the link in a browser there." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This page is on the agent’s computer. Open the link in a browser there."
+            "value" : "This page is on the agent’s device. Open the link in a browser there."
           }
         }
       }
@@ -7021,26 +6997,26 @@
         }
       }
     },
-    "Unpair This Computer" : {
+    "Unpair This Device" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unpair This Computer"
+            "value" : "Unpair This Device"
           }
         }
       }
     },
-    "Unpaired by its computer · pair again to reach it" : {
+    "Unpaired by its device · pair again to reach it" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/FleetWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unpaired by its computer · pair again to reach it"
+            "value" : "Unpaired by its device · pair again to reach it"
           }
         }
       }
@@ -7069,14 +7045,14 @@
         }
       }
     },
-    "Update amux to reach your computers from anywhere" : {
+    "Update amux for relayed connections" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Update amux to reach your computers from anywhere"
+            "value" : "Update amux for relayed connections"
           }
         }
       }
@@ -7561,26 +7537,26 @@
         }
       }
     },
-    "Your agents and files stay on your computers." : {
+    "Your agents and files stay on your devices." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your agents and files stay on your computers."
+            "value" : "Your agents and files stay on your devices."
           }
         }
       }
     },
-    "Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account." : {
+    "Your amux.sh account, its subscription, and your agents and files on your devices stay as they are. This phone signs out and forgets the devices it paired for this account." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your amux.sh account, its subscription, and your agents and files on your computers stay as they are. This phone signs out and forgets the computers it paired for this account."
+            "value" : "Your amux.sh account, its subscription, and your agents and files on your devices stay as they are. This phone signs out and forgets the devices it paired for this account."
           }
         }
       }
@@ -8161,14 +8137,14 @@
         }
       }
     },
-    "direct" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+    "Direct" : {
+      "comment" : "English app copy. A device reached with nothing in between, not through the relay. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, NewAgent.swift and Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "direct"
+            "value" : "Direct"
           }
         }
       }
@@ -8509,26 +8485,26 @@
         }
       }
     },
-    "its host is away" : {
+    "its device is away" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "its host is away"
+            "value" : "its device is away"
           }
         }
       }
     },
-    "its host is shutting down" : {
+    "its device is shutting down" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "its host is shutting down"
+            "value" : "its device is shutting down"
           }
         }
       }
@@ -8893,14 +8869,14 @@
         }
       }
     },
-    "reachable on this network" : {
+    "connected, direct" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "reachable on this network"
+            "value" : "connected, direct"
           }
         }
       }
@@ -9661,14 +9637,14 @@
         }
       }
     },
-    "You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires %@." : {
+    "You’ll see its agents here and can start new ones, which run on that device as you. Pair only with your own devices. This invitation expires %@." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires %@."
+            "value" : "You’ll see its agents here and can start new ones, which run on that device as you. Pair only with your own devices. This invitation expires %@."
           }
         }
       }
@@ -9877,14 +9853,14 @@
         }
       }
     },
-    "A computer running amux on this network appears here, ready to pair." : {
+    "A device running amux on this network appears here, ready to pair." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A computer running amux on this network appears here, ready to pair."
+            "value" : "A device running amux on this network appears here, ready to pair."
           }
         }
       }
@@ -9933,18 +9909,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The code expires %@ after %@ prints it."
-          }
-        }
-      }
-    },
-    "on this network" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "on this network"
           }
         }
       }
@@ -10129,26 +10093,26 @@
         }
       }
     },
-    "%@ offers its account, so this phone reaches it from anywhere." : {
+    "%@ offers its account, so this phone can reach it through the relay." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ offers its account, so this phone reaches it from anywhere."
+            "value" : "%@ offers its account, so this phone can reach it through the relay."
           }
         }
       }
     },
-    "Then this phone reaches %@ from anywhere." : {
+    "Then this phone can reach %@ through the relay." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Then this phone reaches %@ from anywhere."
+            "value" : "Then this phone can reach %@ through the relay."
           }
         }
       }
@@ -10177,14 +10141,14 @@
         }
       }
     },
-    "amux runs agents on your computers. Pair one and its agents appear here." : {
+    "amux runs agents on your devices. Pair one and its agents appear here." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "amux runs agents on your computers. Pair one and its agents appear here."
+            "value" : "amux runs agents on your devices. Pair one and its agents appear here."
           }
         }
       }
@@ -10369,26 +10333,14 @@
         }
       }
     },
-    "Pair it from anywhere" : {
+    "Pair it over a relayed connection" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair it from anywhere"
-          }
-        }
-      }
-    },
-    "Pro pairs it from anywhere" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pro pairs it from anywhere"
+            "value" : "Pair it over a relayed connection"
           }
         }
       }
@@ -10417,14 +10369,14 @@
         }
       }
     },
-    "Get amux on your computer." : {
+    "Get amux on the device your agents will run on." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Get amux on your computer."
+            "value" : "Get amux on the device your agents will run on."
           }
         }
       }
@@ -10441,14 +10393,14 @@
         }
       }
     },
-    "amux looks for your computers on this network, so iOS asks for local network access next." : {
+    "amux looks for your devices on this network, so iOS asks for local network access next." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "amux looks for your computers on this network, so iOS asks for local network access next."
+            "value" : "amux looks for your devices on this network, so iOS asks for local network access next."
           }
         }
       }
@@ -11353,14 +11305,14 @@
         }
       }
     },
-    "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews." : {
+    "This agent’s device doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews."
+            "value" : "This agent’s device doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews."
           }
         }
       }
@@ -11377,14 +11329,14 @@
         }
       }
     },
-    "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them." : {
+    "The round’s snapshot is gone from the agent’s device. Its comments show with the code saved with them." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them."
+            "value" : "The round’s snapshot is gone from the agent’s device. Its comments show with the code saved with them."
           }
         }
       }
@@ -11401,14 +11353,14 @@
         }
       }
     },
-    "This agent’s computer can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back." : {
+    "This agent’s device can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This agent’s computer can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back."
+            "value" : "This agent’s device can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back."
           }
         }
       }
@@ -11689,26 +11641,26 @@
         }
       }
     },
-    "This agent’s computer can’t be reached, so nothing changed." : {
+    "This agent’s device can’t be reached, so nothing changed." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This agent’s computer can’t be reached, so nothing changed."
+            "value" : "This agent’s device can’t be reached, so nothing changed."
           }
         }
       }
     },
-    "The connection dropped before the agent’s computer answered. The page shows what it says next." : {
+    "The connection dropped before the agent’s device answered. The page shows what it says next." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The connection dropped before the agent’s computer answered. The page shows what it says next."
+            "value" : "The connection dropped before the agent’s device answered. The page shows what it says next."
           }
         }
       }
@@ -11809,26 +11761,26 @@
         }
       }
     },
-    "The agent’s computer no longer holds this round, so this is what the agent read." : {
+    "The agent’s device no longer holds this round, so this is what the agent read." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The agent’s computer no longer holds this round, so this is what the agent read."
+            "value" : "The agent’s device no longer holds this round, so this is what the agent read."
           }
         }
       }
     },
-    "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read." : {
+    "The agent’s device can’t be reached and none of this round was loaded, so this is what the agent read." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read."
+            "value" : "The agent’s device can’t be reached and none of this round was loaded, so this is what the agent read."
           }
         }
       }

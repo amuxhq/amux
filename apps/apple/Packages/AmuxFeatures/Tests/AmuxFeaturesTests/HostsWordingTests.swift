@@ -38,9 +38,9 @@ final class HostsWordingTests: XCTestCase {
     /// The row says what the machine is and the route this phone takes.
     func testALiveRowNamesItsRoute() {
         let direct = host()
-        XCTAssertEqual(tab([direct]).0.status(direct), "macOS · direct")
+        XCTAssertEqual(tab([direct]).0.status(direct), "macOS · Direct")
         let relayed = host(reach: .online(.relay), platform: nil)
-        XCTAssertEqual(tab([relayed]).0.status(relayed), "over the internet")
+        XCTAssertEqual(tab([relayed]).0.status(relayed), "Relayed")
         let away = host(reach: .away)
         XCTAssertEqual(tab([away]).0.status(away), "macOS · away on the free plan")
     }
@@ -53,7 +53,7 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertEqual(HostPage.reach(away), "Away on the free plan")
         XCTAssertEqual(
             page([away]).meaning(away),
-            "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro.")
+            "It’s online, but only a relayed connection reaches it, and relayed connections need Pro.")
         XCTAssertEqual(
             ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .away).place,
             "studio · away on the free plan")
@@ -160,14 +160,14 @@ final class HostsWordingTests: XCTestCase {
 
         let free = PairOffer(candidate(relayOnly: true), pro: false)
         XCTAssertEqual(free.title, "nova is online")
-        XCTAssertEqual(free.detail, "Pro pairs it from anywhere")
+        XCTAssertEqual(free.detail, "Relayed connections need Pro")
         XCTAssertEqual(free.button, "Subscribe")
         XCTAssertTrue(free.subscribe)
         XCTAssertEqual(free.identifier("home", "nova"), "home.subscribe.nova")
 
         let paid = PairOffer(candidate(relayOnly: true), pro: true)
         XCTAssertEqual(paid.button, "Pair")
-        XCTAssertEqual(paid.detail, "Pair it from anywhere")
+        XCTAssertEqual(paid.detail, "Pair it over a relayed connection")
         XCTAssertFalse(paid.subscribe)
 
         let unheard = PairOffer(candidate(relayOnly: true), pro: nil)

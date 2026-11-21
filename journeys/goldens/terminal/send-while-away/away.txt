@@ -14,7 +14,7 @@
 
 
 
-                       Its computer is away, and nothing of this chat is held here yet.
+                        Its device is away, and nothing of this chat is held here yet.
 
 
 
@@ -31,4 +31,4 @@
   │ › Check last night's backup.                                                                           │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter can't send until its computer is back
+  enter can't send until its device is back

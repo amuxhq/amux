@@ -324,7 +324,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there(
     assert_eq!(unreadable.code(), Some(ErrorCode::FailedPrecondition));
     assert_eq!(
         refusal(unreadable).message,
-        "one of its attachments is of a kind this host can't read; the host needs updating"
+        "one of its attachments is of a kind this device can't read; the device needs updating"
     );
 
     let error = refusal(resolved("attic").await.unwrap_err());

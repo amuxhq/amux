@@ -11,7 +11,7 @@ people will notice updates the page that describes it.
 - **Get started:** [Install](guide/get-started/install.md),
   [Your first agent](guide/get-started/first-agent.md),
   [Connect your phone](guide/get-started/connect-your-phone.md),
-  [Add another computer](guide/get-started/add-another-computer.md).
+  [Add another device](guide/get-started/add-another-computer.md).
 - **Understand:** [How amux works](guide/understand/how-amux-works.md),
   [Security and privacy](guide/understand/security-and-privacy.md),
   [What amux sends](guide/understand/what-amux-sends.md).

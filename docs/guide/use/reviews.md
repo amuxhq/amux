@@ -10,13 +10,13 @@ for one. Open its changes, comment on the lines that need it, and send your
 comments into its chat. The agent gets each comment with the code it's on,
 works on them, and the next time you look you see just what it changed since.
 
-Your comments are kept on the computer the agent runs on, so a review you
+Your comments are kept on the device the agent runs on, so a review you
 start in the terminal is there on your phone, and the other way round.
 
 ## Switch reviews on
 
 Reviewing is an [experiment](terminal.md#settings): switch on `reviews` on
-the computer the agent runs on.
+the device the agent runs on.
 
 - **In the terminal app**, press `,` on home and turn on **reviews** under
   experiments.
@@ -28,12 +28,12 @@ the computer the agent runs on.
 
 amux restarts itself to apply the switch, a few seconds later; your agents
 keep running. Your phone has no switch of its own: it reviews agents on any
-computer that has reviews on. Where an agent's computer doesn't, its review
+device that has reviews on. Where an agent's device doesn't, its review
 says reviews aren't offered there, and the agent's overview still lists the
 files it changed.
 
 As with every experiment, how reviews work may change in any release. If you
-switch reviews off, the computer deletes its reviews as amux restarts to
+switch reviews off, the device deletes its reviews as amux restarts to
 apply that, unsent comments included; reviews you sent stay in the chats as
 the text the agents read.
 
@@ -80,7 +80,7 @@ on the Mac, click a line to open a comment on it, or drag or Shift-click to
 take in more lines first. From the keyboard, the arrow keys pick a line,
 Shift with them takes in more, and Return opens the comment.
 
-Comments are saved on the agent's computer as you write them. Until you send
+Comments are saved on the agent's device as you write them. Until you send
 them they're drafts: you can change their words or delete them, and they
 show up on your other devices too.
 
@@ -144,8 +144,8 @@ file open, with each comment you sent on its lines.
 
 If you edited a comment before the agent took the message, a later message
 sent it, and this chip shows the text the agent read. You also see that text
-when the review has been started over since, or when the computer can't be
-reached and the round was never loaded. If the computer can no longer read
+when the review has been started over since, or when the device can't be
+reached and the round was never loaded. If the device can no longer read
 the round's code, for example after the branch was rebased and git cleaned up
 the old commits, each comment shows with the code it was written on.
 
@@ -156,7 +156,7 @@ the agent changes code, when its turn ends, and says so without moving
 anything you're reading. Comments written on another device appear as
 they're saved.
 
-If the agent's computer goes to sleep or out of reach, what you already
+If the agent's device goes to sleep or out of reach, what you already
 loaded still reads, but comments can't be saved until it's back; nothing
 holds them to save later.
 
@@ -164,8 +164,8 @@ holds them to save later.
 
 A review never adds anything to your repository: no commits, branches or
 stashes, and your index is left alone. Each snapshot is kept with the agent,
-in its own folder in amux's data on that computer. A snapshot holds untracked
+in its own folder in amux's data on that device. A snapshot holds untracked
 files too, so anything sitting untracked in the agent's folder, a secret
-included, is in it; it stays on that computer and is deleted with the agent,
+included, is in it; it stays on that device and is deleted with the agent,
 when you start the review over, or when reviews are switched off. A review
 has nothing to show in a folder that isn't a git repository.

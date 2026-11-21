@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  amux brings every Claude Code and Codex agent on your computers into one place, in a
+  amux brings every Claude Code and Codex agent on your devices into one place, in a
   beautiful terminal app and on your iPhone. See what each one is doing, answer the ones
   waiting on you, and let them hand work to each other, wherever you are.
 </p>
@@ -101,8 +101,8 @@ and another Claude to rewrite the error messages, and hears back from each one w
 - **Your code stays on your machines.** Agents run where you started them; amux carries
   their chats between your devices.
 - **End-to-end encrypted.** Every connection is encrypted between your own devices and
-  checked against keys they exchanged when you paired them, whether it runs directly on your
-  network or through the amux relay.
+  checked against keys they exchanged when you paired them, whether it's local, direct, or
+  relayed through amux's relay.
 - **Trust you grant in person.** Machines trust each other only once you pair them, with a
   PIN or QR code on the screen in front of you. No account or server can grant access, and
   unpairing takes effect at once.
@@ -110,7 +110,7 @@ and another Claude to rewrite the error messages, and hears back from each one w
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="images/readme/private-dark.svg">
-    <img src="images/readme/private-light.svg" alt="studio and build on your network, connected directly; your phone reaches them through the amux relay; every connection carries a lock and is end-to-end encrypted" width="760">
+    <img src="images/readme/private-light.svg" alt="studio and build on your network, connected locally; your phone reaches them through amux's relay; every connection carries a lock and is end-to-end encrypted" width="760">
   </picture>
 </p>
 
@@ -127,7 +127,7 @@ https://github.com/user-attachments/assets/a3107516-9e6f-4f48-be5e-e22091125002
 curl -fsSL https://amux.sh/install | sh   # install
 amux                                      # open the terminal app
 amux pair --qr                            # pair your phone: scan the code with the camera
-amux pair desk                            # or pair another computer found nearby
+amux pair desk                            # or pair another device found nearby
 ```
 
 amux keeps itself up to date.
@@ -135,15 +135,15 @@ amux keeps itself up to date.
 ## Free, with an optional paid tier
 
 amux is free. Your machines find each other on the same network, or connect over SSH, with
-no account at all. The paid tier adds the amux relay, so you can reach your agents from
-anywhere, securely, when your machines are apart.
+no account at all. The paid tier relays connections through amux's relay, so you can reach
+your agents securely when your phone and devices aren't on the same network.
 
 ## Supported
 
 | | |
 |---|---|
 | **Agents** | Claude Code and Codex, in amux's chat or their own terminal interfaces |
-| **Computers** | macOS, Linux |
+| **Devices** | macOS, Linux |
 | **Phone** | iPhone |
 
 ## Learn more

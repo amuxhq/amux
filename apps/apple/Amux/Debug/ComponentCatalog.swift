@@ -2236,7 +2236,7 @@ private struct FrozenFleetPicture: View {
             Text("Agents")
                 .designFont(.screenTitle, design)
                 .padding(.top, 70)
-            Text("No agents yet · 3 hosts")
+            Text("No agents yet · 3 devices")
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .padding(.top, 4)

@@ -117,7 +117,7 @@ public struct NewAgent: View {
         VStack(alignment: .leading, spacing: 9) {
             SectionHead(title: "Where")
             if hosts.hosts.isEmpty {
-                Explain("Pair a computer before starting an agent.")
+                Explain("Pair a device before starting an agent.")
                     .identified("new-agent.no-hosts")
             } else {
                 Surface {
@@ -154,10 +154,10 @@ public struct NewAgent: View {
         }
         let value = chosen?.name ?? String(localized: "Choose")
         return MenuButton(
-            name: String(localized: "Computer, \(value)"), identifier: "new-agent.host", items: items,
+            name: String(localized: "Device, \(value)"), identifier: "new-agent.host", items: items,
             value: chosen?.name
         ) {
-            FieldRow(label: String(localized: "Computer"), value: value)
+            FieldRow(label: String(localized: "Device"), value: value)
         }
     }
 
@@ -169,7 +169,7 @@ public struct NewAgent: View {
             return hosts.isConnecting(host.id) ? String(localized: "Connecting") : String(localized: "Offline")
         case .onThisNetwork, .throughTheRelay:
             let route = host.group == .onThisNetwork
-                ? String(localized: "on this network") : String(localized: "over the internet")
+                ? String(localized: "Direct") : String(localized: "Relayed")
             return [host.platform?.name, route].compactMap { $0 }.joined(separator: " · ")
         }
     }
@@ -263,7 +263,7 @@ public struct NewAgent: View {
                 case .offered?:
                     EmptyView()
                 case .unavailable?:
-                    Explain("\(machineName) could not say what \(model.provider.title) offers. The agent starts with the computer’s defaults.")
+                    Explain("\(machineName) could not say what \(model.provider.title) offers. The agent starts with the device’s defaults.")
                         .identified("new-agent.offer.unavailable")
                 case .asking?, nil:
                     Explain("Asking \(machineName) what \(model.provider.title) offers…")
@@ -412,7 +412,7 @@ public struct NewAgent: View {
     // MARK: - Starting it
 
     private var machineName: String {
-        model.machine.flatMap { hosts.host($0)?.name } ?? "the computer"
+        model.machine.flatMap { hosts.host($0)?.name } ?? "the device"
     }
 
     private var foot: some View {
@@ -530,7 +530,7 @@ public struct NewAgentDirectories: View {
                         row(repository, recent: false)
                     }
                 } else if model.listing != .asking {
-                    Explain("No matching folders on this computer.")
+                    Explain("No matching folders on this device.")
                         .identified("new-agent.browse.none")
                 }
             } else {
@@ -555,16 +555,16 @@ public struct NewAgentDirectories: View {
                 if model.listing == .ready && model.repositories.isEmpty && model.recent.isEmpty
                     && model.history.isEmpty
                 {
-                    Explain("Nothing has started on this computer yet. Type a path below.")
+                    Explain("Nothing has started on this device yet. Type a path below.")
                         .identified("new-agent.browse.none")
                 }
             }
             switch model.listing {
             case .asking:
-                Explain("Reading this computer’s repositories…")
+                Explain("Reading this device’s repositories…")
                     .identified("new-agent.browse.reading")
             case .unavailable:
-                Explain("This computer could not list its repositories.")
+                Explain("This device could not list its repositories.")
                     .identified("new-agent.browse.unavailable")
             case .none, .ready:
                 EmptyView()

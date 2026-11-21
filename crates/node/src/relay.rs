@@ -141,7 +141,7 @@ fn readable(envelope: &Envelope) -> Result<(), RelayError> {
     };
     match &envelope.body {
         None => Err(refused(
-            "this host can't read what the message holds; the host needs updating",
+            "this device can't read what the message holds; the device needs updating",
         )),
         Some(envelope::Body::Message(message))
             if !attachments::all_readable(&message.attachments) =>

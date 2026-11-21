@@ -5,14 +5,14 @@ chat.prose.render |  | rendered | 297,134,75,20
 chat.row.prose | Watching the logs. | final | 16,176,370,20
 chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.field | Reply |  | 28,750,346,24
+chat.field | desk is out of reach · your draft is kept |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,174,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.header | /p/t/a/n/d/work · desk | detached | 76,66,183,36
-chat.title | bystander | bystander | 76,66,183,36
+chat.header | desk · away | detached | 76,66,119,36
+chat.title | bystander | bystander | 76,66,119,36
  | Attach |  | 23,779,44,44
  | claude-fake-1 · medium |  | 71,779,174,44
  | Dictate |  | 287,779,44,44
@@ -21,6 +21,6 @@ chat.title | bystander | bystander | 76,66,183,36
  | Watching the logs. |  | 16,176,370,20
  | Worked for <t> |  | 16,203,81,16
 BackButton | Agents |  | 16,62,44,44
- | bystander, /p/t/a/n/d/work · desk |  | 76,66,183,36
+ | bystander, desk · away |  | 76,66,119,36
  | More |  | 350,66,28,36
  | Back |  | 16,73,44,23

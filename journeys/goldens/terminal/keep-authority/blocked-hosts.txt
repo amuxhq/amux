@@ -6,14 +6,14 @@
 
 
   ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
-                              ╭─ Devices ──────────────────────────────────────╮
-  › ○ guarded  Claude · /tmp/j│                                                │                       [x]
-      Only this account reache│ desk     offline · this computer is signed out │
-                              │ laptop   this computer                         │
-                              │                                                │
-                              │ Pair another computer with amux pair           │
-                              │ esc close                                      │
-                              ╰────────────────────────────────────────────────╯
+                               ╭─ Devices ────────────────────────────────────╮
+  › ○ guarded  Claude · /tmp/jo│                                              │                        [x]
+      Only this account reaches│ desk     offline · this device is signed out │
+                               │ laptop   this device                         │
+                               │                                              │
+                               │ Pair another device with amux pair           │
+                               │ esc close                                    │
+                               ╰──────────────────────────────────────────────╯
 
 
 

@@ -619,7 +619,7 @@ of different versions speak to each other. A later relay can refuse a build
 too old for it, by its `Host.version`, closing with `VERSION_MISMATCH`, which
 the dialler reads as the error reason `VERSION_MISMATCH`; clients show that
 host as "the other machine needs updating", never as a silent absence. A
-method a host does not have reads as "that host needs updating to do this".
+method a host does not have reads as "that device needs updating to do this".
 A failed or expired cloud token closes
 the link with `AUTH_EXPIRED`. Reauthentication is not acknowledged; success is
 silence and failure is a close.

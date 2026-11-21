@@ -33,16 +33,16 @@ A terminal app you opened before an update keeps working. It shows
 
 ## Updating to 0.11.0
 
-amux 0.11.0 changes how your computers and your phone talk to each other, so
-update all of them to it together: every computer you've paired, and the
-iPhone app from the App Store. Until they match, a computer or phone on 0.11.0
+amux 0.11.0 changes how your devices and your phone talk to each other, so
+update all of them to it together: every device you've paired, and the
+iPhone app from the App Store. Until they match, a device or phone on 0.11.0
 and one on an earlier version can still show each other as online, but
 neither keeps up with the other's agents, and neither can start, message or
 stop agents on the other. Updating
-the one left behind fixes it: run `amux update` on that computer, or update
+the one left behind fixes it: run `amux update` on that device, or update
 the app. From 0.11.0 on, newer and older versions work together again.
 
-An agent that was running when its computer updated carries on with its
+An agent that was running when its device updated carries on with its
 conversation and its work, but its amux tools stop working: it can't list
 the fleet, message another agent, or start or settle subagents. It gets them
 back when it's resumed, so settle it and resume it:
@@ -79,7 +79,7 @@ The change applies at the next check, or at once with `amux update`. amux
 never installs an older version, so going back to stable keeps the preview
 release you have until stable passes it.
 
-New releases can reach computers gradually, so a computer next to yours may
+New releases can reach devices gradually, so a device next to yours may
 update a little before or after it.
 
 ## If an update doesn't start
@@ -100,7 +100,7 @@ amux config set updates manual
 amux then updates only when you run `amux update`. `amux config unset updates`
 turns automatic updates back on.
 
-On a computer where your own service manager runs amux, amux never updates
+On a device where your own service manager runs amux, amux never updates
 itself ([Running amux on a server](server.md#running-amux-under-your-own-service-manager)).
 
 ## How releases are checked
@@ -111,7 +111,7 @@ the download's size and checksum against the signed release. A download that
 doesn't match is never installed.
 
 The very first install is the one step that can't be checked this way, because
-there's no amux on the computer yet to do the checking. The install script
+there's no amux on the device yet to do the checking. The install script
 downloads amux from amux.sh over HTTPS, and checks the download's checksum
 before installing it.
 

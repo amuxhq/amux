@@ -780,7 +780,7 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         XCTAssertEqual(model.draft, "What is this?")
         XCTAssertEqual(model.attachments, [.image(photo)])
-        XCTAssertEqual(model.notice, "Not sent: its host is away")
+        XCTAssertEqual(model.notice, "Not sent: its device is away")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
     }
@@ -1477,7 +1477,7 @@ final class ChatModelTests: XCTestCase {
 
         source.editAnswer = .unreachable
         await model.discardReviewDrafts().value
-        XCTAssertEqual(model.notice, "This agent’s computer can’t be reached, so nothing changed.")
+        XCTAssertEqual(model.notice, "This agent’s device can’t be reached, so nothing changed.")
     }
 
     func testDictationStreamsIntoTheDraftAndStopsOnSend() async {

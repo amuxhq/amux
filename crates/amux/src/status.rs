@@ -110,7 +110,7 @@ fn running_line(
             format!("amux {this} is not running; any amux command starts it.")
         }
         None => format!(
-            "amux {this} is not running; this host's service manager starts it \
+            "amux {this} is not running; this device's service manager starts it \
              (`amux server start` starts one by hand)."
         ),
     }
@@ -149,7 +149,7 @@ fn account(profile: &wire::Profile) -> String {
         .and_then(|cloud| cloud.standing.as_ref());
     match standing {
         None | Some(Standing::Unbound(_)) => {
-            "not signed in; `amux login` reaches your hosts through the relay".to_owned()
+            "not signed in; `amux login` lets your devices connect through amux's relay".to_owned()
         }
         Some(Standing::SignedOut(_)) => format!("signed out of {who}"),
         Some(Standing::SignedIn(link)) => {

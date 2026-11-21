@@ -63,7 +63,7 @@ impl Target {
     pub fn parse(target: &str) -> Result<Target> {
         let target = target.trim();
         if target.is_empty() {
-            bail!("name the host to pair with");
+            bail!("name the device to pair with");
         }
         Ok(if let Ok(addr) = target.parse() {
             Target::Addr(addr)
@@ -191,7 +191,7 @@ const PAIR_MODE_ALREADY_ACTIVE: &str = "PAIR_MODE_ALREADY_ACTIVE";
 fn already_open(status: tonic::Status) -> anyhow::Error {
     if status.message() == PAIR_MODE_ALREADY_ACTIVE {
         anyhow!(
-            "Pairing is already open on this host; finish it or press Ctrl+C where it runs. \
+            "Pairing is already open on this device; finish it or press Ctrl+C where it runs. \
              A demo window has no command running: `amux pair --cancel` closes it."
         )
     } else {
@@ -282,7 +282,7 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
             lines.push(format!(
                 "On the phone: choose {} and enter the PIN, or run `amux pair --qr` here to scan \
                  instead.",
-                if name.is_empty() { "this host" } else { name }
+                if name.is_empty() { "this device" } else { name }
             ));
             // The window's addresses are sorted, so loopback comes first on
             // most networks; another computer can only use one it can reach.
@@ -295,9 +295,9 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                         .is_ok_and(|addr| addr.ip().is_loopback())
                 })
                 .or(started.addrs.first());
-            let computer = match (name, reachable) {
+            let command = match (name, reachable) {
                 ("", Some(addr)) => format!("`amux pair {addr}`"),
-                ("", None) => "`amux pair <this host>`".to_owned(),
+                ("", None) => "`amux pair <this device>`".to_owned(),
                 (name, Some(addr)) => format!(
                     "`{}` (or `amux pair {addr}` if it is not found nearby)",
                     pair_command(name)
@@ -305,7 +305,7 @@ fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
                 (name, None) => format!("`{}`", pair_command(name)),
             };
             lines.push(format!(
-                "On another computer: run {computer} and enter the PIN."
+                "On another device: run {command} and enter the PIN."
             ));
         }
         (None, payload) if !payload.is_empty() => {
@@ -385,7 +385,7 @@ pub async fn pair(admin: Admin, client: &client::Client, target: Target, free: b
             )
         }
     };
-    let pin = ask("Pairing PIN shown on the other host: ")?;
+    let pin = ask("Pairing PIN shown on the other device: ")?;
     let secret =
         begin_pair_request::Secret::Pin(pin.chars().filter(char::is_ascii_digit).collect());
     confirm(
@@ -411,11 +411,11 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     match found.as_slice() {
         [host] => Ok(host),
         [] => Err(anyhow!(
-            "this machine knows of no unpaired host named {name}; `amux hosts` lists the ones \
-             found nearby or announced to it"
+            "this device knows of no unpaired device named {name}; `amux devices` lists the \
+             ones found nearby or announced to it"
         )),
         _ => Err(anyhow!(
-            "more than one unpaired host is named {name}; pair by the id `amux hosts` shows"
+            "more than one unpaired device is named {name}; pair by the id `amux devices` shows"
         )),
     }
 }
@@ -448,20 +448,20 @@ fn refused(status: tonic::Status) -> anyhow::Error {
     match pairing_reason(&status) {
         Some(PairingReason::Locked) => {
             return anyhow!(
-                "the other host closed its pairing window after too many wrong PINs; \
+                "the other device closed its pairing window after too many wrong PINs; \
                  run `amux pair` there again for a new PIN"
             );
         }
         Some(PairingReason::InvalidPin) => {
             return anyhow!(
-                "the PIN did not match, or the other host's pairing window has closed; \
+                "the PIN did not match, or the other device's pairing window has closed; \
                  check the PIN it shows and try again"
             );
         }
         _ => {}
     }
     if client::RpcError::from(status.clone()).reason() == Some(wire::ErrorReason::PaymentRequired) {
-        return anyhow!("{}", needs_pro("the other host"));
+        return anyhow!("{}", needs_pro("the other device"));
     }
     plain(status)
 }
@@ -481,17 +481,18 @@ fn pairing_reason(status: &tonic::Status) -> Option<PairingReason> {
 /// and what pairs it.
 fn needs_pro(name: &str) -> String {
     format!(
-        "{name} can be reached only through the relay, and this account is on the free plan, \
-         which carries no connection between hosts. Pro pairs through the relay: {}. On the \
-         same network, or through a host both are paired with, pairing works on any plan.",
+        "{name} can be reached only through amux's relay, and relayed connections need Pro: \
+         {}. On the same network, or through a device both are paired with, pairing works on \
+         any plan.",
         upgrade_url()
     )
 }
 
 fn paired(peer: &wire::Peer, pending: &PendingPair) -> String {
     let route = match pending.via() {
-        RouteKind::Relay => "through the relay",
-        _ => "on this network",
+        RouteKind::Relay => "through amux's relay",
+        RouteKind::Ssh => "over SSH",
+        _ => "directly",
     };
     format!(
         "Paired with {} ({}) {route}.",
@@ -634,7 +635,7 @@ fn pair_command(name: &str) -> String {
 
 fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String {
     let mut rows = vec![[
-        "HOST".to_owned(),
+        "DEVICE".to_owned(),
         "ID".into(),
         "REACHED".into(),
         "PAIRED".into(),
@@ -649,14 +650,14 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
             matches!(host.reach(), Some(wire::trusted::Reach::Offline(offline)) if offline.revoked)
         });
         let reached = match listed {
-            Some(_) if revoked => "no longer trusts this machine",
+            Some(_) if revoked => "unpaired this device",
             Some(host) => match host.online() {
-                Some(wire::RouteKind::Relay) => "online, through the relay",
+                Some(wire::RouteKind::Relay) => "online, relayed",
                 Some(wire::RouteKind::Ssh) => "online, over SSH",
-                Some(_) => "online, on this network",
+                Some(_) => "online, direct",
                 // The daemon lists a host away only when the relay alone
                 // sees it and the account is on the free plan.
-                None if host.away() => "away: the free plan does not relay between hosts",
+                None if host.away() => "away: relayed connections need Pro",
                 None => "away",
             },
             None => "not listed",
@@ -690,21 +691,21 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
         } else if let Some(through) = candidate.through_paired().next() {
             format!("through {}", through.name)
         } else {
-            "on your account, through the relay".to_owned()
+            "on your account, relayed".to_owned()
         };
         rows.push([
             entry.name().to_owned(),
             host(entry.host_id()),
             reached,
             if free && candidate.relay_only() {
-                format!("no: Pro pairs it through the relay, {}", upgrade_url())
+                format!("no: relayed connections need Pro, {}", upgrade_url())
             } else {
                 pair_again(entry.name())
             },
         ]);
     }
     if rows.len() == 1 {
-        return "No paired hosts, and none found nearby or announced. `amux pair` opens pairing \
+        return "No paired devices, and none found nearby or announced. `amux pair` opens pairing \
                 mode here.\n"
             .to_owned();
     }
@@ -745,8 +746,8 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     });
     let entry = match (named.next(), named.next()) {
         (Some(entry), None) => entry,
-        (None, _) => bail!("{peer} is not a paired host"),
-        (Some(_), Some(_)) => bail!("more than one paired host is called {peer}; name it by id"),
+        (None, _) => bail!("{peer} is not a paired device"),
+        (Some(_), Some(_)) => bail!("more than one paired device is called {peer}; name it by id"),
     };
     if !force {
         if !std::io::stdin().is_terminal() {
@@ -803,7 +804,7 @@ pub async fn login(mut door: Door, profile: Option<&wire::Profile>, cloud_url: &
             }
             Some(Of::Adopt(asked)) => {
                 let answer = ask(
-                    "This profile already has agents or paired hosts. Sign it in to this account \
+                    "This profile already has agents or paired devices. Sign it in to this account \
                      anyway? [y/N] ",
                 )?;
                 let adopt = matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes");
@@ -840,7 +841,7 @@ pub async fn logout(mut admin: Admin, profile: &wire::Profile) -> Result<()> {
         .await
         .map_err(plain)?;
     println!(
-        "Signed {} out; its agents and paired hosts stay.",
+        "Signed {} out; its agents and paired devices stay.",
         profile.label
     );
     Ok(())
@@ -869,7 +870,7 @@ mod tests {
             refused(pairing_refusal(PairingReason::InvalidPin, "INVALID_PIN")).to_string();
         assert_eq!(
             refusal,
-            "the PIN did not match, or the other host's pairing window has closed; \
+            "the PIN did not match, or the other device's pairing window has closed; \
              check the PIN it shows and try again"
         );
         assert!(!refusal.contains("INVALID_PIN"));
@@ -962,7 +963,7 @@ mod tests {
                 "On the phone: choose den mac and enter the PIN, or run `amux pair --qr` here \
                  to scan instead."
                     .to_owned(),
-                "On another computer: run `amux pair 'den mac'` (or `amux pair 10.0.0.2:7420` \
+                "On another device: run `amux pair 'den mac'` (or `amux pair 10.0.0.2:7420` \
                  if it is not found nearby) and enter the PIN."
                     .to_owned(),
             ]
@@ -1004,9 +1005,9 @@ mod tests {
         }];
         let table = peer_table(&trusted, &[online, nearby], false);
         let lines: Vec<&str> = table.lines().collect();
-        assert!(lines[0].starts_with("HOST"), "{table}");
+        assert!(lines[0].starts_with("DEVICE"), "{table}");
         assert!(lines[1].starts_with("studio"), "{table}");
-        assert!(lines[1].contains("online, through the relay"), "{table}");
+        assert!(lines[1].contains("online, relayed"), "{table}");
         assert!(lines[2].starts_with("den mac"), "{table}");
         assert!(lines[2].ends_with("no: amux pair 'den mac'"), "{table}");
     }
@@ -1027,7 +1028,7 @@ mod tests {
         }];
         let table = peer_table(&trusted, &[away], false);
         assert!(
-            table.contains("away: the free plan does not relay between hosts"),
+            table.contains("away: relayed connections need Pro"),
             "{table}"
         );
     }
@@ -1052,7 +1053,7 @@ mod tests {
         }];
         let table = peer_table(&trusted, &[revoked], false);
         let row = table.lines().nth(1).unwrap();
-        assert!(row.contains("no longer trusts this machine"), "{table}");
+        assert!(row.contains("unpaired this device"), "{table}");
         assert!(row.ends_with("no: amux pair desk"), "{table}");
     }
 
@@ -1086,13 +1087,13 @@ mod tests {
         let nova = announced("nova", vec![neighbor("s1", true)]);
         let pro = peer_table(&[], std::slice::from_ref(&nova), false);
         let row = pro.lines().nth(1).unwrap();
-        assert!(row.contains("on your account, through the relay"), "{pro}");
+        assert!(row.contains("on your account, relayed"), "{pro}");
         assert!(row.ends_with("no: amux pair nova"), "{pro}");
 
         let free = peer_table(&[], &[nova], true);
         let row = free.lines().nth(1).unwrap();
         assert!(
-            row.ends_with("no: Pro pairs it through the relay, https://amux.sh/account"),
+            row.ends_with("no: relayed connections need Pro, https://amux.sh/account"),
             "{free}"
         );
     }

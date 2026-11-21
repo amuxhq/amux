@@ -463,7 +463,7 @@
       {"literal": "\"stopped\"", "context": "case \"stopped\": .exited(.finished)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.noMatches\"", "context": ".identified(\"home.noMatches\", label: \"No agents match\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.noMatches.clear\"", "context": ".identified(\"home.noMatches.clear\", label: \"Clear\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"home.empty.firstRun\"", "context": ".identified(\"home.empty.firstRun\", value: \"Pair your first computer\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"home.empty.firstRun\"", "context": ".identified(\"home.empty.firstRun\", value: \"Pair your first device\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.localNetwork\"", "context": "LocalNetworkRefused(heading: false, identifier: \"home.localNetwork\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.empty.looking\"", "context": ".identified(\"home.empty.looking\", value: \"Looking on this network…\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"home.empty.sendLink\"", "context": ".identified(\"home.empty.sendLink\", label: \"Send Link\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -527,7 +527,7 @@
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift": [
       {"literal": "\"hosts\"", "context": ".identified(\"hosts\", value: subtitle)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"hosts.subtitle\"", "context": "LargeSubtitle(text: subtitle, identifier: \"hosts.subtitle\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"hosts.empty\"", "context": ".identified(\"hosts.empty\", value: \"No computers yet\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
+      {"literal": "\"hosts.empty\"", "context": ".identified(\"hosts.empty\", value: \"No devices yet\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"hosts.empty.howToPair\"", "context": ".identified(\"hosts.empty.howToPair\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"hosts.row.\\(key(host))\"", "context": "\"hosts.row.\\(key(host))\", label: spoken(host), value: host.group.name)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -580,7 +580,7 @@
       {"literal": "\"on\"", "context": ".identified(\"new-agent.worktree\", label: \"New worktree\", value: model.newWorktree ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"off\"", "context": ".identified(\"new-agent.worktree\", label: \"New worktree\", value: model.newWorktree ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.cancel\"", "context": "BarButton(\"xmark\", label: String(localized: \"Cancel\"), identifier: \"new-agent.cancel\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"new-agent.host\"", "context": "name: String(localized: \"Computer, \\(value)\"), identifier: \"new-agent.host\", items: items,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.host\"", "context": "name: String(localized: \"Device, \\(value)\"), identifier: \"new-agent.host\", items: items,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.provider\"", "context": "name: String(localized: \"Agent, \\(model.provider.title)\"), identifier: \"new-agent.provider\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.browse.done\"", "context": "BarButton(\"checkmark\", label: String(localized: \"Done\"), identifier: \"new-agent.browse.done\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.search\"", "context": ".identified(\"new-agent.search\", label: \"Search folders\", value: model.query)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -1118,7 +1118,7 @@
       {"literal": "\"sent\"", "context": "page(\"sent\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"rep_4KX2M9\"", "context": "sending: .sent(ReportReceipt(id: \"rep_4KX2M9\", receivedAt: CatalogFixtures.now)), open: true)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"report.\\(id)\"", "context": "id: \"report.\\(id)\", family: .report, canvas: CGSize(width: 390, height: 844)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"No agents yet · 3 hosts\"", "context": "Text(\"No agents yet · 3 hosts\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"No agents yet · 3 devices\"", "context": "Text(\"No agents yet · 3 devices\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"fix-flaky-ci\"", "context": "ForEach([\"fix-flaky-ci\", \"relay-backoff\", \"docs-pass\"], id: \\.self) { name in", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"relay-backoff\"", "context": "ForEach([\"fix-flaky-ci\", \"relay-backoff\", \"docs-pass\"], id: \\.self) { name in", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"desk · Working\"", "context": "Text(\"desk · Working\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1734,7 +1734,7 @@
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FirstRun.swift": [
       {"literal": "\"\\(identifier).primer\"", "context": ".identified(\"\\(identifier).primer\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"\\(identifier).look\"", "context": ".identified(\"\\(identifier).look\", label: \"Look for Computers\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
+      {"literal": "\"\\(identifier).look\"", "context": ".identified(\"\\(identifier).look\", label: \"Look for Devices\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/SignInOffer.swift": [
       {"literal": "\"sign-in-offer.title\"", "context": "PairingPanel(title: title, detail: detail, identifier: \"sign-in-offer.title\") {", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},

@@ -8,10 +8,10 @@
 
     ○ desk-work  Claude · /tmp/jo╭─ Devices ────────────────────────────────╮                          now
                                  │                                          │
-                                 │ desk     on this network                 │
-                                 │ laptop   this computer                   │
+                                 │ desk     direct                          │
+                                 │ laptop   this device                     │
                                  │                                          │
-                                 │ Pair another computer with amux pair     │
+                                 │ Pair another device with amux pair       │
                                  │ esc close                                │
                                  ╰──────────────────────────────────────────╯
 

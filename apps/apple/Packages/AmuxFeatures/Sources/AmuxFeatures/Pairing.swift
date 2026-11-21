@@ -37,7 +37,7 @@ public struct PairingHint: View {
     public init() {}
 
     public var body: some View {
-        Text("Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app.")
+        Text("Open amux on a device on this network to pair it, or scan the code it shows with the Camera app.")
             .designFont(.detail, design)
             .foregroundStyle(design.inkMuted.color)
             .fixedSize(horizontal: false, vertical: true)
@@ -64,7 +64,7 @@ struct LocalNetworkRefused: View {
                 .designFont(heading ? .screenTitle : .bodyEmphasis, design)
                 .foregroundStyle(design.ink.color)
             Explain("""
-                Nobody let amux look at the network this phone is on, so no host on it \
+                Nobody let amux look at the network this phone is on, so no device on it \
                 can be found. Turn on Local Network for amux in Settings.
                 """)
             Button { openSettings() } label: {
@@ -115,11 +115,11 @@ extension View {
 func pairingRoute(_ machine: HostView?) -> String? {
     guard let machine else { return nil }
     if machine.candidate && machine.reach != .online(.relay) {
-        return String(localized: "On this network")
+        return String(localized: "Local")
     }
     switch machine.reach {
-    case .online(.direct): return String(localized: "On this network")
-    case .online(.relay): return String(localized: "Over the internet")
+    case .online(.direct): return String(localized: "Direct")
+    case .online(.relay): return String(localized: "Relayed")
     case .online(.ssh): return String(localized: "Over SSH")
     case .online(.unspecified), .away, .offline: return nil
     }
@@ -147,8 +147,8 @@ public struct PairNeedsAnAccount: View {
 
     public var body: some View {
         PairingPanel(
-            title: String(localized: "That computer is not on this network"),
-            detail: String(localized: "Its invitation names no address here, so it can only be reached over the internet. Sign in and this phone can take it up."),
+            title: String(localized: "That device is not on this network"),
+            detail: String(localized: "Its invitation names no address here, so only a relayed connection reaches it. Sign in and this phone can take it up."),
             identifier: "pair-needs-account.title"
         ) {
             if signingIn {
@@ -171,7 +171,7 @@ public struct PairNeedsAnAccount: View {
             Explain(String(localized: "The invitation is kept until then."))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .pairingChrome(String(localized: "Pair a Computer")) { actions(.cancel) }
+        .pairingChrome(String(localized: "Pair a Device")) { actions(.cancel) }
         .accessibilityElement(children: .contain)
         .identified("pair-needs-account", value: "not on this network")
     }
@@ -268,7 +268,7 @@ public struct PairByCode: View {
     }
 
     private var title: String {
-        guard let machine = model.machine else { return String(localized: "Pair a Computer") }
+        guard let machine = model.machine else { return String(localized: "Pair a Device") }
         return String(localized: "Pair \(machine.name)")
     }
 
@@ -302,7 +302,7 @@ public struct PairByCode: View {
     /// as a wrong code.
     private var instruction: Text {
         let command = Text(verbatim: "amux pair").font(design.font(.monoSmall))
-        guard let machine = model.machine else { return Text("Run \(command) on the computer to get one.") }
+        guard let machine = model.machine else { return Text("Run \(command) on the device to get one.") }
         if machine.windowOpen { return Text("Enter the code amux shows on \(machine.name).") }
         return Text("Run \(command) on \(machine.name) to get one.")
     }
@@ -413,13 +413,13 @@ public struct PairByCode: View {
 
     private var refused: String {
         guard let machine = model.machine else {
-            return String(localized: "That code didn’t work. Get a new one from the computer.")
+            return String(localized: "That code didn’t work. Get a new one from the device.")
         }
         return String(localized: "That code didn’t work. Get a new one from \(machine.name).")
     }
 
     private var expiry: String {
-        let host = model.machine?.name ?? String(localized: "the computer")
+        let host = model.machine?.name ?? String(localized: "the device")
         return String(localized: "The code expires \(PairingStore.offerWindow) after \(host) prints it.")
     }
 
@@ -489,7 +489,7 @@ public struct PairConfirmation: View {
     }
 
     private var title: String {
-        guard let name else { return String(localized: "Pair a Computer") }
+        guard let name else { return String(localized: "Pair a Device") }
         return String(localized: "Pair \(name)")
     }
 
@@ -500,8 +500,8 @@ public struct PairConfirmation: View {
 
     static func route(_ via: RouteKind) -> String? {
         switch via {
-        case .direct: String(localized: "On this network")
-        case .relay: String(localized: "Over the internet")
+        case .direct: String(localized: "Direct")
+        case .relay: String(localized: "Relayed")
         case .ssh: String(localized: "Over SSH")
         case .unspecified: nil
         }
@@ -555,7 +555,7 @@ public struct PairConfirmation: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
                     .identified("pair-confirm.name", value: peer.name)
-                Explain(String(localized: "You’ll see its agents here and can start new ones, which run on that computer as you. Pair only with your own computers. This invitation expires \(expiry(peer))."))
+                Explain(String(localized: "You’ll see its agents here and can start new ones, which run on that device as you. Pair only with your own devices. This invitation expires \(expiry(peer))."))
                     .padding(.top, 14)
                     .identified("pair-confirm.expiry", value: expiry(peer))
                 Spacer(minLength: 22)
@@ -598,7 +598,7 @@ public struct PairConfirmation: View {
         }
     }
 
-    /// "macOS · on this network": what the machine is, where this
+    /// "macOS · Direct": what the machine is, where this
     /// phone knows it, and how it would be reached.
     private func about(_ peer: PendingPair) -> String {
         var parts: [String] = []
@@ -606,8 +606,8 @@ public struct PairConfirmation: View {
             parts.append(platform)
         }
         switch peer.via {
-        case .direct: parts.append(String(localized: "on this network"))
-        case .relay: parts.append(String(localized: "over the internet"))
+        case .direct: parts.append(String(localized: "Direct"))
+        case .relay: parts.append(String(localized: "Relayed"))
         case .ssh: parts.append(String(localized: "over SSH"))
         case .unspecified: break
         }
@@ -631,7 +631,7 @@ public struct PairConfirmation: View {
         PairingPanel(
             title: model.told == nil
                 ? String(localized: "That invitation didn’t work") : String(localized: "Not paired"),
-            detail: model.told ?? String(localized: "Get a new one from the computer."),
+            detail: model.told ?? String(localized: "Get a new one from the device."),
             identifier: "pair-confirm.refused"
         ) {
             Button { actions(.cancel) } label: {

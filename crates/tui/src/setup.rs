@@ -548,7 +548,7 @@ fn host_name(fleet: &FleetState, host: &[u8]) -> String {
         .host(host)
         .map(|host| host.name().to_owned())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "this computer".into())
+        .unwrap_or_else(|| "this device".into())
 }
 
 /// The hosts an agent can start on, the chosen one first in a list (a
@@ -1406,7 +1406,7 @@ impl Form {
                 Field::Name => "Name",
                 Field::Kind => "Agent",
                 Field::Folder => "Folder",
-                Field::Host => "Computer",
+                Field::Host => "Device",
                 Field::Worktree => "Worktree",
             };
             let label_ink = if current {
@@ -1448,7 +1448,7 @@ impl Form {
                         let hint = if field == Field::Name {
                             "named automatically"
                         } else {
-                            "a folder on that computer"
+                            "a folder on that device"
                         };
                         push(&mut line, hint, theme.faint(), wide);
                     } else {

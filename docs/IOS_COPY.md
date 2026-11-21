@@ -14,7 +14,7 @@ words within a title stay lowercase, and names keep their spelling, as in
 **Start on Studio** and **Continue as ada@example.com**.
 
 Use sentence case for headlines, section heads, descriptions, captions,
-placeholders and status lines: **No hosts yet**, **Needs you**, **Message
+placeholders and status lines: **No devices yet**, **Needs you**, **Message
 refactor-auth**, **Reconnecting · your draft is kept**. Identifiers, commands,
 model names and paths keep their original case and use the mono face.
 
@@ -27,30 +27,43 @@ consequences. Do not add reassurance or describe implementation choices.
 
 | Thing | Use |
 | --- | --- |
-| A computer running amux | host |
+| A computer running amux | device |
 | An agent awaiting a response or review | needs you |
 | The account service | account |
 | What a subscription provides | relay |
-| Adding a host | pair |
-| A host reached on the local network | on this network |
-| The route to a host on the local network | direct |
-| An unpaired host discovered on the local network | found |
-| A host the relay refused to connect for the account's free plan | away |
-| A host no channel reaches, for any other reason | offline |
-| Leaving an account or ending a device's access | sign out / revoke |
+| Adding a device | pair |
+| Ending a paired device's access | unpair |
+| A device found by discovery on this network | Local |
+| A device reached with nothing in between, not through the relay | Direct |
+| A device reached through amux's relay | Relayed |
+| A plan that blocks relayed reach | Relayed connections need Pro |
+| An unpaired device discovered on the local network | found |
+| A device the relay refused to connect for the account's free plan | away |
+| A device no channel reaches, for any other reason | offline |
+| Leaving an account | sign out |
 | The debug bundle | report |
 | A plan you do not accept | send back |
 | Ending the turn under way; the agent stays live | interrupt |
 | Ending a live agent; it goes to exited and can be resumed | stop |
 | Removing an exited agent for good | delete |
 
-Use **away** only when the daemon says the relay refused the host because the
+Use **away** only when the daemon says the relay refused the device because the
 selected account has no subscription: upgrading reaches it. The daemon says so
 only once nothing else is being tried, and keeps saying so until that changes,
-so the subscription offer shows as soon as a host reads away and stays put. Use **offline** for
-every other host out of reach, including one that no longer trusts this phone
-and one only a signed-out phone cannot reach. Never describe an offline host as
-away, and never offer a subscription merely because a host is offline.
+so the subscription offer shows as soon as a device reads away and stays put. Use **offline** for
+every other device out of reach, including one that unpaired this phone
+and one only a signed-out phone cannot reach. Never describe an offline device as
+away, and never offer a subscription merely because a device is offline.
+
+The protocol, the code and the commands people type (`amux hosts`) say *host*;
+nothing the app shows does. A device's own name stays as it is, as in
+**laptop is nearby**. How a device is reached reads **Local** (found on this
+network), **Direct** (no relay in between) or **Relayed** (through amux's
+relay), as in "macOS · Relayed" or "Connected · Direct". Where the plan blocks
+relayed reach, say **Relayed connections need Pro**; in a longer sentence, say
+what Pro does: "Pro relays connections when your phone and device aren't on
+the same network." Never "over the internet", "from anywhere" as a route, or
+"cloud".
 
 Putting an agent away is **Settle**, never "stop" or "archive": swiped left
 on its row, or from its menu. Only a settled agent offers **Delete Agent**,
@@ -63,13 +76,14 @@ turn and the ask card's way out of the turn read **Interrupt**.
 A message is never sent while the chat is not current: Send is off and the
 draft stays, and the empty field says why, short enough for one line:
 "Catching up · your draft is kept", "Reconnecting · your draft is kept",
-"desk is out of reach · your draft is kept". One refused because its host
-could not be reached comes back with "Not sent: its host is away". A settle
-whose host cannot be reached is **held** and says when it goes: "Settle held ·
-sends when desk is back". Revoking a host asks first: "Revoke desk? This phone stops reaching it,
-and only pairing again brings it back."
+"desk is out of reach · your draft is kept". One refused because its device
+could not be reached comes back with "Not sent: its device is away". A settle
+whose device cannot be reached is **held** and says when it goes: "Settle held ·
+sends when desk is back". Unpairing a device asks first: "Unpair desk?" with
+"This phone stops reaching it and its agents leave this phone’s list. Only
+pairing again brings it back."
 
-Use second person and present tense. An agent or host is *it*. Avoid hedging,
+Use second person and present tense. An agent or device is *it*. Avoid hedging,
 filler and exclamation marks. Use digits for numbers, a middle dot between
 facts on one line, curly quotes and a proper ellipsis (…). Full sentences end
 with full stops; status fragments do not. Do not use em dashes, semicolons,

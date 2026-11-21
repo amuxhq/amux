@@ -16,13 +16,13 @@ struct LocalNetworkPrimer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Explain(String(localized: "amux looks for your computers on this network, so iOS asks for local network access next."))
+            Explain(String(localized: "amux looks for your devices on this network, so iOS asks for local network access next."))
                 .identified("\(identifier).primer")
             Button { look() } label: {
-                ActionLabel("Look for Computers", kind: .primary)
+                ActionLabel("Look for Devices", kind: .primary)
             }
             .buttonStyle(.amuxControl)
-            .identified("\(identifier).look", label: "Look for Computers")
+            .identified("\(identifier).look", label: "Look for Devices")
         }
         .accessibilityElement(children: .contain)
     }

@@ -10,7 +10,7 @@
                    │  Name      release-notes                                             │
     ○ expired  Clau│  Agent      Claude   Codex                                           │            now
       Tidied.      │  Folder    /tmp/journey/aj-xxxxxxxx/net/laptop/work                  │
-                   │  Computer   cabin   desk   laptop                                    │
+                   │  Device     cabin   desk   laptop                                    │
     ○ limited  Clau│  Worktree  [ ] new worktree                                          │            now
       The FAQ is re│                                                                      │
                    │  [Start]  [Cancel]                                                   │

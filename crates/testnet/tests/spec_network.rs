@@ -258,7 +258,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     // reached from the exchange, and nothing is trusted before the person
     // confirms it. Abandoning releases the attempt, so more abandoned
     // attempts than the guess cap still leave the PIN usable.
-    let now_ms = chrono::Utc::now().timestamp_millis();
+    let now_ms = jiff::Timestamp::now().as_millisecond();
     for _ in 0..6 {
         let pending = begin_pair(
             &net,

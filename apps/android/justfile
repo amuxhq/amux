@@ -36,9 +36,9 @@ lint:
 graph-check:
     mkdir -p target/android
     {{bounded}} 300 cargo tree --locked -p app-jni --target aarch64-linux-android -e normal --prefix none --format "{p}" > target/android/graph-shipping.txt
-    ! grep -E "^(pty-host|agent|testnet|qualification|replay-support) v" target/android/graph-shipping.txt
+    ! grep -E "^(pty-host|agent|interpret|claude-protocol|codex-protocol|schemars|testnet|qualification|replay-support) v" target/android/graph-shipping.txt
     {{bounded}} 300 cargo tree --locked -p app-jni --features debug-tools --target aarch64-linux-android -e normal --prefix none --format "{p}" > target/android/graph-driving.txt
-    ! grep -E "^(pty-host|agent) v" target/android/graph-driving.txt
+    ! grep -E "^(pty-host|agent|interpret|claude-protocol|codex-protocol|schemars) v" target/android/graph-driving.txt
 
 # Build the Rust JNI bridge libraries for Android and/or the host JVM.
 rust *ARGS:

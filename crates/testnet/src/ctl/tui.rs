@@ -965,7 +965,7 @@ pub(crate) fn shot(folder: &Folder, pane: &str) -> Result<(PathBuf, PathBuf), St
     ));
     let dir = folder.dir.join("shots");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    let stamp = chrono::Utc::now().format("%H%M%S%3f");
+    let stamp = jiff::Timestamp::now().strftime("%H%M%S%3f");
     let base = dir.join(format!("{pane}-{stamp}"));
     let frame_path = base.with_extension("frame.json");
     let png = base.with_extension("png");

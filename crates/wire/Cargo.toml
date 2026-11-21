@@ -11,14 +11,20 @@ default = ["grpc"]
 # The generated gRPC clients and servers, and tonic with them. The messages
 # build without it, so a crate that only speaks them carries no tokio.
 grpc = ["dep:tonic", "dep:tonic-prost"]
+# JSON Schema derives for the view values whose Swift mirrors are generated
+# from their schemas. Crates that never emit schemas leave schemars out.
+schema = ["dep:schemars"]
 
 [dependencies]
 prost = { workspace = true }
 # Any, which an error status packs its details in.
 prost-types = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
 tracing = { workspace = true }
 
+
+[lints]
+workspace = true

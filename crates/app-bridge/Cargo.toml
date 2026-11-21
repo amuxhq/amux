@@ -28,3 +28,6 @@ wire = { workspace = true }
 # runtime and has nothing to install.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 installer = { workspace = true }
+
+[lints]
+workspace = true

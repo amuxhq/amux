@@ -310,8 +310,10 @@ fn instance_name(fullname: &str) -> Option<String> {
         }
 
         let mut digits = String::new();
-        while digits.len() < 3 && chars.peek().is_some_and(char::is_ascii_digit) {
-            digits.push(chars.next().unwrap());
+        while digits.len() < 3
+            && let Some(digit) = chars.next_if(char::is_ascii_digit)
+        {
+            digits.push(digit);
         }
         if digits.len() == 3 {
             let byte = digits.parse::<u8>().ok()?;

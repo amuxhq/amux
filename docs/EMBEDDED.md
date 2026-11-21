@@ -49,11 +49,12 @@ deliberate exception to "no UI crate links the daemon".
 
 What ships on a phone is checked from the other end too. `just ios
 graph-check` walks `cargo tree -p app-ffi` for the iOS simulator target and
-fails if `pty-host`, `agent`, `testnet`, `qualification` or
-`replay-support` appears, with and without the driving
-tools. `just mobile-check` checks `node`, `client`, `ui-state`,
-`ui-runtime`, `app-runtime`, `app-embedded` and `app-bridge` for the iOS device,
-iOS simulator and Android targets.
+fails if `pty-host`, `agent`, `interpret`, `claude-protocol`, `codex-protocol`,
+`schemars`, `testnet`, `qualification` or `replay-support` appears, with and
+without the driving tools. `just mobile-check` checks `node`, `client`,
+`ui-state`, `ui-runtime`, `app-runtime`, `app-embedded` and `app-bridge` for the
+iOS device and simulator targets, and `just android check` checks the same graph
+plus `app-jni` for Android.
 
 ## What a client reuses
 

@@ -1938,7 +1938,7 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
 /// "14:07": the local time a row was written.
 pub fn clock(at_ms: i64) -> String {
     local_time(at_ms)
-        .map(|at| at.format("%H:%M").to_string())
+        .map(|at| at.strftime("%H:%M").to_string())
         .unwrap_or_default()
 }
 
@@ -1946,20 +1946,14 @@ pub fn clock(at_ms: i64) -> String {
 /// own tests, and the component vocabulary once it has drawn, read UTC
 /// instead, so a golden drawn from real timestamps reads the same in every
 /// time zone.
-pub(crate) fn local_time(at_ms: i64) -> Option<chrono::DateTime<chrono::FixedOffset>> {
-    use chrono::TimeZone;
-    let at = if cfg!(test) || times_in_utc() {
-        chrono::Utc
-            .timestamp_millis_opt(at_ms)
-            .single()?
-            .fixed_offset()
+pub(crate) fn local_time(at_ms: i64) -> Option<jiff::Zoned> {
+    let at = jiff::Timestamp::from_millisecond(at_ms).ok()?;
+    let zone = if cfg!(test) || times_in_utc() {
+        jiff::tz::TimeZone::UTC
     } else {
-        chrono::Local
-            .timestamp_millis_opt(at_ms)
-            .single()?
-            .fixed_offset()
+        jiff::tz::TimeZone::system()
     };
-    Some(at)
+    Some(at.to_zoned(zone))
 }
 
 #[cfg(feature = "fixtures")]

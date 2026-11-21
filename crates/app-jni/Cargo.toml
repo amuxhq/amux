@@ -19,3 +19,6 @@ debug-tools = ["app-bridge/debug-tools"]
 app-bridge = { workspace = true }
 jni = { workspace = true }
 libc = { workspace = true }
+
+[lints]
+workspace = true

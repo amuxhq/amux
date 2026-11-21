@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -116,8 +116,8 @@ pub struct MetricRun {
     /// such as a regression slope, retain one reportable value while still
     /// naming the full observation count required by the measurement contract.
     pub observation_count: usize,
-    pub started_at: DateTime<Utc>,
-    pub ended_at: DateTime<Utc>,
+    pub started_at: Timestamp,
+    pub ended_at: Timestamp,
 }
 
 #[cfg(test)]
@@ -390,8 +390,8 @@ impl Report {
                 run.metric.workload.identity_growth,
                 run.observation_count,
                 run.metric.workload.warm_up,
-                run.started_at.to_rfc3339(),
-                run.ended_at.to_rfc3339(),
+                run.started_at,
+                run.ended_at,
             );
             if verdict.baseline.is_none() && !ceiling_only {
                 println!("  no committed baseline for this workload");
@@ -566,8 +566,8 @@ mod tests {
                 })
                 .collect(),
             observation_count: values.len(),
-            started_at: Utc::now(),
-            ended_at: Utc::now(),
+            started_at: Timestamp::now(),
+            ended_at: Timestamp::now(),
         }
     }
 

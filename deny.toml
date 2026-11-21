@@ -18,10 +18,6 @@ ignore = [
     # Unmaintained, with no known flaw. fontdue reads the fonts the test
     # screenshot renderer ships with; nothing shipped renders a font.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser reads only the test renderer's own fonts" },
-    # Unmaintained, with no known flaw. amux uses chrono only to read and
-    # write RFC 3339 timestamps and take the current time; moving to jiff is
-    # a change of its own.
-    { id = "RUSTSEC-2026-0543", reason = "chrono only formats, parses and reads the clock" },
 ]
 
 [licenses]
@@ -53,10 +49,17 @@ allow = [
 ignore = true
 
 [bans]
-# Duplicate versions are a build-size question, not one this check answers.
+# Duplicate versions are a build-size question; workspace crates align on shared
+# versions while remaining duplicates are transitive. Deny rules lock in the
+# migrations we have already completed.
 multiple-versions = "allow"
 wildcards = "deny"
 allow-wildcard-paths = true
+deny = [
+    { crate = "chrono", reason = "unmaintained (RUSTSEC-2026-0543); use jiff" },
+    { crate = "sha2:<0.11", reason = "align on sha2 0.11 with hpke" },
+    { crate = "curve25519-dalek:<5", reason = "align on curve25519-dalek 5 with hpke and x25519-dalek" },
+]
 
 [sources]
 unknown-registry = "deny"

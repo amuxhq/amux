@@ -1,11 +1,13 @@
 //! The review document: files, counts and hunks parsed from a diff's patch,
 //! with the person's comments placed on their lines.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use wire::{Diff, ReviewComment};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewDoc {
     pub base: String,
     pub head: String,
@@ -14,7 +16,8 @@ pub struct ReviewDoc {
     pub removed: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewFile {
     pub path: String,
     /// Set for a rename or copy.
@@ -28,7 +31,8 @@ pub struct ReviewFile {
     pub comments: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FileStatus {
     #[default]
     Modified,
@@ -37,7 +41,8 @@ pub enum FileStatus {
     Renamed,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Hunk {
     /// Lines the patch leaves out come before this one: every hunk but a
     /// file's first when that starts at the top.
@@ -48,7 +53,8 @@ pub struct Hunk {
     pub lines: Vec<DiffLine>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DiffLine {
     pub kind: LineKind,
     pub old_line: Option<u32>,
@@ -57,7 +63,8 @@ pub struct DiffLine {
     pub comments: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum LineKind {
     Context,
     Added,

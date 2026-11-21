@@ -46,11 +46,11 @@ every other job but the policy job runs only if the change can reach it:
 
 | Change | Runs |
 | --- | --- |
-| Documentation only (`docs/`, `images/`, `marketing/`, a top-level `*.md`) | The policy job, which holds the documentation check: about a minute |
-| The phone app only (`apps/apple/`) | Clippy, formatting and the tests, some of which read the app's files; the iOS gate judges the rest |
+| Documentation, another workflow or a manual script (`docs/`, `images/`, `marketing/`, top-level `*.md`, non-CI workflows, manual scripts) | The policy job, which holds the documentation and script checks: about a minute |
+| The phone app only (`apps/apple/`) | Only `ios-tools` tests (Swift mirrors and verification CLI) unless a fixture read by another Rust test changed; the iOS gate judges the rest |
 | The browser extension only (`js/`) | The browser extension's job |
-| A crate | Those, the build, the journeys and the simulated stories; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
-| Anything else: a manifest, a script, a workflow, a journey, a schema | Every job |
+| A crate | Format, Clippy and the workspace tests; the journeys and simulated stories when `amux` or `testnet` is built from that crate; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
+| Anything else: a manifest, a CI script, `ci.yml`, a journey, a schema | Every job |
 
 Which crates a crate is built from is read from the manifests. A newer push
 to a branch stops the run of the push before it, in CI and in the iOS gate,
@@ -75,10 +75,10 @@ takes seconds shares a job, and the models run a few to a job.
 | --- | --- | --- |
 | Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just lint` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just store-check` |
-| Test | `ubuntu-latest`, `macos-latest`, `windows-latest`, two jobs each | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models --partition count:N/2`: each job builds every test and runs every second one |
+| Test | `ubuntu-latest` (2 halves), `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models` (partitioned `count:N/2` on Linux and macOS; whole suite on Windows, which compiles out the slow Unix suites) |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
-| Models | `ubuntu-latest`, five jobs | `just test-crate models` filtered to one model's module of the integration test binary, for each of the job's two to four models in turn: each model at its CI bounds |
-| Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
+| Models | `ubuntu-latest`, three jobs | `just test-crate models -- --cargo-profile models --no-fail-fast` filtered to each job's models at their CI bounds |
+| Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux` on macOS (Linux runners include it), then `just journey terminal all`: every terminal story in the manifest |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
@@ -156,8 +156,7 @@ change, compiles the whole dependency graph and can take longer than these
 numbers.
 
 No test builds a binary mid-run. The nextest setup script builds `amux`, the fakes and `fake-amux` once, before
-the first test. Its features unify over its own packages rather than the workspace's, so after a change it
-compiles part of the graph again, once (46 s cold on the Mac, under a second warm). Tests that built the binaries
+the first test, with `--workspace` feature unification so it reuses the rlibs `just test` already compiled (under two seconds). It is skipped for `models` and for simulated runs (`TESTNET_MODE=simulated`), neither of which spawns those binaries. Tests that built the binaries
 themselves each ran cargo again, with the features of their own package: every test crate's first such build
 recompiled part of the graph while other tests ran, and a test process per test would have queued every one of
 them on cargo's lock.
@@ -165,16 +164,16 @@ them on cargo's lock.
 ### Protocol models
 
 The protocol models ([`crates/models`](../crates/models/README.md)) explore
-every state of the real cores within their bounds, a minute or more of
-every core each, so they leave the three Test jobs (`--exclude models`;
-`just test` itself still runs them) for the Models jobs: five Linux jobs,
-each building the models crate and running two to four protocol models (a
-module each of the crate's integration test binary) one after another at
-their CI bounds on the runner's four cores, every one of them whichever
-fails. The models are grouped so that each job takes about eight minutes; a
-job per model spent as long starting as checking and left the run's other
-jobs waiting for a runner. `just tests-check` fails when a model is missing
-from the jobs' matrix.
+every state of the real cores within their bounds, so they leave the platform
+test jobs (`--exclude models`; `just test` itself still runs them) for the
+Models jobs: three Linux jobs, each building the models crate under the
+optimised `models` Cargo profile and running its group of protocol models (a
+module each of the crate's integration test binary) at their CI bounds on the
+runner's four cores, every one of them whichever fails. Three balanced jobs
+keep peak CI concurrency under GitHub's 20-runner free-plan limit; a job per
+model spent as long starting as checking and left the run's other jobs waiting
+for a runner. `just tests-check` fails when a model is missing from the jobs'
+matrix.
 
 A model's bounds are sized to that runner: a run that outgrows them is
 caught by the job guard, 25 minutes, and bounds that would not fit move to the
@@ -209,7 +208,8 @@ The iOS gate is its own workflow so that it runs only when a push or pull
 request touches a path that reaches the phone: `apps/apple`, the three
 `app-*` crates, `ios-tools`, the Cargo manifests, the toolchain pin, the
 shared runner scripts the gate's recipes call (`scripts/bounded`, `py`,
-`no-update-flags.sh`, `sqlite_linkage.py`), the `setup-just` action or `ios.yml` itself. The phone's
+`no-update-flags.sh`, `sqlite_linkage.py`), the `setup-just` and `setup-rust`
+actions or `ios.yml` itself. The phone's
 own scripts live in `apps/apple/Tools` and its Rust tools in `ios-tools`, so
 they need no entry of their own; anything shared stays in `scripts/` or
 `xtask` and leaves the gate alone. The root justfile is not on the list: the
@@ -247,8 +247,7 @@ when `AMUX_XCODE_CACHE` is set): the build of the app and suites took 9 min
 46 s with the cache empty and 6 min 42 s with it full. That cache is saved
 once a week, since each copy is some 400 MB of the repository's cache
 allowance, and a week-old copy still holds most files. The gate compares no picture
-([the iPhone app](IOS.md#no-picture-is-compared) says why). The job uploads
-the shipped-scope audit directory to the run, whether it passed or not.
+([the iPhone app](IOS.md#no-picture-is-compared) says why).
 
 `just ios verify` is the whole sequence a developer runs before pushing a
 phone change: the workspace's `fmt-check`, `lint` and `test` (which runs the spec suites), then the
@@ -263,8 +262,9 @@ and `just ios shipping` run those halves alone.
 Run by hand, the workflow boots the golden simulator on `macos-26` and runs
 `just ios captures`: the store suite on the simulator, journeys and the
 accessibility sweep. Nothing it runs uses the small simulator, which took
-seven minutes to boot. It restores the iOS gate's Rust cache and never saves
-its own. It uploads the journey evidence and the audit's record.
+seven minutes to boot. It restores the iOS gate's Rust, bridge and Xcode
+compilation caches read-only and never saves its own. It uploads the journey
+evidence and the audit's record.
 [The iPhone app](IOS.md) explains what those compare.
 
 ### Waiting
@@ -332,7 +332,6 @@ stopping at the first failure:
 | `lint` | Clippy, warnings denied |
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas |
-| `proto-compat` | The schemas pass buf's lint, and `amux.v1` still reads what the latest release from 0.9.0 wrote; with a ref, what that ref wrote ([`buf.yaml`](../buf.yaml)) |
 | `store-check` | Every store migration the latest release from 0.9.0 shipped is unchanged, and the ones added since only add: no table or column is gone or changed type, and any new column is one an existing store can take; with a ref, against that ref ([`scripts/store-check.py`](../scripts/store-check.py)) |
 | `dependency-policy` | Production and test-infrastructure dependency boundaries ([`scripts/check-dependency-policy.py`](../scripts/check-dependency-policy.py)) |
 | `deny` | No dependency has an open security advisory or is a yanked release, every licence is one [`deny.toml`](../deny.toml) allows, and every crate comes from crates.io or the rustls patch; each advisory it sets aside says why it does not reach amux |

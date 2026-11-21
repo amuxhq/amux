@@ -2,7 +2,7 @@
 //!
 //! Fetches cloud routing connection details from the cloud API.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -24,7 +24,7 @@ pub(crate) struct ApiConnectResult {
     host: String,
     port: u16,
     token: String,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
     tier: crate::Tier,
 }
 
@@ -33,7 +33,7 @@ pub(crate) struct CloudRoutingConnectionDetails {
     pub(crate) host: String,
     pub(crate) port: u16,
     pub(crate) token: String,
-    pub(crate) expires_at: DateTime<Utc>,
+    pub(crate) expires_at: Timestamp,
     pub(crate) tier: crate::Tier,
 }
 

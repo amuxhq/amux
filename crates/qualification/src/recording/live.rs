@@ -7,7 +7,7 @@ use std::error::Error;
 use std::io::{self, BufRead as _, Write as _};
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use redaction::Redaction;
 use semver::Version;
 use serde_json::{Value, json};
@@ -156,7 +156,7 @@ pub fn join(
             provider: provider.to_owned(),
             version: captured.version,
             model: captured.model,
-            at: Utc::now(),
+            at: Timestamp::now(),
         },
     )?;
     manifest.session_ids = captured.session_ids;

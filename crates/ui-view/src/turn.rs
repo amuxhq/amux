@@ -22,6 +22,7 @@
 use std::collections::HashSet;
 use std::ops::RangeInclusive;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Held, ItemBody, ItemClass, Key, SessionState, Transcript};
@@ -30,7 +31,8 @@ use crate::rows::{FileRow, RowKind, kind_of};
 
 /// Where a row stands in a finished turn, stated on every row of one when
 /// the client folds turns.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TurnPlace {
     /// The turn's end, which names it: what opens and closes it.
     pub end: Key,
@@ -39,7 +41,8 @@ pub struct TurnPlace {
     pub part: TurnPart,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum TurnPart {
     /// What opened the turn. The line over its work goes under it; None
     /// when the turn did nothing but answer.
@@ -61,7 +64,8 @@ pub enum TurnPart {
 }
 
 /// The line over a finished turn's work: "Worked for 3m 14s".
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Worked {
     pub duration_ms: Option<i64>,
     pub failed: bool,

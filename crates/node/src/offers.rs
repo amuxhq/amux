@@ -642,19 +642,17 @@ impl ProfileRuntime {
     /// version, sign-in and what it can do; an agent whose command is no
     /// longer found leaves the entry. Run as the runtime starts and whenever
     /// the agents the config names change.
+    ///
+    /// Each agent is asked on its own task, all at once: asking starts the
+    /// agent's program and waits for its `initialize`, which takes seconds
+    /// for a real agent, so asked one after another the last agent a config
+    /// names would be listed only after every one before it had started.
+    /// Each agent's own lock still keeps to one ask of it at a time.
     pub(crate) fn refresh_agents(self: &Arc<Self>) {
-        let runtime = Arc::downgrade(self);
-        let ids: Vec<String> = self
-            .launch()
-            .agents
-            .iter()
-            .map(|program| program.id.clone())
-            .collect();
-        if ids.is_empty() {
-            return;
-        }
-        tokio::spawn(async move {
-            for id in ids {
+        for program in &self.launch().agents {
+            let runtime = Arc::downgrade(self);
+            let id = program.id.clone();
+            tokio::spawn(async move {
                 let Some(runtime) = runtime.upgrade() else {
                     return;
                 };
@@ -669,8 +667,8 @@ impl ProfileRuntime {
                         tracing::warn!(agent = id, %error, "asking an agent what it offers failed")
                     }
                 }
-            }
-        });
+            });
+        }
     }
 
     /// What the ACP agent `agent` offers on this host, and whether it is

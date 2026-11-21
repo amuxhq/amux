@@ -615,3 +615,35 @@ fn an_acp_agents_landed_edit_is_coloured_as_its_files_code() {
         "{lines:?}"
     );
 }
+
+/// A host lists the ACP agents its config names one by one, as each
+/// starts: New Agent's agent list left open gains each one as the host's
+/// entry does, with the pointer kept on the agent it was on.
+#[test]
+fn an_open_agent_list_gains_the_agents_a_host_lists_meanwhile() {
+    let mut fleet = home_fleet();
+    let mut home = new_home();
+    home.key(&fleet, key(KeyCode::Char('n')));
+    home_screen(&mut home, &fleet, theme());
+    home.key(
+        &fleet,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    );
+    home.key(&fleet, key(KeyCode::Char('a')));
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("╭─ Agent"), "{screen}");
+    assert!(!screen.contains("Grok"), "{screen}");
+    home.key(&fleet, key(KeyCode::Down));
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("› 2. Codex"), "{screen}");
+
+    let mut studio = host(b"a", "studio", Reads::Online);
+    if let wire::inventory_event::Of::Host(entry) = &mut studio {
+        entry.providers.push(offered("grok", "Grok", Kind::Acp));
+    }
+    inventory(&mut fleet, studio);
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(screen.contains("╭─ Agent"), "{screen}");
+    assert!(screen.contains("Grok"), "{screen}");
+    assert!(screen.contains("› 2. Codex"), "{screen}");
+}

@@ -134,12 +134,19 @@ fn create(
     frame: Option<&str>,
 ) -> Result<Value, String> {
     let before = ids(&journey.inventory(DESK, Some("inventory-before"))?);
+    // The desk lists each agent its config adds once it has asked it, so
+    // the list is whole only once its entry offers them all.
+    journey.wait_configured_agents(DESK)?;
     journey.home(pane)?;
     journey.keys(pane, &["n"])?;
     journey.wait_terms(pane, &["What should the new agent work on?"])?;
     journey.keys(pane, &["C-s", "a"])?;
     journey.wait_terms(pane, &["╭─ Agent", "type to filter", "Fake ACP Agent"])?;
     if let Some(label) = frame {
+        // The entry reaches the terminal a moment after the desk lists it;
+        // the open list follows it, so the picture waits for the last agent
+        // that fits the list.
+        journey.wait_terms(pane, &["Runner"])?;
         journey.frame(pane, label)?;
     }
     // More agents than a flyover numbers: typed, the list narrows to it.

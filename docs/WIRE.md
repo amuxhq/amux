@@ -881,8 +881,9 @@ offers its host's Claude models and commands. An ACP agent is asked with
 that lists no models (every built-in but Grok), its copy is what the host's
 newest conversation with the agent published, and nothing before the first.
 The host asks each ACP agent its config names as it starts and whenever that
-list changes, so its entry lists every agent it offers without a client
-asking. A helper that fails answers with the copy when there is one, else
+list changes, all at once, so its entry lists every agent it offers without a
+client asking. Each joins the entry as its answer comes, so a client's list of
+agents follows the entry while it is open. A helper that fails answers with the copy when there is one, else
 `UNAVAILABLE`; a request that names no provider, or one the host does not
 know, is `INVALID_ARGUMENT`, and an ACP agent whose program is not found there
 `FAILED_PRECONDITION`. Each host keeps the model and effort a person last

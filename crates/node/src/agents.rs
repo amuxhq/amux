@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use wire::agents::BUILT_INS;
 use settings::agents::AgentEntry;
+use wire::agents::BUILT_INS;
 
 /// An agent program the host knows how to start.
 #[derive(Clone, Debug, PartialEq, Eq)]

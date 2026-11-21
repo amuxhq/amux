@@ -37,10 +37,10 @@ use acp_protocol::{
     ClientMessage, ClientNotification, ClientRequest, ClientResponse, ContentBlock, Empty, Extra,
     RequestId, RpcError,
 };
-pub use wire::agents::{BUILT_INS, BuiltIn, built_in};
 pub use offer::{HostOffer, host_offer};
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
+pub use wire::agents::{BUILT_INS, BuiltIn, built_in};
 use wire::{
     AcpAnswer, AcpAsk, AcpItem, AcpSnapshot, AcpTool, AgentSpec, AskItem, AskOutcome, Catalogue,
     ContextMeter, Envelope, FormAction, Input, KindInput, OfferedCommand, OfferedMode,

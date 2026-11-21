@@ -69,9 +69,8 @@ static FAKE_ROW_RUN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b(toolu_fake|msg_fake|msg_|exec-|call_)[0-9a-f]{8}([0-9a-f]{16})\b")
         .expect("valid fake row id pattern")
 });
-static MASKED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<(?:age|key|device|t|time|id)>").expect("valid masked pattern")
-});
+static MASKED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<(?:age|key|device|t|time|id)>").expect("valid masked pattern"));
 
 type Tell = fn(&mut AndroidJourney) -> Proved;
 
@@ -910,7 +909,8 @@ impl AndroidJourney {
                 Value::String(self.door_token.clone()),
             );
         }
-        ask(self.door(), &request, timeout).map_err(|error| redact_app_error(error, &self.door_token))
+        ask(self.door(), &request, timeout)
+            .map_err(|error| redact_app_error(error, &self.door_token))
     }
 
     fn query(&self) -> Result<Value, String> {
@@ -1059,8 +1059,7 @@ impl AndroidJourney {
                 expected.display()
             ))
         } else {
-            let approved =
-                std::fs::read_to_string(&expected).map_err(|error| error.to_string())?;
+            let approved = std::fs::read_to_string(&expected).map_err(|error| error.to_string())?;
             (!same_geometry(&approved, &drawn)).then(|| {
                 format!(
                     "geometry differs: {}\n{}",
@@ -1237,7 +1236,9 @@ fn named_ids(text: &str, ids: &BTreeMap<String, String>) -> String {
         format!("<{}>", ids.get(&found[0]).map_or("id", String::as_str))
     });
     let text = PROMPT_HEX.replace_all(&text, "prompt:<id>");
-    FAKE_ROW_RUN.replace_all(&text, "${1}<run>${2}").into_owned()
+    FAKE_ROW_RUN
+        .replace_all(&text, "${1}<run>${2}")
+        .into_owned()
 }
 
 fn validate_element_frames(elements: &[Value]) -> Result<(), String> {
@@ -1583,10 +1584,7 @@ fn open_settings(journey: &mut AndroidJourney) -> Result<(), String> {
 
 fn close_settings(journey: &mut AndroidJourney) -> Result<(), String> {
     journey.back()?;
-    journey.wait(
-        |drawn| !drawn.has("screen.settings"),
-        "Settings closed",
-    )?;
+    journey.wait(|drawn| !drawn.has("screen.settings"), "Settings closed")?;
     Ok(())
 }
 
@@ -1792,8 +1790,7 @@ fn reach_host(journey: &mut AndroidJourney) -> Proved {
         |drawn| {
             drawn.has("pairing.confirm")
                 && drawn.has("pairing.fingerprint")
-                && rectangle(drawn, "pairing.sheet")
-                    .is_some_and(|[_, _, _, bottom]| bottom > 800.0)
+                && rectangle(drawn, "pairing.sheet").is_some_and(|[_, _, _, bottom]| bottom > 800.0)
         },
         "pairing confirmation sheet settled at rest",
     )?;
@@ -1865,11 +1862,7 @@ fn reach_host(journey: &mut AndroidJourney) -> Proved {
     ])
 }
 
-fn conversation_decision(
-    journey: &mut AndroidJourney,
-    agent: &str,
-    provider_logs: bool,
-) -> Proved {
+fn conversation_decision(journey: &mut AndroidJourney, agent: &str, provider_logs: bool) -> Proved {
     journey.launch_fresh()?;
     pair_by_code(journey, "desk")?;
     open_agent(journey, agent)?;
@@ -1962,7 +1955,9 @@ fn manage_agent(journey: &mut AndroidJourney) -> Proved {
         .unwrap_or_default()
         .to_owned();
     lifecycle(&created, &id, &named, LIVE)?;
-    journey.extra_ids.insert(id.clone(), "created-agent".to_owned());
+    journey
+        .extra_ids
+        .insert(id.clone(), "created-agent".to_owned());
 
     journey.wait_for(&["screen.conversation", "chat.field"])?;
     send(journey, HELLO)?;
@@ -1998,7 +1993,9 @@ fn manage_agent(journey: &mut AndroidJourney) -> Proved {
         .ok_or("created agent row disappeared")?;
     journey.tap(&created_row)?;
     journey.wait(
-        |drawn| drawn.has("chat.field") && replies(drawn, READY) == 1 && drawn.has("chat.row.turn-end"),
+        |drawn| {
+            drawn.has("chat.field") && replies(drawn, READY) == 1 && drawn.has("chat.row.turn-end")
+        },
         "created chat reopened",
     )?;
     journey.screen("created", &["chat.row.turn-end"])?;
@@ -2199,7 +2196,8 @@ fn decide_plan_claude_sdk(journey: &mut AndroidJourney) -> Proved {
 
     let decisions = control_responses(&journey.provider_input(agent, "plan-decisions")?)?;
     sent_back_then_approved(&decisions, PLAN_NOTE)?;
-    let note_control = negative_control(sent_back_then_approved(&decisions, "a note never written"))?;
+    let note_control =
+        negative_control(sent_back_then_approved(&decisions, "a note never written"))?;
     let plan_control = negative_control(plans_only(&json!({ "items": extra })))?;
 
     no_plan_file(reopen(journey, agent, |drawn| {
@@ -2234,8 +2232,7 @@ fn answer_questions(journey: &mut AndroidJourney) -> Proved {
     journey.tap("ask.option.1")?;
     journey.wait(
         |drawn| {
-            drawn.field("ask.option.1", "selected") == true
-                && labelled(drawn, "Palette  terminal")
+            drawn.field("ask.option.1", "selected") == true && labelled(drawn, "Palette  terminal")
         },
         "Stacked's preview",
     )?;
@@ -2361,8 +2358,7 @@ fn tool_server_asks(journey: &mut AndroidJourney) -> Proved {
     let fox_tag = team_menu
         .iter()
         .find(|(name, element)| {
-            name.starts_with("ask.field.team.option.")
-                && element["label"].as_str() == Some("FOX")
+            name.starts_with("ask.field.team.option.") && element["label"].as_str() == Some("FOX")
         })
         .map(|(name, _)| name.to_owned())
         .ok_or("FOX option disappeared")?;
@@ -2822,7 +2818,9 @@ fn leave_and_recover(journey: &mut AndroidJourney) -> Proved {
     }
     let detached = reopen(journey, "keeper", |drawn| kept_unsent(drawn, DRAFT))?;
     if !labelled(&detached, "out of reach") || labelled(&detached, SECOND) {
-        return Err("reopened offline chat lost out-of-reach state or fabricated missed turn".to_owned());
+        return Err(
+            "reopened offline chat lost out-of-reach state or fabricated missed turn".to_owned(),
+        );
     }
     journey.screen("cached-offline", &["chat.row.turn-end"])?;
 
@@ -2840,7 +2838,10 @@ fn leave_and_recover(journey: &mut AndroidJourney) -> Proved {
         return Err("the missed turn did not append exactly once".to_owned());
     }
     journey.tap("chat.send")?;
-    journey.wait(|drawn| labelled(drawn, THIRD), "the reply to the kept draft")?;
+    journey.wait(
+        |drawn| labelled(drawn, THIRD),
+        "the reply to the kept draft",
+    )?;
     let after = journey.wait_chat(
         "desk",
         "keeper",
@@ -2926,7 +2927,9 @@ fn account_sign_in(journey: &mut AndroidJourney) -> Proved {
     journey.wait(
         |drawn| {
             drawn.has("account.sign-in-result.dialog")
-                && drawn.label("account.sign-in-result.body").contains(REFUSED_SIGN_IN)
+                && drawn
+                    .label("account.sign-in-result.body")
+                    .contains(REFUSED_SIGN_IN)
         },
         "the sign-in refusal dialog",
     )?;
@@ -3111,7 +3114,9 @@ fn accessibility(journey: &mut AndroidJourney) -> Proved {
     journey.app(json!({"kind": "fontScale", "scale": ACCESSIBLE_FONT_SCALE}))?;
     let reported = journey.query()?["fontScale"].as_f64().unwrap_or_default();
     if (reported - ACCESSIBLE_FONT_SCALE).abs() > 0.05 {
-        return Err(format!("expected fontScale ~{ACCESSIBLE_FONT_SCALE}, got {reported}"));
+        return Err(format!(
+            "expected fontScale ~{ACCESSIBLE_FONT_SCALE}, got {reported}"
+        ));
     }
 
     pair_by_code(journey, "desk")?;

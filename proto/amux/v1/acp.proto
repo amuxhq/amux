@@ -116,6 +116,10 @@ message AcpDiff {
   // with no line numbers.
   optional uint32 old_line = 4;
   optional uint32 new_line = 5;
+  // The change was longer than amux keeps: both texts were cut after the
+  // same number of the change's lines, so what is kept is still a true
+  // part of it, and the rest is left out.
+  bool truncated = 6;
 }
 
 message AcpNotice {

@@ -26,7 +26,6 @@ item message:1 message open at=1800000000000 text="Here is the chart ￼, the no
 ## 8 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":" and the plot ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
 append message:1 " and the plot "
 ## 9 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"name":"plot.png","type":"resource_link","uri":"file:///work/plot.png"},"sessionUpdate":"agent_message_chunk"}}}}
-effect store file:///work/plot.png as plot.png
 append message:1 "[plot.png](file:///work/plot.png)"
 ## 10 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":". Also see [the site](https://example.com/).","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
 append message:1 ". Also see [the site](https://example.com/)."
@@ -35,9 +34,7 @@ item message:1 message final at=1800000000000 text="Here is the chart ￼, the n
 item tool:c1 tool final at=1800000000000 text="￼" attachments=1 OTHER SUCCEEDED "amux_attach" input="{\"path\":\"dot.png\"}"
 ## 12 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":[{"content":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png","type":"image"},"type":"content"}],"kind":"read","locations":[{"path":"/work/shot.png"}],"sessionUpdate":"tool_call","status":"completed","title":"read_file","toolCallId":"c2"}}}}
 item tool:c2 tool final at=1800000000000 text="" READ SUCCEEDED "read_file" at=/work/shot.png
-## 13 fact {"channel":"agent","json":{"stored_file":{"attachment":"EjkKIMEflFa5t27Sgih4tWy+QnsDoj2/4hZVZCfgI9mxfzNiEghwbG90LnBuZxoJaW1hZ2UvcG5nIAo=","uri":"file:///work/plot.png"}}}
-item message:1 message final at=1800000000000 text="Here is the chart ￼, the notes ￼ and the plot ￼. Also see [the site](https://example.com/)." attachments=3
-## 14 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"end_turn"}}}
+## 13 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"end_turn"}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot said "Here is the chart , the notes  and the plot plot.png. Also see the site."
 snapshot IDLE queue=[] working_on="Show me the chart and the notes." at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD

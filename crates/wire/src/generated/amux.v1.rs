@@ -5315,6 +5315,11 @@ pub struct AcpDiff {
     pub old_line: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "5")]
     pub new_line: ::core::option::Option<u32>,
+    /// The change was longer than amux keeps: both texts were cut after the
+    /// same number of the change's lines, so what is kept is still a true
+    /// part of it, and the rest is left out.
+    #[prost(bool, tag = "6")]
+    pub truncated: bool,
 }
 impl ::prost::Name for AcpDiff {
     const NAME: &'static str = "AcpDiff";

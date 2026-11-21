@@ -201,9 +201,11 @@ reads the file (a relative path is taken from the agent's working directory),
 hashes it, writes it into `<dir>/blobs/<sha256>`, and returns the canonical
 `<amux-attachment>` element naming it, with `name` as the name viewers see
 (the file's own name when omitted) and a mime type from the file's extension.
-PNG, JPEG, GIF, WebP and SVG are images; everything else is a file. A file
-over the 64 MB attachment limit is refused, naming the limit, before it is
-read. No daemon
+PNG, JPEG, GIF, WebP and SVG are images; everything else is a file. Only a
+regular file is read, its links followed first: a pipe or a device such as
+`/dev/zero` is refused. A file over the 64 MB attachment limit is refused,
+naming the limit, before it is read, and one that grows past it while being
+read is refused at the limit, so the read is bounded. No daemon
 call is made, so it works while the daemon is away. The model is told to put
 the element in its reply exactly as returned; when the reply completes, the
 interpreter makes the element an attachment on the reply's item, which both

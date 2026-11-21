@@ -47,9 +47,9 @@ amux offers an agent no file-system and no terminal client capabilities, so the 
 offer elicitation forms and links, which become asks, and Grok's own question request
 (`_x.ai/ask_user_question`), which becomes a question ask.
 
-What an agent presents in its reply becomes an attachment at its place in the reply: an image, audio, an embedded
-file, and a local file it links, which the agent process reads and stores
-([Attachments](ATTACHMENTS.md#bytes-and-metadata)). A call to amux's `attach` tool carries the attachment it made, as
+What an agent presents in its reply as bytes it sent itself becomes an attachment at its place in the reply: an
+image, audio or an embedded file ([Attachments](ATTACHMENTS.md#bytes-and-metadata)). A link stays words, a local
+file's too: amux never reads a file the agent only names, which would get around the permission `attach` asks for. A call to amux's `attach` tool carries the attachment it made, as
 Claude's does. What a tool call holds (an image a tool read, a file's contents) is what the tool saw, so it is never
 an attachment, and a tool call's images stay hidden.
 
@@ -185,5 +185,5 @@ words.
 | No file-system or terminal client capabilities | Running the agent's files and terminals through amux: more surface for no gain to a person now. |
 | Built-ins curated in code, commands taken from the official ACP registry; a person's own in config | Installing agents from the registry at runtime: it downloads code, and its Antigravity entry runs a separate bundled binary rather than the `agy` people have. |
 | Config `[agents.<id>]` with `name`, `command`, `args`, `env` | `[acp.<id>]`: it puts the protocol in front of people. |
-| What an agent presents in its reply is an attachment; what a tool saw is not | Attaching what tool calls carry: a read file or a screenshot a tool took is the agent's input, not something it shows a person, and every device would fill with them. |
+| What an agent presents in its reply, as bytes it sent itself, is an attachment; what a tool saw is not | Attaching what tool calls carry: a read file or a screenshot a tool took is the agent's input, not something it shows a person, and every device would fill with them. Storing a local file a `resource_link` names: amux would read the file unasked into blobs the agent reads and every device is sent, around the permission `attach` asks for. |
 | A titled choice in an agent's form (`oneOf` of constants) is offered by its titles, and the agent is answered with the constant | Leaving it to the client's form: it read such a field as typed text, and Antigravity took a typed title for no answer. |

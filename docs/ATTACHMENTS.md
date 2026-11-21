@@ -203,16 +203,20 @@ tool's result (a step recorded before this rule may still carry such images,
 and it still draws them), and so do the images and files inside an ACP
 agent's tool calls. Codex's image view and image generation steps keep their
 images, because those steps exist to show them. An ACP agent's reply can
-carry content blocks besides text, and each becomes an attachment at its
-place in the reply's text:
+carry content blocks besides text. Those that hold bytes the agent sent
+itself become an attachment at its place in the reply's text:
 
 | Block in a reply | What the reply's item gets |
 | --- | --- |
 | `image` | The bytes decoded from base64 and written as a blob with the step, the agent process writing it before it journals the step, and an image attachment named `image-<n>` with its type's extension. |
 | `audio` | The same, as a file attachment named `audio-<n>`. |
 | `resource` (embedded) | Its text or bytes as a file attachment, named from the URI's last segment, with its type. |
-| `resource_link` to a `file://` URI | The link's name and URI as text at first; the agent process reads the file and stores it, under the 64 MB limit, and its attachment then takes the link's place. A file that is missing, over the limit or not local stays as the text. |
-| `resource_link` to anything else | The link's name and URI as text. |
+| `resource_link` | The link's name and URI as text, a local file's too. |
+
+A link to a local file is never read. Storing it would copy a file the
+agent only names into the agent's blobs, which the agent reads without
+asking and every device is sent, around the permission the `attach` tool
+asks for; an agent that means to show a file calls `attach`.
 
 The words of the reply also go through the element reader when the reply
 completes, as Claude's and Codex's do, so an element a model writes there

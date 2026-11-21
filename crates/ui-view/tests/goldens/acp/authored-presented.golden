@@ -2,7 +2,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 3 input {"id":"p1","prompt":{"text":"Show me the chart and the notes."}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 14 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"end_turn"}}}
+## 13 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"end_turn"}}}
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed

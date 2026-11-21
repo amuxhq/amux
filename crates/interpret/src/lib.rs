@@ -410,16 +410,6 @@ pub enum Effect {
     /// want of a sign-in. The agent process holds the request, since it
     /// built it.
     AcpReopen,
-    /// An ACP agent linked a local file in its reply (`resource_link` to a
-    /// `file://` URI): the agent process stores the file at `path` in its
-    /// blob directory as an attachment named `name`, at most
-    /// [`wire::ATTACHMENT_SIZE_LIMIT`] of it, and says on the agent channel
-    /// what it stored, or why it could not ([`acp::stored_file_fact`]).
-    StoreFile {
-        uri: String,
-        path: String,
-        name: String,
-    },
 }
 
 /// The provider's own injection channel for agent messages.

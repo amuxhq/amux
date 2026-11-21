@@ -587,18 +587,34 @@ impl Server {
 /// Stores the file at `path` in the blob directory of the agent in `dir`
 /// under its hash, as the attachment named `name` that refers to it: an
 /// image where the bytes are one a provider reads natively, else a file.
-/// A file over [`wire::ATTACHMENT_SIZE_LIMIT`] is refused unread.
-pub(crate) fn store_file(dir: &Path, path: &Path, name: String) -> Result<Attachment, String> {
+/// Only a regular file is read, its links followed first: a device or a
+/// pipe may never end, or may block the call until something writes it. A file over
+/// [`wire::ATTACHMENT_SIZE_LIMIT`] is refused unread, and one that grows
+/// past it while read is refused at the limit, so memory stays bounded.
+fn store_file(dir: &Path, path: &Path, name: String) -> Result<Attachment, String> {
+    use std::io::Read as _;
+
     use sha2::Digest as _;
 
-    let size = std::fs::metadata(path)
-        .map_err(|error| format!("reading {}: {error}", path.display()))?
-        .len();
-    if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+    let reading = |error: std::io::Error| format!("reading {}: {error}", path.display());
+    let limit = wire::ATTACHMENT_SIZE_LIMIT as u64;
+    let resolved = std::fs::canonicalize(path).map_err(reading)?;
+    let metadata = std::fs::metadata(&resolved).map_err(reading)?;
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular file", path.display()));
+    }
+    if metadata.len() > limit {
         return Err(too_large_words(&name));
     }
-    let bytes =
-        std::fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(&resolved)
+        .map_err(reading)?
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(reading)?;
+    if bytes.len() as u64 > limit {
+        return Err(too_large_words(&name));
+    }
     let hash = sha2::Sha256::digest(&bytes).to_vec();
     dir::write_blob(dir, &hash, &bytes)
         .map_err(|error| format!("storing {}: {error}", path.display()))?;

@@ -353,62 +353,6 @@ pub fn stderr_fact(line: &str) -> Vec<u8> {
     .expect("a string serializes")
 }
 
-/// What became of a local file an ACP agent linked in its reply, which the
-/// agent process was asked to store ([`crate::Effect::StoreFile`]): the
-/// attachment it stored, encoded and in base64, or why it did not.
-#[derive(Serialize, Deserialize)]
-struct Stored {
-    stored_file: StoredFile,
-}
-
-#[derive(Serialize, Deserialize)]
-struct StoredFile {
-    uri: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    attachment: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    refused: Option<String>,
-}
-
-/// The fact the agent process gives the interpreter once it has stored
-/// the file linked as `uri`, or found it could not.
-pub fn stored_file_fact(uri: &str, stored: Result<&wire::Attachment, String>) -> Vec<u8> {
-    use base64::Engine as _;
-    let (attachment, refused) = match stored {
-        Ok(attachment) => (
-            Some(base64::engine::general_purpose::STANDARD.encode(attachment.encode_to_vec())),
-            None,
-        ),
-        Err(why) => (None, Some(why)),
-    };
-    serde_json::to_vec(&Stored {
-        stored_file: StoredFile {
-            uri: uri.to_owned(),
-            attachment,
-            refused,
-        },
-    })
-    .expect("strings serialize")
-}
-
-/// A local file the agent linked in a reply, waiting for the agent
-/// process to store it. Its link's words stand in the reply meanwhile, and
-/// stay if it cannot be stored.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-struct Linking {
-    uri: String,
-    /// The reply's item.
-    key: String,
-    /// The words that stand for the link, and where in the reply's text
-    /// they were put.
-    words: String,
-    at: usize,
-    /// The reply as it was when it finished, if it finished first.
-    finished: Option<String>,
-    #[serde(default, with = "serde_pb::msgs")]
-    finished_attachments: Vec<wire::Attachment>,
-}
-
 /// The settings amux can change, by the category ACP gives their option.
 /// Agents name the options differently (a thought level is
 /// `thought_level`, `effort` or `reasoning_effort` in `agy-config`,
@@ -625,9 +569,6 @@ pub struct State {
     /// replies, which names each one that comes without a name.
     #[serde(default)]
     presented: u64,
-    /// The local files linked in replies that the agent process is storing.
-    #[serde(default)]
-    linking: Vec<Linking>,
     context: Option<(u64, u64)>,
     /// The context in use and each model's window, by its id, for an agent
     /// that says them beside ACP ([`Quirks::context_in_update_meta`]).
@@ -804,7 +745,6 @@ impl State {
             outputs: BTreeMap::new(),
             folded: BTreeMap::new(),
             presented: 0,
-            linking: Vec::new(),
             context: None,
             context_used: None,
             windows: BTreeMap::new(),
@@ -1203,112 +1143,6 @@ impl State {
         self.presented
     }
 
-    /// A local file the agent linked: its words go in the reply now, and
-    /// the agent process is asked to store the file, which then takes
-    /// their place ([`Self::stored_file`]).
-    fn link_file(&mut self, emit: &mut Emit, uri: &str, path: String, name: String, words: String) {
-        self.stream(emit, Streamed::Message, &words);
-        let Some((Streamed::Message, key)) = self.stream.clone() else {
-            return;
-        };
-        let at = self
-            .shared
-            .open_item(&key)
-            .map_or(0, |item| item.text.len().saturating_sub(words.len()));
-        self.linking.push(Linking {
-            uri: uri.to_owned(),
-            key,
-            words,
-            at,
-            finished: None,
-            finished_attachments: Vec::new(),
-        });
-        emit.effect(Effect::StoreFile {
-            uri: uri.to_owned(),
-            path,
-            name,
-        });
-    }
-
-    /// The agent process stored a linked file, or could not: stored, it
-    /// takes the place of its link's words in the reply, finished or not;
-    /// not, the words stay.
-    fn stored_file(&mut self, emit: &mut Emit, stored: StoredFile) {
-        use base64::Engine as _;
-        let Some(at) = self
-            .linking
-            .iter()
-            .position(|linking| linking.uri == stored.uri)
-        else {
-            return;
-        };
-        let linking = self.linking.remove(at);
-        let attachment = stored
-            .attachment
-            .and_then(|encoded| {
-                base64::engine::general_purpose::STANDARD
-                    .decode(encoded)
-                    .ok()
-            })
-            .and_then(|bytes| wire::Attachment::decode(bytes.as_slice()).ok());
-        let Some(attachment) = attachment else {
-            return self.log(
-                emit,
-                format!(
-                    "{} linked {}, which is not attached: {}",
-                    self.agent,
-                    stored.uri,
-                    stored.refused.unwrap_or_default()
-                ),
-            );
-        };
-        let (text, mut attachments, complete) = match &linking.finished {
-            Some(text) => (text.clone(), linking.finished_attachments.clone(), true),
-            None => match self.shared.open_item(&linking.key) {
-                Some(item) => (item.text.clone(), item.attachments.clone(), false),
-                None => return,
-            },
-        };
-        // The words nearest where they were put: the reply's own words may
-        // repeat them, and placeholders before them change their offset.
-        let Some(pos) = text
-            .match_indices(&linking.words)
-            .map(|(pos, _)| pos)
-            .min_by_key(|pos| pos.abs_diff(linking.at))
-        else {
-            return;
-        };
-        let index = text[..pos].matches(attachments::PLACEHOLDER).count();
-        let text = format!(
-            "{}{}{}",
-            &text[..pos],
-            attachments::PLACEHOLDER,
-            &text[pos + linking.words.len()..]
-        );
-        attachments.insert(index.min(attachments.len()), attachment);
-        if complete {
-            for other in self
-                .linking
-                .iter_mut()
-                .filter(|other| other.key == linking.key)
-            {
-                other.finished = Some(text.clone());
-                other.finished_attachments = attachments.clone();
-            }
-        }
-        self.emit_item(
-            emit,
-            ItemDraft {
-                key: linking.key,
-                text,
-                attachments,
-                body: text_body(Streamed::Message, complete),
-                complete,
-                ..Default::default()
-            },
-        );
-    }
-
     fn close_stream(&mut self, emit: &mut Emit) {
         let Some((kind, key)) = self.stream.take() else {
             return;
@@ -1322,10 +1156,6 @@ impl State {
             Streamed::Message => crate::shared::parse_reply_between(&item.text, &item.attachments),
             Streamed::Thought => (item.text, item.attachments),
         };
-        for linking in self.linking.iter_mut().filter(|linking| linking.key == key) {
-            linking.finished = Some(text.clone());
-            linking.finished_attachments = attachments.clone();
-        }
         self.emit_item(
             emit,
             ItemDraft {
@@ -1995,9 +1825,6 @@ impl State {
         self.cancelled = false;
         self.stream = None;
         self.ask_requests.clear();
-        // A file a process linked is stored by the agent process that ran
-        // it; what was not stored by now never will be, and keeps its words.
-        self.linking.clear();
         // A new process reports its own servers and reviews.
         self.servers.clear();
         self.reviewing.clear();
@@ -2203,15 +2030,9 @@ impl Interpreter for Acp {
 
     fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
         match fact.channel {
-            // A stderr line is the agent's own words, and a stored file is
-            // the agent's own file: none of either is kept.
+            // A stderr line is the agent's own words: none of it is kept.
             crate::Channel::Agent => crate::shape::FactShape {
-                variant: if serde_json::from_slice::<Stored>(&fact.payload).is_ok() {
-                    "stored_file"
-                } else {
-                    "stderr"
-                }
-                .into(),
+                variant: "stderr".into(),
                 ..Default::default()
             },
             _ => crate::shape::acp_fact(fact),

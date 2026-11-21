@@ -1,5 +1,5 @@
 {
-  "about": "What an ACP agent presents in its reply becomes attachments in their places: an image block, an embedded file, a local file it links once the agent process stores it, and amux's attach tool's step. An image a tool read is not attached.",
+  "about": "What an ACP agent presents in its reply becomes attachments in their places: an image block, an embedded file, and amux's attach tool's step. A link, a local file's too, stays as its words, and an image a tool read is not attached.",
   "spec": {
     "provider": "opencode",
     "created_at_ms": 1800000000000
@@ -161,7 +161,7 @@
           }
         }
       },
-      "note": "a local file linked: its words stand until the agent process has stored it"
+      "note": "a local file linked: it stays as the link's words, since amux never reads a file the agent only names"
     },
     {
       "fact": {
@@ -247,18 +247,6 @@
         }
       },
       "note": "an image a tool read is what the tool saw: no attachment, no blob"
-    },
-    {
-      "fact": {
-        "channel": "agent",
-        "json": {
-          "stored_file": {
-            "uri": "file:///work/plot.png",
-            "attachment": "EjkKIMEflFa5t27Sgih4tWy+QnsDoj2/4hZVZCfgI9mxfzNiEghwbG90LnBuZxoJaW1hZ2UvcG5nIAo="
-          }
-        }
-      },
-      "note": "the agent process stored the linked file: it takes the link's place in the finished reply"
     },
     {
       "fact": {

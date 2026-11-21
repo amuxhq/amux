@@ -1507,93 +1507,33 @@ fn what_an_agent_presents_in_its_reply_is_attached_in_its_place() {
     assert!(blobs.contains(&(sha256(b"# Notes"), b"# Notes".to_vec())));
 }
 
-/// A local file the agent links is stored by the agent process and takes
-/// the link's place once stored, even after the reply finished; a link the
-/// agent process cannot store, or to anything but a local file, stays as
-/// the link's words.
+/// A link stays the link's words, a local file's too: storing a file the
+/// agent only names would read it unasked into the agent's blobs, which
+/// the agent reads unasked and every device is sent, around the permission
+/// amux's attach tool asks for. Nothing is attached and nothing is read.
 #[test]
-fn a_local_file_the_agent_links_is_attached_once_stored() {
+fn a_link_in_a_reply_stays_its_words() {
     let mut state = opened("opencode", serde_json::json!({}));
     Acp::step(&mut state, prompt("a", "show me"));
     let link = |name: &str, uri: &str| {
         said_block(serde_json::json!({"type": "resource_link", "name": name, "uri": uri}))
     };
-    let mut asked = Vec::new();
-    let mut items = Vec::new();
-    for event in [
-        said_text("See "),
-        link("chart.png", "file:///work/my%20chart.png"),
-        said_text(", "),
-        link("gone.txt", "file:///work/gone.txt"),
-        said_text(" and "),
-        link("site", "https://example.com/"),
-        update(serde_json::json!({"sessionUpdate": "agent_thought_chunk",
-            "content": {"type": "text", "text": "done"}})),
-    ] {
-        let stepped = Acp::step(&mut state, event);
-        items.extend(stepped.step.items);
-        asked.extend(
-            stepped
-                .effects
-                .into_iter()
-                .filter_map(|effect| match effect {
-                    Effect::StoreFile { uri, path, name } => Some((uri, path, name)),
-                    _ => None,
-                }),
-        );
-    }
-    assert_eq!(
-        asked,
-        vec![
-            (
-                "file:///work/my%20chart.png".to_owned(),
-                "/work/my chart.png".to_owned(),
-                "chart.png".to_owned()
-            ),
-            (
-                "file:///work/gone.txt".to_owned(),
-                "/work/gone.txt".to_owned(),
-                "gone.txt".to_owned()
-            ),
-        ]
-    );
-    let words = "See [chart.png](file:///work/my%20chart.png), [gone.txt](file:///work/gone.txt) and [site](https://example.com/)";
-    assert_eq!(final_message(&items).text, words);
-    let chart = wire::Attachment {
-        of: Some(wire::attachment::Of::Image(wire::BlobRef {
-            hash: sha256(b"png"),
-            name: "chart.png".into(),
-            mime: "image/png".into(),
-            size: 3,
-        })),
-    };
-    let agent_fact = |payload: Vec<u8>| {
-        Event::Fact(interpret::Fact {
-            channel: interpret::Channel::Agent,
-            payload,
-        })
-    };
-    let stored = Acp::step(
+    let (items, blobs) = reply_of(
         &mut state,
-        agent_fact(interpret::acp::stored_file_fact(
-            "file:///work/my%20chart.png",
-            Ok(&chart),
-        )),
+        vec![
+            said_text("See "),
+            link("chart.png", "file:///work/my%20chart.png"),
+            said_text(" and "),
+            link("site", "https://example.com/"),
+        ],
     );
-    let reply = final_message(&stored.step.items);
+    let reply = final_message(&items);
     assert_eq!(
         reply.text,
-        "See \u{FFFC}, [gone.txt](file:///work/gone.txt) and [site](https://example.com/)"
+        "See [chart.png](file:///work/my%20chart.png) and [site](https://example.com/)"
     );
-    assert_eq!(reply.attachments, vec![chart]);
-    let refused = Acp::step(
-        &mut state,
-        agent_fact(interpret::acp::stored_file_fact(
-            "file:///work/gone.txt",
-            Err("reading /work/gone.txt: no such file".into()),
-        )),
-    );
-    assert!(refused.step.items.is_empty());
+    assert!(reply.attachments.is_empty());
+    assert!(blobs.is_empty());
 }
 
 /// A model that writes an element in its reply gets what it names, as on
@@ -1856,8 +1796,11 @@ fn a_change_keeps_its_own_lines_and_the_place_its_agent_says() {
 }
 
 /// A change's texts and a call's input are cut as output is, so a file an
-/// agent writes whole does not go to every device whole: each long text to
-/// its first cap's worth, and the input still JSON a client reads.
+/// agent writes whole does not go to every device whole. A change keeps the
+/// same number of lines on both sides, as many as fit the cap on each, so
+/// what is kept is still a true part of it, and says it was cut; a long
+/// string in the input keeps its first cap's worth and ends in an
+/// ellipsis, and the input is still JSON a client reads.
 #[test]
 fn a_calls_long_texts_are_cut_as_output_is() {
     let cap = interpret::OUTPUT_CAP;
@@ -1875,15 +1818,52 @@ fn a_calls_long_texts_are_cut_as_output_is() {
         ),
     );
     let (tool, _) = emitted_call(&written, "c1").unwrap();
-    assert!(
-        tool.diffs[0].new_text.len() <= cap,
-        "{}",
-        tool.diffs[0].new_text.len()
-    );
-    assert!(tool.diffs[0].new_text.ends_with('\n'));
-    assert!(tool.input_json.len() < 2 * cap, "{}", tool.input_json.len());
+    let diff = &tool.diffs[0];
+    assert!(diff.truncated);
+    assert!(diff.new_text.len() <= cap, "{}", diff.new_text.len());
+    assert!(diff.new_text.ends_with('\n'));
     let input: serde_json::Value = serde_json::from_slice(&tool.input_json).unwrap();
     assert_eq!(input["filePath"], "/work/big.txt");
+    let content = input["content"].as_str().unwrap();
+    assert!(content.len() <= cap + '…'.len_utf8(), "{}", content.len());
+    assert!(
+        content.ends_with("\n…"),
+        "{:?}",
+        &content[content.len() - 8..]
+    );
+
+    // An edit whose sides differ in length: short lines replaced by long
+    // ones. Both keep the same number of lines.
+    let old: String = (0..5000).map(|n| format!("{n}\n")).collect();
+    let new: String = (0..5000)
+        .map(|n| format!("{n} {}\n", "y".repeat(60)))
+        .collect();
+    let edited = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c2",
+            "title": "edit", "kind": "edit", "status": "completed",
+            "content": [{"type": "diff", "path": "/work/f.txt", "oldText": old, "newText": new}]}),
+        ),
+    );
+    let (tool, _) = emitted_call(&edited, "c2").unwrap();
+    let diff = &tool.diffs[0];
+    assert!(diff.truncated);
+    let kept_old = diff.old_text.as_deref().unwrap().lines().count();
+    let kept_new = diff.new_text.lines().count();
+    assert_eq!(kept_old, kept_new);
+    assert!(kept_new > 0 && kept_new < 5000, "{kept_new}");
+    assert!(diff.new_text.len() <= cap);
+    // A change short enough is kept whole and says nothing was cut.
+    let small = Acp::step(
+        &mut state,
+        update(
+            serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c3",
+            "title": "edit", "kind": "edit", "status": "completed",
+            "content": [{"type": "diff", "path": "/work/f.txt", "oldText": "a\n", "newText": "b\n"}]}),
+        ),
+    );
+    assert!(!emitted_call(&small, "c3").unwrap().0.diffs[0].truncated);
 }
 
 /// While Grok's own reviewer decides on a call, the call waits, and its

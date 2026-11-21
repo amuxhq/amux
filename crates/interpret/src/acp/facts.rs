@@ -95,38 +95,6 @@ fn link_words(name: &str, uri: &str) -> String {
     }
 }
 
-/// The local path a `file://` URI names, its escapes decoded; None for any
-/// other URI, or a file on another host.
-fn file_path(uri: &str) -> Option<String> {
-    let rest = uri.strip_prefix("file://")?;
-    let path = rest.strip_prefix("localhost").unwrap_or(rest);
-    if !path.starts_with('/') {
-        return None;
-    }
-    let bytes = path.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        let hex = |at: usize| {
-            bytes
-                .get(at..at + 2)
-                .and_then(|pair| std::str::from_utf8(pair).ok())
-                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-        };
-        match (bytes[at], hex(at + 1)) {
-            (b'%', Some(byte)) => {
-                decoded.push(byte);
-                at += 3;
-            }
-            (byte, _) => {
-                decoded.push(byte);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8(decoded).ok()
-}
-
 /// The last segment of a URI's path, its query and fragment left off: the
 /// name of what it points at. None where the path ends in a slash.
 fn last_segment(uri: &str) -> Option<&str> {
@@ -225,10 +193,11 @@ fn diff_starts(meta: Option<&Value>) -> (Option<u32>, Option<u32>) {
 /// end are left out, since no row draws them: OpenCode sends the whole file
 /// on every update (`opencode-edit`), which would otherwise go to every
 /// device each time. Lines the agent gave for the texts' start move past
-/// what was left out. Each text left is then cut to its first
-/// [`OUTPUT_CAP`](crate::shared::OUTPUT_CAP)'s worth, as output is to its
-/// last, when it is longer than twice that. A new file is kept whole but
-/// for that cut.
+/// what was left out. When either text left is longer than twice
+/// [`OUTPUT_CAP`](crate::shared::OUTPUT_CAP), both are cut after the same
+/// number of lines, the most whose bytes fit the cap on each side, so what
+/// is kept is still a true part of the change; the diff then says it was
+/// cut. A new file's text is cut the same way.
 pub(super) fn kept_diff(
     path: String,
     old: Option<String>,
@@ -236,17 +205,19 @@ pub(super) fn kept_diff(
     old_line: Option<u32>,
     new_line: Option<u32>,
 ) -> wire::AcpDiff {
+    let new_lines: Vec<&str> = new.split_inclusive('\n').collect();
     let Some(old) = old else {
+        let ((_, kept), truncated) = cut_lines(&[], &new_lines);
         return wire::AcpDiff {
             path,
             old_text: None,
-            new_text: head(new).to_owned(),
+            new_text: kept.concat(),
             old_line,
             new_line,
+            truncated,
         };
     };
     let old_lines: Vec<&str> = old.split_inclusive('\n').collect();
-    let new_lines: Vec<&str> = new.split_inclusive('\n').collect();
     let start = old_lines
         .iter()
         .zip(&new_lines)
@@ -258,41 +229,74 @@ pub(super) fn kept_diff(
         .zip(new_lines[start..].iter().rev())
         .take_while(|(old, new)| old == new)
         .count();
-    let kept = |lines: &[&str]| lines[start..lines.len() - end].concat();
+    let ((old_kept, new_kept), truncated) = cut_lines(
+        &old_lines[start..old_lines.len() - end],
+        &new_lines[start..new_lines.len() - end],
+    );
     let moved = |line: Option<u32>| line.map(|line| line.saturating_add(start as u32));
     wire::AcpDiff {
         path,
-        old_text: Some(head(&kept(&old_lines)).to_owned()),
-        new_text: head(&kept(&new_lines)).to_owned(),
+        old_text: Some(old_kept.concat()),
+        new_text: new_kept.concat(),
         old_line: moved(old_line),
         new_line: moved(new_line),
+        truncated,
     }
 }
 
+/// The lines of a change's two sides as kept ([`kept_diff`]): whole when
+/// neither is longer than twice the output cap, else each side's first
+/// lines, the same number of them on both, as many as fit the cap on each;
+/// and whether they were cut.
+fn cut_lines<'a>(old: &'a [&'a str], new: &'a [&'a str]) -> ((&'a [&'a str], &'a [&'a str]), bool) {
+    let cap = crate::shared::OUTPUT_CAP;
+    let bytes = |lines: &[&str]| lines.iter().map(|line| line.len()).sum::<usize>();
+    if bytes(old) <= 2 * cap && bytes(new) <= 2 * cap {
+        return ((old, new), false);
+    }
+    let (mut kept, mut old_bytes, mut new_bytes) = (0, 0, 0);
+    while kept < old.len().max(new.len()) {
+        let old_next = old_bytes + old.get(kept).map_or(0, |line| line.len());
+        let new_next = new_bytes + new.get(kept).map_or(0, |line| line.len());
+        if old_next > cap || new_next > cap {
+            break;
+        }
+        (old_bytes, new_bytes) = (old_next, new_next);
+        kept += 1;
+    }
+    (
+        (&old[..kept.min(old.len())], &new[..kept.min(new.len())]),
+        true,
+    )
+}
+
 /// A text longer than twice the output cap, cut to its first cap's worth
-/// at the last line break in it, else at a character boundary.
-fn head(text: &str) -> &str {
+/// at the last line break in it, else at a character boundary, and ending
+/// in an ellipsis that says so.
+fn head(text: &str) -> String {
     let cap = crate::shared::OUTPUT_CAP;
     if text.len() <= 2 * cap {
-        return text;
+        return text.to_owned();
     }
     let end = (0..=cap)
         .rev()
         .find(|at| text.is_char_boundary(*at))
         .unwrap_or(0);
-    match text[..end].rfind('\n') {
+    let kept = match text[..end].rfind('\n') {
         Some(at) if at > 0 => &text[..=at],
         _ => &text[..end],
-    }
+    };
+    format!("{kept}…")
 }
 
 /// A call's input as amux keeps it: each string in it longer than twice
-/// the output cap cut to its first cap's worth, as a file an agent writes
-/// is often there whole, so the input stays JSON a client reads.
+/// the output cap cut to its first cap's worth and marked with an ellipsis
+/// (a file an agent writes is often there whole), so the input stays JSON
+/// a client reads.
 fn kept_input(input: &Value) -> Vec<u8> {
     fn cut(value: &Value) -> Value {
         match value {
-            Value::String(text) => Value::String(head(text).to_owned()),
+            Value::String(text) => Value::String(head(text)),
             Value::Array(items) => Value::Array(items.iter().map(cut).collect()),
             Value::Object(fields) => Value::Object(
                 fields
@@ -423,11 +427,6 @@ impl State {
             && let Ok(super::Stderr { stderr }) = serde_json::from_slice(&fact.payload)
         {
             return self.log(emit, format!("{} on stderr: {stderr}", self.agent));
-        }
-        if fact.channel == Channel::Agent
-            && let Ok(super::Stored { stored_file }) = serde_json::from_slice(&fact.payload)
-        {
-            return self.stored_file(emit, stored_file);
         }
         if fact.channel != Channel::Rpc {
             return self.unrecognized(
@@ -677,11 +676,10 @@ impl State {
     }
 
     /// A piece of the agent's reply or thinking. What the agent presents in
-    /// its reply beside its words (an image, a sound, a file it embedded or
-    /// a local file it linked) becomes an attachment in its place: every
-    /// device draws it, as a person's own attachments are drawn. A link to
-    /// anything else, or a local file that cannot be stored, stays as the
-    /// link's words. Its thinking is words alone.
+    /// its reply beside its words, as bytes it sent itself (an image, a
+    /// sound, a file it embedded), becomes an attachment in its place: every
+    /// device draws it, as a person's own attachments are drawn. A link
+    /// stays as the link's words. Its thinking is words alone.
     fn chunk(&mut self, emit: &mut Emit, kind: Streamed, chunk: &ContentChunk) {
         let presented = match (&chunk.content, kind) {
             (ContentBlock::Text(text), _) => {
@@ -689,21 +687,12 @@ impl State {
                 let text = text.text.replace(attachments::PLACEHOLDER, "\u{FFFD}");
                 return self.stream(emit, kind, &text);
             }
-            (ContentBlock::ResourceLink(link), Streamed::Message) => {
-                let words = link_words(&link.name, &link.uri);
-                return match file_path(&link.uri) {
-                    Some(path) => {
-                        let name = if link.name.is_empty() {
-                            last_segment(&link.uri).unwrap_or("file").to_owned()
-                        } else {
-                            link.name.clone()
-                        };
-                        self.link_file(emit, &link.uri, path, name, words)
-                    }
-                    None => self.stream(emit, kind, &words),
-                };
-            }
-            (ContentBlock::ResourceLink(link), Streamed::Thought) => {
+            // A link, even to a local file, stays words: reading a file
+            // the agent names is the agent's to ask for, through amux's
+            // attach tool and the person's permission, and a stored file
+            // would reach the agent's blobs, which it reads unasked, and
+            // every device.
+            (ContentBlock::ResourceLink(link), _) => {
                 return self.stream(emit, kind, &link_words(&link.name, &link.uri));
             }
             (ContentBlock::Image(image), Streamed::Message) => {

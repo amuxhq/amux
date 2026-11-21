@@ -772,8 +772,5 @@ fn effect_record(alias: &Alias, kind: wire::Kind, effect: &Effect) -> Value {
             "attachments": attachments.len(),
         }),
         Effect::AcpReopen => json!({ "effect": "acp_reopen" }),
-        Effect::StoreFile { path, .. } => {
-            json!({ "effect": "store_file", "path_bytes": path.len() })
-        }
     }
 }

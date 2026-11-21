@@ -1775,6 +1775,10 @@ pub enum EditLine {
 pub struct PatchHead {
     pub lines: Vec<PatchLine>,
     pub more: usize,
+    /// The change went on past what the agent's texts kept: amux cut a
+    /// change too long to send whole, so the patch ends short of it, as a
+    /// command's trimmed output starts late.
+    pub cut: bool,
 }
 
 /// The first `max` lines of the patch a landed file change made, for a
@@ -1782,6 +1786,7 @@ pub struct PatchHead {
 /// not landed, or carries no patch.
 pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHead> {
     let held = state.transcript().get(key)?;
+    let mut cut = false;
     let lines = match &held.body {
         ItemBody::Claude(wire::claude_item::Kind::Tool(tool)) => {
             if !succeeded(tool.state) {
@@ -1804,6 +1809,7 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
             if !succeeded(tool.state) {
                 return None;
             }
+            cut = tool.diffs.first().is_some_and(|diff| diff.truncated);
             patch_lines(acp::patch(tool)?)
         }
         _ => return None,
@@ -1815,6 +1821,7 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
     Some(PatchHead {
         lines: lines.into_iter().take(max).collect(),
         more,
+        cut,
     })
 }
 

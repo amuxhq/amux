@@ -1101,6 +1101,32 @@ async fn attach_refuses_a_file_over_the_attachment_limit() {
     assert_eq!(stored, 0, "nothing was stored");
 }
 
+/// Only a regular file is attached, its links followed first: a pipe
+/// would block the call until something wrote to it, and a device such as
+/// `/dev/zero` never ends, so neither is read.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn attach_reads_only_a_regular_file() {
+    let mut mcp = Mcp::start().await;
+    let made = std::process::Command::new("mkfifo")
+        .arg(mcp.cwd.join("pipe"))
+        .status()
+        .unwrap();
+    assert!(made.success());
+    std::os::unix::fs::symlink("/dev/zero", mcp.cwd.join("zeros.bin")).unwrap();
+    for name in ["pipe", "zeros.bin"] {
+        let refused = mcp.refused("attach", json!({ "path": name })).await;
+        assert!(
+            refused.ends_with("is not a regular file"),
+            "{name}: {refused}"
+        );
+    }
+    let stored = std::fs::read_dir(mcp.dir.join(agent::BLOBS))
+        .map(|blobs| blobs.count())
+        .unwrap_or(0);
+    assert_eq!(stored, 0, "nothing was stored");
+}
+
 /// A send's attachment is measured as stored, not as its element says:
 /// one over the limit is refused naming it, and nothing is sent.
 #[tokio::test(flavor = "multi_thread")]

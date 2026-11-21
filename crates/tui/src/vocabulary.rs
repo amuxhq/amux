@@ -918,6 +918,7 @@ fn facts(row: &Row) -> RowFacts {
                 line(44, LineKind::Added, "        }"),
             ],
             more: 10,
+            cut: false,
         });
     }
     facts

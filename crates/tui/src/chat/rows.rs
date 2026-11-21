@@ -682,6 +682,10 @@ pub(crate) fn patch_lines(
         };
         push(&mut out, words, theme.muted(), width);
         lines.push(out);
+    } else if patch.cut {
+        let mut out = Line::from(Span::raw(" ".repeat(INDENT)));
+        push(&mut out, "… change cut short", theme.faint(), width);
+        lines.push(out);
     }
     lines
 }
@@ -698,4 +702,44 @@ pub(crate) fn rule(words: &str, width: usize, theme: Theme) -> Line<'static> {
             .push(Span::styled("─".repeat(end - used), theme.hairline()));
     }
     line
+}
+
+#[cfg(test)]
+mod tests {
+    use ui_view::{LineKind, PatchHead, PatchLine};
+
+    use super::*;
+
+    fn words(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A change amux cut because it was too long to send whole says so
+    /// under its last line, as a command's trimmed output does above its
+    /// first; an uncut one says nothing more.
+    #[test]
+    fn a_cut_change_says_it_was_cut_short() {
+        let patch = |cut| PatchHead {
+            lines: vec![PatchLine {
+                number: None,
+                kind: LineKind::Added,
+                text: "kept".into(),
+            }],
+            more: 0,
+            cut,
+        };
+        let drawn = |cut| words(&patch_lines(&patch(cut), true, 'a', 80, Theme::default()));
+        let cut = drawn(true);
+        assert_eq!(cut.len(), 2, "{cut:?}");
+        assert_eq!(cut[1].trim(), "… change cut short");
+        assert_eq!(drawn(false).len(), 1);
+    }
 }

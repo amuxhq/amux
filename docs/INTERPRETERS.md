@@ -1264,9 +1264,12 @@ neither is drawn unnumbered.
 
 **What a call keeps.** A change keeps only the lines its texts do not
 share at their start and end, since no row draws the rest and OpenCode
-sends the whole file on every update; each text left, and each string in
-a call's input, is then cut to its first `OUTPUT_CAP` when it is over
-twice that, as output is cut to its last. A turn's end settles every call
+sends the whole file on every update. When a side left is over twice
+`OUTPUT_CAP`, both sides keep the same number of first lines, as many as
+fit the cap on each, so what is kept is still a true part of the change,
+and the diff is marked `truncated`, which the terminal draws as "… change
+cut short" under the patch. Each string in a call's input over twice the
+cap keeps its first cap's worth and ends in "…". A turn's end settles every call
 still running, and an update the agent sends afterwards for a call it
 settled is dropped rather than opening a blank running row.
 
@@ -1317,11 +1320,9 @@ agents write there freely.
 something the agent shows: an image or audio block is decoded and written
 as a blob with the step, and an embedded resource is stored the same way as
 a file, each an attachment at its place in the message's text. A
-`resource_link` to a local file goes in as its name and URI, with a
-`StoreFile` effect: the agent process reads and stores the file, under the
-attachment limit, and answers with an `Agent`-channel fact naming the
-attachment or why it could not, which upgrades the link's words in place,
-even after the message finished. When a message completes, the words
+`resource_link` goes in as its name and URI, a local file's too: storing a
+file the agent only names would read it unasked into blobs the agent reads
+and every device is sent. When a message completes, the words
 between its attachments go through the element reader, so an element the
 model wrote is an attachment too. A call to amux's `attach` tool carries the
 attachment its element names. What a tool call holds is never an

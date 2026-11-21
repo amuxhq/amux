@@ -897,6 +897,14 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                             Some(wire::trusted::Reach::Away(_)) => "AWAY",
                             Some(wire::trusted::Reach::Offline(_)) => "OFFLINE",
                         },
+                        // The agents the host's entry offers to start, by
+                        // provider id: a host lists each ACP agent its
+                        // config adds only once it has asked it.
+                        "providers": host
+                            .providers
+                            .iter()
+                            .map(|offered| offered.provider_id.clone())
+                            .collect::<Vec<_>>(),
                     })
                 })
                 .collect();
@@ -913,6 +921,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "cwd": agent.cwd,
                         "branch": agent.git.as_ref().and_then(|git| git.branch.clone()),
                         "kind": agent.kind().as_str_name().trim_start_matches("KIND_"),
+                        "provider": agent.provider,
                         "lifecycle_name": agent.lifecycle().as_str_name().trim_start_matches("LIFECYCLE_"),
                         "phase_name": agent.phase().as_str_name().trim_start_matches("PHASE_"),
                         "working_on": agent.working_on,
@@ -1019,6 +1028,7 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
             wire::ClaudeSnapshot::decode(body).ok()?.model
         }
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
+        wire::Kind::Acp => wire::AcpSnapshot::decode(body).ok()?.model,
         wire::Kind::Unspecified => None,
     }
 }
@@ -1039,6 +1049,7 @@ fn item_body(item: &wire::Item) -> String {
         Ok(wire::Kind::Codex) => {
             wire::CodexItem::decode(body).map(|item| format!("{:?}", item.kind))
         }
+        Ok(wire::Kind::Acp) => wire::AcpItem::decode(body).map(|item| format!("{:?}", item.kind)),
         _ => return String::new(),
     }
     .unwrap_or_else(|error| format!("undecodable: {error}"));
@@ -1057,6 +1068,9 @@ fn pending_asks(snapshot: &wire::Snapshot) -> Vec<String> {
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
         Ok(wire::Kind::Codex) => wire::CodexSnapshot::decode(body)
+            .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
+            .unwrap_or_default(),
+        Ok(wire::Kind::Acp) => wire::AcpSnapshot::decode(body)
             .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
             .unwrap_or_default(),
         _ => Vec::new(),

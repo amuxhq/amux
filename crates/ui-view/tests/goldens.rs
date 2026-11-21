@@ -1,4 +1,4 @@
-//! View data goldens for all three kinds, derived from every interpreter
+//! View data goldens for every kind, derived from every interpreter
 //! fixture: the interpreter's emission is committed the way the daemon
 //! commits it (an order once per new key, a revision per record), reduced
 //! into a session. Each provider subagent's part of a step is committed
@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -354,8 +355,11 @@ fn describe_card(card: Option<&ui_view::AskCard>) -> String {
 }
 
 /// Replays a fixture's emission through the session and renders the views.
-fn render(kind: Kind, frames: &[Replayed]) -> String {
-    let host = support::agent(kind, wire::Phase::NeedsYou);
+fn render(kind: Kind, provider: &str, frames: &[Replayed]) -> String {
+    let host = wire::Agent {
+        provider: provider.to_owned(),
+        ..support::agent(kind, wire::Phase::NeedsYou)
+    };
     let mut state = SessionState::new(host.clone(), support::CAP);
     let mut committer = Committer::default();
     let mut fleet = FleetState::new();
@@ -608,7 +612,14 @@ fn check(
         Ok(frames) => frames,
         Err(error) => return Some(format!("{dir}/{name}: {error}")),
     };
-    let rendered = render(kind, &frames);
+    // The agent's provider, as the fixture's spec names it: an ACP agent's
+    // id, or none, which reads as the kind implies.
+    let fixture: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixtures(dir).join(format!("{name}.json"))).unwrap(),
+    )
+    .unwrap();
+    let provider = fixture["spec"]["provider"].as_str().unwrap_or_default();
+    let rendered = render(kind, provider, &frames);
     let path = goldens(dir).join(format!("{name}.golden"));
     if std::env::var(UPDATE).as_deref() == Ok("1") {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -680,4 +691,9 @@ fn claude_sdk_view_goldens() {
 #[test]
 fn codex_view_goldens() {
     run_all::<Codex>(Kind::Codex, "codex");
+}
+
+#[test]
+fn acp_view_goldens() {
+    run_all::<Acp>(Kind::Acp, "acp");
 }

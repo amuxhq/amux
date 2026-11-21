@@ -667,7 +667,8 @@ pub unsafe extern "C" fn amux_profile_delete_warning(
     })
 }
 
-/// What a provider, as a JSON `Provider` ("Claude" or "Codex"), offers on a
+/// What a provider, by its id as a JSON string ("claude", "codex", an ACP
+/// agent's), offers on a
 /// host, by its id as a JSON byte array, with no agent running there; the
 /// ticket answers `{"Ok": Catalogue}` or `{"Err": ..}`.
 ///
@@ -687,16 +688,16 @@ pub unsafe extern "C" fn amux_profile_host_catalogue(
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
         // SAFETY: the caller's contract.
-        let provider: Option<app_runtime::Provider> = unsafe { parse(provider) };
+        let provider: Option<String> = unsafe { parse(provider) };
         let app = profile.app.clone();
         profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
             let Some(provider) = provider else {
-                return Answered::Err("the provider is not a Provider".into());
+                return Answered::Err("the provider is not a provider id".into());
             };
-            Answered::from(app.host_catalogue(&host_id, provider).await)
+            Answered::from(app.host_catalogue(&host_id, &provider).await)
         })
     })
 }

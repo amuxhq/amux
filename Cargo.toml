@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/acp-protocol",
     "crates/agent",
     "crates/agent-core",
     "crates/analytics",
@@ -100,6 +101,7 @@ ui-view = { path = "crates/ui-view" }
 tui = { path = "crates/tui" }
 pty-host = { path = "crates/pty-host" }
 provider-fakes = { path = "crates/provider-fakes" }
+acp-protocol = { path = "crates/acp-protocol" }
 claude-protocol = { path = "crates/claude-protocol" }
 codex-protocol = { path = "crates/codex-protocol" }
 redaction = { path = "crates/redaction" }

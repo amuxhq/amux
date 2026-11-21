@@ -1,0 +1,34 @@
+
+  soaker │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Run the soak.                                                                                    hh:mm
+
+
+    Starting the soak.
+
+    Working
+
+    Then log the peak.                                                                              queued
+    And email me.                                                                               [Withdraw]
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message soaker                                                                                       │
+  ╰────────────────────────────────────────────────────────────────────────────────── fake-model (medium) ─╯
+
+  backspace withdraw   ↑/↓ queued   esc back

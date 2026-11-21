@@ -15,6 +15,7 @@ mod code;
 mod composer;
 mod fleet;
 mod form;
+mod inputs;
 mod onboarding;
 mod overview;
 mod repository;
@@ -38,19 +39,21 @@ pub use changed_words::*;
 pub use code::{CodeRun, HighlightedCode, LineKind, TokenKind};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
-    PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, command_matches,
-    composer, context, pastes_as_attachment, prompts_underway, queue_rows, refused_prompts,
-    sign_in, switched_away,
+    PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, Untaken,
+    command_matches, composer, context, pastes_as_attachment, prompts_underway, queue_rows,
+    refused_prompts, sign_in, switched_away, untaken, untaken_by, untaken_file,
 };
 pub use fleet::{
     ActivityLine, ExitCause, FamilyHeader, FleetCard, FleetFilter, FleetOnly, FleetRow,
     FleetSection, FleetView, LoudMember, Offline, Reach, SecondLine, SectionKind, SessionLine,
-    family_header, fleet_card, fleet_view, kind_name, matches, reach, session_line,
+    SettleTurn, SettleWarning, family_header, fleet_card, fleet_view, matches, reach, session_line,
+    settle_warning,
 };
 pub use form::{
     FieldProblem, FormField, FormFieldKind, FormProblem, FormValue, form_answer, form_fields,
     form_problems,
 };
+pub use inputs::{Act, act_input, create_config};
 pub use onboarding::{OnboardingView, SetupStep, next_step, onboarding_view, step_open};
 pub use overview::{
     ChangeTotals, ChangedFile, Changes, Comparison, FileStatus, Folder, JobRow, JobStop, Overview,
@@ -61,9 +64,9 @@ pub use repository::{REPOSITORY_TINTS, Repository};
 pub use review_page::*;
 pub use rows::{
     AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView,
-    ExploreVerb, FileChangeView, FilePatch, FileRow, Granted, HunkStart, OUTPUT_HEAD_LINES,
-    PatchHead, PatchHunk, PatchLine, PermissionGrant, PlanVerdict, Resolution, Row, RowKind,
-    ToolRows, chat_rows_for, patch_head,
+    ExploreVerb, FileChangeView, FilePatch, FileRow, Granted, HunkStart, NoticeReason,
+    NoticeSeverity, OUTPUT_HEAD_LINES, PatchHead, PatchHunk, PatchLine, PermissionGrant,
+    PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
 pub use segments::{AttachmentView, Segment, SentReviewRef, THUMBNAIL_SIZE_LIMIT, segments};

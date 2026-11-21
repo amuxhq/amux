@@ -1124,6 +1124,11 @@ impl Engine {
                 }
                 Step::Repeat { .. } => unreachable!("next_step unrolls repeats"),
                 Step::Subagents { agents } => self.subagents(&turn, agents).await,
+                Step::Call(_)
+                | Step::ToolServer(_)
+                | Step::Context { .. }
+                | Step::Title { .. }
+                | Step::Stop { .. } => unreachable!("refused when the script loaded"),
             }
         };
         if exit.is_some() {
@@ -1322,7 +1327,12 @@ impl Engine {
             | Step::Usage(_)
             | Step::AuthFailed { .. }
             | Step::Repeat { .. }
-            | Step::Subagents { .. } => {}
+            | Step::Subagents { .. }
+            | Step::Call(_)
+            | Step::ToolServer(_)
+            | Step::Context { .. }
+            | Step::Title { .. }
+            | Step::Stop { .. } => {}
         }
     }
 

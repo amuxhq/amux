@@ -904,3 +904,75 @@ fn a_commit_moves_a_provider_subagents_lifecycle_with_its_hosts_cursor() {
     assert!(!continued.is_closed(), "open again");
     assert_eq!(store.cursor(&host).unwrap(), 20);
 }
+
+/// Each row keeps which agent program it runs. A row written before the
+/// store kept that, as a rollback's build writes it, holds NULL, and reads
+/// as the program its kind implies.
+#[test]
+fn a_rows_provider_is_kept_and_an_older_rows_comes_from_its_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let mut store = Sqlite::open(&path, OWN).unwrap();
+    let mut acp = AgentRow::new(AgentKey::new(OWN, b"acp".to_vec()), wire::Kind::Acp, "/src");
+    acp.provider = "opencode".into();
+    store.put_agent(&acp).unwrap();
+    let older = AgentRow::new(
+        AgentKey::new(OWN, b"old".to_vec()),
+        wire::Kind::ClaudePty,
+        "/src",
+    );
+    store.put_agent(&older).unwrap();
+    drop(store);
+    let column = |id: &[u8]| -> Option<String> {
+        Connection::open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT provider FROM agents WHERE agent_id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(column(b"acp").as_deref(), Some("opencode"));
+    assert_eq!(column(b"old"), None, "an empty provider is stored as NULL");
+
+    let store = Sqlite::open(&path, OWN).unwrap();
+    let read = |id: &[u8]| {
+        store
+            .agent(&AgentKey::new(OWN, id.to_vec()))
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(read(b"acp").provider_id(), "opencode");
+    assert_eq!(read(b"old").provider, "");
+    assert_eq!(read(b"old").provider_id(), "claude");
+}
+
+/// A dump's copy keeps Claude's, Codex's and the built-in agents' ids, and
+/// reads an agent a person added as `custom`: its id is theirs to choose.
+#[test]
+fn a_redacted_copy_names_a_persons_own_agent_custom() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let mut store = Sqlite::open(&path, OWN).unwrap();
+    for (id, provider) in [
+        (&b"a"[..], "grok"),
+        (b"b", "my-secret-agent"),
+        (b"c", "codex"),
+    ] {
+        let mut row = AgentRow::new(AgentKey::new(OWN, id.to_vec()), wire::Kind::Acp, "/src");
+        row.provider = provider.into();
+        store.put_agent(&row).unwrap();
+    }
+    drop(store);
+    store::redact::redact_file(&path, &Blank).unwrap();
+    let store = Sqlite::open(&path, OWN).unwrap();
+    let mut providers: Vec<String> = store
+        .agents()
+        .unwrap()
+        .into_iter()
+        .map(|row| row.provider)
+        .collect();
+    providers.sort();
+    assert_eq!(providers, ["codex", "custom", "grok"]);
+}

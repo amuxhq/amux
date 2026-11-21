@@ -108,13 +108,12 @@ extension ChatWords {
 
     /// "Claude runs this subagent": the head of a provider subagent's
     /// composer, which has no text box because the provider lets only the
-    /// parent's model talk to it.
-    public static func nativeRunner(_ kind: Kind?) -> String {
-        switch kind {
-        case .claudeSdk?, .claudePty?: String(localized: "Claude runs this subagent")
-        case .codex?: String(localized: "Codex runs this subagent")
-        case .unspecified?, nil: String(localized: "Its provider runs this subagent")
+    /// parent's model talk to it. The program is named as its host names it.
+    public static func nativeRunner(_ provider: String?) -> String {
+        guard let provider, !provider.isEmpty else {
+            return String(localized: "Its provider runs this subagent")
         }
+        return String(localized: "\(provider) runs this subagent")
     }
 
     /// Under the head: why there is nowhere to type.

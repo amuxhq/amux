@@ -3,11 +3,12 @@ name = "provider-fakes"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Scripted stand-ins for the Claude and Codex binaries, for tests"
+description = "Scripted stand-ins for the Claude, Codex and ACP agent binaries, for tests"
 publish = false
 autotests = false
 
 [dependencies]
+acp-protocol.workspace = true
 jiff = { workspace = true }
 claude-protocol.workspace = true
 codex-protocol.workspace = true
@@ -36,6 +37,10 @@ path = "src/bin/fake_claude_pty.rs"
 [[bin]]
 name = "fake-codex"
 path = "src/bin/fake_codex.rs"
+
+[[bin]]
+name = "fake-acp"
+path = "src/bin/fake_acp.rs"
 
 [dev-dependencies]
 patience = { workspace = true }

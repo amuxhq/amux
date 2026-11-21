@@ -26,8 +26,28 @@ struct AppWindow: View {
                 .onChange(of: model.stores?.newAgent.created) { _, created in
                     if let created, model.starting != nil { model.started(created) }
                 }
+                .alert(
+                    settlingTitle, isPresented: settling, presenting: model.settling
+                ) { agent in
+                    Button("Cancel", role: .cancel) { model.settling = nil }
+                    Button("Settle", role: .destructive) {
+                        model.settling = nil
+                        Task { await model.act(.close, on: agent) }
+                    }
+                } message: { agent in
+                    Text(model.settleQuestion(agent) ?? "")
+                }
             }
         }
+    }
+
+    /// A settle that cuts work short or cannot be undone, asked about first.
+    private var settling: Binding<Bool> {
+        Binding(get: { model.settling != nil }, set: { if !$0 { model.settling = nil } })
+    }
+
+    private var settlingTitle: String {
+        model.settling.flatMap { model.row($0)?.name }.map { "Settle \($0)?" } ?? "Settle?"
     }
 
     /// The centre: the open agent's chat, the new-agent page, or a host.
@@ -75,9 +95,12 @@ struct AppWindow: View {
         let model = model
         var actions = AgentActions(
             openChanges: { model.place.changes = true }, openAgent: { model.openChat($0) },
-            openTerminal: { model.openTerminal(agent) }, editor: AppModel.editor?.name ?? "Editor",
+            editor: AppModel.editor?.name ?? "Editor",
             editorIcon: AppModel.editor.map { NSWorkspace.shared.icon(forFile: $0.url.path) },
             terminalIcon: AppModel.appIcon("com.apple.Terminal"), finderIcon: AppModel.appIcon("com.apple.finder"))
+        if model.attachable(agent) {
+            actions.openTerminal = { model.openTerminal(agent) }
+        }
         if let folder = model.local(agent) {
             actions.reveal = { model.reveal(folder) }
             actions.openEditor = { model.openInEditor(folder) }
@@ -130,13 +153,14 @@ struct AppWindow: View {
             restartToUpdate: model.restartToUpdate,
             newAgent: { model.newAgent() },
             search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
-            act: { act, agent in Task { await model.act(act, on: agent) } },
+            act: { act, agent in Task { await model.request(act, on: agent) } },
             deleteWarning: { agent in
                 guard let stores = model.stores else { return .failure(RuntimeFailure("amux isn’t running")) }
                 return await stores.deleteWarning(agent).mapError { $0 }
             },
             dismissProblem: { model.dismissProblem() },
-            openTerminal: { model.openTerminal($0) })
+            openTerminal: { model.openTerminal($0) },
+            runsHere: { model.runsHere($0) })
     }
 }
 

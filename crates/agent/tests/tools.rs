@@ -432,8 +432,16 @@ fn row(id: &[u8], host: &[u8], name: &str) -> Row {
     }
 }
 
-fn host(id: &[u8], name: &str, reach: wire::trusted::Reach) -> HostEntry {
-    HostEntry::trusted_host(id, name, reach)
+fn host(id: &[u8], name: &str, reach: wire::trusted::Reach, offers: &[&str]) -> HostEntry {
+    let mut entry = HostEntry::trusted_host(id, name, reach);
+    entry.providers = offers
+        .iter()
+        .map(|provider| wire::ProviderOnHost {
+            provider_id: (*provider).to_owned(),
+            ..Default::default()
+        })
+        .collect();
+    entry
 }
 
 /// Me on this host with a child, a reviewer on the studio, and a candidate
@@ -445,7 +453,10 @@ fn fleet() -> Fleet {
     me.working_on = Some("Splitting the parser".into());
     let mut reviewer = row(&REVIEWER, &STUDIO, "reviewer");
     reviewer.kind = Kind::Codex as i32;
+    // A child running an ACP agent, named by its agent's id.
     let mut child = row(&CHILD, &HERE, "helper");
+    child.kind = Kind::Acp as i32;
+    child.provider = "opencode".into();
     child.parent = Some(AgentRef {
         host_id: HERE.to_vec(),
         agent_id: ME.to_vec(),
@@ -458,11 +469,13 @@ fn fleet() -> Fleet {
                 &HERE,
                 "laptop",
                 wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                &["claude", "codex", "opencode"],
             ),
             host(
                 &STUDIO,
                 "Studio",
                 wire::trusted::Reach::Away(wire::Empty {}),
+                &["claude", "codex"],
             ),
             HostEntry::candidate_host([0x03; 16], "stranger", Vec::new()),
         ],
@@ -667,7 +680,7 @@ async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
               "live": true, "phase": "working", "working_on": "Splitting the parser", "you": true },
             { "name": "reviewer", "id": interpret::to_hex(&REVIEWER), "kind": "codex",
               "host": "Studio", "live": true, "phase": "idle" },
-            { "name": "helper", "id": interpret::to_hex(&CHILD), "kind": "claude",
+            { "name": "helper", "id": interpret::to_hex(&CHILD), "kind": "opencode",
               "host": "laptop", "live": false, "phase": "idle", "exit_cause": "finished",
               "parent": "lead" },
         ]})
@@ -683,8 +696,9 @@ async fn hosts_lists_trusted_hosts_and_this_one() {
     assert_eq!(
         listed,
         json!({ "hosts": [
-            { "name": "laptop", "presence": "online", "this_host": true },
-            { "name": "Studio", "presence": "away" },
+            { "name": "laptop", "presence": "online", "this_host": true,
+              "agents": ["claude", "codex", "opencode"] },
+            { "name": "Studio", "presence": "away", "agents": ["claude", "codex"] },
         ]})
     );
 }
@@ -846,15 +860,39 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         .await,
         "no trusted host is named stranger; trusted hosts: laptop, Studio"
     );
+    // Any other id is an ACP agent's, for the host it runs on to start or
+    // refuse; one no agent can have never reaches the daemon.
+    mcp.ok(
+        "spawn",
+        json!({ "kind": "opencode", "prompt": "Explain it." }),
+    )
+    .await;
+    let calls = fleet.calls();
+    let Some(Call::Create(addressed, acp)) = calls.last() else {
+        panic!("a create, got {calls:?}");
+    };
     assert_eq!(
-        mcp.refused("spawn", json!({ "kind": "gemini", "prompt": "x" }))
+        wire::host_of_authority(addressed),
+        None,
+        "no host named: the daemon that took the call makes it"
+    );
+    assert_eq!(
+        acp.agent,
+        Some(create_agent_request::Agent::Acp(wire::AcpCreateConfig {
+            agent: "opencode".into(),
+            ..Default::default()
+        })),
+        "the ACP agent with its own settings"
+    );
+    assert_eq!(
+        mcp.refused("spawn", json!({ "kind": "Gemini CLI", "prompt": "x" }))
             .await,
-        "no agent kind \"gemini\"; use claude or codex"
+        "no agent \"Gemini CLI\"; use claude, codex or another agent a host offers, by the id hosts lists"
     );
     let calls = fleet.calls();
     assert!(
-        matches!(calls.as_slice(), [.., Call::ResolveHost(stranger)] if stranger == "stranger"),
-        "no host is named stranger, so nothing was created, and the unknown kind never reached the daemon: {calls:?}"
+        matches!(calls.as_slice(), [.., Call::Create(_, last)] if last == acp),
+        "the malformed id never reached the daemon: {calls:?}"
     );
 }
 
@@ -1122,6 +1160,32 @@ async fn attach_refuses_a_file_over_the_attachment_limit() {
         refused,
         "huge.bin is too large to attach: files can be at most 64 MB"
     );
+    let stored = std::fs::read_dir(mcp.dir.join(agent::BLOBS))
+        .map(|blobs| blobs.count())
+        .unwrap_or(0);
+    assert_eq!(stored, 0, "nothing was stored");
+}
+
+/// Only a regular file is attached, its links followed first: a pipe
+/// would block the call until something wrote to it, and a device such as
+/// `/dev/zero` never ends, so neither is read.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn attach_reads_only_a_regular_file() {
+    let mut mcp = Mcp::start().await;
+    let made = std::process::Command::new("mkfifo")
+        .arg(mcp.cwd.join("pipe"))
+        .status()
+        .unwrap();
+    assert!(made.success());
+    std::os::unix::fs::symlink("/dev/zero", mcp.cwd.join("zeros.bin")).unwrap();
+    for name in ["pipe", "zeros.bin"] {
+        let refused = mcp.refused("attach", json!({ "path": name })).await;
+        assert!(
+            refused.ends_with("is not a regular file"),
+            "{name}: {refused}"
+        );
+    }
     let stored = std::fs::read_dir(mcp.dir.join(agent::BLOBS))
         .map(|blobs| blobs.count())
         .unwrap_or(0);

@@ -1,0 +1,1 @@
+{"argv":["agent","stdio"],"command":"grok","cwd":"<MACHINE_PATH>","process":"1","transport_id":"amux"}

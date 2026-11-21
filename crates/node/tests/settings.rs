@@ -53,7 +53,10 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     assert!(settings.keep_awake && settings.repositories.is_empty());
     assert_eq!(settings.claude_kind, wire::Kind::Unspecified as i32);
     assert_eq!(
-        runtime.host_entry().claude_kind(),
+        runtime
+            .host_entry()
+            .provider("claude")
+            .map_or(wire::Kind::Unspecified, wire::ProviderOnHost::kind),
         wire::Kind::ClaudeSdk,
         "unset follows amux's chat"
     );
@@ -81,7 +84,12 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     assert!(text.contains("host_name = \"study\""), "{text}");
 
     let entry = runtime.host_entry();
-    assert_eq!(entry.claude_kind(), wire::Kind::ClaudePty);
+    assert_eq!(
+        entry
+            .provider("claude")
+            .map_or(wire::Kind::Unspecified, wire::ProviderOnHost::kind),
+        wire::Kind::ClaudePty
+    );
     assert_eq!(entry.host.unwrap().name, "study");
     until(
         "the desk's entry to offer its repository",
@@ -103,7 +111,13 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     let spare = daemon
         .profile(uuid::Uuid::from_slice(&created.id).unwrap())
         .expect("the new profile runs");
-    assert_eq!(spare.host_entry().claude_kind(), wire::Kind::ClaudePty);
+    assert_eq!(
+        spare
+            .host_entry()
+            .provider("claude")
+            .map_or(wire::Kind::Unspecified, wire::ProviderOnHost::kind),
+        wire::Kind::ClaudePty
+    );
     until(
         "the new profile's entry to offer it too",
         pinned_app(&spare),
@@ -215,7 +229,10 @@ async fn a_change_to_the_file_beside_the_daemon_is_applied() {
     let runtime = runtime(&daemon, &desk);
     std::fs::write(&file, "[ui]\nchat_in = \"native\"\n").unwrap();
     until("the native interface's Claude to be published", || {
-        let kind = runtime.host_entry().claude_kind();
+        let kind = runtime
+            .host_entry()
+            .provider("claude")
+            .map_or(wire::Kind::Unspecified, wire::ProviderOnHost::kind);
         async move {
             match kind {
                 wire::Kind::ClaudePty => Ok(()),
@@ -249,9 +266,11 @@ async fn a_paired_host_learns_the_claude_kind_a_host_publishes() {
     let listed = |want: wire::Kind| {
         let laptop_runtime = laptop_runtime.clone();
         move || {
-            let kind = laptop_runtime
-                .host_entry_of(desk_host)
-                .map(|entry| entry.claude_kind());
+            let kind = laptop_runtime.host_entry_of(desk_host).map(|entry| {
+                entry
+                    .provider("claude")
+                    .map_or(wire::Kind::Unspecified, wire::ProviderOnHost::kind)
+            });
             async move {
                 match kind {
                     Some(kind) if kind == want => Ok(()),

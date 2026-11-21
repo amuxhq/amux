@@ -35,8 +35,7 @@ item toolu_01769GXLhBn1Z2xSkGxo4MUg tool final at=1793423354193 text="" Read TOO
 ## 45 recorded 44: fact Stream type=rate_limit_event uuid=304a930f-4677-4864-8d3a-a758852f7fd1
 snapshot WORKING queue=[] working_on="Name the color of the attached image in one word. Then read square.png in the working directory with the Read tool and say whether it is the same image." at=1793423354215 asks=[] session=9883de37-17b7-4175-80dd-43d83b8e021d model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20379/? tasks=? active=[] usage=ok 5h:18%(ok) 7d:1%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 47 recorded 46: fact Stream type=user uuid=ee9d9a92-955b-47df-872b-83f7d0c981a0
-effect blob 0dbc894f 99 bytes
-item toolu_01769GXLhBn1Z2xSkGxo4MUg tool final at=1793423354193 text="" Read TOOL_STATE_SUCCEEDED read ended=1793423354220 image=image/png:99:0dbc894f input="{\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_01769GXLhBn1Z2xSkGxo4MUg tool final at=1793423354193 text="" Read TOOL_STATE_SUCCEEDED read ended=1793423354220 input="{\"file_path\":\"<MACHINE_PATH>\"}"
 ## 49 recorded 48: fact Stream type=system subtype=status uuid=aeedf17e-b19e-40cb-96d2-3e3df3adbc0c
 item aeedf17e-b19e-40cb-96d2-3e3df3adbc0c status final at=1793423354224 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 51 recorded 50: fact Stream type=stream_event uuid=e08d84af-0be0-44cd-a5e0-53ee984b1640

@@ -231,6 +231,26 @@ pub(crate) fn folder_hash(dir: &Path) -> String {
     format!("{:08x}", hash as u32)
 }
 
+/// A topology file as the net is served it: each agent's script file made
+/// absolute, since it is read relative to the topology file.
+fn read_topology(path: &Path) -> Result<Value, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("reading {}: {error}", path.display()))?;
+    let mut value: Value = serde_json::from_str(&text)
+        .map_err(|error| format!("{} is not JSON: {error}", path.display()))?;
+    let base = path.parent().unwrap_or(Path::new("."));
+    // `get_mut`, as indexing a topology that declares no agents would add
+    // `"agents": null`, which the net refuses to read.
+    let agents = value.get_mut("agents").and_then(Value::as_array_mut);
+    for agent in agents.into_iter().flatten() {
+        if let Some(file) = agent.get("script_file").and_then(Value::as_str) {
+            let absolute = base.join(file);
+            agent["script_file"] = json!(absolute);
+        }
+    }
+    Ok(value)
+}
+
 pub(crate) fn up(folder: &Folder, topology: Option<&Path>) -> Result<Outcome, String> {
     if let Ok(record) = folder.record()
         && door::call(
@@ -249,21 +269,7 @@ pub(crate) fn up(folder: &Folder, topology: Option<&Path>) -> Result<Outcome, St
         std::fs::remove_dir_all(net_dir.join("net")).map_err(|error| error.to_string())?;
     }
     let mut declared = match topology {
-        Some(path) => {
-            let text = std::fs::read_to_string(path)
-                .map_err(|error| format!("reading {}: {error}", path.display()))?;
-            let mut value: Value = serde_json::from_str(&text)
-                .map_err(|error| format!("{} is not JSON: {error}", path.display()))?;
-            // Script files are read relative to the topology file.
-            let base = path.parent().unwrap_or(Path::new("."));
-            for agent in value["agents"].as_array_mut().into_iter().flatten() {
-                if let Some(file) = agent.get("script_file").and_then(Value::as_str) {
-                    let absolute = base.join(file);
-                    agent["script_file"] = json!(absolute);
-                }
-            }
-            value
-        }
+        Some(path) => read_topology(path)?,
         None => json!({"hosts": []}),
     };
     // The clients a world comes with are ctl's to open, not the net's.
@@ -654,5 +660,39 @@ fn stop_pairings(folder: &Folder) {
                 .stderr(std::process::Stdio::null())
                 .status();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A world of hosts alone, such as `environments/first-run.json`, is
+    /// served as written: no `agents` key appears, null or otherwise.
+    #[test]
+    fn a_topology_without_agents_gains_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("world.json");
+        std::fs::write(&path, r#"{"hosts": [{"name": "studio"}]}"#).unwrap();
+        let read = read_topology(&path).unwrap();
+        assert_eq!(read, json!({"hosts": [{"name": "studio"}]}));
+        let topology: crate::Topology = serde_json::from_value(read).unwrap();
+        assert!(topology.agents.is_empty());
+    }
+
+    #[test]
+    fn an_agents_script_file_is_read_beside_the_topology() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("world.json");
+        std::fs::write(
+            &path,
+            r#"{"hosts": [], "agents": [{"name": "a", "host": "h", "script_file": "a.json"}]}"#,
+        )
+        .unwrap();
+        let read = read_topology(&path).unwrap();
+        assert_eq!(
+            read["agents"][0]["script_file"],
+            json!(dir.path().join("a.json"))
+        );
     }
 }

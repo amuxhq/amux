@@ -1,0 +1,264 @@
+{
+  "about": "What an ACP agent presents in its reply becomes attachments in their places: an image block, an embedded file, and amux's attach tool's step. A link, a local file's too, stays as its words, and an image a tool read is not attached.",
+  "spec": {
+    "provider": "opencode",
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "agent-initialize",
+          "result": {
+            "protocolVersion": 1,
+            "agentCapabilities": {
+              "loadSession": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "agent-session",
+          "result": {
+            "sessionId": "s1"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p1",
+        "prompt": {
+          "text": "Show me the chart and the notes."
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "Here is the chart "
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "image",
+                "mimeType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+              }
+            }
+          }
+        }
+      },
+      "note": "an image in the reply: its blob is written and a placeholder stands where it came"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ", the notes "
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "resource",
+                "resource": {
+                  "uri": "file:///work/notes.md",
+                  "mimeType": "text/markdown",
+                  "text": "# Notes\n\nTwo lines.\n"
+                }
+              }
+            }
+          }
+        }
+      },
+      "note": "an embedded file in the reply: stored as a file attachment named for its URI"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " and the plot "
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "resource_link",
+                "name": "plot.png",
+                "uri": "file:///work/plot.png"
+              }
+            }
+          }
+        }
+      },
+      "note": "a local file linked: it stays as the link's words, since amux never reads a file the agent only names"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": ". Also see [the site](https://example.com/)."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "c1",
+              "title": "amux_attach",
+              "kind": "other",
+              "status": "completed",
+              "rawInput": {
+                "path": "dot.png"
+              },
+              "content": [
+                {
+                  "type": "content",
+                  "content": {
+                    "type": "text",
+                    "text": "<amux-attachment kind=\"image\" hash=\"sha256:f070f042bc0752d0bfe6e3d7b992289574d90b78fe62b21fa1dd472a9c4fa5e7\" name=\"dot.png\" mime=\"image/png\" size=\"7\" path=\"/agent/blobs/f070f042bc0752d0bfe6e3d7b992289574d90b78fe62b21fa1dd472a9c4fa5e7\"/>"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "c2",
+              "title": "read_file",
+              "kind": "read",
+              "status": "completed",
+              "locations": [
+                {
+                  "path": "/work/shot.png"
+                }
+              ],
+              "content": [
+                {
+                  "type": "content",
+                  "content": {
+                    "type": "image",
+                    "mimeType": "image/png",
+                    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "note": "an image a tool read is what the tool saw: no attachment, no blob"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "amux-prompt-7031",
+          "result": {
+            "stopReason": "end_turn"
+          }
+        }
+      }
+    }
+  ]
+}

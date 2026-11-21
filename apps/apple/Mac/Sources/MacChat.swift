@@ -127,15 +127,17 @@ final class MacChat: ChatSurface {
 
     // MARK: Attaching and settings
 
-    /// Each file is read here and stored on the agent's host; one that
-    /// cannot be read is said in the chat's notice by the model.
+    /// Each file is read here and stored on the agent's host, a picture as
+    /// an image. One the agent does not take, or that is too large, is
+    /// refused in the chat's notice by the model before it is read.
     func attach(files: [URL]) {
         for url in files {
-            guard let data = try? Data(contentsOf: url) else { continue }
             let type = UTType(filenameExtension: url.pathExtension)
+            let image = type?.conforms(to: .image) ?? false
+            guard let data = try? Data(contentsOf: url) else { continue }
             model.attach(
                 data, name: url.lastPathComponent, mime: type?.preferredMIMEType ?? "application/octet-stream",
-                image: type?.conforms(to: .image) ?? false)
+                image: image)
         }
     }
 

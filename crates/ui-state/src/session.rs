@@ -305,6 +305,26 @@ impl SessionState {
         self.host.as_ref()
     }
 
+    /// What the agent can do: what its newest snapshot says, else what its
+    /// host says its provider can do (a snapshot an earlier build wrote
+    /// says nothing), else what every agent of its kind can do, else
+    /// nothing beyond what every agent can. The host's word is for a new
+    /// agent of the kind it starts now, so it stands for this one only when
+    /// that is this one's kind: a headless Claude started before the host
+    /// switched to Claude's own terminal cannot switch back.
+    pub fn capabilities(&self) -> wire::AgentCapabilities {
+        self.snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.capabilities)
+            .unwrap_or_else(|| crate::offered_capabilities(self.host.as_ref(), &self.agent))
+    }
+
+    /// What people call the agent's provider: its host's name for it, else
+    /// its id.
+    pub fn provider_name(&self) -> String {
+        crate::provider_name(self.host.as_ref(), &self.agent)
+    }
+
     /// The newest snapshot, decoded, with what the agent offers when its
     /// catalogue is held.
     pub fn agent_state(&self) -> &AgentState {
@@ -415,7 +435,8 @@ impl SessionState {
 
     /// Stopping a provider subagent from its own chat: its own job, which
     /// its snapshot lists under the provider's id for it while it can be
-    /// stopped. Terminal Claude stops no single subagent, so lists none.
+    /// stopped. An agent that stops no single job (terminal Claude) stops
+    /// no single subagent either, so lists none.
     pub fn native_stop(&self) -> JobStop {
         let Some(native) = &self.agent.native else {
             return JobStop::Unavailable;
@@ -424,7 +445,7 @@ impl SessionState {
             job.kind() == wire::BackgroundKind::Subagent && job.key == native.provider_child_id
         });
         match own {
-            _ if self.exited() || self.kind() == Kind::ClaudePty => JobStop::Unavailable,
+            _ if self.exited() || !self.capabilities().stops_job => JobStop::Unavailable,
             None => JobStop::Unavailable,
             Some(job) if job.key.is_empty() => JobStop::Unavailable,
             Some(job) if job.stopping => JobStop::Stopping,
@@ -445,8 +466,10 @@ impl SessionState {
             Composer::Native {
                 stop: self.native_stop(),
             }
-        } else if self.exited() {
+        } else if self.exited() && self.capabilities().resumable {
             Composer::Resume
+        } else if self.exited() {
+            Composer::Ended
         } else if self.caught_up {
             Composer::Send
         } else if self.connection == Connection::Reconnecting {

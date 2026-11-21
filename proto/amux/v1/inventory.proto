@@ -33,7 +33,9 @@ message HostEntry {
   Host host = 1;
   // Bumped only after an unclean reboot of that host.
   uint64 generation = 2;
-  // What each provider offers on the host, once the host has asked it.
+  // The agent programs the host runs, in the order a picker lists them:
+  // Claude and Codex always, then each ACP agent the host offers once it
+  // has asked it, built-in ones first.
   repeated ProviderOnHost providers = 3;
   oneof standing {
     // Paired with this machine, or this machine itself.
@@ -41,9 +43,10 @@ message HostEntry {
     // Never paired: found by discovery, or announced by a neighbor.
     Candidate candidate = 5;
   }
-  // The kind this host's settings resolve to for a new Claude agent: every
-  // client creates Claude agents on this host with it.
-  Kind claude_kind = 6;
+  // Retired: the kind a new Claude agent starts as is the Claude provider's
+  // ProviderDescriptor.kind.
+  reserved 6;
+  reserved "claude_kind";
   // Set when this host wants notifications: the key they are sealed to, on
   // the host's own entry in the inventory it serves. A daemon reads it only
   // from that stream, whose handshake proves who sent it, and keeps it with
@@ -141,11 +144,49 @@ message Candidate {
   bool pairing_open = 3;
 }
 
+// One agent program a host runs. Kind-neutral, so in the inventory and
+// not a per-kind body: a client reads it to name an agent and decide what
+// New Agent offers before any agent of the program exists, for programs
+// it has never heard of.
 message ProviderOnHost {
-  Provider provider = 1;
-  // The hash GetCatalogue answers with for this provider.
+  // Retired: the provider as an enum of Claude and Codex, which could not
+  // name an agent a person adds.
+  reserved 1;
+  reserved "provider";
+  // The hash GetCatalogue answers with for this provider; absent until the
+  // host has asked it, which GetCatalogue does.
   optional bytes catalogue = 2;
+  // Whether the provider was signed in when the host asked it; says
+  // nothing while `catalogue` is absent.
   bool signed_in = 3;
+  // How clients name and start it.
+  ProviderDescriptor descriptor = 4;
+  // What an agent of this provider started on this host now can do. A
+  // running agent's own snapshot says what it can, which is what a client
+  // reads for that agent.
+  AgentCapabilities capabilities = 5;
+  // The provider's id: "claude", "codex", or an ACP agent's id
+  // ("antigravity", "opencode", "grok", or one a person added in the host's
+  // config). What GetCatalogueRequest and Agent.provider name it by.
+  string provider_id = 6;
+}
+
+// What a client needs to name a provider and start one of its agents,
+// without knowing the provider.
+message ProviderDescriptor {
+  // What people call it ("Claude", "Codex", "OpenCode", or the name a
+  // person gave their own agent).
+  string name = 1;
+  // The kind a new agent of this provider starts as on this host: for
+  // Claude, the one the host's settings choose (terminal or headless).
+  Kind kind = 2;
+  // What a person does to sign in, in the provider's or amux's words
+  // ("Run `opencode auth login` in the terminal"); empty when nothing is
+  // known. amux never signs in for a person.
+  string sign_in_hint = 3;
+  // The program's version as it gave it when the host asked; empty where it
+  // gives none.
+  string version = 4;
 }
 
 // How this machine reaches a host, or how a pairing peer was reached. No
@@ -215,6 +256,12 @@ message Agent {
   // agent whose process runs it, and it takes no messages. Absent on every
   // agent amux started itself.
   optional NativeChild native = 22;
+  // Which agent program it runs, by its provider id ("claude", "codex", or
+  // an ACP agent's, as ProviderOnHost names it). Clients name the agent
+  // with the descriptor its host lists for that id. On the row rather than
+  // in a body because the kind no longer says the program: every ACP agent
+  // is one kind, and a fleet list names each agent without decoding it.
+  string provider = 23;
   // What experiments say about the agent, each entry keyed by an
   // experiment's version (e.g. "workspaces/1") and holding an encoded
   // amux.experimental message. A build reads and writes only the entries of
@@ -262,13 +309,4 @@ message HostRef {
     bytes host_id = 1;
     string name = 2;
   }
-}
-
-// Which provider's program a host runs: the vocabulary amux uses to ask a
-// host what it offers with no agent running. Distinct from Kind, which is
-// the interpreter.
-enum Provider {
-  PROVIDER_UNSPECIFIED = 0;
-  PROVIDER_CLAUDE = 1;
-  PROVIDER_CODEX = 2;
 }

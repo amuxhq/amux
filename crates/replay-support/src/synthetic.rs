@@ -22,6 +22,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use interpret::acp::Acp;
 use interpret::checks::Violation;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
@@ -78,6 +79,7 @@ pub fn reproduce(record: &Value) -> Result<Reproduction, String> {
         Some(wire::Kind::ClaudeSdk) => Ok(reproduce_as::<ClaudeSdk>(record)),
         Some(wire::Kind::ClaudePty) => Ok(reproduce_as::<ClaudePty>(record)),
         Some(wire::Kind::Codex) => Ok(reproduce_as::<Codex>(record)),
+        Some(wire::Kind::Acp) => Ok(reproduce_as::<Acp>(record)),
         _ => Err(format!("a record of kind {kind:?} has no interpreter")),
     }
 }
@@ -534,7 +536,9 @@ impl Values {
                     self.bind_alias(&recorded["id"], uuid.as_bytes())
                 }
                 Effect::ProviderSession { id } => self.bind_alias(&recorded["id"], id.as_bytes()),
-                Effect::ProviderWrite(bytes) | Effect::CodexTurnInput { request: bytes, .. } => {
+                Effect::ProviderWrite(bytes)
+                | Effect::CodexTurnInput { request: bytes, .. }
+                | Effect::AcpPrompt { request: bytes, .. } => {
                     if let Ok(actual) = serde_json::from_slice::<Value>(bytes) {
                         self.bind_shape(&recorded["shape"], &actual);
                     }
@@ -683,6 +687,7 @@ pub fn drift(kind: wire::Kind, channel: Channel, frame: &Value) -> Option<String
             provider_fakes::Kind::ClaudePty
         }
         (wire::Kind::Codex, Channel::Rpc) => provider_fakes::Kind::Codex,
+        (wire::Kind::Acp, Channel::Rpc) => provider_fakes::Kind::Acp,
         _ => return None,
     };
     provider_fakes::shape::typed(kind, frame)

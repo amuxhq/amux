@@ -380,6 +380,13 @@ fn act_arm(request: &SendInputRequest) -> String {
             codex_input::Of::Answer(_) => "answer",
             _ => "other",
         },
+        wire::KindInput::Acp(acp) => match acp.of.as_ref().unwrap() {
+            wire::acp_input::Of::Withdraw(_) => "withdraw",
+            wire::acp_input::Of::SendNow(_) => "send_now",
+            wire::acp_input::Of::Interrupt(_) => "interrupt",
+            wire::acp_input::Of::Answer(_) => "answer",
+            _ => "other",
+        },
     }
     .into()
 }
@@ -1053,4 +1060,68 @@ async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_its_trace_cut_th
     feed.send(caught_up(3));
     feed.send(lagged());
     let (_, _feed) = calls.subscribe_session().await;
+}
+
+/// A prompt carrying an image for an agent that takes none is refused at
+/// once and never sent, as a prompt the agent refused is: it is among the
+/// refused prompts with its words and attachments, so the client gives the
+/// draft back with why.
+#[tokio::test]
+async fn an_attachment_the_agent_does_not_take_is_refused_and_kept_as_a_refused_prompt() {
+    let (client, mut calls) = runtime();
+    let open = tokio::spawn(Session::open(
+        client,
+        agent(Kind::Acp),
+        40,
+        CAP,
+        ManualClock::new(0),
+    ));
+    let (_, feed) = calls.subscribe_session().await;
+    let mut snapshot = snapshot(Kind::Acp, 1, &[]);
+    if let Some(wire::session_event::Of::Snapshot(held)) = &mut snapshot.of {
+        held.capabilities = Some(wire::AgentCapabilities::acp(true, false, false));
+    }
+    feed.send(snapshot);
+    feed.send(caught_up(1));
+    let session = Arc::new(open.await.unwrap().unwrap());
+    let image = wire::Attachment {
+        of: Some(wire::attachment::Of::Image(wire::BlobRef {
+            hash: vec![7; 32],
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            size: 8,
+        })),
+        ..Default::default()
+    };
+    // Nothing answers a send here, so one that went out would never return.
+    let sent = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        session.send_prompt("look at this \u{FFFC}", vec![image.clone()]),
+    )
+    .await
+    .expect("refused without being sent");
+    assert!(!sent.id.is_empty(), "the refusal is recorded under an id");
+    let state = session.state();
+    assert_eq!(
+        state.input_state(&sent.id),
+        Some(InputState::Rejected(Refusal::of(
+            wire::Refusal::Unsupported
+        )))
+    );
+    let refused = ui_view::refused_prompts(&state);
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].input_id, sent.id);
+    let kept = state
+        .inputs()
+        .iter()
+        .find(|input| input.id == sent.id)
+        .map(|input| input.what.clone());
+    assert_eq!(
+        kept,
+        Some(ui_state::InputWhat::Prompt {
+            text: "look at this \u{FFFC}".into(),
+            attachments: vec![image],
+        })
+    );
+    drop(feed);
 }

@@ -2,12 +2,14 @@
 //! record was made from. Every fixture's record, turned into a stream and
 //! recorded again, is the record it was, alias for alias, but for what the
 //! interpreter derives from words the record does not keep ([`derived`],
-//! [`streamed_opening`]).
+//! [`streamed_opening`]) and a number the interpreter counts that the
+//! provider also wrote ([`counted`]).
 //! And a record a report carried reproduces the check its stream broke, at
 //! the step that broke it, from the record alone.
 
 use std::path::{Path, PathBuf};
 
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -217,6 +219,37 @@ fn streamed_opening(difference: &str, recorded: &Value) -> bool {
             .is_some_and(|items| items.iter().all(|item| item["arm"] == "tool"))
 }
 
+/// Whether a difference is in a key the interpreter numbers itself
+/// (`boundary:2`) whose number the provider also wrote as a value of its
+/// own: Antigravity's request ids and a form's choices are `"1"` and `"2"`
+/// (`agy-question`). The record aliases both alike, so the made-up stream
+/// stands one made-up value for the two, and the key the interpreter
+/// numbers again no longer reads as it. It is let through only where the
+/// made-up key and the recorded one are the same number.
+fn counted(difference: &str, recorded: &Value) -> bool {
+    let Some((_, made_up)) = difference
+        .split_once(".key: recorded ")
+        .and_then(|(_, rest)| rest.split_once(" made up "))
+    else {
+        return false;
+    };
+    let Ok(made_up) = serde_json::from_str::<String>(made_up) else {
+        return false;
+    };
+    let Some((prefix, hash)) = made_up.split_once(':') else {
+        return false;
+    };
+    let (again, first) = (Skeleton { salt: AGAIN }, Skeleton { salt: RECORDED });
+    let Some(number) = (1..=10_000u32)
+        .map(|number| number.to_string())
+        .find(|number| again.hash(number.as_bytes()) == hash)
+    else {
+        return false;
+    };
+    let key = format!("\"{prefix}:{}\"", first.hash(number.as_bytes()));
+    recorded["segments"].to_string().contains(&key)
+}
+
 /// The fixtures whose title comes out of the words of a provider's answer.
 /// A record keeps no words, so its replay has no title to take.
 const TITLED_FROM_WORDS: &[&str] = &[
@@ -253,8 +286,9 @@ fn round_trip<I: Interpreter>(kind: &str) -> Outcome {
         differences("", &translated(&recorded, &synthetic), &again, &mut found);
         outcome.fixtures += 1;
         // Only a recorded fixture's frames are the provider's own whole;
-        // an authored one's are as short as its test needs.
-        if name.contains("/recorded_") {
+        // an authored one's are as short as its test needs. An ACP
+        // fixture is recorded unless it is named authored.
+        if name.contains("/recorded_") || (kind == "acp" && !name.contains("/authored-")) {
             for note in &synthetic.notes {
                 // A frame the provider's types refuse as recorded, they
                 // refuse made up too.
@@ -273,7 +307,9 @@ fn round_trip<I: Interpreter>(kind: &str) -> Outcome {
         }
         let other: Vec<&String> = found
             .iter()
-            .filter(|line| !derived(line) && !streamed_opening(line, &recorded))
+            .filter(|line| {
+                !derived(line) && !streamed_opening(line, &recorded) && !counted(line, &recorded)
+            })
             .collect();
         if TITLED_FROM_WORDS.contains(&name.as_str()) {
             outcome.derived.push(name);
@@ -315,6 +351,61 @@ fn every_terminal_claude_fixture_survives_its_record() {
 fn every_codex_fixture_survives_its_record() {
     let outcome = round_trip::<Codex>("codex");
     assert!(outcome.failures.is_empty(), "{:#?}", outcome.failures);
+}
+
+#[test]
+fn every_acp_fixture_survives_its_record() {
+    let outcome = round_trip::<Acp>("acp");
+    assert!(outcome.fixtures >= 52, "{} ACP fixtures", outcome.fixtures);
+    assert!(outcome.failures.is_empty(), "{:#?}", outcome.failures);
+}
+
+/// An ACP agent's record is made up into a stream for the ACP
+/// interpreter, which runs it through with no check broken: every
+/// recording of the three built-in agents.
+#[test]
+fn every_acp_fixture_reproduces_through_the_acp_interpreter() {
+    let mut played = 0;
+    for fixture in fixtures("acp") {
+        let script = interpret::fixture_script::<Acp>(&fixture).unwrap();
+        let events: Vec<Event> = script.events.into_iter().flat_map(|(_, e)| e).collect();
+        let recorded = record::<Acp>(&script.spec, RECORDED, &events);
+        let reproduction = synthetic::reproduce(&recorded).unwrap();
+        assert_eq!(reproduction.kind, wire::Kind::Acp);
+        assert_eq!(
+            reproduction.synthetic.events.len(),
+            events.len(),
+            "{}: {:?}",
+            fixture.display(),
+            reproduction.synthetic.notes
+        );
+        assert!(
+            reproduction.broken.is_empty(),
+            "{}: {:?}",
+            fixture.display(),
+            reproduction.broken
+        );
+        played += 1;
+    }
+    assert!(played >= 52, "{played} ACP fixtures");
+}
+
+/// A made-up ACP frame is held to ACP's own types, as each provider's is.
+#[test]
+fn a_made_up_acp_frame_the_types_refuse_is_told_apart() {
+    let update = |kind: &str| {
+        json!({"jsonrpc": "2.0", "method": "session/update",
+               "params": {"sessionId": "s", "update": {"sessionUpdate": kind, "title": "t"}}})
+    };
+    assert_eq!(
+        synthetic::drift(
+            wire::Kind::Acp,
+            Channel::Rpc,
+            &update("session_info_update")
+        ),
+        None
+    );
+    assert!(synthetic::drift(wire::Kind::Acp, Channel::Rpc, &update("mood_update")).is_some());
 }
 
 fn spec(kind: wire::Kind) -> AgentSpec {

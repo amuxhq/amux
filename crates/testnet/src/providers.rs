@@ -1,4 +1,4 @@
-//! The `claude` and `codex` commands a host's agents run.
+//! The `claude`, `codex` and `acp` commands a host's agents run.
 //!
 //! Every way an agent comes to exist ends with its host launching its
 //! configured provider command: a spawn from the net, a create from the
@@ -82,11 +82,23 @@ pub(crate) struct Wrappers<'a> {
     pub host_script: Option<&'a Path>,
 }
 
-/// The two commands, in the host's `bin/`.
+/// The commands, in the host's `bin/`.
 pub(crate) struct Commands {
     pub claude: PathBuf,
     pub codex: PathBuf,
+    /// The fake ACP agent with the agent's script, which every host runs
+    /// as the agent [`FAKE_ACP_AGENT`]. A net has no real ACP agents set
+    /// up.
+    pub acp: PathBuf,
 }
+
+/// The id a client creates an ACP agent by to have its host run the fake
+/// ACP agent, playing the host's script.
+pub const FAKE_ACP_AGENT: &str = "fake-acp";
+
+/// Set in the environment of an agent a host's config adds: the script its
+/// fake ACP agent plays, over the host's own. Its input log lies beside it.
+pub(crate) const AGENT_SCRIPT_ENV: &str = "TESTNET_AGENT_SCRIPT";
 
 /// Records an agent's provider for the host's commands to find when it
 /// starts: the real one, or a fake of `kind` playing `script`.
@@ -312,11 +324,37 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
         ),
         fake_tail(&format!("fake={}\n", fake(FakeKind::Codex))),
     );
+    let acp = format!(
+        "{}{}{}{}",
+        header("acp"),
+        // An agent the topology configures with a script of its own is the
+        // fake playing it, on a real host too: there is no real ACP agent
+        // behind this command to fall back on.
+        format_args!(
+            "if [ -n \"${{{AGENT_SCRIPT_ENV}:-}}\" ]; then script=${AGENT_SCRIPT_ENV} input=${{{AGENT_SCRIPT_ENV}%.json}}.input provider=fake; fi\n"
+        ),
+        real_branch("ACP", None, ""),
+        fake_tail(&format!(
+            "fake={}
+export {}={}
+",
+            quote(&wrappers.fakes.join(provider_fakes::Kind::Acp.binary_name())),
+            provider_fakes::acp::SESSIONS_ENV,
+            // The host's own, so an agent restarted on it reopens its
+            // session and nothing of the net's is left outside it.
+            quote(&wrappers.dir.join("acp-sessions")),
+        )),
+    );
     let commands = Commands {
         claude: bin.join("claude"),
         codex: bin.join("codex"),
+        acp: bin.join("acp"),
     };
-    for (path, text) in [(&commands.claude, claude), (&commands.codex, codex)] {
+    for (path, text) in [
+        (&commands.claude, claude),
+        (&commands.codex, codex),
+        (&commands.acp, acp),
+    ] {
         std::fs::write(path, text).map_err(|error| error.to_string())?;
         #[cfg(unix)]
         {
@@ -369,6 +407,45 @@ mod tests {
                 "-p",
                 "hi"
             ]
+        );
+    }
+
+    /// A configured ACP agent's script makes the command the fake that
+    /// plays it, even on a host whose agents default to the real ones.
+    #[test]
+    fn a_configured_acp_script_plays_on_a_real_host() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let fakes = dir.path().join("fakes");
+        std::fs::create_dir_all(&fakes).expect("fakes");
+        let fake = fakes.join(provider_fakes::Kind::Acp.binary_name());
+        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' \"${SCRIPT_ENV}\"\n"))
+            .expect("the fake");
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("mode");
+        let host = dir.path().join("host");
+        let commands = write(&Wrappers {
+            host: "studio",
+            dir: &host,
+            default: Provider::Real,
+            choices: &dir.path().join("choices"),
+            recordings: &dir.path().join("recordings"),
+            real: None,
+            fakes: &fakes,
+            host_script: None,
+        })
+        .expect("the wrappers");
+        let output = std::process::Command::new(&commands.acp)
+            .env(AGENT_SCRIPT_ENV, "/scripts/helper.json")
+            .output()
+            .expect("the command runs");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "/scripts/helper.json"
         );
     }
 

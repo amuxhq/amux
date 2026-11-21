@@ -77,7 +77,8 @@ public enum ChatWords {
     public static func run(_ run: Run, counts: RunCounts?) -> String {
         let plus = run.openBelow ? "+" : ""
         let counts = counts ?? RunCounts(
-            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0)
+            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0,
+            denied: 0)
         // "1+ files": a count that is a floor may be more than one.
         func part(_ count: UInt32, _ verb: String, _ one: String, _ many: String) -> String? {
             guard count > 0 else { return nil }
@@ -95,6 +96,7 @@ public enum ChatWords {
             part(counts.fetches, "fetched", "page", "pages"),
             part(counts.other, "used", "tool", "tools"),
             part(counts.subagents, "started", "subagent", "subagents"),
+            part(counts.denied, "denied", "step", "steps"),
         ].compactMap { $0 }
         let words = parts.isEmpty
             ? part(run.steps, "took", "step", "steps") ?? ""
@@ -348,6 +350,42 @@ public enum ChatWords {
             .first ?? "")
     }
 
+    /// What an agent's notice says: its own title, else its words' first
+    /// line, else what cut the turn short; and what is left of its words.
+    public static func notice(
+        _ reason: NoticeReason, title: String, text: String
+    ) -> (subject: String, rest: String) {
+        if !title.isEmpty {
+            return (title, text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let said = switch reason {
+            case .agent: ""
+            case .refusal: String(localized: "The model refused to go on")
+            case .maxTokens: String(localized: "The turn reached the model’s token limit")
+            case .maxTurnRequests: String(localized: "The turn reached its limit on model requests")
+            }
+            return (said, "")
+        }
+        let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        let rest = parts.count > 1 ? String(parts[1]) : ""
+        return (String(parts[0]), rest.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Where an agent that cannot be resumed has its composer: its program
+    /// cannot reopen the conversation, so nothing more goes to it. Named by
+    /// its provider, as the terminal names it.
+    public static func endedForGood(provider: String) -> String {
+        String(localized: "Ended · \(provider) can’t reopen this conversation")
+    }
+
+    /// What settling an agent that cannot be resumed does, said before it
+    /// is done: its program cannot reopen the conversation, so settling
+    /// ends it for good rather than putting it aside.
+    public static func settleEndsForGood(provider: String) -> String {
+        String(localized: "\(provider) can’t reopen this conversation, so settling ends it for good.")
+    }
+
     public static func text(of segments: [Segment]) -> String {
         segments.map { segment in
             switch segment {
@@ -419,16 +457,30 @@ public enum ChatWords {
         }
     }
 
-    /// What a row names when the activity line points at it.
-    public static func subject(of row: Row) -> String? {
+    /// What the activity line names: the agent's own words, or a command,
+    /// path or tool, which are drawn as code.
+    public struct Subject: Equatable, Sendable {
+        public let text: String
+        public let code: Bool
+
+        public init(_ text: String, code: Bool) {
+            self.text = text
+            self.code = code
+        }
+    }
+
+    /// What a row names when the activity line points at it. A command the
+    /// agent described is named by its description, which is prose, as its
+    /// row leads with it; one it did not is named by the command itself.
+    public static func subject(of row: Row) -> Subject? {
         switch row.kind {
         case .command(let command, let description, _, _, _, _, _, _, _):
-            described(description) ?? firstLine(command)
-        case .explore(_, let subject, _, _): subject
-        case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
-        case .child(_, let name, _, _, _, _): name.isEmpty ? nil : name
-        case .fileChange(let files, _): files.first?.path
-        case .subagent(let description, _, _, _, _): firstLine(description)
+            described(description).map { Subject($0, code: false) } ?? Subject(firstLine(command), code: true)
+        case .explore(_, let subject, _, _): Subject(subject, code: true)
+        case .toolCall(let server, let tool, _, _, _): Subject(server.isEmpty ? tool : "\(server) · \(tool)", code: true)
+        case .child(_, let name, _, _, _, _): name.isEmpty ? nil : Subject(name, code: false)
+        case .fileChange(let files, _): files.first.map { Subject($0.path, code: true) }
+        case .subagent(let description, _, _, _, _): Subject(firstLine(description), code: false)
         default: nil
         }
     }
@@ -482,8 +534,9 @@ public enum ChatWords {
             default:
                 return String(localized: "\(host) is out of reach · your draft is kept")
             }
-        // A provider subagent's chat draws no field to say anything in.
-        case .native?:
+        // A provider subagent's chat, and an agent that cannot be resumed,
+        // draw no field to say anything in.
+        case .native?, .ended?:
             return ""
         }
     }
@@ -831,24 +884,21 @@ public enum ChatWords {
 
     /// What closing an agent cuts short, as the close confirm says it:
     /// "desk-1 is working and has 2 background jobs and 1 subagent." Nil when
-    /// closing cuts nothing under way, so it closes without asking.
-    public static func closeCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
-        let turn: Turn = switch phase {
+    /// closing cuts nothing under way.
+    public static func closeCuts(name: String, _ warning: SettleWarning) -> String? {
+        let turn: Turn = switch warning.turn {
         case .working?: .working
         case .needsYou?: .needsYou
-        default: .none
+        case nil: .none
         }
-        return closeCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+        return closeCuts(
+            name: name, turn: turn, jobs: Int(warning.backgroundJobs), subAgents: Int(warning.subagents))
     }
 
-    /// The same, from what a fleet row knows of the agent.
-    public static func closeCuts(name: String, attention: Attention, jobs: Int, subAgents: Int) -> String? {
-        let turn: Turn = switch attention {
-        case .working: .working
-        case .needsYou: .needsYou
-        default: .none
-        }
-        return closeCuts(name: name, turn: turn, jobs: jobs, subAgents: subAgents)
+    /// What settling ends for good, when nothing can reopen the agent's
+    /// conversation; nil when a message resumes it.
+    public static func settleEndsForGood(provider: String, _ warning: SettleWarning) -> String? {
+        warning.endsForGood ? settleEndsForGood(provider: provider) : nil
     }
 
     /// Whether a turn is under way that a close would cut.
@@ -1022,6 +1072,10 @@ public enum ChatWords {
     /// A mode by the name the view gives it.
     public static func mode(_ choice: ModeChoice) -> String { choice.displayName }
 
+    /// A new agent's mode when none is picked and its modes name no normal
+    /// one: it starts in the one its own settings name.
+    public static let agentsOwnMode = String(localized: "Agent’s default")
+
     /// How the model and effort change where only the agent's own commands
     /// change them, typed in the composer; nil where a pick does.
     public static func byTyping(_ changeable: Changeability) -> String? {
@@ -1042,9 +1096,11 @@ public enum ChatWords {
         String(localized: "Terminal Claude changes permission only by cycling through its permissions.")
     }
 
-    /// The permissions card's heading, by the agent's kind.
-    public static func permissionsHeading(_ kind: Kind?) -> String {
-        kind == .codex ? String(localized: "CODEX PERMISSIONS") : String(localized: "CLAUDE PERMISSIONS")
+    /// The permissions card's heading, by the agent's program as its host
+    /// names it.
+    public static func permissionsHeading(_ provider: String?) -> String {
+        guard let provider, !provider.isEmpty else { return String(localized: "PERMISSIONS") }
+        return String(localized: "\(provider.uppercased()) PERMISSIONS")
     }
 
     /// A command as VoiceOver speaks it: its name, then where it comes from.
@@ -1064,19 +1120,36 @@ public enum ChatWords {
     }
 
     /// Who must be signed in again, for the card that stands in the
-    /// composer's place.
-    public static func needsSignIn(_ kind: Kind?) -> String {
-        kind == .codex
-            ? String(localized: "Codex needs you to sign in")
-            : String(localized: "Claude needs you to sign in")
+    /// composer's place: the agent's program, as its host names it.
+    public static func needsSignIn(_ provider: String) -> String {
+        String(localized: "\(provider) needs you to sign in")
     }
 
     /// Where and how to sign in again: on the agent's own host, since that
-    /// is where the provider keeps its credential.
-    public static func signInSteps(_ kind: Kind?, host: String) -> String {
-        kind == .codex
-            ? String(localized: "Run codex login on \(host).")
-            : String(localized: "Run claude and sign in with /login on \(host).")
+    /// is where the program keeps its credential, in the program's own
+    /// words for what to do ("Run codex login."), which the host gives as
+    /// plain text and which are shown as given.
+    public static func signInSteps(_ hint: String, host: String) -> String {
+        let steps = signInHint(hint)
+        guard !steps.isEmpty else { return String(localized: "Sign it in on \(host).") }
+        return String(localized: "\(steps) on \(host).")
+    }
+
+    /// The same steps after a sentence that has already named the host, so
+    /// the host isn't said twice.
+    public static func signInStepsThere(_ hint: String) -> String {
+        let steps = signInHint(hint)
+        guard !steps.isEmpty else { return String(localized: "Sign it in there.") }
+        return String(localized: "\(steps) there.")
+    }
+
+    /// The program's own words for signing in, as a sentence's start with
+    /// no stop, where the computer goes without saying; empty when it gave
+    /// none.
+    public static func signInHint(_ hint: String) -> String {
+        var steps = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        while steps.hasSuffix(".") { steps.removeLast() }
+        return steps
     }
 
     public static func signIn(_ view: SignInView) -> String {
@@ -1155,6 +1228,8 @@ public enum ChatWords {
         case .openLink: String(localized: "I’m done")
         case .grantForTurn: String(localized: "Grant")
         case .grantForSession: String(localized: "Grant")
+        // The agent's own words for what it keeps deciding itself.
+        case .offered(let name, _): name
         }
         return choice.takesNote ? label + "…" : label
     }
@@ -1219,4 +1294,17 @@ public enum ChatWords {
     public static func position(_ card: AskCard) -> String? {
         card.count > 1 ? String(localized: "\(card.position) of \(card.count)") : nil
     }
+}
+
+/// The shared settle rule, as the fleet's own `SettleWarning` methods say it.
+extension SettleWarning {
+    /// Settling cuts work short: a turn, a background job or a subagent.
+    public var cuts: Bool { turn != nil || backgroundJobs > 0 || subagents > 0 }
+
+    /// Settling ends the conversation for good: nothing resumes it. A
+    /// provider's subagent goes with its parent, so it never loses anything.
+    public var endsForGood: Bool { !resumable && !providerSubagent }
+
+    /// Whether to ask before settling; otherwise a message undoes it.
+    public var asks: Bool { cuts || endsForGood }
 }

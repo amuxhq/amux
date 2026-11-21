@@ -621,7 +621,6 @@ impl Daemon {
                 if !caught_up {
                     inventory.generation = Some(entry.generation);
                 }
-                self.claude_kind_said(host, entry.claude_kind);
                 self.providers_said(host, entry.providers);
                 self.folders_said(host, entry.folders);
                 self.push_key_said(host, entry.push_key, out);
@@ -1716,6 +1715,7 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.title = agent.title.clone();
     row.last_said = agent.last_said.clone();
     row.native = agent.native.clone();
+    row.provider = agent.provider.clone();
     // What the origin says under each experiment, whole and undecoded,
     // whatever this host runs: a client of this host, the phone's above
     // all, shows them though this host can switch none of them on.

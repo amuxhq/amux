@@ -4,7 +4,10 @@
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ui_view::{AttachmentView, CallPhase, ExploreVerb, LineKind, PatchHead, Row, RowKind, Segment};
+use ui_view::{
+    AttachmentView, CallPhase, ExploreVerb, LineKind, NoticeReason, NoticeSeverity, PatchHead, Row,
+    RowKind, Segment,
+};
 use wire::{BoundaryKind, EnvelopeKind, SendState};
 
 use super::selection::Join;
@@ -516,6 +519,52 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             }
             lines
         }
+        RowKind::Notice {
+            reason,
+            severity,
+            title,
+            text,
+        } => {
+            let glyph = match severity {
+                NoticeSeverity::Error => ("✗", theme.error()),
+                NoticeSeverity::Warning => ("!", theme.warning()),
+                NoticeSeverity::Info => ("·", theme.muted()),
+            };
+            // The agent's title, else its words' first line, else what cut
+            // the turn short; what is left of its words follows.
+            let said = match reason {
+                NoticeReason::Agent => "",
+                NoticeReason::Refusal => "The model refused to go on",
+                NoticeReason::MaxTokens => "The turn reached the model's token limit",
+                NoticeReason::MaxTurnRequests => "The turn reached its limit on model requests",
+            };
+            let (subject, rest) = if !title.is_empty() {
+                (title.clone(), text.as_str())
+            } else if text.trim().is_empty() {
+                (said.to_owned(), "")
+            } else {
+                let first = first_line(text).to_owned();
+                let rest = text.split_once('\n').map_or("", |(_, rest)| rest);
+                (first, rest)
+            };
+            // The agent's own words, in plain ink: a notice names no
+            // command or path for the code ink a step's subject takes.
+            let mut first = Line::from(Span::raw("  "));
+            push(&mut first, glyph.0, glyph.1, width);
+            push(&mut first, " ", theme.text(), width);
+            push(&mut first, subject, theme.text(), width);
+            let mut lines = vec![first];
+            if !rest.trim().is_empty() {
+                lines.extend(detail(
+                    rest.trim(),
+                    width,
+                    theme.muted(),
+                    if open { OPEN_LINES } else { 3 },
+                    theme,
+                ));
+            }
+            lines
+        }
         RowKind::ModelSwitch { to, reason } => {
             vec![head(
                 ("⇄", theme.muted()),
@@ -668,6 +717,10 @@ pub(crate) fn patch_lines(
         };
         push(&mut out, words, theme.muted(), width);
         lines.push(out);
+    } else if patch.cut {
+        let mut out = Line::from(Span::raw(" ".repeat(INDENT)));
+        push(&mut out, "… change cut short", theme.faint(), width);
+        lines.push(out);
     }
     lines
 }
@@ -684,4 +737,56 @@ pub(crate) fn rule(words: &str, width: usize, theme: Theme) -> Line<'static> {
             .push(Span::styled("─".repeat(end - used), theme.hairline()));
     }
     line
+}
+
+#[cfg(test)]
+mod tests {
+    use ui_view::{LineKind, PatchHead, PatchHunk, PatchLine};
+
+    use super::*;
+
+    fn words(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A change amux cut because it was too long to send whole says so
+    /// under its last line, as a command's trimmed output does above its
+    /// first; an uncut one says nothing more.
+    #[test]
+    fn a_cut_change_says_it_was_cut_short() {
+        let patch = |cut| PatchHead {
+            hunks: vec![PatchHunk {
+                start: None,
+                lines: vec![PatchLine {
+                    number: None,
+                    kind: LineKind::Added,
+                    text: "kept".into(),
+                }],
+            }],
+            more: 0,
+            cut,
+        };
+        let drawn = |cut| {
+            words(&patch_lines(
+                &patch(cut),
+                "notes.txt",
+                true,
+                'a',
+                80,
+                Theme::default(),
+            ))
+        };
+        let cut = drawn(true);
+        assert_eq!(cut.len(), 2, "{cut:?}");
+        assert_eq!(cut[1].trim(), "… change cut short");
+        assert_eq!(drawn(false).len(), 1);
+    }
 }

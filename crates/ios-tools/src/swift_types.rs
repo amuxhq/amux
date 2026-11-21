@@ -64,6 +64,8 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::FleetRow,
         ui_view::FleetCard,
         ui_view::FamilyHeader,
+        ui_view::SettleWarning,
+        ui_view::SettleTurn,
         ui_view::Offline,
         ui_view::ReviewPage,
         ui_view::ReviewChip,
@@ -836,6 +838,13 @@ mod tests {
     #[test]
     fn every_public_view_value_has_a_swift_mirror() {
         const STAY_IN_RUST: &[&str] = &[
+            // What a client asks of an agent before its kind's input is
+            // built: app-runtime and the browser bridge build it, and the
+            // phone names the act through them.
+            "Act",
+            // Which attachment an agent does not take: app-runtime words
+            // the refusal, and the phone shows the words.
+            "Untaken",
             // The answer body a choice sends: the phone names the choice.
             "Answer",
             // Borrowed option types; the chat holds its own open runs.
@@ -864,15 +873,20 @@ mod tests {
             "crates/ui-view/src",
             "crates/app-runtime/src/values.rs",
         ] {
-            let path = root.join(dir);
-            let files = if path.is_dir() {
-                std::fs::read_dir(&path)
-                    .unwrap()
-                    .map(|entry| entry.unwrap().path())
-                    .collect()
-            } else {
-                vec![path]
-            };
+            // A folder's modules, its submodules' folders included.
+            let mut files = Vec::new();
+            let mut pending = vec![root.join(dir)];
+            while let Some(path) = pending.pop() {
+                if path.is_dir() {
+                    pending.extend(
+                        std::fs::read_dir(&path)
+                            .unwrap()
+                            .map(|entry| entry.unwrap().path()),
+                    );
+                } else {
+                    files.push(path);
+                }
+            }
             for file in files {
                 let text = std::fs::read_to_string(&file).unwrap();
                 for line in text.lines() {

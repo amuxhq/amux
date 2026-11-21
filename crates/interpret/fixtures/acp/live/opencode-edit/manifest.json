@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-edit",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:47.438241Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:cf9dc62af1c2604daf674be08ef7861444391cc5dc571cc89fd5667d4c6839fe",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 20,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e059e5c05ffe0k16yxztRdzsmX"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt that has the agent edit a file, its permission allowed once"
+  }
+}

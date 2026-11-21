@@ -248,6 +248,7 @@ fn snapshot(kind: Kind, snapshot: Snapshot) -> Snapshot {
         catalogue: snapshot.catalogue,
         background_jobs: snapshot.background_jobs,
         notice: None,
+        capabilities: snapshot.capabilities,
     }
 }
 
@@ -264,7 +265,10 @@ fn queued(queued: QueuedInput) -> QueuedInput {
 /// An input by its arm, with the ask it answers and the queued input it
 /// withdraws or sends now; a prompt's text and attachments are emptied.
 fn input(input: Input) -> Input {
-    use wire::{KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex};
+    use wire::{
+        KindInput, acp_input as acp, claude_pty_input as pty, claude_sdk_input as sdk,
+        codex_input as codex,
+    };
     let prompt = || wire::PromptInput::default();
     let claude_answer = |answer: wire::ClaudeAnswer| wire::ClaudeAnswer {
         ask_key: answer.ask_key,
@@ -314,6 +318,21 @@ fn input(input: Input) -> Input {
                 codex::Of::StopJob(_) => codex::Of::StopJob(Default::default()),
             }),
         }),
+        Some(KindInput::Acp(held)) => KindInput::Acp(wire::AcpInput {
+            of: held.of.map(|of| match of {
+                acp::Of::Prompt(_) => acp::Of::Prompt(prompt()),
+                acp::Of::Answer(answer) => acp::Of::Answer(wire::AcpAnswer {
+                    ask_key: answer.ask_key,
+                    of: None,
+                }),
+                // Each names the queued input it acts on by its id.
+                named @ (acp::Of::Withdraw(_) | acp::Of::SendNow(_)) => named,
+                acp::Of::Interrupt(_) => acp::Of::Interrupt(Default::default()),
+                acp::Of::Mode(_) => acp::Of::Mode(Default::default()),
+                acp::Of::Model(_) => acp::Of::Model(Default::default()),
+                acp::Of::Effort(_) => acp::Of::Effort(Default::default()),
+            }),
+        }),
         None => {
             return Input {
                 input_id: input.input_id,
@@ -346,6 +365,7 @@ fn rejected(rejected: wire::Rejected) -> wire::Rejected {
 /// The inventory row by its ids, kind and states: no name, folder, task,
 /// branch or exit words.
 fn agent(agent: Agent) -> Agent {
+    let provider = kept_provider(agent.provider_id());
     Agent {
         agent_id: agent.agent_id,
         host_id: agent.host_id,
@@ -371,7 +391,19 @@ fn agent(agent: Agent) -> Agent {
         native: agent.native,
         // An experiment's entry may name folders; none is kept.
         experimental: Default::default(),
+        // A person's own agent is named by what they chose; only amux's
+        // own ids are kept.
+        provider,
     }
+}
+
+/// A provider id as a record keeps it: Claude's, Codex's or a built-in
+/// agent's as it is, and any other as "custom".
+fn kept_provider(provider: &str) -> String {
+    let own = [wire::agents::CLAUDE, wire::agents::CODEX].contains(&provider)
+        || wire::agents::built_in(provider).is_some()
+        || provider.is_empty();
+    if own { provider } else { "custom" }.to_owned()
 }
 
 /// The host by its id, generation and standing's arm.
@@ -389,7 +421,6 @@ fn host(host: HostEntry) -> HostEntry {
             Standing::Trusted(_) => Standing::Trusted(Default::default()),
             Standing::Candidate(_) => Standing::Candidate(Default::default()),
         }),
-        claude_kind: host.claude_kind,
         push_key: None,
     }
 }

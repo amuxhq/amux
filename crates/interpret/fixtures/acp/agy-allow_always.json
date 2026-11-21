@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a narrow shell command allowed always, then the same command again",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-allow_always/io.jsonl",
+    "format": "acp_io"
+  }
+}

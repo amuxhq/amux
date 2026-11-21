@@ -47,6 +47,15 @@ impl OpenAsk for wire::CodexAsk {
     }
 }
 
+impl OpenAsk for wire::AcpAsk {
+    fn key(&self) -> &str {
+        &self.key
+    }
+    fn item_key(&self) -> &str {
+        &self.item_key
+    }
+}
+
 /// The person's queue: prompts waiting for the provider to go idle, in
 /// arrival order, whichever client sent them. Nothing is edited in place;
 /// an edit is a withdraw and a new prompt.
@@ -258,6 +267,63 @@ pub struct ItemDraft {
     pub complete: bool,
 }
 
+/// Bytes an agent presented as an attachment of its reply: an image or a
+/// file named `name`, referenced by the blob its write stores.
+pub(crate) fn presented(
+    image: bool,
+    name: &str,
+    mime: &str,
+    bytes: Vec<u8>,
+) -> (Attachment, Effect) {
+    use sha2::Digest as _;
+
+    let hash = sha2::Sha256::digest(&bytes).to_vec();
+    let blob = wire::BlobRef {
+        hash: hash.clone(),
+        name: name.to_owned(),
+        mime: mime.to_owned(),
+        size: bytes.len() as u64,
+    };
+    let attachment = Attachment {
+        of: Some(if image {
+            wire::attachment::Of::Image(blob)
+        } else {
+            wire::attachment::Of::File(blob)
+        }),
+        ..Default::default()
+    };
+    (attachment, Effect::WriteBlob { hash, bytes })
+}
+
+/// Base64 as a provider writes it in a content block, decoded.
+pub(crate) fn base64_bytes(data: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+
+/// A finished reply that may already hold placeholders for what the agent
+/// presented beside its words, each with its attachment in order: the
+/// elements in the words between them become placeholders and attachments
+/// too ([`parse_reply`]), each kept in its place among the others.
+pub fn parse_reply_between(text: &str, attachments: &[Attachment]) -> (String, Vec<Attachment>) {
+    let mut out = String::with_capacity(text.len());
+    let mut all = Vec::new();
+    let mut presented = attachments.iter();
+    for (at, words) in text.split(attachments::PLACEHOLDER).enumerate() {
+        if at > 0 {
+            out.push(attachments::PLACEHOLDER);
+            all.extend(presented.next().cloned());
+        }
+        let (words, found) = parse_reply(words.to_owned());
+        out.push_str(&words);
+        all.extend(found);
+    }
+    // Attachments with no placeholder left, which a well-formed item never
+    // has, stay listed rather than lost.
+    all.extend(presented.cloned());
+    (out, all)
+}
+
 /// A finished reply's text and attachments. The attach tool answers a model
 /// with an attachment element to put in its reply; each element that
 /// parses becomes the placeholder and an attachment, so clients draw the
@@ -290,6 +356,17 @@ impl Emit {
 
     pub fn items(&self) -> &[Item] {
         &self.step.items
+    }
+
+    /// Says the agent's program took a model a person picked, for its
+    /// host to keep for the next new agent of the program.
+    pub fn picked_model(&mut self, model: String) {
+        self.step.picked.get_or_insert_default().model = Some(model);
+    }
+
+    /// Says the agent's program took an effort a person picked.
+    pub fn picked_effort(&mut self, effort: String) {
+        self.step.picked.get_or_insert_default().effort = Some(effort);
     }
 
     /// Makes this step the incarnation's last, saying why it ended: the
@@ -525,6 +602,11 @@ pub struct Shared<A: OpenAsk> {
     /// reads it so, and suspends it rather than continuing a turn.
     #[serde(default)]
     ended_idle: bool,
+    /// The provider will not open its session until the person signs in:
+    /// the agent reads idle, waiting on them, not starting, though it takes
+    /// no prompt yet, and what is sent waits in the queue.
+    #[serde(default)]
+    awaiting_sign_in: bool,
     /// What the provider process holds that ending it would lose: its
     /// scheduled wake-ups, a grant for its session, and a turn it owes.
     /// Absent from a checkpoint an earlier build wrote.
@@ -548,6 +630,12 @@ pub struct Shared<A: OpenAsk> {
     /// agents of their own has none, and one with none writes none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     subagents: BTreeMap<String, Native<A>>,
+    /// What the agent can do, as its snapshot says: fixed by the kind for
+    /// Claude and Codex, and for an ACP agent set by its interpreter from
+    /// what the agent's program said. None until then, and in a checkpoint
+    /// an earlier build wrote, which the next incarnation fills.
+    #[serde(default, with = "serde_pb::opt_msg")]
+    capabilities: Option<wire::AgentCapabilities>,
     /// What the checks after every step watch.
     watch: Watch,
 }
@@ -631,11 +719,13 @@ impl<A: OpenAsk> Shared<A> {
             stopping: false,
             leaving: false,
             ended_idle: false,
+            awaiting_sign_in: false,
             held: Held::default(),
             idle_since_ms: None,
             housekeeping: false,
             housekept: false,
             subagents: BTreeMap::new(),
+            capabilities: wire::AgentCapabilities::of_kind(kind),
             watch: Watch::default(),
         };
         shared.bootstrap(spec);
@@ -660,6 +750,15 @@ impl<A: OpenAsk> Shared<A> {
         // Nor any subagent of the last one. One that process never ended
         // takes the end of its incarnation, which the journal holds.
         self.subagents.clear();
+        // A kind whose agents are all alike says so again, for a state an
+        // earlier build checkpointed without it; an ACP agent's interpreter
+        // says it from the new process's handshake.
+        if let Some(fixed) = wire::Kind::try_from(self.kind)
+            .ok()
+            .and_then(wire::AgentCapabilities::of_kind)
+        {
+            self.capabilities = Some(fixed);
+        }
         self.now_ms = self.now_ms.max(spec.created_at_ms);
         self.fresh = true;
         self.bootstrap(spec);
@@ -851,6 +950,7 @@ impl<A: OpenAsk> Shared<A> {
             catalogue: self.catalogue.clone(),
             background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
             notice: notice.map(Box::new),
+            capabilities: self.capabilities,
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -864,12 +964,17 @@ impl<A: OpenAsk> Shared<A> {
         }
     }
 
+    /// Says what the agent can do from now on, on its next snapshot.
+    pub fn set_capabilities(&mut self, capabilities: wire::AgentCapabilities) {
+        self.capabilities = Some(capabilities);
+    }
+
     /// Needs-you whenever an ask is open; starting until the provider
     /// accepts input; working while a turn runs; idle otherwise.
     pub fn phase(&self) -> Phase {
         if !self.asks.is_empty() {
             Phase::NeedsYou
-        } else if !self.started && !self.ended_idle {
+        } else if !self.started && !self.ended_idle && !self.awaiting_sign_in {
             Phase::Starting
         } else if self.busy || self.housekeeping {
             Phase::Working
@@ -1025,6 +1130,7 @@ impl<A: OpenAsk> Shared<A> {
             turn_owed: self.held.turn_owed,
             wakeups: self.held.wakeups.len(),
             session_grant: self.held.session_grant,
+            unresumable: false,
         }
     }
 
@@ -1416,6 +1522,12 @@ impl<A: OpenAsk> Shared<A> {
         ) {
             self.trouble = None;
         }
+    }
+
+    /// The provider refused to start until the person signs in, or (false)
+    /// has started after all: see the field.
+    pub fn awaiting_sign_in(&mut self, waiting: bool) {
+        self.awaiting_sign_in = waiting;
     }
 
     pub fn stopped_by(&mut self, why: wire::BlockedNotice) {

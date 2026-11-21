@@ -206,11 +206,14 @@ public struct HostPage: View {
         if let version = view.version {
             facts.append(Fact(id: "version", label: String(localized: "Version"), value: version, mono: true))
         }
-        for signIn in view.providers where signIn.provider != .unspecified {
-            let name = signIn.provider == .codex ? "Codex" : "Claude"
+        // Keyed by the provider's id, which no two rows share; the name is
+        // only the label, and a person's own agents may share one. Only an
+        // agent the host has asked says whether it is signed in.
+        for offered in view.providers where !offered.provider.isEmpty {
+            guard let signedIn = offered.signedIn else { continue }
             facts.append(Fact(
-                id: "provider.\(name.lowercased())", label: name,
-                value: signIn.signedIn ? String(localized: "Signed in") : String(localized: "Not signed in")))
+                id: "provider.\(offered.provider)", label: offered.name,
+                value: signedIn ? String(localized: "Signed in") : String(localized: "Not signed in")))
         }
         // The dial's own error names an address and a status code, which say
         // nothing a person can act on. A machine that dropped this phone has

@@ -565,7 +565,9 @@ private struct ChatPage: View {
             closeHeld: card?.closeHeld ?? false,
             filing: card?.filing ?? .open,
             topLevel: card?.topLevel ?? true,
-            native: card?.native ?? false)
+            native: card?.native ?? false,
+            settle: stores.profile?.settleWarning(agent),
+            provider: card?.providerName ?? "")
         return Standing(subject: subject, family: stores.profile?.family(agent), listed: row != nil)
     }
 
@@ -608,9 +610,11 @@ private struct ChatPage: View {
     private func attach(file url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        // A file over the limit is refused by its size, before it is read.
+        // A file the shared layer refuses by its size or kind is refused
+        // before it is read.
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-           model?.admits(name: url.lastPathComponent, size: size) == false {
+           model?.refuses(name: url.lastPathComponent, mime: mime, size: size) == true {
             return
         }
         guard let data = try? Data(contentsOf: url) else { return }
@@ -632,7 +636,8 @@ private struct AgentsTab: View {
         AgentsHome(
             model: stores.fleet, accounts: accounts, hosts: stores.hosts,
             offerNotifications: offerNotifications, signingIn: signingIn, scope: scope,
-            deleteWarning: { [stores] in await stores.deleteWarning($0) }
+            deleteWarning: { [stores] in await stores.deleteWarning($0) },
+            settleWarning: { [stores] in stores.settleWarning($0) }
         ) { action in
             switch action {
             case .close(let agent): Task { _ = await stores.close(agent) }

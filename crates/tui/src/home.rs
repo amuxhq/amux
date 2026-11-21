@@ -25,7 +25,7 @@ use ui_view::{
     ActivityLine, ExitCause, FleetRow, FleetSection, FleetView, Offline, Reach, SecondLine,
     SectionKind, SessionLine,
 };
-use wire::{Attachment, Kind, Lifecycle, Said, Wants, attachment};
+use wire::{Attachment, Said, Wants, attachment};
 
 use crate::chat::composer::editor_lines;
 use crate::clipboard::{Clip, ClipboardContent};
@@ -296,8 +296,7 @@ enum Item {
 /// Short of room, the folder gives way first, cut from the left down to
 /// its last name, then the host, then the agent; the name and the age
 /// beside them always stay.
-fn where_it_runs(kind: Kind, cwd: &str, elsewhere: Option<&str>, room: usize) -> String {
-    let who = ui_view::kind_name(kind);
+fn where_it_runs(who: &str, cwd: &str, elsewhere: Option<&str>, room: usize) -> String {
     let folder = text::tilde(cwd.trim_end_matches('/'));
     let folder = if folder.is_empty() {
         cwd.to_owned()
@@ -685,8 +684,9 @@ impl Home {
         vec![]
     }
 
-    /// Settles an agent, asking first only when that cuts work short, or
-    /// asks before deleting a settled one: an agent not settled is never
+    /// Settles an agent, asking first only when that cuts work short or
+    /// ends a conversation nothing can resume, or asks before deleting a
+    /// settled one: an agent not settled is never
     /// offered deletion.
     fn close(&mut self, fleet: &FleetState, agent: AgentKey) -> Vec<FleetEffect> {
         let Some(entry) = fleet.agent(&agent) else {
@@ -698,7 +698,7 @@ impl Home {
         if delete && entry.native.is_some() {
             return vec![];
         }
-        if !delete && close_cuts(fleet, &agent).is_none() {
+        if !delete && !ui_view::settle_warning(fleet, &agent).is_some_and(|w| w.asks()) {
             return vec![FleetEffect::Close(agent)];
         }
         // Only the agent's host knows whether its workspace goes with it
@@ -783,6 +783,20 @@ impl Home {
     }
 
     pub fn key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
+        // The new agent's setup names a provider its host offers before a
+        // key acts on it and as soon as a key opens it, so what the host
+        // offers next is taken for that provider.
+        if let Some(setup) = self.open_setup() {
+            setup.settle(fleet);
+        }
+        let effects = self.handle_key(fleet, key);
+        if let Some(setup) = self.open_setup() {
+            setup.settle(fleet);
+        }
+        effects
+    }
+
+    fn handle_key(&mut self, fleet: &FleetState, key: KeyEvent) -> Vec<FleetEffect> {
         if self.draft.open {
             return self.draft_key(fleet, key);
         }
@@ -1071,6 +1085,13 @@ impl Home {
                     self.open_setting(fleet, Setting::Folder);
                     return vec![];
                 }
+                // An attachment the picked agent does not take is said
+                // before anything is created or stored, whichever agent
+                // was picked after the paste.
+                if let Some(why) = setup.untaken(fleet, self.draft.editor.attachments()) {
+                    self.draft.error = Some(why);
+                    return vec![];
+                }
                 self.draft.starting = true;
                 self.draft.error = None;
                 return vec![FleetEffect::Start {
@@ -1094,6 +1115,14 @@ impl Home {
         let Some(setup) = &mut self.draft.setup else {
             return;
         };
+        let item = if item == Setting::Permission && setup.modes_stand_for_permissions() {
+            Setting::Mode
+        } else {
+            item
+        };
+        if !setup.offers(item) {
+            return;
+        }
         if item == Setting::Worktree {
             setup.pick(Setting::Worktree, "");
             return;
@@ -1294,7 +1323,14 @@ impl Home {
         let mut section_folded = false;
         // Where the new agent's composer box starts, for its flyover.
         let mut box_top = None;
-        self.open_setup();
+        if let Some(setup) = self.open_setup() {
+            setup.settle(fleet);
+        }
+        if let (Some(picker), Some(setup)) = (self.draft.picker.as_mut(), &self.draft.setup)
+            && self.draft.open
+        {
+            picker.refresh(setup.choices(picker.item, fleet));
+        }
         // An agent used in its own terminal starts from a modal over home;
         // one chatted with in amux, from its own composer.
         let modal = self.draft.open
@@ -1357,10 +1393,9 @@ impl Home {
             }
         }
         laid.resize_with(height - 1, Laid::default);
-        // A provider subagent has no terminal, so no attach is offered on it.
-        let native =
-            matches!(&self.selected, Some(Target::Agent(agent)) if is_native(fleet, agent));
-        let (hint, at) = self.hint_line(footer, width, theme, section_folded, native);
+        let attach = matches!(&self.selected, Some(Target::Agent(agent))
+            if offers_attach(fleet, &self.place.local_host, agent));
+        let (hint, at) = self.hint_line(footer, width, theme, section_folded, attach);
         if let Some(col) = at {
             cursor = Some((col, height - 1));
         }
@@ -1944,7 +1979,7 @@ impl Home {
                 }
             }
         }
-        let stepped = if setup.cycles() == "mode" {
+        let stepped = if setup.cycles() == Some("mode") {
             Setting::Mode
         } else {
             Setting::Permission
@@ -1997,14 +2032,15 @@ impl Home {
     /// else the keys for what is highlighted. Returns the cursor's column
     /// while the rename field has the keys.
     /// `section_folded`: the highlighted section heading's section is
-    /// folded.
+    /// folded. `attach`: the highlighted agent has a terminal of its own
+    /// here to attach to.
     fn hint_line(
         &self,
         footer: Option<Line<'static>>,
         width: usize,
         theme: Theme,
         section_folded: bool,
-        native: bool,
+        attach: bool,
     ) -> (Laid, Option<usize>) {
         let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
         let key = |code| Hit::Key(plain_key(code));
@@ -2070,35 +2106,51 @@ impl Home {
                     .collect(),
                 // In the edge's order; the worktree, not on the edge until
                 // it is on, gives way first.
-                (None, true) => [
-                    ("n", "name", key(KeyCode::Char('n'))),
-                    ("a", "agent", key(KeyCode::Char('a'))),
-                    ("m", "model", key(KeyCode::Char('m'))),
-                    ("e", "effort", key(KeyCode::Char('e'))),
-                    ("p", "permission", key(KeyCode::Char('p'))),
-                    ("d", "folder", key(KeyCode::Char('d'))),
-                    ("h", "computer", key(KeyCode::Char('h'))),
-                    ("w", "worktree", key(KeyCode::Char('w'))),
-                    ("esc", "back", key(KeyCode::Esc)),
-                ]
-                .into(),
-                (None, false) => vec![
-                    ("enter", "start", key(KeyCode::Enter)),
-                    (
-                        "ctrl+s",
-                        "settings",
-                        Hit::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
-                    ),
-                    (
-                        "shift+tab",
-                        self.draft
-                            .setup
-                            .as_ref()
-                            .map_or("permission", |setup| setup.cycles()),
-                        key(KeyCode::BackTab),
-                    ),
-                    ("esc", "back", key(KeyCode::Esc)),
-                ],
+                (None, true) => {
+                    let setup = self.draft.setup.as_ref();
+                    let offers = |item| setup.is_none_or(|setup| setup.offers(item));
+                    // An agent whose modes stand for its permissions has
+                    // p open its modes, so the key says so.
+                    let permission = if setup.is_some_and(Setup::modes_stand_for_permissions) {
+                        "mode"
+                    } else {
+                        "permission"
+                    };
+                    [
+                        ("n", "name", Setting::Name),
+                        ("a", "agent", Setting::Kind),
+                        ("m", "model", Setting::Model),
+                        ("e", "effort", Setting::Effort),
+                        ("p", permission, Setting::Permission),
+                        ("d", "folder", Setting::Folder),
+                        ("h", "computer", Setting::Host),
+                        ("w", "worktree", Setting::Worktree),
+                    ]
+                    .into_iter()
+                    .filter(|(_, _, item)| offers(*item))
+                    .map(|(letter, words, _)| {
+                        let code = KeyCode::Char(letter.chars().next().unwrap_or(' '));
+                        (letter, words, key(code))
+                    })
+                    .chain([("esc", "back", key(KeyCode::Esc))])
+                    .collect()
+                }
+                (None, false) => {
+                    let mut hints = vec![
+                        ("enter", "start", key(KeyCode::Enter)),
+                        (
+                            "ctrl+s",
+                            "settings",
+                            Hit::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+                        ),
+                    ];
+                    // Shift+Tab is named only where it steps something.
+                    if let Some(stepped) = self.draft.setup.as_ref().and_then(|s| s.cycles()) {
+                        hints.push(("shift+tab", stepped, key(KeyCode::BackTab)));
+                    }
+                    hints.push(("esc", "back", key(KeyCode::Esc)));
+                    hints
+                }
             },
             None if self.filtering => vec![
                 ("enter", "keep", key(KeyCode::Enter)),
@@ -2118,7 +2170,7 @@ impl Home {
                     Some(Target::Section(_)) => vec![("enter", "hide", key(KeyCode::Enter))],
                     _ => vec![("enter", "open", key(KeyCode::Enter))],
                 };
-                if matches!(self.selected, Some(Target::Agent(_))) && !native {
+                if attach {
                     hints.push(("a", "attach", key(KeyCode::Char('a'))));
                 }
                 if self.needle().is_some() {
@@ -2144,28 +2196,22 @@ impl Home {
     }
 }
 
-/// What a settle of `agent` would cut short, when anything: its turn under
-/// way, its background jobs and its subagents ("working and has 2
-/// background jobs and 1 subagent"). Subagents are the live descendants the
-/// agent's host counts, or those this fleet sees when it sees more.
-fn close_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
-    let entry = fleet.agent(agent)?;
+/// What a settle cuts short, when anything: its turn under way, its
+/// background jobs and its subagents ("is working and has 2 background
+/// jobs and 1 subagent").
+fn close_cuts(warning: &ui_view::SettleWarning) -> Option<String> {
     // An ask open is a turn under way too: settling ends it unanswered.
-    let turn = match entry.phase() {
-        wire::Phase::Working => Some("is working"),
-        wire::Phase::NeedsYou => Some("needs you mid-turn"),
-        _ => None,
-    };
-    let jobs = entry.background_jobs as usize;
-    let seen = live_descendants(fleet, agent);
-    let subs = (entry.descendants as usize).max(seen);
-    let count = |n: usize, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
+    let turn = warning.turn.map(|turn| match turn {
+        ui_view::SettleTurn::Working => "is working",
+        ui_view::SettleTurn::NeedsYou => "needs you mid-turn",
+    });
+    let count = |n: u32, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
     let mut has = Vec::new();
-    if jobs > 0 {
-        has.push(count(jobs, "background job"));
+    if warning.background_jobs > 0 {
+        has.push(count(warning.background_jobs, "background job"));
     }
-    if subs > 0 {
-        has.push(count(subs, "subagent"));
+    if warning.subagents > 0 {
+        has.push(count(warning.subagents, "subagent"));
     }
     let has = has.join(" and ");
     match (turn, has.is_empty()) {
@@ -2237,43 +2283,40 @@ fn discards(shown: Option<&DeleteWarning>) -> bool {
 }
 
 /// What the settle window asks: what settling cuts short ("desk-1 is
-/// working and has 2 background jobs and 1 subagent. Settling stops them."),
-/// else the plain question.
+/// working and has 2 background jobs and 1 subagent. Settling stops it
+/// now."), else the plain question; then whether a message resumes it, or
+/// that settling ends its conversation for good when nothing can.
 fn close_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
-    match close_cuts(fleet, agent) {
-        Some(cuts) => format!("{name} {cuts}. Settling stops it now."),
+    let warning = ui_view::settle_warning(fleet, agent).unwrap_or_default();
+    let ends = "It can't be resumed, so settling ends its conversation for good.";
+    match (close_cuts(&warning), warning.ends_for_good()) {
+        (Some(cuts), false) => format!("{name} {cuts}. Settling stops it now."),
+        (Some(cuts), true) => format!("{name} {cuts}. Settling stops it now. {ends}"),
+        (None, true) => format!("Settle {name}? {ends}"),
         // A provider subagent takes no messages, so nothing resumes it.
-        None if fleet
-            .agent(agent)
-            .is_some_and(|entry| entry.native.is_some()) =>
-        {
-            format!("Settle {name}?")
-        }
-        None => format!("Settle {name}? A message resumes it."),
+        (None, false) if warning.provider_subagent => format!("Settle {name}?"),
+        (None, false) => format!("Settle {name}? A message resumes it."),
     }
 }
 
 /// Whether `agent` is a subagent its parent's provider runs.
+/// Whether `agent` has a terminal of its own on this machine to attach to:
+/// not a provider subagent, which runs inside its parent; on this machine,
+/// since raw attach reads the agent's directory; and of a provider that has
+/// one (an ACP agent has none, nor does headless Claude). Attach is offered
+/// only then; pressing it otherwise says why and points at the chat.
+fn offers_attach(fleet: &FleetState, local_host: &[u8], agent: &AgentKey) -> bool {
+    fleet.agent(agent).is_some_and(|entry| {
+        entry.native.is_none()
+            && entry.host_id == local_host
+            && ui_state::offered_capabilities(fleet.host(&entry.host_id), entry).attachable
+    })
+}
+
 fn is_native(fleet: &FleetState, agent: &AgentKey) -> bool {
     fleet
         .agent(agent)
         .is_some_and(|entry| entry.native.is_some())
-}
-
-/// The live agents under `agent` in this fleet, at any depth.
-fn live_descendants(fleet: &FleetState, agent: &AgentKey) -> usize {
-    let mut count = 0;
-    let mut under: Vec<&AgentKey> = fleet.families().children(agent).collect();
-    while let Some(child) = under.pop() {
-        if fleet
-            .agent(child)
-            .is_some_and(|child| child.lifecycle() == Lifecycle::Live)
-        {
-            count += 1;
-        }
-        under.extend(fleet.families().children(child));
-    }
-    count
 }
 
 /// Home's part of the key help.
@@ -2488,15 +2531,6 @@ fn mark(row: &FleetRow, quiet: bool, theme: Theme) -> (&'static str, Style) {
     }
 }
 
-/// The provider a sign-in belongs to.
-fn provider_word(kind: Kind) -> &'static str {
-    match kind {
-        Kind::ClaudeSdk | Kind::ClaudePty => "Claude",
-        Kind::Codex => "Codex",
-        Kind::Unspecified => "the provider",
-    }
-}
-
 /// What an ask asks, in a line: the command, the file, the question.
 fn ask_words(wants: &Wants, more: u32) -> String {
     let words = match wants {
@@ -2536,10 +2570,10 @@ fn ask_words(wants: &Wants, more: u32) -> String {
 }
 
 /// What stops an agent, or what it asks, as its row says it.
-fn said_words(said: &Said, kind: Kind, now_ms: i64) -> String {
+fn said_words(said: &Said, provider: &str, now_ms: i64) -> String {
     match said {
         Said::Ask { wants, more, .. } => ask_words(wants, *more),
-        Said::SignedOut => format!("signed out of {}", provider_word(kind)),
+        Said::SignedOut => format!("signed out of {provider}"),
         Said::UsageLimit { resets_at_ms } => {
             let mut words = "usage limit reached".to_owned();
             if let Some(at) = resets_at_ms.filter(|at| *at > now_ms) {
@@ -2616,10 +2650,14 @@ fn second_words(
     }
     Some(match line {
         // What it asks is the most important line on home.
-        SecondLine::Said(said @ Said::Ask { .. }) => {
-            (said_words(said, row.card.kind, now_ms), theme.text())
-        }
-        SecondLine::Said(said) => (said_words(said, row.card.kind, now_ms), theme.warning()),
+        SecondLine::Said(said @ Said::Ask { .. }) => (
+            said_words(said, &row.card.provider_name, now_ms),
+            theme.text(),
+        ),
+        SecondLine::Said(said) => (
+            said_words(said, &row.card.provider_name, now_ms),
+            theme.warning(),
+        ),
         SecondLine::Step(step) => (step_words(step, theme), theme.muted()),
         SecondLine::LastSaid(said) => (said.clone(), theme.muted()),
         // The Settled heading already says what a settled agent is.
@@ -2740,14 +2778,15 @@ fn agent_lines(
         pad_to(&mut first, used);
         let meta = if card.native {
             // It has no folder: it works in its parent's.
-            let who = if card.kind == Kind::Codex {
-                "Codex"
-            } else {
-                "Claude"
-            };
+            let who = &card.provider_name;
             text::ellipsize(&format!("{who} subagent"), right_at - used - 1)
         } else {
-            where_it_runs(card.kind, &card.cwd, elsewhere, right_at - used - 1)
+            where_it_runs(
+                &card.provider_name,
+                &card.cwd,
+                elsewhere,
+                right_at - used - 1,
+            )
         };
         first.spans.push(Span::styled(meta, theme.faint()));
     }

@@ -240,8 +240,8 @@ enum StoryFleet {
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
             candidate: candidate, reach: .online(.direct), link: 0,
             addrs: candidate && !relayOnly ? ["192.168.1.\(index):4433"] : [], relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
-            providers: [ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: true)],
-            claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)
+            providers: CatalogFixtures.agents(claudeSignedIn: true),
+            lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
     static func key(_ index: UInt8, on host: HostView) -> AgentKey {
@@ -264,7 +264,8 @@ enum StoryFleet {
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
-                agent: key(index, on: host), name: name, handle: handle ?? name, kind: kind, attention: attention,
+                agent: key(index, on: host), name: name, handle: handle ?? name, kind: kind, provider: kind == .codex ? "codex" : "claude", providerName: kind == .codex ? "Codex" : "Claude",
+                attachable: kind == .codex || kind == .claudePty, attention: attention,
                 cwd: native ? "" : "/Users/ada/src/\(name)", phaseSinceMs: ms(minutesAgo: minutes),
                 host: host.name, hostReach: reach, children: children, familyAttention: attention,
                 members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,

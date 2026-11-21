@@ -339,6 +339,14 @@ public struct ChatRowView: View {
                 meta: RowMeta(risk.isEmpty ? "" : String(localized: "\(risk) risk")),
                 detail: expanded && !rationale.isEmpty ? rationale : nil, detailFace: .text,
                 opens: !rationale.isEmpty, open: expanded, toggle: toggle)
+        case .notice(let reason, let severity, let title, let text):
+            // The agent's own words, in plain ink: a notice names no
+            // command or path for the code face a step's subject takes.
+            let said = ChatWords.notice(reason, title: title, text: text)
+            GridRow(
+                kind: "notice", glyph: Self.noticeGlyph(severity), failed: severity == .error, rail: rail,
+                verb: said.subject, detail: said.rest.isEmpty ? nil : said.rest, detailFace: .text,
+                detailLines: expanded ? nil : 3, opens: !said.rest.isEmpty, open: expanded, toggle: toggle)
         case .unrecognized(let what, let summary):
             GridRow(
                 kind: "unrecognized", glyph: "questionmark.square.dashed", rail: rail,
@@ -346,6 +354,14 @@ public struct ChatRowView: View {
                 note: summary.isEmpty ? nil : ChatWords.firstLine(summary))
         case .hidden:
             EmptyView()
+        }
+    }
+
+    private static func noticeGlyph(_ severity: NoticeSeverity) -> String {
+        switch severity {
+        case .error: "exclamationmark.triangle"
+        case .warning: "exclamationmark.circle"
+        case .info: "info.circle"
         }
     }
 

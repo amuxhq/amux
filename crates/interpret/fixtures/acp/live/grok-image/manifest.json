@@ -1,0 +1,25 @@
+{
+  "spec": "grok-image",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:45.366375Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:89b5a7ad5e92748d4f37e1e942e43f9139197317a58a95b549cdce80e2d030b9",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 151,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa62-fb38-7673-b957-0da68fd663d7"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt with a PNG image attached"
+  }
+}

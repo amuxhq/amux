@@ -41,6 +41,9 @@ pub fn prompt_bootstrap(prompt: PromptSubmission) -> Result<Bootstrap, RegistryE
 /// agent's configuration. Carried from one incarnation's spec to the next.
 #[derive(Clone, Debug, Default)]
 pub struct Resolved {
+    /// The agent program's provider id: `claude`, `codex`, or an ACP
+    /// agent's.
+    pub provider: String,
     pub provider_args: Vec<String>,
     pub model: Option<String>,
     pub permission: Option<String>,
@@ -61,7 +64,9 @@ pub struct Settings {
 /// What a resumed incarnation starts with: the previous one's extra
 /// arguments, and the model, permission, mode and effort the agent last
 /// ran with, not the ones it was created with. A setting changed in the
-/// chat survives a stop and a resume.
+/// chat survives a stop and a resume. An ACP agent is started as its
+/// program is configured now ([`build`]), so nothing of how the previous
+/// one started is carried but which agent it is.
 pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
     use create_agent_request::Agent;
     let config = previous.config.clone().unwrap_or_default();
@@ -77,12 +82,21 @@ pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
             permission,
             mode,
         })),
-        _ => resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
+        Kind::Acp => resolve(&Agent::Acp(wire::AcpCreateConfig {
+            agent: previous.provider.clone(),
+            model,
+            effort,
+            mode,
+        })),
+        Kind::ClaudePty | Kind::ClaudeSdk => resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
             args,
             model,
             effort,
             permission,
         })),
+        // No spec a build wrote has no kind; one that did would start no
+        // program, and its agent process says so.
+        Kind::Unspecified => Resolved::default(),
     }
 }
 
@@ -126,6 +140,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 args.extend(["--effort".to_owned(), effort.clone()]);
             }
             Resolved {
+                provider: wire::agents::CLAUDE.to_owned(),
                 provider_args: args,
                 model: claude.model,
                 permission: claude.permission,
@@ -157,6 +172,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 }
             }
             Resolved {
+                provider: wire::agents::CODEX.to_owned(),
                 provider_args: args,
                 model: codex.model,
                 permission: codex.permission,
@@ -164,47 +180,75 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 effort: codex.effort,
             }
         }
+        // An ACP agent takes its settings in its session, from the
+        // interpreter, never as arguments; its mode's default is the
+        // agent's own.
+        Agent::Acp(acp) => Resolved {
+            provider: acp.agent.clone(),
+            provider_args: Vec::new(),
+            model: acp.model.clone(),
+            permission: None,
+            mode: acp.mode.clone(),
+            effort: acp.effort.clone(),
+        },
     }
 }
 
 /// A person's model or effort pick, for the host to start later agents of
-/// its kind on. None leaves that setting as it was.
+/// its program on. None leaves that setting as it was.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Picked {
     pub kind: Kind,
+    /// The agent program's provider id, which the pick is kept under.
+    pub provider: String,
     pub model: Option<String>,
     pub effort: Option<String>,
 }
 
 impl Picked {
     /// A pick worth keeping: only amux's own chat keeps them, since Claude
-    /// in its own terminal follows Claude's settings.
+    /// in its own terminal follows Claude's settings. An ACP agent's are
+    /// kept by its id; never its mode, whose default is the agent's own.
     fn worth_keeping(self) -> Option<Self> {
-        (matches!(self.kind, Kind::ClaudeSdk | Kind::Codex)
-            && (self.model.is_some() || self.effort.is_some()))
-        .then_some(self)
+        let kept = match self.kind {
+            Kind::ClaudeSdk | Kind::Codex | Kind::Acp => !self.provider.is_empty(),
+            Kind::ClaudePty | Kind::Unspecified => false,
+        };
+        (kept && (self.model.is_some() || self.effort.is_some())).then_some(self)
     }
 
-    /// The pick a mid-chat input makes, if it makes one.
-    pub fn of_input(input: &wire::Input) -> Option<Self> {
-        use wire::{KindInput, claude_sdk_input as sdk, codex_input as codex};
-        let (kind, model, effort) = match input.decode_body()? {
-            KindInput::ClaudeSdk(input) => match input.of? {
-                sdk::Of::Model(set) => (Kind::ClaudeSdk, set.model, None),
-                sdk::Of::Effort(set) => (Kind::ClaudeSdk, None, set.effort),
-                _ => return None,
-            },
+    /// The pick a mid-chat input makes as it is accepted, if it makes one:
+    /// Codex's alone, which takes a model or effort without asking its
+    /// program. Headless Claude and an ACP agent ask theirs, which may
+    /// refuse, so their picks are kept once the program took them
+    /// ([`Picked::taken`]).
+    pub fn of_input(input: &wire::Input, provider: &str) -> Option<Self> {
+        use wire::{KindInput, codex_input as codex};
+        let (model, effort) = match input.decode_body()? {
             KindInput::Codex(input) => match input.of? {
-                codex::Of::Model(set) => (Kind::Codex, set.model, None),
-                codex::Of::Effort(set) => (Kind::Codex, None, set.effort),
+                codex::Of::Model(set) => (set.model, None),
+                codex::Of::Effort(set) => (None, set.effort),
                 _ => return None,
             },
-            KindInput::ClaudePty(_) => return None,
+            KindInput::ClaudeSdk(_) | KindInput::Acp(_) | KindInput::ClaudePty(_) => return None,
         };
         Self {
-            kind,
+            kind: Kind::Codex,
+            provider: provider.to_owned(),
             model,
             effort,
+        }
+        .worth_keeping()
+    }
+
+    /// The pick an agent's program took, as its journal says, if it is one
+    /// to keep.
+    pub fn taken(kind: Kind, provider: &str, taken: &wire::PickTaken) -> Option<Self> {
+        Self {
+            kind,
+            provider: provider.to_owned(),
+            model: taken.model.clone(),
+            effort: taken.effort.clone(),
         }
         .worth_keeping()
     }
@@ -221,9 +265,11 @@ pub fn picked_at_creation(
     let (model, effort) = match agent {
         Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (&claude.model, &claude.effort),
         Agent::Codex(codex) => (&codex.model, &codex.effort),
+        Agent::Acp(acp) => (&acp.model, &acp.effort),
     };
     Picked {
         kind: agent.kind(),
+        provider: agent.provider_id().to_owned(),
         model: model.clone().filter(|_| remember_model),
         effort: effort.clone().filter(|_| remember_effort),
     }
@@ -266,7 +312,8 @@ pub fn with_remembered(
             .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
     };
     let mut filled = agent.clone();
-    let (model, effort, defaults, passed_model, passed_effort) = match &mut filled {
+    let defaults = remembered.of(agent.provider_id());
+    let (model, effort, passed_model, passed_effort) = match &mut filled {
         Agent::ClaudePty(_) => return filled,
         Agent::ClaudeSdk(claude) => {
             let passed_model = named(&claude.args, "--model");
@@ -274,18 +321,13 @@ pub fn with_remembered(
             (
                 &mut claude.model,
                 &mut claude.effort,
-                &remembered.claude,
                 passed_model,
                 passed_effort,
             )
         }
-        Agent::Codex(codex) => (
-            &mut codex.model,
-            &mut codex.effort,
-            &remembered.codex,
-            false,
-            false,
-        ),
+        Agent::Codex(codex) => (&mut codex.model, &mut codex.effort, false, false),
+        // Its model and thought level; its mode is never remembered.
+        Agent::Acp(acp) => (&mut acp.model, &mut acp.effort, false, false),
     };
     if model.is_none() && !passed_model {
         model.clone_from(&defaults.model);
@@ -308,11 +350,50 @@ pub fn with_remembered(
     filled
 }
 
-/// The provider command as configured for a kind.
-pub fn provider_command(launch: &Launch, kind: Kind) -> String {
+/// How the agent's program is started: its command, the arguments it is
+/// started with and the environment added to the daemon's.
+struct Program {
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+}
+
+/// The program `kind` runs as configured now. Claude and Codex are each one
+/// configured command, with the arguments the creation resolved to. An ACP
+/// agent is the program its id names among the host's, found where it will
+/// be started from, with that program's own arguments and environment over
+/// the host's: an agent whose program is gone, or no longer configured, is
+/// refused rather than started as something else.
+fn program(launch: &Launch, kind: Kind, resolved: &Resolved) -> Result<Program, RegistryError> {
+    let common = |command: &str| Program {
+        command: command.to_owned(),
+        args: resolved.provider_args.clone(),
+        env: launch.provider_env.clone(),
+    };
     match kind {
-        Kind::Codex => launch.codex_command.clone(),
-        _ => launch.claude_command.clone(),
+        Kind::Codex => Ok(common(&launch.codex_command)),
+        Kind::ClaudePty | Kind::ClaudeSdk => Ok(common(&launch.claude_command)),
+        Kind::Acp => {
+            let agent = launch
+                .agents
+                .iter()
+                .find(|agent| agent.id == resolved.provider)
+                .ok_or_else(|| RegistryError::UnknownAgent(resolved.provider.clone()))?;
+            let path = agent.find(&launch.provider_env).ok_or_else(|| {
+                RegistryError::AgentNotInstalled {
+                    name: agent.name.clone(),
+                    command: agent.command.clone(),
+                }
+            })?;
+            Ok(Program {
+                command: path.to_string_lossy().into_owned(),
+                args: agent.args.clone(),
+                env: agent.environment(&launch.provider_env),
+            })
+        }
+        // An agent with no kind runs no program; its agent process refuses
+        // to start.
+        Kind::Unspecified => Ok(common("")),
     }
 }
 
@@ -333,11 +414,13 @@ pub struct Incarnation<'a> {
     pub base_branch: Option<String>,
 }
 
-pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
-    let command = provider_command(launch, at.kind);
+/// The spec of one incarnation, its program as configured now; refused for
+/// an ACP agent this host cannot start.
+pub fn build(launch: &Launch, at: Incarnation<'_>) -> Result<AgentSpec, RegistryError> {
+    let program = program(launch, at.kind, at.resolved)?;
     let agent = &launch.agent;
     let parentless = at.parent.is_none();
-    AgentSpec {
+    Ok(AgentSpec {
         agent_id: at.agent_id.to_vec(),
         kind: at.kind as i32,
         cwd: at.cwd.to_owned(),
@@ -346,13 +429,10 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         name_given: false,
         title: None,
         parent: at.parent,
-        provider_args: at.resolved.provider_args.clone(),
-        provider_env: launch
-            .provider_env
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<HashMap<_, _>>(),
-        provider_command: command,
+        provider: at.resolved.provider.clone(),
+        provider_args: program.args,
+        provider_env: program.env,
+        provider_command: program.command,
         config: Some(EffectiveConfig {
             grace_ms: millis(agent.grace_secs),
             drain_ms: millis(agent.drain_secs),
@@ -370,7 +450,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         offered: at.offered,
         base_branch: at.base_branch,
         experimental: experimental(launch, parentless),
-    }
+    })
 }
 
 /// What experiments tell the agent process, each under its version, while
@@ -556,6 +636,7 @@ mod tests {
                     base_branch: None,
                 },
             )
+            .unwrap()
         };
         let mut launch = Launch {
             experiments: Enabled::of(&[&SUSPENSION]),
@@ -574,6 +655,150 @@ mod tests {
         );
         launch.experiments = Enabled::none();
         assert!(spec(&launch, None).experimental.is_empty());
+    }
+
+    /// A launch that knows one ACP agent, `mine`, whose program is in a
+    /// folder of its own.
+    fn acp_launch(dir: &Path) -> Launch {
+        let program = dir.join(format!("mine-agent{}", std::env::consts::EXE_SUFFIX));
+        std::fs::write(&program, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        Launch {
+            agents: vec![crate::agents::AgentProgram {
+                id: "mine".into(),
+                name: "Mine".into(),
+                command: program.to_string_lossy().into_owned(),
+                args: vec!["serve".into(), "--stdio".into()],
+                env: [("MINE_TOKEN".into(), "t".into())].into(),
+                built_in: false,
+            }],
+            provider_env: [("SHARED".into(), "s".into())].into(),
+            ..Launch::default()
+        }
+    }
+
+    fn acp_spec(launch: &Launch, resolved: &Resolved) -> Result<AgentSpec, RegistryError> {
+        build(
+            launch,
+            Incarnation {
+                agent_id: b"agent",
+                kind: Kind::Acp,
+                cwd: "/tmp",
+                name: "agent",
+                parent: None,
+                resolved,
+                created_at_ms: 0,
+                incarnation: 1,
+                bootstrap: None,
+                offered: None,
+                base_branch: None,
+            },
+        )
+    }
+
+    /// An ACP agent's spec names the agent by its id, starts the program
+    /// its id names where it was found, with that program's arguments and
+    /// its environment over the host's, and carries the model, effort and
+    /// mode for the interpreter to set in the session.
+    #[test]
+    fn an_acp_spec_runs_the_program_its_agent_id_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let launch = acp_launch(dir.path());
+        let resolved = resolve(&Agent::Acp(wire::AcpCreateConfig {
+            agent: "mine".into(),
+            model: Some("fast".into()),
+            effort: Some("high".into()),
+            mode: Some("plan".into()),
+        }));
+        let spec = acp_spec(&launch, &resolved).unwrap();
+        assert_eq!(spec.kind(), Kind::Acp);
+        assert_eq!(spec.provider, "mine");
+        assert_eq!(
+            spec.provider_command,
+            dir.path()
+                .join(format!("mine-agent{}", std::env::consts::EXE_SUFFIX))
+                .to_string_lossy()
+        );
+        assert_eq!(spec.provider_args, ["serve", "--stdio"]);
+        assert_eq!(
+            spec.provider_env,
+            HashMap::from([
+                ("SHARED".to_owned(), "s".to_owned()),
+                ("MINE_TOKEN".to_owned(), "t".to_owned()),
+            ])
+        );
+        let config = spec.config.unwrap();
+        assert_eq!(
+            (config.model, config.effort, config.mode, config.permission),
+            (
+                Some("fast".into()),
+                Some("high".into()),
+                Some("plan".into()),
+                None
+            )
+        );
+    }
+
+    /// An agent no program is configured for, or whose program is gone, is
+    /// refused rather than started as something else.
+    #[test]
+    fn an_acp_agent_this_host_cannot_start_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut launch = acp_launch(dir.path());
+        let unknown = resolve(&Agent::Acp(wire::AcpCreateConfig {
+            agent: "theirs".into(),
+            ..Default::default()
+        }));
+        assert!(matches!(
+            acp_spec(&launch, &unknown),
+            Err(RegistryError::UnknownAgent(id)) if id == "theirs"
+        ));
+        launch.agents[0].command = dir.path().join("gone").to_string_lossy().into_owned();
+        let mine = resolve(&Agent::Acp(wire::AcpCreateConfig {
+            agent: "mine".into(),
+            ..Default::default()
+        }));
+        assert!(matches!(
+            acp_spec(&launch, &mine),
+            Err(RegistryError::AgentNotInstalled { name, .. }) if name == "Mine"
+        ));
+    }
+
+    /// A resumed ACP agent is the same agent with the model and effort it
+    /// last ran with, started as its program is configured now: the
+    /// previous incarnation's command and arguments are not carried.
+    #[test]
+    fn a_resumed_acp_agent_is_started_as_its_program_is_configured_now() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut launch = acp_launch(dir.path());
+        let created = resolve(&Agent::Acp(wire::AcpCreateConfig {
+            agent: "mine".into(),
+            model: Some("fast".into()),
+            mode: Some("plan".into()),
+            ..Default::default()
+        }));
+        let previous = acp_spec(&launch, &created).unwrap();
+        launch.agents[0].args = vec!["acp".into()];
+        let resumed = carry(
+            &previous,
+            Settings {
+                model: Some("slow".into()),
+                effort: Some("low".into()),
+                ..Settings::default()
+            },
+        );
+        let spec = acp_spec(&launch, &resumed).unwrap();
+        assert_eq!(spec.provider, "mine");
+        assert_eq!(spec.provider_args, ["acp"]);
+        let config = spec.config.unwrap();
+        assert_eq!(
+            (config.model, config.effort, config.mode),
+            (Some("slow".into()), Some("low".into()), Some("plan".into()))
+        );
     }
 
     #[test]
@@ -614,13 +839,22 @@ mod tests {
     }
 
     fn remembered() -> settings::NewAgentSettings {
-        settings::NewAgentSettings {
-            claude: settings::NewAgentDefaults {
+        let mut remembered = settings::NewAgentSettings::default();
+        remembered.set(
+            "claude",
+            settings::NewAgentDefaults {
                 model: Some("sonnet".into()),
                 effort: Some("xhigh".into()),
             },
-            ..Default::default()
-        }
+        );
+        remembered.set(
+            "opencode",
+            settings::NewAgentDefaults {
+                model: Some("anthropic/sonnet".into()),
+                effort: Some("high".into()),
+            },
+        );
+        remembered
     }
 
     fn claude(model: Option<&str>) -> ClaudeCreateConfig {
@@ -712,11 +946,49 @@ mod tests {
             picked_at_creation(&agent, true, false),
             Some(Picked {
                 kind: Kind::ClaudeSdk,
+                provider: "claude".into(),
                 model: Some("sonnet".into()),
                 effort: None,
             })
         );
         let terminal = Agent::ClaudePty(claude(Some("sonnet")));
         assert_eq!(picked_at_creation(&terminal, true, true), None);
+    }
+
+    fn acp(agent: &str) -> wire::AcpCreateConfig {
+        wire::AcpCreateConfig {
+            agent: agent.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_acp_agents_picks_are_remembered_by_its_id_but_never_its_mode() {
+        let filled = with_remembered(&Agent::Acp(acp("opencode")), &remembered(), None);
+        let Agent::Acp(filled) = filled else {
+            panic!("the kind stays");
+        };
+        assert_eq!(filled.model.as_deref(), Some("anthropic/sonnet"));
+        assert_eq!(filled.effort.as_deref(), Some("high"));
+        assert_eq!(filled.mode, None);
+
+        // Another agent's picks are its own.
+        let other = Agent::Acp(acp("gemini"));
+        assert_eq!(with_remembered(&other, &remembered(), None), other);
+
+        let picked = Agent::Acp(wire::AcpCreateConfig {
+            model: Some("anthropic/opus".into()),
+            mode: Some("plan".into()),
+            ..acp("opencode")
+        });
+        assert_eq!(
+            picked_at_creation(&picked, true, true),
+            Some(Picked {
+                kind: Kind::Acp,
+                provider: "opencode".into(),
+                model: Some("anthropic/opus".into()),
+                effort: None,
+            })
+        );
     }
 }

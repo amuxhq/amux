@@ -169,6 +169,34 @@ pub struct Families {
     children: BTreeMap<AgentKey, BTreeSet<AgentKey>>,
 }
 
+/// What `agent` can do, as far as its host says: what the host says a new
+/// agent of its provider can do, when the host starts that provider as the
+/// agent's own kind, else what every agent of its kind can do, else nothing
+/// beyond what every agent can. A running agent's own snapshot says it
+/// better ([`crate::SessionState::capabilities`]); this is for a row with no
+/// chat open. The host's word is for the kind it starts now, so it stands
+/// for this agent only when that is this agent's kind: a headless Claude
+/// started before the host switched to Claude's own terminal cannot switch
+/// back.
+pub fn offered_capabilities(host: Option<&HostEntry>, agent: &Agent) -> wire::AgentCapabilities {
+    let kind = agent.kind();
+    host.and_then(|host| host.provider(agent.provider_id()))
+        .filter(|offered| offered.kind() == kind)
+        .and_then(|offered| offered.capabilities)
+        .or_else(|| wire::AgentCapabilities::of_kind(kind))
+        .unwrap_or_default()
+}
+
+/// What people call `agent`'s provider: the name its host's descriptor
+/// gives it ("Claude", "OpenCode", the name a person gave their own agent),
+/// else its id, the only name a host that does not list it leaves.
+pub fn provider_name(host: Option<&HostEntry>, agent: &Agent) -> String {
+    let id = agent.provider_id();
+    host.and_then(|host| host.provider(id))
+        .map_or_else(|| wire::agents::name_or_id(id), wire::ProviderOnHost::name)
+        .to_owned()
+}
+
 impl Families {
     pub fn children(&self, parent: &AgentKey) -> impl DoubleEndedIterator<Item = &AgentKey> {
         self.children.get(parent).into_iter().flatten()

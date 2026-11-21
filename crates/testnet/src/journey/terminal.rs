@@ -362,6 +362,51 @@ impl TerminalJourney {
         }
     }
 
+    /// Waits until `host`'s entry, as `host` itself lists it, offers every
+    /// agent its config adds, which it does one by one as it asks each.
+    pub(crate) fn wait_configured_agents(&mut self, host: &str) -> Result<Vec<String>, String> {
+        let control = self.ready.control;
+        let status = door(control, &Control::Status {}, DOOR)?;
+        let configured: Vec<String> = status["topology"]["hosts"]
+            .as_array()
+            .and_then(|hosts| hosts.iter().find(|entry| entry["name"] == host))
+            .and_then(|entry| entry["agents"].as_object())
+            .map(|agents| agents.keys().cloned().collect())
+            .unwrap_or_default();
+        let request = Control::Inventory {
+            host: host.to_owned(),
+        };
+        let offered = |reply: &Value| -> Vec<String> {
+            reply["hosts"]
+                .as_array()
+                .and_then(|hosts| hosts.iter().find(|entry| entry["name"] == host))
+                .and_then(|entry| entry["providers"].as_array())
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|id| id.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        match super::poll(
+            Duration::from_secs(60),
+            Duration::from_millis(200),
+            || door(control, &request, DOOR).map(|reply| offered(&reply)),
+            |listed| configured.iter().all(|id| listed.contains(id)),
+        ) {
+            Ok(listed) => {
+                self.record.actions.push(format!(
+                    "observed at {host}: its entry lists {configured:?}"
+                ));
+                Ok(listed)
+            }
+            Err((last, why)) => Err(format!(
+                "timed out waiting for {host}'s entry to list {configured:?} ({why}); it lists {:?}",
+                last.unwrap_or_default()
+            )),
+        }
+    }
+
     pub(crate) fn host_id(&self, host: &str) -> String {
         self.ready
             .hosts

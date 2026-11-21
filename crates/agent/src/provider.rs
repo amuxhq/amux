@@ -5,8 +5,10 @@
 //! stdout. Claude in a terminal runs on a pseudo-terminal whose raw bytes
 //! go to the terminal log; its facts are hook payloads (on
 //! private/hooks.sock) and its transcript rows. Codex's app server listens
-//! on private/codex.sock with the agent as one of its clients. Every child
-//! runs in its own process group so a kill reaches whatever it started.
+//! on private/codex.sock with the agent as one of its clients. An ACP agent
+//! is a plain child speaking JSON-RPC on stdin and stdout, on every
+//! platform. Every child runs in its own process group so a kill reaches
+//! whatever it started.
 //!
 //! The child's exit is what ends the agent, never the end of its output: a
 //! straggler the provider left behind can hold a terminal or a pipe open
@@ -51,6 +53,10 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
+/// How long an ACP agent has to answer each request of its handshake:
+/// long enough for an agent that loads a lot at its start, or reaches a
+/// slow network for its sign-in.
+pub const ACP_HANDSHAKE_WAIT: Duration = Duration::from_secs(60);
 /// How long a resume keeps asking for a thread another Codex server still
 /// writes. A killed agent's server is told to finish by its tether, but
 /// Codex can take seconds to exit and holds the thread until it does.
@@ -76,6 +82,10 @@ pub enum ProviderEvent {
         path: PathBuf,
         error: io::Error,
     },
+    /// The provider runs but never got going, in these words: an ACP agent
+    /// that did not answer its handshake in time. The host kills it and
+    /// ends the incarnation as for one that could not be started.
+    Unstarted(String),
 }
 
 /// Writes the provider's state to `path` in private/, and reports the
@@ -111,6 +121,14 @@ pub enum ProviderError {
         crate::claude::version::MIN_TERMINAL
     )]
     ClaudeTooOld { found: String },
+    /// A later process of an ACP agent with a conversation whose saved id
+    /// cannot be read: opening a new session would pass a fresh
+    /// conversation off as the old one reopened.
+    #[error(
+        "the id of the agent's conversation, saved in {}, cannot be read, so the conversation cannot be reopened; amux does not start a new one in its place",
+        Path::new(dir::PRIVATE).join(dir::PROVIDER_SESSION).display()
+    )]
+    SessionLost,
     #[error("{0}")]
     Io(#[from] io::Error),
 }
@@ -151,6 +169,13 @@ pub struct Provider {
     /// Every process below the provider when it was asked to finish, killed
     /// once it has exited if still running (see the tree module).
     census: Vec<tree::Descendant>,
+    /// What an ACP agent's prompts may carry, as its `initialize` answer
+    /// said; None for the other kinds.
+    takes: Option<Arc<std::sync::Mutex<crate::acp::Takes>>>,
+    /// An ACP agent's: the request that opened its session, as the
+    /// handshake sent it, which the interpreter has sent again once a
+    /// person may have signed in ([`Effect::AcpReopen`]).
+    acp_opening: Option<Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
 }
 
 /// Asked of headless Claude so a command's row can open on what it is for
@@ -187,12 +212,16 @@ impl Provider {
         spec: &AgentSpec,
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
+        clock: Arc<dyn crate::clock::Clock>,
     ) -> Result<Self, ProviderError> {
         match wire::Kind::try_from(spec.kind) {
             Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
             Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
             Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Unspecified) | Err(_) => unreachable!("run refuses any other kind"),
+            Ok(wire::Kind::Acp) => Self::spawn_acp(spec, dir, events, clock).await,
+            Ok(wire::Kind::Unspecified) | Err(_) => {
+                unreachable!("run refuses any other kind")
+            }
         }
     }
 
@@ -283,6 +312,13 @@ impl Provider {
             let status = tokio::select! {
                 status = child.wait() => status,
                 _ = killed => {
+                    // An agent npm installed runs behind a `.cmd` shim, whose
+                    // shell runs the agent as its child: killing the shim
+                    // alone would leave the agent running.
+                    #[cfg(windows)]
+                    if let Some(pid) = pid {
+                        crate::acp::kill_tree(pid).await;
+                    }
                     let _ = child.start_kill();
                     child.wait().await
                 }
@@ -307,6 +343,8 @@ impl Provider {
             transcript: None,
             subagents: Default::default(),
             census: Vec::new(),
+            takes: None,
+            acp_opening: None,
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
@@ -583,6 +621,238 @@ impl Provider {
             transcript: None,
             subagents: Default::default(),
             census: Vec::new(),
+            takes: None,
+            acp_opening: None,
+        })
+    }
+
+    /// An ACP agent: its command and arguments in the agent's folder, over
+    /// stdio pipes, tethered and with the environment scrubbed as headless
+    /// Claude is. The agent does the handshake, as it does Codex's:
+    /// `initialize`, then the session the interpreter's [`opening`] picks
+    /// from that answer and the session saved by the last incarnation. Every
+    /// line the agent writes is a fact, the answers to the handshake
+    /// included; the interpreter writes everything after it. What the agent
+    /// writes on stderr is kept in its log and reaches the interpreter as a
+    /// fact of the agent process's own; it is never taken as a failure, as
+    /// Grok writes an error there for every remote tool server it cannot
+    /// reach at each start.
+    ///
+    /// Each handshake request has [`ACP_HANDSHAKE_WAIT`] on `clock` to be
+    /// answered, so a command that runs but never answers does not leave
+    /// the agent starting for good. A later process whose saved session id
+    /// is there but cannot be read is not started: it would open a new
+    /// session in place of the old one. One whose id is gone altogether
+    /// opens a new session, which the interpreter refuses where it knows
+    /// of a conversation.
+    ///
+    /// [`opening`]: interpret::acp::opening
+    async fn spawn_acp(
+        spec: &AgentSpec,
+        dir: &Path,
+        events: mpsc::Sender<ProviderEvent>,
+        clock: Arc<dyn crate::clock::Clock>,
+    ) -> Result<Self, ProviderError> {
+        let saved = saved_session(dir).filter(|_| spec.incarnation > 1);
+        if spec.incarnation > 1
+            && saved.is_none()
+            && dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION).exists()
+        {
+            return Err(ProviderError::SessionLost);
+        }
+        let blobs = dir.join(dir::BLOBS);
+        std::fs::create_dir_all(&blobs)?;
+        let setup = crate::acp::SessionSetup {
+            cwd: spec.cwd.clone(),
+            // The files amux attaches live outside the working folder, in
+            // the agent's blob folder, named by path in each prompt: an
+            // agent that takes more folders may read them unasked, as
+            // Claude is allowed to.
+            folders: vec![blobs.display().to_string()],
+            tool_server: tool_server(spec, dir),
+        };
+        let mut command = tokio::process::Command::new(crate::acp::program(
+            &spec.provider_command,
+            &spec.provider_env,
+        ));
+        command
+            .args(&spec.provider_args)
+            .current_dir(&spec.cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(false);
+        environment(&mut command, spec);
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = command.spawn().map_err(|source| ProviderError::Spawn {
+            command: spec.provider_command.clone(),
+            source,
+        })?;
+        let pid = child.id();
+        // An agent may run on after its input closes: tethered, it is asked
+        // to finish when the agent process dies instead.
+        #[cfg(unix)]
+        let tether = match pty_host::Tether::new(&child) {
+            Ok(tether) => tether,
+            Err(source) => {
+                let _ = child.start_kill();
+                return Err(ProviderError::Spawn {
+                    command: "the ACP agent's tether".to_owned(),
+                    source,
+                });
+            }
+        };
+        let stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        let takes = Arc::new(std::sync::Mutex::new(crate::acp::Takes::default()));
+
+        let (initialized, on_initialized) = oneshot::channel();
+        let (opened, on_opened) = oneshot::channel();
+        let lines = events.clone();
+        let read_takes = takes.clone();
+        let reader = tokio::spawn(async move {
+            let mut initialized = Some(initialized);
+            let mut opened = Some(opened);
+            let mut stdout = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = stdout.next_line().await {
+                if opened.is_some()
+                    && acp_session_answered(line.as_bytes())
+                    && let Some(opened) = opened.take()
+                {
+                    let _ = opened.send(());
+                }
+                if initialized.is_some()
+                    && let Some(answer) = acp_initialized(line.as_bytes())
+                {
+                    if let Some(init) = &answer {
+                        let caps = init.agent_capabilities.as_ref();
+                        *read_takes.lock().expect("never poisoned") = crate::acp::Takes::of(
+                            caps.and_then(|caps| caps.prompt_capabilities.as_ref()),
+                        );
+                    }
+                    if let Some(initialized) = initialized.take() {
+                        let _ = initialized.send(answer);
+                    }
+                }
+                let fact = Fact {
+                    channel: Channel::Rpc,
+                    payload: line.into_bytes(),
+                };
+                if lines.send(ProviderEvent::Fact(fact)).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let mut stderr_reader =
+            tokio::spawn(acp_stderr(stderr, provider_log(dir)?, events.clone()));
+        let (kill, killed) = oneshot::channel();
+        let exited = events.clone();
+        tokio::spawn(async move {
+            let status = tokio::select! {
+                status = child.wait() => status,
+                _ = killed => {
+                    let _ = child.start_kill();
+                    child.wait().await
+                }
+            };
+            #[cfg(unix)]
+            tether.release().await;
+            let _ = tokio::time::timeout(TRAILING_OUTPUT, reader).await;
+            // A straggler the agent left can hold its stderr open forever.
+            if tokio::time::timeout(TRAILING_OUTPUT, &mut stderr_reader)
+                .await
+                .is_err()
+            {
+                stderr_reader.abort();
+            }
+            let code = status.ok().and_then(|status| status.code());
+            let _ = exited.send(ProviderEvent::Exited(code)).await;
+        });
+
+        let stdin: Stdin = Arc::new(tokio::sync::Mutex::new(Some(stdin)));
+        let handshake = stdin.clone();
+        let opening_sent: Arc<std::sync::Mutex<Option<Vec<u8>>>> = Arc::default();
+        let sent = opening_sent.clone();
+        let unanswered = events.clone();
+        let agent = if spec.provider.is_empty() {
+            spec.provider_command.clone()
+        } else {
+            spec.provider.clone()
+        };
+        tokio::spawn(async move {
+            let deadline = || {
+                clock.sleep_until(
+                    clock
+                        .now_ms()
+                        .saturating_add(ACP_HANDSHAKE_WAIT.as_millis() as i64),
+                )
+            };
+            let late = |method: &str| {
+                ProviderEvent::Unstarted(format!(
+                    "{agent} did not answer {method} within {} seconds",
+                    ACP_HANDSHAKE_WAIT.as_secs()
+                ))
+            };
+            let initialize = crate::acp::initialize(interpret::acp::INITIALIZE_REQUEST);
+            if write_line(&handshake, &initialize).await.is_err() {
+                return;
+            }
+            // A refused or unreadable answer, or one in a version amux does
+            // not speak, ends the incarnation in the interpreter, which
+            // reads it too; so does an agent that ends first.
+            let init = tokio::select! {
+                answer = on_initialized => answer,
+                () = deadline() => {
+                    let _ = unanswered.send(late("initialize")).await;
+                    return;
+                }
+            };
+            let Ok(Some(init)) = init else {
+                return;
+            };
+            if crate::acp::speaks("", &init).is_err() {
+                return;
+            }
+            let opening = interpret::acp::opening(&init, saved.as_deref());
+            let Some(request) =
+                crate::acp::open_session(&opening, &setup, acp_takes_folders(&init))
+            else {
+                return;
+            };
+            *sent.lock().expect("never poisoned") = Some(request.clone());
+            if write_line(&handshake, &request).await.is_err() {
+                return;
+            }
+            let method = match opening {
+                interpret::acp::Opening::Resume(_) => "session/resume",
+                interpret::acp::Opening::Load(_) => "session/load",
+                _ => "session/new",
+            };
+            tokio::select! {
+                _ = on_opened => {}
+                () = deadline() => {
+                    let _ = unanswered.send(late(method)).await;
+                }
+            }
+        });
+
+        Ok(Self {
+            input: Input::Stdin(stdin),
+            pid,
+            kill: Some(kill),
+            terminal: None,
+            messaging: None,
+            session: String::new(),
+            dir: dir.to_owned(),
+            events,
+            followers: Vec::new(),
+            transcript: None,
+            subagents: Default::default(),
+            census: Vec::new(),
+            takes: Some(takes),
+            acp_opening: Some(opening_sent),
         })
     }
 
@@ -735,6 +1005,8 @@ impl Provider {
             transcript: None,
             subagents: Default::default(),
             census: Vec::new(),
+            takes: None,
+            acp_opening: None,
         })
     }
 
@@ -765,9 +1037,37 @@ impl Provider {
                 let request = codex_turn_input(&request, &attachments, &self.dir.join(dir::BLOBS))?;
                 self.write_line(&request).await
             }
+            Effect::AcpPrompt {
+                request,
+                attachments,
+            } => {
+                let takes = self
+                    .takes
+                    .as_ref()
+                    .map(|takes| *takes.lock().expect("never poisoned"))
+                    .unwrap_or_default();
+                let request = crate::acp::prompt_with_attachments(
+                    &request,
+                    &attachments,
+                    &self.dir.join(dir::BLOBS),
+                    takes,
+                )?;
+                self.write_line(&request).await
+            }
             Effect::ProviderSession { id } => {
                 self.adopt_session(&id).await;
                 Ok(())
+            }
+            Effect::AcpReopen => {
+                let request = self
+                    .acp_opening
+                    .as_ref()
+                    .and_then(|sent| sent.lock().expect("never poisoned").clone());
+                match request {
+                    Some(request) => self.write_line(&request).await,
+                    // The handshake has not sent it yet; it will.
+                    None => Ok(()),
+                }
             }
             Effect::FollowTranscript { path } => {
                 let path = PathBuf::from(path);
@@ -1191,6 +1491,80 @@ fn codex_turn_input(
     Ok(codex_protocol::encode(&request))
 }
 
+/// An ACP agent's answer to the agent's `initialize`, when `line` is one:
+/// what it says it offers, or None for a refusal or an answer that does
+/// not read as one.
+fn acp_initialized(line: &[u8]) -> Option<Option<acp_protocol::agent::InitializeResponse>> {
+    let acp_protocol::AgentMessage::Response {
+        id: acp_protocol::RequestId::String(id),
+        result,
+        ..
+    } = acp_protocol::decode(line).ok()?
+    else {
+        return None;
+    };
+    (id == interpret::acp::INITIALIZE_REQUEST).then(|| {
+        result
+            .ok()
+            .and_then(|result| acp_protocol::result(&result).ok())
+    })
+}
+
+/// Whether `line` is an ACP agent's answer, of any kind, to the request
+/// that opens its session.
+fn acp_session_answered(line: &[u8]) -> bool {
+    use interpret::acp::{LOAD_REQUEST, NEW_SESSION_REQUEST, RESUME_REQUEST};
+    matches!(
+        acp_protocol::decode(line),
+        Ok(acp_protocol::AgentMessage::Response {
+            id: acp_protocol::RequestId::String(id),
+            ..
+        }) if [NEW_SESSION_REQUEST, RESUME_REQUEST, LOAD_REQUEST].contains(&id.as_str())
+    )
+}
+
+/// Whether an ACP agent takes more folders than its working one.
+fn acp_takes_folders(init: &acp_protocol::agent::InitializeResponse) -> bool {
+    init.agent_capabilities.as_ref().is_some_and(|caps| {
+        // Antigravity writes each capability again in snake case.
+        [&caps.session_capabilities, &caps.session_capabilities_again]
+            .into_iter()
+            .flatten()
+            .any(|session| matches!(session.additional_directories, Some(Some(_))))
+    })
+}
+
+/// The longest stderr line an ACP agent's interpreter is told of; its log
+/// keeps the whole line.
+const STDERR_LINE_CAP: usize = 2048;
+
+/// Copies an ACP agent's stderr into its log, line by line, and tells the
+/// interpreter of each line.
+async fn acp_stderr(
+    stderr: tokio::process::ChildStderr,
+    log: std::fs::File,
+    events: mpsc::Sender<ProviderEvent>,
+) {
+    let mut log = tokio::fs::File::from_std(log);
+    let mut lines = BufReader::new(stderr).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let _ = log.write_all(line.as_bytes()).await;
+        let _ = log.write_all(b"\n").await;
+        let mut end = line.len().min(STDERR_LINE_CAP);
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        let fact = Fact {
+            channel: Channel::Agent,
+            payload: interpret::acp::stderr_fact(&line[..end]),
+        };
+        if events.send(ProviderEvent::Fact(fact)).await.is_err() {
+            break;
+        }
+    }
+    let _ = log.flush().await;
+}
+
 /// A followed transcript and the task reading it.
 struct Follower {
     tail: Tail,
@@ -1383,6 +1757,11 @@ pub fn codex_view(
 /// The Codex thread this agent runs, once its app server has made or
 /// resumed one.
 pub fn codex_thread(dir: &Path) -> Option<String> {
+    saved_session(dir)
+}
+
+/// The provider's own id for this agent's conversation, as last saved.
+fn saved_session(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION))
         .ok()
         .map(|thread| thread.trim().to_owned())

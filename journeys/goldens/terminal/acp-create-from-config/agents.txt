@@ -1,0 +1,34 @@
+
+  amux  new agent
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                  ╭─ Agent ──────────────────╮
+                  │   type to filter         │
+                  │ › Claude ✓               │
+                  │   Codex                  │
+                  │   Fake ACP Agent         │
+                  │   Gatekeeper             │
+                  │   Helper                 │
+                  │   Locked                 │
+                  │   One Shot               │
+                  │   Runner                 │
+                  ╰──────────────────────────╯
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › What should the new agent work on?                                                                   │
+  ╰─────── + Name │ Claude · claude-fake-1 (medium) · ask │ /tmp/journey/aj-xxxxxxxx/net/desk/work │ desk ─╯
+
+  enter pick   ↑↓ move   esc back

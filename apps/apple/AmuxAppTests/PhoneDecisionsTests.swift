@@ -181,7 +181,7 @@ final class PhoneDecisionsTests: XCTestCase {
             ScriptedChat(
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
                 strip: ScriptedChat.strip(background: 2)),
-            family: oneChild)
+            subject: CatalogFixtures.workingSubject, family: oneChild)
         let found = try await chatMenuItem("Settle")
         let (button, close) = try XCTUnwrap(found)
         MenuSource.run(close, from: button)
@@ -443,7 +443,7 @@ final class PhoneDecisionsTests: XCTestCase {
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
             reach: .offline(.revoked), link: 0, addrs: ["127.0.0.1:55186"], relayOnly: false, pairingOpen: false, current: false, providers: [],
-            claudeKind: nil, lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
+            lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
             platform: .macos, signedIn: nil, through: nil, version: nil)])
         var asked: [HostPageAction] = []
         try host(HostPage(model: hosts, host: desk) { asked.append($0) })
@@ -549,7 +549,7 @@ final class PhoneDecisionsTests: XCTestCase {
     func testAHomeRowCountsItsBackgroundJobs() async throws {
         let card = FleetCard(
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
-            name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
+            name: "cx", handle: "cx", kind: .codex, provider: "codex", providerName: "Codex", attachable: true, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
             members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil)
         let fleet = FleetStore()
@@ -589,7 +589,7 @@ final class PhoneDecisionsTests: XCTestCase {
         func view(_ reach: Reach) -> HostView {
             HostView(
                 hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false, reach: reach, link: 0,
-                addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil, platform: .macos,
+                addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [], lastDialError: nil, platform: .macos,
                 signedIn: nil, through: nil, version: nil)
         }
         let hosts = HostsStore()

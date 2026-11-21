@@ -191,7 +191,14 @@ impl HostSettings {
         // From the file as it is when written, not as last polled: a list
         // that keeps names this build does not know keeps the file's.
         self.write(
-            |fresh| changes(request, self.home(), fresh),
+            |fresh| {
+                changes(request, self.home(), fresh).map(|changes| {
+                    changes
+                        .into_iter()
+                        .map(|(key, value)| (key.to_owned(), value))
+                        .collect()
+                })
+            },
             |held| {
                 if let (Some(on), Some(login)) = (request.start_at_login, &self.login)
                     && (on != held.start_at_login || on != login.is_on())
@@ -240,48 +247,41 @@ impl HostSettings {
                 if pinned {
                     kept.push(path.as_str());
                 }
-                Ok(vec![("repositories", Some(kept.into()))])
+                Ok(vec![("repositories".to_owned(), Some(kept.into()))])
             },
             |_| Ok(()),
         )?;
         Ok((!already).then_some(config))
     }
 
-    /// Keeps a person's pick as what later agents of its kind start with.
+    /// Keeps a person's pick as what later agents of its program start
+    /// with, under its provider id (`new_agent.<id>.model` and `.effort`).
     /// Answers None when the settings already say so.
     pub(crate) fn remember(
         &self,
         picked: &crate::spec::Picked,
     ) -> Result<Option<InstallationConfig>, SettingsError> {
-        let (model_key, effort_key, held) = {
-            let new_agent = self.current().new_agent;
-            match picked.kind {
-                wire::Kind::Codex => (
-                    "new_agent.codex.model",
-                    "new_agent.codex.effort",
-                    new_agent.codex,
-                ),
-                _ => (
-                    "new_agent.claude.model",
-                    "new_agent.claude.effort",
-                    new_agent.claude,
-                ),
-            }
-        };
-        let mut changes: Vec<Change> = Vec::new();
+        let held = self.current().new_agent.of(&picked.provider);
+        let mut changes: Vec<OwnedChange> = Vec::new();
         if let Some(model) = picked
             .model
             .as_ref()
             .filter(|model| Some(*model) != held.model.as_ref())
         {
-            changes.push((model_key, Some(model.clone().into())));
+            changes.push((
+                format!("new_agent.{}.model", picked.provider),
+                Some(model.clone().into()),
+            ));
         }
         if let Some(effort) = picked
             .effort
             .as_ref()
             .filter(|effort| Some(*effort) != held.effort.as_ref())
         {
-            changes.push((effort_key, Some(effort.clone().into())));
+            changes.push((
+                format!("new_agent.{}.effort", picked.provider),
+                Some(effort.clone().into()),
+            ));
         }
         if changes.is_empty() {
             return Ok(None);
@@ -295,7 +295,7 @@ impl HostSettings {
     /// written, and may refuse them.
     fn write(
         &self,
-        changes_of: impl FnOnce(&InstallationConfig) -> Result<Vec<Change<'static>>, SettingsError>,
+        changes_of: impl FnOnce(&InstallationConfig) -> Result<Vec<OwnedChange>, SettingsError>,
         before: impl FnOnce(&InstallationConfig) -> Result<(), SettingsError>,
     ) -> Result<InstallationConfig, SettingsError> {
         let mut held = self.held.lock().unwrap();
@@ -316,6 +316,10 @@ impl HostSettings {
             None => held.config.clone(),
         };
         let changes = changes_of(&fresh)?;
+        let changes: Vec<Change> = changes
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.clone()))
+            .collect();
         // Nothing to change writes nothing; a change made beside the daemon
         // that the file now holds is the poll's to apply.
         if changes.is_empty() {
@@ -383,6 +387,10 @@ pub(crate) fn to_wire(
             .collect(),
     }
 }
+
+/// One key's change, its key made as the change is: an agent's picks are
+/// keyed by its provider id.
+type OwnedChange = (String, Option<toml_edit::Value>);
 
 /// The file's keys a request changes, from the settings it changes.
 fn changes(
@@ -998,6 +1006,7 @@ mod tests {
     fn picked(kind: wire::Kind, model: Option<&str>, effort: Option<&str>) -> crate::spec::Picked {
         crate::spec::Picked {
             kind,
+            provider: wire::agents::implied_by(kind).to_owned(),
             model: model.map(str::to_owned),
             effort: effort.map(str::to_owned),
         }
@@ -1017,9 +1026,9 @@ mod tests {
             .remember(&picked(wire::Kind::ClaudeSdk, Some("sonnet"), Some("low")))
             .unwrap()
             .expect("a change");
-        assert_eq!(kept.new_agent.claude.model.as_deref(), Some("sonnet"));
-        assert_eq!(kept.new_agent.claude.effort.as_deref(), Some("low"));
-        assert_eq!(kept.new_agent.codex, Default::default());
+        assert_eq!(kept.new_agent.of("claude").model.as_deref(), Some("sonnet"));
+        assert_eq!(kept.new_agent.of("claude").effort.as_deref(), Some("low"));
+        assert_eq!(kept.new_agent.of("codex"), Default::default());
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.starts_with("# mine\ntelemetry = false\n"), "{text}");
 
@@ -1029,6 +1038,24 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "already so: the file is left alone"
+        );
+
+        // An ACP agent's are kept under its own id.
+        let acp = crate::spec::Picked {
+            kind: wire::Kind::Acp,
+            provider: "opencode".into(),
+            model: Some("anthropic/sonnet".into()),
+            effort: None,
+        };
+        let kept = settings.remember(&acp).unwrap().expect("a change");
+        assert_eq!(
+            kept.new_agent.of("opencode").model.as_deref(),
+            Some("anthropic/sonnet")
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("[new_agent.opencode]\nmodel = \"anthropic/sonnet\""),
+            "{text}"
         );
     }
 }

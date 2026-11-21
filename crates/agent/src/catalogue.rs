@@ -3,6 +3,43 @@
 //! The daemon starts it when it needs a host's copy, in the folder the copy
 //! is kept in, with the environment it starts agents' providers with.
 //! Neither question spends the account's usage.
+//!
+//! The command line, which the daemon of the same build writes:
+//!
+//! ```text
+//! amux internal catalogue <provider> --command <program> [--arg <arg>]... --out <file>
+//! ```
+//!
+//! `<provider>` is `claude`, `codex`, or the id of an ACP agent: any other
+//! word (`antigravity`, `opencode`, `grok`, or one a person added), which
+//! picks the agent's quirks. `--command` is the program as the agent's spec
+//! names it. `--arg`, repeated, gives an ACP agent's arguments in order
+//! (`--arg acp`, or `--arg agent --arg stdio` for Grok), exactly the ones
+//! its agents start with; nothing is taken from the built-in list, so a
+//! person's entry with no arguments runs the program bare. `--arg` is
+//! refused for Claude and Codex, whose arguments are the helper's own. An
+//! ACP agent's configured environment is the caller's to set on this
+//! process; the agent inherits it, less what a parent Claude session sets.
+//!
+//! On success the exit code is 0 and `<file>` holds an encoded
+//! `ProviderOffer`. For an ACP agent the helper sends `initialize` and
+//! nothing else, so no conversation is left in the agent's history:
+//!
+//! - `provider_version`: the version `initialize` names (`agentInfo`, or
+//!   Grok's `_meta.agentVersion`), empty when it names none;
+//! - `catalogue`: what the agent lists without a session, which is Grok's
+//!   models with their efforts and its commands, and nothing for the rest;
+//! - `acp`: its own name, whether a conversation can be reopened (resume,
+//!   load or neither), whether prompts take images and embedded files, its
+//!   sign-in methods with the hint each gives, and its sign-in state where
+//!   `initialize` shows it (Grok), unspecified elsewhere;
+//! - `signed_in`: false only when the agent is known to be signed out;
+//! - `capabilities`: what an agent started now can do, by that answer and
+//!   the agent's known ways (whether it steers a running turn).
+//!
+//! The program not starting, exiting before it answers, or refusing
+//! `initialize` exits non-zero with the reason on stderr, and writes no
+//! file. The helper waits as long as its caller lets it.
 
 use std::path::Path;
 use std::process::Stdio;
@@ -20,21 +57,14 @@ use codex_protocol::server::{
 use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
 use prost::Message as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-use wire::{Catalogue, Provider, ProviderOffer};
+use wire::{Catalogue, ProviderOffer};
 
 const INITIALIZE: &str = "amux-catalogue";
 const SETTINGS: &str = "amux-settings";
 
-/// The provider a word on the command line names: the `Provider` value's
-/// own name, lowercase, without the enum's prefix, as the daemon writes it.
-pub fn provider_named(word: &str) -> Option<Provider> {
-    Provider::from_str_name(&format!("PROVIDER_{}", word.to_ascii_uppercase()))
-        .filter(|provider| *provider != Provider::Unspecified)
-}
-
-/// Asks `provider`, run as `command`, and writes a `ProviderOffer` to
-/// `out`; the exit code says whether it could.
-pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
+/// Asks `provider`, run as `command` (with `args` for an ACP agent), and
+/// writes a `ProviderOffer` to `out`; the exit code says whether it could.
+pub fn main(provider: &str, command: &str, args: &[String], out: &Path) -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -46,18 +76,22 @@ pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
         }
     };
     let asked = runtime.block_on(async {
-        match provider_named(provider) {
-            Some(Provider::Claude) => ask_claude(command).await,
-            Some(Provider::Codex) => ask_codex(command).await,
-            Some(Provider::Unspecified) | None => Err(format!("no provider named {provider:?}")),
+        let own = [wire::agents::CLAUDE, wire::agents::CODEX].contains(&provider);
+        if own && !args.is_empty() {
+            return Err(format!("{provider} takes no --arg"));
         }
-    });
-    let written = asked.and_then(|(catalogue, signed_in)| {
-        let offer = ProviderOffer {
+        let plain = |(catalogue, signed_in)| ProviderOffer {
             catalogue: Some(catalogue),
             signed_in,
             ..ProviderOffer::default()
         };
+        match provider {
+            wire::agents::CLAUDE => ask_claude(command).await.map(plain),
+            wire::agents::CODEX => ask_codex(command).await.map(plain),
+            agent => ask_acp(agent, command, args).await,
+        }
+    });
+    let written = asked.and_then(|offer| {
         std::fs::write(out, offer.encode_to_vec())
             .map_err(|error| format!("writing {}: {error}", out.display()))
     });
@@ -326,3 +360,78 @@ impl CodexProbe {
         }
     }
 }
+
+/// An ACP agent's `initialize` answer is all the host asks it: anything
+/// more needs a session, which would stay in the agent's history.
+async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<ProviderOffer, String> {
+    let mut child = tokio::process::Command::new(crate::acp::program(
+        command,
+        &std::collections::HashMap::new(),
+    ));
+    child
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    for key in crate::claude::launch::CHILD_SESSION_ENV_SCRUB {
+        child.env_remove(key);
+    }
+    let mut child = child
+        .spawn()
+        .map_err(|error| format!("starting {command}: {error}"))?;
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let mut line = crate::acp::initialize(INITIALIZE);
+    line.push(b'\n');
+    stdin
+        .write_all(&line)
+        .await
+        .map_err(|error| format!("writing to {agent}: {error}"))?;
+    let mut lines = BufReader::new(stdout).lines();
+    let answer = loop {
+        let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|error| format!("reading {agent}: {error}"))?
+        else {
+            return Err(format!("{agent} ended before it answered initialize"));
+        };
+        if let Ok(acp_protocol::AgentMessage::Response {
+            id: acp_protocol::RequestId::String(id),
+            result,
+            ..
+        }) = acp_protocol::decode(line.as_bytes())
+            && id == INITIALIZE
+        {
+            break result;
+        }
+    };
+    // The end of its input ends an agent; one that lingers is killed.
+    drop(stdin);
+    if tokio::time::timeout(ACP_EXIT_WAIT, child.wait())
+        .await
+        .is_err()
+    {
+        let _ = child.start_kill();
+    }
+    let answer =
+        answer.map_err(|error| format!("{agent} refused initialize: {}", error.message))?;
+    let init: acp_protocol::agent::InitializeResponse = acp_protocol::result(&answer)
+        .map_err(|error| format!("{agent}'s initialize answer: {error}"))?;
+    crate::acp::speaks(agent, &init)?;
+    let offer = interpret::acp::host_offer(agent, &init);
+    Ok(ProviderOffer {
+        signed_in: offer.signed_in(),
+        catalogue: Some(offer.catalogue),
+        provider_version: offer.version,
+        acp: Some(offer.acp),
+        capabilities: Some(offer.capabilities),
+        asked_at_ms: 0,
+        // The daemon, which knows what it launched, fills it.
+        launched: Vec::new(),
+    })
+}
+
+/// How long an ACP agent has to exit once the probe has closed its input.
+const ACP_EXIT_WAIT: Duration = Duration::from_secs(2);

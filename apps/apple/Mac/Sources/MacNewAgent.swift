@@ -60,16 +60,12 @@ final class MacNewAgent: NewAgentSurface {
         set { model.typed = newValue }
     }
 
-    var provider: Provider { model.provider.wire }
-
-    func choose(provider: Provider) {
-        if let chosen = NewAgentStore.Provider.allCases.first(where: { $0.wire == provider }) {
-            model.choose(provider: chosen)
-        }
-    }
+    var agents: [HostProvider] { model.agents }
+    var provider: String? { model.provider }
+    func choose(provider: String) { model.choose(provider: provider) }
 
     var offer: OfferState? {
-        switch model.offers[model.provider] {
+        switch model.offer {
         case .asking?: .asking
         case .offered?: .offered
         case .unavailable?: .unavailable

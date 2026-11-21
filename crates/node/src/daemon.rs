@@ -161,13 +161,22 @@ impl Installation {
     }
 
     /// Puts what changed in the settings into force: every profile's
-    /// repositories, Claude kind and name. Only what changed since they were
-    /// last applied moves, so what an embedder gave a host at start stands
-    /// until the person changes that setting.
+    /// repositories, Claude kind, name and the ACP agents it knows. Only
+    /// what changed since they were last applied moves, so what an embedder
+    /// gave a host at start stands until the person changes that setting.
     pub(crate) fn apply(&self, config: &settings::InstallationConfig) {
-        let (repositories, kind, renamed, new_agent) = {
+        let (repositories, kind, renamed, new_agent, agents) = {
             let mut last = self.applied.lock().unwrap();
             let new_agent = (last.new_agent != config.new_agent).then(|| config.new_agent.clone());
+            // The next spawn or resume starts an agent's program as the
+            // config says it now; a running one keeps the one it started.
+            let agents = (last.agents != config.agents).then(|| {
+                let (agents, warnings) = crate::agents::configured(config);
+                for warning in warnings {
+                    tracing::warn!("{warning}");
+                }
+                agents
+            });
             let repositories =
                 (last.repositories != config.repositories).then(|| config.repositories());
             let kind = (crate::host_settings::claude_kind(&last)
@@ -179,7 +188,7 @@ impl Installation {
                 name
             });
             *last = config.clone();
-            (repositories, kind, renamed, new_agent)
+            (repositories, kind, renamed, new_agent, agents)
         };
         self.awake.keep_awake(config.keep_awake);
         let wanted = config.experiments.in_effect();
@@ -188,7 +197,12 @@ impl Installation {
             *was = wanted;
             moved
         });
-        if repositories.is_none() && kind.is_none() && renamed.is_none() && new_agent.is_none() {
+        if repositories.is_none()
+            && kind.is_none()
+            && renamed.is_none()
+            && new_agent.is_none()
+            && agents.is_none()
+        {
             return;
         }
         {
@@ -201,6 +215,9 @@ impl Installation {
             }
             if let Some(new_agent) = &new_agent {
                 launch.new_agent.clone_from(new_agent);
+            }
+            if let Some(agents) = &agents {
+                launch.agents.clone_from(agents);
             }
         }
         let runtimes: Vec<Arc<ProfileRuntime>> = self
@@ -221,12 +238,18 @@ impl Installation {
             if let Some(new_agent) = &new_agent {
                 launch.new_agent.clone_from(new_agent);
             }
+            if let Some(agents) = &agents {
+                launch.agents.clone_from(agents);
+            }
             if kind.is_some() || new_agent.is_some() {
                 runtime.offers().remembered_changed(&launch);
             }
             runtime.set_launch(launch);
             if repositories.is_some() {
                 runtime.refresh_folders();
+            }
+            if agents.is_some() || new_agent.is_some() {
+                runtime.refresh_agents();
             }
             if let (Some(name), Some(edge)) = (&renamed, runtime.edge()) {
                 edge.rename(name);

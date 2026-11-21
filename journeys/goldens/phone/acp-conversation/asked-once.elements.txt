@@ -1,0 +1,34 @@
+shell |  | agents | 0,62,402,778
+chat |  | tester | 0,116,402,724
+chat.row.prompt | Say hello. |  | 16,124,370,40
+chat.prose.render |  | rendered | 303,134,69,20
+chat.row.prose | Hello from the fake agent. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.turn-end | Worked for <t> |  | 16,203,81,16
+chat.row.prompt | Run the tests. |  | 16,233,370,40
+chat.prose.render |  | rendered | 272,243,100,20
+chat.row.command | Wants to run, cargo test |  | 16,285,370,20
+ask | Wants to run a command | open | 12,630,378,200
+ask.more | More |  | 338,638,44,44
+ask.subject | cargo test |  | 28,686,346,40
+ask.reply | Reply instead |  | 24,726,122,44
+ask.choice.0 | Allow |  | 28,770,169,44
+ask.deny | Deny… |  | 205,770,169,44
+chat.more | More |  | 350,66,28,36
+chat.header | /p/t/a/n/d/r/work · desk | live | 76,66,175,36
+chat.title | tester | tester | 76,66,175,36
+ | Wants to run a command |  | 62,650,189,20
+ | More |  | 338,638,44,44
+ | cargo test |  | 28,686,346,40
+ | Reply instead |  | 24,726,122,44
+ | Allow |  | 28,770,169,44
+ | Deny… |  | 205,770,169,44
+ | Say hello. |  | 16,124,370,40
+ | Hello from the fake agent. |  | 16,176,370,20
+ | Worked for <t> |  | 16,203,81,16
+ | Run the tests. |  | 16,233,370,40
+ | Wants to run, cargo test |  | 16,285,370,20
+BackButton | Agents |  | 16,62,44,44
+ | tester, /p/t/a/n/d/r/work · desk |  | 76,66,175,36
+ | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

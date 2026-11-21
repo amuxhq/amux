@@ -27,7 +27,7 @@ struct ComposerBox: View {
     @Bindable var model: ChatModel
     let placeholder: String
     let activity: Activity?
-    let activitySubject: String?
+    let activitySubject: ChatWords.Subject?
     /// Where the exited agent ran, for its head.
     let host: String
     /// Whether the person settled the agent, which its head says.
@@ -73,8 +73,7 @@ struct ComposerBox: View {
                 .identified("chat.field", label: placeholder, value: model.draft)
             // At an accessibility text size the model's words get a line of
             // their own: beside the buttons there is room for a few letters.
-            if typeSize.isAccessibilitySize, let controls = model.frame?.controls,
-               let chip = ChatWords.chip(controls, context: model.frame?.context) {
+            if typeSize.isAccessibilitySize, let controls = model.frame?.controls, let chip = pillWords(controls) {
                 modelChip(chip, warns: controls.permission?.neverAsks == true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -95,8 +94,7 @@ struct ComposerBox: View {
                 .buttonStyle(.amuxControl)
                 .accessibilityLabel("Attach")
                 .identified("chat.attach", label: String(localized: "Attach"), value: plusOpen ? "open" : "closed")
-                if !typeSize.isAccessibilitySize, let controls = model.frame?.controls,
-                   let chip = ChatWords.chip(controls, context: model.frame?.context) {
+                if !typeSize.isAccessibilitySize, let controls = model.frame?.controls, let chip = pillWords(controls) {
                     modelChip(chip, warns: controls.permission?.neverAsks == true)
                 }
                 Spacer(minLength: 4)
@@ -145,6 +143,18 @@ struct ComposerBox: View {
         }
         .accessibilityElement(children: .combine)
         .identified("chat.exited", label: title, value: host)
+    }
+
+    /// The pill's words. An agent that has said no model, effort or mode
+    /// yet but offers a pick (an ACP agent's mode) is named instead, so its
+    /// settings can still be reached.
+    private func pillWords(_ controls: ControlsSummary) -> (model: String, detail: String, unusual: [String])? {
+        if let chip = ChatWords.chip(controls, context: model.frame?.context) { return chip }
+        guard let settings = model.settings, let name = model.frame?.provider.name,
+              settings.changeable.model == .pick || settings.changeable.effort == .pick
+                || settings.changeable.mode == .pick
+        else { return nil }
+        return (name, "", [])
     }
 
     /// The model and its effort, then a permission or mode other than the
@@ -466,7 +476,7 @@ struct NativeComposer: View {
     let model: ChatModel
     let stop: JobStop
     let activity: Activity?
-    let activitySubject: String?
+    let activitySubject: ChatWords.Subject?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -479,7 +489,7 @@ struct NativeComposer: View {
                     .foregroundStyle(design.inkMuted.color)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ChatWords.nativeRunner(model.frame?.kind))
+                    Text(ChatWords.nativeRunner(model.frame?.provider.name))
                         .designFont(.bodyEmphasis, design)
                         .foregroundStyle(design.ink.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -491,7 +501,7 @@ struct NativeComposer: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
                 .identified(
-                    "chat.native", label: ChatWords.nativeRunner(model.frame?.kind),
+                    "chat.native", label: ChatWords.nativeRunner(model.frame?.provider.name),
                     value: ended ?? ChatWords.nativeTakesNoMessages)
                 control
             }
@@ -624,7 +634,7 @@ struct ActivityLine: View {
     @Environment(\.photographed) private var photographed
     @Environment(\.reducesMotion) private var reducesMotion
     let activity: Activity
-    let subject: String?
+    let subject: ChatWords.Subject?
     /// How the chat's live subagents stand, which the words say while one
     /// of them waits on the person.
     var subagents: GroupState = .empty
@@ -653,7 +663,7 @@ struct ActivityLine: View {
 
     /// The line as one sentence, without its clock.
     private var spoken: String {
-        ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject, subagents: subagents)
+        ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject?.text, subagents: subagents)
     }
 
     private func elapsed(at date: Date) -> Int64 {
@@ -663,16 +673,16 @@ struct ActivityLine: View {
 
     private func words(elapsed: Int64) -> some View {
         let parts = ChatWords.activityParts(
-            activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs, subagents: subagents)
+            activity.kind, elapsedMs: elapsed, subject: subject?.text, sinceMs: activity.sinceMs, subagents: subagents)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(parts.words)
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .lineLimit(1)
                 .layoutPriority(2)
-            if let subject = parts.subject {
-                Text(verbatim: subject)
-                    .designFont(.monoSmall, design)
+            if let named = parts.subject {
+                Text(verbatim: named)
+                    .designFont(subject?.code == false ? .detail : .monoSmall, design)
                     .foregroundStyle(design.inkMuted.color)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -689,7 +699,7 @@ struct ActivityLine: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             ChatWords.activity(
-                activity.kind, elapsedMs: elapsed, subject: subject, sinceMs: activity.sinceMs,
+                activity.kind, elapsedMs: elapsed, subject: subject?.text, sinceMs: activity.sinceMs,
                 subagents: subagents))
     }
 
@@ -1057,19 +1067,29 @@ struct ChatDock: View {
     }
 }
 
-/// What the plus offers: a photo or a file to attach, and the permission
-/// mode, each one tap from the composer.
+/// What the plus offers: a photo or a file to attach, where the agent
+/// takes one, and the permission mode, each one tap from the composer.
 struct PlusCard: View {
     @Environment(\.design) private var design
     let settings: SettingsView?
+    /// What the agent's prompts may carry; nil before the chat has said.
+    var capabilities: Capabilities?
     let attach: (AttachChoice) -> Void
     let openSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                tile(String(localized: "Photo"), glyph: "photo", id: "chat.attach.photo") { attach(.photo) }
-                tile(String(localized: "File"), glyph: "doc", id: "chat.attach.file") { attach(.file) }
+            let photos = capabilities?.images ?? true
+            let files = capabilities?.files ?? true
+            if photos || files {
+                HStack(spacing: 10) {
+                    if photos {
+                        tile(String(localized: "Photo"), glyph: "photo", id: "chat.attach.photo") { attach(.photo) }
+                    }
+                    if files {
+                        tile(String(localized: "File"), glyph: "doc", id: "chat.attach.file") { attach(.file) }
+                    }
+                }
             }
             if let settings, !settings.permissions.isEmpty || settings.changeable.permission == .cycle {
                 permissions(settings)
@@ -1202,7 +1222,7 @@ struct FootCard: View {
                     .designFont(.bodyEmphasis, design)
                     .foregroundStyle(design.ink.color)
                 if !detail.isEmpty {
-                    Text(detail)
+                    Text(ChatWords.withCode(detail))
                         .designFont(.detail, design)
                         .foregroundStyle(design.inkMuted.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1212,6 +1232,6 @@ struct FootCard: View {
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.foot.\(kind)", label: title, value: detail)
+        .identified("chat.foot.\(kind)", label: title, value: ChatWords.withoutCodeMarks(detail))
     }
 }

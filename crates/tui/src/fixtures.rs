@@ -5,6 +5,7 @@
 use std::path::Path;
 
 pub use interpret::Committer;
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -16,7 +17,7 @@ use ui_state::{InputOutcome, Msg, SessionState};
 use wire::Kind;
 
 use crate::chat::ChatView;
-pub use crate::sessions::{agent, caught_up, text};
+pub use crate::sessions::{agent, caught_up, host_entry, offered_providers, text};
 use crate::theme::Theme;
 
 /// The session after each frame of one fixture, with its label and the
@@ -25,6 +26,7 @@ pub fn frames(kind: Kind, name: &str) -> Vec<(String, SessionState, i64)> {
     let dir = match kind {
         Kind::ClaudePty => "claude_pty",
         Kind::ClaudeSdk => "claude_sdk",
+        Kind::Acp => "acp",
         _ => "codex",
     };
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -34,10 +36,24 @@ pub fn frames(kind: Kind, name: &str) -> Vec<(String, SessionState, i64)> {
     let replayed: Vec<Replayed> = match kind {
         Kind::ClaudePty => replay::<ClaudePty>(&path),
         Kind::ClaudeSdk => replay::<ClaudeSdk>(&path),
+        Kind::Acp => replay::<Acp>(&path),
         _ => replay::<Codex>(&path),
     }
     .unwrap_or_else(|error| panic!("{dir}/{name}: {error}"));
-    let mut state = SessionState::new(agent(kind), crate::chat::layout::CAP as usize);
+    // An ACP agent is the program its fixture's spec names, which the host
+    // offers under the name amux knows it by.
+    let mut row = agent(kind);
+    let mut providers = offered_providers();
+    if kind == Kind::Acp {
+        let text = std::fs::read_to_string(&path).expect("read above");
+        let spec: serde_json::Value = serde_json::from_str(&text).expect("parsed above");
+        let provider = spec["spec"]["provider"].as_str().unwrap_or_default();
+        let name = wire::agents::name_or_id(provider);
+        providers.push(crate::sessions::offered(provider, name, Kind::Acp));
+        row.provider = provider.to_owned();
+    }
+    let mut state = SessionState::new(row, crate::chat::layout::CAP as usize);
+    state.update(Msg::Host(host_entry(providers)));
     state.update(Msg::Connection(ui_state::Connection::Live));
     let mut committer = Committer::default();
     let mut out = Vec::new();
@@ -204,9 +220,15 @@ pub fn family_frames(kind: Kind, name: &str) -> Vec<Family> {
     .unwrap_or_else(|error| panic!("{dir}/{name}: {error}"));
     let host = agent(kind);
     let mut state = SessionState::new(host.clone(), crate::chat::layout::CAP as usize);
+    state.update(Msg::Host(host_entry(offered_providers())));
     state.update(Msg::Connection(ui_state::Connection::Live));
     let mut committer = Committer::default();
     let mut fleet = ui_state::FleetState::new();
+    fleet.update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
+        of: Some(wire::inventory_event::Of::Host(host_entry(
+            offered_providers(),
+        ))),
+    })));
     fleet.update(listed(&host));
     let mut subs: Vec<Sub> = Vec::new();
     let mut out = Vec::new();
@@ -252,6 +274,7 @@ pub fn family_frames(kind: Kind, name: &str) -> Vec<Family> {
                     };
                     let mut state =
                         SessionState::new(row.clone(), crate::chat::layout::CAP as usize);
+                    state.update(Msg::Host(host_entry(offered_providers())));
                     state.update(Msg::Connection(ui_state::Connection::Live));
                     state.update(caught_up(0));
                     subs.push(Sub {

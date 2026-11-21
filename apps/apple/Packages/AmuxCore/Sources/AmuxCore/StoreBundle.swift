@@ -159,7 +159,8 @@ public final class StoreBundle {
         }
         newAgent.remember(fleet.rows)
         if let machine = newAgent.machine {
-            newAgent.machineStarts(claude: hosts.host(machine)?.claudeKind)
+            newAgent.machineOffers(hosts.host(machine)?.providers ?? [])
+            askOffers(on: machine)
             // The host's entry carries its folders: a pin, or an agent made
             // somewhere new, moves them.
             if delta.hosts != nil, !newAgent.searchesTheMachine {
@@ -396,7 +397,7 @@ public final class StoreBundle {
         newAgent.open(on: host)
         newAgent.remember(fleet.rows)
         guard let host else { return }
-        newAgent.machineStarts(claude: hosts.host(host)?.claudeKind)
+        newAgent.machineOffers(hosts.host(host)?.providers ?? [])
         listDirectories(on: host, matching: "")
         askOffers(on: host)
     }
@@ -404,15 +405,16 @@ public final class StoreBundle {
     public func point(at host: HostId) {
         guard newAgent.machine != host else { return }
         newAgent.point(at: host)
-        newAgent.machineStarts(claude: hosts.host(host)?.claudeKind)
+        newAgent.machineOffers(hosts.host(host)?.providers ?? [])
         listDirectories(on: host, matching: "")
         askOffers(on: host)
     }
 
-    /// Asks the host what each provider offers there, for the screen's
-    /// model, effort, permission and mode choices.
+    /// Asks the host what each agent it lists offers there, for the
+    /// screen's model, effort, permission and mode choices: each once, as
+    /// the host lists it.
     private func askOffers(on host: HostId) {
-        for provider in NewAgentStore.Provider.allCases {
+        for provider in newAgent.unasked {
             let asked = newAgent.askingOffer(for: provider)
             guard let profile else {
                 newAgent.offered(
@@ -420,7 +422,7 @@ public final class StoreBundle {
                 continue
             }
             Task {
-                let offered = await profile.hostCatalogue(on: host, provider: provider.wire)
+                let offered = await profile.hostCatalogue(on: host, provider: provider)
                 newAgent.offered(offered, for: provider, asked: asked)
             }
         }
@@ -512,6 +514,12 @@ public final class StoreBundle {
             models[agent]?.model.keeping = nil
         }
         return outcome
+    }
+
+    /// What settling an agent costs, by the fleet's shared rule; nil when
+    /// nothing is running or the fleet does not hold it.
+    public func settleWarning(_ agent: AgentKey) -> SettleWarning? {
+        profile?.settleWarning(agent)
     }
 
     /// What deleting an agent does to its workspace, for its confirmation

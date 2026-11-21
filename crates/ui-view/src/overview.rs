@@ -9,7 +9,7 @@ use serde::Serialize;
 pub use ui_state::JobStop;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    BackgroundKind, GetChangesResponse, Kind, Limit, TaskListStatus, UsageMeter, UsageState,
+    BackgroundKind, GetChangesResponse, Limit, TaskListStatus, UsageMeter, UsageState,
     get_changes_request,
 };
 
@@ -263,7 +263,7 @@ pub fn overview(state: &SessionState, changed: Option<&GetChangesResponse>) -> O
     });
     // Headless Claude and Codex stop one job on request; terminal Claude
     // has no way to.
-    let stops_one = matches!(state.kind(), Kind::ClaudeSdk | Kind::Codex);
+    let stops_one = state.capabilities().stops_job;
     // A provider subagent's own job is the subagent itself, which its
     // composer stops; the overview lists only what it started.
     let own_job = state
@@ -319,7 +319,7 @@ pub fn overview(state: &SessionState, changed: Option<&GetChangesResponse>) -> O
             windows: usage_windows(&agent.usage),
             credits: match &agent.usage {
                 Usage::Codex(usage) => usage.credits.clone(),
-                Usage::Claude(_) | Usage::Unknown => None,
+                Usage::Claude(_) | Usage::Acp(_) | Usage::Unknown => None,
             },
         }),
         UsageState::Unspecified | UsageState::Ok => None,
@@ -400,7 +400,8 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
         }
     };
     match usage {
-        Usage::Unknown => Vec::new(),
+        // An ACP agent says what its session used, never a limit's window.
+        Usage::Unknown | Usage::Acp(_) => Vec::new(),
         Usage::Claude(usage) => usage
             .windows
             .iter()

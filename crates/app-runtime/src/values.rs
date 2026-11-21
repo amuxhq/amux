@@ -15,7 +15,7 @@ use ui_view::{
     Repository, ReviewAnchor, ReviewChip, ReviewPage, ReviewView, Row, SentPrompt, SettingChange,
     SettingsView, SetupStep, SignInView,
 };
-use wire::{BlobRef, Kind, Platform, RouteKind};
+use wire::{BlobRef, Platform, RouteKind};
 
 /// What an embedded runtime starts from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,7 +201,10 @@ pub struct AskMoved {
 pub struct ChatFrame {
     pub agent: AgentKey,
     pub name: String,
-    pub kind: Kind,
+    /// The program it runs, as its host names it.
+    pub provider: ProviderLabel,
+    /// What it can do: which controls its chat offers.
+    pub capabilities: Capabilities,
     pub phase: PhaseView,
     pub composer: ComposerView,
     /// The model, effort in force, and a permission or mode other than the
@@ -481,23 +484,100 @@ pub struct HostView {
     /// its profile is bound to, None while it was never bound; for another
     /// host, as its link handshake said, None until it has said.
     pub signed_in: Option<bool>,
-    /// Which Claude a new agent on it runs, as its settings resolve it;
-    /// None until it has said.
-    pub claude_kind: Option<Kind>,
     /// This device's copy of the host's agents has caught up with the host
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
     pub current: bool,
-    /// The providers the host has said it can run, and whether each is
-    /// signed in there.
-    pub providers: Vec<ProviderSignIn>,
+    /// The agent programs the host offers, in its order: Claude and Codex
+    /// once it has said anything, then each other agent it has asked,
+    /// a person's own among them.
+    pub providers: Vec<HostProvider>,
 }
 
+/// An agent program a host offers, as a new-agent screen lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct ProviderSignIn {
-    pub provider: wire::Provider,
-    pub signed_in: bool,
+pub struct HostProvider {
+    /// What it is named by: what a new agent and the host's catalogue ask
+    /// for.
+    pub provider: String,
+    /// What people call it, as the host names it ("Claude", "OpenCode", the
+    /// name a person gave their own); its id when the host gives none.
+    pub name: String,
+    /// What a person does to sign in to it, in its own words; empty when
+    /// the host knows none.
+    pub sign_in_hint: String,
+    /// The program's version as the host last read it; empty where it gave
+    /// none.
+    pub version: String,
+    /// Whether it is signed in on the host; None until the host has asked it.
+    pub signed_in: Option<bool>,
+    /// What an agent of it started there now can do.
+    pub capabilities: Capabilities,
+}
+
+impl From<&wire::ProviderOnHost> for HostProvider {
+    fn from(offer: &wire::ProviderOnHost) -> Self {
+        let descriptor = offer.descriptor.clone().unwrap_or_default();
+        HostProvider {
+            provider: offer.provider_id.clone(),
+            name: offer.name().to_owned(),
+            sign_in_hint: descriptor.sign_in_hint,
+            version: descriptor.version,
+            signed_in: offer.signed_in(),
+            capabilities: offer.capabilities.unwrap_or_default().into(),
+        }
+    }
+}
+
+/// How a chat names the program its agent runs.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct ProviderLabel {
+    /// Its id ("claude", "opencode", one a person chose).
+    pub provider: String,
+    /// What people call it, as the agent's host names it; the id while the
+    /// host has not said.
+    pub name: String,
+}
+
+/// What an agent can do, which decides the controls a client offers it.
+/// False is the safe reading of each: a control left out is all it costs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct Capabilities {
+    /// One background job can be stopped on its own.
+    pub stops_job: bool,
+    /// Its own view can go to another conversation and be brought back.
+    pub switches_back: bool,
+    /// It runs with a terminal interface of its own, which a terminal on
+    /// its host can attach to.
+    pub attachable: bool,
+    /// Once it has exited, it can be resumed.
+    pub resumable: bool,
+    /// A queued prompt can be sent into its running turn.
+    pub sends_now: bool,
+    /// A prompt may carry images.
+    pub images: bool,
+    /// A prompt may carry files.
+    pub files: bool,
+    /// A slash command it does not list goes to it as typed.
+    pub passes_unknown_commands: bool,
+}
+
+impl From<wire::AgentCapabilities> for Capabilities {
+    fn from(can: wire::AgentCapabilities) -> Self {
+        Capabilities {
+            stops_job: can.stops_job,
+            switches_back: can.switches_back,
+            attachable: can.attachable,
+            resumable: can.resumable,
+            sends_now: can.sends_now,
+            images: can.images,
+            files: can.files,
+            passes_unknown_commands: can.passes_unknown_commands,
+        }
+    }
 }
 
 /// What moved in a profile's fleet since the host last heard: each field
@@ -533,12 +613,15 @@ pub enum PairRequest {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NewAgent {
     pub host_id: Vec<u8>,
-    pub kind: Kind,
+    /// The agent program to start, by the id the host's entry lists it by;
+    /// the host's entry says which kind of agent that starts.
+    pub provider: String,
     pub cwd: String,
     pub name: String,
     /// The provider's model, effort, permission and mode, by their values
-    /// in the host's catalogue; the host's default for each one absent. Only
-    /// Codex takes a mode.
+    /// in the host's catalogue; the host's default for each one absent, and
+    /// for a mode, the agent's own. One the provider takes no pick of at
+    /// start is not sent.
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]

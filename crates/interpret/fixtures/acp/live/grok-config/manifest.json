@@ -1,0 +1,25 @@
+{
+  "spec": "grok-config",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:44.650199Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:28eb3da353c3fea4064cebf5aec02843f4d76ed81b6291fb9c0f8c2dd34a90b3",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 151,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa63-1921-7ad1-b2a0-163dc5f5d38f"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "thought level and mode changed by session/set_config_option and session/set_mode, then one prompt"
+  }
+}

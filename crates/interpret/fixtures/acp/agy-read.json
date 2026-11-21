@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a prompt that has the agent read a file in its folder",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-read/io.jsonl",
+    "format": "acp_io"
+  }
+}

@@ -2274,6 +2274,10 @@ impl Interpreter for Codex {
         holds
     }
 
+    fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
+        crate::shape::fact(fact)
+    }
+
     fn input_shape(input: &Input) -> crate::shape::InputShape {
         crate::shape::codex_input(&input.body)
     }

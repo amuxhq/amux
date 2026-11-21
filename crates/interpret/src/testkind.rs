@@ -694,6 +694,10 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         state.shared.holds()
     }
 
+    fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
+        crate::shape::fact(fact)
+    }
+
     fn input_shape(input: &wire::Input) -> crate::shape::InputShape {
         crate::shape::claude_sdk_input(&input.body)
     }

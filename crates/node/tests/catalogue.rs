@@ -366,7 +366,7 @@ async fn an_unknown_catalogue_is_not_found() {
     assert_eq!(no_agent.code(), Code::NotFound, "{no_agent:?}");
     let host = wire::host_service_client(api.clone())
         .get_catalogue(tonic::Request::new(wire::GetCatalogueRequest {
-            provider: wire::Provider::Codex as i32,
+            provider: "codex".to_owned(),
         }))
         .await
         .unwrap_err();

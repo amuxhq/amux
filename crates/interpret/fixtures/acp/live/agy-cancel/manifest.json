@@ -1,0 +1,25 @@
+{
+  "spec": "agy-cancel",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.189955Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:7a7c58ce146685f5da5998c39bcbf4b3a0508d0b2b3b1a6f441a8e02bedf5ab8",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "f4bea624-bd4c-4c75-bc9f-bf7806c006b1"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a long turn cancelled with session/cancel once it streams, then one more prompt"
+  }
+}

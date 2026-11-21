@@ -106,6 +106,9 @@ pub struct AskUi {
     /// "Reply instead" is open for typing, in `reply`.
     replying: bool,
     reply: Editor,
+    /// A form or link whose agent takes words instead of an answer: Tab on
+    /// its Decline opens them, and they go as the reply.
+    declines_with_words: bool,
 }
 
 fn scope_words(scope: &Scope) -> String {
@@ -211,6 +214,7 @@ pub fn choice_label(choice: &Choice) -> String {
         }
         ChoiceOutcome::ApprovePlan { .. } => "Approve".to_owned(),
         ChoiceOutcome::SendBack => "Send back".to_owned(),
+        ChoiceOutcome::Offered { name, .. } => name.clone(),
         ChoiceOutcome::Submit => "Submit".to_owned(),
         ChoiceOutcome::Decline => "Decline".to_owned(),
         ChoiceOutcome::OpenLink => "I opened it".to_owned(),
@@ -241,6 +245,8 @@ impl AskUi {
             },
             ..AskUi::default()
         };
+        self.declines_with_words =
+            card.reply_instead && matches!(card.body, AskBody::Form { .. } | AskBody::Link { .. });
         match &card.body {
             AskBody::Question(questions) => {
                 self.picks = vec![QuestionPick::default(); questions.len()];
@@ -390,11 +396,8 @@ fn box_choices(card: &AskCard) -> Vec<usize> {
 
 /// A choice in the box, worded as what happens: "Yes", "Yes, and always
 /// allow cargo test in this project", "No, and stop".
-fn box_label(choice: &Choice, kind: wire::Kind) -> String {
+fn box_label(choice: &Choice) -> String {
     match &choice.outcome {
-        ChoiceOutcome::ApprovePlan { mode, .. } if mode.is_empty() && kind == wire::Kind::Codex => {
-            "Yes, implement this plan".to_owned()
-        }
         ChoiceOutcome::AllowOnce => "Yes".to_owned(),
         ChoiceOutcome::AllowForSession => "Yes, and don't ask again this session".to_owned(),
         ChoiceOutcome::AllowAlways {
@@ -413,7 +416,11 @@ fn box_label(choice: &Choice, kind: wire::Kind) -> String {
                 crate::words::named(mode_name, mode)
             )
         }
-        ChoiceOutcome::ApprovePlan { .. } => "Yes, start building".to_owned(),
+        // Approving without switching to another permission: what follows
+        // is the plan's work, whatever the agent.
+        ChoiceOutcome::ApprovePlan { .. } => "Yes, implement this plan".to_owned(),
+        // The agent's own words for an option it offered.
+        ChoiceOutcome::Offered { name, .. } => name.clone(),
         ChoiceOutcome::SendBack => "No, keep planning".to_owned(),
         ChoiceOutcome::GrantForTurn => "Allow for this turn".to_owned(),
         ChoiceOutcome::GrantForSession => "Allow for this session".to_owned(),
@@ -1033,7 +1040,7 @@ impl AskUi {
             );
             push(&mut row, format!("{}. ", at + 1), ink, width);
             let deny = refuses(&choice.outcome);
-            let said = box_label(choice, card.kind);
+            let said = box_label(choice);
             let typed = self.note.text();
             if deny && choice.takes_note && (self.noting || !typed.is_empty()) {
                 // "No: <note>", the note as typed.
@@ -1107,7 +1114,7 @@ fn wrapped_choice_rows(card: &AskCard, width: usize) -> usize {
                 return 1;
             }
             let lead = 2 + format!("{}. ", at + 1).len();
-            label_lines(&box_label(choice, card.kind), lead, width).len()
+            label_lines(&box_label(choice), lead, width).len()
         })
         .sum()
 }
@@ -1536,6 +1543,16 @@ impl AskUi {
             }
             return AskAction::None;
         }
+        // Tab on a form's Decline opens the words to send instead, where
+        // the agent takes them.
+        if key.code == KeyCode::Tab
+            && self.declines_with_words
+            && !self.in_review(questions)
+            && QuestionRows::of(&questions[self.step], card).out == Some(self.selected)
+        {
+            self.replying = true;
+            return AskAction::None;
+        }
         // Tab opens the question's note where the agent takes one, from
         // anywhere, a field's text included; otherwise Tab and Shift+Tab
         // move between tabs.
@@ -1686,6 +1703,12 @@ impl AskUi {
             AskBody::Link { .. }
                 if matches!(card.state, CardState::Open | CardState::Rejected(_)) =>
             {
+                if self.replying {
+                    return Some(keys(&[("enter", "send"), ("esc", "clear"), STOP]));
+                }
+                if self.selected == 2 && self.declines_with_words {
+                    return Some(keys(&[("enter", "decline"), ("tab", "instead"), STOP]));
+                }
                 let enter = if self.selected == 2 {
                     "decline"
                 } else {
@@ -1763,6 +1786,9 @@ impl AskUi {
         }
         if rows.out == Some(self.selected) {
             let enter = if form { "decline" } else { "to type" };
+            if self.declines_with_words {
+                return Some(keys(&[("enter", enter), ("tab", "instead"), STOP]));
+            }
             return Some(with_tabs(enter, &[STOP, more]));
         }
         let note: &[(&str, &str)] = if takes_notes(card) {
@@ -2687,6 +2713,14 @@ impl AskUi {
         }
         push(&mut row, footer, ink, width);
         push(&mut row, "  esc", theme.faint(), width);
+        if self.declines_with_words {
+            push(
+                &mut row,
+                " · tab to say what to do instead",
+                theme.faint(),
+                width,
+            );
+        }
         out.spots
             .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
         out.lines.push(row);
@@ -2885,7 +2919,25 @@ impl AskUi {
     }
 
     fn link_key(&mut self, card: &AskCard, key: KeyEvent) -> AskAction {
+        if self.replying {
+            match key.code {
+                KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    return self.send_reply(card);
+                }
+                KeyCode::Esc => {
+                    self.reply = Editor::default();
+                    self.replying = false;
+                }
+                _ => {
+                    self.reply.key(key);
+                }
+            }
+            return AskAction::None;
+        }
         match key.code {
+            KeyCode::Tab if self.declines_with_words && self.selected == 2 => {
+                self.replying = true;
+            }
             KeyCode::Up | KeyCode::Char('k') => self.selected = self.selected.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => self.selected = (self.selected + 1).min(2),
             KeyCode::Char(c @ '1'..='2') => return self.link_act(card, c as usize - '1' as usize),
@@ -2977,13 +3029,35 @@ impl AskUi {
             theme.attention(),
             width,
         );
-        push(
-            &mut row,
-            "Decline",
-            if lit { theme.bright() } else { theme.faint() },
-            width,
-        );
+        let ink = if lit { theme.bright() } else { theme.faint() };
+        let typed = self.reply.text();
+        if self.replying || !typed.is_empty() {
+            // "Decline: <words>", the words as typed.
+            push(&mut row, "Decline: ", ink, width);
+            let replying = self.replying;
+            out.push_field(
+                row,
+                width,
+                Typed {
+                    typed,
+                    ink: theme.bright(),
+                    spot: Some(BoxSpot::Choice(2)),
+                    cursor: replying,
+                    after: None,
+                },
+            );
+            return out;
+        }
+        push(&mut row, "Decline", ink, width);
         push(&mut row, "  esc", theme.faint(), width);
+        if self.declines_with_words {
+            push(
+                &mut row,
+                " · tab to say what to do instead",
+                theme.faint(),
+                width,
+            );
+        }
         out.spots
             .push((out.lines.len(), (0, width), BoxSpot::Choice(2)));
         out.lines.push(row);
@@ -3065,6 +3139,7 @@ mod tests {
             question_note: false,
             question_skip: false,
             question_reply: false,
+            reply_instead: false,
             stops_turn: true,
             default_to_no: false,
             state: CardState::Open,

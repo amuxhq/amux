@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a prompt with a PNG image attached",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-image/io.jsonl",
+    "format": "acp_io"
+  }
+}

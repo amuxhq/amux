@@ -404,6 +404,7 @@ fn marked_history() -> ClientSessionHistory {
                 why: Some(wire::blocked_notice::Why::Failed(marked())),
             })),
         })),
+        capabilities: Some(wire::AgentCapabilities::claude_sdk()),
     };
     let prompt = wire::Input::new(
         b"sent".to_vec(),

@@ -12,8 +12,10 @@ mod device;
 mod frame;
 mod perf;
 mod phone;
+mod phone_acp;
 mod phone_stories;
 mod terminal;
+mod terminal_acp;
 mod terminal_stories;
 
 use std::collections::BTreeMap;

@@ -160,6 +160,10 @@ struct Fixture {
     #[serde(default)]
     spec: FixtureSpec,
     recording: Option<Recording>,
+    /// Recordings of the agent's later incarnations, each read after the
+    /// one before it ended and the agent was reincarnated.
+    #[serde(default)]
+    incarnations: Vec<Recording>,
     #[serde(default)]
     prelude: Vec<Value>,
     #[serde(default)]
@@ -186,6 +190,13 @@ struct FixtureSpec {
     /// Nobody chose the agent's name, so its provider titles it.
     #[serde(default)]
     unnamed: bool,
+    /// The agent program's id, for a kind that runs more than one (ACP).
+    #[serde(default)]
+    provider: String,
+    /// The settings the agent was created with.
+    model: Option<String>,
+    effort: Option<String>,
+    mode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -231,6 +242,9 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::E
 enum Action {
     Event(Event),
     Checkpoint,
+    /// The agent's next incarnation starts from the state the last one
+    /// left.
+    Reincarnate,
 }
 
 struct Scripted {
@@ -454,7 +468,7 @@ pub fn fixture_script<I: Interpreter>(fixture: &Path) -> Result<FixtureScript, S
         .map(|scripted| {
             let event = match scripted.action {
                 Action::Event(event) => Some(event),
-                Action::Checkpoint => None,
+                Action::Checkpoint | Action::Reincarnate => None,
             };
             (scripted.label, event)
         })
@@ -536,9 +550,10 @@ pub fn run_golden<I: Interpreter>(fixture: &Path) -> GoldenReport {
     report.violations.extend(check_resumes(&frames));
     report.failures = check_expectations::<I>(&frames, &script);
 
-    // The checkpoint property, at every prefix.
+    // The checkpoint property, at every prefix of a short script and at the
+    // telling ones of a long one.
     let whole = merge(&frames);
-    for at in 0..=script.len() {
+    for at in checkpoint_points(&script) {
         match execute::<I>(&spec, &script, Some(at)) {
             Ok(resumed) => {
                 if let Some(problem) = check_resumes(&resumed).into_iter().next() {
@@ -600,6 +615,15 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
         created_at_ms: spec.created_at_ms,
         incarnation: 1,
         provider_args: spec.provider_args.clone(),
+        provider: spec.provider.clone(),
+        config: (spec.model.is_some() || spec.effort.is_some() || spec.mode.is_some()).then(|| {
+            wire::EffectiveConfig {
+                model: spec.model.clone(),
+                effort: spec.effort.clone(),
+                mode: spec.mode.clone(),
+                ..Default::default()
+            }
+        }),
         parent: spec.parent.then(|| wire::AgentRef {
             host_id: b"parent-host".to_vec(),
             agent_id: b"parent".to_vec(),
@@ -622,7 +646,24 @@ fn script<I: Interpreter>(fixture: &Path, parsed: &Fixture) -> Result<Vec<Script
             scripted::<I>(&host, value).map_err(|error| format!("prelude {index}: {error}"))?,
         );
     }
-    if let Some(recording) = &parsed.recording {
+    let recordings = parsed
+        .recording
+        .iter()
+        .map(|recording| (false, recording))
+        .chain(
+            parsed
+                .incarnations
+                .iter()
+                .map(|recording| (true, recording)),
+        );
+    for (reincarnate, recording) in recordings {
+        if reincarnate {
+            script.push(Scripted {
+                label: format!("reincarnate for {}", recording.format),
+                action: Action::Reincarnate,
+                expect: None,
+            });
+        }
         let path = fixture
             .parent()
             .unwrap_or(Path::new("."))
@@ -724,6 +765,7 @@ fn scripted<I: Interpreter>(host: &[u8], value: &Value) -> Result<Scripted, Stri
         "stop" => Action::Event(Event::StopRequested),
         "git" => Action::Event(Event::Git(git_of(body)?)),
         "checkpoint" => Action::Checkpoint,
+        "reincarnate" => Action::Reincarnate,
         other => return Err(format!("unknown action {other:?}")),
     };
     Ok(Scripted {
@@ -1041,6 +1083,72 @@ pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
     Some(Input::new(input_id, wire::CodexInput { of: Some(of) }))
 }
 
+/// An ACP input. An answer is `{"option": "<option id>"}` for a
+/// permission, `{"form": {"action": "accept", "content": {…}}}`,
+/// `{"link": {"action": "decline"}}`, or `{"reply": {"text": "…"}}`.
+pub fn acp_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
+    use wire::acp_input::Of;
+    let of = match input {
+        FixtureInput::Prompt { text } => Of::Prompt(prompt(text)),
+        FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
+        FixtureInput::SendNow { target } => Of::SendNow(send_now(target)),
+        FixtureInput::Interrupt {} => Of::Interrupt(wire::Interrupt {}),
+        FixtureInput::Answer { ask, answer } => Of::Answer(acp_answer(ask, answer)?),
+        FixtureInput::Model { model } => Of::Model(wire::SetModel {
+            model: model.clone(),
+        }),
+        FixtureInput::Effort { effort } => Of::Effort(wire::SetEffort {
+            effort: effort.clone(),
+        }),
+        FixtureInput::Mode { value } => Of::Mode(wire::SetMode {
+            value: value.clone(),
+        }),
+        FixtureInput::Clear {}
+        | FixtureInput::CyclePermissionMode {}
+        | FixtureInput::Permission { .. }
+        | FixtureInput::StopJob { .. }
+        | FixtureInput::Raw { .. } => return None,
+    };
+    Some(Input::new(input_id, wire::AcpInput { of: Some(of) }))
+}
+
+fn acp_answer(ask: &str, answer: &Value) -> Option<wire::AcpAnswer> {
+    use wire::acp_answer::Of;
+    let action = |value: &Value| {
+        wire::FormAction::from_str_name(&format!(
+            "FORM_ACTION_{}",
+            value
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_uppercase()
+        ))
+        .map(|action| action as i32)
+    };
+    let of = if let Some(option) = answer.get("option").and_then(Value::as_str) {
+        Of::Option(option.to_owned())
+    } else if let Some(reply) = answer.get("reply") {
+        Of::Reply(reply_instead(reply))
+    } else if let Some(link) = answer.get("link") {
+        Of::Link(wire::LinkAnswer {
+            action: action(link)?,
+        })
+    } else {
+        let form = answer.get("form")?;
+        Of::Form(wire::FormAnswer {
+            action: action(form)?,
+            content_json: form
+                .get("content")
+                .map(|content| content.to_string().into_bytes())
+                .unwrap_or_default(),
+        })
+    };
+    Some(wire::AcpAnswer {
+        ask_key: ask.to_owned(),
+        of: Some(of),
+    })
+}
+
 /// One response per question: an option index, a list of indices for a
 /// multi-select, a string for a typed answer, or null for a skip. `notes`
 /// holds each question's note (null for none); a lone `note` goes on the
@@ -1191,7 +1299,8 @@ fn execute<I: Interpreter>(
     script: &[Scripted],
     checkpoint_at: Option<usize>,
 ) -> Result<Vec<Frame>, String> {
-    let (mut state, first) = I::initial(spec);
+    let mut spec = spec.clone();
+    let (mut state, first) = I::initial(&spec);
     let mut frames = vec![Frame {
         label: "initial".into(),
         step: first,
@@ -1239,6 +1348,18 @@ fn execute<I: Interpreter>(
                     broken: None,
                 });
             }
+            Action::Reincarnate => {
+                spec.incarnation += 1;
+                let (next, step) = I::reincarnate(round_trip(&state)?.0, &spec);
+                state = next;
+                frames.push(Frame {
+                    label: "reincarnate".into(),
+                    step,
+                    effects: Vec::new(),
+                    pending: I::pending_messages(&state),
+                    broken: None,
+                });
+            }
         }
     }
     if checkpoint_at == Some(script.len()) {
@@ -1252,6 +1373,43 @@ fn execute<I: Interpreter>(
         });
     }
     Ok(frames)
+}
+
+/// Scripts up to this many events are checked from a checkpoint after
+/// every prefix.
+const CHECK_EVERY_PREFIX: usize = 96;
+
+/// How many prefixes of a long script are checked besides those around
+/// something other than a fact: each check runs the whole script again, so
+/// checking every prefix of a recording of hundreds of streamed chunks
+/// takes minutes and finds nothing the samples do not.
+const SAMPLED_PREFIXES: usize = 48;
+
+/// The prefixes a checkpoint is taken after. A short script: every one. A
+/// long one: its first [`SAMPLED_PREFIXES`] / 2, then evenly spaced ones up
+/// to the same number again, the end, and both sides of every event that
+/// is not a provider fact (an input, an agent message, a stop, an exit, a
+/// reincarnation), where the queue, the asks and the turn change hands.
+fn checkpoint_points(script: &[Scripted]) -> Vec<usize> {
+    let len = script.len();
+    if len <= CHECK_EVERY_PREFIX {
+        return (0..=len).collect();
+    }
+    let head = SAMPLED_PREFIXES / 2;
+    let stride = (len - head).div_ceil(SAMPLED_PREFIXES - head).max(1);
+    let mut points: std::collections::BTreeSet<usize> = (0..head).collect();
+    points.extend((head..len).step_by(stride));
+    points.insert(len);
+    for (index, scripted) in script.iter().enumerate() {
+        if !matches!(
+            scripted.action,
+            Action::Event(Event::Fact(_) | Event::Tick { .. })
+        ) {
+            points.insert(index);
+            points.insert(index + 1);
+        }
+    }
+    points.into_iter().collect()
 }
 
 /// The invariants every interpreter's journal obeys, over the steps of one
@@ -2055,6 +2213,7 @@ fn named_catalogue(step: &Step) -> Option<&[u8]> {
 fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
     match effect {
         Effect::ProviderWrite(bytes) => format!("write {}", display_bytes(bytes)),
+        Effect::AcpReopen => "reopen the session".to_owned(),
         Effect::Reply { input_id, verdict } => {
             format!("reply {} {}", display_id(input_id), verdict_name(verdict))
         }
@@ -2062,6 +2221,10 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
             format!("inject {} via {via:?}", display_id(id))
         }
         Effect::CodexTurnInput {
+            request,
+            attachments,
+        }
+        | Effect::AcpPrompt {
             request,
             attachments,
         } => format!(

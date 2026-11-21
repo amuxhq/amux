@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a long turn cancelled with session/cancel once it streams, then one more prompt",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-cancel/io.jsonl",
+    "format": "acp_io"
+  }
+}

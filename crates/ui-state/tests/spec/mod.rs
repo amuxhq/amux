@@ -6,6 +6,7 @@ mod harness;
 
 mod activity;
 mod asks;
+mod capabilities;
 mod fleet;
 mod following;
 mod inputs;

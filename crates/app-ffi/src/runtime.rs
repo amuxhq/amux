@@ -480,13 +480,6 @@ pub unsafe extern "C" fn amux_pastes_as_attachment(pasted: *const c_char) -> boo
     ui_view::pastes_as_attachment(pasted)
 }
 
-/// The most an attachment may hold, in bytes; the hosts refuse more, so a
-/// client can refuse it before reading or uploading anything.
-#[unsafe(no_mangle)]
-pub extern "C" fn amux_attachment_limit() -> u64 {
-    ui_view::ATTACHMENT_SIZE_LIMIT as u64
-}
-
 /// Starts the installation from a `StartConfig` as JSON, its transport
 /// on a thread of its own and its cores stepped by `amux_runtime_step`.
 /// Blocks, stepping them on the calling thread, until every profile's

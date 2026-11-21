@@ -35,14 +35,76 @@ final class ChatWordsTests: XCTestCase {
     func testARunSaysWhatItDidAndThatItContinuesBelow() {
         let run = Run(
             first: "a", last: "b", steps: 6, live: false, openBelow: false, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         XCTAssertEqual(ChatWords.run(run, counts: run.counts), "Read 4 files, searched 2 times")
         let open = Run(
             first: "a", last: "b", steps: 41, live: false, openBelow: true, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1, denied: 0), hidden: nil,
             recent: nil)
         XCTAssertEqual(ChatWords.run(open, counts: open.counts), "Read 40+ files, used 1+ tools")
+    }
+
+    func testTheActivityLineNamesADescribedCommandInProseAndABareOneAsCode() {
+        let command = { (description: String) in
+            self.row(.command(
+                command: "sleep 90\nmore", description: description, state: .running, outputHead: [],
+                moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil))
+        }
+        XCTAssertEqual(
+            ChatWords.subject(of: command("Sleep for 90 seconds")), ChatWords.Subject("Sleep for 90 seconds", code: false))
+        XCTAssertEqual(ChatWords.subject(of: command("")), ChatWords.Subject("sleep 90", code: true))
+        XCTAssertEqual(
+            ChatWords.subject(of: row(.explore(verb: .read, subject: "src/lib.rs", state: .running, result: ""))),
+            ChatWords.Subject("src/lib.rs", code: true))
+    }
+
+    func testAnAgentThatCannotReopenItsConversationSaysSoByName() {
+        XCTAssertEqual(
+            ChatWords.endedForGood(provider: "OpenCode"), "Ended · OpenCode can’t reopen this conversation")
+        XCTAssertEqual(
+            ChatWords.settleEndsForGood(provider: "OpenCode"),
+            "OpenCode can’t reopen this conversation, so settling ends it for good.")
+    }
+
+    func testSettlingAsksWhenItCutsWorkOrEndsTheConversationForGood() {
+        let warning = { (turn: SettleTurn?, jobs: UInt32, resumable: Bool, native: Bool) in
+            SettleWarning(
+                backgroundJobs: jobs, subagents: 0, resumable: resumable, providerSubagent: native, turn: turn)
+        }
+        let idle = warning(nil, 0, true, false)
+        XCTAssertFalse(idle.asks, "a message undoes it")
+        XCTAssertNil(ChatWords.closeCuts(name: "desk-1", idle))
+        XCTAssertNil(ChatWords.settleEndsForGood(provider: "OpenCode", idle))
+
+        let working = warning(.working, 2, true, false)
+        XCTAssertTrue(working.asks)
+        XCTAssertEqual(ChatWords.closeCuts(name: "desk-1", working), "desk-1 is working and has 2 background jobs.")
+
+        let unresumable = warning(nil, 0, false, false)
+        XCTAssertTrue(unresumable.asks)
+        XCTAssertFalse(unresumable.cuts)
+        XCTAssertEqual(
+            ChatWords.settleEndsForGood(provider: "OpenCode", unresumable),
+            "OpenCode can’t reopen this conversation, so settling ends it for good.")
+
+        let native = warning(nil, 0, false, true)
+        XCTAssertFalse(native.asks, "a provider's subagent goes with its parent")
+    }
+
+    func testARefusedStepFoldsAsDeniedNotAsWhatItWouldHaveDone() {
+        let counts = { (commands: UInt32, denied: UInt32) in
+            RunCounts(
+                commands: commands, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0,
+                other: 0, denied: denied)
+        }
+        let run = { (steps: UInt32) in
+            Run(
+                first: "a", last: "b", steps: steps, live: false, openBelow: false, liveShown: false,
+                unresolvedFailure: false, open: false, counts: nil, hidden: nil, recent: nil)
+        }
+        XCTAssertEqual(ChatWords.run(run(1), counts: counts(0, 1)), "Denied 1 step")
+        XCTAssertEqual(ChatWords.run(run(3), counts: counts(1, 2)), "Ran 1 command, denied 2 steps")
     }
 
     func testADescribedCommandReadsAsTheAgentsWordsOverTheCommand() {
@@ -269,29 +331,57 @@ final class ChatWordsTests: XCTestCase {
             "5-hour limit reached")
     }
 
-    func testSigningInIsAskedForOnTheAgentsHost() {
-        XCTAssertEqual(ChatWords.needsSignIn(.claudeSdk), "Claude needs you to sign in")
-        XCTAssertEqual(ChatWords.signInSteps(.claudeSdk, host: "desk"), "Run claude and sign in with /login on desk.")
-        XCTAssertEqual(ChatWords.needsSignIn(.codex), "Codex needs you to sign in")
-        XCTAssertEqual(ChatWords.signInSteps(.codex, host: "desk"), "Run codex login on desk.")
+    func testSigningInIsAskedForOnTheAgentsHostInItsOwnWords() {
+        XCTAssertEqual(ChatWords.needsSignIn("Claude"), "Claude needs you to sign in")
+        XCTAssertEqual(
+            ChatWords.signInSteps("Run claude and sign in with /login.", host: "desk"),
+            "Run claude and sign in with /login on desk.")
+        XCTAssertEqual(ChatWords.needsSignIn("Codex"), "Codex needs you to sign in")
+        XCTAssertEqual(ChatWords.signInSteps("Run codex login.", host: "desk"), "Run codex login on desk.")
+        // An ACP agent's own words, shown as the host gives them.
+        XCTAssertEqual(
+            ChatWords.signInSteps("Run opencode auth login in the terminal", host: "desk"),
+            "Run opencode auth login in the terminal on desk.")
+        XCTAssertEqual(ChatWords.signInSteps("", host: "desk"), "Sign it in on desk.")
+        // After a sentence that already named the host.
+        XCTAssertEqual(ChatWords.signInStepsThere("Run codex login."), "Run codex login there.")
+        XCTAssertEqual(ChatWords.signInStepsThere(""), "Sign it in there.")
     }
 
     /// The notice stands above a composer that still sends, so it ends
     /// saying that sending is how to try again.
     func testTheSignInNoticeEndsSayingSendingTriesAgain() {
-        let failed = SignInView(state: .failed, account: "ada@example.com", message: "OAuth token has expired.")
+        let failed = SignInView(
+            state: .failed, account: "ada@example.com", message: "OAuth token has expired.",
+            providerName: "Claude", hint: "Run claude and sign in with /login.")
         XCTAssertEqual(
-            ChatWords.signInDetail(failed, kind: .claudeSdk, host: "desk"),
+            ChatWords.signInDetail(failed, host: "desk"),
             """
             Sign-in failed · ada@example.com
             OAuth token has expired.
             Run claude and sign in with /login on desk.
             Signed in elsewhere? Send a message to try again.
             """)
-        let signedOut = SignInView(state: .signedOut, account: "", message: "")
+        let signedOut = SignInView(
+            state: .signedOut, account: "", message: "", providerName: "Codex", hint: "Run codex login.")
         XCTAssertEqual(
-            ChatWords.signInDetail(signedOut, kind: .codex, host: "desk"),
+            ChatWords.signInDetail(signedOut, host: "desk"),
             "Signed out\nRun codex login on desk.\nSigned in elsewhere? Send a message to try again.")
+    }
+
+    /// OpenCode and the fake agent name their sign-in command between
+    /// backticks; it is drawn as code, never with the backticks showing.
+    func testAnAgentsBacktickedCommandIsDrawnAsCode() {
+        let drawn = ChatWords.withCode("Run `opencode auth login` in the terminal on desk.")
+        XCTAssertEqual(String(drawn.characters), "Run opencode auth login in the terminal on desk.")
+        let code = drawn.runs.filter { $0.inlinePresentationIntent == .code }
+            .map { String(drawn[$0.range].characters) }
+        XCTAssertEqual(code, ["opencode auth login"])
+        XCTAssertEqual(ChatWords.withoutCodeMarks("Run `a` then `b`."), "Run a then b.")
+        // Words with no span are as written, and a span never closed keeps
+        // its backtick.
+        XCTAssertEqual(ChatWords.withoutCodeMarks("Run codex login."), "Run codex login.")
+        XCTAssertEqual(ChatWords.withoutCodeMarks("a `b` c `d"), "a b c `d")
     }
 
     func testAQueuedPromptSaysWhetherItWasSteered() {
@@ -455,7 +545,7 @@ final class ChatWordsTests: XCTestCase {
                 body: .edit(
                     path: "/work/notes.txt", files: 1, added: 1, removed: 0, patch: [], reason: "",
                     created: created, line: 1),
-                choices: [], questionNote: false, questionSkip: false, questionReply: false,
+                choices: [], questionNote: false, questionSkip: false, questionReply: false, replyInstead: false,
                 stopsTurn: false, defaultToNo: false, state: .open)
         }
         XCTAssertEqual(ChatWords.headline(card(false)), "Wants to edit a file")
@@ -499,9 +589,9 @@ final class ChatWordsTests: XCTestCase {
     /// A subagent's composer names its provider and has no placeholder to
     /// show, since there is no field.
     func testASubagentsComposerNamesWhoRunsIt() {
-        XCTAssertEqual(ChatWords.nativeRunner(.claudeSdk), "Claude runs this subagent")
-        XCTAssertEqual(ChatWords.nativeRunner(.claudePty), "Claude runs this subagent")
-        XCTAssertEqual(ChatWords.nativeRunner(.codex), "Codex runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner("Claude"), "Claude runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner("Codex"), "Codex runs this subagent")
+        XCTAssertEqual(ChatWords.nativeRunner(nil), "Its provider runs this subagent")
         XCTAssertEqual(
             ChatWords.placeholder(.native(stop: .unavailable), host: "desk", reach: .online(.direct), working: true), "")
     }

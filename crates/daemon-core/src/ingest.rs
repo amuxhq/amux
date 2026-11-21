@@ -86,6 +86,9 @@ impl Daemon {
                 frames: 0,
                 turn_ends: 0,
                 kind: 0,
+                provider: String::new(),
+                picked: None,
+                acp_sign_in: None,
                 end: IngestEnd::Failed(error.to_string()),
                 seen,
                 skipped: 0,
@@ -150,6 +153,9 @@ impl Daemon {
             frames: batch.frames.len() as u32,
             turn_ends: 0,
             kind: 0,
+            provider: String::new(),
+            picked: None,
+            acp_sign_in: None,
             end: if batch.more {
                 IngestEnd::More
             } else {
@@ -190,10 +196,37 @@ impl Daemon {
                 .iter()
                 .filter(|(_, step)| step.turn_end.is_some())
                 .count() as u32;
+            report.picked = batch
+                .frames
+                .iter()
+                .filter_map(|(_, step)| step.picked.clone())
+                .reduce(|mut held, newer| {
+                    held.model = newer.model.or(held.model);
+                    held.effort = newer.effort.or(held.effort);
+                    held
+                });
+            report.acp_sign_in = batch
+                .frames
+                .iter()
+                .rev()
+                .find_map(|(_, step)| step.snapshot.as_ref())
+                .filter(|snapshot| snapshot.kind == wire::Kind::Acp as i32)
+                .and_then(|snapshot| {
+                    use prost::Message as _;
+                    let body = wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()?;
+                    let state = body.sign_in?.state();
+                    let agent = body.agent?;
+                    (state != wire::SignInState::Unspecified).then_some((agent, state))
+                });
+            if (report.turn_ends > 0 || report.picked.is_some())
+                && let Some(row) = self.store.agent(&key)?
+            {
+                report.kind = row.kind;
+                report.provider = row.provider_id().to_owned();
+            }
             if report.turn_ends > 0 {
                 // A turn end may have written an outbox row.
                 self.deliveries_due();
-                report.kind = self.store.agent(&key)?.map_or(0, |row| row.kind);
                 // It may have committed or reverted what other agents in
                 // its checkout count as their changes.
                 self.turn_ended_beside(agent, out);
@@ -487,6 +520,9 @@ mod tests {
                 frames: INGEST_BATCH as u32,
                 turn_ends: 0,
                 kind: 0,
+                provider: String::new(),
+                picked: None,
+                acp_sign_in: None,
                 end: IngestEnd::More,
                 seen: end,
                 skipped: 0,

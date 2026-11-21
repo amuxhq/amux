@@ -145,6 +145,18 @@
         }
       }
     },
+    "%@ PERMISSIONS" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ PERMISSIONS"
+          }
+        }
+      }
+    },
     "%@ could not say what %@ offers. The agent starts with the computer’s defaults." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
@@ -349,18 +361,6 @@
         }
       }
     },
-    "%@ is not attached because it is over the %@ MB limit for attachments." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is not attached because it is over the %@ MB limit for attachments."
-          }
-        }
-      }
-    },
     "%@ is not attached: %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
@@ -373,14 +373,14 @@
         }
       }
     },
-    "%@ is not signed in on %@. Its agents can’t work there until it is." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+    "%@ is not signed in on %@. Its agents can’t work there until it is. %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is not signed in on %@. Its agents can’t work there until it is."
+            "value" : "%@ is not signed in on %@. Its agents can’t work there until it is. %@"
           }
         }
       }
@@ -529,6 +529,18 @@
         }
       }
     },
+    "%@ needs you to sign in" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ needs you to sign in"
+          }
+        }
+      }
+    },
     "%@ of %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -585,6 +597,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ on %@"
+          }
+        }
+      }
+    },
+    "%@ on %@." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ on %@."
           }
         }
       }
@@ -649,6 +673,30 @@
         }
       }
     },
+    "%@ runs this subagent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ runs this subagent"
+          }
+        }
+      }
+    },
+    "%@ starts on its own model and settings." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ starts on its own model and settings."
+          }
+        }
+      }
+    },
     "%@ subagents" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -669,6 +717,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ subagents working"
+          }
+        }
+      }
+    },
+    "%@ there." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ there."
           }
         }
       }
@@ -1233,6 +1293,114 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A report includes a screenshot and this phone’s diagnostic dump."
+          }
+        }
+      }
+    },
+    "Agent’s default" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent’s default"
+          }
+        }
+      }
+    },
+    "Asking %@ which agents it runs…" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asking %@ which agents it runs…"
+          }
+        }
+      }
+    },
+    "Ended · %@ can’t reopen this conversation" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ended · %@ can’t reopen this conversation"
+          }
+        }
+      }
+    },
+    "PERMISSIONS" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PERMISSIONS"
+          }
+        }
+      }
+    },
+    "Sign it in on %@." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign it in on %@."
+          }
+        }
+      }
+    },
+    "Sign it in there." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign it in there."
+          }
+        }
+      }
+    },
+    "The model refused to go on" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The model refused to go on"
+          }
+        }
+      }
+    },
+    "The turn reached its limit on model requests" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The turn reached its limit on model requests"
+          }
+        }
+      }
+    },
+    "The turn reached the model’s token limit" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The turn reached the model’s token limit"
           }
         }
       }
@@ -2629,30 +2797,6 @@
         }
       }
     },
-    "CLAUDE PERMISSIONS" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CLAUDE PERMISSIONS"
-          }
-        }
-      }
-    },
-    "CODEX PERMISSIONS" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CODEX PERMISSIONS"
-          }
-        }
-      }
-    },
     "Cancel" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxCore/Sources/AmuxCore/AskPanels.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/AskPanelView.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/DiffPage.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Overflow.swift, ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Report.swift.",
       "extractionState" : "manual",
@@ -2845,18 +2989,6 @@
         }
       }
     },
-    "Claude needs you to sign in" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude needs you to sign in"
-          }
-        }
-      }
-    },
     "Claude’s own view switched to another conversation" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
@@ -2925,18 +3057,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Codex"
-          }
-        }
-      }
-    },
-    "Codex needs you to sign in" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Codex needs you to sign in"
           }
         }
       }
@@ -5601,30 +5721,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Review changes"
-          }
-        }
-      }
-    },
-    "Run claude and sign in with /login on %@." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run claude and sign in with /login on %@."
-          }
-        }
-      }
-    },
-    "Run codex login on %@." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run codex login on %@."
           }
         }
       }
@@ -9361,18 +9457,6 @@
         }
       }
     },
-    "the provider" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the provider"
-          }
-        }
-      }
-    },
     "the runtime answered what this build cannot read" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
       "extractionState" : "manual",
@@ -9873,6 +9957,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ can be paired"
+          }
+        }
+      }
+    },
+    "%@ can’t reopen this conversation, so settling ends it for good." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can’t reopen this conversation, so settling ends it for good."
           }
         }
       }
@@ -10561,6 +10657,18 @@
         }
       }
     },
+    "Its chat and edits stay." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its chat and edits stay."
+          }
+        }
+      }
+    },
     "Its chat and edits stay. A message resumes it." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState" : "manual",
@@ -11061,30 +11169,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "done"
-          }
-        }
-      }
-    },
-    "Claude runs this subagent" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claude runs this subagent"
-          }
-        }
-      }
-    },
-    "Codex runs this subagent" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/Subagents.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Codex runs this subagent"
           }
         }
       }

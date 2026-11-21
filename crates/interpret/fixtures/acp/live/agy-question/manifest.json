@@ -1,0 +1,25 @@
+{
+  "spec": "agy-question",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.838523Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:92e98fdb45aea3d25fcc2b4dbb105e642289cb32b5a93b55eb5e9d1500cf2327",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "9f3b65d6-2129-49d6-a8ab-7c0fcf5f11ff"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt asking the agent to put a question to the person with its own question tool rather than in chat"
+  }
+}

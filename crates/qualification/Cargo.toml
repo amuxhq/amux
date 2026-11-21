@@ -46,6 +46,13 @@ path = "src/bin/claude_probe/main.rs"
 name = "codex-probe"
 path = "src/bin/codex_probe/main.rs"
 
+# Stands in for any Agent Client Protocol agent: runs it, carries its stdio
+# and records what crosses; `acp-probe join` sanitizes a capture into the
+# ACP corpus.
+[[bin]]
+name = "acp-probe"
+path = "src/bin/acp_probe/main.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 jiff = { workspace = true }
@@ -102,6 +109,14 @@ required-features = ["live"]
 [[test]]
 name = "codex_live"
 path = "tests/codex_live.rs"
+harness = false
+required-features = ["live"]
+
+# The ACP agents under their real programs, driven by a scripted client:
+# `just live acp <agent> <scenario>`.
+[[test]]
+name = "acp_live"
+path = "tests/acp_live.rs"
 harness = false
 required-features = ["live"]
 

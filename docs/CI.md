@@ -74,7 +74,7 @@ takes seconds shares a job, and the models run a few to a job.
 | Job | Runner | Runs |
 | --- | --- | --- |
 | Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just lint` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
+| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just client-kind-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
 | Test | `ubuntu-latest` (2 halves), `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models` (partitioned `count:N/2` on Linux and macOS; whole suite on Windows, which compiles out the slow Unix suites) |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, three jobs | `just test-crate models -- --cargo-profile models --no-fail-fast` filtered to each job's models at their CI bounds |
@@ -339,6 +339,7 @@ stopping at the first failure:
 | `shear` | Every dependency a manifest lists is used by that crate's code; one only the code cannot show, such as a crate named only to pass on a feature, is listed in that crate's manifest as one to skip, with why |
 | `cores-check` | No state-machine core (`daemon-core`, `relay-core`, `agent-core`, `supervisor-core`) nor the `core-ring` they record inputs in has tokio in its dependency graph on any target, and none of their sources holds a lock, spawns a task or awaits ([`scripts/cores-check.py`](../scripts/cores-check.py)) |
 | `typed-provider-check` | The interpreters, the agent's provider handshake and Claude's messaging socket read and write provider messages only through the protocol crates: no `json!`, field looked up by name or untyped `Value` outside the listed tool payloads ([`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py)) |
+| `client-kind-check` | The client crates (ui-state, ui-view, ui-runtime, tui, app-runtime, browser-core) decide nothing by an agent's `Kind` or by a provider id written out (Claude's, Codex's or a built-in ACP agent's, read from `wire::agents::BUILT_INS`), outside the listed places, each with its reason; a listed place that matches nothing fails too ([`scripts/client-kind-check.py`](../scripts/client-kind-check.py)) |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
 | `test` | Every workspace test, under nextest |

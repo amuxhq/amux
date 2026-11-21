@@ -300,6 +300,12 @@
       "clients": ["phone", "terminal", "mac"]
     },
     {
+      "name": "new-agent.agents",
+      "shows": "Choosing which agent a new agent is: every agent the host offers by name, Claude and Codex and the ACP agents set up there, one of them not signed in with what to do about it.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not draw a host offering ACP agents yet."
+    },
+    {
       "name": "new-agent.terminal",
       "shows": "The New Agent window for a person who chats in each agent's own terminal.",
       "clients": ["terminal"],
@@ -362,6 +368,36 @@
       "name": "chat.queued",
       "shows": "Prompts queued behind a turn still running.",
       "clients": ["phone", "terminal"]
+    },
+    {
+      "name": "chat.acp",
+      "shows": "An ACP agent's chat: the file it read, the change it made and its answer, under the agent's own name.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
+    },
+    {
+      "name": "chat.acp-permission",
+      "shows": "An ACP agent asking before it acts, with exactly the choices the agent offers, an always-allow among them, and a way to say what to do instead.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
+    },
+    {
+      "name": "chat.acp-form",
+      "shows": "An ACP agent asking for answers in a form of its own, with a way to decline and say what to do instead.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
+    },
+    {
+      "name": "chat.acp-queued",
+      "shows": "A prompt queued behind an ACP agent's running turn, which it cannot take into that turn: no send-now, only withdrawing it.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
+    },
+    {
+      "name": "chat.acp-ended",
+      "shows": "An ACP agent that exited and cannot reopen its conversation: in the composer's place, that it has ended and takes no more messages.",
+      "clients": ["terminal"],
+      "why": "The phone's and the Mac's storybooks do not replay ACP recordings yet."
     },
     {
       "name": "chat.away",

@@ -19,6 +19,57 @@ pub fn agent(kind: Kind) -> wire::Agent {
     }
 }
 
+/// What the shared agent's host offers: Claude, here headless, and Codex,
+/// each signed in, with the sign-in words their hosts give.
+pub fn offered_providers() -> Vec<wire::ProviderOnHost> {
+    vec![
+        hinted(
+            offered("claude", "Claude", Kind::ClaudeSdk),
+            "Run claude and sign in with /login.",
+        ),
+        hinted(offered("codex", "Codex", Kind::Codex), "Run codex login."),
+    ]
+}
+
+/// One agent a host offers, signed in, with what its kind's agents can do.
+pub fn offered(id: &str, name: &str, kind: Kind) -> wire::ProviderOnHost {
+    wire::ProviderOnHost {
+        provider_id: id.into(),
+        catalogue: Some(vec![0; 32]),
+        signed_in: true,
+        descriptor: Some(wire::ProviderDescriptor {
+            name: name.into(),
+            kind: kind as i32,
+            ..Default::default()
+        }),
+        capabilities: Some(
+            wire::AgentCapabilities::of_kind(kind)
+                .unwrap_or_else(|| wire::AgentCapabilities::acp(true, true, false)),
+        ),
+    }
+}
+
+/// `offer` with its host's words for signing in.
+pub fn hinted(mut offer: wire::ProviderOnHost, hint: &str) -> wire::ProviderOnHost {
+    if let Some(descriptor) = offer.descriptor.as_mut() {
+        descriptor.sign_in_hint = hint.into();
+    }
+    offer
+}
+
+/// The shared agent's host as its session knows it: online, offering
+/// `providers`.
+pub fn host_entry(providers: Vec<wire::ProviderOnHost>) -> wire::HostEntry {
+    wire::HostEntry {
+        providers,
+        ..wire::HostEntry::trusted_host(
+            b"host".to_vec(),
+            "studio",
+            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+        )
+    }
+}
+
 pub fn caught_up(revision: u64) -> Msg {
     Msg::Event(SessionEvent {
         of: Some(session_event::Of::CaughtUp(wire::CaughtUp { revision })),

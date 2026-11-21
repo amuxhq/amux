@@ -1035,6 +1035,65 @@ fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
     );
 }
 
+/// A model or effort a person picks is said on the step where Claude took
+/// it, for its host to keep, and not as it is asked for: one Claude
+/// refuses is never kept.
+#[test]
+fn a_pick_is_said_once_claude_took_it() {
+    let mut state = started();
+    let request_id = |stepped: &interpret::Stepped| -> Value {
+        stepped
+            .effects
+            .iter()
+            .find_map(|effect| match effect {
+                Effect::ProviderWrite(bytes) => serde_json::from_slice::<Value>(bytes)
+                    .ok()
+                    .filter(|line| line["type"] == "control_request"),
+                _ => None,
+            })
+            .expect("a control request")["request_id"]
+            .clone()
+    };
+    let answered = |state: &mut State, id: Value, subtype: &str| {
+        ClaudeSdk::step(
+            state,
+            stream(json!({"type": "control_response",
+                "response": {"subtype": subtype, "request_id": id, "error": "no"}})),
+        )
+    };
+
+    let asked = ClaudeSdk::step(
+        &mut state,
+        sdk_input(
+            b"m",
+            wire::claude_sdk_input::Of::Model(wire::SetModel {
+                model: Some("haiku".into()),
+            }),
+        ),
+    );
+    assert_eq!(asked.step.picked, None, "asked, not yet taken");
+    let taken = answered(&mut state, request_id(&asked), "success");
+    assert_eq!(
+        taken.step.picked,
+        Some(wire::PickTaken {
+            model: Some("haiku".into()),
+            effort: None,
+        })
+    );
+
+    let asked = ClaudeSdk::step(
+        &mut state,
+        sdk_input(
+            b"e",
+            wire::claude_sdk_input::Of::Effort(wire::SetEffort {
+                effort: Some("high".into()),
+            }),
+        ),
+    );
+    let refused = answered(&mut state, request_id(&asked), "error");
+    assert_eq!(refused.step.picked, None, "refused, so not kept");
+}
+
 /// The background jobs a headless Claude snapshot lists, by id.
 fn listed_jobs(stepped: &interpret::Stepped) -> Option<Vec<String>> {
     use prost::Message as _;

@@ -9,7 +9,7 @@ use prost::Message as _;
 use prost_types::{DescriptorProto, FileDescriptorSet};
 use serde::Deserialize;
 
-const KINDS: [&str; 3] = ["claude_pty", "claude_sdk", "codex"];
+const KINDS: [&str; 4] = ["claude_pty", "claude_sdk", "codex", "acp"];
 const ROWS: usize = 31;
 
 #[derive(Deserialize)]
@@ -26,6 +26,7 @@ struct Row {
     claude_pty: Availability,
     claude_sdk: Availability,
     codex: Availability,
+    acp: Availability,
 }
 
 impl Row {
@@ -33,7 +34,9 @@ impl Row {
         match kind {
             "claude_pty" => &self.claude_pty,
             "claude_sdk" => &self.claude_sdk,
-            _ => &self.codex,
+            "codex" => &self.codex,
+            "acp" => &self.acp,
+            other => panic!("{other} is not one of KINDS"),
         }
     }
 }
@@ -90,11 +93,11 @@ fn carrier_exists(
     carrier: &str,
 ) -> Result<(), String> {
     // Both Claude kinds carry the same item and snapshot messages.
-    let camel = if kind == "codex" { "Codex" } else { "Claude" };
-    let ask = if kind == "codex" {
-        ".amux.v1.CodexAsk"
-    } else {
-        ".amux.v1.Ask"
+    let (camel, ask) = match kind {
+        "claude_pty" | "claude_sdk" => ("Claude", ".amux.v1.Ask"),
+        "codex" => ("Codex", ".amux.v1.CodexAsk"),
+        "acp" => ("Acp", ".amux.v1.AcpAsk"),
+        other => return Err(format!("{other} is not one of KINDS")),
     };
     let (place, path) = carrier
         .split_once(':')

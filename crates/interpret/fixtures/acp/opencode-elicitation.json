@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a tool server's form elicitation, during a tool call the prompt asks for",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-elicitation/io.jsonl",
+    "format": "acp_io"
+  }
+}

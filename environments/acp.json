@@ -1,0 +1,16 @@
+{
+  "hosts": [
+    {
+      "name": "studio", "lan": true, "bonjour": true, "provider": "real",
+      "repositories": ["app"],
+      "files": {
+        "app/README.md": "# app\n\nA small command-line tool.\n",
+        "app/main.py": "print('hello')\n"
+      }
+    }
+  ],
+  "clients": {
+    "phone": {"paired": ["studio"]},
+    "terminal": {"host": "studio"}
+  }
+}

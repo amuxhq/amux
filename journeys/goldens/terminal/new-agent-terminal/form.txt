@@ -8,7 +8,7 @@
                    ╭─ New Agent ──────────────────────────────────────────────────────────╮
   › ○ backups  Clau│                                                                      │            [x]
                    │  Name      release-notes                                             │
-    ○ expired  Clau│  Agent      Claude   Codex                                           │            now
+    ○ expired  Clau│  Agent      Claude   Codex   Fake ACP Agent                          │            now
       Tidied.      │  Folder    /tmp/journey/aj-xxxxxxxx/net/laptop/work                  │
                    │  Computer   cabin   desk   laptop                                    │
     ○ limited  Clau│  Worktree  [ ] new worktree                                          │            now
@@ -24,7 +24,7 @@
 
     ○ planner-codex  Codex · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                             now
 
-    ○ planner-pty  Claude (terminal) · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                   now
+    ○ planner-pty  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                              now
 
     ○ planner  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                  now
 

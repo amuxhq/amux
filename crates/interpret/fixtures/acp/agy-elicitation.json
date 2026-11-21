@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a tool server's form elicitation, during a tool call the prompt asks for",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-elicitation/io.jsonl",
+    "format": "acp_io"
+  }
+}

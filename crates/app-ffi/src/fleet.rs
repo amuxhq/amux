@@ -89,4 +89,23 @@ pub unsafe extern "C" fn amux_fleet_family(
     unsafe { fleet_read(profile, |app| app.family_header(&agent)) }
 }
 
+/// What settling an agent costs, as a `SettleWarning`, or null JSON for an
+/// agent the fleet does not hold. Ask before settling when it cuts work
+/// short or ends a conversation nothing resumes.
+///
+/// # Safety
+/// As for `amux_fleet_card`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_fleet_settle_warning(
+    profile: *const AmuxProfile,
+    agent: *const c_char,
+) -> *mut c_char {
+    // SAFETY: the caller's contract.
+    let Some(agent) = (unsafe { parse::<AgentKey>(agent) }) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: the caller's contract.
+    unsafe { fleet_read(profile, |app| app.settle_warning(&agent)) }
+}
+
 // --- a chat ----------------------------------------------------------------

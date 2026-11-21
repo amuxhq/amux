@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a shell command needing permission, rejected once",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-deny/io.jsonl",
+    "format": "acp_io"
+  }
+}

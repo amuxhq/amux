@@ -157,11 +157,13 @@ public enum Stories {
     private static func card(
         _ number: UInt8, _ name: String, on host: String, _ attention: Attention, cwd: String = "/src/amux",
         filing: Filing = .open, children: UInt32 = 0, ago: Int64 = 0, exit: ExitCause? = nil,
-        branch: String = "main", reach: Reach = .online(.direct)
+        branch: String = "main", reach: Reach = .online(.direct), agent: HostProvider = agents[0]
     ) -> FleetCard {
         FleetCard(
             agent: AgentKey(host: host == machine ? Array(repeating: 1, count: 16) : elsewhere, agent: Array(repeating: number, count: 16)),
-            name: name, handle: name, kind: .claudeSdk, attention: attention, cwd: home(cwd),
+            name: name, handle: name, kind: (["claude": .claudeSdk, "codex": .codex] as [String: Kind])[agent.provider] ?? .acp,
+            provider: agent.provider, providerName: agent.name, attachable: agent.capabilities.attachable,
+            attention: attention, cwd: home(cwd),
             phaseSinceMs: Int64(Date.now.timeIntervalSince1970 * 1000) - ago * 1000,
             host: host, hostReach: reach, children: children, familyAttention: attention,
             members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
@@ -215,7 +217,7 @@ public enum Stories {
                 step("git log --oneline v0.8.7..HEAD")),
             row(card(3, "Tidy the settings page", on: "build-box", .working, cwd: "/src/console", children: 2, ago: 95, branch: "settings-tidy"),
                 step("cargo build -p amux-ui")),
-            row(card(4, "Review the store migration", on: "build-box", .idle, cwd: "/src/amuxcloud", ago: 7_200),
+            row(card(4, "Review the store migration", on: "build-box", .idle, cwd: "/src/amuxcloud", ago: 7_200, agent: agents[2]),
                 .lastSaid("The migration is safe; two nits inside.")),
             row(card(7, "Profile the phone build", on: "studio", .working, cwd: "/src/amux", ago: 1_800, branch: "phone-profile", reach: .away),
                 step("Recording a trace")),
@@ -284,9 +286,27 @@ public enum Stories {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: number, count: 16), name: name, local: local, trusted: true, candidate: false,
-            reach: reach, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [],
-            claudeKind: .claudeSdk, lastDialError: nil, platform: platform, signedIn: true, through: nil,
+            reach: reach, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: agents,
+            lastDialError: nil, platform: platform, signedIn: true, through: nil,
             version: "0.9.0")
+    }
+
+    /// What a host offers: Claude and Codex, two of the built-in agents
+    /// that speak ACP, one of them signed out there, and one a person added
+    /// to the host's config.
+    static let agents = [
+        offered("claude", "Claude", hint: "Run claude and sign in with /login.", can: .claude),
+        offered("codex", "Codex", hint: "Run codex login.", can: .codex),
+        offered("opencode", "OpenCode", hint: "Run opencode auth login in the terminal", can: .acp),
+        offered("grok", "Grok", hint: "Sign in with Grok", signedIn: false, can: .acp),
+        offered("local-llm", "Local Llama", hint: "", can: .acp),
+    ]
+
+    private static func offered(
+        _ id: String, _ name: String, hint: String, signedIn: Bool = true, can: Capabilities
+    ) -> HostProvider {
+        HostProvider(
+            provider: id, name: name, signInHint: hint, version: "", capabilities: can, signedIn: signedIn)
     }
 
     private static let thisMac = host(1, machine, .online(.direct), local: true)
@@ -299,9 +319,11 @@ public enum Stories {
     /// build-box, with what it says of itself.
     private static var buildBox: HostView {
         var box = paired[0]
-        box.providers = [
-            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
-        ]
+        box.providers = agents.map { agent in
+            var agent = agent
+            if agent.provider == "codex" { agent.signedIn = false }
+            return agent
+        }
         box.addrs = ["192.168.1.24:47821", "[fe80::1c2b:3a]:47821"]
         return box
     }
@@ -386,7 +408,9 @@ public enum Stories {
         chip: ReviewChip? = nil
     ) -> ChatFrame {
         ChatFrame(
-            agent: card.agent, name: card.name, kind: card.kind, phase: phase,
+            agent: card.agent, name: card.name,
+            provider: ProviderLabel(provider: card.provider, name: card.providerName),
+            capabilities: agents.first { $0.provider == card.provider }?.capabilities ?? .claude, phase: phase,
             composer: ComposerView(
                 mode: mode, switchedAway: false,
                 // The turn started when the agent went to work, so the chat's
@@ -421,7 +445,7 @@ public enum Stories {
                    open: false, counts: nil, hidden: nil, recent: 1), collapsed: true, turn: .work),
         r("r5", .explore(verb: .search, subject: "sleep(", state: .succeeded, result: ""),
           run: Run(first: "r3", last: "r5", steps: 3, live: false, openBelow: false, liveShown: false, unresolvedFailure: false,
-                   open: false, counts: RunCounts(commands: 1, edits: 0, reads: 1, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+                   open: false, counts: RunCounts(commands: 1, edits: 0, reads: 1, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
                    recent: 0), turn: .work),
         r("r6", .prose(text: text("""
             Found it. The test cuts the link **before the relay has acknowledged the hello**, so on a slow \
@@ -459,7 +483,7 @@ public enum Stories {
           run: liveRun(
               recent: 0, shown: true,
               hidden: RunCounts(
-                  commands: 0, edits: 0, reads: 2, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0))),
+                  commands: 0, edits: 0, reads: 2, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0))),
     ]
 
     /// A step of the run under way in `workingRows`: its newest step shows,
@@ -621,7 +645,7 @@ public enum Stories {
                             outcome: .allowSimilar(prefix: ["cargo", "test"]), primary: false, takesNote: false),
                         Choice(outcome: .deny, primary: false, takesNote: true),
                     ],
-                    questionNote: true, questionSkip: true, questionReply: true, stopsTurn: true, defaultToNo: false,
+                    questionNote: true, questionSkip: true, questionReply: true, replyInstead: false, stopsTurn: true, defaultToNo: false,
                     state: .open),
                 changes: ChangeTotals(files: 1, added: 3, removed: 2), settings: claude)
         },
@@ -1161,4 +1185,18 @@ private func appIcon(_ bundle: String) -> NSImage? {
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle).map {
         NSWorkspace.shared.icon(forFile: $0.path)
     }
+}
+
+extension Capabilities {
+    /// What headless Claude, Codex and an ACP agent that reopens its
+    /// conversations can do, for the stories.
+    static let claude = Capabilities(
+        stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: true,
+        files: true, passesUnknownCommands: true)
+    static let codex = Capabilities(
+        stopsJob: true, switchesBack: false, attachable: true, resumable: true, sendsNow: true, images: true,
+        files: true, passesUnknownCommands: false)
+    static let acp = Capabilities(
+        stopsJob: false, switchesBack: false, attachable: false, resumable: true, sendsNow: false, images: true,
+        files: true, passesUnknownCommands: true)
 }

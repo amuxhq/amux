@@ -95,6 +95,10 @@ pub struct RunCounts {
     pub subagents: u32,
     /// Tool-server calls, images and the rest.
     pub other: u32,
+    /// Steps refused before they ran, by the person or the agent's own
+    /// rules: counted here and not as what they would have done, so a run
+    /// whose one command was denied does not read as having run it.
+    pub denied: u32,
 }
 
 impl RunCounts {
@@ -279,6 +283,10 @@ struct Counting {
 impl Counting {
     fn count(&mut self, kind: &RowKind) {
         let counts = &mut self.counts;
+        if crate::rows::phase_of(kind) == Some(crate::rows::CallPhase::Denied) {
+            counts.denied += 1;
+            return;
+        }
         match kind {
             RowKind::Command { .. } | RowKind::Background { .. } => counts.commands += 1,
             RowKind::FileChange { files, .. } => {

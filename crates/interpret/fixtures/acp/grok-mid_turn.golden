@@ -1,0 +1,1446 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 recorded 0: tick 165
+snapshot STARTING queue=[] working_on=- at=165 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
+snapshot STARTING queue=[] working_on=- at=165 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 19 recorded 18: fact Rpc method=session/update
+effect catalogue daef34d7 models=[] commands=63 permissions=[] modes=[]
+snapshot catalogue daef34d7
+snapshot STARTING queue=[] working_on=- at=278 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 28 recorded 27: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
+effect session "01a1fa62-9f44-7330-8704-81bcbb12473e"
+effect catalogue 1ee2ee4d models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
+item boundary:1 boundary final at=299 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 1ee2ee4d
+snapshot IDLE queue=[] working_on=- at=299 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 31 recorded 30: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fa62-9f44-7330-8704-81bcbb12473e\",\"value\":\"grok-4.7-build-fast\"}}"
+effect reply p1-1 accepted
+## 38 recorded 37: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=363 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 39 recorded 38: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fa62-9f44-7330-8704-81bcbb12473e\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 40 recorded 39: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=363 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 43 recorded 42: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Write a 500-word story about a lighthouse keeper. Do not use any tools.\",\"type\":\"text\"}],\"sessionId\":\"01a1fa62-9f44-7330-8704-81bcbb12473e\"}}"
+item prompt:70312d33 prompt final input=p1-3 at=367 text="Write a 500-word story about a lighthouse keeper. Do not use any tools."
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=367 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 59 recorded 58: fact Rpc method=_x.ai/mcp/server_status
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=397 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH]
+## 61 recorded 60: fact Rpc method=_x.ai/mcp/server_status
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=400 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH]
+## 70 recorded 69: fact Rpc method=_x.ai/mcp/server_status
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=787 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+## 74 recorded 73: fact Rpc method=session/update
+item thought:1 thought open at=2459 text="I will write a 500-word"
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2459 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1430/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+## 76 recorded 75: fact Rpc method=session/update
+append thought:1 " story about a lighthouse"
+## 77 recorded 76: input p1-4
+effect reply p1-4 queued
+snapshot WORKING queue=[p1-4] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2460 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1430/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+## 78 recorded 77: input p1-5
+effect reply p1-5 rejected:UNSUPPORTED
+## 79 recorded 78: fact Rpc method=session/update
+append thought:1 " keeper without using"
+## 81 recorded 80: fact Rpc method=session/update
+append thought:1 " any tools."
+## 82 recorded 81: fact Rpc method=session/update
+item thought:1 thought final at=2459 text="I will write a 500-word story about a lighthouse keeper without using any tools."
+item message:2 message open at=2464 text="M"
+## 83 recorded 82: fact Rpc method=session/update
+append message:2 "ara"
+## 84 recorded 83: fact Rpc method=session/update
+append message:2 " kept"
+## 85 recorded 84: fact Rpc method=session/update
+append message:2 " the"
+## 87 recorded 86: fact Rpc method=session/update
+append message:2 " light"
+## 88 recorded 87: fact Rpc method=session/update
+append message:2 " because"
+## 89 recorded 88: fact Rpc method=session/update
+append message:2 " the"
+## 90 recorded 89: fact Rpc method=session/update
+append message:2 " sea"
+## 94 recorded 93: fact Rpc method=session/update
+append message:2 " kept"
+## 96 recorded 95: fact Rpc method=session/update
+append message:2 " her"
+## 98 recorded 97: fact Rpc method=session/update
+append message:2 " father"
+## 100 recorded 99: fact Rpc method=session/update
+append message:2 "."
+## 102 recorded 101: fact Rpc method=session/update
+append message:2 " Twenty"
+## 104 recorded 103: fact Rpc method=session/update
+append message:2 " years"
+## 106 recorded 105: fact Rpc method=session/update
+append message:2 " ago"
+## 108 recorded 107: fact Rpc method=session/update
+append message:2 " he"
+## 110 recorded 109: fact Rpc method=session/update
+append message:2 " had"
+## 111 recorded 110: fact Rpc method=session/update
+append message:2 " row"
+## 112 recorded 111: fact Rpc method=session/update
+append message:2 "ed"
+## 114 recorded 113: fact Rpc method=session/update
+append message:2 " out"
+## 116 recorded 115: fact Rpc method=session/update
+append message:2 " after"
+## 118 recorded 117: fact Rpc method=session/update
+append message:2 " a"
+## 120 recorded 119: fact Rpc method=session/update
+append message:2 " flare"
+## 122 recorded 121: fact Rpc method=session/update
+append message:2 " that"
+## 124 recorded 123: fact Rpc method=session/update
+append message:2 " never"
+## 126 recorded 125: fact Rpc method=session/update
+append message:2 " came"
+## 128 recorded 127: fact Rpc method=session/update
+append message:2 " back"
+## 130 recorded 129: fact Rpc method=session/update
+append message:2 ","
+## 132 recorded 131: fact Rpc method=session/update
+append message:2 " and"
+## 134 recorded 133: fact Rpc method=session/update
+append message:2 " the"
+## 136 recorded 135: fact Rpc method=session/update
+append message:2 " tower"
+## 138 recorded 137: fact Rpc method=session/update
+append message:2 " on"
+## 140 recorded 139: fact Rpc method=session/update
+append message:2 " Black"
+## 142 recorded 141: fact Rpc method=session/update
+append message:2 "bar"
+## 144 recorded 143: fact Rpc method=session/update
+append message:2 " Point"
+## 146 recorded 145: fact Rpc method=session/update
+append message:2 " had"
+## 148 recorded 147: fact Rpc method=session/update
+append message:2 " needed"
+## 150 recorded 149: fact Rpc method=session/update
+append message:2 " someone"
+## 152 recorded 151: fact Rpc method=session/update
+append message:2 " who"
+## 153 recorded 152: fact Rpc method=session/update
+append message:2 " would"
+## 155 recorded 154: fact Rpc method=session/update
+append message:2 " not"
+## 156 recorded 155: fact Rpc method=session/update
+append message:2 " leave"
+## 158 recorded 157: fact Rpc method=session/update
+append message:2 " the"
+## 160 recorded 159: fact Rpc method=session/update
+append message:2 " stairs"
+## 162 recorded 161: fact Rpc method=session/update
+append message:2 "."
+## 164 recorded 163: fact Rpc method=session/update
+append message:2 " She"
+## 166 recorded 165: fact Rpc method=session/update
+append message:2 " learned"
+## 168 recorded 167: fact Rpc method=session/update
+append message:2 " the"
+## 170 recorded 169: fact Rpc method=session/update
+append message:2 " lamp"
+## 172 recorded 171: fact Rpc method=session/update
+append message:2 " the"
+## 174 recorded 173: fact Rpc method=session/update
+append message:2 " way"
+## 176 recorded 175: fact Rpc method=session/update
+append message:2 " other"
+## 178 recorded 177: fact Rpc method=session/update
+append message:2 " people"
+## 180 recorded 179: fact Rpc method=session/update
+append message:2 " learn"
+## 182 recorded 181: fact Rpc method=session/update
+append message:2 " a"
+## 184 recorded 183: fact Rpc method=session/update
+append message:2 " kitchen"
+## 186 recorded 185: fact Rpc method=session/update
+append message:2 ":"
+## 188 recorded 187: fact Rpc method=session/update
+append message:2 " by"
+## 190 recorded 189: fact Rpc method=session/update
+append message:2 " touch"
+## 192 recorded 191: fact Rpc method=session/update
+append message:2 ","
+## 194 recorded 193: fact Rpc method=session/update
+append message:2 " in"
+## 196 recorded 195: fact Rpc method=session/update
+append message:2 " the"
+## 198 recorded 197: fact Rpc method=session/update
+append message:2 " dark"
+## 200 recorded 199: fact Rpc method=session/update
+append message:2 ","
+## 202 recorded 201: fact Rpc method=session/update
+append message:2 " with"
+## 204 recorded 203: fact Rpc method=session/update
+append message:2 " the"
+## 206 recorded 205: fact Rpc method=session/update
+append message:2 " wind"
+## 208 recorded 207: fact Rpc method=session/update
+append message:2 " arguing"
+## 209 recorded 208: fact Rpc method=session/update
+append message:2 " through"
+## 210 recorded 209: fact Rpc method=session/update
+append message:2 " the"
+## 212 recorded 211: fact Rpc method=session/update
+append message:2 " glass"
+## 213 recorded 212: fact Rpc method=session/update
+append message:2 ".\n\n"
+## 214 recorded 213: fact Rpc method=session/update
+append message:2 "Each"
+## 216 recorded 215: fact Rpc method=session/update
+append message:2 " evening"
+## 218 recorded 217: fact Rpc method=session/update
+append message:2 " she"
+## 220 recorded 219: fact Rpc method=session/update
+append message:2 " climbed"
+## 222 recorded 221: fact Rpc method=session/update
+append message:2 " the"
+## 224 recorded 223: fact Rpc method=session/update
+append message:2 " spiral"
+## 226 recorded 225: fact Rpc method=session/update
+append message:2 " with"
+## 228 recorded 227: fact Rpc method=session/update
+append message:2 " a"
+## 230 recorded 229: fact Rpc method=session/update
+append message:2 " cloth"
+## 232 recorded 231: fact Rpc method=session/update
+append message:2 " over"
+## 234 recorded 233: fact Rpc method=session/update
+append message:2 " her"
+## 236 recorded 235: fact Rpc method=session/update
+append message:2 " shoulder"
+## 238 recorded 237: fact Rpc method=session/update
+append message:2 " and"
+## 240 recorded 239: fact Rpc method=session/update
+append message:2 " a"
+## 242 recorded 241: fact Rpc method=session/update
+append message:2 " tin"
+## 244 recorded 243: fact Rpc method=session/update
+append message:2 " of"
+## 246 recorded 245: fact Rpc method=session/update
+append message:2 " oil"
+## 248 recorded 247: fact Rpc method=session/update
+append message:2 " in"
+## 250 recorded 249: fact Rpc method=session/update
+append message:2 " her"
+## 251 recorded 250: fact Rpc method=session/update
+append message:2 " hand"
+## 253 recorded 252: fact Rpc method=session/update
+append message:2 "."
+## 254 recorded 253: fact Rpc method=session/update
+append message:2 " The"
+## 256 recorded 255: fact Rpc method=session/update
+append message:2 " steps"
+## 258 recorded 257: fact Rpc method=session/update
+append message:2 " were"
+## 260 recorded 259: fact Rpc method=session/update
+append message:2 " worn"
+## 262 recorded 261: fact Rpc method=session/update
+append message:2 " in"
+## 264 recorded 263: fact Rpc method=session/update
+append message:2 " the"
+## 266 recorded 265: fact Rpc method=session/update
+append message:2 " middle"
+## 268 recorded 267: fact Rpc method=session/update
+append message:2 ","
+## 270 recorded 269: fact Rpc method=session/update
+append message:2 " polished"
+## 272 recorded 271: fact Rpc method=session/update
+append message:2 " by"
+## 274 recorded 273: fact Rpc method=session/update
+append message:2 " boots"
+## 276 recorded 275: fact Rpc method=session/update
+append message:2 " that"
+## 278 recorded 277: fact Rpc method=session/update
+append message:2 " had"
+## 280 recorded 279: fact Rpc method=session/update
+append message:2 " belonged"
+## 282 recorded 281: fact Rpc method=session/update
+append message:2 " to"
+## 284 recorded 283: fact Rpc method=session/update
+append message:2 " keep"
+## 286 recorded 285: fact Rpc method=session/update
+append message:2 "ers"
+## 288 recorded 287: fact Rpc method=session/update
+append message:2 " before"
+## 290 recorded 289: fact Rpc method=session/update
+append message:2 " her"
+## 292 recorded 291: fact Rpc method=session/update
+append message:2 "."
+## 294 recorded 293: fact Rpc method=session/update
+append message:2 " At"
+## 296 recorded 295: fact Rpc method=session/update
+append message:2 " the"
+## 298 recorded 297: fact Rpc method=session/update
+append message:2 " top"
+## 300 recorded 299: fact Rpc method=session/update
+append message:2 " the"
+## 302 recorded 301: fact Rpc method=session/update
+append message:2 " lantern"
+## 304 recorded 303: fact Rpc method=session/update
+append message:2 " room"
+## 306 recorded 305: fact Rpc method=session/update
+append message:2 " smelled"
+## 307 recorded 306: fact Rpc method=session/update
+append message:2 " of"
+## 309 recorded 308: fact Rpc method=session/update
+append message:2 " hot"
+## 310 recorded 309: fact Rpc method=session/update
+append message:2 " metal"
+## 312 recorded 311: fact Rpc method=session/update
+append message:2 " and"
+## 314 recorded 313: fact Rpc method=session/update
+append message:2 " salt"
+## 316 recorded 315: fact Rpc method=session/update
+append message:2 "."
+## 318 recorded 317: fact Rpc method=session/update
+append message:2 " She"
+## 320 recorded 319: fact Rpc method=session/update
+append message:2 " trimmed"
+## 322 recorded 321: fact Rpc method=session/update
+append message:2 " the"
+## 324 recorded 323: fact Rpc method=session/update
+append message:2 " wick"
+## 326 recorded 325: fact Rpc method=session/update
+append message:2 ","
+## 328 recorded 327: fact Rpc method=session/update
+append message:2 " wiped"
+## 330 recorded 329: fact Rpc method=session/update
+append message:2 " the"
+## 332 recorded 331: fact Rpc method=session/update
+append message:2 " lens"
+## 334 recorded 333: fact Rpc method=session/update
+append message:2 " until"
+## 336 recorded 335: fact Rpc method=session/update
+append message:2 " her"
+## 338 recorded 337: fact Rpc method=session/update
+append message:2 " own"
+## 340 recorded 339: fact Rpc method=session/update
+append message:2 " face"
+## 342 recorded 341: fact Rpc method=session/update
+append message:2 " vanished"
+## 344 recorded 343: fact Rpc method=session/update
+append message:2 " in"
+## 346 recorded 345: fact Rpc method=session/update
+append message:2 " the"
+## 348 recorded 347: fact Rpc method=session/update
+append message:2 " curve"
+## 350 recorded 349: fact Rpc method=session/update
+append message:2 " of"
+## 352 recorded 351: fact Rpc method=session/update
+append message:2 " it"
+## 354 recorded 353: fact Rpc method=session/update
+append message:2 ","
+## 356 recorded 355: fact Rpc method=session/update
+append message:2 " and"
+## 357 recorded 356: fact Rpc method=session/update
+append message:2 " set"
+## 358 recorded 357: fact Rpc method=session/update
+append message:2 " the"
+## 359 recorded 358: fact Rpc method=session/update
+append message:2 " mechanism"
+## 361 recorded 360: fact Rpc method=session/update
+append message:2 " turning"
+## 363 recorded 362: fact Rpc method=session/update
+append message:2 "."
+## 365 recorded 364: fact Rpc method=session/update
+append message:2 " The"
+## 367 recorded 366: fact Rpc method=session/update
+append message:2 " beam"
+## 369 recorded 368: fact Rpc method=session/update
+append message:2 " walked"
+## 371 recorded 370: fact Rpc method=session/update
+append message:2 " the"
+## 373 recorded 372: fact Rpc method=session/update
+append message:2 " water"
+## 375 recorded 374: fact Rpc method=session/update
+append message:2 " in"
+## 377 recorded 376: fact Rpc method=session/update
+append message:2 " a"
+## 379 recorded 378: fact Rpc method=session/update
+append message:2 " slow"
+## 381 recorded 380: fact Rpc method=session/update
+append message:2 " white"
+## 383 recorded 382: fact Rpc method=session/update
+append message:2 " circle"
+## 385 recorded 384: fact Rpc method=session/update
+append message:2 "."
+## 387 recorded 386: fact Rpc method=session/update
+append message:2 " Ships"
+## 389 recorded 388: fact Rpc method=session/update
+append message:2 " answered"
+## 391 recorded 390: fact Rpc method=session/update
+append message:2 " with"
+## 393 recorded 392: fact Rpc method=session/update
+append message:2 " small"
+## 395 recorded 394: fact Rpc method=session/update
+append message:2 " lights"
+## 397 recorded 396: fact Rpc method=session/update
+append message:2 " of"
+## 399 recorded 398: fact Rpc method=session/update
+append message:2 " their"
+## 401 recorded 400: fact Rpc method=session/update
+append message:2 " own"
+## 403 recorded 402: fact Rpc method=session/update
+append message:2 ","
+## 405 recorded 404: fact Rpc method=session/update
+append message:2 " polite"
+## 407 recorded 406: fact Rpc method=session/update
+append message:2 " and"
+## 408 recorded 407: fact Rpc method=session/update
+append message:2 " distant"
+## 409 recorded 408: fact Rpc method=session/update
+append message:2 ","
+## 410 recorded 409: fact Rpc method=session/update
+append message:2 " and"
+## 412 recorded 411: fact Rpc method=session/update
+append message:2 " then"
+## 413 recorded 412: fact Rpc method=session/update
+append message:2 " they"
+## 415 recorded 414: fact Rpc method=session/update
+append message:2 " were"
+## 417 recorded 416: fact Rpc method=session/update
+append message:2 " gone"
+## 419 recorded 418: fact Rpc method=session/update
+append message:2 ".\n\n"
+## 421 recorded 420: fact Rpc method=session/update
+append message:2 "On"
+## 423 recorded 422: fact Rpc method=session/update
+append message:2 " the"
+## 425 recorded 424: fact Rpc method=session/update
+append message:2 " third"
+## 427 recorded 426: fact Rpc method=session/update
+append message:2 " night"
+## 429 recorded 428: fact Rpc method=session/update
+append message:2 " of"
+## 431 recorded 430: fact Rpc method=session/update
+append message:2 " the"
+## 433 recorded 432: fact Rpc method=session/update
+append message:2 " November"
+## 435 recorded 434: fact Rpc method=session/update
+append message:2 " gale"
+## 437 recorded 436: fact Rpc method=session/update
+append message:2 " the"
+## 439 recorded 438: fact Rpc method=session/update
+append message:2 " fog"
+## 441 recorded 440: fact Rpc method=session/update
+append message:2 " came"
+## 443 recorded 442: fact Rpc method=session/update
+append message:2 " in"
+## 445 recorded 444: fact Rpc method=session/update
+append message:2 " so"
+## 447 recorded 446: fact Rpc method=session/update
+append message:2 " thick"
+## 449 recorded 448: fact Rpc method=session/update
+append message:2 " she"
+## 451 recorded 450: fact Rpc method=session/update
+append message:2 " could"
+## 453 recorded 452: fact Rpc method=session/update
+append message:2 " not"
+## 455 recorded 454: fact Rpc method=session/update
+append message:2 " see"
+## 457 recorded 456: fact Rpc method=session/update
+append message:2 " the"
+## 459 recorded 458: fact Rpc method=session/update
+append message:2 " railing"
+## 461 recorded 460: fact Rpc method=session/update
+append message:2 "."
+## 462 recorded 461: fact Rpc method=session/update
+append message:2 " The"
+## 464 recorded 463: fact Rpc method=session/update
+append message:2 " horn"
+## 465 recorded 464: fact Rpc method=session/update
+append message:2 " took"
+## 467 recorded 466: fact Rpc method=session/update
+append message:2 " up"
+## 469 recorded 468: fact Rpc method=session/update
+append message:2 " its"
+## 471 recorded 470: fact Rpc method=session/update
+append message:2 " work"
+## 473 recorded 472: fact Rpc method=session/update
+append message:2 ","
+## 475 recorded 474: fact Rpc method=session/update
+append message:2 " a"
+## 477 recorded 476: fact Rpc method=session/update
+append message:2 " low"
+## 479 recorded 478: fact Rpc method=session/update
+append message:2 " note"
+## 481 recorded 480: fact Rpc method=session/update
+append message:2 " that"
+## 483 recorded 482: fact Rpc method=session/update
+append message:2 " shook"
+## 485 recorded 484: fact Rpc method=session/update
+append message:2 " the"
+## 487 recorded 486: fact Rpc method=session/update
+append message:2 " floor"
+## 489 recorded 488: fact Rpc method=session/update
+append message:2 " under"
+## 491 recorded 490: fact Rpc method=session/update
+append message:2 " her"
+## 493 recorded 492: fact Rpc method=session/update
+append message:2 " boots"
+## 495 recorded 494: fact Rpc method=session/update
+append message:2 "."
+## 497 recorded 496: fact Rpc method=session/update
+append message:2 " She"
+## 499 recorded 498: fact Rpc method=session/update
+append message:2 " stayed"
+## 501 recorded 500: fact Rpc method=session/update
+append message:2 " in"
+## 503 recorded 502: fact Rpc method=session/update
+append message:2 " the"
+## 505 recorded 504: fact Rpc method=session/update
+append message:2 " lantern"
+## 507 recorded 506: fact Rpc method=session/update
+append message:2 " room"
+## 509 recorded 508: fact Rpc method=session/update
+append message:2 " with"
+## 511 recorded 510: fact Rpc method=session/update
+append message:2 " a"
+## 512 recorded 511: fact Rpc method=session/update
+append message:2 " blanket"
+## 513 recorded 512: fact Rpc method=session/update
+append message:2 " and"
+## 514 recorded 513: fact Rpc method=session/update
+append message:2 " the"
+## 516 recorded 515: fact Rpc method=session/update
+append message:2 " log"
+## 518 recorded 517: fact Rpc method=session/update
+append message:2 "book"
+## 520 recorded 519: fact Rpc method=session/update
+append message:2 ","
+## 522 recorded 521: fact Rpc method=session/update
+append message:2 " writing"
+## 524 recorded 523: fact Rpc method=session/update
+append message:2 " the"
+## 526 recorded 525: fact Rpc method=session/update
+append message:2 " hour"
+## 528 recorded 527: fact Rpc method=session/update
+append message:2 " and"
+## 530 recorded 529: fact Rpc method=session/update
+append message:2 " the"
+## 532 recorded 531: fact Rpc method=session/update
+append message:2 " state"
+## 534 recorded 533: fact Rpc method=session/update
+append message:2 " of"
+## 536 recorded 535: fact Rpc method=session/update
+append message:2 " the"
+## 538 recorded 537: fact Rpc method=session/update
+append message:2 " sea"
+## 540 recorded 539: fact Rpc method=session/update
+append message:2 " the"
+## 542 recorded 541: fact Rpc method=session/update
+append message:2 " way"
+## 544 recorded 543: fact Rpc method=session/update
+append message:2 " the"
+## 546 recorded 545: fact Rpc method=session/update
+append message:2 " manual"
+## 548 recorded 547: fact Rpc method=session/update
+append message:2 " required"
+## 550 recorded 549: fact Rpc method=session/update
+append message:2 "."
+## 552 recorded 551: fact Rpc method=session/update
+append message:2 " Somewhere"
+## 554 recorded 553: fact Rpc method=session/update
+append message:2 " past"
+## 556 recorded 555: fact Rpc method=session/update
+append message:2 " midnight"
+## 558 recorded 557: fact Rpc method=session/update
+append message:2 " the"
+## 560 recorded 559: fact Rpc method=session/update
+append message:2 " horn"
+## 561 recorded 560: fact Rpc method=session/update
+append message:2 " stutter"
+## 562 recorded 561: fact Rpc method=session/update
+append message:2 "ed"
+## 563 recorded 562: fact Rpc method=session/update
+append message:2 " and"
+## 564 recorded 563: fact Rpc method=session/update
+append message:2 " died"
+## 565 recorded 564: fact Rpc method=session/update
+append message:2 "."
+## 567 recorded 566: fact Rpc method=session/update
+append message:2 " The"
+## 569 recorded 568: fact Rpc method=session/update
+append message:2 " silence"
+## 571 recorded 570: fact Rpc method=session/update
+append message:2 " afterward"
+## 573 recorded 572: fact Rpc method=session/update
+append message:2 " was"
+## 575 recorded 574: fact Rpc method=session/update
+append message:2 " worse"
+## 577 recorded 576: fact Rpc method=session/update
+append message:2 " than"
+## 579 recorded 578: fact Rpc method=session/update
+append message:2 " the"
+## 581 recorded 580: fact Rpc method=session/update
+append message:2 " wind"
+## 583 recorded 582: fact Rpc method=session/update
+append message:2 ".\n\n"
+## 585 recorded 584: fact Rpc method=session/update
+append message:2 "M"
+## 587 recorded 586: fact Rpc method=session/update
+append message:2 "ara"
+## 589 recorded 588: fact Rpc method=session/update
+append message:2 " went"
+## 591 recorded 590: fact Rpc method=session/update
+append message:2 " down"
+## 593 recorded 592: fact Rpc method=session/update
+append message:2 " to"
+## 595 recorded 594: fact Rpc method=session/update
+append message:2 " the"
+## 597 recorded 596: fact Rpc method=session/update
+append message:2 " engine"
+## 599 recorded 598: fact Rpc method=session/update
+append message:2 " room"
+## 601 recorded 600: fact Rpc method=session/update
+append message:2 " with"
+## 603 recorded 602: fact Rpc method=session/update
+append message:2 " a"
+## 604 recorded 603: fact Rpc method=session/update
+append message:2 " lantern"
+## 605 recorded 604: fact Rpc method=session/update
+append message:2 " and"
+## 607 recorded 606: fact Rpc method=session/update
+append message:2 " found"
+## 609 recorded 608: fact Rpc method=session/update
+append message:2 " the"
+## 611 recorded 610: fact Rpc method=session/update
+append message:2 " belt"
+## 613 recorded 612: fact Rpc method=session/update
+append message:2 " thrown"
+## 615 recorded 614: fact Rpc method=session/update
+append message:2 " and"
+## 617 recorded 616: fact Rpc method=session/update
+append message:2 " the"
+## 619 recorded 618: fact Rpc method=session/update
+append message:2 " motor"
+## 620 recorded 619: fact Rpc method=session/update
+append message:2 " hot"
+## 622 recorded 621: fact Rpc method=session/update
+append message:2 " enough"
+## 623 recorded 622: fact Rpc method=session/update
+append message:2 " to"
+## 625 recorded 624: fact Rpc method=session/update
+append message:2 " sting"
+## 627 recorded 626: fact Rpc method=session/update
+append message:2 " her"
+## 629 recorded 628: fact Rpc method=session/update
+append message:2 " palm"
+## 631 recorded 630: fact Rpc method=session/update
+append message:2 " through"
+## 633 recorded 632: fact Rpc method=session/update
+append message:2 " the"
+## 635 recorded 634: fact Rpc method=session/update
+append message:2 " glove"
+## 637 recorded 636: fact Rpc method=session/update
+append message:2 "."
+## 639 recorded 638: fact Rpc method=session/update
+append message:2 " She"
+## 641 recorded 640: fact Rpc method=session/update
+append message:2 " had"
+## 643 recorded 642: fact Rpc method=session/update
+append message:2 " fixed"
+## 645 recorded 644: fact Rpc method=session/update
+append message:2 " it"
+## 647 recorded 646: fact Rpc method=session/update
+append message:2 " twice"
+## 649 recorded 648: fact Rpc method=session/update
+append message:2 " before"
+## 651 recorded 650: fact Rpc method=session/update
+append message:2 "."
+## 653 recorded 652: fact Rpc method=session/update
+append message:2 " This"
+## 655 recorded 654: fact Rpc method=session/update
+append message:2 " time"
+## 657 recorded 656: fact Rpc method=session/update
+append message:2 " the"
+## 659 recorded 658: fact Rpc method=session/update
+append message:2 " spare"
+## 660 recorded 659: fact Rpc method=session/update
+append message:2 " belt"
+## 662 recorded 661: fact Rpc method=session/update
+append message:2 " was"
+## 663 recorded 662: fact Rpc method=session/update
+append message:2 " cracked"
+## 664 recorded 663: fact Rpc method=session/update
+append message:2 " along"
+## 665 recorded 664: fact Rpc method=session/update
+append message:2 " its"
+## 667 recorded 666: fact Rpc method=session/update
+append message:2 " length"
+## 669 recorded 668: fact Rpc method=session/update
+append message:2 ","
+## 671 recorded 670: fact Rpc method=session/update
+append message:2 " the"
+## 673 recorded 672: fact Rpc method=session/update
+append message:2 " rubber"
+## 675 recorded 674: fact Rpc method=session/update
+append message:2 " gone"
+## 677 recorded 676: fact Rpc method=session/update
+append message:2 " white"
+## 679 recorded 678: fact Rpc method=session/update
+append message:2 " at"
+## 681 recorded 680: fact Rpc method=session/update
+append message:2 " the"
+## 683 recorded 682: fact Rpc method=session/update
+append message:2 " fold"
+## 685 recorded 684: fact Rpc method=session/update
+append message:2 "."
+## 687 recorded 686: fact Rpc method=session/update
+append message:2 " She"
+## 689 recorded 688: fact Rpc method=session/update
+append message:2 " stood"
+## 691 recorded 690: fact Rpc method=session/update
+append message:2 " with"
+## 693 recorded 692: fact Rpc method=session/update
+append message:2 " it"
+## 695 recorded 694: fact Rpc method=session/update
+append message:2 " in"
+## 697 recorded 696: fact Rpc method=session/update
+append message:2 " both"
+## 698 recorded 697: fact Rpc method=session/update
+append message:2 " hands"
+## 700 recorded 699: fact Rpc method=session/update
+append message:2 " and"
+## 701 recorded 700: fact Rpc method=session/update
+append message:2 " listened"
+## 702 recorded 701: fact Rpc method=session/update
+append message:2 " to"
+## 703 recorded 702: fact Rpc method=session/update
+append message:2 " the"
+## 705 recorded 704: fact Rpc method=session/update
+append message:2 " tower"
+## 707 recorded 706: fact Rpc method=session/update
+append message:2 " cre"
+## 709 recorded 708: fact Rpc method=session/update
+append message:2 "ak"
+## 711 recorded 710: fact Rpc method=session/update
+append message:2 "."
+## 713 recorded 712: fact Rpc method=session/update
+append message:2 " No"
+## 715 recorded 714: fact Rpc method=session/update
+append message:2 " ship"
+## 717 recorded 716: fact Rpc method=session/update
+append message:2 " would"
+## 719 recorded 718: fact Rpc method=session/update
+append message:2 " hear"
+## 720 recorded 719: fact Rpc method=session/update
+append message:2 " a"
+## 722 recorded 721: fact Rpc method=session/update
+append message:2 " light"
+## 724 recorded 723: fact Rpc method=session/update
+append message:2 " in"
+## 729 recorded 728: fact Rpc method=session/update
+append message:2 " that"
+## 731 recorded 730: fact Rpc method=session/update
+append message:2 " fog"
+## 733 recorded 732: fact Rpc method=session/update
+append message:2 "."
+## 735 recorded 734: fact Rpc method=session/update
+append message:2 " They"
+## 737 recorded 736: fact Rpc method=session/update
+append message:2 " needed"
+## 739 recorded 738: fact Rpc method=session/update
+append message:2 " the"
+## 741 recorded 740: fact Rpc method=session/update
+append message:2 " sound"
+## 743 recorded 742: fact Rpc method=session/update
+append message:2 ".\n\n"
+## 745 recorded 744: fact Rpc method=session/update
+append message:2 "In"
+## 747 recorded 746: fact Rpc method=session/update
+append message:2 " the"
+## 749 recorded 748: fact Rpc method=session/update
+append message:2 " store"
+## 750 recorded 749: fact Rpc method=session/update
+append message:2 " cupboard"
+## 752 recorded 751: fact Rpc method=session/update
+append message:2 " she"
+## 754 recorded 753: fact Rpc method=session/update
+append message:2 " found"
+## 756 recorded 755: fact Rpc method=session/update
+append message:2 " an"
+## 758 recorded 757: fact Rpc method=session/update
+append message:2 " old"
+## 760 recorded 759: fact Rpc method=session/update
+append message:2 " leather"
+## 762 recorded 761: fact Rpc method=session/update
+append message:2 " strap"
+## 764 recorded 763: fact Rpc method=session/update
+append message:2 " her"
+## 766 recorded 765: fact Rpc method=session/update
+append message:2 " father"
+## 768 recorded 767: fact Rpc method=session/update
+append message:2 " had"
+## 770 recorded 769: fact Rpc method=session/update
+append message:2 " used"
+## 772 recorded 771: fact Rpc method=session/update
+append message:2 " to"
+## 773 recorded 772: fact Rpc method=session/update
+append message:2 " carry"
+## 775 recorded 774: fact Rpc method=session/update
+append message:2 " coal"
+## 776 recorded 775: fact Rpc method=session/update
+append message:2 ","
+## 777 recorded 776: fact Rpc method=session/update
+append message:2 " stiff"
+## 778 recorded 777: fact Rpc method=session/update
+append message:2 " and"
+## 779 recorded 778: fact Rpc method=session/update
+append message:2 " salted"
+## 781 recorded 780: fact Rpc method=session/update
+append message:2 " and"
+## 783 recorded 782: fact Rpc method=session/update
+append message:2 " still"
+## 785 recorded 784: fact Rpc method=session/update
+append message:2 " whole"
+## 787 recorded 786: fact Rpc method=session/update
+append message:2 "."
+## 789 recorded 788: fact Rpc method=session/update
+append message:2 " She"
+## 791 recorded 790: fact Rpc method=session/update
+append message:2 " cut"
+## 793 recorded 792: fact Rpc method=session/update
+append message:2 " it"
+## 795 recorded 794: fact Rpc method=session/update
+append message:2 ","
+## 797 recorded 796: fact Rpc method=session/update
+append message:2 " punched"
+## 799 recorded 798: fact Rpc method=session/update
+append message:2 " holes"
+## 801 recorded 800: fact Rpc method=session/update
+append message:2 " with"
+## 803 recorded 802: fact Rpc method=session/update
+append message:2 " a"
+## 805 recorded 804: fact Rpc method=session/update
+append message:2 " nail"
+## 807 recorded 806: fact Rpc method=session/update
+append message:2 ","
+## 809 recorded 808: fact Rpc method=session/update
+append message:2 " and"
+## 811 recorded 810: fact Rpc method=session/update
+append message:2 " laced"
+## 813 recorded 812: fact Rpc method=session/update
+append message:2 " it"
+## 815 recorded 814: fact Rpc method=session/update
+append message:2 " through"
+## 817 recorded 816: fact Rpc method=session/update
+append message:2 " the"
+## 819 recorded 818: fact Rpc method=session/update
+append message:2 " pul"
+## 821 recorded 820: fact Rpc method=session/update
+append message:2 "leys"
+## 823 recorded 822: fact Rpc method=session/update
+append message:2 " with"
+## 825 recorded 824: fact Rpc method=session/update
+append message:2 " wire"
+## 827 recorded 826: fact Rpc method=session/update
+append message:2 " from"
+## 829 recorded 828: fact Rpc method=session/update
+append message:2 " the"
+## 831 recorded 830: fact Rpc method=session/update
+append message:2 " fence"
+## 832 recorded 831: fact Rpc method=session/update
+append message:2 " coil"
+## 834 recorded 833: fact Rpc method=session/update
+append message:2 "."
+## 836 recorded 835: fact Rpc method=session/update
+append message:2 " Her"
+## 838 recorded 837: fact Rpc method=session/update
+append message:2 " fingers"
+## 840 recorded 839: fact Rpc method=session/update
+append message:2 " slipped"
+## 842 recorded 841: fact Rpc method=session/update
+append message:2 "."
+## 844 recorded 843: fact Rpc method=session/update
+append message:2 " She"
+## 846 recorded 845: fact Rpc method=session/update
+append message:2 " swore"
+## 848 recorded 847: fact Rpc method=session/update
+append message:2 " at"
+## 849 recorded 848: fact Rpc method=session/update
+append message:2 " the"
+## 851 recorded 850: fact Rpc method=session/update
+append message:2 " machine"
+## 853 recorded 852: fact Rpc method=session/update
+append message:2 " the"
+## 855 recorded 854: fact Rpc method=session/update
+append message:2 " way"
+## 857 recorded 856: fact Rpc method=session/update
+append message:2 " she"
+## 859 recorded 858: fact Rpc method=session/update
+append message:2 " had"
+## 861 recorded 860: fact Rpc method=session/update
+append message:2 " heard"
+## 863 recorded 862: fact Rpc method=session/update
+append message:2 " him"
+## 865 recorded 864: fact Rpc method=session/update
+append message:2 " swear"
+## 867 recorded 866: fact Rpc method=session/update
+append message:2 ","
+## 869 recorded 868: fact Rpc method=session/update
+append message:2 " without"
+## 870 recorded 869: fact Rpc method=session/update
+append message:2 " heat"
+## 871 recorded 870: fact Rpc method=session/update
+append message:2 ","
+## 873 recorded 872: fact Rpc method=session/update
+append message:2 " as"
+## 875 recorded 874: fact Rpc method=session/update
+append message:2 " if"
+## 877 recorded 876: fact Rpc method=session/update
+append message:2 " the"
+## 879 recorded 878: fact Rpc method=session/update
+append message:2 " words"
+## 881 recorded 880: fact Rpc method=session/update
+append message:2 " were"
+## 883 recorded 882: fact Rpc method=session/update
+append message:2 " tools"
+## 885 recorded 884: fact Rpc method=session/update
+append message:2 "."
+## 887 recorded 886: fact Rpc method=session/update
+append message:2 " When"
+## 889 recorded 888: fact Rpc method=session/update
+append message:2 " she"
+## 891 recorded 890: fact Rpc method=session/update
+append message:2 " threw"
+## 893 recorded 892: fact Rpc method=session/update
+append message:2 " the"
+## 895 recorded 894: fact Rpc method=session/update
+append message:2 " switch"
+## 897 recorded 896: fact Rpc method=session/update
+append message:2 " the"
+## 899 recorded 898: fact Rpc method=session/update
+append message:2 " motor"
+## 901 recorded 900: fact Rpc method=session/update
+append message:2 " caught"
+## 903 recorded 902: fact Rpc method=session/update
+append message:2 ","
+## 905 recorded 904: fact Rpc method=session/update
+append message:2 " coughed"
+## 907 recorded 906: fact Rpc method=session/update
+append message:2 ","
+## 909 recorded 908: fact Rpc method=session/update
+append message:2 " and"
+## 910 recorded 909: fact Rpc method=session/update
+append message:2 " settled"
+## 911 recorded 910: fact Rpc method=session/update
+append message:2 " into"
+## 912 recorded 911: fact Rpc method=session/update
+append message:2 " its"
+## 913 recorded 912: fact Rpc method=session/update
+append message:2 " old"
+## 915 recorded 914: fact Rpc method=session/update
+append message:2 " knock"
+## 917 recorded 916: fact Rpc method=session/update
+append message:2 "."
+## 919 recorded 918: fact Rpc method=session/update
+append message:2 " The"
+## 921 recorded 920: fact Rpc method=session/update
+append message:2 " horn"
+## 923 recorded 922: fact Rpc method=session/update
+append message:2 " came"
+## 925 recorded 924: fact Rpc method=session/update
+append message:2 " back"
+## 927 recorded 926: fact Rpc method=session/update
+append message:2 ","
+## 929 recorded 928: fact Rpc method=session/update
+append message:2 " late"
+## 931 recorded 930: fact Rpc method=session/update
+append message:2 " and"
+## 933 recorded 932: fact Rpc method=session/update
+append message:2 " a"
+## 935 recorded 934: fact Rpc method=session/update
+append message:2 " little"
+## 937 recorded 936: fact Rpc method=session/update
+append message:2 " flat"
+## 939 recorded 938: fact Rpc method=session/update
+append message:2 ","
+## 941 recorded 940: fact Rpc method=session/update
+append message:2 " and"
+## 943 recorded 942: fact Rpc method=session/update
+append message:2 " filled"
+## 945 recorded 944: fact Rpc method=session/update
+append message:2 " the"
+## 947 recorded 946: fact Rpc method=session/update
+append message:2 " fog"
+## 949 recorded 948: fact Rpc method=session/update
+append message:2 " again"
+## 951 recorded 950: fact Rpc method=session/update
+append message:2 ".\n\n"
+## 953 recorded 952: fact Rpc method=session/update
+append message:2 "She"
+## 955 recorded 954: fact Rpc method=session/update
+append message:2 " climbed"
+## 957 recorded 956: fact Rpc method=session/update
+append message:2 " to"
+## 959 recorded 958: fact Rpc method=session/update
+append message:2 " the"
+## 961 recorded 960: fact Rpc method=session/update
+append message:2 " light"
+## 963 recorded 962: fact Rpc method=session/update
+append message:2 " and"
+## 965 recorded 964: fact Rpc method=session/update
+append message:2 " stayed"
+## 967 recorded 966: fact Rpc method=session/update
+append message:2 " until"
+## 969 recorded 968: fact Rpc method=session/update
+append message:2 " the"
+## 971 recorded 970: fact Rpc method=session/update
+append message:2 " gray"
+## 973 recorded 972: fact Rpc method=session/update
+append message:2 " came"
+## 974 recorded 973: fact Rpc method=session/update
+append message:2 " up"
+## 976 recorded 975: fact Rpc method=session/update
+append message:2 "."
+## 977 recorded 976: fact Rpc method=session/update
+append message:2 " A"
+## 979 recorded 978: fact Rpc method=session/update
+append message:2 " fre"
+## 981 recorded 980: fact Rpc method=session/update
+append message:2 "ighter"
+## 983 recorded 982: fact Rpc method=session/update
+append message:2 " passed"
+## 985 recorded 984: fact Rpc method=session/update
+append message:2 " close"
+## 987 recorded 986: fact Rpc method=session/update
+append message:2 " enough"
+## 989 recorded 988: fact Rpc method=session/update
+append message:2 " that"
+## 991 recorded 990: fact Rpc method=session/update
+append message:2 " she"
+## 993 recorded 992: fact Rpc method=session/update
+append message:2 " saw"
+## 995 recorded 994: fact Rpc method=session/update
+append message:2 " the"
+## 997 recorded 996: fact Rpc method=session/update
+append message:2 " rust"
+## 999 recorded 998: fact Rpc method=session/update
+append message:2 " on"
+## 1001 recorded 1000: fact Rpc method=session/update
+append message:2 " its"
+## 1003 recorded 1002: fact Rpc method=session/update
+append message:2 " bow"
+## 1005 recorded 1004: fact Rpc method=session/update
+append message:2 " and"
+## 1007 recorded 1006: fact Rpc method=session/update
+append message:2 " a"
+## 1009 recorded 1008: fact Rpc method=session/update
+append message:2 " man"
+## 1011 recorded 1010: fact Rpc method=session/update
+append message:2 " in"
+## 1013 recorded 1012: fact Rpc method=session/update
+append message:2 " a"
+## 1015 recorded 1014: fact Rpc method=session/update
+append message:2 " yellow"
+## 1017 recorded 1016: fact Rpc method=session/update
+append message:2 " coat"
+## 1018 recorded 1017: fact Rpc method=session/update
+append message:2 " lifting"
+## 1020 recorded 1019: fact Rpc method=session/update
+append message:2 " one"
+## 1021 recorded 1020: fact Rpc method=session/update
+append message:2 " hand"
+## 1022 recorded 1021: fact Rpc method=session/update
+append message:2 "."
+## 1023 recorded 1022: fact Rpc method=session/update
+append message:2 " She"
+## 1025 recorded 1024: fact Rpc method=session/update
+append message:2 " lifted"
+## 1027 recorded 1026: fact Rpc method=session/update
+append message:2 " hers"
+## 1029 recorded 1028: fact Rpc method=session/update
+append message:2 " back"
+## 1031 recorded 1030: fact Rpc method=session/update
+append message:2 ","
+## 1033 recorded 1032: fact Rpc method=session/update
+append message:2 " though"
+## 1035 recorded 1034: fact Rpc method=session/update
+append message:2 " he"
+## 1037 recorded 1036: fact Rpc method=session/update
+append message:2 " could"
+## 1039 recorded 1038: fact Rpc method=session/update
+append message:2 " not"
+## 1041 recorded 1040: fact Rpc method=session/update
+append message:2 " have"
+## 1043 recorded 1042: fact Rpc method=session/update
+append message:2 " seen"
+## 1045 recorded 1044: fact Rpc method=session/update
+append message:2 " her"
+## 1047 recorded 1046: fact Rpc method=session/update
+append message:2 " face"
+## 1049 recorded 1048: fact Rpc method=session/update
+append message:2 "."
+## 1051 recorded 1050: fact Rpc method=session/update
+append message:2 " When"
+## 1053 recorded 1052: fact Rpc method=session/update
+append message:2 " the"
+## 1055 recorded 1054: fact Rpc method=session/update
+append message:2 " fog"
+## 1057 recorded 1056: fact Rpc method=session/update
+append message:2 " th"
+## 1059 recorded 1058: fact Rpc method=session/update
+append message:2 "inned"
+## 1061 recorded 1060: fact Rpc method=session/update
+append message:2 " she"
+## 1063 recorded 1062: fact Rpc method=session/update
+append message:2 " wrote"
+## 1065 recorded 1064: fact Rpc method=session/update
+append message:2 " the"
+## 1067 recorded 1066: fact Rpc method=session/update
+append message:2 " night"
+## 1069 recorded 1068: fact Rpc method=session/update
+append message:2 " in"
+## 1071 recorded 1070: fact Rpc method=session/update
+append message:2 " the"
+## 1073 recorded 1072: fact Rpc method=session/update
+append message:2 " log"
+## 1075 recorded 1074: fact Rpc method=session/update
+append message:2 " in"
+## 1077 recorded 1076: fact Rpc method=session/update
+append message:2 " her"
+## 1079 recorded 1078: fact Rpc method=session/update
+append message:2 " square"
+## 1081 recorded 1080: fact Rpc method=session/update
+append message:2 " hand"
+## 1082 recorded 1081: fact Rpc method=session/update
+append message:2 ":"
+## 1083 recorded 1082: fact Rpc method=session/update
+append message:2 " belt"
+## 1085 recorded 1084: fact Rpc method=session/update
+append message:2 " failed"
+## 1086 recorded 1085: fact Rpc method=session/update
+append message:2 ";"
+## 1087 recorded 1086: fact Rpc method=session/update
+append message:2 " repaired"
+## 1089 recorded 1088: fact Rpc method=session/update
+append message:2 " with"
+## 1091 recorded 1090: fact Rpc method=session/update
+append message:2 " leather"
+## 1093 recorded 1092: fact Rpc method=session/update
+append message:2 " strap"
+## 1095 recorded 1094: fact Rpc method=session/update
+append message:2 ";"
+## 1097 recorded 1096: fact Rpc method=session/update
+append message:2 " horn"
+## 1099 recorded 1098: fact Rpc method=session/update
+append message:2 " restored"
+## 1101 recorded 1100: fact Rpc method=session/update
+append message:2 " at"
+## 1103 recorded 1102: fact Rpc method=session/update
+append message:2 " "
+## 1105 recorded 1104: fact Rpc method=session/update
+append message:2 "1"
+## 1107 recorded 1106: fact Rpc method=session/update
+append message:2 ":"
+## 1109 recorded 1108: fact Rpc method=session/update
+append message:2 "40"
+## 1111 recorded 1110: fact Rpc method=session/update
+append message:2 "."
+## 1113 recorded 1112: fact Rpc method=session/update
+append message:2 " She"
+## 1115 recorded 1114: fact Rpc method=session/update
+append message:2 " did"
+## 1117 recorded 1116: fact Rpc method=session/update
+append message:2 " not"
+## 1119 recorded 1118: fact Rpc method=session/update
+append message:2 " write"
+## 1121 recorded 1120: fact Rpc method=session/update
+append message:2 " that"
+## 1123 recorded 1122: fact Rpc method=session/update
+append message:2 " she"
+## 1125 recorded 1124: fact Rpc method=session/update
+append message:2 " had"
+## 1127 recorded 1126: fact Rpc method=session/update
+append message:2 " been"
+## 1129 recorded 1128: fact Rpc method=session/update
+append message:2 " afraid"
+## 1131 recorded 1130: fact Rpc method=session/update
+append message:2 "."
+## 1133 recorded 1132: fact Rpc method=session/update
+append message:2 " The"
+## 1135 recorded 1134: fact Rpc method=session/update
+append message:2 " book"
+## 1137 recorded 1136: fact Rpc method=session/update
+append message:2 " was"
+## 1138 recorded 1137: fact Rpc method=session/update
+append message:2 " for"
+## 1139 recorded 1138: fact Rpc method=session/update
+append message:2 " the"
+## 1140 recorded 1139: fact Rpc method=session/update
+append message:2 " next"
+## 1142 recorded 1141: fact Rpc method=session/update
+append message:2 " keeper"
+## 1144 recorded 1143: fact Rpc method=session/update
+append message:2 ","
+## 1146 recorded 1145: fact Rpc method=session/update
+append message:2 " and"
+## 1148 recorded 1147: fact Rpc method=session/update
+append message:2 " fear"
+## 1150 recorded 1149: fact Rpc method=session/update
+append message:2 " did"
+## 1152 recorded 1151: fact Rpc method=session/update
+append message:2 " not"
+## 1154 recorded 1153: fact Rpc method=session/update
+append message:2 " help"
+## 1156 recorded 1155: fact Rpc method=session/update
+append message:2 " them"
+## 1158 recorded 1157: fact Rpc method=session/update
+append message:2 ".\n\n"
+## 1160 recorded 1159: fact Rpc method=session/update
+append message:2 "At"
+## 1162 recorded 1161: fact Rpc method=session/update
+append message:2 " noon"
+## 1164 recorded 1163: fact Rpc method=session/update
+append message:2 " she"
+## 1166 recorded 1165: fact Rpc method=session/update
+append message:2 " slept"
+## 1168 recorded 1167: fact Rpc method=session/update
+append message:2 " in"
+## 1170 recorded 1169: fact Rpc method=session/update
+append message:2 " the"
+## 1172 recorded 1171: fact Rpc method=session/update
+append message:2 " chair"
+## 1174 recorded 1173: fact Rpc method=session/update
+append message:2 " by"
+## 1176 recorded 1175: fact Rpc method=session/update
+append message:2 " the"
+## 1178 recorded 1177: fact Rpc method=session/update
+append message:2 " kitchen"
+## 1180 recorded 1179: fact Rpc method=session/update
+append message:2 " stove"
+## 1182 recorded 1181: fact Rpc method=session/update
+append message:2 "."
+## 1184 recorded 1183: fact Rpc method=session/update
+append message:2 " When"
+## 1185 recorded 1184: fact Rpc method=session/update
+append message:2 " she"
+## 1186 recorded 1185: fact Rpc method=session/update
+append message:2 " woke"
+## 1187 recorded 1186: fact Rpc method=session/update
+append message:2 ","
+## 1188 recorded 1187: fact Rpc method=session/update
+append message:2 " the"
+## 1190 recorded 1189: fact Rpc method=session/update
+append message:2 " strap"
+## 1192 recorded 1191: fact Rpc method=session/update
+append message:2 " was"
+## 1194 recorded 1193: fact Rpc method=session/update
+append message:2 " still"
+## 1196 recorded 1195: fact Rpc method=session/update
+append message:2 " holding"
+## 1198 recorded 1197: fact Rpc method=session/update
+append message:2 " and"
+## 1200 recorded 1199: fact Rpc method=session/update
+append message:2 " the"
+## 1202 recorded 1201: fact Rpc method=session/update
+append message:2 " sea"
+## 1204 recorded 1203: fact Rpc method=session/update
+append message:2 " had"
+## 1206 recorded 1205: fact Rpc method=session/update
+append message:2 " gone"
+## 1208 recorded 1207: fact Rpc method=session/update
+append message:2 " the"
+## 1210 recorded 1209: fact Rpc method=session/update
+append message:2 " color"
+## 1212 recorded 1211: fact Rpc method=session/update
+append message:2 " of"
+## 1214 recorded 1213: fact Rpc method=session/update
+append message:2 " pewter"
+## 1215 recorded 1214: fact Rpc method=session/update
+append message:2 "."
+## 1217 recorded 1216: fact Rpc method=session/update
+append message:2 " She"
+## 1219 recorded 1218: fact Rpc method=session/update
+append message:2 " made"
+## 1221 recorded 1220: fact Rpc method=session/update
+append message:2 " tea"
+## 1223 recorded 1222: fact Rpc method=session/update
+append message:2 ","
+## 1225 recorded 1224: fact Rpc method=session/update
+append message:2 " carried"
+## 1227 recorded 1226: fact Rpc method=session/update
+append message:2 " it"
+## 1229 recorded 1228: fact Rpc method=session/update
+append message:2 " up"
+## 1230 recorded 1229: fact Rpc method=session/update
+append message:2 ","
+## 1232 recorded 1231: fact Rpc method=session/update
+append message:2 " and"
+## 1233 recorded 1232: fact Rpc method=session/update
+append message:2 " stood"
+## 1234 recorded 1233: fact Rpc method=session/update
+append message:2 " with"
+## 1236 recorded 1235: fact Rpc method=session/update
+append message:2 " the"
+## 1238 recorded 1237: fact Rpc method=session/update
+append message:2 " cup"
+## 1240 recorded 1239: fact Rpc method=session/update
+append message:2 " warming"
+## 1242 recorded 1241: fact Rpc method=session/update
+append message:2 " her"
+## 1244 recorded 1243: fact Rpc method=session/update
+append message:2 " hands"
+## 1246 recorded 1245: fact Rpc method=session/update
+append message:2 " while"
+## 1248 recorded 1247: fact Rpc method=session/update
+append message:2 " the"
+## 1250 recorded 1249: fact Rpc method=session/update
+append message:2 " beam"
+## 1252 recorded 1251: fact Rpc method=session/update
+append message:2 " turned"
+## 1254 recorded 1253: fact Rpc method=session/update
+append message:2 " over"
+## 1256 recorded 1255: fact Rpc method=session/update
+append message:2 " a"
+## 1258 recorded 1257: fact Rpc method=session/update
+append message:2 " quieter"
+## 1260 recorded 1259: fact Rpc method=session/update
+append message:2 " water"
+## 1262 recorded 1261: fact Rpc method=session/update
+append message:2 "."
+## 1264 recorded 1263: fact Rpc method=session/update
+append message:2 " The"
+## 1266 recorded 1265: fact Rpc method=session/update
+append message:2 " tower"
+## 1268 recorded 1267: fact Rpc method=session/update
+append message:2 " would"
+## 1270 recorded 1269: fact Rpc method=session/update
+append message:2 " need"
+## 1272 recorded 1271: fact Rpc method=session/update
+append message:2 " a"
+## 1274 recorded 1273: fact Rpc method=session/update
+append message:2 " proper"
+## 1276 recorded 1275: fact Rpc method=session/update
+append message:2 " belt"
+## 1278 recorded 1277: fact Rpc method=session/update
+append message:2 "."
+## 1280 recorded 1279: fact Rpc method=session/update
+append message:2 " She"
+## 1282 recorded 1281: fact Rpc method=session/update
+append message:2 " would"
+## 1284 recorded 1283: fact Rpc method=session/update
+append message:2 " send"
+## 1286 recorded 1285: fact Rpc method=session/update
+append message:2 " for"
+## 1288 recorded 1287: fact Rpc method=session/update
+append message:2 " one"
+## 1290 recorded 1289: fact Rpc method=session/update
+append message:2 "."
+## 1292 recorded 1291: fact Rpc method=session/update
+append message:2 " Until"
+## 1294 recorded 1293: fact Rpc method=session/update
+append message:2 " it"
+## 1296 recorded 1295: fact Rpc method=session/update
+append message:2 " came"
+## 1298 recorded 1297: fact Rpc method=session/update
+append message:2 ","
+## 1300 recorded 1299: fact Rpc method=session/update
+append message:2 " the"
+## 1302 recorded 1301: fact Rpc method=session/update
+append message:2 " leather"
+## 1304 recorded 1303: fact Rpc method=session/update
+append message:2 " would"
+## 1306 recorded 1305: fact Rpc method=session/update
+append message:2 " do"
+## 1308 recorded 1307: fact Rpc method=session/update
+append message:2 ","
+## 1310 recorded 1309: fact Rpc method=session/update
+append message:2 " and"
+## 1312 recorded 1311: fact Rpc method=session/update
+append message:2 " so"
+## 1314 recorded 1313: fact Rpc method=session/update
+append message:2 " would"
+## 1316 recorded 1315: fact Rpc method=session/update
+append message:2 " she"
+## 1318 recorded 1317: fact Rpc method=session/update
+append message:2 ","
+## 1320 recorded 1319: fact Rpc method=session/update
+append message:2 " which"
+## 1322 recorded 1321: fact Rpc method=session/update
+append message:2 " was"
+## 1323 recorded 1322: fact Rpc method=session/update
+append message:2 " the"
+## 1324 recorded 1323: fact Rpc method=session/update
+append message:2 " whole"
+## 1325 recorded 1324: fact Rpc method=session/update
+append message:2 " of"
+## 1327 recorded 1326: fact Rpc method=session/update
+append message:2 " the"
+## 1329 recorded 1328: fact Rpc method=session/update
+append message:2 " work"
+## 1331 recorded 1330: fact Rpc method=session/update
+append message:2 ":"
+## 1333 recorded 1332: fact Rpc method=session/update
+append message:2 " to"
+## 1335 recorded 1334: fact Rpc method=session/update
+append message:2 " be"
+## 1337 recorded 1336: fact Rpc method=session/update
+append message:2 " the"
+## 1339 recorded 1338: fact Rpc method=session/update
+append message:2 " person"
+## 1341 recorded 1340: fact Rpc method=session/update
+append message:2 " who"
+## 1343 recorded 1342: fact Rpc method=session/update
+append message:2 " stayed"
+## 1344 recorded 1343: fact Rpc method=session/update
+append message:2 " when"
+## 1345 recorded 1344: fact Rpc method=session/update
+append message:2 " the"
+## 1346 recorded 1345: fact Rpc method=session/update
+append message:2 " dark"
+## 1347 recorded 1346: fact Rpc method=session/update
+append message:2 " came"
+## 1348 recorded 1347: fact Rpc method=session/update
+append message:2 " in"
+## 1350 recorded 1349: fact Rpc method=session/update
+append message:2 " and"
+## 1351 recorded 1350: fact Rpc method=session/update
+append message:2 " the"
+## 1352 recorded 1351: fact Rpc method=session/update
+append message:2 " machines"
+## 1353 recorded 1352: fact Rpc method=session/update
+append message:2 " forgot"
+## 1354 recorded 1353: fact Rpc method=session/update
+append message:2 " their"
+## 1355 recorded 1354: fact Rpc method=session/update
+append message:2 " duty"
+## 1356 recorded 1355: fact Rpc method=session/update
+append message:2 "."
+## 1358 recorded 1357: fact Rpc method=session/update
+snapshot WORKING queue=[p1-4] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=15543 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21551/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+## 1371 recorded 1370: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+effect write "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Stop the story now and reply with exactly the word: steered\",\"type\":\"text\"}],\"sessionId\":\"01a1fa62-9f44-7330-8704-81bcbb12473e\"}}"
+item message:2 message final at=2464 text="Mara kept the light because the sea kept her father. Twenty years ago he had rowed out after a flare that never came back, and the tower on Blackbar Point had needed someone who would not leave the stairs. She learned the lamp the way other people learn a kitchen: by touch, in the dark, with the wind arguing through the glass.\n\nEach evening she climbed the spiral with a cloth over her shoulder and a tin of oil in her hand. The steps were worn in the middle, polished by boots that had belonged to keepers before her. At the top the lantern room smelled of hot metal and salt. She trimmed the wick, wiped the lens until her own face vanished in the curve of it, and set the mechanism turning. The beam walked the water in a slow white circle. Ships answered with small lights of their own, polite and distant, and then they were gone.\n\nOn the third night of the November gale the fog came in so thick she could not see the railing. The horn took up its work, a low note that shook the floor under her boots. She stayed in the lantern room with a blanket and the logbook, writing the hour and the state of the sea the way the manual required. Somewhere past midnight the horn stuttered and died. The silence afterward was worse than the wind.\n\nMara went down to the engine room with a lantern and found the belt thrown and the motor hot enough to sting her palm through the glove. She had fixed it twice before. This time the spare belt was cracked along its length, the rubber gone white at the fold. She stood with it in both hands and listened to the tower creak. No ship would hear a light in that fog. They needed the sound.\n\nIn the store cupboard she found an old leather strap her father had used to carry coal, stiff and salted and still whole. She cut it, punched holes with a nail, and laced it through the pulleys with wire from the fence coil. Her fingers slipped. She swore at the machine the way she had heard him swear, without heat, as if the words were tools. When she threw the switch the motor caught, coughed, and settled into its old knock. The horn came back, late and a little flat, and filled the fog again.\n\nShe climbed to the light and stayed until the gray came up. A freighter passed close enough that she saw the rust on its bow and a man in a yellow coat lifting one hand. She lifted hers back, though he could not have seen her face. When the fog thinned she wrote the night in the log in her square hand: belt failed; repaired with leather strap; horn restored at 1:40. She did not write that she had been afraid. The book was for the next keeper, and fear did not help them.\n\nAt noon she slept in the chair by the kitchen stove. When she woke, the strap was still holding and the sea had gone the color of pewter. She made tea, carried it up, and stood with the cup warming her hands while the beam turned over a quieter water. The tower would need a proper belt. She would send for one. Until it came, the leather would do, and so would she, which was the whole of the work: to be the person who stayed when the dark came in and the machines forgot their duty."
+item turn:1 turn final at=15634 text="" #1 TURN_OUTCOME_COMPLETED started=367
+item prompt:70312d34 prompt final input=p1-4 at=15634 text="Stop the story now and reply with exactly the word: steered"
+snapshot WORKING queue=[] working_on="Stop the story now and reply with exactly the word: steered" at=15634 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21551/256000 plan=? usage=in:20829/out:713/thought:29/total:21551 cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+turn_end 1 last=message:2
+## 1377 recorded 1376: fact Rpc method=session/update
+item message:3 message open at=17467 text="ste"
+snapshot WORKING queue=[] working_on="Stop the story now and reply with exactly the word: steered" at=17467 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21705/256000 plan=? usage=in:20829/out:713/thought:29/total:21551 cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+## 1378 recorded 1377: fact Rpc method=session/update
+append message:3 "ered"
+## 1380 recorded 1379: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Stop the story now and reply with exactly the word: steered" at=17567 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21757/256000 plan=? usage=in:20829/out:713/thought:29/total:21551 cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+## 1389 recorded 1388: fact Rpc "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
+item message:3 message final at=17467 text="steered"
+item turn:2 turn final at=17648 text="" #2 TURN_OUTCOME_COMPLETED started=15634
+snapshot said "steered"
+snapshot IDLE queue=[] working_on="Stop the story now and reply with exactly the word: steered" at=17648 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21757/256000 plan=? usage=in:21713/out:37/thought:35/total:21757 cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+turn_end 2 last=message:3
+## 1399 recorded 1398: provider_exit Some(0)
+item boundary:2 boundary final at=22719 text="" BOUNDARY_KIND_EXITED cause=QUIT
+snapshot IDLE queue=[] working_on="Stop the story now and reply with exactly the word: steered" at=22719 agent=grok session=01a1fa62-9f44-7330-8704-81bcbb12473e asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21757/256000 plan=? usage=in:21713/out:37/thought:35/total:21757 cost=? sign_in=SIGNED_IN reopen=RESUME
+incarnation_end QUIT

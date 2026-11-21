@@ -103,18 +103,30 @@ impl Attacher {
                 "{name} is stopped, so it has no terminal to attach to; start it again with \
                  `amux resume {name}`"
             ))
-        } else if agent.kind() == Kind::ClaudeSdk {
-            Some(format!(
-                "{name} was started for amux's chat and has no Claude Code interface; \
-                 `amux attach {name} --in amux` opens its chat"
-            ))
-        } else if agent.kind() == Kind::Codex && cfg!(windows) {
-            Some(format!(
-                "Codex's own interface does not open on Windows, where {name}'s Codex has room \
-                 for amux alone; `amux attach {name} --in amux` opens its chat"
-            ))
         } else {
-            None
+            match agent.kind() {
+                Kind::ClaudeSdk => Some(format!(
+                    "{name} was started for amux's chat and has no Claude Code interface; \
+                     `amux attach {name} --in amux` opens its chat"
+                )),
+                Kind::Codex if cfg!(windows) => Some(format!(
+                    "Codex's own interface does not open on Windows, where {name}'s Codex has \
+                     room for amux alone; `amux attach {name} --in amux` opens its chat"
+                )),
+                Kind::ClaudePty | Kind::Codex => None,
+                // amux talks to it over its standard input and output, which
+                // leaves it no screen of its own to show.
+                Kind::Acp => Some(format!(
+                    "{name} has no interface of its own, only amux's chat; \
+                     `amux attach {name} --in amux` opens it"
+                )),
+                // A kind this build does not know, from a newer one: its
+                // chat is the one way in that every kind has.
+                Kind::Unspecified => Some(format!(
+                    "{name} is an agent this amux does not know how to attach to; \
+                     `amux attach {name} --in amux` opens its chat"
+                )),
+            }
         }
     }
 

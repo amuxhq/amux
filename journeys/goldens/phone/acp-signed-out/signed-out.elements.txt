@@ -1,0 +1,24 @@
+shell |  | agents | 0,62,402,778
+chat |  | signer | 0,116,402,724
+chat.foot.sign-in | Fake ACP Agent needs you to sign in | Signed out
+Run fake-acp login in the terminal on attic.
+Signed in elsewhere? Send a message to try again. | 12,582,378,146
+chat.field | Reply |  | 28,750,346,24
+chat.attach | Attach | closed | 23,779,44,44
+chat.dictate | Dictate | idle | 287,779,44,44
+chat.send | Send |  | 335,779,44,44 (disabled)
+chat.more | More |  | 350,66,28,36
+chat.header | /p/t/a/n/a/r/work · attic | live | 76,66,172,36
+chat.title | signer | signer | 76,66,172,36
+ | Error |  | 29,599,17,17
+ | Fake ACP Agent needs you to sign in |  | 58,598,272,20
+ | Signed out
+Run fake-acp login in the terminal on attic.
+Signed in elsewhere? Send a message to try again. |  | 58,620,280,92
+ | Attach |  | 23,779,44,44
+ | Dictate |  | 287,779,44,44
+ | Send |  | 335,779,44,44 (disabled)
+BackButton | Agents |  | 16,62,44,44
+ | signer, /p/t/a/n/a/r/work · attic |  | 76,66,172,36
+ | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

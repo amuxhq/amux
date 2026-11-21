@@ -403,6 +403,9 @@ private struct AskBodyView: View {
     @State private var forSession = false
     @State private var opened = false
     @State private var fields: [FormEntry]?
+    /// The person's own words in place of any answer, being written.
+    @State private var replying: Bool
+    @State private var replyText: String
 
     init(
         card: AskCard, preset: AskPreset?, questions: QuestionKeeping, form: FormKeeping,
@@ -415,6 +418,11 @@ private struct AskBodyView: View {
         self.act = act
         if case .noting? = preset { _noting = State(initialValue: true) } else { _noting = State(initialValue: false) }
         _autoAccept = State(initialValue: preset == .autoAccept)
+        if case .replying(let text)? = preset {
+            (_replying, _replyText) = (State(initialValue: true), State(initialValue: text))
+        } else {
+            (_replying, _replyText) = (State(initialValue: false), State(initialValue: ""))
+        }
     }
 
     var body: some View {
@@ -428,9 +436,27 @@ private struct AskBodyView: View {
         } else {
             PinnedFooter {
                 subject
-                if noting { noteRows } else { choiceRows }
+                if replying {
+                    ReplyStep(text: $replyText) { replying = false }
+                } else if noting {
+                    noteRows
+                } else {
+                    choiceRows
+                    // An agent that takes the person's own words in place
+                    // of any answer (an ACP agent's) offers them on every
+                    // ask, a form's and a link's included.
+                    if card.replyInstead {
+                        link(String(localized: "Reply instead"), id: "ask.reply", value: "") { replying = true }
+                    }
+                }
             } footer: {
-                if noting { noteButtons } else { choiceButtons }
+                if replying {
+                    ReplyStep.send(replyText) { act(.reply(replyText, soFar: [])) }
+                } else if noting {
+                    noteButtons
+                } else {
+                    choiceButtons
+                }
             }
         }
     }
@@ -573,6 +599,7 @@ private struct AskBodyView: View {
     private func isDeny(_ choice: Choice) -> Bool {
         switch choice.outcome {
         case .deny, .denyAndStop, .decline, .sendBack: true
+        case .offered(_, let refuses): refuses
         default: false
         }
     }
@@ -1673,44 +1700,11 @@ struct QuestionCard: View {
     /// The person's own words in place of the answers; what they had
     /// answered so far goes with them.
     private var replyStep: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Reply in your own words")
-                    .designFont(.monoSmall, design)
-                    .foregroundStyle(design.inkMuted.color)
-                Spacer(minLength: 6)
-                Button { replying = false } label: {
-                    Text("Back")
-                        .designFont(.detail, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .thumbTarget(x: 6, y: 12)
-                }
-                .buttonStyle(.amuxControl)
-                .identified("ask.reply.back", label: String(localized: "Back"))
-                .reclaimingThumbTarget(x: 6, y: 12)
-            }
-            TextField("", text: $replyText, axis: .vertical)
-                .lineLimit(2...6)
-                .designFont(.body, design)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background {
-                    RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
-                        .fill(design.raised.color)
-                        .strokeBorder(design.ink.color, lineWidth: 1)
-                }
-                .accessibilityLabel(String(localized: "Reply in your own words"))
-                .identified("ask.reply.text", value: replyText)
-        }
+        ReplyStep(text: $replyText) { replying = false }
     }
 
     private var replyButtons: some View {
-        let blank = replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return choiceButton(
-            String(localized: "Send reply"), kind: .primary, id: "ask.reply.send", enabled: !blank
-        ) {
-            reply(replyText, responses)
-        }
+        ReplyStep.send(replyText) { reply(replyText, responses) }
     }
 
     private func textLink(_ title: String, id: String, action: @escaping () -> Void) -> some View {
@@ -1808,5 +1802,53 @@ struct OptionRow: View {
             }
         }
         .frame(width: 18, height: 18)
+    }
+}
+
+/// Writing the person's own words in place of an answer: what it is, Back,
+/// and the field. Its button is `send`, pinned with the card's others.
+struct ReplyStep: View {
+    @Environment(\.design) private var design
+    @Binding var text: String
+    let back: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Reply in your own words")
+                    .designFont(.monoSmall, design)
+                    .foregroundStyle(design.inkMuted.color)
+                Spacer(minLength: 6)
+                Button(action: back) {
+                    Text("Back")
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .thumbTarget(x: 6, y: 12)
+                }
+                .buttonStyle(.amuxControl)
+                .identified("ask.reply.back", label: String(localized: "Back"))
+                .reclaimingThumbTarget(x: 6, y: 12)
+            }
+            TextField("", text: $text, axis: .vertical)
+                .lineLimit(2...6)
+                .designFont(.body, design)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background {
+                    RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
+                        .fill(design.raised.color)
+                        .strokeBorder(design.ink.color, lineWidth: 1)
+                }
+                .accessibilityLabel(String(localized: "Reply in your own words"))
+                .identified("ask.reply.text", value: text)
+        }
+    }
+
+    /// Send reply, enabled once there are words to send.
+    @MainActor
+    static func send(_ text: String, action: @escaping () -> Void) -> some View {
+        let blank = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return choiceButton(
+            String(localized: "Send reply"), kind: .primary, id: "ask.reply.send", enabled: !blank, action: action)
     }
 }

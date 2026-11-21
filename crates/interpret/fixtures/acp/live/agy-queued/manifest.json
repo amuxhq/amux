@@ -1,0 +1,25 @@
+{
+  "spec": "agy-queued",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.898079Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:04df83f9800ed2f9ab33e4d1076bd852a5ccbdaafc0d45444d09de0b0541d647",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "203ea196-941d-4d3f-a401-252ea4a1b47e"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a second prompt sent as soon as the first turn's answer arrives"
+  }
+}

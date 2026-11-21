@@ -31,11 +31,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # The sources held to the types: every file under a directory, or one file.
 SOURCES = [
+    "crates/interpret/src/acp",
     "crates/interpret/src/codex",
     "crates/interpret/src/claude_sdk",
     "crates/interpret/src/claude_pty",
     "crates/interpret/src/claude_common.rs",
     "crates/interpret/src/claude_answers.rs",
+    "crates/agent/src/acp.rs",
     "crates/agent/src/provider.rs",
     "crates/agent/src/claude/messaging.rs",
 ]
@@ -125,6 +127,18 @@ EXEMPTIONS = [
         "codex_answer_response",
         r"Value::Object\(Default::default\(\)\)",
         "a tool server's form content is whatever its schema asks for",
+    ),
+    Exemption(
+        "crates/interpret/src/acp/facts.rs",
+        "agent_request",
+        r"json_as_written\(payload, &\[\"params\", \"requestedSchema\"\]\)",
+        "an elicitation's form schema is kept as the agent wrote it; a Value would sort its keys and so the form's fields",
+    ),
+    Exemption(
+        "crates/interpret/src/acp/facts.rs",
+        "cut",
+        r"Value::(Array|Object)",
+        "an ACP call's input is whatever the tool was given, kept as written; only its long strings are cut",
     ),
     Exemption(
         "crates/interpret/src/codex/facts.rs",

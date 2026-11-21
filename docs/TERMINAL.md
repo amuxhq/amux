@@ -158,8 +158,8 @@ chats with their agents, the installation's `ui.chat_in`:
   handed straight to the new agent (see [raw attach](#raw-attach)); started on another machine its chat opens
   instead, and says why.
 
-A new agent always shows the values it will start with, as the host's catalogue names them: `new_agent.claude` and
-`new_agent.codex` hold a person's remembered model and effort, and whatever they do not set is what the provider's own
+A new agent always shows the values it will start with, as the host's catalogue names them: `new_agent.claude`,
+`new_agent.codex` and `new_agent.<id>` for an ACP agent hold a person's remembered model and effort (never a mode), and whatever they do not set is what the provider's own
 settings resolve to. amux ships no values of its own and never writes the provider's settings. The leader then `n` from
 a chat starts from that chat's agent, folder and host instead.
 
@@ -454,6 +454,9 @@ effort = "high"
 [new_agent.codex]
 model = "gpt-6.1-sol"
 effort = "medium"
+
+[new_agent.opencode]  # an ACP agent's, by its id
+model = "anthropic/claude-sonnet"
 ```
 
 `theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back
@@ -643,7 +646,7 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux` | Opens the terminal client. |
 | `amux attach <agent>` | Opens the agent's chat in this terminal, in the interface `ui.chat_in` names, or the one `--in amux\|native` asks for; see [raw attach](#raw-attach). |
 | `amux ls` | Lists the agents with children beneath their parent: name, short id, agent and state. |
-| `amux new claude\|codex` | Starts an agent in the current directory (`--cwd` for another), for the interface `ui.chat_in` names or `--in amux\|native`: Claude runs headless for amux's chat and in a terminal for its own. `--name`, `--model`, `--effort`, `--permission` and `--prompt` for its first prompt; the model, effort and permission come from `new_agent` otherwise, except in the agent's own interface, which sets its own. Extra arguments for Claude go after `--`. |
+| `amux new <agent>` | Starts an agent (`claude`, `codex` or an ACP agent's id) in the current directory (`--cwd` for another), for the interface `ui.chat_in` names or `--in amux\|native`: Claude runs headless for amux's chat and in a terminal for its own. `--name`, `--model`, `--effort`, `--permission` and `--prompt` for its first prompt; the model and effort come from `new_agent` otherwise and the permission from the provider, except in the agent's own interface, which sets its own. Extra arguments for Claude go after `--`. |
 | `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it, and if not, why in a sentence. |
 | `amux settle <agent>` | Files the agent as done with, stopping it now when live, and every descendant is settled with it on its own host: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
 | `amux resume <agent> [text…]` | Starts a stopped agent again, with an optional first prompt. |

@@ -196,7 +196,8 @@ impl Offers {
 
     /// Names Claude's and Codex's copies again after the host's remembered
     /// picks changed, so each hash follows what a client would now be told.
-    /// An ACP agent's is named again the next time it is asked for.
+    /// An ACP agent's is named again as it is next asked for, which the
+    /// runtime does at once ([`ProfileRuntime::refresh_agents`]).
     pub(crate) fn remembered_changed(&self, launch: &Launch) {
         for (provider, held) in self.held.lock().unwrap().iter_mut() {
             if OWN.contains(&provider.as_str()) {
@@ -286,14 +287,10 @@ fn copy_path(profile_dir: &Path, provider: &str) -> PathBuf {
 /// The picks a new agent of `provider` starts with on this host. A host that
 /// runs Claude in its own terminal keeps to Claude's own settings.
 fn remembered(provider: &str, launch: &Launch) -> settings::NewAgentDefaults {
-    match provider {
-        CLAUDE if launch.claude_kind == wire::Kind::ClaudePty => {
-            settings::NewAgentDefaults::default()
-        }
-        CLAUDE => launch.new_agent.claude.clone(),
-        CODEX => launch.new_agent.codex.clone(),
-        _ => settings::NewAgentDefaults::default(),
+    if provider == CLAUDE && launch.claude_kind == wire::Kind::ClaudePty {
+        return settings::NewAgentDefaults::default();
     }
+    launch.new_agent.of(provider)
 }
 
 /// Encodes the helper's catalogue once, with the host's remembered picks

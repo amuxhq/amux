@@ -258,7 +258,7 @@ impl ProfileRuntime {
         }
         // Only a person changes a chat's model or effort, so it is the same
         // act as picking them for a new agent, and sticks the same way.
-        let picked = crate::spec::Picked::of_input(&input);
+        let picked = crate::spec::Picked::of_input(&input, row.provider_id());
         // A row that says suspended has no process to relay to: asked
         // first, the wake does not write to a connection its process left
         // behind for a moment, which would lose the input.

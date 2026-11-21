@@ -31,7 +31,10 @@ amux new opencode --prompt "Find where we parse the config and explain it"
 
 `--model` and `--effort` pick from what the agent offers. `--permission`
 picks one of the agent's own modes, such as `plan`. Leave them out and the
-agent starts with its own settings. These agents have no interface of their
+agent starts with its own settings. A model or effort you change in its chat
+becomes what that agent starts with next time on that computer, kept under its
+id (`amux config unset new_agent.opencode.model` forgets it); a mode never
+sticks. These agents have no interface of their
 own, so `amux attach` opens them in amux's chat.
 
 ## Add your own agent

@@ -195,30 +195,32 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
 }
 
 /// A person's model or effort pick, for the host to start later agents of
-/// its kind on. None leaves that setting as it was.
+/// its program on. None leaves that setting as it was.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Picked {
     pub kind: Kind,
+    /// The agent program's provider id, which the pick is kept under.
+    pub provider: String,
     pub model: Option<String>,
     pub effort: Option<String>,
 }
 
 impl Picked {
     /// A pick worth keeping: only amux's own chat keeps them, since Claude
-    /// in its own terminal follows Claude's settings. An ACP agent's picks
-    /// would be kept by its agent's id, which the settings do not hold yet,
-    /// so it starts on the agent's own defaults.
+    /// in its own terminal follows Claude's settings. An ACP agent's are
+    /// kept by its id; never its mode, whose default is the agent's own.
     fn worth_keeping(self) -> Option<Self> {
         let kept = match self.kind {
-            Kind::ClaudeSdk | Kind::Codex => true,
-            Kind::ClaudePty | Kind::Acp | Kind::Unspecified => false,
+            Kind::ClaudeSdk | Kind::Codex | Kind::Acp => !self.provider.is_empty(),
+            Kind::ClaudePty | Kind::Unspecified => false,
         };
         (kept && (self.model.is_some() || self.effort.is_some())).then_some(self)
     }
 
-    /// The pick a mid-chat input makes, if it makes one.
-    pub fn of_input(input: &wire::Input) -> Option<Self> {
-        use wire::{KindInput, claude_sdk_input as sdk, codex_input as codex};
+    /// The pick a mid-chat input to an agent of `provider` makes, if it
+    /// makes one.
+    pub fn of_input(input: &wire::Input, provider: &str) -> Option<Self> {
+        use wire::{KindInput, acp_input as acp, claude_sdk_input as sdk, codex_input as codex};
         let (kind, model, effort) = match input.decode_body()? {
             KindInput::ClaudeSdk(input) => match input.of? {
                 sdk::Of::Model(set) => (Kind::ClaudeSdk, set.model, None),
@@ -230,12 +232,16 @@ impl Picked {
                 codex::Of::Effort(set) => (Kind::Codex, None, set.effort),
                 _ => return None,
             },
-            // Remembering an ACP agent's picks needs them kept by its
-            // id, which the settings do not do yet.
-            KindInput::ClaudePty(_) | KindInput::Acp(_) => return None,
+            KindInput::Acp(input) => match input.of? {
+                acp::Of::Model(set) => (Kind::Acp, set.model, None),
+                acp::Of::Effort(set) => (Kind::Acp, None, set.effort),
+                _ => return None,
+            },
+            KindInput::ClaudePty(_) => return None,
         };
         Self {
             kind,
+            provider: provider.to_owned(),
             model,
             effort,
         }
@@ -252,10 +258,11 @@ pub fn picked_at_creation(
     let (model, effort) = match agent {
         Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (&claude.model, &claude.effort),
         Agent::Codex(codex) => (&codex.model, &codex.effort),
-        Agent::Acp(_) => return None,
+        Agent::Acp(acp) => (&acp.model, &acp.effort),
     };
     Picked {
         kind: agent.kind(),
+        provider: agent.provider_id().to_owned(),
         model: model.clone().filter(|_| request.remember_model),
         effort: effort.clone().filter(|_| request.remember_effort),
     }
@@ -298,27 +305,22 @@ pub fn with_remembered(
             .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
     };
     let mut filled = agent.clone();
-    let (model, effort, defaults, passed_model, passed_effort) = match &mut filled {
-        // No pick is remembered for an ACP agent yet.
-        Agent::ClaudePty(_) | Agent::Acp(_) => return filled,
+    let defaults = remembered.of(agent.provider_id());
+    let (model, effort, passed_model, passed_effort) = match &mut filled {
+        Agent::ClaudePty(_) => return filled,
         Agent::ClaudeSdk(claude) => {
             let passed_model = named(&claude.args, "--model");
             let passed_effort = named(&claude.args, "--effort");
             (
                 &mut claude.model,
                 &mut claude.effort,
-                &remembered.claude,
                 passed_model,
                 passed_effort,
             )
         }
-        Agent::Codex(codex) => (
-            &mut codex.model,
-            &mut codex.effort,
-            &remembered.codex,
-            false,
-            false,
-        ),
+        Agent::Codex(codex) => (&mut codex.model, &mut codex.effort, false, false),
+        // Its model and thought level; its mode is never remembered.
+        Agent::Acp(acp) => (&mut acp.model, &mut acp.effort, false, false),
     };
     if model.is_none() && !passed_model {
         model.clone_from(&defaults.model);
@@ -792,25 +794,6 @@ mod tests {
         );
     }
 
-    /// No pick of an ACP agent's is kept: the settings keep picks by
-    /// Claude and Codex alone.
-    #[test]
-    fn an_acp_agents_picks_are_not_kept() {
-        let agent = Agent::Acp(wire::AcpCreateConfig {
-            agent: "grok".into(),
-            model: Some("grok-5".into()),
-            effort: Some("high".into()),
-            mode: None,
-        });
-        let request = wire::CreateAgentRequest {
-            remember_model: true,
-            remember_effort: true,
-            ..Default::default()
-        };
-        assert_eq!(picked_at_creation(&agent, &request), None);
-        assert_eq!(with_remembered(&agent, &remembered(), None), agent);
-    }
-
     #[test]
     fn a_claude_permission_is_its_permission_mode_argument() {
         let resolved = resolve(&Agent::ClaudeSdk(ClaudeCreateConfig {
@@ -849,13 +832,22 @@ mod tests {
     }
 
     fn remembered() -> settings::NewAgentSettings {
-        settings::NewAgentSettings {
-            claude: settings::NewAgentDefaults {
+        let mut remembered = settings::NewAgentSettings::default();
+        remembered.set(
+            "claude",
+            settings::NewAgentDefaults {
                 model: Some("sonnet".into()),
                 effort: Some("xhigh".into()),
             },
-            ..Default::default()
-        }
+        );
+        remembered.set(
+            "opencode",
+            settings::NewAgentDefaults {
+                model: Some("anthropic/sonnet".into()),
+                effort: Some("high".into()),
+            },
+        );
+        remembered
     }
 
     fn claude(model: Option<&str>) -> ClaudeCreateConfig {
@@ -952,11 +944,54 @@ mod tests {
             picked_at_creation(&agent, &request(true, false)),
             Some(Picked {
                 kind: Kind::ClaudeSdk,
+                provider: "claude".into(),
                 model: Some("sonnet".into()),
                 effort: None,
             })
         );
         let terminal = Agent::ClaudePty(claude(Some("sonnet")));
         assert_eq!(picked_at_creation(&terminal, &request(true, true)), None);
+    }
+
+    fn acp(agent: &str) -> wire::AcpCreateConfig {
+        wire::AcpCreateConfig {
+            agent: agent.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_acp_agents_picks_are_remembered_by_its_id_but_never_its_mode() {
+        let filled = with_remembered(&Agent::Acp(acp("opencode")), &remembered(), None);
+        let Agent::Acp(filled) = filled else {
+            panic!("the kind stays");
+        };
+        assert_eq!(filled.model.as_deref(), Some("anthropic/sonnet"));
+        assert_eq!(filled.effort.as_deref(), Some("high"));
+        assert_eq!(filled.mode, None);
+
+        // Another agent's picks are its own.
+        let other = Agent::Acp(acp("gemini"));
+        assert_eq!(with_remembered(&other, &remembered(), None), other);
+
+        let picked = Agent::Acp(wire::AcpCreateConfig {
+            model: Some("anthropic/opus".into()),
+            mode: Some("plan".into()),
+            ..acp("opencode")
+        });
+        let request = wire::CreateAgentRequest {
+            remember_model: true,
+            remember_effort: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            picked_at_creation(&picked, &request),
+            Some(Picked {
+                kind: Kind::Acp,
+                provider: "opencode".into(),
+                model: Some("anthropic/opus".into()),
+                effort: None,
+            })
+        );
     }
 }

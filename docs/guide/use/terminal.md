@@ -332,6 +332,8 @@ default and nothing restarts.
 To go back to following Claude or Codex after picking in amux, forget the
 remembered value: `amux config unset new_agent.claude.model`, and likewise
 `new_agent.claude.effort`, `new_agent.codex.model` and `new_agent.codex.effort`.
+Another agent's picks are kept under its id, as `new_agent.<id>.model` and
+`new_agent.<id>.effort`, for example `new_agent.opencode.model`.
 
 ## Commands
 

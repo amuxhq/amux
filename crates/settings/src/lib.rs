@@ -263,16 +263,44 @@ impl Default for AgentSettings {
 
 /// How a new agent starts on this host. amux ships no model or effort of its
 /// own: unset, the provider's own settings decide. A person's pick in amux's
-/// chat is kept here, and `claude_kind` chooses which Claude runs.
+/// chat is kept here, per agent, and `claude_kind` chooses which Claude
+/// runs.
+///
+/// In the file each agent's picks are a table under its provider id:
+/// `[new_agent.claude]`, `[new_agent.codex]`, `[new_agent.opencode]`.
+/// Claude's also holds `kind`. Only a model and an effort are kept, never a
+/// permission or a mode, whose default is the agent's own.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewAgentSettings {
-    pub claude: NewAgentDefaults,
-    pub codex: NewAgentDefaults,
+    /// Each agent's remembered picks, by its provider id. An agent with
+    /// nothing remembered has no entry.
+    pub agents: std::collections::BTreeMap<String, NewAgentDefaults>,
     /// Which Claude a new agent runs (`new_agent.claude.kind`); unset
     /// follows `ui.chat_in`. Read it through
     /// [`InstallationConfig::claude_kind`].
     pub claude_kind: Option<ClaudeKindSetting>,
 }
+
+impl NewAgentSettings {
+    /// What a new agent of `provider` starts with: its remembered picks, or
+    /// none.
+    pub fn of(&self, provider: &str) -> NewAgentDefaults {
+        self.agents.get(provider).cloned().unwrap_or_default()
+    }
+
+    /// Remembers `defaults` for `provider`, forgetting the agent's entry
+    /// once it holds nothing.
+    pub fn set(&mut self, provider: &str, defaults: NewAgentDefaults) {
+        if defaults == NewAgentDefaults::default() {
+            self.agents.remove(provider);
+        } else {
+            self.agents.insert(provider.to_owned(), defaults);
+        }
+    }
+}
+
+/// Claude's table under `new_agent`, which also says which Claude runs.
+const CLAUDE: &str = "claude";
 
 /// Which Claude a new agent runs: headless behind amux's chat, or in its
 /// own terminal.
@@ -288,6 +316,7 @@ impl Serialize for NewAgentSettings {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
         #[derive(Serialize)]
         struct Claude<'a> {
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -297,20 +326,24 @@ impl Serialize for NewAgentSettings {
             #[serde(skip_serializing_if = "Option::is_none")]
             kind: Option<ClaudeKindSetting>,
         }
-        #[derive(Serialize)]
-        struct Both<'a> {
-            claude: Claude<'a>,
-            codex: &'a NewAgentDefaults,
+        let claude = self.of(CLAUDE);
+        let mut map = serializer.serialize_map(None)?;
+        if claude != NewAgentDefaults::default() || self.claude_kind.is_some() {
+            map.serialize_entry(
+                CLAUDE,
+                &Claude {
+                    model: &claude.model,
+                    effort: &claude.effort,
+                    kind: self.claude_kind,
+                },
+            )?;
         }
-        Both {
-            claude: Claude {
-                model: &self.claude.model,
-                effort: &self.claude.effort,
-                kind: self.claude_kind,
-            },
-            codex: &self.codex,
+        for (provider, defaults) in &self.agents {
+            if provider != CLAUDE {
+                map.serialize_entry(provider, defaults)?;
+            }
         }
-        .serialize(serializer)
+        map.end()
     }
 }
 
@@ -325,27 +358,48 @@ impl<'de> Deserialize<'de> for NewAgentSettings {
             effort: Option<String>,
             kind: Option<ClaudeKindSetting>,
         }
-        #[derive(Default, Deserialize)]
-        #[serde(default)]
-        struct Both {
-            claude: GivenClaude,
-            codex: NewAgentDefaults,
+        /// Each table read as its agent's: Claude's with its kind, every
+        /// other one (Codex's, an ACP agent's) as picks alone, so a key one
+        /// does not take is reported as ignored.
+        struct Tables;
+        impl<'de> serde::de::Visitor<'de> for Tables {
+            type Value = NewAgentSettings;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a table of agents' remembered picks")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<NewAgentSettings, A::Error> {
+                let mut settings = NewAgentSettings::default();
+                while let Some(provider) = map.next_key::<String>()? {
+                    if provider == CLAUDE {
+                        let given: GivenClaude = map.next_value()?;
+                        settings.claude_kind = given.kind;
+                        settings.set(
+                            CLAUDE,
+                            NewAgentDefaults {
+                                model: given.model,
+                                effort: given.effort,
+                            },
+                        );
+                    } else {
+                        let given: NewAgentDefaults = map.next_value()?;
+                        settings.set(&provider, given);
+                    }
+                }
+                Ok(settings)
+            }
         }
-        let given = Both::deserialize(deserializer)?;
-        Ok(Self {
-            claude: NewAgentDefaults {
-                model: given.claude.model,
-                effort: given.claude.effort,
-            },
-            codex: given.codex,
-            claude_kind: given.claude.kind,
-        })
+        deserializer.deserialize_map(Tables)
     }
 }
 
 /// One agent's remembered starting model and effort, in the agent's own
-/// words: a Claude alias or a Codex model id, and the effort as the agent
-/// names it. Permission is left out on purpose: a one-off "never ask" must
+/// words: a Claude alias, a Codex model id or an ACP agent's model value,
+/// and the effort as the agent names it. Permission is left out on purpose: a one-off "never ask" must
 /// not become how every later agent starts.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -615,9 +669,26 @@ impl InstallationConfig {
     }
 }
 
+/// Whether `key` is an agent's remembered pick, `new_agent.<id>.model` or
+/// `new_agent.<id>.effort`: Claude's and Codex's are among
+/// [`installation_keys`], and an ACP agent's, for any id an agent may have,
+/// is taken too.
+pub fn is_new_agent_key(key: &str) -> bool {
+    let Some(rest) = key.strip_prefix("new_agent.") else {
+        return false;
+    };
+    match rest.rsplit_once('.') {
+        Some((id, "model" | "effort")) => {
+            [CLAUDE, "codex"].contains(&id) || agents::id_problem(id).is_none()
+        }
+        _ => false,
+    }
+}
+
 /// Every key the installation's file takes, dotted as `amux config` names
 /// them, in alphabetical order: the leaves of a default config, and the
-/// three that are absent until set.
+/// ones absent until set. An ACP agent's remembered picks are keys too, by
+/// its id ([`is_new_agent_key`]).
 pub fn installation_keys() -> Vec<String> {
     fn leaves(prefix: &str, table: &toml::Table, out: &mut Vec<String>) {
         for (key, value) in table {
@@ -725,9 +796,12 @@ mod tests {
     #[test]
     fn an_agent_setting_given_alone_leaves_the_rest_to_the_provider() {
         let config = installation("[new_agent.claude]\nmodel = \"sonnet\"\n").unwrap();
-        assert_eq!(config.new_agent.claude.model.as_deref(), Some("sonnet"));
-        assert_eq!(config.new_agent.claude.effort, None);
-        assert_eq!(config.new_agent.codex, NewAgentSettings::default().codex);
+        assert_eq!(
+            config.new_agent.of("claude").model.as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(config.new_agent.of("claude").effort, None);
+        assert_eq!(config.new_agent.of("codex"), NewAgentDefaults::default());
     }
 
     #[test]
@@ -813,7 +887,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.host_name(), "desk");
-        assert_eq!(config.new_agent.claude.model.as_deref(), Some("opus"));
+        assert_eq!(config.new_agent.of("claude").model.as_deref(), Some("opus"));
         assert_eq!(
             config.ignored,
             [
@@ -1005,13 +1079,52 @@ mod tests {
         )
         .unwrap();
         assert_eq!(set.claude_kind(), ClaudeKindSetting::Sdk);
-        assert_eq!(set.new_agent.claude.model.as_deref(), Some("haiku"));
+        assert_eq!(set.new_agent.of("claude").model.as_deref(), Some("haiku"));
         assert!(set.ignored.is_empty(), "{:?}", set.ignored);
         // It writes back where it was read from.
         let again = installation(&toml::to_string(&set).unwrap()).unwrap();
         assert_eq!(again.new_agent, set.new_agent);
         assert!(installation_keys().contains(&"new_agent.claude.kind".to_owned()));
         assert!(!installation_keys().contains(&"new_agent.codex.kind".to_owned()));
+    }
+
+    /// Each agent's picks are a table under its id: Claude's and Codex's as
+    /// a release wrote them, and an ACP agent's beside them. Claude's alone
+    /// takes `kind`, none takes a permission or a mode, and the whole map
+    /// writes back as it was read.
+    #[test]
+    fn new_agent_picks_are_kept_per_agent_id() {
+        let set = installation(
+            "[new_agent.claude]\nmodel = \"opus\"\nkind = \"terminal\"\n\
+             [new_agent.codex]\nmodel = \"gpt-5\"\neffort = \"high\"\nkind = \"sdk\"\n\
+             [new_agent.opencode]\nmodel = \"anthropic/sonnet\"\nmode = \"plan\"\n",
+        )
+        .unwrap();
+        assert_eq!(set.new_agent.of("claude").model.as_deref(), Some("opus"));
+        assert_eq!(set.new_agent.claude_kind, Some(ClaudeKindSetting::Terminal));
+        assert_eq!(set.new_agent.of("codex").effort.as_deref(), Some("high"));
+        assert_eq!(
+            set.new_agent.of("opencode"),
+            NewAgentDefaults {
+                model: Some("anthropic/sonnet".into()),
+                effort: None,
+            }
+        );
+        assert_eq!(set.new_agent.of("grok"), NewAgentDefaults::default());
+        assert_eq!(
+            set.ignored,
+            ["new_agent.codex.kind", "new_agent.opencode.mode"],
+            "only Claude's table says a kind, and no pick of a mode is kept"
+        );
+        let again = installation(&toml::to_string(&set).unwrap()).unwrap();
+        assert_eq!(again.new_agent, set.new_agent);
+
+        assert!(is_new_agent_key("new_agent.opencode.model"));
+        assert!(is_new_agent_key("new_agent.my-agent.effort"));
+        assert!(is_new_agent_key("new_agent.claude.model"));
+        assert!(!is_new_agent_key("new_agent.opencode.mode"));
+        assert!(!is_new_agent_key("new_agent.Bad Id.model"));
+        assert!(!is_new_agent_key("ui.model"));
     }
 
     #[test]
@@ -1070,15 +1183,14 @@ mod tests {
             "[new_agent.claude]\nmodel = \"haiku\"\neffort = \"low\"\npermission = \"default\"\n",
         )
         .unwrap();
-        assert_eq!(set.new_agent.claude.model.as_deref(), Some("haiku"));
-        assert_eq!(set.new_agent.codex, NewAgentSettings::default().codex);
+        assert_eq!(set.new_agent.of("claude").model.as_deref(), Some("haiku"));
+        assert_eq!(set.new_agent.of("codex"), NewAgentDefaults::default());
     }
 
     #[test]
     fn nothing_is_shipped_for_a_new_agent() {
         let shipped = NewAgentSettings::default();
-        assert_eq!(shipped.claude, NewAgentDefaults::default());
-        assert_eq!(shipped.codex, NewAgentDefaults::default());
+        assert!(shipped.agents.is_empty());
         let written = toml::to_string(&InstallationConfig::default()).unwrap();
         assert!(!written.contains("model ="), "{written}");
         assert!(!written.contains("effort ="), "{written}");

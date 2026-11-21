@@ -248,7 +248,7 @@ impl Installation {
             if repositories.is_some() {
                 runtime.refresh_folders();
             }
-            if agents.is_some() {
+            if agents.is_some() || new_agent.is_some() {
                 runtime.refresh_agents();
             }
             if let (Some(name), Some(edge)) = (&renamed, runtime.edge()) {

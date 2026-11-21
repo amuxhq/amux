@@ -155,7 +155,11 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   agent's matching commands are offered above the composer, and a tap puts
   one in the draft. Which commands match, and what the draft becomes, is the
   shared view's `command_matches`; a paste becomes a text attachment by its
-  `pastes_as_attachment`, the rule the terminal follows too.
+  `pastes_as_attachment`, the rule the terminal follows too. The pasted text
+  is sent where the cursor was, with the draft's words on both sides of it,
+  and its place moves with the words typed around it; its chip still sits
+  above the field. Photos and files have no place in the field and follow
+  every word.
 - When terminal Claude's own view resumes another conversation, the chat
   says so above the composer ("Claude's own view switched to another
   conversation") with Switch Back, which asks the library to return that

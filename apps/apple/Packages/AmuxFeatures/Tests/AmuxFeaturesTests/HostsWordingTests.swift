@@ -125,6 +125,20 @@ final class HostsWordingTests: XCTestCase {
             version: nil)
     }
 
+    /// The pairing sheet says Local only for a machine discovery found on
+    /// this network: one only the relay reaches, or a signed-out phone needs
+    /// an account for, is Relayed, and one a paired machine announced is
+    /// neither.
+    func testThePairingSheetSaysLocalOnlyForAMachineFoundHere() {
+        XCTAssertEqual(pairingRoute(candidate(addrs: ["10.0.0.9:7"])), "Local")
+        XCTAssertEqual(pairingRoute(candidate(relayOnly: true)), "Relayed")
+        XCTAssertEqual(pairingRoute(candidate(addrs: ["10.0.0.9:7"], relayOnly: true)), "Relayed")
+        XCTAssertEqual(pairingRoute(candidate()), "Relayed")
+        XCTAssertNil(pairingRoute(candidate(through: "studio")))
+        XCTAssertEqual(pairingRoute(host()), "Direct")
+        XCTAssertEqual(pairingRoute(host(reach: .online(.relay))), "Relayed")
+    }
+
     /// A machine nobody paired is offered by how the phone reaches it, and
     /// only one the relay alone reaches on the free plan is sold a
     /// subscription in place of a pairing.

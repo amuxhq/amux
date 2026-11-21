@@ -1166,6 +1166,13 @@ public enum ChatWords {
         return String(localized: "Switch to \(modeName.isEmpty ? mode : modeName)")
     }
 
+    /// What Approve does when approving the plan is offered only with a
+    /// switch of permission mode: "Switches to Accept edits".
+    public static func planSwitches(_ choice: Choice) -> String {
+        guard case .approvePlan(let mode, let modeName) = choice.outcome else { return "" }
+        return String(localized: "Switches to \(modeName.isEmpty ? mode : modeName)")
+    }
+
     /// A choice on a button: the likely allow reads "Allow" beside Deny,
     /// and terminal Claude's one deny reads "Deny" though it always stops.
     public static func button(_ choice: Choice) -> String {

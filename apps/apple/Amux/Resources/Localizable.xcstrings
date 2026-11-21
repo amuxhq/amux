@@ -5749,14 +5749,14 @@
         }
       }
     },
-    "Send now" : {
+    "Send Now" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatComposer.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Send now"
+            "value" : "Send Now"
           }
         }
       }
@@ -6417,6 +6417,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switch to %@"
+          }
+        }
+      }
+    },
+    "Switches to %@" : {
+      "comment" : "English app copy. Substituted values appear as %@. The plan card's caption where approving also switches the permission mode and no switch is offered. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switches to %@"
           }
         }
       }

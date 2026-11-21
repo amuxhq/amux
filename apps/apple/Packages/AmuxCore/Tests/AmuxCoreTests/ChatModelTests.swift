@@ -980,9 +980,44 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
         await model.send()?.value
         XCTAssertEqual(
-            source.sent.first?.text, "Look at this: two\nlines\u{FFFC}\u{FFFC}",
-            "each paste's place follows the words, where the sent message draws it")
+            source.sent.first?.text, "Look at this: \u{FFFC}two\nlines\u{FFFC}",
+            "each paste is sent where it was pasted among the words")
         XCTAssertEqual(source.sent.first?.attachments?.first, .text(name: "Pasted text", text: text))
+    }
+
+    /// A paste goes where the cursor was, with the draft's words on both
+    /// sides of it, and stays there as the words around it change: the
+    /// terminal and Android place it the same way.
+    func testAPasteIsPlacedAtTheCursorAndMovesWithTheWordsAroundIt() async {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        model.type("Before after")
+        let log = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        model.type("Before " + log + "after")
+        XCTAssertEqual(model.draft, "Before after", "the words on both sides stay in the draft")
+        XCTAssertEqual(model.attachments, [.text(name: "Pasted text", text: log)])
+        model.draft = "Look: before after"
+        model.draft = "Look: before after, then send"
+        await model.send()?.value
+        XCTAssertEqual(source.sent.first?.text, "Look: before \u{FFFC}after, then send")
+        XCTAssertEqual(
+            source.sent.first?.parts,
+            [.text("Look: before "), .attachment(.text(name: "Pasted text", text: log)), .text("after, then send")])
+    }
+
+    /// A draft put back keeps each paste where it was among its words.
+    func testAPromptTakenBackKeepsItsPasteAmongItsWords() {
+        let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        let draft = Draft(parts: [.text("Read "), .attachment(pasted), .text(" closely.")])
+        XCTAssertEqual(draft.places, [5])
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        model.reopen(draft)
+        XCTAssertEqual(model.draft, "Read  closely.")
+        XCTAssertEqual(kept, draft)
+        model.draft = "Please: Read  closely."
+        XCTAssertEqual(kept?.text, "Please: Read \u{FFFC} closely.")
     }
 
     /// A prompt's text marks each attachment's place with U+FFFC, one per

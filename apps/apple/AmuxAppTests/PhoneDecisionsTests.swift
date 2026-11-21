@@ -432,6 +432,25 @@ final class PhoneDecisionsTests: XCTestCase {
         [view] + view.subviews.flatMap { views(in: $0) }
     }
 
+    /// A plan whose only approval also changes the permission mode has no
+    /// switch to offer, so the card says what Approve will do instead of
+    /// changing the mode unannounced.
+    func testAPlanApprovedOnlyWithASwitchSaysSoWhereTheSwitchWouldBe() async throws {
+        let plan = CatalogFixtures.card(.claudePty, .plan(body: CatalogFixtures.planBody, title: CatalogFixtures.planTitle), [
+            Choice(outcome: .approvePlan(mode: "acceptEdits", modeName: "Accept edits"), primary: true, takesNote: false),
+            Choice(outcome: .sendBack, primary: false, takesNote: true),
+        ])
+        var sent: [AskAction] = []
+        try host(AskCardView(card: plan) { sent.append($0) })
+        await spin()
+        let caption = try XCTUnwrap(element("ask.plan.switches"), "the card does not say Approve switches the mode")
+        XCTAssertEqual(caption.label, "Switches to Accept edits")
+        XCTAssertNil(element("ask.plan.auto"), "a switch is offered with no plain approval beside it")
+        try activate("ask.approve")
+        await spin()
+        XCTAssertEqual(sent, [.choose(0, note: nil)])
+    }
+
     // MARK: - Hosts
 
     /// A host that dropped this phone is offered again from its page, and

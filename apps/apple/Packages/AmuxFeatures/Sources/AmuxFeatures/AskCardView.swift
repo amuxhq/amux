@@ -667,6 +667,16 @@ private struct AskBodyView: View {
                 String(localized: "\(title), As the work starts"),
                 isOn: $autoAccept)
             .identified("ask.plan.auto", value: autoAccept ? "on" : "off")
+        } else if let switched = planSwitched {
+            // The only way to approve also changes the permission mode: no
+            // switch to offer, so say what Approve will do in its place
+            // rather than let it change the mode unannounced.
+            let caption = ChatWords.planSwitches(card.choices[switched])
+            Text(caption)
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .lineLimit(1)
+                .identified("ask.plan.switches", label: caption)
         }
     }
 

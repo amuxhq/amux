@@ -108,14 +108,25 @@ extension View {
     }
 }
 
+/// A candidate discovery found on this network, the only one that is
+/// Local: not one only the relay reaches, nor one a paired machine
+/// announced, which has no address here.
+private func foundHere(_ machine: HostView) -> Bool {
+    machine.candidate && !machine.relayOnly && machine.reach != .online(.relay) && !machine.addrs.isEmpty
+}
+
 /// How this phone would reach the machine it is pairing with, for the bar
 /// under its name. Said because it is the difference between a code that
 /// works with no account at all and one carried across the relay: two
 /// machines of one name on two routes are otherwise one name.
 func pairingRoute(_ machine: HostView?) -> String? {
     guard let machine else { return nil }
-    if machine.candidate && machine.reach != .online(.relay) {
-        return String(localized: "Local")
+    if machine.candidate {
+        if foundHere(machine) { return String(localized: "Local") }
+        // One a paired machine announced goes through that machine, which
+        // is neither. Any other has no address here, so only the relay
+        // reaches it, which is also why a signed-out phone needs an account.
+        return machine.through == nil ? String(localized: "Relayed") : nil
     }
     switch machine.reach {
     case .online(.direct): return String(localized: "Direct")
@@ -494,8 +505,22 @@ public struct PairConfirmation: View {
     }
 
     private var subtitle: String? {
-        if case .confirming(let peer) = model.phase { return Self.route(peer.via) }
+        if case .confirming(let peer) = model.phase {
+            // A direct dial to the machine discovery found here stays Local,
+            // as the bar said before the code was entered.
+            return confirmingRoute(peer)
+        }
         return pairingRoute(model.machine)
+    }
+
+    /// How the code just entered reached the machine. A direct dial to the
+    /// machine discovery found here stays Local, as the bar said before the
+    /// code was entered.
+    private func confirmingRoute(_ peer: PendingPair) -> String? {
+        if peer.via == .direct, let machine = model.machine, machine.hostId == peer.hostId, foundHere(machine) {
+            return String(localized: "Local")
+        }
+        return Self.route(peer.via)
     }
 
     static func route(_ via: RouteKind) -> String? {
@@ -605,11 +630,11 @@ public struct PairConfirmation: View {
         if let machine = model.machine, machine.hostId == peer.hostId, let platform = machine.platform?.name {
             parts.append(platform)
         }
-        switch peer.via {
-        case .direct: parts.append(String(localized: "Direct"))
-        case .relay: parts.append(String(localized: "Relayed"))
-        case .ssh: parts.append(String(localized: "over SSH"))
-        case .unspecified: break
+        if peer.via == .ssh {
+            parts.append(String(localized: "over SSH"))
+        } else if let route = confirmingRoute(peer) {
+            // The same word as the bar above it.
+            parts.append(route)
         }
         return parts.joined(separator: " · ")
     }

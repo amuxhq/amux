@@ -978,7 +978,7 @@ struct ChatDock: View {
                 .foregroundStyle(design.inkMuted.color)
         } actions: {
             if row.canSendNow {
-                icon("arrow.up.circle", String(localized: "Send now"), id: "\(id).sendNow") { model.sendNow(row) }
+                icon("arrow.up.circle", String(localized: "Send Now"), id: "\(id).sendNow") { model.sendNow(row) }
             }
             if row.canWithdraw {
                 icon("pencil", String(localized: "Withdraw"), id: "\(id).withdraw") { model.withdraw(row) }

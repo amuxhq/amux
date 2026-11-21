@@ -299,11 +299,24 @@ public final class ChatModel {
     /// or the reader asking.
     public private(set) var toNewest = 0
     public var draft = "" {
-        didSet { if draft != oldValue { keepDraft() } }
+        didSet {
+            guard draft != oldValue, !regathering else { return }
+            movePlaces(from: oldValue, to: draft)
+            keepDraft()
+        }
     }
     public private(set) var attachments: [DraftAttachment] = [] {
-        didSet { if attachments != oldValue { keepDraft() } }
+        didSet { if attachments != oldValue, !regathering { keepDraft() } }
     }
+    /// Where each of `attachments` sits among the draft's characters, in the
+    /// same order: a paste goes where the cursor was, as the terminal and
+    /// Android place it, and the sent text marks it there. Nil for one that
+    /// follows every word: a photo or file, which has no place in the field.
+    /// The chips themselves sit above the field in this order.
+    @ObservationIgnored private var attachmentPlaces: [Int?] = []
+    /// Set while the draft, its attachments and their places change together,
+    /// so none of them is read half changed.
+    @ObservationIgnored private var regathering = false
     /// Told the draft as it stands each time it changes, so it can be kept
     /// past the session and the app: the phone's drafts live with its own
     /// daemon.
@@ -856,11 +869,10 @@ public final class ChatModel {
         return chip
     }
 
-    /// The draft as it is sent. The chips sit apart from the field, and a
-    /// sent message draws attachments after its words, so that is where
-    /// they go.
+    /// The draft as it is sent: each paste where it was pasted among the
+    /// words, and the photos and files after them.
     private var composed: Draft {
-        Draft(words: draft, attachments: attachments)
+        Draft(words: draft, attachments: attachments, places: attachmentPlaces)
     }
 
     /// Something a command the client runs asked the screen to open; the
@@ -1064,8 +1076,13 @@ public final class ChatModel {
             after.insert(" ", at: 0)
         }
         draft = String(before + after)
-        attachments.append(.text(name: String(localized: "Pasted text"), text: String(inserted)))
-        pasted = (at: before.count, text: inserted)
+        // In place order, ahead of the first one after the cursor and of
+        // the photos and files that follow every word.
+        let at = before.count
+        let index = attachmentPlaces.firstIndex { $0.map { $0 > at } ?? true } ?? attachmentPlaces.count
+        attachmentPlaces.insert(at, at: index)
+        attachments.insert(.text(name: String(localized: "Pasted text"), text: String(inserted)), at: index)
+        pasted = (at: at, text: inserted)
         redrawField()
     }
 
@@ -1093,8 +1110,11 @@ public final class ChatModel {
     }
 
     public func clearDraft() {
-        draft = ""
-        attachments = []
+        let held = !draft.isEmpty || !attachments.isEmpty
+        regathering = true
+        (draft, attachmentPlaces, attachments) = ("", [], [])
+        regathering = false
+        if held { keepDraft() }
     }
 
     /// Puts back a draft kept from an earlier session, ahead of anything
@@ -1104,16 +1124,50 @@ public final class ChatModel {
     }
 
     private func keepDraft() {
-        keeping?(Draft(words: draft, attachments: attachments))
+        keeping?(composed)
     }
 
     /// Puts a draft's words and attachments back ahead of what the composer
-    /// holds.
+    /// holds, each paste where it was among its words.
     private func restore(_ sent: Draft) {
         let words = sent.words
         let joined =
             if draft.isEmpty { words } else if words.isEmpty { draft } else { words + "\n" + draft }
-        (draft, attachments) = (joined, (sent.attachments ?? []) + attachments)
+        // What the composer holds moves down past the words put back ahead
+        // of it. With words or a placed paste in the composer, the photos
+        // and files put back stay with their own words rather than falling
+        // to the end of everything.
+        let ahead = draft.isEmpty || words.isEmpty ? 0 : words.count + 1
+        let anchored = !draft.isEmpty || attachmentPlaces.contains { $0 != nil }
+        let returned: [Int?] = sent.places.map { place in anchored ? Optional(place ?? words.count) : place }
+        regathering = true
+        draft = joined
+        attachmentPlaces = returned + attachmentPlaces.map { $0.map { $0 + ahead } }
+        attachments = (sent.attachments ?? []) + attachments
+        regathering = false
+        keepDraft()
+    }
+
+    /// Moves each placed attachment with the words around it as the draft
+    /// goes from `old` to `new`: one before the change stays, one after it
+    /// moves by what the change added or took away, and one inside words
+    /// that were replaced goes to the end of what replaced them.
+    private func movePlaces(from old: String, to new: String) {
+        guard attachmentPlaces.contains(where: { $0 != nil }) else { return }
+        let (a, b) = (Array(old), Array(new))
+        var head = 0
+        while head < a.count, head < b.count, a[head] == b[head] { head += 1 }
+        var tail = 0
+        while tail < a.count - head, tail < b.count - head, a[a.count - 1 - tail] == b[b.count - 1 - tail] {
+            tail += 1
+        }
+        let (oldEnd, newEnd) = (a.count - tail, b.count - tail)
+        attachmentPlaces = attachmentPlaces.map { place in
+            guard let place else { return nil }
+            if place <= head { return place }
+            if place >= oldEnd { return min(max(place + b.count - a.count, 0), b.count) }
+            return newEnd
+        }
     }
 
     /// Whether an attachment this large may be stored. One over the limit is
@@ -1140,7 +1194,9 @@ public final class ChatModel {
             let stored = await source.putBlob(data, name: name, mime: mime)
             uploading -= 1
             switch stored {
-            case .success(let blob): attachments.append(image ? .image(blob) : .file(blob))
+            case .success(let blob):
+                attachmentPlaces.append(nil)
+                attachments.append(image ? .image(blob) : .file(blob))
             case .failure(let failure):
                 notice = String(localized: "\(name) is not attached: \(failure.description)")
             }
@@ -1196,6 +1252,7 @@ public final class ChatModel {
 
     public func removeAttachment(at index: Int) {
         guard attachments.indices.contains(index) else { return }
+        attachmentPlaces.remove(at: index)
         attachments.remove(at: index)
     }
 
@@ -1417,10 +1474,47 @@ public struct QuestionDraft: Equatable, Sendable {
 }
 
 extension Draft {
-    /// Words followed by attachments: the composer's shape, whose chips sit
-    /// beside the field rather than among the words.
+    /// Words followed by attachments.
     public init(words: String, attachments: [DraftAttachment]) {
         self.init(parts: (words.isEmpty ? [] : [.text(words)]) + attachments.map(DraftPart.attachment))
+    }
+
+    /// Words with each attachment at its place among their characters, in
+    /// order, and those placed nowhere after every word.
+    public init(words: String, attachments: [DraftAttachment], places: [Int?]) {
+        let characters = Array(words)
+        var parts: [DraftPart] = []
+        var trailing: [DraftAttachment] = []
+        var cursor = 0
+        for (attachment, place) in zip(attachments, places) {
+            guard let place else {
+                trailing.append(attachment)
+                continue
+            }
+            let at = min(max(place, cursor), characters.count)
+            if at > cursor {
+                parts.append(.text(String(characters[cursor..<at])))
+                cursor = at
+            }
+            parts.append(.attachment(attachment))
+        }
+        if cursor < characters.count { parts.append(.text(String(characters[cursor...]))) }
+        self.init(parts: parts + trailing.map(DraftPart.attachment))
+    }
+
+    /// Each attachment's place among the words' characters, in order; nil
+    /// for one after every word, so words typed later go before it.
+    public var places: [Int?] {
+        let lastWords = parts.lastIndex { if case .text = $0 { true } else { false } }
+        var count = 0
+        var places: [Int?] = []
+        for (index, part) in parts.enumerated() {
+            switch part {
+            case .text(let words): count += words.count
+            case .attachment: places.append(lastWords.map { index < $0 } == true ? count : nil)
+            }
+        }
+        return places
     }
 
     /// The prompt's text as its host receives it: each attachment's place

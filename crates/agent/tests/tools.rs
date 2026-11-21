@@ -430,7 +430,7 @@ fn host(id: &[u8], name: &str, reach: wire::trusted::Reach, offers: &[&str]) -> 
     entry.providers = offers
         .iter()
         .map(|provider| wire::ProviderOnHost {
-            provider: (*provider).to_owned(),
+            provider_id: (*provider).to_owned(),
             ..Default::default()
         })
         .collect();

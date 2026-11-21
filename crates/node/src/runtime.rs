@@ -2004,6 +2004,16 @@ impl ProfileRuntime {
         if report.frames == 0 {
             return;
         }
+        // A person's pick the agent's program took: kept off the core's
+        // thread, as a pick made at creation is.
+        if let Some(taken) = &report.picked
+            && let Ok(kind) = Kind::try_from(report.kind)
+            && let Some(picked) = spec::Picked::taken(kind, &report.provider, taken)
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            let remember = self.remember_pick.clone();
+            handle.spawn_blocking(move || remember.keep(picked));
+        }
         self.wrote();
         self.ingested_frames
             .fetch_add(u64::from(report.frames), Ordering::Relaxed);

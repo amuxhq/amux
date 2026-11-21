@@ -1879,7 +1879,7 @@ impl App {
             .map(|entry| entry.providers.clone())
             .unwrap_or_default();
         for offer in listed {
-            let provider = offer.provider.clone();
+            let provider = offer.provider_id.clone();
             let named = offer.catalogue.clone();
             if let Some((hash, held)) = named
                 .as_ref()
@@ -1911,7 +1911,7 @@ impl App {
             self.spawn(async move {
                 let request = wire::GetCatalogueRequest {
                     host_id: host.clone(),
-                    provider: provider.clone(),
+                    provider_id: provider.clone(),
                 };
                 let answer = client
                     .get_catalogue(request)

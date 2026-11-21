@@ -1609,7 +1609,7 @@
       {"literal": "\"fingerprint\"", "context": "id: \"fingerprint\", label: String(localized: \"Fingerprint\"),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.revoke.confirm\"", "context": ".accessibilityIdentifier(\"host.revoke.confirm\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.meaning\"", "context": ".identified(\"host.meaning\", value: meaning)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"provider.\\(name.lowercased())\"", "context": "id: \"provider.\\(name.lowercased())\", label: name,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"provider.\\(signIn.provider)\"", "context": "id: \"provider.\\(signIn.provider)\", label: signIn.name,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.subscribe\"", "context": ".identified(\"host.subscribe\", label: String(localized: \"Subscribe\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Previews.swift": [

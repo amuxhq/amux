@@ -574,6 +574,10 @@ pub struct Ingested {
     pub kind: i32,
     /// The agent's provider id, beside its kind; empty with it.
     pub provider: String,
+    /// The model or effort a person picked that the agent's program took
+    /// in these frames, the newest of each, for the host to keep. The kind
+    /// and provider are read with it.
+    pub picked: Option<wire::PickTaken>,
     pub end: IngestEnd,
     /// How far the step found the agent's journal, as a global offset:
     /// the journal cut here reads as the step read it.

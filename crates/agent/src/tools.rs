@@ -329,7 +329,7 @@ impl Server {
                 let offers: Vec<&str> = host
                     .providers
                     .iter()
-                    .map(|provider| provider.provider.as_str())
+                    .map(|provider| provider.provider_id.as_str())
                     .collect();
                 let mut row = json!({
                     "name": host.name(),

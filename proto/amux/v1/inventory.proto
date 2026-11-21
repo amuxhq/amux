@@ -146,10 +146,10 @@ message Candidate {
 
 // One agent program a host runs.
 message ProviderOnHost {
-  // The provider's id: "claude", "codex", or an ACP agent's id
-  // ("antigravity", "opencode", "grok", or one a person added in the host's
-  // config). What GetCatalogueRequest and Agent.provider name it by.
-  string provider = 1;
+  // Retired: the provider as an enum of Claude and Codex. An entry from a
+  // build that sends it lists the provider with no provider_id.
+  reserved 1;
+  reserved "provider";
   // The hash GetCatalogue answers with for this provider; absent until the
   // host has asked it, which GetCatalogue does.
   optional bytes catalogue = 2;
@@ -162,6 +162,10 @@ message ProviderOnHost {
   // running agent's own snapshot says what it can, which is what a client
   // reads for that agent.
   AgentCapabilities capabilities = 5;
+  // The provider's id: "claude", "codex", or an ACP agent's id
+  // ("antigravity", "opencode", "grok", or one a person added in the host's
+  // config). What GetCatalogueRequest and Agent.provider name it by.
+  string provider_id = 6;
 }
 
 // What a client needs to name a provider and start one of its agents,

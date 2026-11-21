@@ -365,7 +365,7 @@ async fn an_unknown_catalogue_is_not_found() {
     let host = api
         .get_catalogue(tonic::Request::new(GetCatalogueRequest {
             host_id: runtime.host().as_bytes().to_vec(),
-            provider: "codex".to_owned(),
+            provider_id: "codex".to_owned(),
         }))
         .await
         .unwrap_err();

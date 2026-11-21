@@ -618,7 +618,7 @@ impl AgentService for ClientApi {
         if host != runtime.host() {
             return forwarded(&runtime, host, request).await;
         }
-        own_catalogue(&runtime, &request.provider).await
+        own_catalogue(&runtime, &request.provider_id).await
     }
 
     async fn pin_folder(

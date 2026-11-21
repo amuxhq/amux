@@ -297,6 +297,13 @@ pub struct Step {
     /// agent whose provider started no subagent.
     #[prost(message, repeated, tag = "6")]
     pub agents: ::prost::alloc::vec::Vec<AgentStep>,
+    /// Set on the step where the agent's program took a model or effort a
+    /// person picked in its chat, once it said it took it: what the agent's
+    /// host keeps for the next new agent of the same program. A kind that
+    /// takes a pick without asking its program (Codex) leaves it unset; its
+    /// host keeps the pick as it accepts the input.
+    #[prost(message, optional, tag = "7")]
+    pub picked: ::core::option::Option<PickTaken>,
 }
 impl ::prost::Name for Step {
     const NAME: &'static str = "Step";
@@ -306,6 +313,24 @@ impl ::prost::Name for Step {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Step".into()
+    }
+}
+/// A person's pick an agent's program took: its model, its effort, or both.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PickTaken {
+    #[prost(string, optional, tag = "1")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub effort: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for PickTaken {
+    const NAME: &'static str = "PickTaken";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PickTaken".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.PickTaken".into()
     }
 }
 /// One provider subagent's part of a step, filed under the subagent's own
@@ -4573,11 +4598,6 @@ impl ::prost::Name for Candidate {
 /// One agent program a host runs.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProviderOnHost {
-    /// The provider's id: "claude", "codex", or an ACP agent's id
-    /// ("antigravity", "opencode", "grok", or one a person added in the host's
-    /// config). What GetCatalogueRequest and Agent.provider name it by.
-    #[prost(string, tag = "1")]
-    pub provider: ::prost::alloc::string::String,
     /// The hash GetCatalogue answers with for this provider; absent until the
     /// host has asked it, which GetCatalogue does.
     #[prost(bytes = "vec", optional, tag = "2")]
@@ -4594,6 +4614,11 @@ pub struct ProviderOnHost {
     /// reads for that agent.
     #[prost(message, optional, tag = "5")]
     pub capabilities: ::core::option::Option<AgentCapabilities>,
+    /// The provider's id: "claude", "codex", or an ACP agent's id
+    /// ("antigravity", "opencode", "grok", or one a person added in the host's
+    /// config). What GetCatalogueRequest and Agent.provider name it by.
+    #[prost(string, tag = "6")]
+    pub provider_id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProviderOnHost {
     const NAME: &'static str = "ProviderOnHost";
@@ -8718,8 +8743,8 @@ pub struct GetCatalogueRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
     /// The provider's id, as ProviderOnHost names it.
-    #[prost(string, tag = "2")]
-    pub provider: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub provider_id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for GetCatalogueRequest {
     const NAME: &'static str = "GetCatalogueRequest";
@@ -15369,6 +15394,11 @@ pub struct ProviderOffer {
     /// whose kind says it.
     #[prost(message, optional, tag = "6")]
     pub capabilities: ::core::option::Option<AgentCapabilities>,
+    /// For an ACP agent, the SHA-256 of the command, arguments and environment
+    /// it was asked with: a copy asked of a program the config has since
+    /// changed is asked again. Empty for Claude and Codex.
+    #[prost(bytes = "vec", tag = "7")]
+    pub launched: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for ProviderOffer {
     const NAME: &'static str = "ProviderOffer";

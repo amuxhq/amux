@@ -2773,7 +2773,7 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
         wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
     );
     studio.providers = vec![wire::ProviderOnHost {
-        provider: "claude".into(),
+        provider_id: "claude".into(),
         descriptor: Some(wire::ProviderDescriptor {
             name: "Claude".into(),
             kind: Kind::ClaudePty as i32,
@@ -3165,13 +3165,13 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers = vec![
             wire::ProviderOnHost {
-                provider: "claude".to_owned(),
+                provider_id: "claude".to_owned(),
                 catalogue: Some(vec![1; 32]),
                 signed_in: true,
                 ..Default::default()
             },
             wire::ProviderOnHost {
-                provider: "codex".to_owned(),
+                provider_id: "codex".to_owned(),
                 catalogue: Some(vec![2; 32]),
                 signed_in: false,
                 ..Default::default()

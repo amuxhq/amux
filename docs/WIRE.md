@@ -675,9 +675,11 @@ the replica's current snapshot names it (see [attachments](ATTACHMENTS.md)),
 so the picker still reads with the origin away. A hash that names no blob is
 `NOT_FOUND`.
 
-`GetCatalogue(host_id, provider)` names a host and a provider by its id
+`GetCatalogue(host_id, provider_id)` names a host and a provider by its id
 (`claude`, `codex`, or an ACP agent's: `antigravity`, `opencode`, `grok`, or
-one a person added under `[agents.<id>]` in that host's config) and answers
+one a person added under `[agents.<id>]` in that host's config; the enum an
+earlier build sent at tag 2 is reserved, so its request names no provider and
+is refused `INVALID_ARGUMENT` in words saying so) and answers
 what that provider offers there with no agent running,
 as a `GetCatalogueResponse`: the encoded `Catalogue` and the SHA-256 of exactly
 those bytes, which is the hash the host's entry names for that provider. The
@@ -700,7 +702,10 @@ host does not know is `INVALID_ARGUMENT`, and an ACP agent whose program is
 not found there `FAILED_PRECONDITION`. Each host keeps the model and effort a
 person last picked per provider id (`new_agent.<id>.model` and `.effort` in
 its config) and lays them over what a new agent starts with in the copy it
-serves.
+serves. A pick made in a chat is kept once it holds: Codex's as its input is
+accepted, and headless Claude's or an ACP agent's once the program took it,
+which the interpreter says on that step (`Step.picked`); a pick the program
+refuses is never kept, and a mode or permission never is.
 
 A blob lives as long as its agent's directory. See
 [attachments](ATTACHMENTS.md) for the attachment types and lifetimes.
@@ -816,7 +821,8 @@ only after an unclean reboot of that host (see
 [the journal and store](JOURNAL_AND_STORE.md)), and its `providers`: each
 agent program the host runs, Claude and Codex always and then each ACP agent
 it offers once it has asked it, as a `ProviderOnHost`. That names the
-provider by its id, and once asked, the hash of what it offers there and
+provider by its id (`provider_id`; the enum earlier builds sent at tag 1 is
+reserved, so their entries read as a provider with no id), and once asked, the hash of what it offers there and
 whether it is signed in (`signed_in` says nothing while `catalogue` is
 absent). Its `descriptor` is what a client needs to offer it without knowing
 it: the name people call it, the kind a new agent of it starts as on that host

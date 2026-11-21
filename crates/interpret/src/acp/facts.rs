@@ -956,6 +956,9 @@ impl State {
                     format!("{} refused a setting: {}", self.agent, error.message),
                 );
                 if !newer {
+                    // A person's pick it refused is not kept for later
+                    // agents either.
+                    self.picking.remove(&category);
                     // The session keeps what it has.
                     match self.current(category) {
                         Some(current) if !apply => {
@@ -983,6 +986,15 @@ impl State {
                     }
                 }
                 if !newer {
+                    // The newest pick of the setting, taken: its host keeps
+                    // a person's model or effort, never a mode.
+                    if self.picking.remove(&category) {
+                        match category {
+                            Category::Model => emit.picked_model(value.clone()),
+                            Category::Effort => emit.picked_effort(value.clone()),
+                            Category::Mode => {}
+                        }
+                    }
                     self.wanted.insert(category, value);
                 }
             }

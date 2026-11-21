@@ -129,7 +129,7 @@ impl Install {
             .clone()
             .get_catalogue(GetCatalogueRequest {
                 host_id,
-                provider: provider.to_owned(),
+                provider_id: provider.to_owned(),
             })
             .await
             .map_err(|status| format!("the host's catalogue: {status}"))?

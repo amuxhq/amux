@@ -428,6 +428,8 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         acp: Some(offer.acp),
         capabilities: Some(offer.capabilities),
         asked_at_ms: 0,
+        // The daemon, which knows what it launched, fills it.
+        launched: Vec::new(),
     })
 }
 

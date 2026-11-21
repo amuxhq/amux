@@ -206,10 +206,11 @@ public struct HostPage: View {
         if let version = view.version {
             facts.append(Fact(id: "version", label: String(localized: "Version"), value: version, mono: true))
         }
+        // Keyed by the provider's id, which no two rows share; the name is
+        // only the label, and a person's own agents may share one.
         for signIn in view.providers where !signIn.provider.isEmpty {
-            let name = signIn.name
             facts.append(Fact(
-                id: "provider.\(name.lowercased())", label: name,
+                id: "provider.\(signIn.provider)", label: signIn.name,
                 value: signIn.signedIn ? String(localized: "Signed in") : String(localized: "Not signed in")))
         }
         // The dial's own error names an address and a status code, which say

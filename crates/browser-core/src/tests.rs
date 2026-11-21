@@ -32,7 +32,7 @@ fn fleet_with_one_agent(kind: wire::Kind) -> u32 {
             ..Default::default()
         }),
         providers: vec![wire::ProviderOnHost {
-            provider: "claude".into(),
+            provider_id: "claude".into(),
             descriptor: Some(wire::ProviderDescriptor {
                 name: "Claude".into(),
                 kind: wire::Kind::ClaudeSdk as i32,

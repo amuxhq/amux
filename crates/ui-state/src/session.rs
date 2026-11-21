@@ -308,18 +308,22 @@ impl SessionState {
     /// What the agent can do: what its newest snapshot says, else what its
     /// host says its provider can do (a snapshot an earlier build wrote
     /// says nothing), else what every agent of its kind can do, else
-    /// nothing beyond what every agent can.
+    /// nothing beyond what every agent can. The host's word is for a new
+    /// agent of the kind it starts now, so it stands for this one only when
+    /// that is this one's kind: a headless Claude started before the host
+    /// switched to Claude's own terminal cannot switch back.
     pub fn capabilities(&self) -> wire::AgentCapabilities {
+        let kind = self.kind();
         self.snapshot
             .as_ref()
             .and_then(|snapshot| snapshot.capabilities)
             .or_else(|| {
-                self.host
-                    .as_ref()?
-                    .provider(self.agent.provider_id())?
-                    .capabilities
+                let offered = self.host.as_ref()?.provider(self.agent.provider_id())?;
+                (offered.kind() == kind)
+                    .then_some(offered.capabilities)
+                    .flatten()
             })
-            .or_else(|| wire::AgentCapabilities::of_kind(self.kind()))
+            .or_else(|| wire::AgentCapabilities::of_kind(kind))
             .unwrap_or_default()
     }
 

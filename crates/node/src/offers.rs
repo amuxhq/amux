@@ -40,6 +40,13 @@ pub enum CatalogueError {
     /// No built-in agent and no `[agents.<id>]` entry has the id.
     #[error("this computer knows no agent {0:?}")]
     NoAgent(String),
+    /// The request names no provider id: an earlier build named Claude and
+    /// Codex by a field this host no longer reads.
+    #[error(
+        "the request names no provider; a client that names Claude and Codex the way earlier \
+         builds did needs updating"
+    )]
+    NoProvider,
     /// The agent's command is not found where agents are started from.
     #[error("{0} is not installed on this computer")]
     NotInstalled(String),
@@ -56,7 +63,7 @@ pub enum CatalogueError {
 impl CatalogueError {
     pub fn to_wire(&self) -> wire::Error {
         let code = match self {
-            Self::NoAgent(_) => ErrorCode::InvalidArgument,
+            Self::NoAgent(_) | Self::NoProvider => ErrorCode::InvalidArgument,
             Self::NotInstalled(_) => ErrorCode::FailedPrecondition,
             Self::Helper(_) => ErrorCode::Unavailable,
             Self::Read(_) | Self::Write(_) | Self::Store(_) => ErrorCode::Internal,
@@ -228,7 +235,7 @@ impl Offers {
                 wire::Kind::Codex
             };
             ProviderOnHost {
-                provider: provider.to_owned(),
+                provider_id: provider.to_owned(),
                 catalogue: held.map(|held| held.offer.blob.hash.clone()),
                 signed_in: held.is_some_and(|held| held.offer.signed_in),
                 descriptor: Some(ProviderDescriptor {
@@ -250,7 +257,7 @@ impl Offers {
         let agents = launch.agents.iter().filter_map(|program| {
             let held = held.get(&program.id)?;
             Some(ProviderOnHost {
-                provider: program.id.clone(),
+                provider_id: program.id.clone(),
                 catalogue: Some(held.offer.blob.hash.clone()),
                 signed_in: held.offer.signed_in,
                 descriptor: Some(ProviderDescriptor {
@@ -272,10 +279,40 @@ impl Offers {
         own.chain(agents).collect()
     }
 
+    /// What the host's entry lists for `provider`, if it lists it.
+    fn listed(&self, provider: &str, launch: &Launch) -> Option<ProviderOnHost> {
+        self.on_host(launch)
+            .into_iter()
+            .find(|offered| offered.provider_id == provider)
+    }
+
     /// Forgets an ACP agent's copy, once the host no longer offers it.
     fn forget(&self, agent: &str) -> bool {
         self.held.lock().unwrap().remove(agent).is_some()
     }
+}
+
+/// What an ACP agent was asked with, as its copy keeps it: the SHA-256 of
+/// its command, its arguments and its environment, each length-prefixed so
+/// no two launches read alike.
+fn launched(command: &str, args: &[String], env: &HashMap<String, String>) -> Vec<u8> {
+    use sha2::{Digest as _, Sha256};
+    let mut hash = Sha256::new();
+    let mut put = |part: &str| {
+        hash.update((part.len() as u64).to_le_bytes());
+        hash.update(part.as_bytes());
+    };
+    put(command);
+    for arg in args {
+        put(arg);
+    }
+    let mut env: Vec<_> = env.iter().collect();
+    env.sort();
+    for (key, value) in env {
+        put(key);
+        put(value);
+    }
+    hash.finalize().to_vec()
 }
 
 /// A provider's copy: named by its id. An ACP agent's id is never
@@ -366,6 +403,7 @@ impl ProfileRuntime {
     /// copy, or an ACP agent's ([`Self::agent_catalogue`]).
     pub async fn host_catalogue(&self, provider: &str) -> Result<HostCatalogue, CatalogueError> {
         match provider {
+            "" => Err(CatalogueError::NoProvider),
             CLAUDE | CODEX => self.own_catalogue(provider).await,
             agent => self.agent_catalogue(agent).await,
         }
@@ -639,10 +677,17 @@ impl ProfileRuntime {
         let path = program
             .find(&launch.provider_env)
             .ok_or_else(|| CatalogueError::NotInstalled(program.name.clone()))?;
+        let env = program.environment(&launch.provider_env);
+        let command = path.to_string_lossy().into_owned();
+        let launched = launched(&command, &program.args, &env);
         let offers = self.offers();
         let run = offers.run(agent);
         let _run = run.lock().await;
         let now = self.clock_now();
+        // What the host's entry says of the agent now, to tell paired hosts
+        // and clients when any of it moves: its copy, name, version,
+        // sign-in or capabilities.
+        let listed = offers.listed(agent, &launch);
         let held = {
             let mut held = offers.held.lock().unwrap();
             if !held.contains_key(agent)
@@ -652,19 +697,25 @@ impl ProfileRuntime {
                 let offer = host_catalogue(asked.clone(), &Default::default());
                 held.insert(agent.to_owned(), Held::of(asked, offer, i64::MIN));
             }
+            // A copy asked of the program as the config named it before is
+            // not this program's: it is dropped, and asked again.
+            if held
+                .get(agent)
+                .is_some_and(|held| held.asked.launched != launched)
+            {
+                held.remove(agent);
+            }
             held.get(agent).map(|held| {
                 let age = now.saturating_sub(held.asked_at_ms);
                 let current = age < launch.catalogue_max_age_ms
                     && (held.offer.signed_in || age < launch.catalogue_recheck_ms);
-                (held.asked.clone(), held.offer.blob.hash.clone(), current)
+                (held.asked.clone(), current)
             })
         };
-        let (asked, was) = match held {
-            Some((asked, was, true)) => (asked, Some(was)),
+        let asked = match held {
+            Some((asked, true)) => asked,
             held => {
                 let providers = self.dir().join(PROVIDERS);
-                let env = program.environment(&launch.provider_env);
-                let command = path.to_string_lossy();
                 match self
                     .run_helper(agent, &command, &program.args, &env, &launch, &providers)
                     .await
@@ -672,16 +723,22 @@ impl ProfileRuntime {
                     Ok(asked) => {
                         let asked = ProviderOffer {
                             asked_at_ms: now,
+                            launched: launched.clone(),
                             ..asked
                         };
                         self.keep_copy(agent, &asked).await?;
-                        (asked, held.map(|(_, was, _)| was))
+                        asked
                     }
                     Err(error) => {
                         tracing::warn!(agent, %error, "asking what the agent offers failed");
                         match held {
-                            Some((asked, was, _)) => (asked, Some(was)),
-                            None => return Err(error),
+                            Some((asked, _)) => asked,
+                            None => {
+                                if offers.listed(agent, &launch) != listed {
+                                    self.tell_own_host();
+                                }
+                                return Err(error);
+                            }
                         }
                     }
                 }
@@ -689,7 +746,6 @@ impl ProfileRuntime {
         };
         let learned = self.learned(agent).await?;
         let answer = agent_catalogue(&asked, learned, &remembered(agent, &launch));
-        let moved = was.as_ref() != Some(&answer.blob.hash);
         let asked_at = asked.asked_at_ms;
         offers.held.lock().unwrap().insert(
             agent.to_owned(),
@@ -700,7 +756,9 @@ impl ProfileRuntime {
                 version_read_at_ms: now,
             },
         );
-        if moved {
+        // A copy read from the profile as the host starts is newly listed
+        // too, so the host's entry is published with it.
+        if offers.listed(agent, &launch) != listed {
             self.tell_own_host();
         }
         Ok(answer)
@@ -815,6 +873,7 @@ mod tests {
                 ..Default::default()
             }),
             capabilities: None,
+            launched: Vec::new(),
         }
     }
 

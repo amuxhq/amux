@@ -490,6 +490,10 @@ pub struct State {
     /// The values the first session started with, which a pick of none
     /// returns to.
     starting: BTreeMap<Category, String>,
+    /// The settings a person picked that the agent has not yet said it
+    /// took: once it does, the step says so, and its host keeps the pick.
+    #[serde(default)]
+    picking: std::collections::BTreeSet<Category>,
     requests: BTreeMap<String, Request>,
     /// The prompt requests unanswered, oldest first.
     prompts: Vec<String>,
@@ -648,6 +652,7 @@ impl State {
             choices: Vec::new(),
             wanted,
             starting: BTreeMap::new(),
+            picking: Default::default(),
             requests: BTreeMap::new(),
             prompts: Vec::new(),
             sets: 0,
@@ -1397,6 +1402,7 @@ impl State {
                 return self.shared.reject(emit, id, Refusal::Unsupported);
             }
             self.wanted.insert(category, value);
+            self.picking.insert(category);
             return self.shared.accept(emit, id, false);
         }
         self.sets += 1;
@@ -1405,6 +1411,7 @@ impl State {
             return self.shared.reject(emit, id, Refusal::Unsupported);
         }
         self.wanted.insert(category, value);
+        self.picking.insert(category);
         self.shared.accept(emit, id, false);
     }
 

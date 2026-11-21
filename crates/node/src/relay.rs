@@ -257,7 +257,9 @@ impl ProfileRuntime {
             return self.send_subagent_input(&row, input).await;
         }
         // Only a person changes a chat's model or effort, so it is the same
-        // act as picking them for a new agent, and sticks the same way.
+        // act as picking them for a new agent, and sticks the same way: as
+        // Codex accepts it, and for the kinds that ask their program, once
+        // it took it.
         let picked = crate::spec::Picked::of_input(&input, row.provider_id());
         // A row that says suspended has no process to relay to: asked
         // first, the wake does not write to a connection its process left

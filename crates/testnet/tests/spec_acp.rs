@@ -475,7 +475,7 @@ async fn a_hosts_acp_agent_is_offered_with_its_descriptor_and_capabilities_to_an
     let ids: Vec<&str> = entry
         .providers
         .iter()
-        .map(|provider| provider.provider.as_str())
+        .map(|provider| provider.provider_id.as_str())
         .collect();
     assert_eq!(ids, ["claude", "codex", FAKE_ACP_AGENT]);
     for (id, name) in [("claude", "Claude"), ("codex", "Codex")] {
@@ -496,7 +496,7 @@ async fn a_hosts_acp_agent_is_offered_with_its_descriptor_and_capabilities_to_an
         .unwrap()
         .get_catalogue(Request::new(wire::GetCatalogueRequest {
             host_id: desk.as_bytes().to_vec(),
-            provider: FAKE_ACP_AGENT.into(),
+            provider_id: FAKE_ACP_AGENT.into(),
         }))
         .await
         .expect("the desk answers what its agent offers")

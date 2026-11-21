@@ -217,33 +217,38 @@ impl Picked {
         (kept && (self.model.is_some() || self.effort.is_some())).then_some(self)
     }
 
-    /// The pick a mid-chat input to an agent of `provider` makes, if it
-    /// makes one.
+    /// The pick a mid-chat input makes as it is accepted, if it makes one:
+    /// Codex's alone, which takes a model or effort without asking its
+    /// program. Headless Claude and an ACP agent ask theirs, which may
+    /// refuse, so their picks are kept once the program took them
+    /// ([`Picked::taken`]).
     pub fn of_input(input: &wire::Input, provider: &str) -> Option<Self> {
-        use wire::{KindInput, acp_input as acp, claude_sdk_input as sdk, codex_input as codex};
-        let (kind, model, effort) = match input.decode_body()? {
-            KindInput::ClaudeSdk(input) => match input.of? {
-                sdk::Of::Model(set) => (Kind::ClaudeSdk, set.model, None),
-                sdk::Of::Effort(set) => (Kind::ClaudeSdk, None, set.effort),
-                _ => return None,
-            },
+        use wire::{KindInput, codex_input as codex};
+        let (model, effort) = match input.decode_body()? {
             KindInput::Codex(input) => match input.of? {
-                codex::Of::Model(set) => (Kind::Codex, set.model, None),
-                codex::Of::Effort(set) => (Kind::Codex, None, set.effort),
+                codex::Of::Model(set) => (set.model, None),
+                codex::Of::Effort(set) => (None, set.effort),
                 _ => return None,
             },
-            KindInput::Acp(input) => match input.of? {
-                acp::Of::Model(set) => (Kind::Acp, set.model, None),
-                acp::Of::Effort(set) => (Kind::Acp, None, set.effort),
-                _ => return None,
-            },
-            KindInput::ClaudePty(_) => return None,
+            KindInput::ClaudeSdk(_) | KindInput::Acp(_) | KindInput::ClaudePty(_) => return None,
         };
         Self {
-            kind,
+            kind: Kind::Codex,
             provider: provider.to_owned(),
             model,
             effort,
+        }
+        .worth_keeping()
+    }
+
+    /// The pick an agent's program took, as its journal says, if it is one
+    /// to keep.
+    pub fn taken(kind: Kind, provider: &str, taken: &wire::PickTaken) -> Option<Self> {
+        Self {
+            kind,
+            provider: provider.to_owned(),
+            model: taken.model.clone(),
+            effort: taken.effort.clone(),
         }
         .worth_keeping()
     }

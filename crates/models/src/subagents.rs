@@ -147,6 +147,7 @@ mod tests {
                 turn_ends: 0,
                 kind: 0,
                 provider: String::new(),
+                picked: None,
                 end: IngestEnd::Read,
                 seen: 0,
                 skipped: 0,

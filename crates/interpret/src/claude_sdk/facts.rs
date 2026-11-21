@@ -1775,6 +1775,10 @@ impl State {
         let ok = response.response.subtype == ControlOutcome::Success;
         match self.requests.remove(response.request_id()) {
             Some(Request::Model(model)) if ok => {
+                // Taken: its host keeps a person's pick from here.
+                if let Some(model) = &model {
+                    emit.picked_model(model.clone());
+                }
                 self.chosen_model.clone_from(&model);
                 self.model = model.or(self.model.take());
                 self.ask_settings(emit);
@@ -1795,7 +1799,10 @@ impl State {
                 // An untitled answer leaves the next prompt to ask again.
                 self.title_asked = !self.shared.wants_title();
             }
-            Some(Request::Effort(Some(effort))) if ok => self.effort = Some(effort),
+            Some(Request::Effort(Some(effort))) if ok => {
+                emit.picked_effort(effort.clone());
+                self.effort = Some(effort);
+            }
             Some(Request::Effort(None)) if ok => self.ask_settings(emit),
             Some(Request::Settings) if ok => {
                 let Some(Ok(settings)) = response.result::<SettingsResult>() else {

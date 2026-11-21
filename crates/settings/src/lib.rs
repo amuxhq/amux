@@ -348,52 +348,66 @@ impl Serialize for NewAgentSettings {
 }
 
 impl<'de> Deserialize<'de> for NewAgentSettings {
+    /// Read whole and then entry by entry ([`NewAgentSettings::read`]), so
+    /// a value no build reads skips that value with a warning and never
+    /// stops amux starting.
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> std::result::Result<Self, D::Error> {
-        #[derive(Default, Deserialize)]
-        #[serde(default)]
-        struct GivenClaude {
-            model: Option<String>,
-            effort: Option<String>,
-            kind: Option<ClaudeKindSetting>,
-        }
-        /// Each table read as its agent's: Claude's with its kind, every
-        /// other one (Codex's, an ACP agent's) as picks alone, so a key one
-        /// does not take is reported as ignored.
-        struct Tables;
-        impl<'de> serde::de::Visitor<'de> for Tables {
-            type Value = NewAgentSettings;
+        let value = toml::Value::deserialize(deserializer)?;
+        Ok(Self::read(&value).0)
+    }
+}
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a table of agents' remembered picks")
-            }
-
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> std::result::Result<NewAgentSettings, A::Error> {
-                let mut settings = NewAgentSettings::default();
-                while let Some(provider) = map.next_key::<String>()? {
-                    if provider == CLAUDE {
-                        let given: GivenClaude = map.next_value()?;
-                        settings.claude_kind = given.kind;
-                        settings.set(
-                            CLAUDE,
-                            NewAgentDefaults {
-                                model: given.model,
-                                effort: given.effort,
-                            },
-                        );
-                    } else {
-                        let given: NewAgentDefaults = map.next_value()?;
-                        settings.set(&provider, given);
+impl NewAgentSettings {
+    /// The picks `[new_agent]` holds, and each key in it this build reads
+    /// nothing from, dotted: a value that is not an agent's table, a pick
+    /// that is not a string, a `kind` anywhere but Claude's, a mode (never
+    /// remembered), or any key a later build may add. Each is skipped by
+    /// itself.
+    fn read(value: &toml::Value) -> (Self, Vec<String>) {
+        let mut settings = Self::default();
+        let mut ignored = Vec::new();
+        let Some(tables) = value.as_table() else {
+            ignored.push("new_agent".to_owned());
+            return (settings, ignored);
+        };
+        for (provider, table) in tables {
+            let known = [CLAUDE, "codex"].contains(&provider.as_str())
+                || agents::id_problem(provider).is_none();
+            let Some(table) = table.as_table().filter(|_| known) else {
+                ignored.push(format!("new_agent.{provider}"));
+                continue;
+            };
+            let mut defaults = NewAgentDefaults::default();
+            for (key, value) in table {
+                let read = match (key.as_str(), value) {
+                    ("model", toml::Value::String(model)) => {
+                        defaults.model = Some(model.clone());
+                        true
                     }
+                    ("effort", toml::Value::String(effort)) => {
+                        defaults.effort = Some(effort.clone());
+                        true
+                    }
+                    ("kind", kind) if provider == CLAUDE => {
+                        match ClaudeKindSetting::deserialize(kind.clone()) {
+                            Ok(kind) => {
+                                settings.claude_kind = Some(kind);
+                                true
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    _ => false,
+                };
+                if !read {
+                    ignored.push(format!("new_agent.{provider}.{key}"));
                 }
-                Ok(settings)
             }
+            settings.set(provider, defaults);
         }
-        deserializer.deserialize_map(Tables)
+        (settings, ignored)
     }
 }
 
@@ -568,6 +582,12 @@ impl InstallationConfig {
         ignored.extend(config.experiments.ignored_keys());
         // So is each agent's entry, so a broken one skips only itself.
         ignored.extend(config.agents.ignored_keys());
+        // And each agent's remembered picks, for the same reason.
+        if let Ok(document) = text.parse::<toml::Table>()
+            && let Some(new_agent) = document.get("new_agent")
+        {
+            ignored.extend(NewAgentSettings::read(new_agent).1);
+        }
         ignored.sort();
         config.ignored = ignored;
         config.updates()?;
@@ -1084,6 +1104,34 @@ mod tests {
         // It writes back where it was read from.
         let again = installation(&toml::to_string(&set).unwrap()).unwrap();
         assert_eq!(again.new_agent, set.new_agent);
+
+        // A key no build reads, a value that is not a table, and a table
+        // that holds no pick this build can read each skip themselves with a
+        // warning; the rest still read, and amux still starts.
+        let odd = installation(
+            "[new_agent]\nfuture_option = true\n\
+             [new_agent.claude]\nmodel = 5\neffort = \"high\"\nkind = \"sideways\"\n\
+             [new_agent.codex]\nmodel = \"gpt-5\"\n\
+             [new_agent.opencode]\nmodel = [\"a\", \"b\"]\nlater = { x = 1 }\n\
+             [new_agent.\"Bad Id\"]\nmodel = \"m\"\n",
+        )
+        .expect("an odd [new_agent] never stops amux starting");
+        assert_eq!(odd.new_agent.of("claude").effort.as_deref(), Some("high"));
+        assert_eq!(odd.new_agent.of("claude").model, None);
+        assert_eq!(odd.new_agent.claude_kind, None);
+        assert_eq!(odd.new_agent.of("codex").model.as_deref(), Some("gpt-5"));
+        assert_eq!(odd.new_agent.of("opencode"), NewAgentDefaults::default());
+        assert_eq!(
+            odd.ignored,
+            [
+                "new_agent.Bad Id",
+                "new_agent.claude.kind",
+                "new_agent.claude.model",
+                "new_agent.future_option",
+                "new_agent.opencode.later",
+                "new_agent.opencode.model",
+            ]
+        );
         assert!(installation_keys().contains(&"new_agent.claude.kind".to_owned()));
         assert!(!installation_keys().contains(&"new_agent.codex.kind".to_owned()));
     }

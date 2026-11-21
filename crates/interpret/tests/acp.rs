@@ -539,6 +539,93 @@ fn settings_are_restored_model_first_before_the_first_prompt() {
     assert_eq!(sent[0]["method"], "session/prompt");
 }
 
+fn set(id: &str, of: wire::acp_input::Of) -> Event {
+    Event::Input(wire::Input::new(
+        id.as_bytes().to_vec(),
+        wire::AcpInput { of: Some(of) },
+    ))
+}
+
+/// A person's model or effort pick is said on the step where the agent
+/// took it, for its host to keep, and not where amux only asked: one the
+/// agent refuses is never kept, a mode never is, and a value amux restores
+/// itself as a session opens was nobody's pick.
+#[test]
+fn a_pick_is_said_once_the_agent_took_it() {
+    let options = |model: &str, effort: &str, mode: &str| {
+        serde_json::json!([
+            select("model", "model", model, &["small", "big"]),
+            select("effort", "thought_level", effort, &["low", "high"]),
+            select("mode", "mode", mode, &["ask", "code"])
+        ])
+    };
+    let (mut state, _) = Acp::initial(&spec("opencode"));
+    let opened = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {"sessionId": "s1", "configOptions": options("small", "low", "ask")}}),
+        ),
+    );
+    assert_eq!(opened.step.picked, None);
+
+    let asked = Acp::step(
+        &mut state,
+        set(
+            "m",
+            wire::acp_input::Of::Model(wire::SetModel {
+                model: Some("big".into()),
+            }),
+        ),
+    );
+    assert_eq!(writes(&asked.effects)[0]["id"], "amux-set-1");
+    assert_eq!(asked.step.picked, None, "asked, not yet taken");
+    let taken = Acp::step(
+        &mut state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": "amux-set-1",
+            "result": {"configOptions": options("big", "low", "ask")}})),
+    );
+    assert_eq!(
+        taken.step.picked,
+        Some(wire::PickTaken {
+            model: Some("big".into()),
+            effort: None,
+        })
+    );
+
+    Acp::step(
+        &mut state,
+        set(
+            "e",
+            wire::acp_input::Of::Effort(wire::SetEffort {
+                effort: Some("high".into()),
+            }),
+        ),
+    );
+    let refused = Acp::step(
+        &mut state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": "amux-set-2",
+            "error": {"code": -32602, "message": "not now"}})),
+    );
+    assert_eq!(refused.step.picked, None, "refused, so not kept");
+
+    Acp::step(
+        &mut state,
+        set(
+            "o",
+            wire::acp_input::Of::Mode(wire::SetMode {
+                value: "code".into(),
+            }),
+        ),
+    );
+    let mode = Acp::step(
+        &mut state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": "amux-set-3",
+            "result": {"configOptions": options("big", "low", "code")}})),
+    );
+    assert_eq!(mode.step.picked, None, "a mode is never kept");
+}
+
 /// A send-now the agent turns down waits its turn again, with the refusal
 /// shown, rather than standing as a steer that never landed.
 #[test]

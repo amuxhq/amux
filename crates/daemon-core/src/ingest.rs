@@ -83,6 +83,7 @@ impl Daemon {
                 turn_ends: 0,
                 kind: 0,
                 provider: String::new(),
+                picked: None,
                 end: IngestEnd::Failed(error.to_string()),
                 seen,
                 skipped: 0,
@@ -148,6 +149,7 @@ impl Daemon {
             turn_ends: 0,
             kind: 0,
             provider: String::new(),
+            picked: None,
             end: if batch.more {
                 IngestEnd::More
             } else {
@@ -172,13 +174,24 @@ impl Daemon {
                 .iter()
                 .filter(|(_, step)| step.turn_end.is_some())
                 .count() as u32;
+            report.picked = batch
+                .frames
+                .iter()
+                .filter_map(|(_, step)| step.picked.clone())
+                .reduce(|mut held, newer| {
+                    held.model = newer.model.or(held.model);
+                    held.effort = newer.effort.or(held.effort);
+                    held
+                });
+            if (report.turn_ends > 0 || report.picked.is_some())
+                && let Some(row) = self.store.agent(&key)?
+            {
+                report.kind = row.kind;
+                report.provider = row.provider_id().to_owned();
+            }
             if report.turn_ends > 0 {
                 // A turn end may have written an outbox row.
                 self.deliveries_due();
-                if let Some(row) = self.store.agent(&key)? {
-                    report.kind = row.kind;
-                    report.provider = row.provider_id().to_owned();
-                }
                 // It may have committed or reverted what other agents in
                 // its checkout count as their changes.
                 self.turn_ended_beside(agent, out);
@@ -465,6 +478,7 @@ mod tests {
                 turn_ends: 0,
                 kind: 0,
                 provider: String::new(),
+                picked: None,
                 end: IngestEnd::More,
                 seen: end,
                 skipped: 0,

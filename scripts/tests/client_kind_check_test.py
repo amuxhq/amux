@@ -30,6 +30,9 @@ class ClientKindCheckTest(unittest.TestCase):
         self.root = Path(self.room.name)
         for crate in kinds.CRATES:
             shutil.copytree(ROOT / crate / "src", self.root / crate / "src")
+        built_ins = self.root / kinds.BUILT_INS
+        built_ins.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / kinds.BUILT_INS, built_ins)
 
     def tearDown(self):
         self.room.cleanup()
@@ -55,6 +58,8 @@ class ClientKindCheckTest(unittest.TestCase):
             "let terminal = agent.kind() == wire::Kind::ClaudePty;",
             "match kind { Kind::Acp => {} _ => {} }",
             'let codex = provider == "codex";',
+            'let opencode = provider == "opencode";',
+            'let grok = matches!(provider, "grok");',
             "let claude = provider == wire::agents::CLAUDE;",
         ]:
             with self.subTest(line=line):
@@ -65,6 +70,18 @@ class ClientKindCheckTest(unittest.TestCase):
                 source.write_text(clean)
                 self.assertEqual(code, 1, out)
                 self.assertIn("in planted", out)
+
+    def test_the_built_in_ids_follow_wire(self):
+        self.assertEqual(kinds.built_in_ids(ROOT), ["antigravity", "opencode", "grok"])
+        # A built-in added to the list is searched for from then on.
+        source = self.root / kinds.BUILT_INS
+        source.write_text(source.read_text().replace(
+            'id: "grok",', 'id: "grok",\n    },\n    BuiltIn {\n        id: "newcomer",', 1))
+        self.assertIn("newcomer", kinds.built_in_ids(self.root))
+        self.plant(FLEET, 'let newcomer = provider == "newcomer";')
+        code, out = self.check()
+        self.assertEqual(code, 1, out)
+        self.assertIn("in planted", out)
 
     def test_an_entry_covers_only_its_own_function(self):
         # kind_name is listed; a new function beside it is not.

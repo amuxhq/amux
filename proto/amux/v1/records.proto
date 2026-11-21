@@ -130,6 +130,18 @@ message Step {
   // the frame is what survives a crash whole. Empty in every step of an
   // agent whose provider started no subagent.
   repeated AgentStep agents = 6;
+  // Set on the step where the agent's program took a model or effort a
+  // person picked in its chat, once it said it took it: what the agent's
+  // host keeps for the next new agent of the same program. A kind that
+  // takes a pick without asking its program (Codex) leaves it unset; its
+  // host keeps the pick as it accepts the input.
+  optional PickTaken picked = 7;
+}
+
+// A person's pick an agent's program took: its model, its effort, or both.
+message PickTaken {
+  optional string model = 1;
+  optional string effort = 2;
 }
 
 // One provider subagent's part of a step, filed under the subagent's own

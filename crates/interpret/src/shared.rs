@@ -301,6 +301,17 @@ impl Emit {
         &self.step.items
     }
 
+    /// Says the agent's program took a model a person picked, for its
+    /// host to keep for the next new agent of the program.
+    pub fn picked_model(&mut self, model: String) {
+        self.step.picked.get_or_insert_default().model = Some(model);
+    }
+
+    /// Says the agent's program took an effort a person picked.
+    pub fn picked_effort(&mut self, effort: String) {
+        self.step.picked.get_or_insert_default().effort = Some(effort);
+    }
+
     /// Makes this step the incarnation's last, saying why it ended: the
     /// daemon reads the cause from the journal and puts it on the row.
     pub fn end_incarnation(&mut self, end: wire::IncarnationEnd) {

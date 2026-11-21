@@ -95,7 +95,7 @@ const CODEX_ASKED: &str = "\"model/list\"";
 fn by_host(host: uuid::Uuid, provider: &str) -> tonic::Request<GetCatalogueRequest> {
     tonic::Request::new(GetCatalogueRequest {
         host_id: host.as_bytes().to_vec(),
-        provider: provider.to_owned(),
+        provider_id: provider.to_owned(),
     })
 }
 
@@ -146,7 +146,7 @@ fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
         ),
     };
     ProviderOnHost {
-        provider: provider.to_owned(),
+        provider_id: provider.to_owned(),
         catalogue: Some(asked.blob.hash.clone()),
         signed_in,
         descriptor: Some(wire::ProviderDescriptor {
@@ -270,12 +270,31 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
         let unknown = api
             .get_catalogue(tonic::Request::new(GetCatalogueRequest {
                 host_id: here.as_bytes().to_vec(),
-                provider: provider.to_owned(),
+                provider_id: provider.to_owned(),
             }))
             .await
             .unwrap_err();
         assert_eq!(unknown.code(), tonic::Code::InvalidArgument, "{unknown:?}");
     }
+    // A released build's request names Claude by the enum it had at tag 2,
+    // which this build reads as an unknown field: the request still decodes,
+    // and the host says in words why it answers nothing.
+    let mut released = GetCatalogueRequest {
+        host_id: here.as_bytes().to_vec(),
+        provider_id: String::new(),
+    }
+    .encode_to_vec();
+    released.extend([0x10, 0x01]);
+    let released = GetCatalogueRequest::decode(released.as_slice()).unwrap();
+    let refused = api
+        .get_catalogue(tonic::Request::new(released))
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument);
+    assert!(
+        refused.message().contains("names no provider"),
+        "{refused:?}"
+    );
 
     // The copies outlive the daemon.
     drop((inventory, api, runtime));
@@ -800,7 +819,7 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
     let ids: Vec<&str> = entry
         .providers
         .iter()
-        .map(|p| p.provider.as_str())
+        .map(|p| p.provider_id.as_str())
         .collect();
     assert_eq!(ids, ["claude", "codex", "mine"]);
     let mine = entry.provider("mine").unwrap();
@@ -870,6 +889,251 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
         runtime.agent_catalogue("theirs").await,
         Err(node::CatalogueError::NoAgent(_))
     ));
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Whether `seen` holds an entry for `host` that lists `provider` with a
+/// copy.
+fn lists(seen: &[wire::InventoryEvent], host: uuid::Uuid, provider: &str) -> bool {
+    seen.iter().any(|event| match &event.of {
+        Some(inventory_event::Of::Host(entry)) => {
+            entry.host_id() == host.as_bytes()
+                && entry
+                    .provider(provider)
+                    .is_some_and(|offered| offered.catalogue.is_some())
+        }
+        _ => false,
+    })
+}
+
+/// A copy of an ACP agent's offer the profile kept is read again when the
+/// host next starts and is asked for, without asking the agent; it is new
+/// to the host's entry, so the entry is published with it, as it is for a
+/// fresh ask.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agents_kept_copy_read_at_a_restart_is_published() {
+    let host = Host::new(&Script {
+        version: Some("2.0.0".into()),
+        ..Script::default()
+    });
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let with_mine = with_acp_agent(&host, &sessions);
+    let daemon = host.install.start("boot-1", with_mine.clone()).await;
+    let runtime = support::runtime(&daemon, &host.install);
+    let copy = runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(host.asked("\"initialize\""), 1);
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    // Started knowing no agent, so nothing reads the copy before the
+    // inventory is open; then the config names it again.
+    let daemon = host.install.start("boot-2", host.launch()).await;
+    let runtime = support::runtime(&daemon, &host.install);
+    let here = runtime.host();
+    let mut inventory = runtime.subscribe_inventory().await.unwrap();
+    let mut seen = Vec::new();
+    read_inventory_until(&mut inventory, &mut seen, "the opening", |seen| {
+        seen.iter()
+            .any(|event| matches!(event.of, Some(inventory_event::Of::CaughtUp(_))))
+    })
+    .await;
+    assert!(!lists(&seen, here, "mine"), "not offered yet");
+    runtime.set_launch(with_mine);
+    assert_eq!(runtime.agent_catalogue("mine").await.unwrap(), copy);
+    assert_eq!(host.asked("\"initialize\""), 1, "the kept copy answers");
+    read_inventory_until(
+        &mut inventory,
+        &mut seen,
+        "the entry listing the kept copy",
+        |seen| lists(seen, here, "mine"),
+    )
+    .await;
+    drop((inventory, runtime));
+    daemon.shutdown().await.unwrap();
+}
+
+/// A kept copy belongs to the program the config named when it was asked:
+/// once the agent's command, arguments or environment change, the agent is
+/// asked again, and a copy asked of the same program still answers.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agents_copy_is_asked_again_when_its_launch_changes() {
+    let host = Host::new(&Script::default());
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let launch = with_acp_agent(&host, &sessions);
+    let daemon = host.install.start("boot-1", launch.clone()).await;
+    let runtime = support::runtime(&daemon, &host.install);
+    runtime.agent_catalogue("mine").await.unwrap();
+    let asked = host.asked("\"initialize\"");
+    runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(
+        host.asked("\"initialize\""),
+        asked,
+        "the same program: the copy"
+    );
+
+    let mut changed = launch.clone();
+    changed.agents[0]
+        .env
+        .insert("MINE_PROFILE".into(), "work".into());
+    runtime.set_launch(changed.clone());
+    runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(host.asked("\"initialize\""), asked + 1, "a new environment");
+
+    let mut changed = changed;
+    changed.agents[0].args.push("--verbose".into());
+    runtime.set_launch(changed.clone());
+    runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(host.asked("\"initialize\""), asked + 2, "new arguments");
+    runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(
+        host.asked("\"initialize\""),
+        asked + 2,
+        "then the copy again"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+
+    // The copy on disk says what it was asked with too.
+    let daemon = host.install.start("boot-2", launch).await;
+    let runtime = support::runtime(&daemon, &host.install);
+    runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(
+        host.asked("\"initialize\""),
+        asked + 3,
+        "the kept copy was asked with other arguments"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A model or effort a person picks in an ACP agent's chat is what that
+/// agent's later agents start with once the agent took it, and only then:
+/// a pick it is refused changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agents_pick_is_kept_once_the_agent_took_it() {
+    let host = Host::new(&Script {
+        models: vec![model("fast"), model("slow")],
+        ..Script::default()
+    });
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let daemon = host
+        .install
+        .start("boot-1", with_acp_agent(&host, &sessions))
+        .await;
+    let runtime = support::runtime(&daemon, &host.install);
+    let cwd = host.install.path("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let agent = runtime
+        .spawn(
+            wire::CreateAgentRequest {
+                agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                name: Some("chat".into()),
+                cwd: cwd.to_string_lossy().into_owned(),
+                agent: Some(wire::create_agent_request::Agent::Acp(
+                    wire::AcpCreateConfig {
+                        agent: "mine".into(),
+                        ..Default::default()
+                    },
+                )),
+                ..wire::CreateAgentRequest::default()
+            },
+            None,
+        )
+        .await
+        .expect("the agent starts");
+    let key = store::AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+    until("the session to open", || {
+        let key = key.clone();
+        let runtime = runtime.clone();
+        async move {
+            let row = runtime
+                .read_store(move |store| store.agent(&key).unwrap())
+                .await
+                .unwrap()
+                .ok_or("no row")?;
+            (row.phase == wire::Phase::Idle as i32)
+                .then_some(())
+                .ok_or(format!("phase {}", row.phase))
+        }
+    })
+    .await
+    .unwrap();
+    let send = |of: wire::acp_input::Of, accepted: bool| {
+        let runtime = runtime.clone();
+        let agent_id = agent.agent_id.clone();
+        async move {
+            let verdict = runtime
+                .send_input(&wire::SendInputRequest {
+                    agent_id,
+                    input: Some(wire::Input::new(
+                        uuid::Uuid::new_v4().as_bytes().to_vec(),
+                        wire::AcpInput { of: Some(of) },
+                    )),
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
+                accepted,
+                "{verdict:?}"
+            );
+        }
+    };
+    let kept = || runtime.launch().new_agent.of("mine");
+    let until_kept = |what: &'static str, holds: fn(&settings::NewAgentDefaults) -> bool| {
+        let kept = &kept;
+        async move {
+            until(what, || async move {
+                let now = kept();
+                holds(&now).then_some(()).ok_or(format!("{now:?}"))
+            })
+            .await
+            .unwrap();
+        }
+    };
+
+    send(
+        wire::acp_input::Of::Model(wire::SetModel {
+            model: Some("slow".into()),
+        }),
+        true,
+    )
+    .await;
+    until_kept("the model the agent took", |kept| {
+        kept.model.as_deref() == Some("slow")
+    })
+    .await;
+
+    // A model the session does not offer is refused, so nothing moves; an
+    // effort it offers is taken and kept after it. (A pick the agent itself
+    // refuses is never said taken: the interpreter's own tests show it.)
+    send(
+        wire::acp_input::Of::Model(wire::SetModel {
+            model: Some("nope".into()),
+        }),
+        false,
+    )
+    .await;
+    send(
+        wire::acp_input::Of::Effort(wire::SetEffort {
+            effort: Some("high".into()),
+        }),
+        true,
+    )
+    .await;
+    until_kept("the effort the agent took", |kept| {
+        kept.effort.as_deref() == Some("high")
+    })
+    .await;
+    assert_eq!(
+        kept().model.as_deref(),
+        Some("slow"),
+        "the refused pick is not kept"
+    );
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

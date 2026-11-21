@@ -242,7 +242,7 @@ impl AppRuntime {
                     .iter()
                     .filter_map(|offer| {
                         Some(ProviderSignIn {
-                            provider: offer.provider.clone(),
+                            provider: offer.provider_id.clone(),
                             name: offer.name().to_owned(),
                             signed_in: offer.signed_in()?,
                         })
@@ -340,7 +340,7 @@ impl AppRuntime {
             .client
             .get_catalogue(wire::GetCatalogueRequest {
                 host_id: host_id.to_vec(),
-                provider: provider.to_owned(),
+                provider_id: provider.to_owned(),
             })
             .await?;
         wire::Catalogue::decode(blob.bytes.as_slice()).map_err(|error| {

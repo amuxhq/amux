@@ -12,8 +12,10 @@ crates for both:
 - a `Kind` variant named (`Kind::ClaudePty`, `Kind::ClaudeSdk`,
   `Kind::Codex`, `Kind::Acp`), which is how a match or a comparison on the
   kind is written;
-- a provider id written out (`"claude"`, `"codex"`, `agents::CLAUDE`,
-  `agents::CODEX`).
+- a provider id written out (`"claude"`, `"codex"`, a built-in ACP agent's
+  id such as `"opencode"`, `agents::CLAUDE`, `agents::CODEX`). The built-in
+  ids are read from `wire::agents::BUILT_INS`, so a new built-in is searched
+  for as it is added.
 
 Some places have to know the kind: decoding a snapshot or item body, which
 is a per-kind message, and building an input in the kind's own arm. Those
@@ -43,11 +45,30 @@ CRATES = [
     "crates/browser-core",
 ]
 
-PATTERNS = [
-    ("a kind matched", re.compile(r"\bKind::(ClaudePty|ClaudeSdk|Codex|Acp)\b")),
-    ("a provider named", re.compile(r"\"(claude|codex)\"")),
-    ("a provider named", re.compile(r"\bagents::(CLAUDE|CODEX)\b")),
-]
+# Where the built-in ACP agents are listed, each by `id: "<id>"`.
+BUILT_INS = "crates/wire/src/agents.rs"
+
+
+def built_in_ids(root: Path) -> list[str]:
+    """The built-in ACP agents' ids, as `wire::agents::BUILT_INS` lists them."""
+    text = (root / BUILT_INS).read_text()
+    start = text.find("pub const BUILT_INS")
+    end = text.find("];", start)
+    if start < 0 or end < 0:
+        raise SystemExit(f"client-kind-check: no BUILT_INS list in {BUILT_INS}")
+    ids = re.findall(r'\bid:\s*"([^"]+)"', text[start:end])
+    if not ids:
+        raise SystemExit(f"client-kind-check: BUILT_INS in {BUILT_INS} names no id")
+    return ids
+
+
+def patterns(root: Path):
+    ids = "|".join(re.escape(id) for id in ["claude", "codex", *built_in_ids(root)])
+    return [
+        ("a kind matched", re.compile(r"\bKind::(ClaudePty|ClaudeSdk|Codex|Acp)\b")),
+        ("a provider named", re.compile(rf'"({ids})"')),
+        ("a provider named", re.compile(r"\bagents::(CLAUDE|CODEX)\b")),
+    ]
 
 FN = re.compile(r"^\s*(pub(\([^)]*\))?\s+)?(const\s+)?(async\s+)?(unsafe\s+)?fn\s+(\w+)")
 TESTS = re.compile(r"^#\[cfg\(test\)\]")
@@ -57,7 +78,8 @@ DECODE = "the decode boundary: a per-kind body is decoded, or an input built, in
 # Why a site that names a provider by its kind may, for now.
 NAMED = "names the provider by its kind; the host's ProviderDescriptor names it instead"
 
-# What an entry's code matches: a kind named, or a provider id written out.
+# What an entry's code matches: a kind named, or Claude's or Codex's id
+# written out.
 KIND = r"Kind::"
 ID = r"\"(claude|codex)\"|agents::(CLAUDE|CODEX)"
 
@@ -167,7 +189,7 @@ def sources(root: Path) -> list[Path]:
     return found
 
 
-def hits(path: Path, relative: str):
+def hits(path: Path, relative: str, patterns):
     """Every line outside a test item that names a kind or a provider, with
     its function."""
     function = ""
@@ -191,7 +213,7 @@ def hits(path: Path, relative: str):
             continue
         if match := FN.match(line):
             function = match.group(6)
-        for what, pattern in PATTERNS:
+        for what, pattern in patterns:
             if pattern.search(line):
                 yield number, function, what, stripped
                 break
@@ -200,9 +222,10 @@ def hits(path: Path, relative: str):
 def check(root: Path = ROOT) -> int:
     used = set()
     failures = []
+    searched = patterns(root)
     for path in sources(root):
         relative = path.relative_to(root).as_posix()
-        for number, function, what, code in hits(path, relative):
+        for number, function, what, code in hits(path, relative, searched):
             allowed = next(
                 (
                     entry

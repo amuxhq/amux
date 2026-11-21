@@ -451,7 +451,7 @@ impl HostEntry {
     pub fn provider(&self, id: &str) -> Option<&ProviderOnHost> {
         self.providers
             .iter()
-            .find(|provider| provider.provider == id)
+            .find(|provider| provider.provider_id == id)
     }
 }
 
@@ -469,7 +469,7 @@ impl ProviderOnHost {
             .as_ref()
             .map(|descriptor| descriptor.name.as_str())
             .filter(|name| !name.is_empty())
-            .unwrap_or(&self.provider)
+            .unwrap_or(&self.provider_id)
     }
 
     /// Whether it is signed in, once the host has asked it.

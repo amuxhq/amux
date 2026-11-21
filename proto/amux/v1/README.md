@@ -29,7 +29,11 @@ plain string: `claude` (both Claude kinds), `codex`, or an ACP agent's
 (`antigravity`, `opencode`, `grok`, or one a person added in a host's
 config). Ids are strings rather than an enum because a person can add an
 agent no build knows. `ProviderOnHost`, `GetCatalogueRequest`, `Agent` and
-`AgentSpec` name a provider by its id.
+`AgentSpec` name a provider by its id. Where an enum of Claude and Codex
+named it before, its number and name are reserved and the id has a new
+number (`ProviderOnHost.provider_id`, `GetCatalogueRequest.provider_id`),
+so a released build's enum reads here as an unknown field, not as a
+message that fails to decode.
 
 ## Compatibility
 

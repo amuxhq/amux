@@ -46,7 +46,7 @@ public struct HostPage: View {
                 let providers = host.providers.filter { !$0.provider.isEmpty }
                 if !providers.isEmpty {
                     group("Coding tools") {
-                        ForEach(Array(providers.enumerated()), id: \.offset) { _, signIn in
+                        ForEach(providers, id: \.provider) { signIn in
                             fact(signIn.name, signIn.signedIn ? "Signed in" : "Not signed in",
                                  quiet: !signIn.signedIn)
                         }

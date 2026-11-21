@@ -98,6 +98,10 @@ message ProviderOffer {
   // `initialize` and the agent's known ways; absent for Claude and Codex,
   // whose kind says it.
   AgentCapabilities capabilities = 6;
+  // For an ACP agent, the SHA-256 of the command, arguments and environment
+  // it was asked with: a copy asked of a program the config has since
+  // changed is asked again. Empty for Claude and Codex.
+  bytes launched = 7;
 }
 
 message EffectiveConfig {

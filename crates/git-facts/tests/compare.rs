@@ -129,10 +129,23 @@ async fn a_renamed_and_edited_file_is_followed_from_its_old_path_in_one_diff() {
     assert_eq!(files[0].status, Status::Renamed);
     assert_eq!((files[0].added, files[0].removed), (1, 1));
 
+    // Asked by its old path, as a comment on its removed lines names it,
+    // the renamed file is answered under its new one.
+    let by_old = compare::hunks(dir, &store, &from, &to, &["old.rs"], 3)
+        .await
+        .unwrap();
+    assert_eq!(
+        by_old
+            .iter()
+            .map(|file| (file.path.as_str(), file.old_path.as_deref()))
+            .collect::<Vec<_>>(),
+        [("new.rs", Some("old.rs"))]
+    );
     let hunks = compare::hunks(dir, &store, &from, &to, &["new.rs"], 3)
         .await
         .unwrap();
     assert_eq!(hunks.len(), 1);
+    assert_eq!(by_old, hunks);
     let file = &hunks[0];
     assert_eq!(file.old_path.as_deref(), Some("old.rs"));
     assert!(file.old_blob.is_some() && file.new_blob.is_some());

@@ -952,6 +952,53 @@ fn an_undo_since_the_last_round_is_listed_fetched_and_shown() {
     assert_eq!(all.empty, Some(ReviewEmpty::Nothing));
 }
 
+/// A removed line of a renamed file is a line of the compared commit,
+/// where the file has its old name: its anchor names that path, and the
+/// host places it in the file as the snapshot names it.
+#[test]
+fn a_removed_line_of_a_renamed_file_anchors_on_its_old_path() {
+    let mut summary = summary();
+    summary.files = vec![wire::ChangedFile {
+        old_path: Some("src/old.rs".into()),
+        ..changed("src/new.rs", wire::FileStatus::Renamed, 1, 1)
+    }];
+    summary.comments.clear();
+    let diff = ReviewFileDiff {
+        path: "src/new.rs".into(),
+        hunks: vec![ReviewHunk {
+            old_commit: BASE.into(),
+            old_start: 3,
+            new_start: 3,
+            scope: Vec::new(),
+            lines: vec![
+                context(3, 3, "fn kept() {}"),
+                removed(4, "fn gone() {}"),
+                added(4, "fn made() {}"),
+            ],
+        }],
+        outline: Vec::new(),
+        context: Vec::new(),
+    };
+    let page = page(&summary, &[diff], &ReviewPageState::default());
+    let gone = line_at(&page, "src/new.rs", LineKind::Removed, Some(4), None);
+    let made = line_at(&page, "src/new.rs", LineKind::Added, None, Some(4));
+    assert_eq!(
+        anchor(&page, gone, gone),
+        Some(ReviewAnchor {
+            commit: BASE.into(),
+            path: "src/old.rs".into(),
+            start: 4,
+            end: 4,
+        }),
+        "the compared commit's line, in the file as that commit names it"
+    );
+    assert_eq!(
+        anchor(&page, made, made).map(|anchor| anchor.path),
+        Some("src/new.rs".into()),
+        "the snapshot's line, in the file as the snapshot names it"
+    );
+}
+
 #[test]
 fn a_selection_anchors_to_the_commit_its_lines_belong_to() {
     let page = page(

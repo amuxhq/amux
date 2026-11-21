@@ -813,8 +813,9 @@ pub fn review_page_of(
 /// file; otherwise the lines of one file among the rows. Added and context
 /// lines are the snapshot's, so a selection holding any is on the
 /// snapshot's lines among them; one of removed lines alone is on those
-/// lines of the commit their hunk compared against. None for a selection
-/// with no line, or across files.
+/// lines of the commit their hunk compared against, in the file as that
+/// commit names it: a renamed file's old path. None for a selection with no
+/// line, or across files.
 pub fn anchor(page: &ReviewPage, from: usize, to: usize) -> Option<ReviewAnchor> {
     let header = page.header.as_ref()?;
     let (from, to) = (from.min(to), from.max(to));
@@ -844,6 +845,12 @@ pub fn anchor(page: &ReviewPage, from: usize, to: usize) -> Option<ReviewAnchor>
             ReviewRowOf::File(_) => Some(&header.compared_with),
             _ => None,
         });
+    // What the compared commit names the file: its old path when the view
+    // shows it renamed.
+    let mut old_path = page.rows[..from].iter().rev().find_map(|row| match &row.of {
+        ReviewRowOf::File(head) => Some(head.old_path.as_deref()),
+        _ => None,
+    });
     let mut path: Option<&str> = None;
     // The first and last line selected on each side, both included.
     let mut new: Option<(u32, u32)> = None;
@@ -863,6 +870,7 @@ pub fn anchor(page: &ReviewPage, from: usize, to: usize) -> Option<ReviewAnchor>
                     return None;
                 }
                 path = Some(&head.path);
+                old_path = Some(head.old_path.as_deref());
             }
             ReviewRowOf::Line(line) => {
                 if path.is_some_and(|path| path != line.path) {
@@ -885,15 +893,15 @@ pub fn anchor(page: &ReviewPage, from: usize, to: usize) -> Option<ReviewAnchor>
             _ => {}
         }
     }
-    let path = path?.to_owned();
-    let (commit, (start, end)) = match (new, old, removed_commit) {
-        (Some(lines), _, _) => (&header.snapshot, lines),
-        (None, Some(lines), Some(commit)) => (commit, lines),
+    let path = path?;
+    let (commit, path, (start, end)) = match (new, old, removed_commit) {
+        (Some(lines), _, _) => (&header.snapshot, path, lines),
+        (None, Some(lines), Some(commit)) => (commit, old_path.flatten().unwrap_or(path), lines),
         _ => return None,
     };
     Some(ReviewAnchor {
         commit: commit.clone(),
-        path,
+        path: path.to_owned(),
         start,
         end,
     })

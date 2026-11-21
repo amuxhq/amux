@@ -1002,6 +1002,44 @@ async fn a_comment_on_a_renamed_file_is_placed_in_the_file_by_its_new_name() {
     host.stop().await;
 }
 
+/// A removed line of a renamed file is a line of the commit compared
+/// against, where the file has its old name: a comment on it names that
+/// path, is stored with that file's lines, and sits in the file as the
+/// snapshot names it, on the removed side.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_comment_on_a_removed_line_of_a_renamed_file_sits_in_the_renamed_file() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let agent = agent_in(&install, &install.work, Some("main"));
+    git(&install.work, &["mv", "notes.txt", "renamed.txt"]);
+    let host = Host::start(install).await;
+    let first = host.open(&agent).await;
+    let renamed = first
+        .files
+        .iter()
+        .find(|file| file.path == "renamed.txt")
+        .expect("the rename is listed");
+    assert_eq!(renamed.old_path.as_deref(), Some("notes.txt"));
+    let written = host
+        .edit(
+            &agent,
+            vec![put("gone", &first.base_commit, "notes.txt", 25, 25)],
+        )
+        .await;
+    assert_eq!(at(&written, "gone"), At::Compared(ReviewComparedLines {
+        commit: first.base_commit.clone(),
+        lines: Some(ReviewLineRange { start: 25, end: 25 }),
+    }));
+    assert_eq!(placed_path(&written, "gone"), "renamed.txt");
+    let snippet = &comment(&written, "gone").snippet;
+    assert!(
+        snippet.iter().any(|line| line.text == "line 25"
+            && line.kind() == wire::experimental::ReviewLineKind::Removed),
+        "stored with the rename's removed line: {snippet:?}"
+    );
+    host.stop().await;
+}
+
 /// The command the agent is given diffs the working tree against the
 /// snapshot truthfully, untracked files included, lists the files made
 /// since, and writes nothing to the repository or to the snapshot's index;

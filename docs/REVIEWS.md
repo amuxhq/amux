@@ -278,7 +278,10 @@ definitions the change touches) and any **more context** asked for
 
 A comment is anchored on **the commit that holds its lines**, a path, and a
 line range, zero to zero for the whole file. A new or context line is held by
-the snapshot; a removed line by the commit the view compared against. "Old
+the snapshot; a removed line by the commit the view compared against. The
+path is the file's in that commit, so a removed line of a file renamed since
+names its old path (`anchor` takes it from the file's head), and the host
+places the comment in the file as the snapshot names it. "Old
 side" and "new side" are not used, because the two views have different old
 sides. A comment put on lines of a commit the review no longer shows is
 refused, for the client to open the review again.

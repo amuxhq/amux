@@ -362,9 +362,16 @@ async fn cut(
         WHOLE_FILE,
     )
     .await
-    .map_err(super::compare_refused)?
-    .into_iter()
-    .find(|file| file.path == anchor.path);
+    .map_err(super::compare_refused)?;
+    // On the snapshot the anchor names the file by its path there; on the
+    // commit compared against, by its path at that commit, which a rename
+    // since then makes its old path.
+    let file = match on_snapshot {
+        true => file.into_iter().find(|file| file.path == anchor.path),
+        false => file
+            .into_iter()
+            .find(|candidate| old_path(candidate) == anchor.path),
+    };
     if file.as_ref().is_some_and(|file| file.binary) {
         return Ok((Vec::new(), Vec::new()));
     }

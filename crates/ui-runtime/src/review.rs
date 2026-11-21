@@ -799,7 +799,7 @@ fn seated_on(held: &ReviewSummary, comments: Vec<ReviewerComment>) -> Vec<Review
                 None => comment
                     .anchor
                     .as_ref()
-                    .map(|anchor| written_on(anchor, &held.snapshot)),
+                    .map(|anchor| written_on(anchor, placed_in(&comment), &held.snapshot)),
             };
             comment
         })
@@ -809,21 +809,38 @@ fn seated_on(held: &ReviewSummary, comments: Vec<ReviewerComment>) -> Vec<Review
 /// A comment on the lines `anchor` names, as it sits on `snapshot`: on the
 /// snapshot's lines when they are its, on the lines of the commit compared
 /// against when they are that commit's, and on its file when it names no
-/// lines.
-fn written_on(anchor: &ReviewAnchor, snapshot: &str) -> ReviewPlacement {
+/// lines. The file is the anchor's on the snapshot; on a compared commit,
+/// where a renamed file has its old name, it is `placed`, the file the host
+/// placed the comment in, as the snapshots name it.
+fn written_on(anchor: &ReviewAnchor, placed: Option<&str>, snapshot: &str) -> ReviewPlacement {
+    let on_snapshot = anchor.commit == snapshot;
     let at = match anchor.lines.filter(|lines| lines.start > 0) {
         None => review_placement::At::File(wire::Empty {}),
-        Some(lines) if anchor.commit == snapshot => review_placement::At::Lines(lines),
+        Some(lines) if on_snapshot => review_placement::At::Lines(lines),
         Some(lines) => review_placement::At::Compared(ReviewComparedLines {
             commit: anchor.commit.clone(),
             lines: Some(lines),
         }),
     };
+    let path = match (on_snapshot, placed) {
+        (false, Some(placed)) => placed,
+        _ => anchor.path.as_str(),
+    };
     ReviewPlacement {
         at: Some(at),
         changed_near: false,
-        path: anchor.path.clone(),
+        path: path.to_owned(),
     }
+}
+
+/// The file the host placed `comment` in, as the snapshot it placed it on
+/// names it; none when it could not tell.
+fn placed_in(comment: &ReviewerComment) -> Option<&str> {
+    comment
+        .placement
+        .as_ref()
+        .map(|placement| placement.path.as_str())
+        .filter(|path| !path.is_empty())
 }
 
 /// The round of `summary`, the review as its host holds it now, that the
@@ -859,7 +876,7 @@ pub fn round_of(
             placement: comment
                 .anchor
                 .as_ref()
-                .map(|anchor| written_on(anchor, &round.snapshot)),
+                .map(|anchor| written_on(anchor, placed_in(comment), &round.snapshot)),
             ..comment.clone()
         })
         .collect();

@@ -198,8 +198,8 @@ impl FileHunks {
 
 /// The hunks of the files `paths` from `from` to `to`, with `context` lines
 /// around each change, renames followed. A file is asked for by its path at
-/// `to` (a deleted one by its path at `from`); asked by its old path, a
-/// renamed file is not found. Files that did not change are left out.
+/// `to`, or by its path at `from`: a deleted one, or a renamed one, which is
+/// answered under its path at `to`. Files that did not change are left out.
 pub async fn hunks(
     cwd: &Path,
     store: &ObjectStore,
@@ -212,6 +212,10 @@ pub async fn hunks(
     let wanted: HashSet<&str> = paths.iter().copied().collect();
     let diffed = diffed(&root, store, from, to, context, |file| {
         wanted.contains(file.path.as_str())
+            || file
+                .old_path
+                .as_deref()
+                .is_some_and(|old| wanted.contains(old))
     })
     .await?;
     Ok(diffed

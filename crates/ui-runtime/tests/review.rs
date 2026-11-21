@@ -943,6 +943,26 @@ fn a_round_is_found_by_the_input_that_closed_it() {
     );
     assert_eq!(all(&round).from, "a".repeat(40));
 
+    // A comment on removed lines of a file renamed since the compared
+    // commit names the old path; on the round's page it sits in the file
+    // as the host placed it, by its new name.
+    let mut gone = comment(b"gone", Some(1));
+    gone.anchor = Some(ReviewAnchor {
+        commit: "a".repeat(40),
+        path: "src/old.rs".into(),
+        lines: Some(ReviewLineRange { start: 2, end: 2 }),
+    });
+    let mut renamed = now.clone();
+    renamed.comments.push(gone);
+    let (_, round) =
+        ui_runtime::review::round_of(&renamed, b"review-1", b"first send").expect("held");
+    let placed = round.comments[1].placement.clone().unwrap();
+    assert_eq!(placed.path, "src/lib.rs", "the file the host placed it in");
+    assert!(matches!(
+        placed.at,
+        Some(review_placement::At::Compared(ref compared)) if compared.commit == "a".repeat(40)
+    ));
+
     // The second send's chip opens the round it closed, though it carried
     // "a" too.
     let (number, round) =

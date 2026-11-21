@@ -1,23 +1,23 @@
-//! Terminal markdown for agent text. The source is parsed (CommonMark with
-//! GFM tables, task lists and strikethrough) and drawn as typography in the
-//! chat's inks, never as its syntax: headings bright and bold, bullets,
-//! quotes on a faint rail, links as underlined text that opens on a click,
-//! rules as hairlines, code blocks indented and coloured by the terminal's
-//! own palette, tables in aligned columns.
+//! Terminal markdown for agent text. The text comes parsed, as the blocks
+//! every client draws ([`ui_view::Markdown`]), and is drawn here as
+//! typography in the chat's inks, never as its syntax: headings bright and
+//! bold, bullets, quotes on a faint rail, links as underlined text that
+//! opens on a click, rules as hairlines, code blocks indented and coloured
+//! by the terminal's own palette, tables in aligned columns.
 //!
 //! Paragraphs reflow to the width given. A word is never split unless it is
 //! longer than a whole line, URLs included; code lines keep their spacing
 //! and hard-wrap. A message's lines are kept by content and width, so only
-//! a message still streaming is parsed again.
+//! a message still streaming is drawn again.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
+use ui_view::{InlineRun, Markdown, ProseBlock, ProseItem, TableAlign};
 
 use crate::chat::selection::Join;
 use crate::text::{clip_to_width, str_width};
@@ -50,42 +50,24 @@ const MIN_COLUMN: usize = 12;
 /// The rule between table columns, with a column of room either side.
 const RULE: &str = " │ ";
 
-/// A reply still streaming, less a table header whose delimiter row has
-/// not arrived: until then the parser reads the header as a paragraph of
-/// pipes, so it waits a moment and appears as a table.
-pub(crate) fn streaming_source(source: &str) -> &str {
-    let trimmed = source.trim_end_matches([' ', '\t']);
-    let body = trimmed.trim_end_matches('\n');
-    let start = body.rfind('\n').map_or(0, |at| at + 1);
-    let last = &body[start..];
-    let pipe_row = last.trim_start().starts_with('|');
-    // A row under a delimiter row belongs to a table already drawn.
-    let before = &body[..start.saturating_sub(1).min(body.len())];
-    let previous = before.rsplit('\n').next().unwrap_or("").trim();
-    let in_table = previous.starts_with('|');
-    if pipe_row && !in_table {
-        &source[..start]
-    } else {
-        source
-    }
-}
-
-/// The source drawn as rows of spans, wrapped at `width`.
+/// Words an agent wrote that come as text rather than parsed with a row,
+/// such as a question or an option's preview, drawn as rows of spans
+/// wrapped at `width`.
 pub(crate) fn markdown_rows(source: &str, width: usize, theme: Theme) -> Vec<Vec<Span<'static>>> {
-    markdown_lines(source, false, width, theme)
+    markdown_lines(&Markdown::parse(source, false), false, width, theme)
         .iter()
         .map(|line| line.spans.clone())
         .collect()
 }
 
-/// The source drawn as lines with their links, wrapped at `width`.
+/// The text drawn as lines with their links, wrapped at `width`.
 /// `streaming` is for a message still being written, whose last code block
-/// may still be open. Kept for the next frame by content, width and theme
+/// may still be open. Kept for the next frame by source, width and theme
 /// once every code block in it is coloured as far as it will be, so a
-/// message is parsed again only while it changes or its code is still
+/// message is drawn again only while it changes or its code is still
 /// being coloured.
 pub(crate) fn markdown_lines(
-    source: &str,
+    markdown: &Markdown,
     streaming: bool,
     width: usize,
     theme: Theme,
@@ -97,7 +79,7 @@ pub(crate) fn markdown_lines(
     let width = width.max(1);
     let hash = {
         let mut hasher = DefaultHasher::new();
-        source.hash(&mut hasher);
+        markdown.source.hash(&mut hasher);
         hasher.finish()
     };
     let key = (hash, width, streaming);
@@ -109,7 +91,7 @@ pub(crate) fn markdown_lines(
     }) {
         return lines;
     }
-    let (lines, settled) = render(source, streaming, width, theme);
+    let (lines, settled) = render(&markdown.blocks, streaming, width, theme);
     let lines = Rc::new(lines);
     if !settled {
         return lines;
@@ -124,18 +106,15 @@ pub(crate) fn markdown_lines(
     lines
 }
 
-/// The source's lines, and whether every code block in them is settled.
-fn render(source: &str, streaming: bool, width: usize, theme: Theme) -> (Vec<MdLine>, bool) {
-    let options =
-        Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
-    let mut drawer = Drawer::new(width, theme);
-    let mut fences = Fences::new(source);
-    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
-        if let Some(unclosed) = fences.see(&event, range) {
-            drawer.open_block = streaming && unclosed;
-        }
-        drawer.event(event);
-    }
+/// The blocks' lines, and whether every code block in them is settled.
+fn render(
+    blocks: &[ProseBlock],
+    streaming: bool,
+    width: usize,
+    theme: Theme,
+) -> (Vec<MdLine>, bool) {
+    let mut drawer = Drawer::new(width, theme, streaming);
+    drawer.blocks(blocks);
     drawer.flush();
     let mut out = drawer.out;
     while out
@@ -145,69 +124,6 @@ fn render(source: &str, streaming: bool, width: usize, theme: Theme) -> (Vec<MdL
         out.pop();
     }
     (out, drawer.settled)
-}
-
-/// Follows the parser's events for the fenced code block the source leaves
-/// unclosed: in a message still streaming, the block still being written.
-///
-/// The parser has already decided which lines are code (how far a closing
-/// fence may be indented, that it must be as long as the opening, that a
-/// quote's marker is not part of it), so the only thing read here is what
-/// follows the block's last code: a block is closed when that holds a run
-/// of its opening's fence character at least as long as the opening. Only
-/// a closing fence can put one there. Comparing where the code ends with
-/// where the block ends is not enough: the parser counts a trailing line
-/// of indentation as the block's but emits it as no code.
-///
-/// An unclosed block is the one being written only when it runs to the
-/// end of what has arrived. A block a quote or list item ends before the
-/// source does is finished; nothing more will join it.
-struct Fences<'a> {
-    source: &'a str,
-    /// Where what has arrived ends, less trailing whitespace.
-    end: usize,
-    /// The fenced block open now: its opening fence, where the block ends,
-    /// and where its code ends.
-    block: Option<(&'a str, usize, usize)>,
-}
-
-impl<'a> Fences<'a> {
-    fn new(source: &'a str) -> Fences<'a> {
-        Fences {
-            source,
-            end: source.trim_end().len(),
-            block: None,
-        }
-    }
-
-    /// Takes the next event; at a fenced block's end, says whether the
-    /// block is unclosed.
-    fn see(&mut self, event: &Event, range: std::ops::Range<usize>) -> Option<bool> {
-        match event {
-            // Before any code, the block's code ends with its opening line.
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => {
-                let text = &self.source[range.clone()];
-                let opening = text.find('\n').map_or(range.end, |at| range.start + at + 1);
-                let text = text.trim_start();
-                let mark = text.chars().next().unwrap_or('`');
-                let fence = &text[..text.len() - text.trim_start_matches(mark).len()];
-                self.block = Some((fence, range.end, opening));
-                None
-            }
-            Event::Text(_) => {
-                if let Some((_, _, code)) = &mut self.block {
-                    *code = range.end;
-                }
-                None
-            }
-            Event::End(TagEnd::CodeBlock) => {
-                let (fence, block, code) = self.block.take()?;
-                let closed = self.source[code..block].contains(fence);
-                Some(!closed && block >= self.end)
-            }
-            _ => None,
-        }
-    }
 }
 
 /// What encloses the text being drawn, outermost first.
@@ -224,58 +140,42 @@ enum Container {
 }
 
 struct Table {
-    alignments: Vec<Alignment>,
+    alignments: Vec<TableAlign>,
+    /// The header's cells, then each row's.
     rows: Vec<Vec<Vec<Run>>>,
-    row: Vec<Vec<Run>>,
 }
 
 struct Drawer {
     width: usize,
     theme: Theme,
+    /// The message is still being written, so its unclosed code block is
+    /// the one still arriving.
+    streaming: bool,
     out: Vec<MdLine>,
     runs: Vec<Run>,
     containers: Vec<Container>,
-    /// The next number of each open list; None for a bulleted one.
-    lists: Vec<Option<u64>>,
-    bold: usize,
-    italic: usize,
-    strike: usize,
     heading: bool,
     /// The item's task is done: its words recede.
     done: bool,
-    link: Option<String>,
-    /// The code block being gathered: its fence's info string and its
-    /// code.
-    code: Option<(String, String)>,
-    /// The code block ending next is the one still being written.
-    open_block: bool,
     /// Every code block drawn so far is coloured as far as it will be.
     settled: bool,
-    table: Option<Table>,
     /// Nothing has been drawn since the current list item began.
     fresh_item: bool,
     last_blank: bool,
 }
 
 impl Drawer {
-    fn new(width: usize, theme: Theme) -> Drawer {
+    fn new(width: usize, theme: Theme, streaming: bool) -> Drawer {
         Drawer {
             width,
             theme,
+            streaming,
             out: Vec::new(),
             runs: Vec::new(),
             containers: Vec::new(),
-            lists: Vec::new(),
-            bold: 0,
-            italic: 0,
-            strike: 0,
             heading: false,
             done: false,
-            link: None,
-            code: None,
-            open_block: false,
             settled: true,
-            table: None,
             fresh_item: false,
             last_blank: true,
         }
@@ -287,10 +187,16 @@ impl Drawer {
             .any(|container| matches!(container, Container::Quote))
     }
 
-    /// The style inline text takes here.
-    fn style(&self) -> Style {
+    fn in_item(&self) -> bool {
+        self.containers
+            .iter()
+            .any(|container| matches!(container, Container::Item { .. }))
+    }
+
+    /// The style plain inline text takes here.
+    fn ink(&self) -> Style {
         let theme = self.theme;
-        let mut style = if self.heading {
+        if self.heading {
             theme.emphasis()
         } else if self.done {
             theme.faint()
@@ -298,59 +204,125 @@ impl Drawer {
             theme.muted()
         } else {
             theme.text()
-        };
-        if self.bold > 0 {
-            style = style.add_modifier(Modifier::BOLD);
         }
-        if self.italic > 0 {
-            style = style.add_modifier(Modifier::ITALIC);
-        }
-        if self.strike > 0 {
-            style = style.add_modifier(Modifier::CROSSED_OUT);
-        }
-        if self.link.is_some() {
-            style = style.add_modifier(Modifier::UNDERLINED);
-        }
-        style
     }
 
-    fn event(&mut self, event: Event<'_>) {
-        if let Some((_, code)) = &mut self.code {
-            match event {
-                Event::Text(text) => {
-                    code.push_str(&text);
-                    return;
+    /// A parsed run as drawn here; a line break is a run of its own.
+    fn runs_of(&self, runs: &[InlineRun]) -> Vec<Run> {
+        let ink = self.ink();
+        let mut out = Vec::new();
+        for run in runs {
+            let mut style = if run.code { self.theme.code() } else { ink };
+            if !run.code {
+                if run.strong {
+                    style = style.add_modifier(Modifier::BOLD);
                 }
-                Event::End(TagEnd::CodeBlock) => {}
-                _ => return,
+                if run.emphasis {
+                    style = style.add_modifier(Modifier::ITALIC);
+                }
+                if run.strikethrough {
+                    style = style.add_modifier(Modifier::CROSSED_OUT);
+                }
+            }
+            if run.link.is_some() {
+                style = style.add_modifier(Modifier::UNDERLINED);
+            }
+            for (i, piece) in run.text.split('\n').enumerate() {
+                if i > 0 {
+                    out.push(Run {
+                        text: "\n".into(),
+                        style: Style::default(),
+                        link: None,
+                    });
+                }
+                if !piece.is_empty() {
+                    out.push(Run {
+                        text: piece.to_owned(),
+                        style,
+                        link: run.link.clone(),
+                    });
+                }
             }
         }
-        match event {
-            Event::Start(tag) => self.start(tag),
-            Event::End(tag) => self.end(tag),
-            Event::Text(text) => self.text(&text),
-            Event::Code(code) => {
-                let mut style = self.theme.code();
-                if self.link.is_some() {
-                    style = style.add_modifier(Modifier::UNDERLINED);
+        out
+    }
+
+    fn blocks(&mut self, blocks: &[ProseBlock]) {
+        for block in blocks {
+            self.block(block);
+        }
+    }
+
+    fn block(&mut self, block: &ProseBlock) {
+        match block {
+            ProseBlock::Paragraph { text } => {
+                if !self.fresh_item {
+                    self.flush();
+                    self.gap();
                 }
-                self.runs.push(Run {
-                    text: code.into_string(),
-                    style,
-                    link: self.link.clone(),
+                self.runs = self.runs_of(text);
+                self.flush();
+            }
+            ProseBlock::Heading { text, .. } => {
+                self.flush();
+                self.gap();
+                self.heading = true;
+                self.runs = self.runs_of(text);
+                self.flush();
+                self.heading = false;
+            }
+            ProseBlock::Quote { blocks } => {
+                self.flush();
+                self.gap();
+                self.containers.push(Container::Quote);
+                self.blocks(blocks);
+                self.flush();
+                self.containers.pop();
+            }
+            ProseBlock::Code {
+                language,
+                code,
+                closed,
+            } => {
+                self.flush();
+                if !self.fresh_item {
+                    self.gap();
+                }
+                let open = self.streaming && !closed;
+                self.code_block(language, code, open);
+            }
+            ProseBlock::List {
+                ordered,
+                start,
+                items,
+                ..
+            } => {
+                self.flush();
+                // A list starts a block; one nested in an item hangs under
+                // its text without a gap.
+                if !self.in_item() {
+                    self.gap();
+                }
+                self.list(*ordered, *start, items);
+                self.flush();
+            }
+            ProseBlock::Table {
+                alignments,
+                header,
+                rows,
+            } => {
+                self.flush();
+                self.gap();
+                let rows = std::iter::once(header)
+                    .chain(rows)
+                    .map(|row| row.iter().map(|cell| self.runs_of(cell)).collect())
+                    .collect();
+                self.draw_table(Table {
+                    alignments: alignments.clone(),
+                    rows,
                 });
             }
-            // A single newline stays a line break, unlike CommonMark: agents
-            // write lists, logs and "one per line" answers as lines, and
-            // Claude's and Codex's own interfaces draw them so. A blank line
-            // still parts paragraphs.
-            Event::SoftBreak | Event::HardBreak => self.runs.push(Run {
-                text: "\n".into(),
-                style: Style::default(),
-                link: None,
-            }),
-            Event::Html(html) | Event::InlineHtml(html) => self.text(&html),
-            Event::Rule => {
+            ProseBlock::Rule => {
                 self.flush();
                 self.gap();
                 let (first, _) = self.prefixes();
@@ -359,201 +331,52 @@ impl Drawer {
                 spans.push(Span::styled("─".repeat(room), self.theme.hairline()));
                 self.push_line(spans, Vec::new());
             }
-            Event::TaskListMarker(done) => {
-                self.done = done;
-                if let Some(Container::Item { marker, width, .. }) = self.containers.last_mut() {
-                    let mark = if done { "✓ " } else { "○ " };
-                    *marker = vec![Span::styled(mark, self.theme.faint())];
-                    *width = 2;
-                }
-            }
-            Event::FootnoteReference(name) => self.text(&format!("[{name}]")),
-            _ => {}
         }
     }
 
-    fn start(&mut self, tag: Tag<'_>) {
-        match tag {
-            Tag::Paragraph => {
-                if !self.fresh_item {
-                    self.flush();
-                    self.gap();
-                }
-            }
-            Tag::Heading { .. } => {
-                self.flush();
-                self.gap();
-                self.heading = true;
-            }
-            Tag::BlockQuote(_) => {
-                self.flush();
-                self.gap();
-                self.containers.push(Container::Quote);
-            }
-            Tag::CodeBlock(kind) => {
-                self.flush();
-                if !self.fresh_item {
-                    self.gap();
-                }
-                let language = match kind {
-                    CodeBlockKind::Fenced(language) => language.into_string(),
-                    CodeBlockKind::Indented => String::new(),
-                };
-                self.code = Some((language, String::new()));
-            }
-            Tag::List(first) => {
-                self.flush();
-                // A list starts a block; one nested in an item hangs under
-                // its text without a gap.
-                if !self
-                    .containers
-                    .iter()
-                    .any(|container| matches!(container, Container::Item { .. }))
-                {
-                    self.gap();
-                }
-                self.lists.push(first);
-            }
-            Tag::Item => {
-                self.flush();
-                let words = match self.lists.last_mut() {
-                    Some(Some(next)) => {
-                        let words = format!("{next}. ");
-                        *next += 1;
-                        words
-                    }
-                    _ => "• ".to_owned(),
-                };
-                let ink = if self.quoted() {
-                    self.theme.muted()
-                } else {
-                    self.theme.text()
-                };
-                self.containers.push(Container::Item {
-                    width: str_width(&words),
-                    marker: vec![Span::styled(words, ink)],
-                    used: false,
-                });
-                self.fresh_item = true;
-                self.done = false;
-            }
-            Tag::Table(alignments) => {
-                self.flush();
-                self.gap();
-                self.table = Some(Table {
-                    alignments,
-                    rows: Vec::new(),
-                    row: Vec::new(),
-                });
-            }
-            Tag::TableHead | Tag::TableRow => {
-                if let Some(table) = &mut self.table {
-                    table.row.clear();
-                }
-            }
-            Tag::TableCell => self.runs.clear(),
-            Tag::Emphasis => self.italic += 1,
-            Tag::Strong => self.bold += 1,
-            Tag::Strikethrough => self.strike += 1,
-            Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
-                self.link = Some(dest_url.into_string());
-            }
-            _ => {}
-        }
-    }
-
-    fn end(&mut self, tag: TagEnd) {
-        match tag {
-            TagEnd::Paragraph => self.flush(),
-            TagEnd::Heading(_) => {
-                self.flush();
-                self.heading = false;
-            }
-            TagEnd::BlockQuote(_) => {
-                self.flush();
-                if matches!(self.containers.last(), Some(Container::Quote)) {
-                    self.containers.pop();
-                }
-            }
-            TagEnd::CodeBlock => {
-                let open = std::mem::take(&mut self.open_block);
-                if let Some((language, code)) = self.code.take() {
-                    self.code_block(&language, &code, open);
-                }
-            }
-            TagEnd::List(_) => {
-                self.flush();
-                self.lists.pop();
-            }
-            TagEnd::Item => {
-                self.flush();
-                if matches!(self.containers.last(), Some(Container::Item { .. })) {
-                    self.containers.pop();
-                }
-                self.done = false;
-                self.fresh_item = false;
-            }
-            TagEnd::TableCell => {
-                let cell = std::mem::take(&mut self.runs);
-                if let Some(table) = &mut self.table {
-                    table.row.push(cell);
-                }
-            }
-            TagEnd::TableHead | TagEnd::TableRow => {
-                if let Some(table) = &mut self.table {
-                    let row = std::mem::take(&mut table.row);
-                    table.rows.push(row);
-                }
-            }
-            TagEnd::Table => {
-                if let Some(table) = self.table.take() {
-                    self.draw_table(table);
-                }
-            }
-            TagEnd::Emphasis => self.italic = self.italic.saturating_sub(1),
-            TagEnd::Strong => self.bold = self.bold.saturating_sub(1),
-            TagEnd::Strikethrough => self.strike = self.strike.saturating_sub(1),
-            TagEnd::Link | TagEnd::Image => self.link = None,
-            _ => {}
-        }
-    }
-
-    /// Inline text, with bare URLs underlined and linked to themselves.
-    fn text(&mut self, text: &str) {
-        let style = self.style();
-        if self.link.is_some() {
-            self.runs.push(Run {
-                text: text.to_owned(),
-                style,
-                link: self.link.clone(),
+    /// A list's items, each marker in a column as wide as the list's widest,
+    /// so every item's text starts at one edge: numbers stand right-aligned
+    /// in it, `9.` over `10.`.
+    fn list(&mut self, ordered: bool, start: u64, items: &[ProseItem]) {
+        let markers: Vec<String> = items
+            .iter()
+            .enumerate()
+            .map(|(at, item)| match item.task {
+                Some(true) => "✓".to_owned(),
+                Some(false) => "○".to_owned(),
+                None if ordered => format!("{}.", start.saturating_add(at as u64)),
+                None => "•".to_owned(),
+            })
+            .collect();
+        let column = markers
+            .iter()
+            .map(|marker| str_width(marker))
+            .max()
+            .unwrap_or(0)
+            + 1;
+        for (item, marker) in items.iter().zip(markers) {
+            self.flush();
+            let ink = match item.task {
+                Some(_) => self.theme.faint(),
+                None if self.quoted() => self.theme.muted(),
+                None => self.theme.text(),
+            };
+            let pad = column - 1 - str_width(&marker);
+            let words = format!("{}{marker} ", " ".repeat(pad));
+            self.containers.push(Container::Item {
+                width: column,
+                marker: vec![Span::styled(words, ink)],
+                used: false,
             });
-            return;
-        }
-        let mut rest = text;
-        while let Some(at) = find_url(rest) {
-            let (before, from) = rest.split_at(at);
-            if !before.is_empty() {
-                self.runs.push(Run {
-                    text: before.to_owned(),
-                    style,
-                    link: None,
-                });
+            self.fresh_item = true;
+            self.done = item.task == Some(true);
+            self.blocks(&item.blocks);
+            self.flush();
+            if matches!(self.containers.last(), Some(Container::Item { .. })) {
+                self.containers.pop();
             }
-            let end = url_end(from);
-            let url = &from[..end];
-            self.runs.push(Run {
-                text: url.to_owned(),
-                style: style.add_modifier(Modifier::UNDERLINED),
-                link: Some(url.to_owned()),
-            });
-            rest = &from[end..];
-        }
-        if !rest.is_empty() {
-            self.runs.push(Run {
-                text: rest.to_owned(),
-                style,
-                link: None,
-            });
+            self.done = false;
+            self.fresh_item = false;
         }
     }
 
@@ -803,13 +626,13 @@ impl Drawer {
             .iter()
             .any(|row| row.iter().any(|lines| lines.len() > 1));
         // Alignment as the markdown's markers say, header included.
-        let aligns: Vec<Alignment> = (0..columns)
+        let aligns: Vec<TableAlign> = (0..columns)
             .map(|column| {
                 table
                     .alignments
                     .get(column)
                     .copied()
-                    .unwrap_or(Alignment::None)
+                    .unwrap_or(TableAlign::None)
             })
             .collect();
         let bar = || Span::styled(RULE, theme.hairline());
@@ -843,9 +666,9 @@ impl Drawer {
                     let used = runs_width(&pieces);
                     let slack = widths[column].saturating_sub(used);
                     let (left, right) = match aligns[column] {
-                        Alignment::Right => (slack, 0),
-                        Alignment::Center => (slack / 2, slack - slack / 2),
-                        Alignment::Left | Alignment::None => (0, slack),
+                        TableAlign::Right => (slack, 0),
+                        TableAlign::Center => (slack / 2, slack - slack / 2),
+                        TableAlign::Left | TableAlign::None => (0, slack),
                     };
                     spans.push(Span::raw(" ".repeat(left)));
                     let (cell_spans, cell_links) = placed(&[], &pieces);
@@ -988,22 +811,6 @@ fn placed(
         col += width;
     }
     (spans, links)
-}
-
-/// Where the next bare URL in `text` starts.
-fn find_url(text: &str) -> Option<usize> {
-    ["https://", "http://"]
-        .iter()
-        .filter_map(|scheme| text.find(scheme))
-        .min()
-}
-
-/// How far a bare URL at the start of `text` runs: to whitespace, less the
-/// sentence's punctuation after it.
-fn url_end(text: &str) -> usize {
-    let end = text.find(char::is_whitespace).unwrap_or(text.len());
-    let trimmed = text[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', '\'', '"']);
-    trimmed.len()
 }
 
 /// Greedy word wrap over styled runs into lines of at most `width`
@@ -1181,52 +988,41 @@ fn hard_wrap(line: &[(String, Style)], width: usize) -> Vec<Vec<Span<'static>>> 
 mod tests {
     use super::*;
 
-    fn open_blocks(source: &str) -> Vec<bool> {
-        let options =
-            Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH;
-        let mut fences = Fences::new(source);
-        Parser::new_ext(source, options)
-            .into_offset_iter()
-            .filter_map(|(event, range)| fences.see(&event, range))
+    fn texts(source: &str, width: usize) -> Vec<String> {
+        let (lines, _) = render(
+            &Markdown::parse(source, false).blocks,
+            false,
+            width,
+            Theme::default(),
+        );
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
             .collect()
     }
 
+    /// The marker column is as wide as the list's widest marker, so item 9's
+    /// words and item 10's start at one edge, and so do their wrapped lines.
     #[test]
-    fn only_a_last_fence_not_closed_yet_is_still_being_written() {
-        for (source, open) in [
-            ("Here:\n\n```rust\nfn a() {}\nfn b", vec![true]),
-            ("```rust\nfn a() {}\n", vec![true]),
-            ("```rust\n", vec![true]),
-            ("```rust\nfn a() {}\n```", vec![false]),
-            ("```rust\nfn a() {}\n```\n\n", vec![false]),
-            ("```rust\nfn a() {}\n``", vec![true]),
-            ("~~~\nx\n~~~", vec![false]),
-            // A shorter fence inside a longer one does not close it.
-            ("````md\n```\n", vec![true]),
-            ("```a\nx\n```\n\nThen:\n\n```b\ny", vec![false, true]),
-            ("- item\n\n  ```sh\n  ls\n  ```", vec![false]),
-            ("> ```sh\n> ls\n> ```", vec![false]),
-            // A quote's fence the quote has ended is finished.
-            ("> ```sh\n> ls\n\nafter", vec![false]),
-            // A fence indented four spaces is code, not a closing fence;
-            // three spaces still close.
-            ("```rust\nfn a() {}\n    ```\n", vec![true]),
-            ("```rust\nfn a() {}\n   ```\n", vec![false]),
-            // Outside a quote, a line starting `>` is code.
-            ("```md\n> ```\n", vec![true]),
-            ("```md\n> quoted\n", vec![true]),
-            ("```rust\n```", vec![false]),
-            ("```rust", vec![true]),
-            // A list item's fence a dedented paragraph ends is finished.
-            ("- ```sh\n  ls\n\nafter", vec![false]),
-            // Indentation alone after the code is not a closing fence,
-            // though the parser counts it as the block's.
-            ("- ~~~rust\n  fn f() {}\n  ", vec![true]),
-            ("- ~~~rust\n  fn f() {}\n  ~~~", vec![false]),
-            ("```rust\nfn f() {}\n   ", vec![true]),
-        ] {
-            assert_eq!(open_blocks(source), open, "{source:?}");
-        }
+    fn a_list_s_items_start_their_words_at_one_edge() {
+        let source: Vec<String> = (1..=10).map(|n| format!("{n}. item {n}")).collect();
+        let lines = texts(&source.join("\n"), 80);
+        assert_eq!(lines[8], " 9. item 9");
+        assert_eq!(lines[9], "10. item 10");
+        let wrapped = texts("9. one two three four\n10. five", 12);
+        assert_eq!(
+            wrapped,
+            [" 9. one two", "    three", "    four", "10. five"]
+        );
+        assert_eq!(
+            texts("- [x] built\n- [ ] tested", 80),
+            ["✓ built", "○ tested"]
+        );
     }
 
     fn styles_of(lines: &[MdLine], text: &str) -> Vec<Style> {
@@ -1250,41 +1046,43 @@ mod tests {
         let source = "Closed:\n\n```rust\nstruct Closed;\n```\n\nOpen:\n\n```rust\nstruct Open;\nenum Partial";
 
         // Until the grammar is built, every block is plain.
-        let (building, settled) = render(source, true, 80, theme);
+        let parsed = Markdown::parse(source, true);
+        let (building, settled) = render(&parsed.blocks, true, 80, theme);
         assert!(!settled);
         assert_eq!(styles_of(&building, "struct Closed;"), vec![plain]);
         held.run();
 
         // The closed block is highlighted whole at once; the open one is
         // plain until its background pass comes back.
-        let (first, settled) = render(source, true, 80, theme);
+        let (first, settled) = render(&parsed.blocks, true, 80, theme);
         assert!(!settled);
         assert_eq!(styles_of(&first, "struct"), vec![keyword]);
         assert_eq!(styles_of(&first, "struct Open;"), vec![plain]);
         assert_eq!(styles_of(&first, "enum Partial"), vec![plain]);
         assert_eq!(held.len(), 1, "the open block's pass is under way");
         crate::code::begin_frame();
-        let again = markdown_lines(source, true, 80, theme);
+        let again = markdown_lines(&parsed, true, 80, theme);
         assert!(
             crate::code::drew_unsettled(),
             "the frame asks to be drawn again"
         );
         assert!(
-            !Rc::ptr_eq(&again, &markdown_lines(source, true, 80, theme)),
+            !Rc::ptr_eq(&again, &markdown_lines(&parsed, true, 80, theme)),
             "an unsettled message is not kept"
         );
 
         held.run();
-        let (passed, settled) = render(source, true, 80, theme);
+        let (passed, settled) = render(&parsed.blocks, true, 80, theme);
         assert!(settled);
         assert_eq!(styles_of(&passed, "struct"), vec![keyword, keyword]);
         // The last line, not complete yet, waits for the block to grow.
         assert_eq!(styles_of(&passed, "enum Partial"), vec![plain]);
-        let kept = markdown_lines(source, true, 80, theme);
-        assert!(Rc::ptr_eq(&kept, &markdown_lines(source, true, 80, theme)));
+        let kept = markdown_lines(&parsed, true, 80, theme);
+        assert!(Rc::ptr_eq(&kept, &markdown_lines(&parsed, true, 80, theme)));
 
         // Finished, the same words are highlighted whole.
-        let (done, settled) = render(source, false, 80, theme);
+        let done = Markdown::parse(source, false);
+        let (done, settled) = render(&done.blocks, false, 80, theme);
         assert!(settled);
         assert_eq!(styles_of(&done, "struct"), vec![keyword, keyword]);
         assert!(styles_of(&done, "enum Partial").is_empty());

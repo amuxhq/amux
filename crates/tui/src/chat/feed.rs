@@ -19,8 +19,8 @@ use ratatui::text::{Line, Span};
 use ui_state::{AgentKey, Key, PhaseView};
 use ui_view::{
     AnswerView, AskRow, AttachmentView, CallPhase, ChildAction, DecisionView, ExitCause,
-    FileChangeView, GroupState, OpenedAgent, PlanVerdict, ProsePart, QuestionView, Resolution, Row,
-    RowKind, Run, RunCounts, Segment,
+    FileChangeView, GroupState, Markdown, OpenedAgent, PlanVerdict, ProsePart, QuestionView,
+    Resolution, Row, RowKind, Run, RunCounts, Segment,
 };
 use wire::BlobRef;
 
@@ -292,25 +292,11 @@ pub fn row_lines(
         }
         Placement::Plain => match &row.kind {
             RowKind::Prompt { text, steered } => prompt(
-                &mut drawn,
-                row,
-                &rows::segments_of(text),
-                *steered,
-                expanded,
-                facts,
-                width,
-                theme,
+                &mut drawn, row, text, *steered, expanded, facts, width, theme,
             ),
             RowKind::Prose {
                 text, streaming, ..
-            } => prose(
-                &mut drawn,
-                &rows::segments_of(text),
-                *streaming,
-                facts,
-                width,
-                theme,
-            ),
+            } => prose(&mut drawn, text, *streaming, facts, width, theme),
             RowKind::Ask(AskRow::Plan {
                 title,
                 body,
@@ -324,7 +310,7 @@ pub fn row_lines(
                 &row.id,
                 &Plan {
                     title: title.as_deref(),
-                    body: &body.source,
+                    body,
                     verdict: *verdict,
                     mode,
                     mode_name,
@@ -494,7 +480,7 @@ pub fn is_step(row: &Row) -> bool {
 fn prompt(
     drawn: &mut Drawn,
     row: &Row,
-    words: &[Segment],
+    words: &[ProsePart],
     steered: bool,
     open: bool,
     facts: &RowFacts,
@@ -518,7 +504,7 @@ const PASTE_LINES: usize = 8;
 /// open; without one (a message still on its way) a long paste stays cut.
 fn prompt_block(
     drawn: &mut Drawn,
-    words: &[Segment],
+    words: &[ProsePart],
     when: &str,
     toggle: Option<(&Key, bool)>,
     thumbnails: bool,
@@ -576,7 +562,7 @@ fn prompt_block(
 /// than PASTE_LINES is cut with "… N more lines [Show All]"; opened, it
 /// ends with "[Show Less]".
 fn message_lines(
-    words: &[Segment],
+    words: &[ProsePart],
     room: usize,
     toggle: Option<(&Key, bool)>,
     thumbnails: bool,
@@ -584,34 +570,27 @@ fn message_lines(
 ) -> Vec<(Line<'static>, LineHits, RowShape)> {
     let room = room.max(1);
     let mut out: Vec<(Line<'static>, LineHits, RowShape)> = Vec::new();
-    let mut run: Vec<Segment> = Vec::new();
+    let mut run: Vec<ProsePart> = Vec::new();
     let plain = |line| (line, LineHits::new(), RowShape::default());
-    let flush = |run: &mut Vec<Segment>, out: &mut Vec<(Line<'static>, LineHits, RowShape)>| {
+    let flush = |run: &mut Vec<ProsePart>, out: &mut Vec<(Line<'static>, LineHits, RowShape)>| {
         // The space a chip leaves after itself is not a line of its own.
-        let blank = run.iter().all(|segment| match segment {
-            Segment::Text(text) => text.trim().is_empty(),
-            Segment::Attachment(_) => false,
-        });
+        let blank = run
+            .iter()
+            .all(|part| part.source().is_some_and(|text| text.trim().is_empty()));
         if !blank {
             // Words after a paste start their own line, without the space
             // the paste's chip left after itself.
             if !out.is_empty()
-                && let Some(Segment::Text(text)) = run.first_mut()
+                && let Some(ProsePart::Text(text)) = run.first_mut()
+                && text.source.trim_start() != text.source
             {
-                *text = text.trim_start().to_owned();
+                *text = Markdown::parse(text.source.trim_start(), false);
             }
             // Words alone read as the agent's do. Words among chips keep the
             // chips at their places in the line, which markdown cannot.
-            let words: Option<String> = run
-                .iter()
-                .map(|segment| match segment {
-                    Segment::Text(text) => Some(text.as_str()),
-                    Segment::Attachment(_) => None,
-                })
-                .collect();
-            match words {
-                Some(source) => out.extend(
-                    crate::markdown::markdown_lines(&source, false, room, theme)
+            match run.as_slice() {
+                [ProsePart::Text(words)] => out.extend(
+                    crate::markdown::markdown_lines(words, false, room, theme)
                         .iter()
                         .map(|line| {
                             let shape = RowShape {
@@ -624,8 +603,8 @@ fn message_lines(
                             (Line::from(line.spans.clone()), LineHits::new(), shape)
                         }),
                 ),
-                None => out.extend(
-                    segment_rows(run, room, theme.text(), theme)
+                _ => out.extend(
+                    segment_rows(&rows::segments_of(run), room, theme.text(), theme)
                         .into_iter()
                         .map(|(line, shape)| (line, chip_hits(shape.opening.clone()), shape)),
                 ),
@@ -641,13 +620,13 @@ fn message_lines(
             .collect()
     };
     for segment in words {
-        if let Segment::Attachment(AttachmentView::Image(blob)) = segment
+        if let ProsePart::Attachment(AttachmentView::Image(blob)) = segment
             && takes_thumbnail(blob, thumbnails)
         {
             flush(&mut run, &mut out);
-            let chip = std::slice::from_ref(segment);
+            let chip = rows::segments_of(std::slice::from_ref(segment));
             out.extend(
-                segment_rows(chip, room, theme.text(), theme)
+                segment_rows(&chip, room, theme.text(), theme)
                     .into_iter()
                     .map(|(line, shape)| (line, chip_hits(shape.opening.clone()), shape)),
             );
@@ -658,7 +637,7 @@ fn message_lines(
             );
             continue;
         }
-        let Segment::Attachment(AttachmentView::Text { text: pasted, .. }) = segment else {
+        let ProsePart::Attachment(AttachmentView::Text { text: pasted, .. }) = segment else {
             run.push(segment.clone());
             continue;
         };
@@ -793,7 +772,8 @@ pub fn pending_prompt(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let mut drawn = Drawn::default();
-    prompt_block(&mut drawn, words, when, None, false, width, theme);
+    let words = ui_view::prose_parts(words.to_vec(), false);
+    prompt_block(&mut drawn, &words, when, None, false, width, theme);
     drawn.lines
 }
 
@@ -860,43 +840,70 @@ fn tinted(line: Line<'static>, surface: Style, width: usize) -> Line<'static> {
 /// between the words around it.
 fn prose(
     drawn: &mut Drawn,
-    words: &[Segment],
+    words: &[ProsePart],
     streaming: bool,
     facts: &RowFacts,
     width: usize,
     theme: Theme,
 ) {
     let before = drawn.lines.len();
-    let mut source = String::new();
-    for segment in words {
-        match segment {
-            Segment::Text(text) => source.push_str(text),
-            Segment::Attachment(view) => match rows::opens(view) {
-                Some(blob) => {
-                    prose_words(drawn, &std::mem::take(&mut source), false, width, theme);
-                    attachment_line(drawn, view, blob, facts, width, theme);
-                }
-                None => source.push_str(&chip(view)),
-            },
+    // The words since the last attachment on a line of its own: a chip
+    // that is not stands among them as text, so they read as one passage.
+    let mut pending: Vec<&ProsePart> = Vec::new();
+    for (at, part) in words.iter().enumerate() {
+        if let ProsePart::Attachment(view) = part
+            && let Some(blob) = rows::opens(view)
+        {
+            prose_words(drawn, &std::mem::take(&mut pending), false, width, theme);
+            attachment_line(drawn, view, blob, facts, width, theme);
+            continue;
+        }
+        pending.push(part);
+        if at + 1 == words.len() {
+            prose_words(
+                drawn,
+                &std::mem::take(&mut pending),
+                streaming,
+                width,
+                theme,
+            );
         }
     }
-    prose_words(drawn, &source, streaming, width, theme);
     if drawn.lines.len() > before {
         drawn.blank();
     }
 }
 
-/// A stretch of the agent's words, as markdown.
-fn prose_words(drawn: &mut Drawn, source: &str, streaming: bool, width: usize, theme: Theme) {
-    if source.trim().is_empty() {
+/// A stretch of the agent's words, as markdown. Words alone are drawn as
+/// their row parsed them; words around a chip are read with the chip's
+/// text among them.
+fn prose_words(
+    drawn: &mut Drawn,
+    parts: &[&ProsePart],
+    streaming: bool,
+    width: usize,
+    theme: Theme,
+) {
+    let joined;
+    let words = match parts {
+        [] => return,
+        [ProsePart::Text(words)] => words,
+        _ => {
+            let source: String = parts
+                .iter()
+                .map(|part| match part {
+                    ProsePart::Text(words) => words.source.clone(),
+                    ProsePart::Attachment(view) => chip(view),
+                })
+                .collect();
+            joined = Markdown::parse(&source, streaming);
+            &joined
+        }
+    };
+    if words.source.trim().is_empty() {
         return;
     }
-    let source = if streaming {
-        crate::markdown::streaming_source(source)
-    } else {
-        source
-    };
-    let lines = markdown_linked(source, streaming, width.saturating_sub(2), theme);
+    let lines = markdown_linked(words, streaming, width.saturating_sub(2), theme);
     for (line, links, (from, join, exact)) in lines {
         drawn.copy.insert(
             drawn.lines.len(),
@@ -950,7 +957,7 @@ fn attachment_line(
 /// A plan, as the feed reads it: the title and body the view lifted.
 struct Plan<'a> {
     title: Option<&'a str>,
-    body: &'a str,
+    body: &'a Markdown,
     verdict: PlanVerdict,
     /// Approved switching: the permission switched to, and its name.
     mode: &'a str,
@@ -974,7 +981,7 @@ fn plan_lines(
     theme: Theme,
 ) {
     // Nothing to show yet: its first line is still being written.
-    if plan.writing && plan.title.is_none() && plan.body.is_empty() {
+    if plan.writing && plan.title.is_none() && plan.body.source.is_empty() {
         return;
     }
     let outcome = match plan.verdict {
@@ -1038,7 +1045,7 @@ fn plan_lines(
     if !folded {
         prose(
             drawn,
-            &[Segment::Text(plan.body.to_owned())],
+            &[ProsePart::Text(plan.body.clone())],
             plan.writing,
             &RowFacts::default(),
             width,

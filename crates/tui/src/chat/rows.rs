@@ -195,13 +195,13 @@ pub(crate) type LinkedLine = (Line<'static>, Vec<Link>, (usize, Join, bool));
 /// its words and how it continues the one before when copied. `streaming`
 /// is for words still being written.
 pub(crate) fn markdown_linked(
-    source: &str,
+    markdown: &ui_view::Markdown,
     streaming: bool,
     width: usize,
     theme: Theme,
 ) -> Vec<LinkedLine> {
     crate::markdown::markdown_lines(
-        source,
+        markdown,
         streaming,
         width.saturating_sub(INDENT).max(1),
         theme,

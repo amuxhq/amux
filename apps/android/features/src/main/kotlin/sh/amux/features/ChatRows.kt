@@ -1072,7 +1072,7 @@ private fun SubagentAnswerToggleBlock(
 }
 
 @Composable
-private fun PromptBubbleRow(
+internal fun PromptBubbleRow(
     segments: List<Segment>,
     steered: Boolean,
     imageBytes: (BlobRef) -> ByteArray?,

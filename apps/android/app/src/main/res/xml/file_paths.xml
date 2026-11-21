@@ -5,5 +5,5 @@
         path="amux-attachments/" />
     <cache-path
         name="exports"
-        path="." />
+        path="exports/" />
 </paths>

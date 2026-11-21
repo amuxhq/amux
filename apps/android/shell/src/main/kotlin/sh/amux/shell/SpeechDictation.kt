@@ -22,7 +22,19 @@ interface DictationController {
         onError: () -> Unit,
     )
 
+    /**
+     * User-initiated stop: tells the recognizer to stop capturing audio and
+     * wait for its trailing final result before releasing the recognizer.
+     */
     fun stop()
+
+    /**
+     * Immediate cancellation: discards any pending utterance and destroys the
+     * recognizer immediately (used when leaving chat or backgrounding).
+     */
+    fun cancel() {
+        stop()
+    }
 
     fun destroy()
 }
@@ -62,8 +74,9 @@ private class PlatformSpeechRecognizerBackend(
 
 /**
  * Android [DictationController] wrapping [SpeechRecognizer] strictly on the
- * Main looper, requesting partial hypotheses and cleaning up recognizer state
- * safely across errors, stops, and destruction.
+ * Main looper, requesting partial hypotheses, letting user-initiated [stop]
+ * deliver trailing final utterances, and tearing down cleanly on [cancel],
+ * errors, and [destroy].
  */
 class AndroidSpeechDictation internal constructor(
     private val context: Context,
@@ -84,6 +97,7 @@ class AndroidSpeechDictation internal constructor(
         val onFinal: (String) -> Unit,
         val onError: () -> Unit,
         var active: Boolean = true,
+        var stopping: Boolean = false,
     )
 
     private var recognizer: SpeechRecognizerBackend? = null
@@ -141,15 +155,42 @@ class AndroidSpeechDictation internal constructor(
 
     override fun stop() {
         runOnMain {
+            val current = activeSession ?: return@runOnMain
+            if (!current.active) return@runOnMain
+            if (current.stopping) {
+                // Second stop tap while waiting for trailing results: force finish cleanly.
+                current.active = false
+                activeSession = null
+                tearDownRecognizer()
+                current.onFinal("")
+                return@runOnMain
+            }
+            current.stopping = true
+            val backend = recognizer
+            if (backend == null) {
+                current.active = false
+                activeSession = null
+                current.onFinal("")
+                return@runOnMain
+            }
+            val stopped = runCatching { backend.stopListening() }.isSuccess
+            if (!stopped) {
+                current.active = false
+                activeSession = null
+                tearDownRecognizer()
+                current.onFinal("")
+            }
+        }
+    }
+
+    override fun cancel() {
+        runOnMain {
             val current = activeSession
             activeSession = null
             if (current != null) {
                 current.active = false
             }
-            recognizer?.let { backend ->
-                runCatching { backend.stopListening() }
-                runCatching { backend.cancel() }
-            }
+            tearDownRecognizer()
         }
     }
 
@@ -187,11 +228,16 @@ class AndroidSpeechDictation internal constructor(
 
         override fun onError(error: Int) {
             if (!session.active || activeSession !== session) return
+            val wasStopping = session.stopping
             session.active = false
             activeSession = null
             // Reset the recognizer after an error so a subsequent start() recovers cleanly.
             tearDownRecognizer()
-            session.onError()
+            if (wasStopping && isBenignStopError(error)) {
+                session.onFinal("")
+            } else {
+                session.onError()
+            }
         }
 
         override fun onResults(results: Bundle?) {
@@ -199,6 +245,7 @@ class AndroidSpeechDictation internal constructor(
             session.active = false
             activeSession = null
             val text = extractTranscript(results)
+            tearDownRecognizer()
             session.onFinal(text)
         }
 
@@ -222,6 +269,11 @@ class AndroidSpeechDictation internal constructor(
     }
 
     companion object {
+        private fun isBenignStopError(error: Int): Boolean =
+            error == SpeechRecognizer.ERROR_NO_MATCH ||
+                error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT ||
+                error == SpeechRecognizer.ERROR_CLIENT
+
         internal fun buildRecognizerIntent(callingPackage: String): Intent =
             Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(

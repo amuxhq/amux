@@ -24,6 +24,7 @@ import sh.amux.values.HostView
 import sh.amux.values.PairingWindowView
 import sh.amux.values.PairRequest
 import sh.amux.values.PendingPair
+import sh.amux.values.SignInOfferOutcome
 import sh.amux.values.SignInOfferView
 
 /**
@@ -65,6 +66,7 @@ class StoreBundle(
     private val warning: (suspend (AgentKey) -> Result<DeleteWarning?>)? = null,
     private val beginPairOp: (suspend (PairRequest) -> Result<PendingPair>)? = null,
     private val abandonPairOp: (suspend (PendingPair) -> Result<Unit>)? = null,
+    private val answerSignInOfferOp: (suspend (SignInOfferView, Boolean) -> Result<SignInOfferOutcome>)? = null,
 ) {
     val fleet: FleetStore = FleetStore(clock = clock)
     val hosts: HostsStore = HostsStore(scope = scope, clock = clock)
@@ -377,6 +379,13 @@ class StoreBundle(
         closeChat(cached.chat)
     }
 
+    /** Stops any active dictation state on open chat models (e.g. when the Activity backgrounds). */
+    fun stopAllDictation() {
+        for (cached in models.values) {
+            cached.model.stopDictation()
+        }
+    }
+
     fun closeChats() {
         val pendingJobs = expiryJobs.values.toList()
         expiryJobs.clear()
@@ -483,11 +492,17 @@ class StoreBundle(
     // --- Sign-in offers ----------------------------------------------------
 
     fun answerOffer(offer: SignInOfferView, accept: Boolean) {
-        val activeProfile = profile ?: return
+        val activeProfile = profile
+        val answerAction = answerSignInOfferOp
+        if (activeProfile == null && answerAction == null) return
         if (offers.snapshot.answering != null) return
         offers.answers(offer.hostId)
         scope.launch {
-            val outcome = activeProfile.answerSignInOffer(offer.hostId, accept)
+            val outcome = if (answerAction != null) {
+                answerAction(offer, accept)
+            } else {
+                activeProfile!!.answerSignInOffer(offer.hostId, accept)
+            }
             offers.answered(outcome, fromHostId = offer.hostId)
         }
     }

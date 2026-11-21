@@ -126,6 +126,7 @@ import sh.amux.features.defaultValidateAgentName
 import sh.amux.features.validateFormFields
 import sh.amux.values.AgentKey
 import sh.amux.values.FleetFilter
+import sh.amux.values.RelayLink
 import sh.amux.words.OpenableLink
 import sh.amux.words.name
 
@@ -168,6 +169,7 @@ sealed interface ShellAction {
     data class SetAutoReports(val enabled: Boolean) : ShellAction
     data object ReportProblem : ShellAction
     data object ExportDiagnostics : ShellAction
+    data object ClearDiagnosticsExport : ShellAction
     data object OpenSettings : ShellAction
     data object AcceptReportOffer : ShellAction
     data object DismissReport : ShellAction
@@ -195,6 +197,7 @@ fun Shell(
     autoReports: Boolean = false,
     appVersion: String = "",
     diagnosticsExport: DiagnosticsExportState = DiagnosticsExportState.Idle,
+    cloudEndpoint: CloudEndpoint = CloudEndpoint.Production,
     signIn: SignInStore? = null,
     paywall: PaywallStore? = null,
     paywallStoreUnavailable: Boolean = false,
@@ -231,13 +234,21 @@ fun Shell(
     var startedLinkKey by remember(stores) { mutableStateOf<String?>(null) }
     var settledQuery by remember { mutableStateOf("") }
     var settingsFingerprintCopied by remember { mutableStateOf(false) }
+    var wasOnSettings by remember { mutableStateOf(false) }
 
     val signedIn = accountsState.accounts.any { it.signedIn }
 
     LaunchedEffect(routerState.topRoute) {
+        val onSettingsNow = routerState.topRoute == Route.Settings
+        if (wasOnSettings && !onSettingsNow) {
+            onAction(ShellAction.ClearDiagnosticsExport)
+        }
+        wasOnSettings = onSettingsNow
+
         when (routerState.topRoute) {
             Route.Settings -> {
                 settingsFingerprintCopied = false
+                onAction(ShellAction.ClearDiagnosticsExport)
                 onAction(ShellAction.OpenSettings)
                 if (hostsState.roster == null) {
                     stores.refreshRoster()
@@ -395,7 +406,14 @@ fun Shell(
                 router.dismissAccountSheet()
                 onAction(ShellAction.AddAccount)
             }
-            HomeAction.SignIn -> onAction(ShellAction.SignIn)
+            HomeAction.SignIn -> {
+                val selectedEntry = accountsState.selectedAccount
+                if (selectedEntry != null && (!selectedEntry.signedIn || fleetState.relay == RelayLink.SignInAgain)) {
+                    onAction(ShellAction.SignInAgain(selectedEntry.id))
+                } else {
+                    onAction(ShellAction.SignIn)
+                }
+            }
             is HomeAction.SignInAgain -> {
                 router.dismissAccountSheet()
                 onAction(ShellAction.SignInAgain(AccountId(action.accountId)))
@@ -704,7 +722,7 @@ fun Shell(
                                         SettingsAction.ContactSupport -> {
                                             ShellPlatform.openExternalUrl(
                                                 context,
-                                                CloudEndpoint.Production.supportUrl,
+                                                cloudEndpoint.supportUrl,
                                             )
                                         }
                                         is SettingsAction.CopyFingerprint -> {
@@ -730,6 +748,10 @@ fun Shell(
                                 paywall = paywallState,
                                 accountEmail = accountsState.selectedAccount?.account?.email,
                                 storeUnavailable = paywallStoreUnavailable,
+                                privacyUrl = cloudEndpoint.privacyUrl,
+                                formatRenews = { date ->
+                                    context.getString(R.string.shell_paywall_renews, date)
+                                },
                             )
                             PaywallScreen(
                                 state = paywallUiState,
@@ -943,7 +965,13 @@ fun Shell(
     }
 
     val deleteAccountState = deletionState?.let {
-        StateMappers.toDeleteAccountSheetState(it, accountsState)
+        StateMappers.toDeleteAccountSheetState(
+            deletion = it,
+            registry = accountsState,
+            formatBillingWarning = { date ->
+                context.getString(R.string.shell_delete_billing_warning, date)
+            },
+        )
     }
     if (!reportOpen && deleteAccountState != null) {
         DeleteAccountSheet(
@@ -1130,7 +1158,7 @@ private fun ConversationRouteContent(
 
     DisposableEffect(model, dictation) {
         onDispose {
-            dictation?.stop()
+            dictation?.cancel()
             model.stopDictation()
         }
     }
@@ -1256,11 +1284,13 @@ private fun ConversationRouteContent(
             onCopyAddress = { address -> ShellPlatform.copyToClipboard(context, address) },
             onDraftChange = { text -> model.type(text) },
             onSend = {
-                dictation?.stop()
+                dictation?.cancel()
+                model.stopDictation()
                 model.send()
             },
             onResume = {
-                dictation?.stop()
+                dictation?.cancel()
+                model.stopDictation()
                 model.resume()
             },
             onInterrupt = { model.interrupt() },
@@ -1288,8 +1318,11 @@ private fun ConversationRouteContent(
             onToggleDictation = {
                 val controller = dictation
                 if (model.state.value.dictation.active) {
-                    controller?.stop()
-                    model.stopDictation()
+                    if (controller != null) {
+                        controller.stop()
+                    } else {
+                        model.stopDictation()
+                    }
                 } else if (controller != null && controller.isAvailable) {
                     val hasMicPermission = ContextCompat.checkSelfPermission(
                         context,

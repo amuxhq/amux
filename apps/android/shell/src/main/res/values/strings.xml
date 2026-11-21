@@ -4,4 +4,10 @@
     <string name="shell_tab_computers">Computers</string>
     <string name="shell_install_link_subject">Install amux</string>
     <string name="shell_install_link_chooser">Send Link</string>
+    <string name="shell_paywall_renews">Renews %1$s</string>
+    <string name="shell_delete_billing_warning">Your subscription renews on %1$s. Cancel renewal before deleting this account.</string>
+    <string name="shell_channel_attention_name">Needs your attention</string>
+    <string name="shell_channel_attention_description">Alerts when an agent asks for input or finishes a turn.</string>
+    <string name="shell_channel_general_name">General</string>
+    <string name="shell_channel_general_description">Status updates from amux.</string>
 </resources>

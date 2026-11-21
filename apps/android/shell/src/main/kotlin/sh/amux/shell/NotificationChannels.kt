@@ -30,13 +30,6 @@ object NotificationChannels {
     const val CHANNEL_ATTENTION: String = "amux_attention"
     const val CHANNEL_GENERAL: String = "amux_general"
 
-    private const val ATTENTION_NAME: String = "Needs your attention"
-    private const val ATTENTION_DESCRIPTION: String =
-        "Alerts when an agent asks for input or finishes a turn."
-    private const val GENERAL_NAME: String = "General"
-    private const val GENERAL_DESCRIPTION: String =
-        "Status updates from amux."
-
     /**
      * Creates the app's notification channels idempotently. Android preserves
      * any user-adjusted settings on existing channels when called again.
@@ -45,19 +38,19 @@ object NotificationChannels {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         val attention = NotificationChannel(
             CHANNEL_ATTENTION,
-            ATTENTION_NAME,
+            context.getString(R.string.shell_channel_attention_name),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = ATTENTION_DESCRIPTION
+            description = context.getString(R.string.shell_channel_attention_description)
             enableVibration(true)
             setShowBadge(true)
         }
         val general = NotificationChannel(
             CHANNEL_GENERAL,
-            GENERAL_NAME,
+            context.getString(R.string.shell_channel_general_name),
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = GENERAL_DESCRIPTION
+            description = context.getString(R.string.shell_channel_general_description)
             setShowBadge(false)
         }
         manager.createNotificationChannels(listOf(attention, general))

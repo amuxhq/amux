@@ -1,10 +1,16 @@
 package sh.amux.android
 
+import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.Base64
 import java.util.UUID
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -15,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import sh.amux.core.runtime.HostId
 import sh.amux.shell.PairingModal
@@ -105,6 +112,76 @@ class MainActivityTest {
 
         composition.report.dismiss()
         controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun mergedManifestDeclaresScreenCapturePermissionSingleTaskAutoVerifyAndQueries() {
+        val app = RuntimeEnvironment.getApplication()
+        val pm = app.packageManager
+        val pkgInfo = pm.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS)
+        val permissions = pkgInfo.requestedPermissions?.toSet().orEmpty()
+        assertTrue(
+            "merged manifest must declare DETECT_SCREEN_CAPTURE",
+            Manifest.permission.DETECT_SCREEN_CAPTURE in permissions,
+        )
+        assertTrue(Manifest.permission.POST_NOTIFICATIONS in permissions)
+        assertTrue(Manifest.permission.RECORD_AUDIO in permissions)
+
+        val activityInfo = pm.getActivityInfo(ComponentName(app, MainActivity::class.java), 0)
+        assertEquals(
+            "MainActivity must use singleTask so amux://callback clears Custom Tabs cleanly",
+            ActivityInfo.LAUNCH_SINGLE_TASK,
+            activityInfo.launchMode,
+        )
+
+        // Inspect the merged debug manifest XML directly for autoVerify and <queries> intents.
+        val mergedManifest = listOf(
+            File("build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"),
+            File("app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"),
+            File("src/main/AndroidManifest.xml"),
+        ).firstOrNull { it.isFile }
+        assertNotNull("manifest file must exist for inspection", mergedManifest)
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder()
+            .parse(mergedManifest!!)
+
+        val androidNs = "http://schemas.android.com/apk/res/android"
+        val intentFilters = doc.getElementsByTagName("intent-filter")
+        var foundAutoVerifyAppLink = false
+        for (i in 0 until intentFilters.length) {
+            val filter = intentFilters.item(i) as org.w3c.dom.Element
+            val autoVerify = filter.getAttributeNS(androidNs, "autoVerify")
+            val dataNodes = filter.getElementsByTagName("data")
+            for (j in 0 until dataNodes.length) {
+                val data = dataNodes.item(j) as org.w3c.dom.Element
+                if (data.getAttributeNS(androidNs, "host") == "amux.sh" &&
+                    data.getAttributeNS(androidNs, "path") == "/p"
+                ) {
+                    assertEquals("true", autoVerify)
+                    foundAutoVerifyAppLink = true
+                }
+            }
+        }
+        assertTrue("https://amux.sh/p filter must declare android:autoVerify=\"true\"", foundAutoVerifyAppLink)
+
+        val queryActions = mutableSetOf<String>()
+        val queriesNodes = doc.getElementsByTagName("queries")
+        for (i in 0 until queriesNodes.length) {
+            val queries = queriesNodes.item(i) as org.w3c.dom.Element
+            val actions = queries.getElementsByTagName("action")
+            for (j in 0 until actions.length) {
+                val action = actions.item(j) as org.w3c.dom.Element
+                queryActions += action.getAttributeNS(androidNs, "name")
+            }
+        }
+        assertTrue(
+            "manifest <queries> must declare CustomTabsService",
+            "android.support.customtabs.action.CustomTabsService" in queryActions,
+        )
+        assertTrue(
+            "manifest <queries> must declare RecognitionService",
+            "android.speech.RecognitionService" in queryActions,
+        )
     }
 
     @Test

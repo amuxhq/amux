@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -29,9 +30,11 @@ import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
 import sh.amux.core.runtime.ChatBridge
 import sh.amux.core.runtime.DeletionStore
+import sh.amux.core.runtime.Entitlement
 import sh.amux.core.runtime.EntitlementSource
 import sh.amux.core.runtime.FleetEvent
 import sh.amux.core.runtime.FrozenFrame
+import sh.amux.core.runtime.Grant
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.NewAgentBridge
 import sh.amux.core.runtime.NewAgentSource
@@ -144,6 +147,7 @@ import sh.amux.values.Segment
 import sh.amux.values.SendOutcome
 import sh.amux.values.SettingChange
 import sh.amux.values.SettingsView
+import sh.amux.values.SignInOfferOutcome
 import sh.amux.values.SignInOfferView
 import sh.amux.words.EMPTY_GROUP_STATE
 
@@ -1107,10 +1111,17 @@ class ShellTest {
     }
 
     @Test
-    fun signInOfferSheetRendersIncomingOfferAndSignInResultDialogRendersMismatch() {
+    fun signInOfferSheetRendersIncomingOfferAndEmitsAcceptAndDecline() {
         val router = Router()
         val accounts = AccountRegistry()
-        val stores = StoreBundle(account = AccountId("signed-out"))
+        val answered = mutableListOf<Pair<String, Boolean>>()
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            answerSignInOfferOp = { offer, accept ->
+                answered += offer.email to accept
+                Result.success(SignInOfferOutcome.Declined)
+            },
+        )
         stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = emptyList())
         stores.moved(
             FleetEvent.SignInOffers(
@@ -1124,6 +1135,49 @@ class ShellTest {
                 ),
             ),
         )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_ACCEPT).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf("ada@example.com" to true), answered)
+
+        // Present a second offer and verify Decline.
+        composeRule.runOnIdle {
+            stores.moved(
+                FleetEvent.SignInOffers(
+                    listOf(
+                        SignInOfferView(
+                            hostId = List(16) { 6 },
+                            hostName = "desk",
+                            email = "grace@example.com",
+                            accountName = "Grace",
+                        ),
+                    ),
+                ),
+            )
+        }
+        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_DECLINE).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf("ada@example.com" to true, "grace@example.com" to false), answered)
+    }
+
+    @Test
+    fun signInResultDialogRendersMismatchAndEmitsKeep() {
+        val router = Router()
+        val accounts = AccountRegistry()
+        val stores = StoreBundle(account = AccountId("signed-out"))
+        stores.fleet.show(FleetView(emptyList(), 0, 0), hosts = emptyList())
         val signIn = SignInStore(
             initialPhase = SignInStore.Phase.Mismatched(
                 wanted = SignedInAccount(AccountId("sub-1"), "ada@example.com"),
@@ -1146,10 +1200,47 @@ class ShellTest {
             }
         }
 
-        composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_OFFER_SHEET).assertIsDisplayed()
         composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_RESULT_DIALOG).assertIsDisplayed()
         composeRule.onNodeWithTag(AccountSheetTags.SIGN_IN_RESULT_KEEP).performClick()
         assertTrue(ShellAction.KeepMismatchedSignIn in actions)
+    }
+
+    @Test
+    fun deleteAccountStateIncludesBillingRenewalWarningWhenSubscriptionRenews() {
+        val accounts = AccountRegistry()
+        accounts.show(
+            listOf(
+                ProfileView(
+                    id = "prof-1",
+                    label = "Ada",
+                    subject = "sub-ada",
+                    account = AccountView(
+                        binding = AccountBinding.SignedIn,
+                        email = "ada@example.com",
+                        name = "Ada",
+                        picture = "",
+                        pro = true,
+                        relay = RelayLink.Connected,
+                    ),
+                ),
+            ),
+        )
+        accounts.entitlement(
+            Entitlement.Active(
+                grant = Grant.Purchased(EntitlementSource.Web),
+                renewsAtMs = 1_800_000_000_000L,
+            ),
+            forAccount = AccountId("sub-ada"),
+        )
+        val deletion = DeletionStore(asking = AccountId("sub-ada"))
+        val ui = StateMappers.toDeleteAccountSheetState(
+            deletion = deletion.snapshot,
+            registry = accounts.snapshot,
+            formatBillingWarning = { date -> "Renews on $date" },
+        )
+        assertNotNull(ui)
+        assertTrue("expected non-null billing warning", !ui!!.billingWarning.isNullOrBlank())
+        assertTrue(ui.billingWarning!!.startsWith("Renews on "))
     }
 
     private class FakeShellChatBridge : ChatBridge {

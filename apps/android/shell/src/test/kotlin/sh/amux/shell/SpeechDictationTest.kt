@@ -94,12 +94,120 @@ class SpeechDictationTest {
         assertEquals(listOf("hello", "hello world"), partials)
         assertEquals(listOf("hello world today"), finals)
         assertEquals(0, errors)
+        assertEquals(1, backend.destroyCount)
 
         // Late callbacks after completion are ignored.
         listener.onPartialResults(resultsBundle("stale"))
         listener.onError(SpeechRecognizer.ERROR_NO_MATCH)
         assertEquals(listOf("hello", "hello world"), partials)
         assertEquals(0, errors)
+    }
+
+    @Test
+    fun userStopDeliversTrailingFinalResultAndReleasesRecognizer() {
+        val context = RuntimeEnvironment.getApplication()
+        val backend = FakeBackend()
+        val dictation = AndroidSpeechDictation(
+            context = context,
+            mainHandler = Handler(Looper.getMainLooper()),
+            availabilityCheck = { true },
+            recognizerFactory = { backend },
+        )
+
+        val finals = mutableListOf<String>()
+        var errors = 0
+
+        dictation.start(
+            onPartial = {},
+            onFinal = { finals += it },
+            onError = { errors += 1 },
+        )
+
+        dictation.stop()
+        assertEquals(1, backend.stopCount)
+        assertEquals(0, backend.cancelCount)
+        assertEquals(0, backend.destroyCount)
+
+        // Trailing final utterance arrives after stopListening() and must be delivered.
+        backend.listener!!.onResults(resultsBundle("short utterance"))
+        assertEquals(listOf("short utterance"), finals)
+        assertEquals(0, errors)
+        assertEquals(1, backend.destroyCount)
+
+        // Late callbacks after finalization are suppressed.
+        backend.listener!!.onResults(resultsBundle("late duplicate"))
+        assertEquals(listOf("short utterance"), finals)
+    }
+
+    @Test
+    fun userStopTreatsNoMatchAsCleanCompletionAndSecondStopForcesFinish() {
+        val context = RuntimeEnvironment.getApplication()
+        val created = mutableListOf<FakeBackend>()
+        val dictation = AndroidSpeechDictation(
+            context = context,
+            mainHandler = Handler(Looper.getMainLooper()),
+            availabilityCheck = { true },
+            recognizerFactory = { FakeBackend().also { created += it } },
+        )
+
+        val finals = mutableListOf<String>()
+        var errors = 0
+
+        // Case 1: stop() followed by ERROR_NO_MATCH finishes cleanly with empty final instead of error.
+        dictation.start(onPartial = {}, onFinal = { finals += it }, onError = { errors += 1 })
+        dictation.stop()
+        created[0].listener!!.onError(SpeechRecognizer.ERROR_NO_MATCH)
+        assertEquals(listOf(""), finals)
+        assertEquals(0, errors)
+        assertEquals(1, created[0].destroyCount)
+
+        // Case 2: tapping stop() a second time while waiting forces immediate finish.
+        dictation.start(onPartial = {}, onFinal = { finals += it }, onError = { errors += 1 })
+        dictation.stop()
+        dictation.stop()
+        assertEquals(listOf("", ""), finals)
+        assertEquals(1, created[1].destroyCount)
+    }
+
+    @Test
+    fun cancelDiscardsPendingUtteranceAndDestroysImmediately() {
+        val context = RuntimeEnvironment.getApplication()
+        val backend = FakeBackend()
+        val dictation = AndroidSpeechDictation(
+            context = context,
+            mainHandler = Handler(Looper.getMainLooper()),
+            availabilityCheck = { true },
+            recognizerFactory = { backend },
+        )
+
+        val partials = mutableListOf<String>()
+        val finals = mutableListOf<String>()
+        var errors = 0
+
+        dictation.start(
+            onPartial = { partials += it },
+            onFinal = { finals += it },
+            onError = { errors += 1 },
+        )
+
+        dictation.cancel()
+        assertEquals(1, backend.cancelCount)
+        assertEquals(1, backend.destroyCount)
+
+        backend.listener!!.onPartialResults(resultsBundle("after cancel"))
+        backend.listener!!.onResults(resultsBundle("final after cancel"))
+        backend.listener!!.onError(SpeechRecognizer.ERROR_CLIENT)
+        assertTrue(partials.isEmpty())
+        assertTrue(finals.isEmpty())
+        assertEquals(0, errors)
+
+        dictation.destroy()
+        dictation.destroy()
+        assertEquals(1, backend.destroyCount)
+
+        // Starting after destroy reports an error without creating a new session.
+        dictation.start(onPartial = {}, onFinal = {}, onError = { errors += 1 })
+        assertEquals(1, errors)
     }
 
     @Test
@@ -126,46 +234,6 @@ class SpeechDictationTest {
         assertEquals(2, created.size)
         created[1].listener!!.onResults(resultsBundle("recovered"))
         assertEquals(listOf("recovered"), finals)
-        assertEquals(1, errors)
-    }
-
-    @Test
-    fun stopAndDestroyAreIdempotentAndSuppressLateCallbacks() {
-        val context = RuntimeEnvironment.getApplication()
-        val backend = FakeBackend()
-        val dictation = AndroidSpeechDictation(
-            context = context,
-            mainHandler = Handler(Looper.getMainLooper()),
-            availabilityCheck = { true },
-            recognizerFactory = { backend },
-        )
-
-        val partials = mutableListOf<String>()
-        val finals = mutableListOf<String>()
-        var errors = 0
-
-        dictation.start(
-            onPartial = { partials += it },
-            onFinal = { finals += it },
-            onError = { errors += 1 },
-        )
-
-        dictation.stop()
-        dictation.stop()
-
-        backend.listener!!.onPartialResults(resultsBundle("after stop"))
-        backend.listener!!.onResults(resultsBundle("final after stop"))
-        backend.listener!!.onError(SpeechRecognizer.ERROR_CLIENT)
-        assertTrue(partials.isEmpty())
-        assertTrue(finals.isEmpty())
-        assertEquals(0, errors)
-
-        dictation.destroy()
-        dictation.destroy()
-        assertEquals(1, backend.destroyCount)
-
-        // Starting after destroy reports an error without creating a new session.
-        dictation.start(onPartial = {}, onFinal = {}, onError = { errors += 1 })
         assertEquals(1, errors)
     }
 

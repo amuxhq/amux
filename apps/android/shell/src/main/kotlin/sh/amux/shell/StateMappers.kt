@@ -13,6 +13,7 @@ import sh.amux.core.runtime.ChatAsk
 import sh.amux.core.runtime.ChatModel
 import sh.amux.core.runtime.ChatPaging
 import sh.amux.core.runtime.ChatUiState
+import sh.amux.core.runtime.CloudEndpoint
 import sh.amux.core.runtime.DeletionState
 import sh.amux.core.runtime.DeletionStore
 import sh.amux.core.runtime.Entitlement
@@ -596,6 +597,8 @@ object StateMappers {
         paywall: PaywallState,
         accountEmail: String?,
         storeUnavailable: Boolean = false,
+        privacyUrl: String = CloudEndpoint.Production.privacyUrl,
+        formatRenews: (String) -> String = { "Renews $it" },
     ): PaywallScreenState {
         val plans = paywall.plans.map { plan ->
             PaywallPlanUi(
@@ -623,11 +626,7 @@ object StateMappers {
                     }
                 }
                 val renewalText = (paywall.entitlement as? Entitlement.Active)?.renewsAtMs?.let { ms ->
-                    val date = Instant.ofEpochMilli(ms)
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDate()
-                        .format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
-                    "Renews $date"
+                    formatRenews(formatLocalizedDate(ms))
                 }
                 PaywallPhaseUi.Entitled(source = source, renewalOrExpiryText = renewalText)
             }
@@ -661,6 +660,7 @@ object StateMappers {
             chosen = chosen,
             phase = phase,
             manageUrl = paywall.manageUrl,
+            privacyUrl = privacyUrl,
             accountEmail = accountEmail,
         )
     }
@@ -721,6 +721,9 @@ object StateMappers {
     fun toDeleteAccountSheetState(
         deletion: DeletionState,
         registry: AccountRegistryState,
+        formatBillingWarning: (String) -> String = { date ->
+            "Your subscription renews on $date. Cancel renewal before deleting this account."
+        },
     ): DeleteAccountSheetState? {
         val id = deletion.account ?: return null
         val phase: DeleteAccountPhaseUi = when (val raw = deletion.phase) {
@@ -734,13 +737,23 @@ object StateMappers {
             DeletionStore.Phase.Deleted -> return null
         }
         val entry = registry.accounts.firstOrNull { it.id == id }
+        val billingWarning = (entry?.entitlement as? Entitlement.Active)?.renewsAtMs?.let { ms ->
+            formatBillingWarning(formatLocalizedDate(ms))
+        }
         return DeleteAccountSheetState(
             accountId = id.value,
             email = entry?.account?.email ?: id.value,
             typedEmail = deletion.typed,
+            billingWarning = billingWarning,
             phase = phase,
         )
     }
+
+    private fun formatLocalizedDate(epochMs: Long): String =
+        Instant.ofEpochMilli(epochMs)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
+            .format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
 
     fun toReportUiState(
         report: ReportState,

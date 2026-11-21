@@ -93,11 +93,12 @@ object ShellPlatform {
 
     /**
      * Prepares a diagnostic dump file or directory for sharing via [FileProvider]
-     * by copying a single file or zipping a dump bundle directory into
-     * `cacheDir/exports/`.
+     * by pruning stale export zips and copying a single file or zipping a dump
+     * bundle directory into `cacheDir/exports/`.
      */
     suspend fun prepareShareableExport(context: Context, source: File): File = withContext(Dispatchers.IO) {
         val exportsDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        pruneStaleExports(exportsDir)
         val baseName = source.name.ifBlank { "amux-diagnostics" }
         if (source.isDirectory) {
             val zipName = if (baseName.endsWith(".zip", ignoreCase = true)) baseName else "$baseName.zip"
@@ -114,9 +115,9 @@ object ShellPlatform {
             }
             target
         } else {
-            val canonicalCache = context.cacheDir.canonicalFile
+            val canonicalExports = exportsDir.canonicalFile
             val canonicalSource = source.canonicalFile
-            if (canonicalSource.path.startsWith("${canonicalCache.path}${File.separator}")) {
+            if (canonicalSource.path.startsWith("${canonicalExports.path}${File.separator}")) {
                 canonicalSource
             } else {
                 val target = File(exportsDir, baseName)
@@ -124,6 +125,12 @@ object ShellPlatform {
                 target
             }
         }
+    }
+
+    private fun pruneStaleExports(exportsDir: File) {
+        exportsDir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
+            ?.forEach { it.delete() }
     }
 
     /**
@@ -141,7 +148,10 @@ object ShellPlatform {
         val mime = resolveShareMime(file)
         val viewIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (context !is Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         }
         val opened = runCatching { context.startActivity(viewIntent) }.isSuccess
         if (!opened) {
@@ -149,20 +159,33 @@ object ShellPlatform {
         }
     }
 
-    /** Shares or exports a local file via Android's system chooser using [FileProvider]. */
-    fun shareFile(context: Context, file: File) {
-        val uri = fileProviderUri(context, file) ?: return
+    /**
+     * Shares or exports a local file via Android's system chooser using [FileProvider],
+     * attaching [ClipData] and read URI permissions on both the send and chooser
+     * intents and returning [Result] so callers never report false success.
+     */
+    fun shareFile(context: Context, file: File): Result<Unit> {
+        val uri = fileProviderUri(context, file)
+            ?: return Result.failure(IllegalStateException("Could not create share URI for ${file.name}"))
+        val chooser = buildShareIntent(context, file, uri)
+        return runCatching { context.startActivity(chooser) }
+    }
+
+    internal fun buildShareIntent(context: Context, file: File, uri: Uri): Intent {
         val mime = resolveShareMime(file)
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = mime
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, file.name)
+            clipData = ClipData.newRawUri(file.name, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val chooser = Intent.createChooser(sendIntent, file.name).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return Intent.createChooser(sendIntent, file.name).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (context !is Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         }
-        runCatching { context.startActivity(chooser) }
     }
 
     private fun fileProviderUri(context: Context, file: File): Uri? =

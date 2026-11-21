@@ -62,6 +62,7 @@ import sh.amux.shell.OAuthBrowser
 import sh.amux.shell.Router
 import sh.amux.shell.ShellAction
 import sh.amux.shell.ShellPlatform
+import sh.amux.values.RelayLink
 
 /**
  * Optional constructor overrides injected by debug harnesses (`DoorServer`)
@@ -84,6 +85,7 @@ data class CompositionOverrides(
     val installationDir: File? = null,
     val accountsFile: File? = null,
     val prefsName: String? = null,
+    val shareFile: ((Context, File) -> Result<Unit>)? = null,
 )
 
 /**
@@ -139,10 +141,13 @@ class Composition(
 
     val router: Router = Router()
     val signIn: SignInStore = SignInStore()
-    val paywall: PaywallStore = PaywallStore()
+    val paywall: PaywallStore = PaywallStore(manageUrl = cloud.endpoint.accountPageUrl)
     val deletion: DeletionStore = DeletionStore()
     val removal: RemovalStore = RemovalStore()
     val report: ReportStore = ReportStore()
+
+    private val shareFileOp: (Context, File) -> Result<Unit> =
+        overrides.shareFile ?: { ctx, file -> ShellPlatform.shareFile(ctx, file) }
 
     val signedOutStores: StoreBundle = StoreBundle(
         account = AccountId("signed-out"),
@@ -242,7 +247,10 @@ class Composition(
             else -> null
         }
 
-        runtime.accountChanged = { router.leaveAccount() }
+        runtime.accountChanged = {
+            router.leaveAccount()
+            report.dismiss()
+        }
 
         scope.launch {
             cloud.lend { account -> runtime.bearer(account) }
@@ -293,6 +301,18 @@ class Composition(
     fun detachActivity(activity: Activity) {
         if (activeActivity?.get() === activity) {
             activeActivity = null
+        }
+    }
+
+    fun onActivityStopped(activity: Activity) {
+        dictation.cancel()
+        runtime.stores.stopAllDictation()
+        detachActivity(activity)
+    }
+
+    fun clearDiagnosticsExport() {
+        if (_diagnosticsExport.value !is DiagnosticsExportState.Exporting) {
+            _diagnosticsExport.value = DiagnosticsExportState.Idle
         }
     }
 
@@ -390,10 +410,23 @@ class Composition(
         reportFreezer: ReportFreezing? = null,
     ) {
         when (action) {
-            is ShellAction.SelectAccount -> accounts.select(action.id)
-            ShellAction.AddAccount,
-            ShellAction.SignIn,
-            -> startSignIn(SignInIntent.Adding)
+            is ShellAction.SelectAccount -> {
+                if (accounts.selected != action.id) {
+                    report.dismiss()
+                }
+                accounts.select(action.id)
+            }
+            ShellAction.AddAccount -> startSignIn(SignInIntent.Adding)
+            ShellAction.SignIn -> {
+                val entry = accounts.selectedAccount?.takeIf {
+                    !it.signedIn || runtime.stores.fleet.snapshot.relay == RelayLink.SignInAgain
+                }
+                if (entry != null) {
+                    startSignIn(SignInIntent.Returning(entry.account))
+                } else {
+                    startSignIn(SignInIntent.Adding)
+                }
+            }
             is ShellAction.SignInAgain -> {
                 val entry = accounts.accounts.firstOrNull { it.id == action.id }
                 if (entry != null) {
@@ -403,12 +436,24 @@ class Composition(
                 }
             }
             is ShellAction.SignOut -> {
-                scope.launch { runtime.signOut(action.id) }
+                if (report.state.value.capture?.account == action.id) {
+                    report.dismiss()
+                }
+                scope.launch {
+                    cloud.forgetSession(action.id)
+                    runtime.signOut(action.id)
+                }
             }
             is ShellAction.RequestRemoveAccount -> removal.ask(action.id)
             is ShellAction.ConfirmRemoveAccount -> {
                 removal.dismiss()
-                scope.launch { runtime.remove(action.id) }
+                if (report.state.value.capture?.account == action.id) {
+                    report.dismiss()
+                }
+                scope.launch {
+                    cloud.forgetSession(action.id)
+                    runtime.remove(action.id)
+                }
             }
             ShellAction.DismissRemoveAccount -> removal.dismiss()
             is ShellAction.RequestDeleteAccount -> deletion.ask(action.id)
@@ -501,7 +546,11 @@ class Composition(
                 val chooser = Intent.createChooser(
                     share,
                     activityContext.getString(sh.amux.shell.R.string.shell_install_link_chooser),
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ).apply {
+                    if (activityContext !is Activity) {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                }
                 runCatching { activityContext.startActivity(chooser) }
             }
             ShellAction.TurnOnNotifications -> {
@@ -527,6 +576,7 @@ class Composition(
                 }
             }
             ShellAction.ExportDiagnostics -> exportDiagnostics(activityContext)
+            ShellAction.ClearDiagnosticsExport -> clearDiagnosticsExport()
             ShellAction.OpenSettings -> {
                 scope.launch { entitlementWatch.look(force = false) }
             }
@@ -547,7 +597,13 @@ class Composition(
     private fun performDeleteAccount() {
         scope.launch {
             deletion.delete(cloud) { deletedId ->
-                scope.launch { runtime.remove(deletedId) }
+                if (report.state.value.capture?.account == deletedId) {
+                    report.dismiss()
+                }
+                scope.launch {
+                    cloud.forgetSession(deletedId)
+                    runtime.remove(deletedId)
+                }
             }
         }
     }
@@ -579,8 +635,15 @@ class Composition(
                     }
                     shareable.fold(
                         onSuccess = { file ->
-                            _diagnosticsExport.value = DiagnosticsExportState.Exported(file.name)
-                            ShellPlatform.shareFile(activityContext, file)
+                            val shared = shareFileOp(activityContext, file)
+                            shared.fold(
+                                onSuccess = {
+                                    _diagnosticsExport.value = DiagnosticsExportState.Exported(file.name)
+                                },
+                                onFailure = { err ->
+                                    _diagnosticsExport.value = DiagnosticsExportState.Failed(err.failureDescription)
+                                },
+                            )
                         },
                         onFailure = { err ->
                             _diagnosticsExport.value = DiagnosticsExportState.Failed(err.failureDescription)

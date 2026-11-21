@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import sh.amux.design.AmuxTheme
 import sh.amux.design.AppearanceMode
+import sh.amux.features.SettingsNotificationStatus
 import sh.amux.features.StoreFailureScreen
 import sh.amux.shell.Shell
 
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
             val activeStores by appComposition.runtime.storesFlow.collectAsState()
             val signInState by appComposition.signIn.state.collectAsState()
             val notificationStatus by appComposition.notificationStatus.collectAsState()
+            val notificationsDismissed by appComposition.notificationsDismissed.collectAsState()
             val diagnosticsExport by appComposition.diagnosticsExport.collectAsState()
 
             val systemDark = isSystemInDarkTheme()
@@ -89,6 +91,8 @@ class MainActivity : ComponentActivity() {
                             accounts = appComposition.accounts,
                             stores = activeStores,
                             deviceName = appComposition.deviceName,
+                            offerNotifications = !notificationsDismissed &&
+                                notificationStatus != SettingsNotificationStatus.Enabled,
                             signingIn = signInState.working,
                             onAction = { action ->
                                 appComposition.handleShellAction(
@@ -108,6 +112,7 @@ class MainActivity : ComponentActivity() {
                             autoReports = coordinatorState.autoReports,
                             appVersion = appComposition.appVersion,
                             diagnosticsExport = diagnosticsExport,
+                            cloudEndpoint = appComposition.cloud.endpoint,
                             signIn = appComposition.signIn,
                             paywall = appComposition.paywall,
                             paywallStoreUnavailable = appComposition.paywallStoreUnavailable,
@@ -139,7 +144,7 @@ class MainActivity : ComponentActivity() {
         runCatching {
             unregisterScreenCaptureCallback(screenCaptureCallback)
         }
-        composition.detachActivity(this)
+        composition.onActivityStopped(this)
         super.onStop()
     }
 

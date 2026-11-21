@@ -4264,6 +4264,13 @@ pub struct Trusted {
     /// reads every trusted host current has reconciled with its fleet.
     #[prost(bool, tag = "4")]
     pub current: bool,
+    /// Online over a direct path on a network both machines are on: a
+    /// private, unique-local, link-local or loopback address, as a client says
+    /// Local. `online` stays ROUTE_KIND_DIRECT, so a reader without this field
+    /// reads the host as direct, which it also is. False for every other route,
+    /// for this machine itself, and from builds before it.
+    #[prost(bool, tag = "5")]
+    pub same_network: bool,
     /// How the host reads from the daemon that lists it, from the outcome of
     /// opening a channel to it. A host whose route comes up keeps the reach it
     /// had until the first channel attempt on that route concludes.

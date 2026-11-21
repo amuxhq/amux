@@ -40,6 +40,7 @@ class HostPageTest {
     ): HostView = HostView(
         hostId = List(16) { 7 },
         link = 0L,
+        sameNetwork = false,
         name = "desk",
         local = false,
         trusted = true,

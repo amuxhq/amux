@@ -1602,8 +1602,8 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     row_until(
         &mut fleet,
         desk,
-        "the tablet's client told of the direct link",
-        |row| row.online() == Some(wire::RouteKind::Direct),
+        "the tablet's client told of the direct link, on the network both are on",
+        |row| row.online() == Some(wire::RouteKind::Direct) && row.same_network(),
     )
     .await;
     peer_inventory_hosts(&edge(&net, "tablet"), desk)

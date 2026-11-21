@@ -191,6 +191,7 @@ internal object StoryFleet {
     ): HostView = HostView(
         hostId = List(16) { index },
         link = 0L,
+        sameNetwork = false,
         name = name,
         local = false,
         trusted = trusted,

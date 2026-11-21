@@ -129,7 +129,7 @@ func pairingRoute(_ machine: HostView?) -> String? {
         return machine.through == nil ? String(localized: "Relayed") : nil
     }
     switch machine.reach {
-    case .online(.direct): return String(localized: "Direct")
+    case .online(.direct): return machine.sameNetwork ? String(localized: "Local") : String(localized: "Direct")
     case .online(.relay): return String(localized: "Relayed")
     case .online(.ssh): return String(localized: "Over SSH")
     case .online(.unspecified), .away, .offline: return nil

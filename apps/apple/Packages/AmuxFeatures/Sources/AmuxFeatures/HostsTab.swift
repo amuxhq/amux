@@ -280,7 +280,7 @@ public struct HostsTab: View {
         var parts: [String] = []
         if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
-        case .onThisNetwork: parts.append(String(localized: "Direct"))
+        case .onThisNetwork: parts.append(host.sameNetwork ? String(localized: "Local") : String(localized: "Direct"))
         case .throughTheRelay: parts.append(String(localized: "Relayed"))
         case .away: parts.append(String(localized: "away on the free plan"))
         case .offline:
@@ -318,7 +318,8 @@ public struct HostsTab: View {
         var parts = [host.name]
         if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
-        case .onThisNetwork: parts.append(String(localized: "connected, direct"))
+        case .onThisNetwork:
+            parts.append(host.sameNetwork ? String(localized: "connected, local") : String(localized: "connected, direct"))
         case .throughTheRelay: parts.append(String(localized: "connected, relayed"))
         case .away:
             parts.append(String(localized: "away"))

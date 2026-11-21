@@ -236,7 +236,8 @@ public struct HostPage: View {
     /// How this phone stands with the machine, in the words the rows use.
     static func reach(_ view: HostView) -> String {
         switch view.group {
-        case .onThisNetwork: return String(localized: "Connected · Direct")
+        case .onThisNetwork:
+            return view.sameNetwork ? String(localized: "Connected · Local") : String(localized: "Connected · Direct")
         case .throughTheRelay: return String(localized: "Connected · Relayed")
         // The daemon lists a host away only when the relay refused to
         // connect to it because the free plan relays nothing between hosts.

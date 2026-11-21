@@ -168,8 +168,8 @@ public struct NewAgent: View {
         case .offline:
             return hosts.isConnecting(host.id) ? String(localized: "Connecting") : String(localized: "Offline")
         case .onThisNetwork, .throughTheRelay:
-            let route = host.group == .onThisNetwork
-                ? String(localized: "Direct") : String(localized: "Relayed")
+            let route = host.group != .onThisNetwork ? String(localized: "Relayed")
+                : host.sameNetwork ? String(localized: "Local") : String(localized: "Direct")
             return [host.platform?.name, route].compactMap { $0 }.joined(separator: " · ")
         }
     }

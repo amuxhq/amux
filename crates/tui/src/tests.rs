@@ -1329,6 +1329,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
                 ..Default::default()
             })),
             current: false,
+            same_network: false,
         }));
     }
     inventory(&mut fleet, desk);

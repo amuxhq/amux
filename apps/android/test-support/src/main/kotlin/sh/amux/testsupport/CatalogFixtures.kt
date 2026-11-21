@@ -831,6 +831,7 @@ internal object CatalogFixtures {
     ): HostView = HostView(
         hostId = List(16) { index },
         link = 0L,
+        sameNetwork = false,
         name = name,
         local = false,
         trusted = trusted,
@@ -902,6 +903,7 @@ internal object CatalogFixtures {
         HostView(
             hostId = List(16) { 7 },
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,
@@ -920,6 +922,7 @@ internal object CatalogFixtures {
         HostView(
             hostId = List(16) { 8 },
             link = 0L,
+            sameNetwork = false,
             name = "laptop",
             local = false,
             trusted = true,

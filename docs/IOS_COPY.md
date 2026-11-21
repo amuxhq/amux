@@ -33,8 +33,8 @@ consequences. Do not add reassurance or describe implementation choices.
 | What a subscription provides | relay |
 | Adding a device | pair |
 | Ending a paired device's access | unpair |
-| A device found by discovery on this network | Local |
-| A device reached with nothing in between, not through the relay | Direct |
+| A device found by discovery on this network, or a paired one reached directly there | Local |
+| A device reached with nothing in between across networks, not through the relay | Direct |
 | A device reached through amux's relay | Relayed |
 | A plan that blocks relayed reach | Relayed connections need Pro |
 | An unpaired device discovered on the local network | found |
@@ -57,8 +57,9 @@ away, and never offer a subscription merely because a device is offline.
 
 The protocol, the code and the commands people type (`amux hosts`) say *host*;
 nothing the app shows does. A device's own name stays as it is, as in
-**laptop is nearby**. How a device is reached reads **Local** (found on this
-network), **Direct** (no relay in between) or **Relayed** (through amux's
+**laptop is nearby**. How a device is reached reads **Local** (on this
+network, found or reached there), **Direct** (no relay in between, across
+networks) or **Relayed** (through amux's
 relay), as in "macOS · Relayed" or "Connected · Direct". Where the plan blocks
 relayed reach, say **Relayed connections need Pro**; in a longer sentence, say
 what Pro does: "Pro relays connections when your phone and device aren't on

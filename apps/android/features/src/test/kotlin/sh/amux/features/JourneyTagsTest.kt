@@ -141,6 +141,7 @@ class JourneyTagsTest {
         val desk = HostView(
             hostId = List(16) { 4 },
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = false,

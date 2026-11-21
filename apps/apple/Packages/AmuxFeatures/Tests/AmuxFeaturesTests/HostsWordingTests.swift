@@ -9,11 +9,12 @@ final class HostsWordingTests: XCTestCase {
     private let studio = HostId(UUID(uuidString: "00000000-0000-0000-0000-000000000601")!)
 
     private func host(
-        reach: Reach = .online(.direct), addrs: [String] = [], platform: Platform? = .macos
+        reach: Reach = .online(.direct), sameNetwork: Bool = false, addrs: [String] = [],
+        platform: Platform? = .macos
     ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "studio", local: false, trusted: true, candidate: false,
-            reach: reach, link: 0, addrs: addrs, relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil,
+            reach: reach, sameNetwork: sameNetwork, link: 0, addrs: addrs, relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil,
             platform: platform, signedIn: nil, through: nil, version: nil)
     }
 
@@ -43,6 +44,17 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertEqual(tab([relayed]).0.status(relayed), "Relayed")
         let away = host(reach: .away)
         XCTAssertEqual(tab([away]).0.status(away), "macOS · away on the free plan")
+    }
+
+    /// A paired machine reached directly on the network both are on reads
+    /// Local wherever its route is said; one reached directly across
+    /// networks still reads Direct.
+    func testAPairedMachineOnThisNetworkReadsLocal() {
+        let here = host(sameNetwork: true)
+        XCTAssertEqual(tab([here]).0.status(here), "macOS · Local")
+        XCTAssertEqual(HostPage.reach(here), "Connected · Local")
+        let across = host()
+        XCTAssertEqual(HostPage.reach(across), "Connected · Direct")
     }
 
     /// A host is away only when the relay alone sees it on the free plan,
@@ -120,7 +132,7 @@ final class HostsWordingTests: XCTestCase {
     ) -> HostView {
         HostView(
             hostId: studio.bytes, name: "nova", local: false, trusted: false, candidate: true,
-            reach: .online(.unspecified), link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: open, current: false,
+            reach: .online(.unspecified), sameNetwork: false, link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: open, current: false,
             providers: [], claudeKind: nil, lastDialError: nil, platform: .linux, signedIn: nil, through: through,
             version: nil)
     }

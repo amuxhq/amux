@@ -395,6 +395,7 @@ impl Machine for Replication {
                 link: LINK,
                 peer: ORIGIN,
                 kind: CarrierKind::Direct,
+                lan: false,
                 resumed: None,
             });
             // The replica follows the origin's inventory, and at its
@@ -1017,6 +1018,7 @@ fn resumed_up(link: LinkId) -> Input {
         link,
         peer: REPLICA,
         kind: CarrierKind::Direct,
+        lan: false,
         resumed: Some(PublicKey(key)),
     }
 }

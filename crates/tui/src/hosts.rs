@@ -13,9 +13,10 @@ use crate::theme::Theme;
 
 /// How a trusted host is reached now, in one word: the route while it is
 /// online, else whether it is away or offline. This machine's own entry has
-/// no route.
-pub fn route(reach: Reach, local: bool) -> &'static str {
+/// no route; a direct one on the network both are on reads local.
+pub fn route(reach: Reach, local: bool, same_network: bool) -> &'static str {
     match reach {
+        Reach::Online(RouteKind::Direct) if same_network => "local",
         Reach::Online(RouteKind::Direct) => "direct",
         Reach::Online(RouteKind::Relay) => "relayed",
         Reach::Online(RouteKind::Ssh) => "ssh",
@@ -32,7 +33,10 @@ pub fn route(reach: Reach, local: bool) -> &'static str {
 /// than the host.
 pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> String {
     let reach = ui_view::reach(fleet, local_host, entry.host_id());
-    let mut parts = vec![format!("·{}", route(reach, entry.host_id() == local_host))];
+    let mut parts = vec![format!(
+        "·{}",
+        route(reach, entry.host_id() == local_host, entry.same_network())
+    )];
     match reach {
         Reach::Offline(Offline::Revoked) => parts.push("unpaired this device".into()),
         Reach::Offline(Offline::SignedOut) => parts.push("this device is signed out".into()),
@@ -161,4 +165,22 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         Span::styled(" close", theme.faint()),
     ]));
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A direct route reads local only when the daemon says it is on a
+    /// network both machines are on; any other route ignores the flag.
+    #[test]
+    fn a_direct_route_on_the_same_network_reads_local() {
+        let direct = Reach::Online(RouteKind::Direct);
+        assert_eq!(route(direct, false, true), "local");
+        assert_eq!(route(direct, false, false), "direct");
+        assert_eq!(
+            route(Reach::Online(RouteKind::Relay), false, true),
+            "relayed"
+        );
+    }
 }

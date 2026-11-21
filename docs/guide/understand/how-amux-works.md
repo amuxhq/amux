@@ -132,13 +132,14 @@ Paired devices connect whichever way works, preferring the most direct:
 
 | Route | When |
 |---|---|
-| **Direct** | Nothing is in between: both are on the same network, or they reach each other without the relay, as on a Tailscale network or over a path amux opens between them. |
+| **Local** | Both are on the same network, and connect with nothing in between. |
+| **Direct** | Nothing is in between, across networks: they reach each other without the relay, as on a Tailscale network or over a path amux opens between them. |
 | **ssh** | You paired over SSH. The connection runs through `ssh` to the other device. |
 | **Relayed** | They're apart, and both are signed in to the same account with Pro. The connection goes through amux's relay. |
 
 The fleet shows each device's route beside it, or **offline** when nothing
 reaches it. A device found on your network that you haven't paired yet reads
-**Local**. An agent on a device you can't reach stays in your fleet as it last
+**Local** too. An agent on a device you can't reach stays in your fleet as it last
 was. Its chat shows what you last saw, and fills in again when the device comes
 back.
 

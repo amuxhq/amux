@@ -154,6 +154,7 @@ class NewAgentStoreTest {
     ): HostView = HostView(
         hostId = id.bytes,
         link = 0L,
+        sameNetwork = false,
         name = name,
         local = false,
         trusted = true,

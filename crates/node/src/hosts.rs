@@ -35,6 +35,7 @@ impl ProfileRuntime {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: true,
+                same_network: false,
             })),
             claude_kind: self.launch_claude_kind() as i32,
             folders: self.folders(),

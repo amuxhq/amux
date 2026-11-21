@@ -73,7 +73,7 @@ enum Cards {
     ) -> HostView {
         HostView(
             hostId: id.bytes, name: name, local: local, trusted: trusted, candidate: candidate,
-            reach: reach, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
+            reach: reach, sameNetwork: false, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: [], claudeKind: claudeKind, lastDialError: nil, platform: nil,
             signedIn: signedIn, through: through, version: nil)
     }

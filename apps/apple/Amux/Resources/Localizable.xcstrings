@@ -4706,7 +4706,7 @@
       }
     },
     "Local" : {
-      "comment" : "English app copy. How this phone would reach a device it is pairing with that discovery found on this network. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "comment" : "English app copy. A device on the network both are on: one discovery found, or a paired one reached directly there. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, NewAgent.swift and Pairing.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -5217,6 +5217,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connected · Direct"
+          }
+        }
+      }
+    },
+    "Connected · Local" : {
+      "comment" : "English app copy. A paired device reached directly on the network both are on. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected · Local"
           }
         }
       }
@@ -8889,6 +8901,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "connected, direct"
+          }
+        }
+      }
+    },
+    "connected, local" : {
+      "comment" : "English app copy. Spoken for a paired device reached on this network. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "connected, local"
           }
         }
       }

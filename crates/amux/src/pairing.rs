@@ -654,6 +654,7 @@ fn peer_table(trusted: &[wire::Peer], hosts: &[HostEntry], free: bool) -> String
             Some(host) => match host.online() {
                 Some(wire::RouteKind::Relay) => "online, relayed",
                 Some(wire::RouteKind::Ssh) => "online, over SSH",
+                Some(_) if host.same_network() => "online, local",
                 Some(_) => "online, direct",
                 // The daemon lists a host away only when the relay alone
                 // sees it and the account is on the free plan.

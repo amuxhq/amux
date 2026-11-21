@@ -172,6 +172,7 @@ class AccountRegistryTest {
         val host = HostView(
             hostId = deskId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,

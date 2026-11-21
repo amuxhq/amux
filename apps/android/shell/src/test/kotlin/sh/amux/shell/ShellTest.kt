@@ -210,6 +210,7 @@ class ShellTest {
         val laptop = HostView(
             hostId = laptopId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "laptop",
             local = false,
             trusted = false,
@@ -273,6 +274,7 @@ class ShellTest {
         val discoveredHost = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "ipv6-desk",
             local = false,
             trusted = false,
@@ -315,6 +317,7 @@ class ShellTest {
         val desk = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = false,
@@ -367,6 +370,7 @@ class ShellTest {
         val desk = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,
@@ -518,6 +522,7 @@ class ShellTest {
         val desk = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,

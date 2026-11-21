@@ -166,7 +166,7 @@ a chat starts from that chat's agent, folder and host instead.
 ### Hosts
 
 `h`, or the leader then `h` from a chat, opens the devices window over home: every trusted host whatever its
-presence, with `this device`, how it is reached (`direct`, `relayed`, `ssh`) or why not (`offline · not signed in`, `offline ·
+presence, with `this device`, how it is reached (`local` on a network both are on, `direct`, `relayed`, `ssh`) or why not (`offline · not signed in`, `offline ·
 this device is signed out`, `offline · unpaired this device`, `away` and the free plan's words when the relay
 refused the host for the plan). Hosts not yet trusted are listed faint, with where they were found and the command
 that pairs them: `found nearby · amux pair desk` for one local-network discovery sees, `through studio · amux pair

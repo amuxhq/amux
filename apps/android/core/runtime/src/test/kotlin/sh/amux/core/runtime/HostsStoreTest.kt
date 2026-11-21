@@ -38,6 +38,7 @@ class HostsStoreTest {
     ): HostView = HostView(
         hostId = id.bytes,
         link = 0L,
+        sameNetwork = false,
         name = name,
         local = local,
         trusted = trusted,

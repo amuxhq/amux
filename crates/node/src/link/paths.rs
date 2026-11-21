@@ -507,6 +507,7 @@ impl PathDriver {
                 core.report(daemon_core::Input::LinkCarried {
                     link: *link,
                     kind: carrier_kind(kind),
+                    lan: kind == PathKind::Lan,
                 });
             }
         }

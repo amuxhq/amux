@@ -740,6 +740,10 @@ async fn run_established(
         link: link.core(),
         peer: core_host(peer_host.id),
         kind: carrier_tag,
+        // Said here as well as when the path driver moves the link, since
+        // the driver tells the core only of a path that changes.
+        lan: carrier_tag == CarrierKind::Direct
+            && carrier.path_kind() == crate::link_log::PathKind::Lan,
         resumed: ctx
             .resumed
             .as_ref()

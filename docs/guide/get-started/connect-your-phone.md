@@ -51,7 +51,7 @@ working; open pairing again for a new one.
 
 **On the same network,** your phone reaches your device directly. The
 pairing screen shows the device as **Local**, and once it's paired the
-connection reads **Direct**. This is free and needs no account.
+connection reads **Local** too. This is free and needs no account.
 
 **Away from home,** your phone reaches your device through amux's relay, and
 the app shows the connection as **Relayed**. Pro relays connections when your

@@ -707,9 +707,10 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     }
 
     // The running client's overlay says so, and the desk's work is there.
+    // The net's machines share one network, so the desk reads local.
     journey.wait(
         &pane,
-        |frame| !frame.contains("found nearby") && spaced(frame, "desk", "direct"),
+        |frame| !frame.contains("found nearby") && spaced(frame, "desk", "local"),
         "the desk paired in the overlay",
     )?;
     journey.frame(&pane, "paired")?;
@@ -737,7 +738,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
         format!("the PIN the desk printed paired the laptop, which named desk {desk_id}"),
         control,
         "the desk lists the laptop as paired".to_owned(),
-        "the running client's overlay showed the desk online and direct without a restart".to_owned(),
+        "the running client's overlay showed the desk online and local without a restart".to_owned(),
         format!(
             "the desk's agent opened from the laptop; the desk holds {} once and its reply",
             quoted(prompt)

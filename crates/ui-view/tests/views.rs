@@ -1159,6 +1159,7 @@ fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: false,
+                same_network: false,
             })),
             ..Default::default()
         })),
@@ -1170,6 +1171,7 @@ fn reads(entry: &mut wire::HostEntry, reach: wire::trusted::Reach) {
     entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
         reach: Some(reach),
         current: false,
+        same_network: false,
     }));
 }
 

@@ -55,6 +55,10 @@ pub struct LinkRegistry {
 pub struct Link {
     pub peer: HostId,
     pub kind: CarrierKind,
+    /// A direct carrier on a network both hosts are on: the host reads as
+    /// on the same network while calls take this link.
+    #[serde(default)]
+    pub lan: bool,
     /// The hosts the peer says it reaches, other than this host, itself
     /// and any relay.
     pub claims: BTreeSet<HostId>,
@@ -178,6 +182,7 @@ impl Daemon {
         link: LinkId,
         peer: HostId,
         kind: CarrierKind,
+        lan: bool,
         resumed: Option<&PublicKey>,
         out: &mut Vec<Output>,
     ) {
@@ -195,6 +200,7 @@ impl Daemon {
             Link {
                 peer,
                 kind,
+                lan: lan && kind == CarrierKind::Direct,
                 claims: BTreeSet::new(),
             },
         );
@@ -203,14 +209,16 @@ impl Daemon {
 
     /// A link up is carried on a path of another kind now. Its routes stay
     /// as they are, so no call moves; the host reads by the new kind.
-    pub(crate) fn link_carried(&mut self, link: LinkId, kind: CarrierKind) {
+    pub(crate) fn link_carried(&mut self, link: LinkId, kind: CarrierKind, lan: bool) {
         let Some(up) = self.routing.links.links.get_mut(&link) else {
             return;
         };
-        if up.kind == kind || matches!(up.kind, CarrierKind::Relay) {
+        let lan = lan && kind == CarrierKind::Direct;
+        if (up.kind == kind && up.lan == lan) || matches!(up.kind, CarrierKind::Relay) {
             return;
         }
         up.kind = kind;
+        up.lan = lan;
         self.touched.host_set = true;
     }
 
@@ -619,6 +627,7 @@ mod tests {
                 link: LINK,
                 peer: PEER,
                 kind: CarrierKind::Direct,
+                lan: false,
                 resumed: None,
             },
         );
@@ -748,6 +757,7 @@ mod tests {
                 link: LINK,
                 peer,
                 kind: CarrierKind::Direct,
+                lan: false,
                 resumed: Some(key),
             },
         )
@@ -942,6 +952,7 @@ mod tests {
                 link: forwarded,
                 peer: PEER,
                 kind: CarrierKind::Forwarded,
+                lan: false,
                 resumed: None,
             },
         );
@@ -1055,6 +1066,7 @@ mod tests {
                 link: relay_link,
                 peer: HostId([9; 16]),
                 kind: CarrierKind::Relay,
+                lan: false,
                 resumed: None,
             },
         );

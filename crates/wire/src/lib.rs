@@ -395,6 +395,7 @@ impl HostEntry {
             standing: Some(host_entry::Standing::Trusted(Trusted {
                 reach: Some(reach),
                 current: false,
+                same_network: false,
             })),
             ..Self::default()
         }
@@ -456,6 +457,13 @@ impl HostEntry {
             trusted::Reach::Online(kind) => Some(RouteKind::try_from(*kind).unwrap_or_default()),
             _ => None,
         }
+    }
+
+    /// A trusted host online over a direct path on a network both machines
+    /// are on, which a client calls Local.
+    pub fn same_network(&self) -> bool {
+        self.online() == Some(RouteKind::Direct)
+            && self.trusted().is_some_and(|trusted| trusted.same_network)
     }
 
     pub fn away(&self) -> bool {

@@ -113,7 +113,7 @@ enum HostWords {
         switch host.reach {
         case .online(let via):
             return switch via {
-            case .direct: "Connected · Direct"
+            case .direct: host.sameNetwork ? "Connected · Local" : "Connected · Direct"
             case .relay: "Connected · Relayed"
             case .ssh: "Connected over SSH"
             case .unspecified: "Connected"

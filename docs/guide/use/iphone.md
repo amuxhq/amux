@@ -119,10 +119,12 @@ again ([Look back at a round](reviews.md#look-back-at-a-round)).
 ## Devices
 
 The Devices tab lists your paired devices, and says how the phone reaches each
-one, as in **macOS · Direct**:
+one, as in **macOS · Local**:
 
-- **Direct**: nothing is in between. The phone and the device are on the same
-  network, or reach each other without the relay.
+- **Local**: the phone and the device are on the same network, with nothing
+  in between.
+- **Direct**: nothing is in between, but they're on different networks and
+  reach each other without the relay, as over Tailscale.
 - **Relayed**: they're apart, and amux's relay connects them. Pro relays
   connections when your phone and device aren't on the same network; see
   [Pro](https://amux.sh/docs/account/plans-and-billing/).

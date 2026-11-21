@@ -3965,6 +3965,11 @@ data class HostView(
     /** How this device reaches it now, and over which route. */
     @SerialName("reach") val reach: Reach,
     /**
+     * Online over a direct path on a network both are on, which reads
+     * Local; `reach` says direct for it too.
+     */
+    @SerialName("same_network") val sameNetwork: Boolean,
+    /**
      * How many links to it this device has read come up: one more each
      * time it reads the host linked after reading it otherwise. Two
      * listings that read it linked with the same count read the same

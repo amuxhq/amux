@@ -294,10 +294,11 @@ impl Daemon {
                 link,
                 peer,
                 kind,
+                lan,
                 resumed,
-            } => self.link_up(link, peer, kind, resumed.as_ref(), out),
+            } => self.link_up(link, peer, kind, lan, resumed.as_ref(), out),
             Input::LinkDown { link, reason } => self.link_down(link, reason, out),
-            Input::LinkCarried { link, kind } => self.link_carried(link, kind),
+            Input::LinkCarried { link, kind, lan } => self.link_carried(link, kind, lan),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::Credential {
                 link,

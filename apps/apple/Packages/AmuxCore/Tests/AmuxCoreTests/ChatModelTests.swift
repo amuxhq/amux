@@ -202,9 +202,12 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return ordered.filter { keys.contains($0.id) }
     }
 
+    /// What the next send comes back as.
+    var sendState: InputState = .sent
+
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
         sent.append(draft)
-        return .success(SendOutcome(inputId: [UInt8(sent.count)], state: .sent))
+        return .success(SendOutcome(inputId: [UInt8(sent.count)], state: sendState))
     }
 
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
@@ -291,6 +294,10 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
 
     /// The name of every attachment handed over to be stored, in order.
     var stored: [String] = []
+    /// What the shared layer would say of an attachment, by its name.
+    var refusals: [String: String] = [:]
+
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { refusals[name] }
 
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         stored.append(name)
@@ -350,14 +357,14 @@ private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? =
 
 private func frame(
     mode: Composer = .send, caughtUp: Bool = true, hasOlder: Bool = false,
-    phase: PhaseView = .idle, images: Bool = true, files: Bool = true
+    phase: PhaseView = .idle
 ) -> ChatFrame {
     ChatFrame(
         agent: AgentKey(host: [1], agent: [2]), name: "a",
         provider: ProviderLabel(provider: "claude", name: "Claude"),
         capabilities: Capabilities(
-            stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: images,
-            files: files, passesUnknownCommands: true), phase: phase,
+            stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: true,
+            files: true, passesUnknownCommands: true), phase: phase,
         composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
         signIn: nil)
@@ -760,6 +767,27 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
     }
 
+    /// A send refused at once, as one carrying an attachment the agent does
+    /// not take is, puts the draft back with why, and once only though a
+    /// later frame reports the same refusal.
+    func testASendRefusedAtOnceKeepsTheDraftWithTheReason() async {
+        let source = FakeChat(rows: [], frame: frame())
+        source.sendState = .rejected(Refusal(reason: .unsupported, detail: "OpenCode can’t take images"))
+        let model = ChatModel(source: source)
+        model.draft = "What is this?"
+        await model.send()?.value
+        XCTAssertEqual(model.draft, "What is this?")
+        XCTAssertEqual(source.discarded, [[1]])
+        let notice = model.notice ?? ""
+        XCTAssertTrue(notice.hasPrefix("Not sent"), notice)
+        var later = frame()
+        later.refused = [RefusedPrompt(inputId: [1], reason: Refusal(reason: .unsupported, detail: nil))]
+        source.drafts[[1]] = Draft(words: "What is this?", attachments: [])
+        model.apply(ChatDelta(
+            chat: 0, rows: [], agents: nil, ask: nil, frame: later, keys: nil, overview: nil, settings: nil))
+        XCTAssertEqual(model.draft, "What is this?", "the draft came back twice")
+    }
+
     private static let shot = BlobRef(hash: [5], name: "../shots/screen.png", mime: "image/png", size: 4)
 
     /// A row's change, as the session reports an attachment landing.
@@ -999,31 +1027,19 @@ final class ChatModelTests: XCTestCase {
             "the failed attachment left no trace naming it: notice \(String(reflecting: model.notice)), chips \(model.attachments)")
     }
 
-    func testAnAttachmentOverTheSizeLimitIsRefusedBeforeUploadNamingTheLimit() async {
-        // An attachment has a stated limit of 64 MB, checked by the phone
-        // before it uploads anything and refused in plain words naming it.
+    func testAnAttachmentTheSharedLayerRefusesIsNamedAndNeverStored() async {
+        // The shared layer says what is refused before upload (over the
+        // hosts' limit, or a kind the agent takes none of); the chat shows
+        // its words and stores nothing.
         let source = FakeChat(rows: [], frame: frame())
-        let model = ChatModel(source: source)
-        await model.attach(Data(count: 64 * 1024 * 1024 + 1), name: "huge.bin", mime: "application/octet-stream", image: false)?.value
-        XCTAssertEqual(source.stored, [], "a file over the limit was handed over for upload")
-        XCTAssertTrue(model.attachments.isEmpty, "a file over the limit became a chip")
-        XCTAssertTrue(
-            (model.notice ?? "").contains("64 MB") && (model.notice ?? "").contains("huge.bin"),
-            "the refusal names the file and the 64 MB limit: \(String(reflecting: model.notice))")
-    }
-
-    func testAnAttachmentTheAgentDoesNotTakeIsRefusedBeforeUploadNamingIt() async {
-        // An agent that takes no images, or no files, would refuse the whole
-        // prompt: what it does not take is refused before anything is
-        // stored, in words naming the file and the agent.
-        let source = FakeChat(rows: [], frame: frame(images: false, files: false))
+        source.refusals["shot.png"] = "shot.png is not attached: OpenCode can’t take images."
         let model = ChatModel(source: source)
         await model.attach(Data(count: 16), name: "shot.png", mime: "image/png", image: true)?.value
-        XCTAssertEqual(model.notice, "shot.png is not attached: Claude can’t take images.")
-        await model.attach(Data(count: 16), name: "notes.txt", mime: "text/plain", image: false)?.value
-        XCTAssertEqual(model.notice, "notes.txt is not attached: Claude can’t take files.")
+        XCTAssertEqual(model.notice, "shot.png is not attached: OpenCode can’t take images.")
         XCTAssertEqual(source.stored, [], "a refused attachment was handed over for upload")
         XCTAssertTrue(model.attachments.isEmpty)
+        await model.attach(Data(count: 16), name: "notes.txt", mime: "text/plain", image: false)?.value
+        XCTAssertEqual(source.stored, ["notes.txt"], "one it takes is stored")
     }
 
     func testAnEmptyChatSaysItIsLoadingOnlyAfterAMoment() async throws {

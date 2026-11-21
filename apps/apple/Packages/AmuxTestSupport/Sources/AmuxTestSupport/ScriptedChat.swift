@@ -523,6 +523,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         held?.resume()
     }
 
+    /// A scripted chat takes every attachment: what the live chat refuses
+    /// is the shared layer's to say.
+    public func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
+
     public func putBlob(
         _ data: Data, name: String, mime: String
     ) async -> Result<BlobRef, RuntimeFailure> {

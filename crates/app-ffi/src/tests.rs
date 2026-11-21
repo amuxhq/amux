@@ -1555,7 +1555,6 @@ fn the_composers_rules_come_from_the_shared_view() {
     assert!(unsafe { amux_pastes_as_attachment(long.as_ptr()) });
     // SAFETY: the strings live for the call.
     assert!(!unsafe { amux_pastes_as_attachment(short.as_ptr()) });
-    assert_eq!(amux_attachment_limit(), wire::ATTACHMENT_SIZE_LIMIT as u64);
 }
 
 /// An attached daemon restarts under the app (an update, a stop and a

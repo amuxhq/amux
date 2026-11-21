@@ -379,10 +379,13 @@ terminal Claude or the headless one included.
 Words and controls never follow an agent's kind. A chat names its program
 from `ChatFrame.provider` (the host's name for it), its sign-in notice says
 how to sign in in the program's own words, and it offers what
-`ChatFrame.capabilities` says it can do: photos and files to attach (one it
-does not take is refused in words before anything is stored), while
+`ChatFrame.capabilities` says it can do: photos and files to attach, while
 send-now and resume come from the agent's capabilities as the shared views
-give them. An agent whose program cannot reopen its conversation has no field
+give them. Whether an attachment may go is the shared layer's to say
+(`Chat::attachment_refusal`): one too large, or of a kind the agent takes
+none of, is refused in its words before anything is stored, and a prompt
+refused for one all the same comes back into the draft with why. An ACP
+agent's ask, whatever it asks, offers Reply instead. An agent whose program cannot reopen its conversation has no field
 once it ends, only a line saying so. A fleet row names its program from its
 card.
 

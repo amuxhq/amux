@@ -320,8 +320,6 @@ final class AppModel {
 
     // MARK: - Opening an agent elsewhere
 
-    /// The agent's own interface in Terminal: a script that runs
-    /// `amux attach` there, opened as Terminal opens any `.command` file.
     /// Whether the agent has a terminal interface of its own to attach to:
     /// a provider subagent has no interface of its own, and an agent whose
     /// program runs only behind amux's chat has none.
@@ -329,6 +327,8 @@ final class AppModel {
         row(agent).map { !$0.native && $0.card.attachable } ?? false
     }
 
+    /// The agent's own interface in Terminal: a script that runs
+    /// `amux attach` there, opened as Terminal opens any `.command` file.
     func openTerminal(_ agent: AgentKey) {
         guard attachable(agent), let row = self.row(agent) else { return }
         var script = "#!/bin/zsh -l\n"

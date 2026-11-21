@@ -633,9 +633,11 @@ private struct ChatPage: View {
     private func attach(file url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        // A file over the limit is refused by its size, before it is read.
+        // A file the shared layer refuses by its size or kind is refused
+        // before it is read.
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-           model?.admits(name: url.lastPathComponent, size: size) == false {
+           model?.refuses(name: url.lastPathComponent, mime: mime, size: size) == true {
             return
         }
         guard let data = try? Data(contentsOf: url) else { return }

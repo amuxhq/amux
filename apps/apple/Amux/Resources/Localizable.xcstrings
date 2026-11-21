@@ -361,18 +361,6 @@
         }
       }
     },
-    "%@ is not attached because it is over the %@ MB limit for attachments." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is not attached because it is over the %@ MB limit for attachments."
-          }
-        }
-      }
-    },
     "%@ is not attached: %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
       "extractionState" : "manual",
@@ -381,30 +369,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ is not attached: %@"
-          }
-        }
-      }
-    },
-    "%@ is not attached: %@ can’t take files." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is not attached: %@ can’t take files."
-          }
-        }
-      }
-    },
-    "%@ is not attached: %@ can’t take images." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is not attached: %@ can’t take images."
           }
         }
       }

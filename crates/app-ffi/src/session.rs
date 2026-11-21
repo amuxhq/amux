@@ -352,6 +352,27 @@ pub unsafe extern "C" fn amux_review_doc(
     })
 }
 
+/// Why an attachment of `size` bytes would be refused before anything of
+/// it is read or stored, as a JSON string naming the file; JSON `null` when
+/// it may go.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; the strings are NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_attachment_refusal(
+    chat: *const AmuxChat,
+    name: *const c_char,
+    mime: *const c_char,
+    size: u64,
+) -> *mut c_char {
+    // SAFETY: the caller's contract.
+    let name = unsafe { text(name) }.unwrap_or_default().to_owned();
+    // SAFETY: the caller's contract.
+    let mime = unsafe { text(mime) }.unwrap_or_default().to_owned();
+    // SAFETY: the caller's contract.
+    unsafe { read(chat, |chat| chat.attachment_refusal(&name, &mime, size)) }
+}
+
 /// Stores bytes to attach to a prompt; the ticket answers
 /// `{"Ok": BlobRef}` or `{"Err": ..}`.
 ///

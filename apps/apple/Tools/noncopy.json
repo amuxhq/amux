@@ -742,7 +742,8 @@
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/Shell.swift": [
       {"literal": "\"shell\"", "context": ".reported(\"shell\", value: router.tab.rawValue)", "reason": "Protocol field, enum tag, resource path or stable driving identifier; preserve its exact spelling.", "count": 1},
       {"literal": "\"you.close\"", "context": "BarButton(\"xmark\", label: String(localized: \"Close\"), identifier: \"you.close\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat\"", "context": "identifier: \"chat\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"chat\"", "context": "identifier: \"chat\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"application/octet-stream\"", "context": "let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? \"application/octet-stream\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Door.swift": [
       {"literal": "\"scroll\"", "context": "case \"scroll\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -1332,9 +1333,10 @@
       {"literal": "\"ask.review.\\(index)\"", "context": ".identified(\"ask.review.\\(index)\", value: stepState(index))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.reply\"", "context": "textLink(String(localized: \"Reply instead\"), id: \"ask.reply\") { replying = true }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.reply.back\"", "context": ".identified(\"ask.reply.back\", label: String(localized: \"Back\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.reply.text\"", "context": ".identified(\"ask.reply.text\", value: replyText)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.reply.send\"", "context": "String(localized: \"Send reply\"), kind: .primary, id: \"ask.reply.send\", enabled: !blank", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"repeat\"", "context": "Image(systemName: \"repeat\")", "reason": "SF Symbol name, not interface copy.", "count": 1}
+      {"literal": "\"repeat\"", "context": "Image(systemName: \"repeat\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"ask.reply\"", "context": "link(String(localized: \"Reply instead\"), id: \"ask.reply\", value: \"\") { replying = true }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ask.reply.text\"", "context": ".identified(\"ask.reply.text\", value: text)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ask.reply.send\"", "context": "String(localized: \"Send reply\"), kind: .primary, id: \"ask.reply.send\", enabled: !blank, action: action)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatComposer.swift": [
       {"literal": "\"gearshape.2\"", "context": "Image(systemName: \"gearshape.2\")", "reason": "SF Symbol name, not interface copy.", "count": 1},

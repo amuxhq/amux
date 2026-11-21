@@ -47,6 +47,9 @@ public protocol ChatSource: AnyObject, Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome?
     func resume(with draft: Draft) async -> ActOutcome?
     func pageOlder(_ rows: UInt32) async -> PageOutcome?
+    /// Why an attachment would be refused before anything of it is stored,
+    /// in words naming the file; nil when it may go.
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String?
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure>
     func blob(_ hash: [UInt8]) -> Data?
     func blobFailed(_ hash: [UInt8]) -> Bool
@@ -171,6 +174,9 @@ public final class ChatModel {
     /// Every row key the chat holds, oldest first. Not observed, so a cell
     /// that reads past its own row (for its rail) does not redraw when the
     /// sequence changes; the list watches `sequence` instead.
+    /// The refused prompts already put back in the draft, so one the send's
+    /// outcome and a later frame both report comes back once.
+    @ObservationIgnored private var takenBack: Set<[UInt8]> = []
     @ObservationIgnored public private(set) var ids: [String] = []
     /// Bumped whenever `ids` changes: at either edge, or swapped whole.
     public private(set) var sequence = 0
@@ -859,9 +865,21 @@ public final class ChatModel {
         return Task {
             let outcome = await source.send(sent)
             sending = false
-            if case .failure(let failure) = outcome {
+            switch outcome {
+            case .failure(let failure):
                 restore(sent)
                 notice = failure.description
+            // Refused at once, as an attachment the agent does not take
+            // is: the draft comes back with why, as a prompt refused later
+            // does, and only once whichever says so first.
+            case .success(let sentOutcome):
+                if case .rejected(let reason) = sentOutcome.state,
+                   takenBack.insert(sentOutcome.inputId).inserted
+                {
+                    restore(sent)
+                    notice = Self.notSent(reason)
+                    source.discard(sentOutcome.inputId)
+                }
             }
         }
     }
@@ -1005,42 +1023,23 @@ public final class ChatModel {
         (draft, attachments) = (joined, (sent.attachments ?? []) + attachments)
     }
 
-    /// Whether an attachment this large may be stored. One over the limit is
-    /// refused here, in words naming the file and the limit, so nothing is
-    /// read or uploaded for it.
-    @discardableResult
-    public func admits(name: String, size: Int) -> Bool {
-        let limit = Bridge.attachmentLimit
-        guard size > limit else { return true }
-        let megabytes = limit / (1024 * 1024)
-        notice = String(localized: "\(name) is not attached because it is over the \(megabytes) MB limit for attachments.")
-        return false
-    }
-
-    /// Whether the agent takes a picture, or another file, in a prompt, as
-    /// its capabilities say. One it does not take is refused here, in words
-    /// naming the file and what the agent takes no more of, before anything
-    /// is stored: the agent would refuse the whole prompt.
-    private func takes(name: String, image: Bool) -> Bool {
-        guard let frame else { return true }
-        let agent = frame.provider.name
-        if image, !frame.capabilities.images {
-            notice = String(localized: "\(name) is not attached: \(agent) can’t take images.")
-            return false
-        }
-        if !image, !frame.capabilities.files {
-            notice = String(localized: "\(name) is not attached: \(agent) can’t take files.")
-            return false
-        }
+    /// Whether the shared layer refuses an attachment before anything of it
+    /// is read: too large, or a kind the agent takes none of. Its words go
+    /// in the notice.
+    public func refuses(name: String, mime: String, size: Int) -> Bool {
+        guard let refusal = source.attachmentRefusal(name: name, mime: mime, size: size) else { return false }
+        notice = refusal
         return true
     }
 
     /// Stores a photo or file and adds it to the draft once it is stored. One
-    /// that cannot be stored is named in the notice with the reason, so it
-    /// never leaves the draft without a word.
+    /// the shared layer refuses (too large, or a kind the agent takes none
+    /// of) is refused in its words before anything is stored, and one that
+    /// cannot be stored is named in the notice with the reason, so it never
+    /// leaves the draft without a word.
     @discardableResult
     public func attach(_ data: Data, name: String, mime: String, image: Bool) -> Task<Void, Never>? {
-        guard takes(name: name, image: image), admits(name: name, size: data.count) else { return nil }
+        if refuses(name: name, mime: mime, size: data.count) { return nil }
         uploading += 1
         notice = nil
         return Task {
@@ -1131,6 +1130,7 @@ public final class ChatModel {
     /// A prompt the agent refused, back into the draft with the reason
     /// said: its words and attachments to change and send again.
     private func takeBack(_ refused: RefusedPrompt) {
+        guard takenBack.insert(refused.inputId).inserted else { return }
         if let sent = source.draft(of: refused.inputId) { restore(sent) }
         notice = Self.notSent(refused.reason)
         source.discard(refused.inputId)

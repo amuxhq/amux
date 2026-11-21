@@ -119,16 +119,22 @@ struct Composer: View {
     }
 
     /// The model and effort: "Opus 5.5 High ⌄", opening the picker of
-    /// what the agent offers.
+    /// what the agent offers. An agent that offers only a mode to pick, as
+    /// an ACP agent may, still gets the chip, by its name, to reach it.
     @ViewBuilder private var model: some View {
-        if let chip = ChatWords.chip(chat.frame?.controls ?? empty, context: chat.frame?.context) {
-            let settings = chat.settings
-            let picks = settings.map { $0.changeable.model == .pick || $0.changeable.effort == .pick } ?? false
+        let settings = chat.settings
+        let picks = settings.map {
+            $0.changeable.model == .pick || $0.changeable.effort == .pick || $0.changeable.mode == .pick
+        } ?? false
+        if let chip = ChatWords.chip(chat.frame?.controls ?? empty, context: chat.frame?.context)
+            ?? (picks ? (model: "", detail: "", unusual: []) : nil)
+        {
             // The program's mark, else its name ahead of the model.
             let glyph = chat.frame.flatMap { ProviderMark.glyph($0.provider.provider) }
             let named = glyph == nil ? chat.frame.map(\.provider.name) : nil
             let label = ChipLabel(
-                icon: glyph, text: [named, chip.model].compactMap { $0 }.joined(separator: " · "),
+                icon: glyph,
+                text: [named, chip.model.isEmpty ? nil : chip.model].compactMap { $0 }.joined(separator: " · "),
                 detail: chip.detail.isEmpty ? nil : chip.detail, tint: .primary, menu: picks)
             if settings != nil, picks {
                 Button { pickingModel.toggle() } label: { label }
@@ -141,7 +147,7 @@ struct Composer: View {
                             chooseEffort: { chat.change(.effort($0)) },
                             chooseMode: { chat.change(.mode($0)) })
                     }
-                    .help("Model and effort")
+                    .help("Model, effort and mode")
             } else {
                 label
             }

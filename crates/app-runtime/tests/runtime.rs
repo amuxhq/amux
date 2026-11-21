@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome,
+    ActOutcome, AgentAct, ChatDelta, Draft, DraftAttachment, DraftPart, KeysMoved, NewAgent,
+    PageOutcome,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
@@ -885,6 +886,7 @@ async fn an_agent_the_host_offers_by_id_starts_and_is_named_as_the_host_names_it
         acp: provider_fakes::script::AcpAgent {
             name: testnet::FAKE_ACP_AGENT.into(),
             resume: true,
+            image: false,
             ..Default::default()
         },
         ..Default::default()
@@ -964,6 +966,49 @@ async fn an_agent_the_host_offers_by_id_starts_and_is_named_as_the_host_names_it
     assert_eq!(frame.provider.name, "Fake ACP Agent");
     assert!(frame.capabilities.resumable, "{:?}", frame.capabilities);
     assert!(!frame.capabilities.attachable, "{:?}", frame.capabilities);
+
+    // What it does not take is refused before anything is stored, in words
+    // naming the file and the agent, as is anything over the hosts' limit.
+    assert!(!frame.capabilities.images, "{:?}", frame.capabilities);
+    assert_eq!(
+        chat.attachment_refusal("shot.png", "image/png", 16).as_deref(),
+        Some("shot.png is not attached: Fake ACP Agent can’t take images.")
+    );
+    let over = wire::ATTACHMENT_SIZE_LIMIT as u64 + 1;
+    assert_eq!(
+        chat.attachment_refusal("huge.log", "text/plain", over).as_deref(),
+        Some("huge.log is not attached because it is over the 64 MB limit for attachments.")
+    );
+    assert!(frame.capabilities.files, "{:?}", frame.capabilities);
+    assert_eq!(chat.attachment_refusal("notes.txt", "text/plain", 16), None);
+
+    // A prompt carrying a picture all the same is refused at once, and says
+    // why in the same words, so the draft that comes back says so.
+    let picture = Draft {
+        parts: vec![
+            DraftPart::Text("What is this?".into()),
+            DraftPart::Attachment(DraftAttachment::Image(wire::BlobRef {
+                hash: vec![7; 32],
+                name: "shot.png".into(),
+                mime: "image/png".into(),
+                size: 16,
+            })),
+        ],
+    };
+    let sent = chat.send(&picture).await;
+    let cannot = Refusal {
+        reason: wire::Refusal::Unsupported,
+        detail: Some("Fake ACP Agent can’t take images".into()),
+    };
+    assert_eq!(sent.state, InputState::Rejected(cannot.clone()));
+    let refused = chat.frame().refused;
+    assert!(
+        refused
+            .iter()
+            .any(|refused| refused.input_id == sent.input_id && refused.reason == cannot),
+        "{refused:?}"
+    );
+    chat.discard(&sent.input_id);
 
     // A program the host does not offer is refused before anything is
     // asked of the host.

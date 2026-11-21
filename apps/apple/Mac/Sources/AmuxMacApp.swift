@@ -95,7 +95,7 @@ private struct AppCommands: Commands {
                 .keyboardShortcut("s", modifiers: [.control, .command])
             Button(model.changesShown ? "Hide Tools" : "Show Tools") { model.place.changes.toggle() }
                 .keyboardShortcut("i", modifiers: [.option, .command])
-                .disabled(!ready || !(model.place.agent.map(model.attachable) ?? false))
+                .disabled(!ready || model.place.agent.flatMap { model.row($0) }.map { $0.native } ?? true)
             Divider()
             Button("Agents") { model.place.surface = .agents }
                 .keyboardShortcut("1")

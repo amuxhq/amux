@@ -66,8 +66,7 @@ struct ComposerBox: View {
                 .identified("chat.field", label: placeholder, value: model.draft)
             // At an accessibility text size the model's words get a line of
             // their own: beside the buttons there is room for a few letters.
-            if typeSize.isAccessibilitySize, let controls = model.frame?.controls,
-               let chip = ChatWords.chip(controls, context: model.frame?.context) {
+            if typeSize.isAccessibilitySize, let controls = model.frame?.controls, let chip = pillWords(controls) {
                 modelChip(chip, warns: controls.permission?.neverAsks == true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -88,8 +87,7 @@ struct ComposerBox: View {
                 .buttonStyle(.amuxControl)
                 .accessibilityLabel("Attach")
                 .identified("chat.attach", label: String(localized: "Attach"), value: plusOpen ? "open" : "closed")
-                if !typeSize.isAccessibilitySize, let controls = model.frame?.controls,
-                   let chip = ChatWords.chip(controls, context: model.frame?.context) {
+                if !typeSize.isAccessibilitySize, let controls = model.frame?.controls, let chip = pillWords(controls) {
                     modelChip(chip, warns: controls.permission?.neverAsks == true)
                 }
                 Spacer(minLength: 4)
@@ -138,6 +136,18 @@ struct ComposerBox: View {
         }
         .accessibilityElement(children: .combine)
         .identified("chat.exited", label: title, value: host)
+    }
+
+    /// The pill's words. An agent that has said no model, effort or mode
+    /// yet but offers a pick (an ACP agent's mode) is named instead, so its
+    /// settings can still be reached.
+    private func pillWords(_ controls: ControlsSummary) -> (model: String, detail: String, unusual: [String])? {
+        if let chip = ChatWords.chip(controls, context: model.frame?.context) { return chip }
+        guard let settings = model.settings, let name = model.frame?.provider.name,
+              settings.changeable.model == .pick || settings.changeable.effort == .pick
+                || settings.changeable.mode == .pick
+        else { return nil }
+        return (name, "", [])
     }
 
     /// The model and its effort, then a permission or mode other than the

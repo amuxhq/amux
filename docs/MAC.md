@@ -148,7 +148,10 @@ panel, repository tiles, rows, tabs, chips, cards).
   solid blue and on Return, each with its key shown, and the provider's
   other answers in a menu split off the expected one. A question's options
   are picked from the card, with Reply Instead where the agent takes a
-  reply, and a note for an answer that takes one.
+  reply, and a note for an answer that takes one. An agent that takes the
+  person's own words in place of any answer (`AskCard.reply_instead`, an
+  ACP agent's) offers Reply Instead on every ask, a form's and a link's
+  included.
 - **Subagents** a turn started through Claude's or Codex's own tool fold to
   one line, "4 subagents", saying what they come to ("2 running · 1 waiting
   on you · 1 done", the waiting count in amber); a click on it unfolds the

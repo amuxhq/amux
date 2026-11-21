@@ -161,7 +161,7 @@ impl Host {
                     name: self.caller.name.clone(),
                 },
             ),
-            Who::PersonThere => (Served::Link, Calling::PersonAt(peer(), Client::Phone)),
+            Who::PersonThere => (Served::Link, Calling::PersonAt(peer(), Client::Ios)),
             Who::AgentThere => (
                 Served::Link,
                 Calling::Agent {

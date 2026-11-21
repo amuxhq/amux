@@ -1,9 +1,10 @@
 //! Product analytics across hosts: a pairing is counted on both sides, each
 //! in its own role, and a prompt to a paired host's agent is counted once,
-//! on the agent's host, naming the host the person sent it from. A page
-//! review sent from the browser through its bridge, addressed to the host
-//! that owns the agent, is counted there the same way, and the browser is
-//! counted opening on the host it is attached to.
+//! on the agent's host, naming the host and the client the person sent it
+//! from. A page review sent from the browser through its bridge, addressed
+//! to the host that owns the agent, is counted there the same way, as the
+//! browser's, and the browser is counted opening on the host it is attached
+//! to.
 
 use std::process::Stdio;
 
@@ -154,11 +155,22 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_on_the_agents_host() {
     let prompts: Vec<_> = desk_events
         .iter()
         .filter_map(|event| match event {
-            Event::PromptSent { kind, from, .. } => Some((*kind, *from)),
+            Event::PromptSent {
+                kind,
+                from,
+                surface,
+                ..
+            } => Some((*kind, *from, *surface)),
             _ => None,
         })
         .collect();
-    assert_eq!(prompts, [(Kind::ClaudeSdk, Origin::PairedHost(laptop))]);
+    // The laptop's person is on the in-memory client the phone uses, and
+    // the desk counts the prompt for that client, as the laptop named it
+    // beside the call it carried.
+    assert_eq!(
+        prompts,
+        [(Kind::ClaudeSdk, Origin::PairedHost(laptop), Client::Ios)]
+    );
     assert_eq!(
         desk_events
             .iter()
@@ -171,7 +183,7 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_on_the_agents_host() {
             Event::AgentCreated {
                 kind: Kind::ClaudeSdk,
                 from: Origin::Here,
-                by: By::Person,
+                by: By::Person(Client::Ios),
             },
             Event::PairingStarted {
                 role: Role::Offerer,
@@ -448,6 +460,7 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
         Event::PromptSent {
             kind: Kind::ClaudeSdk,
             from: Origin::PairedHost(from),
+            surface: Client::Browser,
             ..
         },
         Event::PageReviewSent {
@@ -457,7 +470,9 @@ async fn a_page_review_from_the_browser_is_counted_on_the_agents_host() {
         },
     ] = desk_events.as_slice()
     else {
-        panic!("the desk counts the prompt and its page review: {desk_events:?}");
+        panic!(
+            "the desk counts the prompt, from the browser, and its page review: {desk_events:?}"
+        );
     };
     assert_eq!(*from, laptop, "sent from the laptop");
     let laptop_events = counted(of(&recording, laptop));

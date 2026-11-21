@@ -26,9 +26,11 @@ message Caller {
 
 // A person at the calling host.
 message Person {
-  // The client the person is using: "terminal", "mac", "phone" or
-  // "browser", as the client names itself to its own node. A word this
-  // build does not know reads as the terminal.
+  // The client the person is using: "terminal", "mac", "ios", "android"
+  // or "browser", as the client names itself to its own node. The iPhone
+  // app wrote "phone" before it wrote "ios", and that word still reads as
+  // the iPhone app. A word this build does not know reads as another
+  // client.
   string surface = 1;
 }
 

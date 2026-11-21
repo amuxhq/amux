@@ -336,7 +336,7 @@ mod tests {
             Caller::person_here(Surface::Terminal),
             Caller::Person {
                 at: At::Paired(host.paired),
-                surface: Surface::Phone,
+                surface: Surface::Ios,
             },
         ] {
             for agent in [host.lead, host.coder, host.other, host.helper] {

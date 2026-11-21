@@ -5204,9 +5204,11 @@ impl ::prost::Name for Caller {
 /// A person at the calling host.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Person {
-    /// The client the person is using: "terminal", "mac", "phone" or
-    /// "browser", as the client names itself to its own node. A word this
-    /// build does not know reads as the terminal.
+    /// The client the person is using: "terminal", "mac", "ios", "android"
+    /// or "browser", as the client names itself to its own node. The iPhone
+    /// app wrote "phone" before it wrote "ios", and that word still reads as
+    /// the iPhone app. A word this build does not know reads as another
+    /// client.
     #[prost(string, tag = "1")]
     pub surface: ::prost::alloc::string::String,
 }

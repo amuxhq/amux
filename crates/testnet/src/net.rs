@@ -1348,7 +1348,7 @@ impl Net {
             }),
             None => Ok(client::Client::in_memory(
                 self.entrance(host)?,
-                client::Surface::Phone,
+                client::Surface::Ios,
             )),
         }
     }

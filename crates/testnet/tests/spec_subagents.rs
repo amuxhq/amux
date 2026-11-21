@@ -135,7 +135,7 @@ impl Client {
             let _ = sender.send(wake);
         });
         let local = net.host(host).unwrap().host_id.as_bytes().to_vec();
-        let node = client::Client::in_memory(net.entrance(host).unwrap(), client::Surface::Phone);
+        let node = client::Client::in_memory(net.entrance(host).unwrap(), client::Surface::Ios);
         let runtime = AppRuntime::open(node, Arc::new(SystemClock), local, wake)
             .await
             .unwrap();

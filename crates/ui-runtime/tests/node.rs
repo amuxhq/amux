@@ -288,7 +288,7 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
     .await
     .unwrap();
     net.settle("far").await.unwrap();
-    let client = Client::in_memory(net.entrance("desk").unwrap(), Surface::Phone);
+    let client = Client::in_memory(net.entrance("desk").unwrap(), Surface::Ios);
     let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
     let far = net.agent("far").unwrap().id;
     let agent = until_within(PATIENCE, fleet.changed(), || {

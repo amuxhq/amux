@@ -347,7 +347,7 @@ mod tests {
                     Served::Profile,
                     Calling::PersonHere(analytics::Client::Terminal),
                 ),
-                (Served::Phone, Calling::PersonHere(analytics::Client::Phone)),
+                (Served::Phone, Calling::PersonHere(analytics::Client::Ios)),
                 (
                     Served::Link,
                     Calling::PersonAt(self.paired, analytics::Client::Mac),

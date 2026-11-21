@@ -35,7 +35,7 @@ async fn clients(net: &Net, host: &str) -> [(&'static str, Client); 2] {
     let socket = Client::connect(&socket(net, host).await, Surface::Terminal)
         .await
         .unwrap();
-    let memory = Client::in_memory(net.entrance(host).unwrap(), Surface::Phone);
+    let memory = Client::in_memory(net.entrance(host).unwrap(), Surface::Ios);
     [("socket", socket), ("in memory", memory)]
 }
 

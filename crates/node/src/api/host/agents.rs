@@ -133,12 +133,13 @@ fn record_input(
     shape: Option<InputShape>,
     queued: Option<bool>,
 ) {
-    let (Caller::Person { .. }, Some(shape), Some(queued)) = (caller, shape, queued) else {
+    let (Caller::Person { surface, .. }, Some(shape), Some(queued)) = (caller, shape, queued)
+    else {
         return;
     };
     runtime
         .analytics()
-        .record(shape.event(origin(runtime, caller), queued));
+        .record(shape.event(origin(runtime, caller), *surface, queued));
     for event in shape.page_reviews() {
         runtime.analytics().record(event);
     }
@@ -197,7 +198,7 @@ impl AgentService for Agents {
             .map_err(|error| status(error.to_wire()))?;
         if let Some(kind) = kind {
             let by = match caller {
-                Caller::Person { .. } => analytics::By::Person,
+                Caller::Person { surface, .. } => analytics::By::Person(surface),
                 Caller::Agent { .. } => analytics::By::Agent,
             };
             runtime.analytics().record(analytics::Event::AgentCreated {

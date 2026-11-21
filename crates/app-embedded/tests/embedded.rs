@@ -905,7 +905,7 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
             (
                 host,
                 analytics::Event::ClientOpened {
-                    client: analytics::Client::Phone
+                    client: analytics::Client::Ios
                 }
             ),
             (

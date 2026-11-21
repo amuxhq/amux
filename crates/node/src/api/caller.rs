@@ -250,12 +250,16 @@ pub(in crate::api) fn link_peer(extensions: &http::Extensions) -> Result<HostId,
 }
 
 /// The client a person's surface word names. A word this build does not
-/// know reads as the terminal, the client that names itself with none.
+/// know reads as another client, so one added later still counts. The
+/// iPhone app named itself `phone` before it was `ios`, and a paired phone
+/// running such a release still writes that word in its caller header, so
+/// it reads as the iPhone app too.
 pub(crate) fn surface_named(word: &str) -> Surface {
     match word {
         "terminal" => Surface::Terminal,
-        "phone" => Surface::Phone,
         "mac" => Surface::Mac,
+        "ios" | "phone" => Surface::Ios,
+        "android" => Surface::Android,
         "browser" => Surface::Browser,
         _ => Surface::Other,
     }
@@ -294,7 +298,7 @@ mod tests {
     fn a_peer_service_call_with_a_header_is_refused() {
         let here = host(9);
         for caller in [
-            Caller::person_here(Surface::Phone),
+            Caller::person_here(Surface::Ios),
             Caller::agent_of(here, AgentId::from_bytes([2; 16]), "coder"),
         ] {
             let header = caller.header(here);
@@ -314,12 +318,12 @@ mod tests {
     fn a_header_names_someone_of_the_links_own_host() {
         let (laptop, desk) = (host(1), host(2));
         let agent = AgentId::from_bytes([3; 16]);
-        let person = Caller::person_here(Surface::Phone).header(laptop);
+        let person = Caller::person_here(Surface::Ios).header(laptop);
         assert_eq!(
             on_link(laptop, person).unwrap(),
             Caller::Person {
                 at: At::Paired(laptop),
-                surface: Surface::Phone,
+                surface: Surface::Ios,
             }
         );
         let coder = Caller::agent_of(laptop, agent, "coder").header(laptop);
@@ -383,6 +387,7 @@ mod tests {
     #[test]
     fn a_surface_this_build_does_not_know_reads_as_another_client() {
         assert_eq!(surface_named("watch"), Surface::Other);
+        assert_eq!(surface_named("phone"), Surface::Ios);
         for surface in Surface::ALL.iter().copied() {
             assert_eq!(surface_named(analytics::Token::as_str(surface)), surface);
         }
@@ -400,7 +405,7 @@ mod tests {
             tonic::Code::Internal
         );
 
-        let person = Caller::person_here(Surface::Phone);
+        let person = Caller::person_here(Surface::Ios);
         request.extensions_mut().insert(person.clone());
         request.extensions_mut().insert(PairedDaemon(host(7)));
         assert_eq!(Caller::of(&request).unwrap(), person);

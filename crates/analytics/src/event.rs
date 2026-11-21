@@ -49,11 +49,16 @@ tokens! {
 }
 
 tokens! {
-    /// Which client opened, or which one an onboarding step was on.
+    /// Which client opened, which one an onboarding step was on, or which
+    /// one a person acted from. Each of amux's apps is named for itself,
+    /// so the iPhone and Android apps count apart. A word a build does not
+    /// know reads as [`Client::Other`], so a client added later is counted
+    /// as another client by the daemons released before it, not dropped.
     Client {
         Terminal => "terminal",
-        Phone => "phone",
         Mac => "mac",
+        Ios => "ios",
+        Android => "android",
         Browser => "browser",
         /// A client that names none of these, or names nothing: one
         /// somebody else built on the protocol.
@@ -83,12 +88,13 @@ tokens! {
     }
 }
 
-tokens! {
-    /// Who asked for an agent: a person, or another agent through its tools.
-    By {
-        Person => "person",
-        Agent => "agent",
-    }
+/// Who asked for an agent: a person, on the client they asked from, or
+/// another agent through its tools. An agent has no client, so only a
+/// person's request says which one it came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum By {
+    Person(Client),
+    Agent,
 }
 
 tokens! {
@@ -376,14 +382,19 @@ pub enum Event {
         from: Origin,
         by: By,
     },
+    /// A person's prompt was accepted. `surface` is the client they sent
+    /// it from, which may be on another host than the one counting it.
     PromptSent {
         kind: Kind,
         from: Origin,
+        surface: Client,
         queued: bool,
     },
+    /// A person's answer to an ask was accepted, from `surface`.
     AskAnswered {
         kind: Kind,
         from: Origin,
+        surface: Client,
         ask: Ask,
     },
     PairingStarted {
@@ -552,16 +563,34 @@ impl Event {
             Event::AgentCreated { kind, from, by } => {
                 put("kind", token(*kind));
                 origin(&mut put, *from);
-                put("by", token(*by));
+                match by {
+                    By::Person(surface) => {
+                        put("by", json!("person"));
+                        put("surface", token(*surface));
+                    }
+                    By::Agent => put("by", json!("agent")),
+                }
             }
-            Event::PromptSent { kind, from, queued } => {
+            Event::PromptSent {
+                kind,
+                from,
+                surface,
+                queued,
+            } => {
                 put("kind", token(*kind));
                 origin(&mut put, *from);
+                put("surface", token(*surface));
                 put("queued", json!(queued));
             }
-            Event::AskAnswered { kind, from, ask } => {
+            Event::AskAnswered {
+                kind,
+                from,
+                surface,
+                ask,
+            } => {
                 put("kind", token(*kind));
                 origin(&mut put, *from);
+                put("surface", token(*surface));
                 put("ask", token(*ask));
             }
             Event::PairingStarted { role, method } => {
@@ -667,16 +696,18 @@ impl Event {
             Event::AgentCreated {
                 kind: Kind::ClaudeSdk,
                 from: Origin::Here,
-                by: By::Person,
+                by: By::Person(Client::Mac),
             },
             Event::PromptSent {
                 kind: Kind::Codex,
                 from: Origin::PairedHost(host),
+                surface: Client::Ios,
                 queued: false,
             },
             Event::AskAnswered {
                 kind: Kind::ClaudePty,
                 from: Origin::PairedHost(host),
+                surface: Client::Ios,
                 ask: Ask::Permission,
             },
             Event::PairingStarted {

@@ -283,7 +283,7 @@ impl EmbeddedRuntime {
             runtime.analytics().record_at_most_every(
                 CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened {
-                    client: analytics::Client::Phone,
+                    client: analytics::Client::Ios,
                 },
             );
         }
@@ -394,7 +394,7 @@ impl EmbeddedRuntime {
         };
         Ok(Installation::in_memory(
             InstallationServiceServer::new(door),
-            Surface::Phone,
+            Surface::Ios,
             open,
         ))
     }
@@ -689,5 +689,5 @@ fn fingerprint(pubkey: &[u8]) -> String {
 
 /// A client of a profile's node over its routes in memory, as the phone.
 fn in_memory(registry: &Registry, profile: ProfileId) -> Result<Client, ProfileRefusal> {
-    Ok(Client::in_memory(registry.routes(profile)?, Surface::Phone))
+    Ok(Client::in_memory(registry.routes(profile)?, Surface::Ios))
 }

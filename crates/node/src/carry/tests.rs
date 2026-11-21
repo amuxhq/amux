@@ -371,7 +371,7 @@ async fn a_call_for_another_host_is_carried_there_as_the_entrys_caller() {
     let far = Far::new();
     let entrance = near(reaching(&far));
     let desk = wire::authority(&far.id);
-    let person = Caller::person_here(Surface::Phone).header(OWN).unwrap();
+    let person = Caller::person_here(Surface::Ios).header(OWN).unwrap();
     assert_eq!(
         who(&entrance, Some(desk.clone())).await.unwrap(),
         format!("answered-by=far authority={desk} caller={person}")

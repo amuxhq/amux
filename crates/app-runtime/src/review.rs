@@ -738,7 +738,7 @@ mod tests {
     fn page(fake: &Fake) -> Opened {
         let routes = tonic::service::Routes::default()
             .add_service(wire::experimental::reviews1_server(fake.clone()));
-        let client = client::Client::in_memory(routes, client::Surface::Phone);
+        let client = client::Client::in_memory(routes, client::Surface::Ios);
         let agent = client.agent(&wire::AgentRef {
             host_id: vec![7; 16],
             agent_id: b"agent-1".to_vec(),

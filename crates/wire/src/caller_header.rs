@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn a_caller_round_trips_through_its_header() {
-        for caller in [Caller::person("phone"), Caller::agent([7; 16], "coder")] {
+        for caller in [Caller::person("ios"), Caller::agent([7; 16], "coder")] {
             let header = caller.to_header();
             assert!(
                 header.bytes().all(|byte| byte.is_ascii_graphic()),

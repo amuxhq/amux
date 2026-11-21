@@ -151,7 +151,7 @@ mod tests {
         let recording = Recording::new();
         let analytics = Analytics::new(HostId::from_u128(1), recording.clone());
         let opened = Event::ClientOpened {
-            client: Client::Phone,
+            client: Client::Ios,
         };
         analytics.record_at_most_every(Duration::from_secs(3600), opened.clone());
         analytics.record_at_most_every(Duration::from_secs(3600), opened.clone());
@@ -204,15 +204,15 @@ mod tests {
             ("client_opened", json!({"surface": "terminal"})),
             (
                 "agent_created",
-                json!({"kind": "claude_sdk", "from": "here", "by": "person"}),
+                json!({"kind": "claude_sdk", "from": "here", "by": "person", "surface": "mac"}),
             ),
             (
                 "prompt_sent",
-                json!({"kind": "codex", "from": "paired_host", "remote_host": host, "queued": false}),
+                json!({"kind": "codex", "from": "paired_host", "remote_host": host, "surface": "ios", "queued": false}),
             ),
             (
                 "ask_answered",
-                json!({"kind": "claude_pty", "from": "paired_host", "remote_host": host, "ask": "permission"}),
+                json!({"kind": "claude_pty", "from": "paired_host", "remote_host": host, "surface": "ios", "ask": "permission"}),
             ),
             ("pairing_started", json!({"role": "joiner", "method": "qr"})),
             (
@@ -296,6 +296,28 @@ mod tests {
         for step in Step::ALL {
             check("step", &json!(step.as_str()));
         }
+        for client in Client::ALL {
+            check("surface", &json!(client.as_str()));
+        }
+    }
+
+    /// A person's new agent says which client they asked from; an agent's
+    /// has no client to name.
+    #[test]
+    fn only_a_persons_new_agent_names_a_client() {
+        let created = |by| Event::AgentCreated {
+            kind: Kind::Codex,
+            from: Origin::Here,
+            by,
+        };
+        assert_eq!(
+            json!(created(By::Person(Client::Android)).properties()),
+            json!({"kind": "codex", "from": "here", "by": "person", "surface": "android"})
+        );
+        assert_eq!(
+            json!(created(By::Agent).properties()),
+            json!({"kind": "codex", "from": "here", "by": "agent"})
+        );
     }
 
     /// The public page lists every event and every property a device sends.
@@ -317,6 +339,12 @@ mod tests {
                 if !page.contains(&key) {
                     missing.push(format!("{key} (of {})", event.name()));
                 }
+            }
+        }
+        for client in Client::ALL {
+            let word = format!("`{}`", client.as_str());
+            if !page.contains(&word) {
+                missing.push(format!("{word} (a surface)"));
             }
         }
         for key in [

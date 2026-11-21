@@ -2,7 +2,7 @@
 //! prompt and answer, each once, here, saying where it came from; and the
 //! onboarding step a person's first agent from a paired device finishes.
 
-use analytics::{By, Event, Kind, Origin, Recording};
+use analytics::{By, Client, Event, Kind, Origin, Recording};
 use futures_util::StreamExt as _;
 use tonic::Request;
 use wire::installation_service_server::InstallationService as _;
@@ -13,7 +13,8 @@ use crate::host_acts::{EVERYONE, Setup, Who, create, peer, prompt};
 /// counted, under this host's setting: a new agent whoever asked, saying
 /// whether a person or an agent did; a person's prompts, a first one
 /// included, and none of an agent's. Each says where it came from: here,
-/// or the paired host the call was carried from.
+/// or the paired host the call was carried from; and a person's says which
+/// client they used, as the carrying host named it.
 #[tokio::test(flavor = "multi_thread")]
 async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
     let mut setup = Setup::new();
@@ -35,6 +36,12 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
             Who::PersonHere | Who::AgentHere => Origin::Here,
             Who::PersonThere | Who::AgentThere => Origin::PairedHost(peer()),
         };
+        // The client the person acted from: the terminal here, and at the
+        // paired host the iPhone app its node named in the caller header.
+        let surface = match who {
+            Who::PersonThere => Client::Ios,
+            _ => Client::Terminal,
+        };
         let tag = format!("{who:?}").to_lowercase();
         host.agents(who)
             .create_agent(create(&work, &format!("{tag}-new"), Some("start here")))
@@ -43,7 +50,7 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
         let by = if who.is_agent() {
             By::Agent
         } else {
-            By::Person
+            By::Person(surface)
         };
         expected.push(Event::AgentCreated {
             kind: Kind::ClaudeSdk,
@@ -54,6 +61,7 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
             expected.push(Event::PromptSent {
                 kind: Kind::ClaudeSdk,
                 from,
+                surface,
                 queued: false,
             });
         }
@@ -77,6 +85,7 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
             expected.push(Event::PromptSent {
                 kind: Kind::ClaudeSdk,
                 from,
+                surface,
                 queued: true,
             });
         }
@@ -103,6 +112,7 @@ async fn usage_is_counted_by_the_host_that_acts_saying_where_it_came_from() {
             expected.push(Event::AskAnswered {
                 kind: Kind::ClaudeSdk,
                 from,
+                surface,
                 ask: analytics::Ask::Question,
             });
         }

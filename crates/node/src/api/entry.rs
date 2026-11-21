@@ -39,7 +39,7 @@ pub(crate) enum Entry {
     /// the caller of everything that arrives on it.
     Tools(AgentId),
     /// The phone's runtime, called in memory by the app it runs in: a
-    /// person on the phone.
+    /// person on the iPhone app, the only app that runs a node in itself.
     Phone,
     /// The streams of links whose handshake presented a trusted key. The
     /// paired host is each connection's own, and the caller header says
@@ -253,7 +253,7 @@ async fn client_caller(
                 .and_then(|value| value.to_str().ok())
                 .map_or(Surface::Other, surface_named),
         )),
-        Entry::Phone => Ok(Caller::person_here(Surface::Phone)),
+        Entry::Phone => Ok(Caller::person_here(Surface::Ios)),
         Entry::Tools(agent) => {
             // The socket knows the agent by its id alone, and its name can
             // change while it runs, so the name is read as the call comes.

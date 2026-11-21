@@ -175,7 +175,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
 
     // The phone's app counts its own coming to the front, so its listing
     // the agents in memory counts no client.
-    let phone = served_as(&runtime, Served::Phone, Calling::PersonHere(Client::Phone));
+    let phone = served_as(&runtime, Served::Phone, Calling::PersonHere(Client::Ios));
     drop(
         wire::inventory_service_client(phone)
             .subscribe_inventory(Request::new(wire::SubscribeInventoryRequest {}))
@@ -203,6 +203,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
                 Event::PromptSent {
                     kind: Kind::ClaudeSdk,
                     from: Origin::Here,
+                    surface: Client::Terminal,
                     queued: true
                 }
             ),
@@ -211,6 +212,7 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
                 Event::AskAnswered {
                     kind: Kind::ClaudeSdk,
                     from: Origin::Here,
+                    surface: Client::Terminal,
                     ask: Ask::Question
                 }
             ),

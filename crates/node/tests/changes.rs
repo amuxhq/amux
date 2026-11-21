@@ -459,7 +459,7 @@ async fn every_entry_answers_a_person_and_an_agent_only_about_its_children() {
     for target in [&lead, &coder, &helper] {
         let person = Calling::PersonHere(analytics::Client::Terminal);
         assert_eq!(ask(Served::Profile, person, target).await, Ok(()));
-        let person = Calling::PersonAt(paired, analytics::Client::Phone);
+        let person = Calling::PersonAt(paired, analytics::Client::Ios);
         assert_eq!(ask(Served::Link, person, target).await, Ok(()));
     }
     let tools = Served::Tools(lead.id);

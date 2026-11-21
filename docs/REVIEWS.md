@@ -222,6 +222,7 @@ options (`DIFF_OPTIONS`):
 | `--submodule=short` | `diff.submodule=log` writes a summary with no `diff --git` header, and `diff` the submodule's own files |
 | `--inter-hunk-context=0`, `--diff-algorithm=myers`, `--indent-heuristic`, `-O/dev/null` | Hunks, their boundaries and the order of files decide line numbers, placements and what since-last keeps; a person's algorithm or order file would move them |
 | `core.hooksPath` set to `/dev/null` (on Windows, a folder in the user's own temporary directory that is never made) | Git runs a repository's `post-index-change` hook whenever it writes an index, the copies a snapshot and a moved check write included; a person's hooks are for their own work. A folder that is never made in a temporary directory every user shares, as `/tmp` is on Linux, would let another user put a hook there and have it run as the person |
+| `core.longpaths=true` | Git for Windows refuses a path past 260 characters ("Filename too long") unless it is set, so one deep file would fail every snapshot and every read of the working tree; git on macOS and Linux has no such limit and ignores the key |
 | `diff.autoRefreshIndex=true` | A file whose times alone changed reads as unchanged, as it does by default, whatever the person set; with optional locks off, git writes no refresh into the person's index |
 
 The one call that runs with the person's configuration alone is checking out

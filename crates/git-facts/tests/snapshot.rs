@@ -1222,6 +1222,29 @@ async fn mid_rebase_the_snapshot_says_a_merge_is_under_way() {
     assert!(String::from_utf8(text).unwrap().contains("<<<<<<<"));
 }
 
+/// A file whose full path is past Windows' old 260-character limit is
+/// taken like any other: Git for Windows refuses such a path unless told
+/// otherwise, which would fail every snapshot of the tree.
+#[tokio::test]
+async fn a_file_past_windows_path_limit_is_taken() {
+    let repo = repository();
+    let root = repo.path();
+    let path = format!(
+        "{}end/{}.txt",
+        "nested-folder-".repeat(8),
+        "a-long-file-name".repeat(8)
+    );
+    assert!(root.join(&path).as_os_str().len() > 260);
+    write(root, &path, "deep\n");
+
+    let store = store();
+    let snapshot = take(root, &store.store).await;
+    assert_eq!(
+        read(root, &store.store, &snapshot.commit, &path).await,
+        Some(b"deep\n".to_vec())
+    );
+}
+
 /// A link is stored as a link, its target as written, whether or not
 /// anything is there.
 #[cfg(unix)]

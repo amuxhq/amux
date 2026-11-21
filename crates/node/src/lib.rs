@@ -11,6 +11,7 @@
 //! shutdown that marks the installation clean.
 
 mod activation;
+pub mod agents;
 mod auth;
 mod awake;
 mod blobs;
@@ -97,7 +98,7 @@ pub use install::{
     STORE, write_durably,
 };
 pub use link::{Cursor, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket};
-pub use offers::{HostCatalogue, PROVIDERS, Provider};
+pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{
     DrainReport, HttpSender, NoopSender, Push, PushCloud, PushFuture, PushRecipient, PushSender,
 };

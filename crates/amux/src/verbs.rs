@@ -238,20 +238,40 @@ fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
     }
 }
 
-/// The agents a person chooses between.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+/// The agents a person chooses between: Claude, Codex, or another agent
+/// the host offers, by its id (`antigravity`, `opencode`, `grok`, or one
+/// added to the host's config).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CliAgent {
     Claude,
     Codex,
+    Other(String),
+}
+
+impl std::str::FromStr for CliAgent {
+    type Err = String;
+
+    fn from_str(word: &str) -> Result<Self, String> {
+        match word {
+            "claude" => Ok(Self::Claude),
+            "codex" => Ok(Self::Codex),
+            id => match settings::agents::id_problem(id) {
+                None => Ok(Self::Other(id.to_owned())),
+                Some(problem) => Err(problem),
+            },
+        }
+    }
 }
 
 /// What a new agent runs on. Claude runs as its host publishes, the kind
 /// every client starts there; an interface named for this one agent
 /// (`--in`) chooses for it instead: headless for amux's chat, in a terminal
-/// for its own. Codex is the same agent for both.
-fn kind_for(agent: CliAgent, named: Option<ChatInSetting>, published: Kind) -> Kind {
+/// for its own. Codex is the same agent for both, and so is every other
+/// agent, which has amux's chat alone.
+fn kind_for(agent: &CliAgent, named: Option<ChatInSetting>, published: Kind) -> Kind {
     match (agent, named, published) {
         (CliAgent::Codex, ..) => Kind::Codex,
+        (CliAgent::Other(_), ..) => Kind::Acp,
         (CliAgent::Claude, Some(ChatInSetting::Amux), _) => Kind::ClaudeSdk,
         (CliAgent::Claude, Some(ChatInSetting::Native), _) => Kind::ClaudePty,
         (CliAgent::Claude, None, kind @ (Kind::ClaudeSdk | Kind::ClaudePty)) => kind,
@@ -339,18 +359,37 @@ pub async fn create(client: &mut Client, host: &[u8], create: Create) -> Result<
         }
         _ => Kind::Unspecified,
     };
-    let config = match kind_for(create.agent, create.interface, published) {
-        Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
-        Kind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
-        _ => {
-            if !create.args.is_empty() {
-                bail!("codex agents take no extra provider arguments");
-            }
+    let only_claude_takes_arguments = || {
+        if create.args.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow!("only Claude takes extra arguments"))
+        }
+    };
+    let config = match &create.agent {
+        CliAgent::Claude => match kind_for(&create.agent, create.interface, published) {
+            Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
+            _ => create_agent_request::Agent::ClaudeSdk(claude()),
+        },
+        CliAgent::Codex => {
+            only_claude_takes_arguments()?;
             create_agent_request::Agent::Codex(CodexCreateConfig {
                 model: model.clone(),
                 effort: effort.clone(),
                 permission: permission.clone(),
                 mode: None,
+            })
+        }
+        // Another agent's permission is the mode it offers, by its own
+        // name for it (`default`, `plan`); the agent's own settings choose
+        // one when none is given.
+        CliAgent::Other(id) => {
+            only_claude_takes_arguments()?;
+            create_agent_request::Agent::Acp(wire::AcpCreateConfig {
+                agent: id.clone(),
+                model: model.clone(),
+                effort: effort.clone(),
+                mode: permission.clone(),
             })
         }
     };
@@ -558,7 +597,7 @@ mod tests {
     #[test]
     fn a_new_claude_runs_the_kind_its_host_publishes() {
         use ChatInSetting::{Amux, Native};
-        let claude = CliAgent::Claude;
+        let claude = &CliAgent::Claude;
         assert_eq!(kind_for(claude, None, Kind::ClaudePty), Kind::ClaudePty);
         assert_eq!(kind_for(claude, None, Kind::ClaudeSdk), Kind::ClaudeSdk);
         assert_eq!(kind_for(claude, None, Kind::Unspecified), Kind::ClaudeSdk);
@@ -571,7 +610,7 @@ mod tests {
             Kind::ClaudeSdk
         );
         assert_eq!(
-            kind_for(CliAgent::Codex, None, Kind::ClaudePty),
+            kind_for(&CliAgent::Codex, None, Kind::ClaudePty),
             Kind::Codex
         );
     }

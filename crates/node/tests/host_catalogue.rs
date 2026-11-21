@@ -673,3 +673,138 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
     kill_all(&runtime).await;
     daemon.shutdown().await.unwrap();
 }
+
+/// A host that knows one ACP agent, `mine`, run as fake-acp with the
+/// arguments the built-ins use, its sessions kept in `sessions`.
+fn with_acp_agent(host: &Host, sessions: &std::path::Path) -> node::Launch {
+    let mut launch = host.launch();
+    launch.agents = vec![node::agents::AgentProgram {
+        id: "mine".into(),
+        name: "Mine".into(),
+        command: provider_fakes::binaries::path("fake-acp")
+            .to_string_lossy()
+            .into_owned(),
+        args: vec!["agent".into(), "stdio".into()],
+        env: [(
+            provider_fakes::acp::SESSIONS_ENV.to_owned(),
+            sessions.to_string_lossy().into_owned(),
+        )]
+        .into(),
+        built_in: false,
+    }];
+    launch
+}
+
+/// An ACP agent's copy on the host comes from its `initialize` answer
+/// alone, so asking leaves no conversation in the agent's history: its
+/// version, how it reopens a conversation and no models before any
+/// conversation. The copy is kept, so a second ask runs nothing. What the
+/// host's own newest conversation with the agent published, its models and
+/// whether it was refused as signed out, fills in what `initialize` does
+/// not tell.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_showed() {
+    use prost::Message as _;
+    let host = Host::new(&Script {
+        version: Some("3.1.4".into()),
+        acp: provider_fakes::script::AcpAgent {
+            name: "Mine".into(),
+            load: true,
+            resume: false,
+            ..Default::default()
+        },
+        ..Script::default()
+    });
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let daemon = host
+        .install
+        .start("boot-1", with_acp_agent(&host, &sessions))
+        .await;
+    let runtime = runtime(&daemon, &host.install);
+    assert_eq!(
+        runtime
+            .offered_agents()
+            .iter()
+            .map(|offered| offered.program.id.as_str())
+            .collect::<Vec<_>>(),
+        ["mine"]
+    );
+
+    let copy = runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(copy.provider_version, "3.1.4");
+    let acp = copy.acp.clone().expect("what initialize said");
+    assert_eq!(acp.reopen(), wire::AcpReopen::Load);
+    assert!(copy.catalogue.models.is_empty(), "no session, no models");
+    assert!(copy.signed_in, "never signed out on a guess");
+    let sent = std::fs::read_to_string(&host.log).unwrap_or_default();
+    assert!(sent.contains("\"initialize\""), "{sent}");
+    assert!(!sent.contains("session/"), "no session was opened: {sent}");
+    assert!(
+        std::fs::read_dir(&sessions).unwrap().next().is_none(),
+        "no conversation left in the agent's history"
+    );
+    assert_eq!(runtime.agent_catalogue("mine").await.unwrap(), copy);
+    assert_eq!(
+        host.asked("\"initialize\""),
+        1,
+        "the copy answers the second ask"
+    );
+
+    // A conversation with it on this host published its catalogue and was
+    // refused as signed out.
+    let catalogue = Catalogue {
+        models: vec![wire::OfferedModel {
+            value: "mine-fast".into(),
+            ..Default::default()
+        }],
+        ..Catalogue::default()
+    };
+    let bytes = catalogue.encode_to_vec();
+    let hash = Sha256::digest(&bytes).to_vec();
+    let agent = SyntheticAgent::new(&host.install, "chatter", 1 << 20);
+    let blobs = agent.dir.join("blobs");
+    std::fs::create_dir_all(&blobs).unwrap();
+    let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
+    std::fs::write(blobs.join(hex), &bytes).unwrap();
+    let mut row = agent.row(&host.install);
+    row.kind = wire::Kind::Acp as i32;
+    row.lifecycle = wire::Lifecycle::Exited as i32;
+    row.snapshot = Some(wire::Snapshot {
+        kind: wire::Kind::Acp as i32,
+        catalogue: Some(hash),
+        at_ms: 10,
+        body: wire::AcpSnapshot {
+            agent: Some("mine".into()),
+            sign_in: Some(wire::SignIn {
+                state: wire::SignInState::SignedOut as i32,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .encode_to_vec(),
+        ..Default::default()
+    });
+    host.install.store().put_agent(&row).unwrap();
+
+    let learned = runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(
+        values(&learned.catalogue.models, |m| &m.value),
+        ["mine-fast"]
+    );
+    assert!(!learned.signed_in);
+    assert_eq!(learned.acp.unwrap().sign_in(), wire::SignInState::SignedOut);
+    assert_eq!(
+        host.asked("\"initialize\""),
+        1,
+        "learned without asking the agent"
+    );
+
+    // An agent the host does not know, or cannot find, is refused.
+    assert!(matches!(
+        runtime.agent_catalogue("theirs").await,
+        Err(node::CatalogueError::NoAgent(_))
+    ));
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

@@ -343,6 +343,104 @@ async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
     daemon.shutdown().await.unwrap();
 }
 
+/// An ACP agent is created by its agent's id: its spec names the id and
+/// starts the program the id names, found where agents are started from,
+/// with that program's arguments and environment; the agent runs its first
+/// prompt to the end of its turn. An id the host knows no program for is
+/// refused before anything starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agent_is_created_by_its_agents_id() {
+    let install = Install::new();
+    let mut launch = install.launch("reply", vec![text("hello"), wire_turn_end()]);
+    let sessions = install.path("sessions");
+    launch.agents = vec![node::agents::AgentProgram {
+        id: "mine".into(),
+        name: "Mine".into(),
+        command: provider_fakes::binaries::path("fake-acp")
+            .to_string_lossy()
+            .into_owned(),
+        args: vec!["acp".into()],
+        env: [(
+            provider_fakes::acp::SESSIONS_ENV.to_owned(),
+            sessions.to_string_lossy().into_owned(),
+        )]
+        .into(),
+        built_in: false,
+    }];
+    let daemon = install.start("boot-1", launch.clone()).await;
+    let runtime = runtime(&daemon, &install);
+    let acp = |agent: &str| wire::CreateAgentRequest {
+        agent: Some(wire::create_agent_request::Agent::Acp(
+            wire::AcpCreateConfig {
+                agent: agent.to_owned(),
+                model: None,
+                effort: None,
+                mode: Some("default".into()),
+            },
+        )),
+        ..create(&install.work, "mine-first", Some("say hello"))
+    };
+
+    let agent = runtime
+        .spawn(acp("mine"), None)
+        .await
+        .expect("the agent spawns");
+    assert_eq!(agent.kind(), wire::Kind::Acp);
+    let id = id_of(&agent);
+    let spec = spec(&install.agent_dir(id), 1);
+    assert_eq!(spec.kind(), wire::Kind::Acp);
+    assert_eq!(spec.provider, "mine");
+    assert_eq!(spec.provider_command, launch.agents[0].command);
+    assert_eq!(spec.provider_args, ["acp"]);
+    assert_eq!(
+        spec.provider_env.get(provider_fakes::acp::SESSIONS_ENV),
+        Some(&sessions.to_string_lossy().into_owned())
+    );
+    assert_eq!(
+        spec.config
+            .as_ref()
+            .and_then(|config| config.mode.as_deref()),
+        Some("default")
+    );
+    until("the reply to be committed", || async {
+        let key = key(&runtime, id);
+        let (row, said) = runtime
+            .read_store(move |store| {
+                let row = store.agent(&key).unwrap().unwrap();
+                let said = store
+                    .last_n(&key, 50)
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.text.contains("hello"));
+                (row, said)
+            })
+            .await
+            .unwrap();
+        (row.phase == Phase::Idle as i32 && said)
+            .then_some(())
+            .ok_or_else(|| format!("phase {}, said hello {said}", row.phase))
+    })
+    .await
+    .unwrap();
+
+    let unknown = runtime
+        .spawn(
+            wire::CreateAgentRequest {
+                name: Some("theirs-first".into()),
+                ..acp("theirs")
+            },
+            None,
+        )
+        .await;
+    assert!(
+        matches!(&unknown, Err(RegistryError::UnknownAgent(id)) if id == "theirs"),
+        "{unknown:?}"
+    );
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     let install = Install::new();

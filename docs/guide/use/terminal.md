@@ -315,6 +315,10 @@ enabled = ["workspaces"]   # the experiments switched on, by name
 after = "1h"               # how long an agent sits idle before it suspends
 ```
 
+Agents other than Claude and Codex, the ones amux knows and ones you add,
+are set up in the same file under `[agents.<id>]`; see
+[Other agents](other-agents.md).
+
 Switching experiments with `amux config set experiments.enabled
 '["workspaces"]'`, or by editing the file, restarts amux the same way.
 `amux config` reads and changes an experiment's settings by the same names:

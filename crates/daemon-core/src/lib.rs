@@ -141,6 +141,14 @@ pub struct StartOptions {
     /// agent this start finds gone ended with the machine, not by a fault.
     #[serde(default)]
     pub rebooted: bool,
+    /// Own agents whose conversation no new process of their program can
+    /// reopen: an ACP agent whose program offers neither to resume a
+    /// session nor to load one. Each found gone after a restart is exited,
+    /// never suspended or continued. Read by the driver when the profile
+    /// opens; the agent process itself refuses to pass a fresh
+    /// conversation off as the old one, whatever this holds.
+    #[serde(default)]
+    pub unresumable: std::collections::BTreeSet<AgentId>,
 }
 
 impl Daemon {

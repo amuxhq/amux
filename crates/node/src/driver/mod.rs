@@ -1608,6 +1608,13 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             let agent = uuid::Uuid::from_bytes(agent.0);
             match runtime.next_spec(agent, bootstrap, snapshot.as_deref()) {
                 Ok(spec) => JobResult::Spec(spec.map(Box::new)),
+                // What the caller is told as it is: the agent cannot start
+                // as it is configured now, or cannot start again at all.
+                Err(
+                    error @ (crate::runtime::RegistryError::UnknownAgent(_)
+                    | crate::runtime::RegistryError::AgentNotInstalled { .. }
+                    | crate::runtime::RegistryError::Unresumable(_)),
+                ) => JobResult::Refused(error.to_wire()),
                 Err(error) => JobResult::Failed(error.to_string()),
             }
         }

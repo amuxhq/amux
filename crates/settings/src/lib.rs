@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod edit;
 pub mod experiments;
 
@@ -451,6 +452,12 @@ pub struct InstallationConfig {
     /// The experiments switched on, and each one's own table. Read when the
     /// daemon starts; a change takes effect at the next start.
     pub experiments: experiments::ExperimentSettings,
+    /// The agent programs a person added, or built-in ones they run
+    /// differently, as `[agents.<id>]` entries. Read through
+    /// [`agents::AgentTables::read`], which skips a broken entry with a
+    /// warning.
+    #[serde(skip_serializing_if = "agents::AgentTables::is_empty")]
+    pub agents: agents::AgentTables,
     #[serde(skip)]
     pub path: Option<PathBuf>,
     /// Keys the file set that this version does not know, as dotted paths.
@@ -480,6 +487,7 @@ impl Default for InstallationConfig {
             discovery: DiscoverySettings::default(),
             agent: AgentSettings::default(),
             experiments: experiments::ExperimentSettings::default(),
+            agents: agents::AgentTables::default(),
             path: None,
             ignored: Vec::new(),
         }
@@ -504,6 +512,8 @@ impl InstallationConfig {
         // The keys under `[experiments]` are collected whole, so the ones
         // this build reads nothing from are named here.
         ignored.extend(config.experiments.ignored_keys());
+        // So is each agent's entry, so a broken one skips only itself.
+        ignored.extend(config.agents.ignored_keys());
         ignored.sort();
         config.ignored = ignored;
         config.updates()?;

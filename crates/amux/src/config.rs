@@ -189,6 +189,9 @@ pub fn edit(path: &Path) -> Result<()> {
     for name in config.experiments.unknown_names() {
         eprintln!("amux: this amux has no experiment named {name:?}, so it is ignored");
     }
+    for warning in node::agents::configured(&config).1 {
+        eprintln!("amux: {warning}");
+    }
     Ok(())
 }
 

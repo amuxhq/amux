@@ -402,3 +402,190 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// An ACP agent's row as a restart of the machine left it: live, idle, in
+/// a conversation of the program `program`, whose `initialize` answer the
+/// host's copy says reopens a session as `reopen`; and its first spec.
+fn acp_agent(
+    install: &Install,
+    name: &str,
+    program: &str,
+    reopen: wire::AcpReopen,
+) -> SyntheticAgent {
+    use prost::Message as _;
+    let agent = SyntheticAgent::new(install, name, SEGMENTS);
+    let mut row = agent.row(install);
+    row.kind = wire::Kind::Acp as i32;
+    row.phase = wire::Phase::Idle as i32;
+    row.snapshot = Some(wire::Snapshot {
+        kind: wire::Kind::Acp as i32,
+        phase: wire::Phase::Idle as i32,
+        body: wire::AcpSnapshot {
+            agent: Some(program.to_owned()),
+            session_id: Some(format!("{name}-session")),
+            ..Default::default()
+        }
+        .encode_to_vec(),
+        ..Default::default()
+    });
+    install.store().put_agent(&row).unwrap();
+    let spec = wire::AgentSpec {
+        agent_id: agent.id.as_bytes().to_vec(),
+        kind: wire::Kind::Acp as i32,
+        provider: program.to_owned(),
+        cwd: agent.dir.to_string_lossy().into_owned(),
+        name: name.to_owned(),
+        incarnation: 1,
+        ..Default::default()
+    };
+    std::fs::write(agent.dir.join("spec.1"), spec.encode_to_vec()).unwrap();
+    let copy = wire::ProviderOffer {
+        acp: Some(wire::AcpOffer {
+            reopen: reopen as i32,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let providers = install.profile_dir().join("providers");
+    std::fs::create_dir_all(&providers).unwrap();
+    std::fs::write(providers.join(program), copy.encode_to_vec()).unwrap();
+    agent
+}
+
+/// An ACP agent whose program can reopen no conversation never suspends:
+/// found gone after the machine restarted, it is exited for good, while one
+/// whose program resumes its sessions is suspended as any other; and a
+/// resume of the one that ended is refused, saying why, rather than started
+/// on a fresh conversation.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agent_that_cannot_reopen_its_conversation_ends_with_the_machine() {
+    let install = Install::new();
+    let daemon = install.start("boot-1", suspending()).await;
+    daemon.shutdown().await.unwrap();
+    let lonely = acp_agent(&install, "lonely", "forgetful", wire::AcpReopen::None);
+    let sleeper = acp_agent(&install, "sleeper", "mindful", wire::AcpReopen::Resume);
+
+    let daemon = install.start("boot-2", suspending()).await;
+    let runtime = runtime(&daemon, &install);
+    let ended = row(&install, &lonely);
+    assert_eq!(
+        (ended.lifecycle, ended.exit_cause),
+        (Lifecycle::Exited as i32, ExitCause::EndedWhileAway as i32),
+        "it cannot be suspended"
+    );
+    let suspended = row(&install, &sleeper);
+    assert_eq!(
+        (suspended.lifecycle, suspended.exit_cause),
+        (Lifecycle::Live as i32, ExitCause::Suspended as i32),
+        "it can"
+    );
+
+    let id = lonely.id;
+    let refused = runtime.resume(id, None).await.unwrap_err();
+    assert!(
+        refused
+            .to_string()
+            .contains("cannot reopen its conversation"),
+        "{refused}"
+    );
+    assert_eq!(row(&install, &lonely).lifecycle, Lifecycle::Exited as i32);
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A program for an ACP agent: fake-acp playing a reply, offering to reopen
+/// its sessions by `session/resume` or not at all.
+fn acp_program(install: &Install, id: &str, resumes: bool) -> node::agents::AgentProgram {
+    use provider_fakes::script::{AcpAgent, SCRIPT_ENV, Script, Step};
+    let script = install.path(&format!("{id}.json"));
+    let played = Script {
+        steps: vec![
+            Step::Text {
+                chunks: vec!["hello".to_owned()],
+            },
+            Step::TurnEnd,
+        ],
+        acp: AcpAgent {
+            resume: resumes,
+            load: false,
+            ..AcpAgent::default()
+        },
+        ..Script::default()
+    };
+    std::fs::write(&script, serde_json::to_string(&played).unwrap()).unwrap();
+    node::agents::AgentProgram {
+        id: id.to_owned(),
+        name: id.to_owned(),
+        command: provider_fakes::binaries::path("fake-acp")
+            .to_string_lossy()
+            .into_owned(),
+        args: vec!["acp".into()],
+        env: [
+            (SCRIPT_ENV.to_owned(), script.to_string_lossy().into_owned()),
+            (
+                provider_fakes::acp::SESSIONS_ENV.to_owned(),
+                install.path("sessions").to_string_lossy().into_owned(),
+            ),
+        ]
+        .into(),
+        built_in: false,
+    }
+}
+
+/// Suspension is decided by the agent process from what its interpreter
+/// holds: an ACP agent whose program cannot reopen its conversation holds
+/// it, so it never suspends however long it sits idle, while one whose
+/// program resumes sessions suspends after the same wait.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acp_agent_that_cannot_reopen_its_conversation_never_suspends() {
+    let install = Install::new();
+    let mut launch = install.launch("unused", Vec::new());
+    launch.experiments = settings::experiments::Enabled::of(&[&settings::experiments::SUSPENSION]);
+    launch.suspension.after = Duration::from_millis(300);
+    launch.agents = vec![
+        acp_program(&install, "keeper", true),
+        acp_program(&install, "forgetter", false),
+    ];
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let create = |agent: &str| wire::CreateAgentRequest {
+        agent: Some(wire::create_agent_request::Agent::Acp(
+            wire::AcpCreateConfig {
+                agent: agent.to_owned(),
+                ..Default::default()
+            },
+        )),
+        ..create(&install.work, &format!("{agent}-one"), Some("say hello"))
+    };
+    let keeper = runtime.spawn(create("keeper"), None).await.unwrap();
+    let forgetter = runtime.spawn(create("forgetter"), None).await.unwrap();
+    let key =
+        |agent: &wire::Agent| store::AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+    let row = |agent: &wire::Agent| install.store().agent(&key(agent)).unwrap().unwrap();
+
+    until("the agent that reopens to suspend", || async {
+        let row = row(&keeper);
+        (row.exit_cause == ExitCause::Suspended as i32)
+            .then_some(())
+            .ok_or_else(|| format!("{row:?}"))
+    })
+    .await
+    .unwrap();
+    // Past its own wait several times over, whenever its stretch began.
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    let held = row(&forgetter);
+    assert_eq!(
+        (held.lifecycle, held.exit_cause, held.phase),
+        (
+            Lifecycle::Live as i32,
+            ExitCause::Unspecified as i32,
+            wire::Phase::Idle as i32
+        ),
+        "idle as long, and still running"
+    );
+    let id = uuid::Uuid::from_slice(&forgetter.agent_id).unwrap();
+    assert!(runtime.hello(id).is_some(), "its process still runs");
+    support::kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

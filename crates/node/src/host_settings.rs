@@ -246,11 +246,14 @@ impl HostSettings {
                     "new_agent.codex.effort",
                     new_agent.codex,
                 ),
-                _ => (
+                wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => (
                     "new_agent.claude.model",
                     "new_agent.claude.effort",
                     new_agent.claude,
                 ),
+                // The settings keep no pick by an ACP agent's id, and a pick
+                // never kept is never offered here (`Picked::worth_keeping`).
+                wire::Kind::Acp | wire::Kind::Unspecified => return Ok(None),
             }
         };
         let mut changes: Vec<Change> = Vec::new();

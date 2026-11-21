@@ -18,6 +18,7 @@ people will notice updates the page that describes it.
 - **Use:** [Terminal app](guide/use/terminal.md),
   [iPhone app](guide/use/iphone.md),
   [Agents working together](guide/use/agents-working-together.md),
+  [Other agents](guide/use/other-agents.md),
   [Running amux on a server](guide/use/server.md),
   [Updates and channels](guide/use/updates.md),
   [Troubleshooting](guide/use/troubleshooting.md).

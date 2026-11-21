@@ -313,6 +313,10 @@ pub enum Refusal {
     /// saying why: it has no process or directory of its own and goes with
     /// the agent that runs it.
     Subagent(String),
+    /// The driver refused to build the next spec, in its own words to the
+    /// caller: the agent's program is no longer configured or installed,
+    /// or its conversation cannot be reopened.
+    Spec(wire::Error),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -1750,10 +1754,18 @@ impl Daemon {
         }
         // The provider's own end can come first in a shutdown, its journal
         // then saying it was signalled, or that it quit as it was asked to:
-        // with the machine restarted since, that is the shutdown.
+        // with the machine restarted since, that is the shutdown. An agent
+        // whose conversation no new process can reopen ended for good with
+        // it, as any end of its process does: suspending it would offer a
+        // resume that cannot happen.
+        let reopens = |row: &AgentRow| {
+            AgentId::from_slice(&row.agent.agent)
+                .is_none_or(|agent| !self.options.unresumable.contains(&agent))
+        };
         if restarted
             && let Some(row) = live
             && shutdown_like(row)
+            && reopens(row)
         {
             // A provider subagent still running is its work under way, as
             // a turn is.
@@ -1974,6 +1986,10 @@ impl Daemon {
                     Ok(doing) => self.set_doing(agent, doing),
                     Err(refusal) => self.finish(agent, Err(refusal), out),
                 },
+                JobResult::Refused(error) => self.finish(agent, Err(Refusal::Spec(error)), out),
+                JobResult::Failed(words) => {
+                    self.finish(agent, Err(Refusal::CouldNotStart(words)), out)
+                }
                 other => self.finish(
                     agent,
                     Err(Refusal::CouldNotStart(format!("{other:?}"))),
@@ -3401,6 +3417,84 @@ mod tests {
                 "the continue keeps the run"
             );
         }
+    }
+
+    /// An agent whose conversation no new process can reopen ends for good
+    /// with the machine: found gone after the restart, idle or in its turn,
+    /// it is exited as ended while away, neither suspended nor continued,
+    /// while one that can reopen beside it is suspended as ever.
+    #[test]
+    fn after_a_reboot_an_agent_that_cannot_reopen_its_conversation_is_exited() {
+        const IDLE: AgentId = AgentId(*b"idle-00000000000");
+        const BUSY: AgentId = AgentId(*b"busy-00000000000");
+        let mut rig = suspension_rig(true);
+        rig.daemon.options.unresumable = [IDLE, BUSY].into();
+        rig.left(PARENT, wire::Phase::Idle, ExitCause::Unspecified);
+        rig.left(IDLE, wire::Phase::Idle, ExitCause::Unspecified);
+        rig.left(BUSY, wire::Phase::Working, ExitCause::Unspecified);
+        for agent in [PARENT, IDLE, BUSY] {
+            let out = rig.step(Input::ControlClosed {
+                agent,
+                ended: Ended::Away,
+            });
+            assert!(
+                agent == PARENT || job_of(&out).is_none(),
+                "nothing resumes {agent:?}: {out:?}"
+            );
+        }
+        rig.step(Input::Swept);
+        let row = rig.row(PARENT).unwrap();
+        assert_eq!(
+            (row.lifecycle, row.exit_cause),
+            (Lifecycle::Live as i32, ExitCause::Suspended as i32),
+            "one that reopens is suspended"
+        );
+        for agent in [IDLE, BUSY] {
+            let row = rig.row(agent).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause),
+                (Lifecycle::Exited as i32, ExitCause::EndedWhileAway as i32),
+                "{agent:?}"
+            );
+        }
+    }
+
+    /// A resume whose next spec the driver refuses, as it refuses one for
+    /// an agent that cannot reopen its conversation, answers the caller in
+    /// the driver's own words and leaves the row exited as it was.
+    #[test]
+    fn a_resume_whose_spec_is_refused_says_why_in_the_drivers_words() {
+        let mut rig = suspension_rig(false);
+        rig.left(PARENT, wire::Phase::Idle, ExitCause::ProviderExited);
+        let mut row = rig.row(PARENT).unwrap();
+        row.lifecycle = Lifecycle::Exited as i32;
+        rig.daemon.store.put_agent(&row).unwrap();
+        let (call, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
+            agent: PARENT,
+            bootstrap: None,
+            if_suspended: false,
+        })));
+        let Some((unlock, Job::AwaitUnlocked { .. })) = job_of(&out) else {
+            panic!("the resume waits for the directory: {out:?}");
+        };
+        let unlocked = rig.step(Input::JobDone {
+            job: unlock,
+            result: JobResult::Done,
+        });
+        let Some((spec, Job::NextSpec { .. })) = job_of(&unlocked) else {
+            panic!("the spec is asked for: {unlocked:?}");
+        };
+        let refused = wire::Error {
+            code: wire::ErrorCode::FailedPrecondition as i32,
+            message: "it cannot reopen its conversation".into(),
+            details: Vec::new(),
+        };
+        let out = rig.step(Input::JobDone {
+            job: spec,
+            result: JobResult::Refused(refused.clone()),
+        });
+        assert_eq!(refusal_of(&out, call), Some(Refusal::Spec(refused)));
+        assert_eq!(rig.row(PARENT).unwrap().lifecycle, Lifecycle::Exited as i32);
     }
 
     /// A stop the person asks for while the start is still reading the

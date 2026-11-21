@@ -49,7 +49,7 @@ final class AcpLiveWalk: XCTestCase {
             extra: """
                 [agents.\(agent)]
                 command = "\(program)"
-                env = { HOME = "\(home)", PATH = "\(path)" }
+                env = { HOME = "\(home)", PATH = "\(path)"\(command.asking) }
 
                 """)
         self.daemon = daemon
@@ -134,13 +134,21 @@ final class AcpLiveWalk: XCTestCase {
     private struct BuiltIn {
         let program: String
         let name: String
+        /// More of its environment, as TOML inline-table entries, that makes
+        /// it ask before it runs a command, for this process alone.
+        var asking = ""
     }
 
     /// The built-ins by id: the program a person has installed and the name
-    /// the host gives the agent.
+    /// the host gives the agent. OpenCode's own default runs commands
+    /// unasked; the configuration it is handed in its environment is laid
+    /// over its files, which are left as they are. Grok asks only as its own
+    /// settings say, so where they never ask this walk waits in vain.
     private static let builtIns: [String: BuiltIn] = [
         "antigravity": BuiltIn(program: "agy", name: "Antigravity"),
-        "opencode": BuiltIn(program: "opencode", name: "OpenCode"),
+        "opencode": BuiltIn(
+            program: "opencode", name: "OpenCode",
+            asking: #", OPENCODE_CONFIG_CONTENT = '{"permission":{"bash":"ask","edit":"ask"}}'"#),
         "grok": BuiltIn(program: "grok", name: "Grok"),
     ]
 

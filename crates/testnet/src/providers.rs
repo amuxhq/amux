@@ -327,8 +327,11 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
     let acp = format!(
         "{}{}{}{}",
         header("acp"),
+        // An agent the topology configures with a script of its own is the
+        // fake playing it, on a real host too: there is no real ACP agent
+        // behind this command to fall back on.
         format_args!(
-            "if [ -n \"${{{AGENT_SCRIPT_ENV}:-}}\" ]; then script=${AGENT_SCRIPT_ENV} input=${{{AGENT_SCRIPT_ENV}%.json}}.input; fi\n"
+            "if [ -n \"${{{AGENT_SCRIPT_ENV}:-}}\" ]; then script=${AGENT_SCRIPT_ENV} input=${{{AGENT_SCRIPT_ENV}%.json}}.input provider=fake; fi\n"
         ),
         real_branch("ACP", None, ""),
         fake_tail(&format!(
@@ -404,6 +407,45 @@ mod tests {
                 "-p",
                 "hi"
             ]
+        );
+    }
+
+    /// A configured ACP agent's script makes the command the fake that
+    /// plays it, even on a host whose agents default to the real ones.
+    #[test]
+    fn a_configured_acp_script_plays_on_a_real_host() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let fakes = dir.path().join("fakes");
+        std::fs::create_dir_all(&fakes).expect("fakes");
+        let fake = fakes.join(provider_fakes::Kind::Acp.binary_name());
+        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' \"${SCRIPT_ENV}\"\n"))
+            .expect("the fake");
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("mode");
+        let host = dir.path().join("host");
+        let commands = write(&Wrappers {
+            host: "studio",
+            dir: &host,
+            default: Provider::Real,
+            choices: &dir.path().join("choices"),
+            recordings: &dir.path().join("recordings"),
+            real: None,
+            fakes: &fakes,
+            host_script: None,
+        })
+        .expect("the wrappers");
+        let output = std::process::Command::new(&commands.acp)
+            .env(AGENT_SCRIPT_ENV, "/scripts/helper.json")
+            .output()
+            .expect("the command runs");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "/scripts/helper.json"
         );
     }
 

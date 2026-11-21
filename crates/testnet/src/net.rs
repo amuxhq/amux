@@ -10,7 +10,7 @@
 //! [`Net::rewind_host`] is power loss, the store and journals back to what
 //! reached the drive and the machine up under a new boot id.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
@@ -1163,14 +1163,13 @@ impl Net {
             tracing::warn!(%host, "acp-probe is not built; the real host offers no built-in ACP agents");
             return Vec::new();
         }
-        let path = std::env::var_os("PATH").unwrap_or_default();
         let (built_ins, _) = node::agents::programs(&[]);
         built_ins
             .into_iter()
             .filter_map(|program| {
-                let real = std::env::split_paths(&path)
-                    .map(|dir| dir.join(&program.command))
-                    .find(|candidate| candidate.is_file())?;
+                // Looked up as a daemon looks it up: runnable, and an
+                // absolute path, as the probe starts it from elsewhere.
+                let real = program.find(&HashMap::new())?;
                 let mut args = vec!["--".to_owned(), real.to_string_lossy().into_owned()];
                 args.extend(program.args.iter().cloned());
                 let capture = self.recordings.join(host).join(&program.id);
@@ -1734,13 +1733,18 @@ impl Net {
             built_in: false,
         }];
         if let Ok(config) = settings::InstallationConfig::from_file(&own.info.config) {
+            let read = config.agents.read();
+            let declared: BTreeSet<String> =
+                read.entries.iter().map(|entry| entry.id.clone()).collect();
             let (added, warnings) = node::agents::configured(&config);
             for warning in warnings {
                 tracing::warn!(host = %host.name, "{warning}");
             }
-            launch
-                .agents
-                .extend(added.into_iter().filter(|program| !program.built_in));
+            launch.agents.extend(
+                added
+                    .into_iter()
+                    .filter(|program| offered_from_config(program, &declared)),
+            );
         }
         if own.decl.provider == Provider::Real {
             // A real host's `acp` command has no real agent behind it, so
@@ -1748,7 +1752,18 @@ impl Net {
             launch
                 .agents
                 .retain(|program| program.id != providers::FAKE_ACP_AGENT);
-            launch.agents.extend(self.machine_agents(&host.name));
+            // An id the topology configures stays as configured.
+            let machine: Vec<_> = self
+                .machine_agents(&host.name)
+                .into_iter()
+                .filter(|program| {
+                    !launch
+                        .agents
+                        .iter()
+                        .any(|configured| configured.id == program.id)
+                })
+                .collect();
+            launch.agents.extend(machine);
         }
         launch.agent.grace_secs = AGENT_GRACE_SECS;
         launch.agent.drain_secs = 5;
@@ -4260,5 +4275,40 @@ fn loopback(decl: &HostDecl) -> std::net::IpAddr {
         std::net::Ipv6Addr::LOCALHOST.into()
     } else {
         std::net::Ipv4Addr::LOCALHOST.into()
+    }
+}
+
+/// Whether a host offers `program`, read from its config: an agent the
+/// config adds, or a built-in whose id the config declares, as a topology
+/// does to play its own script under a built-in's id. A built-in the config
+/// leaves alone is whatever this machine has installed, which a net does
+/// not run from here.
+fn offered_from_config(program: &node::agents::AgentProgram, declared: &BTreeSet<String>) -> bool {
+    !program.built_in || declared.contains(&program.id)
+}
+
+#[cfg(test)]
+mod config_agent_tests {
+    use super::*;
+
+    #[test]
+    fn a_built_in_id_the_config_declares_is_kept_and_the_rest_are_left_out() {
+        let (programs, _) = node::agents::programs(&[]);
+        let declared = BTreeSet::from(["opencode".to_owned()]);
+        let kept: Vec<&str> = programs
+            .iter()
+            .filter(|program| offered_from_config(program, &declared))
+            .map(|program| program.id.as_str())
+            .collect();
+        assert_eq!(kept, ["opencode"]);
+        let added = node::agents::AgentProgram {
+            id: "helper".to_owned(),
+            name: "Helper".to_owned(),
+            command: "/bin/true".to_owned(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            built_in: false,
+        };
+        assert!(offered_from_config(&added, &BTreeSet::new()));
     }
 }

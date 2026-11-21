@@ -156,7 +156,7 @@ object ChatComposerTags {
     const val ATTACHING: String = "chat.attaching"
     const val CONTROLS_STRIP: String = "chat.controls"
     const val MODEL_CHIP: String = "chat.model"
-    const val OVERVIEW_CHIP: String = "chat.overview"
+    const val OVERVIEW_CHIP: String = "chat.composer.overview"
     const val ATTACH_BUTTON: String = "chat.attach"
     const val ATTACH_MENU_PHOTO: String = "chat.attach.photo"
     const val ATTACH_MENU_FILE: String = "chat.attach.file"
@@ -1096,7 +1096,7 @@ private fun ComposerPrimaryControl(
 
     when {
         state.composer.mode is Composer.Resume -> {
-            val enabled = state.canResume && state.hasDraft
+            val enabled = state.canResume
             val resumeLabel = stringResource(R.string.chat_composer_resume)
             Button(
                 onClick = callbacks.onResume,

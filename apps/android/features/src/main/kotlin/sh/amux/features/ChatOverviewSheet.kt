@@ -89,6 +89,9 @@ data class ChatSubjectUi(
 data class ChatOverviewState(
     val subject: ChatSubjectUi,
     val overview: Overview? = null,
+    val changesComparison: Comparison? = null,
+    val changesLoading: Boolean = false,
+    val changesError: String? = null,
     val context: ContextView? = null,
     val comparisons: List<Comparison> = listOf(Comparison.Uncommitted),
     val comparison: Comparison = Comparison.Uncommitted,
@@ -101,6 +104,7 @@ data class ChatOverviewState(
 sealed interface ChatOverviewAction {
     data class StopJob(val key: String) : ChatOverviewAction
     data class SelectComparison(val comparison: Comparison) : ChatOverviewAction
+    data object RetryChanges : ChatOverviewAction
     data class OpenReview(val filePath: String? = null) : ChatOverviewAction
     data object Dismiss : ChatOverviewAction
 }
@@ -189,11 +193,15 @@ fun ChatOverviewSheetContent(
 
         OverviewChangesSection(
             changes = overview?.changes,
+            changesComparison = state.changesComparison,
+            changesLoading = state.changesLoading,
+            changesError = state.changesError,
             totals = state.changeTotals,
             comparisons = state.comparisons,
             comparison = state.comparison,
             baseBranch = state.baseBranch,
             onSelectComparison = { onAction(ChatOverviewAction.SelectComparison(it)) },
+            onRetryChanges = { onAction(ChatOverviewAction.RetryChanges) },
             onOpenReview = { path -> onAction(ChatOverviewAction.OpenReview(path)) },
         )
     }
@@ -716,15 +724,25 @@ internal fun ContextMeterBlock(
 @Composable
 private fun OverviewChangesSection(
     changes: Changes?,
+    changesComparison: Comparison?,
+    changesLoading: Boolean,
+    changesError: String?,
     totals: ChangeTotals?,
     comparisons: List<Comparison>,
     comparison: Comparison,
     baseBranch: String?,
     onSelectComparison: (Comparison) -> Unit,
+    onRetryChanges: () -> Unit,
     onOpenReview: (String?) -> Unit,
 ) {
     val colors = AmuxTheme.colors
-    val displayTotals = changes?.totals ?: totals
+    val comparisonMatches = changesComparison == null || changesComparison == comparison
+    val matchedChanges = if (!changesLoading && changesError == null && comparisonMatches) {
+        changes
+    } else {
+        null
+    }
+    val displayTotals = matchedChanges?.totals ?: totals
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -773,14 +791,51 @@ private fun OverviewChangesSection(
             }
         }
 
-        if (changes != null && changes.totals.files > 0) {
+        if (changesError != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Space.margin)
+                    .testTag(AskReviewTags.OVERVIEW_CHANGES_ERROR),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
+                Text(
+                    text = stringResource(R.string.overview_changes_failed, changesError),
+                    style = AmuxTheme.typography.detail,
+                    color = colors.accent,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = onRetryChanges,
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(AskReviewTags.OVERVIEW_CHANGES_RETRY),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_retry),
+                        style = AmuxTheme.typography.bodyEmphasis,
+                        color = colors.ink,
+                    )
+                }
+            }
+        } else if (changesLoading || (changes != null && !comparisonMatches)) {
+            Text(
+                text = stringResource(R.string.overview_changes_listing),
+                style = AmuxTheme.typography.detail,
+                color = colors.inkFaint,
+                modifier = Modifier
+                    .padding(horizontal = Space.margin)
+                    .testTag(AskReviewTags.OVERVIEW_CHANGES_LOADING),
+            )
+        } else if (matchedChanges != null && matchedChanges.totals.files > 0) {
             AmuxPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Space.margin),
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    changes.folders.forEachIndexed { folderIndex, folder ->
+                    matchedChanges.folders.forEachIndexed { folderIndex, folder ->
                         if (folderIndex > 0) AmuxHairline()
                         OverviewFolderGroup(
                             folder = folder,
@@ -803,7 +858,7 @@ private fun OverviewChangesSection(
                 )
             }
         } else {
-            val emptyMessage = if (changes == null && totals != null) {
+            val emptyMessage = if (matchedChanges == null && totals != null) {
                 stringResource(R.string.overview_changes_listing)
             } else {
                 stringResource(R.string.overview_changes_none)

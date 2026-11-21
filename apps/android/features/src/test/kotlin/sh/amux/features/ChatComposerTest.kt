@@ -140,7 +140,32 @@ class ChatComposerTest {
     }
 
     @Test
-    fun resumeModeRequiresDraftAndDispatchesOnResume() {
+    fun resumeModeAllowsEmptyDraftAndDraftAndDispatchesOnResume() {
+        var resumeCount = 0
+        val emptyState = ChatComposerState(
+            composer = ComposerView(mode = Composer.Resume, switchedAway = false),
+            phase = PhaseView.Exited(ExitCause.Finished),
+            draft = "",
+            canResume = true,
+            host = "desk",
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatComposer(
+                    state = emptyState,
+                    callbacks = ChatComposerCallbacks(onResume = { resumeCount += 1 }),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(ChatComposerTags.EXITED_HEAD).assertIsDisplayed()
+        composeRule.onNodeWithTag(ChatComposerTags.RESUME_BUTTON).assertIsEnabled().performClick()
+        assertEquals(1, resumeCount)
+    }
+
+    @Test
+    fun resumeModeWithDraftDispatchesOnResume() {
         var resumed = false
         val state = ChatComposerState(
             composer = ComposerView(mode = Composer.Resume, switchedAway = false),

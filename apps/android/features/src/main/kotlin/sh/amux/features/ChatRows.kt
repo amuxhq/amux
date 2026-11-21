@@ -176,13 +176,17 @@ private object RowGridMetrics {
 /**
  * Renders one chat [Row] according to the shared chat vocabulary.
  *
- * Returns early when [Row.collapsed] is true or [Row.kind] is [RowKind.Hidden].
+ * Returns early when [shown] is false (defaults to `!row.collapsed`) or
+ * [Row.kind] is [RowKind.Hidden]. Callers that evaluate subagent-parent
+ * expansion (via `ChatRowSource.shows`) pass `shown = true` so expanded
+ * child steps render.
  */
 @Composable
 fun ChatRowView(
     row: Row,
     modifier: Modifier = Modifier,
     expanded: Boolean = false,
+    shown: Boolean = !row.collapsed,
     rail: RailJoin = RailJoin.NONE,
     placement: RunPlacement = RunPlacement.Own,
     openedAgents: Map<List<Int>, OpenedAgent> = emptyMap(),
@@ -191,7 +195,7 @@ fun ChatRowView(
     imageBytes: (BlobRef) -> ByteArray? = { null },
     callbacks: ChatRowCallbacks = ChatRowCallbacks(),
 ) {
-    if (row.collapsed || row.kind is RowKind.Hidden) return
+    if (!shown || row.kind is RowKind.Hidden) return
 
     Box(
         modifier = modifier
@@ -1690,6 +1694,7 @@ private fun AskRowView(
                     ask.server,
                 )
             }
+            val fieldsSummary = ask.fields.takeIf { it.isNotEmpty() }?.joinToString(", ")
             GridRow(
                 kindTag = "form",
                 glyph = Icons.Outlined.Checklist,
@@ -1697,6 +1702,7 @@ private fun AskRowView(
                 rail = rail,
                 verb = verb,
                 subject = if (ask.resolution == Resolution.Answered) ask.server else "",
+                meta = if (fieldsSummary != null) RowMeta(fieldsSummary) else RowMeta(),
                 detail = if (expanded && ask.message.isNotEmpty()) ask.message else null,
                 detailMono = false,
                 opens = ask.message.isNotEmpty(),

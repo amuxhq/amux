@@ -205,4 +205,50 @@ class ChatOverviewSheetTest {
 
         composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_STRIP).assertDoesNotExist()
     }
+
+    @Test
+    fun mismatchedComparisonHidesStaleFilesAndErrorOffersRetry() {
+        val actions = mutableListOf<ChatOverviewAction>()
+        val mismatched = sampleState().copy(
+            comparison = Comparison.OnBranch,
+            changesComparison = Comparison.Uncommitted,
+            changesLoading = true,
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatOverviewSheetContent(
+                    state = mismatched,
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_CHANGES_LOADING).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.overviewFile("src/auth/token.rs")).assertDoesNotExist()
+    }
+
+    @Test
+    fun failedFileListingShowsErrorAndEmitsRetry() {
+        val actions = mutableListOf<ChatOverviewAction>()
+        val failed = sampleState().copy(
+            comparison = Comparison.OnBranch,
+            changesComparison = Comparison.Uncommitted,
+            changesLoading = false,
+            changesError = "host away",
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatOverviewSheetContent(
+                    state = failed,
+                    onAction = { actions += it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_CHANGES_ERROR).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_CHANGES_RETRY).performScrollTo().performClick()
+        assertEquals(listOf(ChatOverviewAction.RetryChanges), actions)
+    }
 }

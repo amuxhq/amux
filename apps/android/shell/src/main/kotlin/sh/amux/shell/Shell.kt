@@ -766,6 +766,7 @@ private fun ChangesRouteContent(
         onAction = { action ->
             when (action) {
                 ReviewPageAction.Back -> router.pop()
+                ReviewPageAction.Retry -> Unit
                 is ReviewPageAction.SelectComparison -> {
                     model.compare(action.comparison)
                     coroutineScope.launch {

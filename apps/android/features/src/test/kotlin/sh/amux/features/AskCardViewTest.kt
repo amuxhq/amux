@@ -1,6 +1,19 @@
 package sh.amux.features
 
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -57,6 +70,7 @@ class AskCardViewTest {
         questionNote: Boolean = false,
         questionSkip: Boolean = false,
         questionReply: Boolean = false,
+        stopsTurn: Boolean = true,
     ): AskCard = AskCard(
         kind = Kind.ClaudeSdk,
         key = "ask-1",
@@ -68,7 +82,7 @@ class AskCardViewTest {
         questionNote = questionNote,
         questionSkip = questionSkip,
         questionReply = questionReply,
-        stopsTurn = true,
+        stopsTurn = stopsTurn,
         defaultToNo = false,
         state = state,
     )
@@ -119,11 +133,11 @@ class AskCardViewTest {
 
         // Allow primary choice
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
-        assertEquals(AskAction.Choose(0, null), actions.last())
+        assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
 
         // Always allow scope row
         composeRule.onNodeWithTag(AskReviewTags.askChoice(1)).performClick()
-        assertEquals(AskAction.Choose(1, null), actions.last())
+        assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
 
         // Deny with note flow
         composeRule.onNodeWithTag(AskReviewTags.ASK_DENY).performClick()
@@ -132,7 +146,7 @@ class AskCardViewTest {
             it(AnnotatedString("Run only unit tests"))
         }
         composeRule.onNodeWithTag(AskReviewTags.askChoice(2)).performClick()
-        assertEquals(AskAction.Choose(2, "Run only unit tests"), actions.last())
+        assertEquals(AskAction.Choose(2, "Run only unit tests", askKey = "ask-1"), actions.last())
 
         // Overflow menu interrupt escape
         composeRule.onNodeWithTag(AskReviewTags.ASK_MORE).performClick()
@@ -173,7 +187,7 @@ class AskCardViewTest {
         composeRule.onNodeWithText("⋯").assertIsDisplayed()
         composeRule.onNodeWithText("let next = 2;").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
-        assertEquals(AskAction.Choose(0, null), actions.last())
+        assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
     }
 
     @Test
@@ -207,7 +221,7 @@ class AskCardViewTest {
         composeRule.onNodeWithText("RECOMMENDED").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.askOption(0)).performClick()
         assertEquals(
-            AskAction.Respond(listOf(QuestionResponse(note = null, other = null, picked = listOf(0)))),
+            AskAction.Respond(listOf(QuestionResponse(note = null, other = null, picked = listOf(0))), askKey = "ask-1"),
             actions.last(),
         )
     }
@@ -248,7 +262,7 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_NEXT).performClick()
 
         assertEquals(
-            AskAction.Respond(listOf(QuestionResponse(note = null, other = "Linux", picked = listOf(0)))),
+            AskAction.Respond(listOf(QuestionResponse(note = null, other = "Linux", picked = listOf(0))), askKey = "ask-1"),
             actions.last(),
         )
     }
@@ -301,6 +315,7 @@ class AskCardViewTest {
                     QuestionResponse(note = null, other = null, picked = listOf(0)),
                     QuestionResponse(note = null, other = null, picked = emptyList()),
                 ),
+                askKey = "ask-1",
             ),
             actions.last(),
         )
@@ -332,7 +347,7 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_SWITCH).performClick()
         composeRule.onNodeWithText("Yes, and switch to auto").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.ASK_PLAN_APPROVE).performClick()
-        assertEquals(AskAction.Choose(1, null), actions.last())
+        assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
 
         // Send back requires a note
         composeRule.onNodeWithTag(AskReviewTags.askChoice(2)).performClick()
@@ -341,7 +356,7 @@ class AskCardViewTest {
             it(AnnotatedString("Keep the existing schema"))
         }
         composeRule.onNodeWithTag(AskReviewTags.askChoice(2)).assertIsEnabled().performClick()
-        assertEquals(AskAction.Choose(2, "Keep the existing schema"), actions.last())
+        assertEquals(AskAction.Choose(2, "Keep the existing schema", askKey = "ask-1"), actions.last())
     }
 
     @Test
@@ -400,7 +415,7 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_SUBMIT).assertIsEnabled().performClick()
 
         assertEquals(
-            AskAction.Submit(listOf(FormValue.Text("3"), FormValue.Toggle(true))),
+            AskAction.Submit(listOf(FormValue.Text("3"), FormValue.Toggle(true)), askKey = "ask-1"),
             actions.last(),
         )
         assertEquals(listOf(FieldProblem.NotANumber), validateFormFields(fields, listOf(FormValue.Text("x"), FormValue.Toggle(false))).map { it.problem })
@@ -430,7 +445,7 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_LINK_OPEN).performClick()
         assertEquals(AskAction.OpenUrl("https://github.com/login/device"), actions.last())
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
-        assertEquals(AskAction.Choose(0, null), actions.last())
+        assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
     }
 
     @Test
@@ -461,7 +476,7 @@ class AskCardViewTest {
         composeRule.onNodeWithText("/var/cache").assertIsDisplayed()
         composeRule.onNodeWithText("crates.io").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_SESSION).performClick()
-        assertEquals(AskAction.Choose(1, null), actions.last())
+        assertEquals(AskAction.Choose(1, null, askKey = "ask-1"), actions.last())
     }
 
     @Test
@@ -537,7 +552,7 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_REJECTED).assertIsDisplayed()
         composeRule.onNodeWithText("Not sent · its host is away").assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
-        assertEquals(AskAction.Choose(0, null), actions.last())
+        assertEquals(AskAction.Choose(0, null, askKey = "ask-1"), actions.last())
     }
 
     @Test
@@ -575,7 +590,7 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.askOption(0)).performClick()
         composeRule.onNodeWithTag(AskReviewTags.ASK_NEXT).performClick()
         assertEquals(
-            AskAction.Respond(listOf(QuestionResponse(note = "Use staging key", other = null, picked = listOf(0)))),
+            AskAction.Respond(listOf(QuestionResponse(note = "Use staging key", other = null, picked = listOf(0))), askKey = "ask-1"),
             actions.last(),
         )
 
@@ -587,22 +602,207 @@ class AskCardViewTest {
         composeRule.onNodeWithTag(AskReviewTags.ASK_REPLY_SEND).performClick()
         assertTrue(actions.last() is AskAction.Reply)
         assertEquals("Let me rotate the key first", (actions.last() as AskAction.Reply).text)
+        assertEquals("ask-1", (actions.last() as AskAction.Reply).askKey)
     }
 
     @Test
     fun dismissedStateAndLocalLinkRenderAppropriately() {
-        val dismissedCard = card(
-            body = AskBody.Command("ls", "", "", ""),
-            choices = listOf(Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false)),
-            state = CardState.Dismissed,
+        var activeCard by mutableStateOf(
+            card(
+                body = AskBody.Command("ls", "", "", ""),
+                choices = listOf(Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false)),
+                state = CardState.Dismissed,
+            ),
         )
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
-                AskCardView(card = dismissedCard, onAction = {})
+                AskCardView(card = activeCard, onAction = {})
             }
         }
 
         composeRule.onNodeWithTag(AskReviewTags.ASK_DISMISSED).assertIsDisplayed()
         composeRule.onNodeWithTag(AskReviewTags.ASK_SUBJECT).assertDoesNotExist()
+
+        // Local-page Link ask hides Open Link button and shows local-computer notice.
+        activeCard = card(
+            body = AskBody.Link(
+                server = "oauth",
+                message = "Finish sign-in",
+                url = "http://127.0.0.1:4000/auth",
+                localPage = true,
+            ),
+            choices = listOf(
+                Choice(ChoiceOutcome.OpenLink, primary = true, takesNote = false),
+                Choice(ChoiceOutcome.Decline, primary = false, takesNote = false),
+            ),
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_LINK_OPEN).assertDoesNotExist()
+        composeRule.onNodeWithText("This page is on the agent’s computer. Open the link in a browser there.")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun stopsTurnFalseHidesInterruptAndWhitespaceOtherCannotSubmit() {
+        val askCard = card(
+            body = AskBody.Question(
+                listOf(
+                    QuestionView(
+                        header = "Choice",
+                        question = "Pick or type",
+                        multiSelect = false,
+                        options = emptyList(),
+                        allowOther = true,
+                        secret = false,
+                    ),
+                ),
+            ),
+            choices = emptyList(),
+            stopsTurn = false,
+        )
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                AskCardView(card = askCard, onAction = {})
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.ASK_MORE).assertDoesNotExist()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_OPTION_OTHER).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_OTHER_INPUT).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("   "))
+        }
+        composeRule.onNodeWithTag(AskReviewTags.ASK_NEXT).assertIsNotEnabled()
+    }
+
+    @Test
+    fun optionalManyFormFieldAndNegativeDecimalValidateCleanly() {
+        val fields = listOf(
+            FormField(
+                name = "tags",
+                title = "Tags",
+                description = "",
+                required = false,
+                kind = FormFieldKind.Many(options = listOf("a", "b", "c"), minItems = 2, maxItems = 3),
+                initial = FormValue.Many(emptyList()),
+            ),
+            FormField(
+                name = "offset",
+                title = "Offset",
+                description = "",
+                required = true,
+                kind = FormFieldKind.Number(integer = false, minimum = -10.0, maximum = 10.0),
+                initial = FormValue.Text("-3.5"),
+            ),
+        )
+        val problems = validateFormFields(fields, listOf(FormValue.Many(emptyList()), FormValue.Text("-3.5")))
+        assertTrue("optional empty Many and negative decimal must be valid: $problems", problems.isEmpty())
+
+        val tooFew = validateFormFields(fields, listOf(FormValue.Many(listOf(0)), FormValue.Text("-3.5")))
+        assertEquals(listOf(FieldProblem.TooFew(2)), tooFew.map { it.problem })
+    }
+
+    @Test
+    fun permissionNoteSurvivesSendingToRejectedAndAccessButtonsStayReachable() {
+        val baseCard = card(
+            body = AskBody.Command("rm -rf build", "", "Clean build", ""),
+            choices = listOf(
+                Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false),
+                Choice(ChoiceOutcome.Deny, primary = false, takesNote = true),
+            ),
+            state = CardState.Open,
+        )
+        var currentCard by mutableStateOf(baseCard)
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Box(modifier = Modifier.heightIn(max = 520.dp)) {
+                    AskCardView(card = currentCard, onAction = {})
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.ASK_DENY).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_NOTE).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("Keep target cache"))
+        }
+
+        // Sending -> Rejected preserves typed note & note mode for the same ask key.
+        currentCard = baseCard.copy(state = CardState.Sending)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_SENDING).assertIsDisplayed()
+
+        currentCard = baseCard.copy(state = CardState.Rejected(Refusal(RefusalReason.HostUnreachable)))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_NOTE).assertIsDisplayed()
+        composeRule.onNodeWithText("Keep target cache").assertIsDisplayed()
+
+        // Tall Access card keeps Grant/Deny buttons reachable inside 520dp dock cap.
+        currentCard = card(
+            body = AskBody.Access(
+                reason = "Read build inputs",
+                read = (1..20).map { "/var/cache/module-$it/artifacts" },
+                write = (1..10).map { "/tmp/output-$it" },
+                network = true,
+                hosts = listOf("crates.io"),
+            ),
+            choices = listOf(
+                Choice(ChoiceOutcome.GrantForTurn, primary = true, takesNote = false),
+                Choice(ChoiceOutcome.GrantForSession, primary = false, takesNote = false),
+                Choice(ChoiceOutcome.Deny, primary = false, takesNote = false),
+            ),
+        ).copy(key = "ask-access-tall")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_TURN).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_GRANT_SESSION).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.askChoice(2)).assertIsDisplayed()
+    }
+
+    @Test
+    fun systemBackStepsBackwardInsideMultiStepQuestionAsk() {
+        val backDispatcher = OnBackPressedDispatcher()
+        val backOwner = object : OnBackPressedDispatcherOwner {
+            private val registry = LifecycleRegistry(this).apply {
+                currentState = Lifecycle.State.RESUMED
+            }
+            override val lifecycle: Lifecycle = registry
+            override val onBackPressedDispatcher: OnBackPressedDispatcher = backDispatcher
+        }
+        val askCard = card(
+            body = AskBody.Question(
+                listOf(
+                    QuestionView("Step1", "Question one?", false, listOf(OptionView("A", "", "", false)), false, false),
+                    QuestionView("Step2", "Question two?", false, listOf(OptionView("B", "", "", false)), false, false),
+                ),
+            ),
+            choices = emptyList(),
+            questionReply = true,
+        )
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides backOwner) {
+                AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                    AskCardView(card = askCard, onAction = {})
+                }
+            }
+        }
+
+        // Advance step 0 -> step 1 -> review
+        composeRule.onNodeWithTag(AskReviewTags.askOption(0)).performClick()
+        composeRule.onNodeWithText("Question two?").assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.askOption(0)).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_SEND).assertIsDisplayed()
+
+        // Back from review -> step 1
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
+        composeRule.onNodeWithText("Question two?").assertIsDisplayed()
+
+        // Back from step 1 -> step 0
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
+        composeRule.onNodeWithText("Question one?").assertIsDisplayed()
+
+        // Enter reply-instead, then Back returns to question step
+        composeRule.onNodeWithTag(AskReviewTags.ASK_REPLY_LINK).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.ASK_REPLY_INPUT).assertIsDisplayed()
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
+        composeRule.onNodeWithText("Question one?").assertIsDisplayed()
     }
 }

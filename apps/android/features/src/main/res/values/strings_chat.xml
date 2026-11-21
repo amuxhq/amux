@@ -51,5 +51,11 @@
     <string name="chat_settle_keeps_chat">Its chat and edits stay. A message resumes it.</string>
     <string name="chat_delete_title">Delete %1$s?</string>
     <string name="chat_preview_unavailable">Preview unavailable for this attachment.</string>
+    <string name="chat_preview_open">Open</string>
+    <string name="chat_preview_share">Share</string>
+    <string name="chat_command_replace_title">Replace draft?</string>
+    <string name="chat_command_replace_detail">Selecting %1$s replaces your current draft.</string>
+    <string name="chat_command_replace_confirm">Replace</string>
+    <string name="chat_command_replace_keep">Keep Draft</string>
     <string name="chat_not_opened_title">Chat unavailable</string>
 </resources>

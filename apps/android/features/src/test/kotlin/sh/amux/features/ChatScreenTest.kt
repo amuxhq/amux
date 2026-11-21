@@ -1,6 +1,11 @@
 package sh.amux.features
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
+import java.io.File
+import sh.amux.values.CommandView
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -247,6 +252,18 @@ class ChatScreenTest {
             }
         }
 
+        // Overview from overflow menu
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_OVERVIEW).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_CLOSE).performClick()
+
+        // Settings from overflow menu
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_SETTINGS).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.CHAT_SETTINGS_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.CHAT_SETTINGS_CLOSE).performClick()
+
         // Copy Address from overflow menu
         composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
         composeRule.onNodeWithTag(ChatScreenTags.MENU_COPY_ADDRESS).performClick()
@@ -389,16 +406,24 @@ class ChatScreenTest {
         composeRule.onNodeWithTag(ChatComposerTags.ROOT).assertDoesNotExist()
 
         composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
-        assertEquals(listOf(AskAction.Choose(0, null)), askActions)
+        assertEquals(listOf(AskAction.Choose(0, null, askKey = "ask-1")), askActions)
     }
 
     @Test
-    fun openedAttachmentRendersFullScreenPreviewDialog() {
+    fun openedAttachmentRendersFullScreenPreviewDialogWithOpenAndShare() {
         var cleared = false
+        val openedExternal = mutableListOf<File>()
+        val shared = mutableListOf<File>()
+        val localFile = File("/tmp/trace.txt")
         val state = ChatScreenState(
             subject = ChatSubject(name = "refactor-auth", host = "desk"),
             frame = baseFrame(),
-            openedAttachment = ChatOpenedAttachmentUi(name = "trace.txt", bytes = null, isImage = false),
+            openedAttachment = ChatOpenedAttachmentUi(
+                name = "trace.txt",
+                bytes = null,
+                isImage = false,
+                file = localFile,
+            ),
         )
 
         composeRule.setContent {
@@ -406,13 +431,133 @@ class ChatScreenTest {
                 ChatScreen(
                     state = state,
                     rowSource = StaticChatRowSource(emptyList()),
-                    callbacks = ChatScreenCallbacks(onClearOpenedAttachment = { cleared = true }),
+                    callbacks = ChatScreenCallbacks(
+                        onOpenAttachmentExternally = { openedExternal += it },
+                        onShareAttachment = { shared += it },
+                        onClearOpenedAttachment = { cleared = true },
+                    ),
                 )
             }
         }
 
         composeRule.onNodeWithTag(ChatScreenTags.PREVIEW_DIALOG).assertIsDisplayed()
+        composeRule.onNodeWithTag(ChatScreenTags.PREVIEW_OPEN).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.PREVIEW_SHARE).performClick()
+        assertEquals(listOf(localFile), openedExternal)
+        assertEquals(listOf(localFile), shared)
         composeRule.onNodeWithTag(ChatScreenTags.PREVIEW_CLOSE).performClick()
         assertTrue(cleared)
+    }
+
+    @Test
+    fun scrollableTranscriptDoesNotEmitFrameZeroReadingOrPagingAndFollowsCappedTail() {
+        val readingEvents = mutableListOf<Boolean>()
+        val reachedTopEvents = mutableListOf<Int>()
+
+        fun makeRows(range: IntRange): List<Row> = range.map { i ->
+            Row(
+                id = "m$i",
+                order = i.toLong(),
+                atMs = i * 1_000L,
+                kind = RowKind.Prose(
+                    text = listOf(Segment.Text("Transcript message number $i with enough text to occupy vertical space.")),
+                    streaming = false,
+                    workingNote = false,
+                ),
+                collapsed = false,
+                attention = false,
+            )
+        }
+
+        var rows by mutableStateOf(makeRows(1..50))
+        var screenState by mutableStateOf(
+            ChatScreenState(
+                subject = ChatSubject(name = "long-chat", host = "desk", key = agentKey),
+                keys = rows.map { it.id },
+                frame = baseFrame(name = "long-chat").copy(hasOlder = true),
+                following = true,
+            ),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatScreen(
+                    state = screenState,
+                    rowSource = StaticChatRowSource(rows),
+                    callbacks = ChatScreenCallbacks(
+                        onReadingChange = { readingEvents += it },
+                        onReachedTop = { reachedTopEvents += it },
+                    ),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        assertTrue("frame-0 must never report reading=false: $readingEvents", readingEvents.isEmpty())
+        assertTrue("frame-0 while following must never trigger reachedTop: $reachedTopEvents", reachedTopEvents.isEmpty())
+        composeRule.onNodeWithText("Transcript message number 50 with enough text to occupy vertical space.")
+            .assertIsDisplayed()
+
+        // Cap-scrolling: drop oldest (m1) and append newest (m51) -> same key count (50), new tail key.
+        rows = makeRows(2..51)
+        screenState = screenState.copy(keys = rows.map { it.id })
+        composeRule.waitForIdle()
+
+        assertTrue("cap-scroll must not spuriously unfollow: $readingEvents", readingEvents.isEmpty())
+        composeRule.onNodeWithText("Transcript message number 51 with enough text to occupy vertical space.")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun failedPagingOffersRetryAndSettingsCommandPreservesNonBlankDraft() {
+        val retried = mutableListOf<Int>()
+        val draftChanges = mutableListOf<String>()
+        val settingsWithCmd = sampleSettings().copy(
+            commands = listOf(
+                CommandView("compact", "Compact history", "", "built-in", "/", false),
+            ),
+        )
+        val state = ChatScreenState(
+            subject = ChatSubject(name = "refactor-auth", host = "desk", key = agentKey),
+            keys = emptyList(),
+            frame = baseFrame().copy(hasOlder = true),
+            paging = ChatPagingUi.Failed("timeout"),
+            settings = settingsWithCmd,
+            draft = "important unsent prompt",
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatScreen(
+                    state = state,
+                    rowSource = StaticChatRowSource(emptyList()),
+                    callbacks = ChatScreenCallbacks(
+                        onReachedTop = { retried += it },
+                        onDraftChange = { draftChanges += it },
+                    ),
+                )
+            }
+        }
+
+        // Failed paging notice offers Retry button
+        composeRule.onNodeWithTag(ChatScreenTags.PAGING_RETRY).assertIsDisplayed().performClick()
+        assertEquals(listOf(0), retried)
+
+        // Selecting a command from Settings while draft is non-blank asks confirmation first
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_SETTINGS).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.chatSettingsCommand("compact")).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_DIALOG).assertIsDisplayed()
+        assertTrue("draft must not be overwritten before confirmation", draftChanges.isEmpty())
+
+        composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_KEEP).performClick()
+        assertTrue(draftChanges.isEmpty())
+
+        // Confirming replaces the draft with the command prefix
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_SETTINGS).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.chatSettingsCommand("compact")).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.COMMAND_REPLACE_CONFIRM).performClick()
+        assertEquals(listOf("/compact "), draftChanges)
     }
 }

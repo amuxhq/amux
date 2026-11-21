@@ -1,8 +1,14 @@
 package sh.amux.features
 
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -215,5 +221,84 @@ class ReviewPageTest {
 
         composeRule.onNodeWithTag(AskReviewTags.REVIEW_EMPTY).assertIsDisplayed()
         composeRule.onNodeWithText("No changes").assertIsDisplayed()
+    }
+
+    @Test
+    fun loadingAndErrorStatesRenderAndRetryEmitsAction() {
+        val actions = mutableListOf<ReviewPageAction>()
+        var state by mutableStateOf(ReviewPageState(doc = null, loading = true))
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewPage(state = state, onAction = { actions += it })
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_LOADING).assertIsDisplayed()
+
+        state = ReviewPageState(doc = null, loading = false, error = "host unreachable")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_ERROR).assertIsDisplayed()
+        composeRule.onNodeWithText("host unreachable").assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_RETRY).performClick()
+        assertEquals(listOf(ReviewPageAction.Retry), actions)
+    }
+
+    @Test
+    fun switchingComparisonClearsOpenCommentComposerAndBlocksEdits() {
+        var state by mutableStateOf(
+            ReviewPageState(
+                doc = sampleDoc(),
+                comparison = Comparison.Uncommitted,
+                baseBranch = "main",
+            ),
+        )
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ReviewPage(state = state, onAction = {})
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertIsDisplayed()
+
+        state = state.copy(switching = true)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SWITCHING).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertDoesNotExist()
+
+        // Tapping a line while switching must not reopen the comment composer.
+        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertDoesNotExist()
+    }
+
+    @Test
+    fun systemBackDismissesCommentComposerInsteadOfPoppingReviewPage() {
+        val backDispatcher = OnBackPressedDispatcher()
+        val backOwner = object : OnBackPressedDispatcherOwner {
+            private val registry = LifecycleRegistry(this).apply {
+                currentState = Lifecycle.State.RESUMED
+            }
+            override val lifecycle: Lifecycle = registry
+            override val onBackPressedDispatcher: OnBackPressedDispatcher = backDispatcher
+        }
+        val actions = mutableListOf<ReviewPageAction>()
+        composeRule.setContent {
+            CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides backOwner) {
+                AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                    ReviewPage(
+                        state = ReviewPageState(doc = sampleDoc()),
+                        onAction = { actions += it },
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 2)).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertIsDisplayed()
+
+        composeRule.runOnIdle { backDispatcher.onBackPressed() }
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_SHEET).assertDoesNotExist()
+        assertEquals(emptyList<ReviewPageAction>(), actions)
     }
 }

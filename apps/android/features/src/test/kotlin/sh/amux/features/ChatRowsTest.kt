@@ -527,4 +527,43 @@ class ChatRowsTest {
         assertEquals(0, composeRule.onAllNodesWithTag(ChatRowTags.row("h1")).fetchSemanticsNodes().size)
         assertEquals(0, composeRule.onAllNodesWithTag(ChatRowTags.row("c1")).fetchSemanticsNodes().size)
     }
+
+    @Test
+    fun expandedLegacySubagentChildStepAndFormFieldNamesRender() {
+        val childStep = makeRow(
+            id = "legacy-child",
+            kind = RowKind.Explore(
+                verb = ExploreVerb.Read,
+                subject = "src/lib.rs",
+                state = CallPhase.Succeeded,
+                result = "",
+            ),
+            collapsed = true,
+        ).copy(parent = "legacy-subagent")
+        val formRow = makeRow(
+            id = "form-1",
+            kind = RowKind.Ask(
+                AskRow.Form(
+                    server = "deploy",
+                    message = "Release settings",
+                    fields = listOf("version", "dry_run"),
+                    resolution = Resolution.Answered,
+                ),
+            ),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Column {
+                    ChatRowView(row = childStep, shown = true)
+                    ChatRowView(row = formRow)
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(ChatRowTags.row("legacy-child")).assertIsDisplayed()
+        composeRule.onNodeWithText("src/lib.rs").assertIsDisplayed()
+        composeRule.onNodeWithTag(ChatRowTags.row("form-1")).assertIsDisplayed()
+        composeRule.onNodeWithText("version, dry_run").assertIsDisplayed()
+    }
 }

@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,12 +11,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -38,6 +44,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,11 +86,15 @@ data class ReviewPageState(
     val comparisons: List<Comparison> = listOf(Comparison.Uncommitted, Comparison.OnBranch),
     val baseBranch: String? = null,
     val selectedFileIndex: Int = 0,
+    val loading: Boolean = false,
+    val switching: Boolean = false,
+    val error: String? = null,
 )
 
 /** Actions emitted by [ReviewPage]. */
 sealed interface ReviewPageAction {
     data object Back : ReviewPageAction
+    data object Retry : ReviewPageAction
     data class SelectComparison(val comparison: Comparison) : ReviewPageAction
     data class SelectFile(val fileIndex: Int) : ReviewPageAction
     data class AddComment(
@@ -139,6 +150,19 @@ fun ReviewPage(
     }
     var commentTarget by remember { mutableStateOf<CommentDraftTarget?>(null) }
     var commentText by remember { mutableStateOf("") }
+
+    // Bind pending comment edits to the frozen diff and clear when switching comparisons.
+    LaunchedEffect(state.comparison, state.doc?.head, state.doc?.base, state.switching) {
+        if (state.switching || commentTarget != null) {
+            commentTarget = null
+            commentText = ""
+        }
+    }
+
+    BackHandler(enabled = commentTarget != null) {
+        commentTarget = null
+        commentText = ""
+    }
 
     val commentCount = state.comments.size
     val commentsByFile = remember(state.comments) {
@@ -202,6 +226,7 @@ fun ReviewPage(
                 actions = {
                     if (commentCount > 0) {
                         TextButton(
+                            enabled = !state.switching,
                             onClick = { onAction(ReviewPageAction.SendReview) },
                             modifier = Modifier
                                 .thumbTarget()
@@ -210,7 +235,7 @@ fun ReviewPage(
                             Text(
                                 text = stringResource(R.string.review_send_count, commentCount),
                                 style = AmuxTheme.typography.bodyEmphasis,
-                                color = colors.accent,
+                                color = if (state.switching) colors.inkFaint else colors.accent,
                             )
                         }
                     }
@@ -263,7 +288,52 @@ fun ReviewPage(
                     }
                 }
 
-                if (files.isEmpty()) {
+                if (state.switching) {
+                    Text(
+                        text = stringResource(R.string.review_switching),
+                        style = AmuxTheme.typography.caption,
+                        color = colors.inkMuted,
+                        modifier = Modifier
+                            .padding(horizontal = Space.margin, vertical = Space.xs)
+                            .testTag(AskReviewTags.REVIEW_SWITCHING),
+                    )
+                }
+
+                val activeError = state.error
+                if (state.loading && state.doc == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Space.margin)
+                            .testTag(AskReviewTags.REVIEW_LOADING),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        AmuxEmptyCard(
+                            title = stringResource(R.string.review_loading_title),
+                            detail = stringResource(R.string.review_loading_detail),
+                        )
+                    }
+                } else if (activeError != null && state.doc == null) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Space.margin)
+                            .testTag(AskReviewTags.REVIEW_ERROR),
+                        verticalArrangement = Arrangement.spacedBy(Space.m),
+                    ) {
+                        AmuxEmptyCard(
+                            title = stringResource(R.string.review_error_title),
+                            detail = activeError,
+                        )
+                        AmuxActionButton(
+                            label = stringResource(R.string.action_retry),
+                            kind = ActionButtonKind.Primary,
+                            fillWidth = true,
+                            onClick = { onAction(ReviewPageAction.Retry) },
+                            modifier = Modifier.testTag(AskReviewTags.REVIEW_RETRY),
+                        )
+                    }
+                } else if (files.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -277,6 +347,36 @@ fun ReviewPage(
                         )
                     }
                 } else {
+                    if (activeError != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(colors.sunken)
+                                .padding(horizontal = Space.margin, vertical = Space.xs)
+                                .testTag(AskReviewTags.REVIEW_ERROR),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.s),
+                        ) {
+                            Text(
+                                text = activeError,
+                                style = AmuxTheme.typography.detail,
+                                color = colors.accent,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = { onAction(ReviewPageAction.Retry) },
+                                modifier = Modifier
+                                    .thumbTarget()
+                                    .testTag(AskReviewTags.REVIEW_RETRY),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.action_retry),
+                                    style = AmuxTheme.typography.bodyEmphasis,
+                                    color = colors.ink,
+                                )
+                            }
+                        }
+                    }
                     // Horizontal scrollable file strip
                     LazyRow(
                         modifier = Modifier
@@ -320,13 +420,16 @@ fun ReviewPage(
                         item(key = "header:${currentFile.path}") {
                             ReviewFileHeader(
                                 file = currentFile,
+                                enabled = !state.switching,
                                 onCommentOnFile = {
-                                    commentText = ""
-                                    commentTarget = CommentDraftTarget.New(
-                                        path = currentFile.path,
-                                        line = 0,
-                                        oldLine = 0,
-                                    )
+                                    if (!state.switching) {
+                                        commentText = ""
+                                        commentTarget = CommentDraftTarget.New(
+                                            path = currentFile.path,
+                                            line = 0,
+                                            oldLine = 0,
+                                        )
+                                    }
                                 },
                             )
                             AmuxHairline()
@@ -339,8 +442,10 @@ fun ReviewPage(
                             ReviewCommentThreadRow(
                                 text = comment.text,
                                 onClick = {
-                                    commentText = comment.text
-                                    commentTarget = CommentDraftTarget.Editing(commentIndex)
+                                    if (!state.switching) {
+                                        commentText = comment.text
+                                        commentTarget = CommentDraftTarget.Editing(commentIndex)
+                                    }
                                 },
                                 modifier = Modifier.testTag(AskReviewTags.reviewCommentThread(commentIndex)),
                             )
@@ -373,20 +478,22 @@ fun ReviewPage(
                                         line = diffLine,
                                         hasComments = lineComments.isNotEmpty(),
                                         onClick = {
-                                            commentText = ""
-                                            val targetLine = when (diffLine.kind) {
-                                                LineKind.Removed -> 0
-                                                LineKind.Added, LineKind.Context -> diffLine.newLine ?: 0
+                                            if (!state.switching) {
+                                                commentText = ""
+                                                val targetLine = when (diffLine.kind) {
+                                                    LineKind.Removed -> 0
+                                                    LineKind.Added, LineKind.Context -> diffLine.newLine ?: 0
+                                                }
+                                                val targetOldLine = when (diffLine.kind) {
+                                                    LineKind.Removed -> diffLine.oldLine ?: 0
+                                                    LineKind.Added, LineKind.Context -> 0
+                                                }
+                                                commentTarget = CommentDraftTarget.New(
+                                                    path = currentFile.path,
+                                                    line = targetLine,
+                                                    oldLine = targetOldLine,
+                                                )
                                             }
-                                            val targetOldLine = when (diffLine.kind) {
-                                                LineKind.Removed -> diffLine.oldLine ?: 0
-                                                LineKind.Added, LineKind.Context -> 0
-                                            }
-                                            commentTarget = CommentDraftTarget.New(
-                                                path = currentFile.path,
-                                                line = targetLine,
-                                                oldLine = targetOldLine,
-                                            )
                                         },
                                         modifier = Modifier.testTag(
                                             AskReviewTags.reviewLine(activeFileIndex, hunkIndex, lineIndex),
@@ -396,8 +503,10 @@ fun ReviewPage(
                                         ReviewCommentThreadRow(
                                             text = comment.text,
                                             onClick = {
-                                                commentText = comment.text
-                                                commentTarget = CommentDraftTarget.Editing(commentIndex)
+                                                if (!state.switching) {
+                                                    commentText = comment.text
+                                                    commentTarget = CommentDraftTarget.Editing(commentIndex)
+                                                }
                                             },
                                             modifier = Modifier.testTag(AskReviewTags.reviewCommentThread(commentIndex)),
                                         )
@@ -411,7 +520,7 @@ fun ReviewPage(
 
             // Inline / bottom comment composer sheet
             val activeTarget = commentTarget
-            if (activeTarget != null) {
+            if (activeTarget != null && !state.switching) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.BottomCenter,
@@ -432,7 +541,7 @@ fun ReviewPage(
                         },
                         onSave = {
                             val trimmed = commentText.trim()
-                            if (trimmed.isNotEmpty()) {
+                            if (trimmed.isNotEmpty() && !state.switching) {
                                 when (activeTarget) {
                                     is CommentDraftTarget.New -> onAction(
                                         ReviewPageAction.AddComment(
@@ -455,7 +564,9 @@ fun ReviewPage(
                         },
                         onDelete = if (activeTarget is CommentDraftTarget.Editing) {
                             {
-                                onAction(ReviewPageAction.DeleteComment(activeTarget.index))
+                                if (!state.switching) {
+                                    onAction(ReviewPageAction.DeleteComment(activeTarget.index))
+                                }
                                 commentTarget = null
                                 commentText = ""
                             }
@@ -538,6 +649,7 @@ private fun ReviewFileStripChip(
 @Composable
 private fun ReviewFileHeader(
     file: ReviewFile,
+    enabled: Boolean,
     onCommentOnFile: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
@@ -568,6 +680,7 @@ private fun ReviewFileHeader(
             DiffDeltaCounts(added = file.added, removed = file.removed)
         }
         TextButton(
+            enabled = enabled,
             onClick = onCommentOnFile,
             modifier = Modifier
                 .thumbTarget()
@@ -757,6 +870,7 @@ private fun ReviewCommentComposer(
     AmuxChrome(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
             .padding(Space.m)
             .testTag(AskReviewTags.REVIEW_COMMENT_SHEET),
         shape = RoundedCornerShape(AmuxTheme.metrics.cardRadius),

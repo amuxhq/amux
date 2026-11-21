@@ -1,5 +1,6 @@
 package sh.amux.features
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -165,6 +166,9 @@ object AskReviewTags {
     const val OVERVIEW_USAGE: String = "chat.overview.usage"
     const val OVERVIEW_CONTEXT: String = "chat.overview.context"
     const val OVERVIEW_REVIEW: String = "chat.overview.review"
+    const val OVERVIEW_CHANGES_LOADING: String = "chat.overview.changes.loading"
+    const val OVERVIEW_CHANGES_ERROR: String = "chat.overview.changes.error"
+    const val OVERVIEW_CHANGES_RETRY: String = "chat.overview.changes.retry"
     const val OVERVIEW_CHANGES_NONE: String = "chat.overview.changes.none"
     const val OVERVIEW_STRIP: String = "chat.overview.strip"
     const val OVERVIEW_STRIP_CHANGES: String = "chat.overview.strip.changes"
@@ -195,6 +199,10 @@ object AskReviewTags {
     const val REVIEW_SCREEN: String = "review"
     const val REVIEW_BACK: String = "review.back"
     const val REVIEW_SEND: String = "review.send"
+    const val REVIEW_LOADING: String = "review.loading"
+    const val REVIEW_SWITCHING: String = "review.switching"
+    const val REVIEW_ERROR: String = "review.error"
+    const val REVIEW_RETRY: String = "review.retry"
     const val REVIEW_EMPTY: String = "review.empty"
     const val REVIEW_FILE_COMMENT: String = "review.file.comment"
     const val REVIEW_COMMENT_SHEET: String = "review.comment.sheet"
@@ -214,16 +222,30 @@ object AskReviewTags {
 /** What the person did on an ask card. */
 sealed interface AskAction {
     /** The choice at this position on the card, with the optional note it takes. */
-    data class Choose(val index: Int, val note: String? = null) : AskAction
+    data class Choose(
+        val index: Int,
+        val note: String? = null,
+        val askKey: String = "",
+    ) : AskAction
 
     /** One response per question, in order. */
-    data class Respond(val responses: List<QuestionResponse>) : AskAction
+    data class Respond(
+        val responses: List<QuestionResponse>,
+        val askKey: String = "",
+    ) : AskAction
 
     /** The person's own words instead of answering, with what they answered so far. */
-    data class Reply(val text: String, val soFar: List<QuestionResponse>) : AskAction
+    data class Reply(
+        val text: String,
+        val soFar: List<QuestionResponse>,
+        val askKey: String = "",
+    ) : AskAction
 
     /** A form's Submit, with one value per field in the form's order. */
-    data class Submit(val values: List<FormValue>) : AskAction
+    data class Submit(
+        val values: List<FormValue>,
+        val askKey: String = "",
+    ) : AskAction
 
     /** Requests opening a validated web or email link from a Link ask. */
     data class OpenUrl(val url: String) : AskAction
@@ -236,17 +258,6 @@ sealed interface AskAction {
 
     /** Discards an unconfirmed answer. */
     data object Discard : AskAction
-}
-
-/** Optional starting state for capturing or testing an ask card mid-interaction. */
-sealed interface AskPreset {
-    data class Noting(val index: Int) : AskPreset
-    data class Other(val text: String) : AskPreset
-    data class Highlighted(val position: Int) : AskPreset
-    data class Reviewing(val responses: List<QuestionResponse>) : AskPreset
-    data object AutoAccept : AskPreset
-    data class QuestionNote(val text: String) : AskPreset
-    data class Replying(val text: String) : AskPreset
 }
 
 /** Progress kept across navigation for a multi-step question ask. */
@@ -338,7 +349,7 @@ private fun validateSingleField(field: FormField, value: FormValue): FieldProble
             val minItems = kind.minItems
             val maxItems = kind.maxItems
             when {
-                picked.isEmpty() && field.required -> FieldProblem.Required
+                picked.isEmpty() -> if (field.required) FieldProblem.Required else null
                 minItems != null && picked.size < minItems -> FieldProblem.TooFew(minItems)
                 maxItems != null && picked.size > maxItems -> FieldProblem.TooMany(maxItems)
                 else -> null
@@ -358,7 +369,6 @@ fun AskCardView(
     card: AskCard,
     onAction: (AskAction) -> Unit,
     modifier: Modifier = Modifier,
-    preset: AskPreset? = null,
     keptQuestionDraft: QuestionDraft? = null,
     onQuestionDraftChange: (QuestionDraft) -> Unit = {},
     keptFormValues: List<FormValue>? = null,
@@ -370,6 +380,12 @@ fun AskCardView(
     val triggerInterrupt = {
         if (onInterrupt != null) onInterrupt() else onAction(AskAction.Interrupt)
     }
+
+    // Hoisted above the CardState branch so typed denial / send-back notes and
+    // plan toggles survive Sending -> Rejected for the same ask key.
+    var noting by remember(card.key) { mutableStateOf(false) }
+    var noteText by remember(card.key) { mutableStateOf("") }
+    var planAutoAccept by remember(card.key) { mutableStateOf(false) }
 
     AmuxPanel(
         modifier = modifier
@@ -426,7 +442,12 @@ fun AskCardView(
                 if (card.state is CardState.Open || card.state is CardState.Rejected) {
                     AskCardBody(
                         card = card,
-                        preset = preset,
+                        noting = noting,
+                        onNotingChange = { noting = it },
+                        noteText = noteText,
+                        onNoteTextChange = { noteText = it },
+                        planAutoAccept = planAutoAccept,
+                        onPlanAutoAcceptChange = { planAutoAccept = it },
                         keptQuestionDraft = keptQuestionDraft,
                         onQuestionDraftChange = onQuestionDraftChange,
                         keptFormValues = keptFormValues,
@@ -434,6 +455,9 @@ fun AskCardView(
                         validateForm = validateForm,
                         onAction = onAction,
                         onInterrupt = triggerInterrupt,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
                     )
                 }
             }
@@ -494,50 +518,52 @@ private fun AskCardHeader(
                 modifier = Modifier.testTag(AskReviewTags.ASK_POSITION),
             )
         }
-        Box {
-            val moreLabel = stringResource(R.string.action_more_options)
-            IconButton(
-                onClick = { menuExpanded = true },
-                modifier = Modifier
-                    .thumbTarget()
-                    .testTag(AskReviewTags.ASK_MORE),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.MoreHoriz,
-                    contentDescription = moreLabel,
-                    tint = colors.inkMuted,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
-                containerColor = colors.raised,
-            ) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = stringResource(R.string.ask_interrupt),
-                            style = AmuxTheme.typography.body,
-                            color = colors.removed,
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.StopCircle,
-                            contentDescription = null,
-                            tint = colors.removed,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onInterrupt()
-                    },
+        if (card.stopsTurn) {
+            Box {
+                val moreLabel = stringResource(R.string.action_more_options)
+                IconButton(
+                    onClick = { menuExpanded = true },
                     modifier = Modifier
                         .thumbTarget()
-                        .testTag(AskReviewTags.ASK_INTERRUPT_MENU),
-                )
+                        .testTag(AskReviewTags.ASK_MORE),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.MoreHoriz,
+                        contentDescription = moreLabel,
+                        tint = colors.inkMuted,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                    containerColor = colors.raised,
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.ask_interrupt),
+                                style = AmuxTheme.typography.body,
+                                color = colors.removed,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.StopCircle,
+                                contentDescription = null,
+                                tint = colors.removed,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onInterrupt()
+                        },
+                        modifier = Modifier
+                            .thumbTarget()
+                            .testTag(AskReviewTags.ASK_INTERRUPT_MENU),
+                    )
+                }
             }
         }
     }
@@ -638,7 +664,12 @@ private fun askBodyIcon(body: AskBody): ImageVector = when (body) {
 @Composable
 private fun AskCardBody(
     card: AskCard,
-    preset: AskPreset?,
+    noting: Boolean,
+    onNotingChange: (Boolean) -> Unit,
+    noteText: String,
+    onNoteTextChange: (String) -> Unit,
+    planAutoAccept: Boolean,
+    onPlanAutoAcceptChange: (Boolean) -> Unit,
     keptQuestionDraft: QuestionDraft?,
     onQuestionDraftChange: (QuestionDraft) -> Unit,
     keptFormValues: List<FormValue>?,
@@ -646,6 +677,7 @@ private fun AskCardBody(
     validateForm: (List<FormField>, List<FormValue>) -> List<FormProblem>,
     onAction: (AskAction) -> Unit,
     onInterrupt: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     when (val body = card.body) {
         is AskBody.Question -> {
@@ -655,18 +687,22 @@ private fun AskCardBody(
                 takesNote = card.questionNote,
                 skips = card.questionSkip,
                 replies = card.questionReply,
-                preset = preset,
                 keptDraft = keptQuestionDraft,
                 onDraftChange = onQuestionDraftChange,
-                onRespond = { onAction(AskAction.Respond(it)) },
-                onReply = { text, soFar -> onAction(AskAction.Reply(text, soFar)) },
+                onRespond = { onAction(AskAction.Respond(it, askKey = card.key)) },
+                onReply = { text, soFar -> onAction(AskAction.Reply(text, soFar, askKey = card.key)) },
+                modifier = modifier,
             )
         }
         is AskBody.Command -> {
             PermissionAskSection(
                 card = card,
-                preset = preset,
+                noting = noting,
+                onNotingChange = onNotingChange,
+                note = noteText,
+                onNoteChange = onNoteTextChange,
                 onAction = onAction,
+                modifier = modifier,
             ) {
                 AskSubjectBox(text = body.command)
                 val desc = body.description.ifEmpty { body.reason }
@@ -685,8 +721,12 @@ private fun AskCardBody(
             var showWholeDiff by remember(card.key) { mutableStateOf(false) }
             PermissionAskSection(
                 card = card,
-                preset = preset,
+                noting = noting,
+                onNotingChange = onNotingChange,
+                note = noteText,
+                onNoteChange = onNoteTextChange,
                 onAction = onAction,
+                modifier = modifier,
             ) {
                 AskSubjectBox(
                     text = body.path,
@@ -725,8 +765,12 @@ private fun AskCardBody(
         is AskBody.Tool -> {
             PermissionAskSection(
                 card = card,
-                preset = preset,
+                noting = noting,
+                onNotingChange = onNotingChange,
+                note = noteText,
+                onNoteChange = onNoteTextChange,
                 onAction = onAction,
+                modifier = modifier,
             ) {
                 if (body.arguments.isNotEmpty()) {
                     AskSubjectBox(text = body.arguments, maxLines = 8)
@@ -737,8 +781,14 @@ private fun AskCardBody(
             PlanAskSection(
                 card = card,
                 plan = body,
-                preset = preset,
+                autoAccept = planAutoAccept,
+                onAutoAcceptChange = onPlanAutoAcceptChange,
+                noting = noting,
+                onNotingChange = onNotingChange,
+                note = noteText,
+                onNoteChange = onNoteTextChange,
                 onAction = onAction,
+                modifier = modifier,
             )
         }
         is AskBody.Form -> {
@@ -749,6 +799,7 @@ private fun AskCardBody(
                 onValuesChange = onFormValuesChange,
                 validateForm = validateForm,
                 onAction = onAction,
+                modifier = modifier,
             )
         }
         is AskBody.Link -> {
@@ -756,6 +807,7 @@ private fun AskCardBody(
                 card = card,
                 link = body,
                 onAction = onAction,
+                modifier = modifier,
             )
         }
         is AskBody.Access -> {
@@ -763,17 +815,25 @@ private fun AskCardBody(
                 card = card,
                 access = body,
                 onAction = onAction,
+                modifier = modifier,
             )
         }
         is AskBody.Unanswerable -> {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = modifier,
                 verticalArrangement = Arrangement.spacedBy(Space.m),
             ) {
-                val reason = body.reason.ifEmpty {
-                    stringResource(R.string.ask_unanswerable_default)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    val reason = body.reason.ifEmpty {
+                        stringResource(R.string.ask_unanswerable_default)
+                    }
+                    AskWhyText(text = reason)
                 }
-                AskWhyText(text = reason)
                 AmuxActionButton(
                     label = stringResource(R.string.ask_interrupt),
                     kind = ActionButtonKind.Outline,
@@ -798,34 +858,36 @@ private fun isDenyOutcome(outcome: ChoiceOutcome): Boolean = when (outcome) {
 @Composable
 private fun PermissionAskSection(
     card: AskCard,
-    preset: AskPreset?,
+    noting: Boolean,
+    onNotingChange: (Boolean) -> Unit,
+    note: String,
+    onNoteChange: (String) -> Unit,
     onAction: (AskAction) -> Unit,
+    modifier: Modifier = Modifier,
     subject: @Composable () -> Unit,
 ) {
-    var noting by remember(card.key) { mutableStateOf(preset is AskPreset.Noting) }
-    var note by remember(card.key) { mutableStateOf("") }
+    BackHandler(enabled = noting) {
+        onNotingChange(false)
+    }
 
     val primaryIndex = card.choices.indexOfFirst { it.primary }.takeIf { it >= 0 }
     val denyIndices = card.choices.indices.filter { isDenyOutcome(card.choices[it].outcome) }
     val scopeIndices = card.choices.indices.filter { it != primaryIndex && it !in denyIndices }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        subject()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            subject()
 
-        if (noting) {
-            NoteStepSection(
-                card = card,
-                denyIndices = denyIndices,
-                note = note,
-                onNoteChange = { note = it },
-                onBack = { noting = false },
-                onChoose = { index, text -> onAction(AskAction.Choose(index, text)) },
-            )
-        } else {
-            if (scopeIndices.isNotEmpty()) {
+            if (!noting && scopeIndices.isNotEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(Space.s),
@@ -835,13 +897,24 @@ private fun PermissionAskSection(
                         AskScopeChoiceRow(
                             title = row.title,
                             detail = row.detail,
-                            onClick = { onAction(AskAction.Choose(index, null)) },
+                            onClick = { onAction(AskAction.Choose(index, null, askKey = card.key)) },
                             modifier = Modifier.testTag(AskReviewTags.askChoice(index)),
                         )
                     }
                 }
             }
+        }
 
+        if (noting) {
+            NoteStepSection(
+                card = card,
+                denyIndices = denyIndices,
+                note = note,
+                onNoteChange = onNoteChange,
+                onBack = { onNotingChange(false) },
+                onChoose = { index, text -> onAction(AskAction.Choose(index, text, askKey = card.key)) },
+            )
+        } else {
             val firstDeny = denyIndices.firstOrNull()
             AskButtonPair(
                 primary = primaryIndex?.let { idx ->
@@ -850,7 +923,7 @@ private fun PermissionAskSection(
                             label = ChatWords.button(card.choices[idx]),
                             kind = ActionButtonKind.Primary,
                             fillWidth = true,
-                            onClick = { onAction(AskAction.Choose(idx, null)) },
+                            onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
                             modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
                         )
                     }
@@ -862,7 +935,7 @@ private fun PermissionAskSection(
                                 label = ChatWords.button(card.choices[idx]),
                                 kind = ActionButtonKind.Outline,
                                 fillWidth = true,
-                                onClick = { onAction(AskAction.Choose(idx, null)) },
+                                onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
                                 modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
                             )
                         }
@@ -872,10 +945,7 @@ private fun PermissionAskSection(
                                 label = stringResource(R.string.ask_deny_ellipsis),
                                 kind = ActionButtonKind.Outline,
                                 fillWidth = true,
-                                onClick = {
-                                    note = ""
-                                    noting = true
-                                },
+                                onClick = { onNotingChange(true) },
                                 modifier = Modifier.testTag(AskReviewTags.ASK_DENY),
                             )
                         }
@@ -990,13 +1060,19 @@ private fun NoteStepSection(
 private fun PlanAskSection(
     card: AskCard,
     plan: AskBody.Plan,
-    preset: AskPreset?,
+    autoAccept: Boolean,
+    onAutoAcceptChange: (Boolean) -> Unit,
+    noting: Boolean,
+    onNotingChange: (Boolean) -> Unit,
+    note: String,
+    onNoteChange: (String) -> Unit,
     onAction: (AskAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
-    var autoAccept by remember(card.key) { mutableStateOf(preset == AskPreset.AutoAccept) }
-    var noting by remember(card.key) { mutableStateOf(preset is AskPreset.Noting) }
-    var note by remember(card.key) { mutableStateOf("") }
+    BackHandler(enabled = noting) {
+        onNotingChange(false)
+    }
 
     val approveIndices = card.choices.indices.filter { card.choices[it].outcome is ChoiceOutcome.ApprovePlan }
     val switchedIndex = approveIndices.firstOrNull {
@@ -1010,7 +1086,7 @@ private fun PlanAskSection(
     val otherIndices = card.choices.indices.filter { it !in approveIndices }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
         val planTitle = plan.title
@@ -1018,26 +1094,25 @@ private fun PlanAskSection(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
                     .background(colors.sunken)
-                    .heightIn(max = 200.dp)
+                    .heightIn(max = 220.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(Space.m)
                     .testTag(AskReviewTags.ASK_PLAN_BODY),
                 verticalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
-                if (!planTitle.isNullOrBlank()) {
+                if (plan.body.isNotBlank()) {
+                    MarkdownView(
+                        markdown = plan.body,
+                        title = planTitle,
+                    )
+                } else if (!planTitle.isNullOrBlank()) {
                     Text(
                         text = planTitle,
                         style = AmuxTheme.typography.bodyEmphasis,
                         color = colors.ink,
-                    )
-                }
-                if (plan.body.isNotBlank()) {
-                    Text(
-                        text = plan.body,
-                        style = AmuxTheme.typography.detail,
-                        color = colors.inkMuted,
                     )
                 }
             }
@@ -1048,9 +1123,9 @@ private fun PlanAskSection(
                 card = card,
                 denyIndices = otherIndices,
                 note = note,
-                onNoteChange = { note = it },
-                onBack = { noting = false },
-                onChoose = { index, text -> onAction(AskAction.Choose(index, text)) },
+                onNoteChange = onNoteChange,
+                onBack = { onNotingChange(false) },
+                onChoose = { index, text -> onAction(AskAction.Choose(index, text, askKey = card.key)) },
             )
         } else {
             if (switchedIndex != null && plainIndex != null) {
@@ -1061,7 +1136,7 @@ private fun PlanAskSection(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
                         .background(colors.sunken)
-                        .clickable(role = Role.Switch) { autoAccept = !autoAccept }
+                        .clickable(role = Role.Switch) { onAutoAcceptChange(!autoAccept) }
                         .padding(horizontal = Space.m, vertical = Space.s)
                         .thumbTarget()
                         .testTag(AskReviewTags.ASK_PLAN_SWITCH),
@@ -1082,7 +1157,7 @@ private fun PlanAskSection(
                     }
                     Switch(
                         checked = autoAccept,
-                        onCheckedChange = { autoAccept = it },
+                        onCheckedChange = onAutoAcceptChange,
                         colors = amuxSwitchColors(),
                     )
                 }
@@ -1111,7 +1186,7 @@ private fun PlanAskSection(
                             label = approveLabel,
                             kind = ActionButtonKind.Primary,
                             fillWidth = true,
-                            onClick = { onAction(AskAction.Choose(activeApproveIndex, null)) },
+                            onClick = { onAction(AskAction.Choose(activeApproveIndex, null, askKey = card.key)) },
                             modifier = Modifier.testTag(AskReviewTags.ASK_PLAN_APPROVE),
                         )
                     }
@@ -1127,10 +1202,9 @@ private fun PlanAskSection(
                             fillWidth = true,
                             onClick = {
                                 if (choice.takesNote) {
-                                    note = ""
-                                    noting = true
+                                    onNotingChange(true)
                                 } else {
-                                    onAction(AskAction.Choose(idx, null))
+                                    onAction(AskAction.Choose(idx, null, askKey = card.key))
                                 }
                             },
                             modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
@@ -1150,6 +1224,7 @@ private fun FormAskSection(
     onValuesChange: (List<FormValue>) -> Unit,
     validateForm: (List<FormField>, List<FormValue>) -> List<FormProblem>,
     onAction: (AskAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val initialValues = remember(card.key, form.fields) {
         if (keptValues != null && keptValues.size == form.fields.size) {
@@ -1165,20 +1240,19 @@ private fun FormAskSection(
     val problemsByField = problems.associateBy { it.field }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        if (form.message.isNotEmpty()) {
-            AskWhyText(text = form.message)
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 340.dp)
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Space.m),
         ) {
+            if (form.message.isNotEmpty()) {
+                AskWhyText(text = form.message)
+            }
             form.fields.forEachIndexed { index, field ->
                 val currentValue = values.getOrElse(index) { field.initial }
                 val rawProblem = problemsByField[index]?.problem
@@ -1215,7 +1289,7 @@ private fun FormAskSection(
                         kind = ActionButtonKind.Primary,
                         fillWidth = true,
                         enabled = problems.isEmpty(),
-                        onClick = { onAction(AskAction.Submit(values)) },
+                        onClick = { onAction(AskAction.Submit(values, askKey = card.key)) },
                         modifier = Modifier.testTag(AskReviewTags.ASK_SUBMIT),
                     )
                 }
@@ -1226,7 +1300,7 @@ private fun FormAskSection(
                         label = ChatWords.choice(card.choices[idx]),
                         kind = ActionButtonKind.Outline,
                         fillWidth = true,
-                        onClick = { onAction(AskAction.Choose(idx, null)) },
+                        onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
                         modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
                     )
                 }
@@ -1282,7 +1356,11 @@ private fun FormFieldControl(
                     singleLine = true,
                     isError = problem != null,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = if (kind is FormFieldKind.Number) KeyboardType.Decimal else KeyboardType.Text,
+                        keyboardType = if (kind is FormFieldKind.Number && (kind.minimum ?: -1.0) >= 0.0) {
+                            KeyboardType.Decimal
+                        } else {
+                            KeyboardType.Text
+                        },
                     ),
                     shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
                     colors = amuxTextFieldColors(),
@@ -1477,6 +1555,7 @@ private fun LinkAskSection(
     card: AskCard,
     link: AskBody.Link,
     onAction: (AskAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var opened by remember(card.key) { mutableStateOf(false) }
     val openable = remember(link.url) { OpenableLink.parse(link.url) }
@@ -1484,15 +1563,23 @@ private fun LinkAskSection(
     val declineIndex = card.choices.indexOfFirst { it.outcome != ChoiceOutcome.OpenLink }.takeIf { it >= 0 }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        if (link.message.isNotEmpty()) {
-            AskWhyText(text = link.message)
-        }
-        AskSubjectBox(text = link.url, maxLines = 3)
-        if (link.localPage) {
-            AskWhyText(text = stringResource(R.string.ask_link_local_page))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            if (link.message.isNotEmpty()) {
+                AskWhyText(text = link.message)
+            }
+            AskSubjectBox(text = link.url, maxLines = 3)
+            if (link.localPage) {
+                AskWhyText(text = stringResource(R.string.ask_link_local_page))
+            }
         }
 
         if (!link.localPage && openable != null && !opened) {
@@ -1515,7 +1602,7 @@ private fun LinkAskSection(
                         label = ChatWords.choice(card.choices[idx]),
                         kind = if (opened) ActionButtonKind.Primary else ActionButtonKind.Outline,
                         fillWidth = true,
-                        onClick = { onAction(AskAction.Choose(idx, null)) },
+                        onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
                         modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
                     )
                 }
@@ -1526,7 +1613,7 @@ private fun LinkAskSection(
                         label = ChatWords.choice(card.choices[idx]),
                         kind = ActionButtonKind.Outline,
                         fillWidth = true,
-                        onClick = { onAction(AskAction.Choose(idx, null)) },
+                        onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
                         modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
                     )
                 }
@@ -1540,6 +1627,7 @@ private fun AccessAskSection(
     card: AskCard,
     access: AskBody.Access,
     onAction: (AskAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AmuxTheme.colors
     val turnIndex = card.choices.indexOfFirst { it.outcome == ChoiceOutcome.GrantForTurn }.takeIf { it >= 0 }
@@ -1547,38 +1635,46 @@ private fun AccessAskSection(
     val denyIndices = card.choices.indices.filter { it != turnIndex && it != sessionIndex }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        if (access.reason.isNotEmpty()) {
-            AskWhyText(text = access.reason)
-        }
-        val hasFacts = access.write.isNotEmpty() || access.read.isNotEmpty() || access.network
-        if (hasFacts) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
-                    .background(colors.sunken)
-                    .padding(horizontal = Space.m, vertical = Space.s),
-                verticalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                access.write.forEach { path ->
-                    AccessFactRow(label = stringResource(R.string.ask_access_write_to), value = path)
-                }
-                access.read.forEach { path ->
-                    AccessFactRow(label = stringResource(R.string.ask_access_read), value = path)
-                }
-                if (access.network) {
-                    val hostText = if (access.hosts.isEmpty()) {
-                        stringResource(R.string.ask_access_any_host)
-                    } else {
-                        access.hosts.joinToString(", ")
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            if (access.reason.isNotEmpty()) {
+                AskWhyText(text = access.reason)
+            }
+            val hasFacts = access.write.isNotEmpty() || access.read.isNotEmpty() || access.network
+            if (hasFacts) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
+                        .background(colors.sunken)
+                        .padding(horizontal = Space.m, vertical = Space.s),
+                    verticalArrangement = Arrangement.spacedBy(Space.s),
+                ) {
+                    access.write.forEach { path ->
+                        AccessFactRow(label = stringResource(R.string.ask_access_write_to), value = path)
                     }
-                    AccessFactRow(
-                        label = stringResource(R.string.ask_access_network),
-                        value = hostText,
-                    )
+                    access.read.forEach { path ->
+                        AccessFactRow(label = stringResource(R.string.ask_access_read), value = path)
+                    }
+                    if (access.network) {
+                        val hostText = if (access.hosts.isEmpty()) {
+                            stringResource(R.string.ask_access_any_host)
+                        } else {
+                            access.hosts.joinToString(", ")
+                        }
+                        AccessFactRow(
+                            label = stringResource(R.string.ask_access_network),
+                            value = hostText,
+                        )
+                    }
                 }
             }
         }
@@ -1592,7 +1688,7 @@ private fun AccessAskSection(
                     label = stringResource(R.string.ask_access_grant_turn),
                     kind = ActionButtonKind.Primary,
                     fillWidth = true,
-                    onClick = { onAction(AskAction.Choose(turnIndex, null)) },
+                    onClick = { onAction(AskAction.Choose(turnIndex, null, askKey = card.key)) },
                     modifier = Modifier.testTag(AskReviewTags.ASK_GRANT_TURN),
                 )
             }
@@ -1601,7 +1697,7 @@ private fun AccessAskSection(
                     label = stringResource(R.string.ask_access_grant_session),
                     kind = if (turnIndex == null) ActionButtonKind.Primary else ActionButtonKind.Outline,
                     fillWidth = true,
-                    onClick = { onAction(AskAction.Choose(sessionIndex, null)) },
+                    onClick = { onAction(AskAction.Choose(sessionIndex, null, askKey = card.key)) },
                     modifier = Modifier.testTag(AskReviewTags.ASK_GRANT_SESSION),
                 )
             }
@@ -1610,7 +1706,7 @@ private fun AccessAskSection(
                     label = ChatWords.choice(card.choices[idx]),
                     kind = ActionButtonKind.Outline,
                     fillWidth = true,
-                    onClick = { onAction(AskAction.Choose(idx, null)) },
+                    onClick = { onAction(AskAction.Choose(idx, null, askKey = card.key)) },
                     modifier = Modifier.testTag(AskReviewTags.askChoice(idx)),
                 )
             }
@@ -1653,15 +1749,15 @@ private fun QuestionAskSection(
     takesNote: Boolean,
     skips: Boolean,
     replies: Boolean,
-    preset: AskPreset?,
     keptDraft: QuestionDraft?,
     onDraftChange: (QuestionDraft) -> Unit,
     onRespond: (List<QuestionResponse>) -> Unit,
     onReply: (String, List<QuestionResponse>) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val count = questions.size
     val initialDraft = remember(cardKey, count) {
-        buildInitialQuestionDraft(count = count, preset = preset, kept = keptDraft)
+        buildInitialQuestionDraft(count = count, kept = keptDraft)
     }
     var step by remember(cardKey) { mutableIntStateOf(initialDraft.step) }
     var picks by remember(cardKey) { mutableStateOf(initialDraft.picks) }
@@ -1673,6 +1769,17 @@ private fun QuestionAskSection(
     var reviewing by remember(cardKey) { mutableStateOf(initialDraft.reviewing) }
     var replying by remember(cardKey) { mutableStateOf(initialDraft.replying) }
     var replyText by remember(cardKey) { mutableStateOf(initialDraft.replyText) }
+
+    BackHandler(enabled = replying || reviewing || step > 0) {
+        when {
+            replying -> replying = false
+            reviewing -> {
+                reviewing = false
+                step = (count - 1).coerceAtLeast(0)
+            }
+            step > 0 -> step -= 1
+        }
+    }
 
     LaunchedEffect(step, picks, others, highlighted, skipped, notes, noting, reviewing, replying, replyText) {
         onDraftChange(
@@ -1693,7 +1800,7 @@ private fun QuestionAskSection(
 
     fun answered(index: Int): Boolean {
         if (index !in picks.indices) return false
-        return picks[index].isNotEmpty() || !others[index].isNullOrEmpty()
+        return picks[index].isNotEmpty() || !others[index]?.trim().isNullOrEmpty()
     }
 
     fun decided(index: Int): Boolean =
@@ -1705,7 +1812,7 @@ private fun QuestionAskSection(
         currentNotes: List<String> = notes,
     ): List<QuestionResponse> = questions.indices.map { index ->
         val note = currentNotes.getOrElse(index) { "" }.trim()
-        val other = currentOthers.getOrNull(index)?.takeIf { it.isNotEmpty() }
+        val other = currentOthers.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() }
         val pickedList = if (other != null && !questions[index].multiSelect) {
             emptyList()
         } else {
@@ -1749,7 +1856,7 @@ private fun QuestionAskSection(
 
     val colors = AmuxTheme.colors
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
         if (replying) {
@@ -1833,7 +1940,10 @@ private fun QuestionAskSection(
 
             if (reviewing) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(Space.s),
                 ) {
                     questions.forEachIndexed { index, q ->
@@ -1899,179 +2009,188 @@ private fun QuestionAskSection(
             } else if (step in questions.indices) {
                 val index = step
                 val currentQuestion = questions[index]
-                Text(
-                    text = MarkdownDocument.inline(currentQuestion.question).plainText,
-                    style = AmuxTheme.typography.body,
-                    color = colors.ink,
-                    modifier = Modifier.testTag(AskReviewTags.ASK_QUESTION),
-                )
-
-                val previewOptionIndex = run {
-                    val hi = highlighted.getOrNull(index)
-                    if (hi != null && hi in currentQuestion.options.indices && currentQuestion.options[hi].preview.isNotEmpty()) {
-                        hi
-                    } else {
-                        currentQuestion.options.indexOfFirst { it.preview.isNotEmpty() }.takeIf { it >= 0 }
-                    }
-                }
-                if (previewOptionIndex != null) {
-                    val option = currentQuestion.options[previewOptionIndex]
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(AskReviewTags.ASK_PREVIEW),
-                        verticalArrangement = Arrangement.spacedBy(Space.xs),
-                    ) {
-                        Text(
-                            text = MarkdownDocument.inline(option.label).plainText,
-                            style = AmuxTheme.typography.caption,
-                            color = colors.inkMuted,
-                        )
-                        AskSubjectBox(text = option.preview, maxLines = 8)
-                    }
-                }
 
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(Space.s),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Space.m),
                 ) {
-                    currentQuestion.options.forEachIndexed { position, option ->
-                        val isSelected = position in picks.getOrElse(index) { emptySet() }
-                        QuestionOptionRow(
-                            option = option,
-                            multi = currentQuestion.multiSelect,
-                            isSelected = isSelected,
-                            onClick = {
-                                val nextSkipped = skipped.toMutableList().apply { this[index] = false }
-                                val nextHighlighted = highlighted.toMutableList().apply { this[index] = position }
-                                skipped = nextSkipped
-                                highlighted = nextHighlighted
-                                if (currentQuestion.multiSelect) {
-                                    val nextPicks = picks.toMutableList()
-                                    val currentSet = nextPicks[index]
-                                    nextPicks[index] = if (position in currentSet) currentSet - position else currentSet + position
-                                    picks = nextPicks
-                                } else {
-                                    val nextOthers = others.toMutableList().apply { this[index] = null }
-                                    val nextPicks = picks.toMutableList().apply { this[index] = setOf(position) }
-                                    others = nextOthers
-                                    picks = nextPicks
-                                    if (tapAnswers) {
-                                        onRespond(buildResponses(currentPicks = nextPicks, currentOthers = nextOthers))
-                                    } else if (!hasPreviews && !noting.getOrElse(index) { false }) {
-                                        if (count == 1) {
-                                            onRespond(buildResponses(currentPicks = nextPicks, currentOthers = nextOthers))
-                                        } else if (index + 1 < count) {
-                                            step = index + 1
-                                        } else {
-                                            reviewing = true
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = Modifier.testTag(AskReviewTags.askOption(position)),
-                        )
+                    Text(
+                        text = MarkdownDocument.inline(currentQuestion.question).plainText,
+                        style = AmuxTheme.typography.body,
+                        color = colors.ink,
+                        modifier = Modifier.testTag(AskReviewTags.ASK_QUESTION),
+                    )
+
+                    val previewOptionIndex = run {
+                        val hi = highlighted.getOrNull(index)
+                        if (hi != null && hi in currentQuestion.options.indices && currentQuestion.options[hi].preview.isNotEmpty()) {
+                            hi
+                        } else {
+                            currentQuestion.options.indexOfFirst { it.preview.isNotEmpty() }.takeIf { it >= 0 }
+                        }
+                    }
+                    if (previewOptionIndex != null) {
+                        val option = currentQuestion.options[previewOptionIndex]
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(AskReviewTags.ASK_PREVIEW),
+                            verticalArrangement = Arrangement.spacedBy(Space.xs),
+                        ) {
+                            Text(
+                                text = MarkdownDocument.inline(option.label).plainText,
+                                style = AmuxTheme.typography.caption,
+                                color = colors.inkMuted,
+                            )
+                            AskSubjectBox(text = option.preview, maxLines = 8)
+                        }
                     }
 
-                    if (currentQuestion.allowOther) {
-                        val otherValue = others.getOrNull(index)
-                        if (otherValue != null) {
-                            val otherLabel = stringResource(R.string.ask_question_something_else)
-                            OutlinedTextField(
-                                value = otherValue,
-                                onValueChange = { typed ->
-                                    val nextOthers = others.toMutableList().apply { this[index] = typed }
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(Space.s),
+                    ) {
+                        currentQuestion.options.forEachIndexed { position, option ->
+                            val isSelected = position in picks.getOrElse(index) { emptySet() }
+                            QuestionOptionRow(
+                                option = option,
+                                multi = currentQuestion.multiSelect,
+                                isSelected = isSelected,
+                                onClick = {
                                     val nextSkipped = skipped.toMutableList().apply { this[index] = false }
-                                    others = nextOthers
+                                    val nextHighlighted = highlighted.toMutableList().apply { this[index] = position }
                                     skipped = nextSkipped
-                                    if (!currentQuestion.multiSelect) {
-                                        picks = picks.toMutableList().apply { this[index] = emptySet() }
+                                    highlighted = nextHighlighted
+                                    if (currentQuestion.multiSelect) {
+                                        val nextPicks = picks.toMutableList()
+                                        val currentSet = nextPicks[index]
+                                        nextPicks[index] = if (position in currentSet) currentSet - position else currentSet + position
+                                        picks = nextPicks
+                                    } else {
+                                        val nextOthers = others.toMutableList().apply { this[index] = null }
+                                        val nextPicks = picks.toMutableList().apply { this[index] = setOf(position) }
+                                        others = nextOthers
+                                        picks = nextPicks
+                                        if (tapAnswers) {
+                                            onRespond(buildResponses(currentPicks = nextPicks, currentOthers = nextOthers))
+                                        } else if (!hasPreviews && !noting.getOrElse(index) { false }) {
+                                            if (count == 1) {
+                                                onRespond(buildResponses(currentPicks = nextPicks, currentOthers = nextOthers))
+                                            } else if (index + 1 < count) {
+                                                step = index + 1
+                                            } else {
+                                                reviewing = true
+                                            }
+                                        }
                                     }
+                                },
+                                modifier = Modifier.testTag(AskReviewTags.askOption(position)),
+                            )
+                        }
+
+                        if (currentQuestion.allowOther) {
+                            val otherValue = others.getOrNull(index)
+                            if (otherValue != null) {
+                                val otherLabel = stringResource(R.string.ask_question_something_else)
+                                OutlinedTextField(
+                                    value = otherValue,
+                                    onValueChange = { typed ->
+                                        val nextOthers = others.toMutableList().apply { this[index] = typed }
+                                        val nextSkipped = skipped.toMutableList().apply { this[index] = false }
+                                        others = nextOthers
+                                        skipped = nextSkipped
+                                        if (!currentQuestion.multiSelect) {
+                                            picks = picks.toMutableList().apply { this[index] = emptySet() }
+                                        }
+                                    },
+                                    placeholder = {
+                                        Text(
+                                            text = otherLabel,
+                                            style = AmuxTheme.typography.body,
+                                            color = colors.inkFaint,
+                                        )
+                                    },
+                                    textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
+                                    singleLine = true,
+                                    visualTransformation = if (currentQuestion.secret) {
+                                        PasswordVisualTransformation()
+                                    } else {
+                                        VisualTransformation.None
+                                    },
+                                    shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
+                                    colors = amuxTextFieldColors(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .semantics { contentDescription = otherLabel }
+                                        .testTag(AskReviewTags.ASK_OTHER_INPUT),
+                                )
+                            } else {
+                                QuestionOptionRow(
+                                    option = OptionView(
+                                        label = stringResource(R.string.ask_question_something_else_ellipsis),
+                                        description = "",
+                                        preview = "",
+                                        recommended = false,
+                                    ),
+                                    multi = currentQuestion.multiSelect,
+                                    isSelected = false,
+                                    quiet = true,
+                                    onClick = {
+                                        others = others.toMutableList().apply { this[index] = "" }
+                                        if (!currentQuestion.multiSelect) {
+                                            picks = picks.toMutableList().apply { this[index] = emptySet() }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag(AskReviewTags.ASK_OPTION_OTHER),
+                                )
+                            }
+                        }
+                    }
+
+                    if (takesNote) {
+                        if (noting.getOrElse(index) { false }) {
+                            val notePlaceholder = stringResource(R.string.ask_question_note_placeholder)
+                            OutlinedTextField(
+                                value = notes.getOrElse(index) { "" },
+                                onValueChange = { typed ->
+                                    notes = notes.toMutableList().apply { this[index] = typed }
                                 },
                                 placeholder = {
                                     Text(
-                                        text = otherLabel,
+                                        text = notePlaceholder,
                                         style = AmuxTheme.typography.body,
                                         color = colors.inkFaint,
                                     )
                                 },
                                 textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
-                                singleLine = true,
-                                visualTransformation = if (currentQuestion.secret) {
-                                    PasswordVisualTransformation()
-                                } else {
-                                    VisualTransformation.None
-                                },
+                                minLines = 1,
+                                maxLines = 4,
                                 shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
                                 colors = amuxTextFieldColors(),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .semantics { contentDescription = otherLabel }
-                                    .testTag(AskReviewTags.ASK_OTHER_INPUT),
+                                    .semantics { contentDescription = notePlaceholder }
+                                    .testTag(AskReviewTags.askQuestionNote(index)),
                             )
                         } else {
-                            QuestionOptionRow(
-                                option = OptionView(
-                                    label = stringResource(R.string.ask_question_something_else_ellipsis),
-                                    description = "",
-                                    preview = "",
-                                    recommended = false,
-                                ),
-                                multi = currentQuestion.multiSelect,
-                                isSelected = false,
-                                quiet = true,
+                            TextButton(
                                 onClick = {
-                                    others = others.toMutableList().apply { this[index] = "" }
-                                    if (!currentQuestion.multiSelect) {
-                                        picks = picks.toMutableList().apply { this[index] = emptySet() }
-                                    }
+                                    noting = noting.toMutableList().apply { this[index] = true }
                                 },
-                                modifier = Modifier.testTag(AskReviewTags.ASK_OPTION_OTHER),
-                            )
-                        }
-                    }
-                }
-
-                if (takesNote) {
-                    if (noting.getOrElse(index) { false }) {
-                        val notePlaceholder = stringResource(R.string.ask_question_note_placeholder)
-                        OutlinedTextField(
-                            value = notes.getOrElse(index) { "" },
-                            onValueChange = { typed ->
-                                notes = notes.toMutableList().apply { this[index] = typed }
-                            },
-                            placeholder = {
+                                modifier = Modifier
+                                    .thumbTarget()
+                                    .testTag(AskReviewTags.askAddNote(index)),
+                                contentPadding = PaddingValues(horizontal = Space.xs, vertical = Space.xs),
+                            ) {
                                 Text(
-                                    text = notePlaceholder,
-                                    style = AmuxTheme.typography.body,
-                                    color = colors.inkFaint,
+                                    text = stringResource(R.string.ask_question_add_note),
+                                    style = AmuxTheme.typography.bodyEmphasis,
+                                    color = colors.ink,
                                 )
-                            },
-                            textStyle = AmuxTheme.typography.body.copy(color = colors.ink),
-                            minLines = 1,
-                            maxLines = 4,
-                            shape = RoundedCornerShape(AmuxTheme.metrics.controlRadius),
-                            colors = amuxTextFieldColors(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .semantics { contentDescription = notePlaceholder }
-                                .testTag(AskReviewTags.askQuestionNote(index)),
-                        )
-                    } else {
-                        TextButton(
-                            onClick = {
-                                noting = noting.toMutableList().apply { this[index] = true }
-                            },
-                            modifier = Modifier
-                                .thumbTarget()
-                                .testTag(AskReviewTags.askAddNote(index)),
-                            contentPadding = PaddingValues(horizontal = Space.xs, vertical = Space.xs),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.ask_question_add_note),
-                                style = AmuxTheme.typography.bodyEmphasis,
-                                color = colors.ink,
-                            )
+                            }
                         }
                     }
                 }
@@ -2142,64 +2261,20 @@ private fun QuestionAskSection(
 
 private fun buildInitialQuestionDraft(
     count: Int,
-    preset: AskPreset?,
     kept: QuestionDraft?,
 ): QuestionDraft {
     if (kept != null && kept.fits(count)) return kept
-    val picks = MutableList(count) { emptySet<Int>() }
-    val others = MutableList<String?>(count) { null }
-    val highlighted = MutableList<Int?>(count) { null }
-    val skipped = MutableList(count) { false }
-    val notes = MutableList(count) { "" }
-    val noting = MutableList(count) { false }
-    var reviewing = false
-    var replying = false
-    var replyText = ""
-
-    when (preset) {
-        is AskPreset.Other -> if (count > 0) others[0] = preset.text
-        is AskPreset.Highlighted -> if (count > 0) {
-            picks[0] = setOf(preset.position)
-            highlighted[0] = preset.position
-        }
-        is AskPreset.Reviewing -> {
-            preset.responses.forEachIndexed { index, response ->
-                if (index < count) {
-                    val chosen = response.picked.orEmpty()
-                    val typed = response.other?.takeIf { it.isNotEmpty() }
-                    if (chosen.isEmpty() && typed == null) {
-                        skipped[index] = true
-                    } else {
-                        picks[index] = chosen.toSet()
-                        others[index] = typed
-                    }
-                    notes[index] = response.note.orEmpty()
-                }
-            }
-            reviewing = true
-        }
-        is AskPreset.QuestionNote -> if (count > 0) {
-            notes[0] = preset.text
-            noting[0] = true
-        }
-        is AskPreset.Replying -> {
-            replying = true
-            replyText = preset.text
-        }
-        else -> Unit
-    }
-
     return QuestionDraft(
         step = 0,
-        picks = picks,
-        others = others,
-        highlighted = highlighted,
-        skipped = skipped,
-        notes = notes,
-        noting = noting,
-        reviewing = reviewing,
-        replying = replying,
-        replyText = replyText,
+        picks = List(count) { emptySet() },
+        others = List(count) { null },
+        highlighted = List(count) { null },
+        skipped = List(count) { false },
+        notes = List(count) { "" },
+        noting = List(count) { false },
+        reviewing = false,
+        replying = false,
+        replyText = "",
     )
 }
 
@@ -2213,11 +2288,12 @@ private fun questionSummaryText(
     val parts = picked.sorted().mapNotNull { pos ->
         question.options.getOrNull(pos)?.let { MarkdownDocument.inline(it.label).plainText }
     }.toMutableList()
-    if (!other.isNullOrEmpty()) {
+    val trimmedOther = other?.trim()
+    if (!trimmedOther.isNullOrEmpty()) {
         parts += if (question.secret) {
             stringResource(R.string.ask_question_answered_hidden)
         } else {
-            "\u201C$other\u201D"
+            "\u201C$trimmedOther\u201D"
         }
     }
     return when {

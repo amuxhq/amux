@@ -6,6 +6,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +20,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imeNestedScroll
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -71,8 +76,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -92,6 +99,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.flow.distinctUntilChanged
 import sh.amux.design.AmuxChrome
@@ -175,12 +183,18 @@ object ChatScreenTags {
     const val ENDED_BANNER: String = "chat.ended"
     const val FEED: String = "chat.feed"
     const val PAGING: String = "chat.paging"
+    const val PAGING_RETRY: String = "chat.paging.retry"
     const val LOADING: String = "chat.loading"
     const val AWAY: String = "chat.away"
     const val NEW_ACTIVITY: String = "chat.newActivity"
     const val TO_NEWEST: String = "chat.toNewest"
     const val PREVIEW_DIALOG: String = "chat.preview"
     const val PREVIEW_CLOSE: String = "chat.preview.close"
+    const val PREVIEW_OPEN: String = "chat.preview.open"
+    const val PREVIEW_SHARE: String = "chat.preview.share"
+    const val COMMAND_REPLACE_DIALOG: String = "chat.command.replace.dialog"
+    const val COMMAND_REPLACE_CONFIRM: String = "chat.command.replace.confirm"
+    const val COMMAND_REPLACE_KEEP: String = "chat.command.replace.keep"
     const val RENAME_DIALOG: String = "chat.rename.dialog"
     const val RENAME_INPUT: String = "chat.rename.field"
     const val RENAME_PROBLEM: String = "chat.rename.problem"
@@ -210,6 +224,7 @@ data class ChatSubject(
     val topLevel: Boolean = true,
     val workspaceGoes: WorkspaceGoes? = null,
     val native: Boolean = false,
+    val key: AgentKey? = null,
 ) {
     val reachable: Boolean
         get() = reach is Reach.Online
@@ -249,17 +264,22 @@ data class ChatOpenedAttachmentUi(
     val name: String,
     val bytes: ByteArray? = null,
     val isImage: Boolean = true,
+    val file: File? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is ChatOpenedAttachmentUi) return false
-        return name == other.name && bytes.contentEquals(other.bytes) && isImage == other.isImage
+        return name == other.name &&
+            bytes.contentEquals(other.bytes) &&
+            isImage == other.isImage &&
+            file == other.file
     }
 
     override fun hashCode(): Int {
         var result = name.hashCode()
         result = 31 * result + (bytes?.contentHashCode() ?: 0)
         result = 31 * result + isImage.hashCode()
+        result = 31 * result + (file?.hashCode() ?: 0)
         return result
     }
 }
@@ -358,6 +378,9 @@ data class ChatScreenState(
     val frame: ChatFrame? = null,
     val ask: AskCard? = null,
     val overview: Overview? = null,
+    val overviewChangesComparison: Comparison? = null,
+    val overviewChangesLoading: Boolean = false,
+    val overviewChangesError: String? = null,
     val settings: SettingsView? = null,
     val openedAgents: Map<List<Int>, OpenedAgent> = emptyMap(),
     val liveSubagents: GroupState = EMPTY_GROUP_STATE,
@@ -434,6 +457,8 @@ data class ChatScreenCallbacks(
     val onOpenAgent: (AgentKey) -> Unit = {},
     val onOpenReview: (filePath: String?) -> Unit = {},
     val onOpenAttachment: (BlobRef) -> Unit = {},
+    val onOpenAttachmentExternally: (File) -> Unit = {},
+    val onShareAttachment: (File) -> Unit = {},
     val onClearOpenedAttachment: () -> Unit = {},
     val onOpenLink: (OpenableLink) -> Unit = {},
     val onCopyCode: (String) -> Unit = {},
@@ -458,6 +483,7 @@ data class ChatScreenCallbacks(
     val onFormValuesChange: (askKey: String, List<FormValue>) -> Unit = { _, _ -> },
     val validateForm: (List<FormField>, List<FormValue>) -> List<FormProblem> = ::validateFormFields,
     val onSelectComparison: (Comparison) -> Unit = {},
+    val onRetryChangedFiles: () -> Unit = {},
     val onChangeSetting: (SettingChange) -> Unit = {},
     val onOverviewOpenChange: (Boolean) -> Unit = {},
     val onClearRequestedOverlay: () -> Unit = {},
@@ -490,29 +516,54 @@ fun ChatScreen(
     callbacks: ChatScreenCallbacks = ChatScreenCallbacks(),
     modifier: Modifier = Modifier,
 ) {
+    val chatIdentity: Any = state.subject.key
+        ?: state.frame?.agent
+        ?: state.subject.address.ifEmpty { state.subject.name }
+
+    key(chatIdentity) {
+        ChatScreenContent(
+            state = state,
+            rowSource = rowSource,
+            callbacks = callbacks,
+            modifier = modifier,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ChatScreenContent(
+    state: ChatScreenState,
+    rowSource: ChatRowSource,
+    callbacks: ChatScreenCallbacks,
+    modifier: Modifier = Modifier,
+) {
     val colors = AmuxTheme.colors
     val listState = rememberLazyListState()
+    val currentCallbacks by rememberUpdatedState(callbacks)
+    val currentFollowing by rememberUpdatedState(state.following)
 
     var overviewOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     var settleConfirmCuts by remember { mutableStateOf<String?>(null) }
     var deleteOpen by remember { mutableStateOf(false) }
+    var pendingCommandPrefix by remember { mutableStateOf<String?>(null) }
     var localPreview by remember { mutableStateOf<ChatOpenedAttachmentUi?>(null) }
 
     LaunchedEffect(overviewOpen) {
-        callbacks.onOverviewOpenChange(overviewOpen)
+        currentCallbacks.onOverviewOpenChange(overviewOpen)
     }
 
     LaunchedEffect(state.requestedOverlay) {
         when (state.requestedOverlay) {
             ChatRequestedOverlay.Settings -> {
                 settingsOpen = true
-                callbacks.onClearRequestedOverlay()
+                currentCallbacks.onClearRequestedOverlay()
             }
             ChatRequestedOverlay.Rename -> {
                 renameOpen = true
-                callbacks.onClearRequestedOverlay()
+                currentCallbacks.onClearRequestedOverlay()
             }
             null -> Unit
         }
@@ -537,38 +588,95 @@ fun ChatScreen(
         }
     }
 
-    // Auto-follow newest row while following or when jumpToNewest bumps toNewest.
+    // Observe tail row identity + streaming revision so cap-scrolling (same key count,
+    // new tail key) and growing streamed replies keep the viewport pinned to newest.
+    val lastKey = state.keys.lastOrNull()
+    val tailCell = if (lastKey != null) rowSource.observeCell(lastKey) else null
+    val lastLandingId = state.landingInFeed.lastOrNull()?.inputId
     val totalTailAnchor = state.keys.size + state.landingInFeed.size
-    LaunchedEffect(state.following, state.toNewest, totalTailAnchor) {
+    var initialFollowDone by remember { mutableStateOf(!state.following || totalTailAnchor == 0) }
+    var userScrolledSinceSettle by remember { mutableStateOf(false) }
+    var userHasInteracted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(
+        state.following,
+        state.toNewest,
+        lastKey,
+        tailCell?.revision,
+        lastLandingId,
+        totalTailAnchor,
+    ) {
         if (state.following && totalTailAnchor > 0) {
-            val lastIndex = listState.layoutInfo.totalItemsCount - 1
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastIndex = if (totalItems > 0) totalItems - 1 else totalTailAnchor - 1
             if (lastIndex >= 0) {
                 listState.scrollToItem(lastIndex)
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()
+                if (lastVisible != null && lastVisible.index == info.totalItemsCount - 1) {
+                    val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
+                    if (overflow > 0) {
+                        listState.scrollBy(overflow.toFloat())
+                    }
+                }
+            }
+            initialFollowDone = true
+        } else if (!state.following || totalTailAnchor == 0) {
+            initialFollowDone = true
+        }
+    }
+
+    // Only user drag gestures (never frame-0 layout, programmatic scrollToItem,
+    // new row arrivals, or IME viewport shrink) change reading/following state.
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is DragInteraction.Start -> {
+                    userScrolledSinceSettle = true
+                    userHasInteracted = true
+                }
+                is DragInteraction.Stop,
+                is DragInteraction.Cancel,
+                -> {
+                    if (!listState.isScrollInProgress && userScrolledSinceSettle) {
+                        userScrolledSinceSettle = false
+                        currentCallbacks.onReadingChange(isNearTranscriptBottom(listState))
+                    }
+                }
             }
         }
     }
 
-    // Track user scroll position to update following state and trigger top-edge paging.
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress to isNearTranscriptBottom(listState) }
             .distinctUntilChanged()
             .collect { (scrolling, atBottom) ->
-                if (!scrolling) {
-                    callbacks.onReadingChange(atBottom)
+                if (!scrolling && userScrolledSinceSettle) {
+                    userScrolledSinceSettle = false
+                    currentCallbacks.onReadingChange(atBottom)
                 }
             }
     }
 
-    LaunchedEffect(listState, state.keys.size, state.frame?.hasOlder, state.paging) {
+    LaunchedEffect(
+        listState,
+        state.keys.size,
+        state.frame?.hasOlder,
+        state.paging,
+        initialFollowDone,
+        userHasInteracted,
+    ) {
+        if (!initialFollowDone) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect { firstVisible ->
-                if (state.keys.isNotEmpty() &&
+                if ((!currentFollowing || userHasInteracted) &&
+                    state.keys.isNotEmpty() &&
                     firstVisible < TOP_PAGING_THRESHOLD &&
                     state.frame?.hasOlder == true &&
                     state.paging is ChatPagingUi.Idle
                 ) {
-                    callbacks.onReachedTop(firstVisible)
+                    currentCallbacks.onReachedTop(firstVisible)
                 }
             }
     }
@@ -653,8 +761,7 @@ fun ChatScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .navigationBarsPadding()
-                    .imePadding(),
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
             ) {
                 // Family header (parent back-chip for subagents; expandable children summary for head)
                 val family = state.family
@@ -691,6 +798,7 @@ fun ChatScreen(
                         rowSource = rowSource,
                         listState = listState,
                         callbacks = rowCallbacks,
+                        onRetryPaging = { callbacks.onReachedTop(0) },
                     )
 
                     if (state.newActivity) {
@@ -727,6 +835,9 @@ fun ChatScreen(
             state = ChatOverviewState(
                 subject = state.subject.toOverviewUi(),
                 overview = state.overview,
+                changesComparison = state.overviewChangesComparison,
+                changesLoading = state.overviewChangesLoading,
+                changesError = state.overviewChangesError,
                 context = state.frame?.context,
                 comparisons = state.comparisons,
                 comparison = state.comparison,
@@ -738,6 +849,7 @@ fun ChatScreen(
                 when (action) {
                     is ChatOverviewAction.StopJob -> callbacks.onStopJob(action.key)
                     is ChatOverviewAction.SelectComparison -> callbacks.onSelectComparison(action.comparison)
+                    ChatOverviewAction.RetryChanges -> callbacks.onRetryChangedFiles()
                     is ChatOverviewAction.OpenReview -> {
                         overviewOpen = false
                         callbacks.onOpenReview(action.filePath)
@@ -761,7 +873,66 @@ fun ChatScreen(
             onSelectCommand = { command ->
                 settingsOpen = false
                 val prefix = command.sigil.ifEmpty { "/" } + command.name + " "
-                callbacks.onDraftChange(prefix)
+                if (state.draft.isBlank() || state.draft.trimStart().startsWith(prefix.trimEnd())) {
+                    callbacks.onDraftChange(prefix)
+                } else {
+                    pendingCommandPrefix = prefix
+                }
+            },
+        )
+    }
+
+    val commandToReplace = pendingCommandPrefix
+    if (commandToReplace != null) {
+        AlertDialog(
+            onDismissRequest = { pendingCommandPrefix = null },
+            containerColor = colors.raised,
+            titleContentColor = colors.ink,
+            textContentColor = colors.inkMuted,
+            modifier = Modifier.testTag(ChatScreenTags.COMMAND_REPLACE_DIALOG),
+            title = {
+                Text(
+                    text = stringResource(R.string.chat_command_replace_title),
+                    style = AmuxTheme.typography.bodyEmphasis,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.chat_command_replace_detail, commandToReplace.trim()),
+                    style = AmuxTheme.typography.detail,
+                    color = colors.inkMuted,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingCommandPrefix = null
+                        callbacks.onDraftChange(commandToReplace)
+                    },
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(ChatScreenTags.COMMAND_REPLACE_CONFIRM),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_command_replace_confirm),
+                        style = AmuxTheme.typography.bodyEmphasis,
+                        color = colors.ink,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingCommandPrefix = null },
+                    modifier = Modifier
+                        .thumbTarget()
+                        .testTag(ChatScreenTags.COMMAND_REPLACE_KEEP),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_command_replace_keep),
+                        style = AmuxTheme.typography.body,
+                        color = colors.inkMuted,
+                    )
+                }
             },
         )
     }
@@ -809,6 +980,8 @@ fun ChatScreen(
     if (previewTarget != null) {
         AttachmentPreviewDialog(
             attachment = previewTarget,
+            onOpenExternally = callbacks.onOpenAttachmentExternally,
+            onShare = callbacks.onShareAttachment,
             onDismiss = {
                 localPreview = null
                 if (state.openedAttachment != null) {
@@ -893,7 +1066,9 @@ private fun isNearTranscriptBottom(listState: LazyListState): Boolean {
     val total = info.totalItemsCount
     if (total == 0) return true
     val lastVisible = info.visibleItemsInfo.lastOrNull() ?: return true
-    return lastVisible.index >= total - 1
+    if (lastVisible.index < total - 1) return false
+    val overflow = (lastVisible.offset + lastVisible.size) - info.viewportEndOffset
+    return overflow <= 24
 }
 
 @Composable
@@ -1529,6 +1704,7 @@ private fun ChatTranscriptList(
     rowSource: ChatRowSource,
     listState: LazyListState,
     callbacks: ChatRowCallbacks,
+    onRetryPaging: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
     val pagingMessage: String? = when (val paging = state.paging) {
@@ -1537,6 +1713,7 @@ private fun ChatTranscriptList(
         ChatPagingUi.Unreachable -> stringResource(R.string.chat_paging_unreachable, state.subject.host)
         is ChatPagingUi.Failed -> paging.reason
     }
+    val canRetryPaging = state.paging is ChatPagingUi.Failed || state.paging is ChatPagingUi.Unreachable
 
     val emptyNotice: Pair<String, String>? = if (state.empty && state.frame?.caughtUp != true) {
         if (!state.subject.reachable && !state.subject.connecting) {
@@ -1574,6 +1751,7 @@ private fun ChatTranscriptList(
                 TranscriptNoticeRow(
                     text = pagingMessage,
                     tag = ChatScreenTags.PAGING,
+                    onRetry = if (canRetryPaging) onRetryPaging else null,
                 )
             }
         }
@@ -1587,12 +1765,13 @@ private fun ChatTranscriptList(
             }
         }
 
-        items(
+        itemsIndexed(
             items = state.keys,
-            key = { it },
-        ) { rowId ->
+            key = { _, id -> id },
+        ) { index, rowId ->
             ChatTranscriptRowItem(
                 rowId = rowId,
+                nextKey = state.keys.getOrNull(index + 1),
                 expanded = rowId in state.expanded,
                 openedAgents = state.openedAgents,
                 groupStates = state.groupStates,
@@ -1637,6 +1816,7 @@ private fun ChatTranscriptList(
 @Composable
 private fun ChatTranscriptRowItem(
     rowId: String,
+    nextKey: String?,
     expanded: Boolean,
     openedAgents: Map<List<Int>, OpenedAgent>,
     groupStates: Map<String, GroupState>,
@@ -1647,8 +1827,9 @@ private fun ChatTranscriptRowItem(
     val row = cell.row ?: return
     if (!rowSource.shows(row)) return
 
-    val rail = remember(row, cell.revision) {
-        RailJoin.of(row, next = rowSource.rowBelow(row.id))
+    val rowBelow = rowSource.rowBelow(row.id)
+    val rail = remember(row, cell.revision, nextKey, rowBelow?.id, rowBelow?.kind, rowBelow?.run) {
+        RailJoin.of(row, next = rowBelow)
     }
     val placement = remember(row, cell.revision) {
         RunPlacement.of(
@@ -1663,6 +1844,7 @@ private fun ChatTranscriptRowItem(
     ChatRowView(
         row = row,
         expanded = expanded,
+        shown = true,
         rail = rail,
         placement = placement,
         openedAgents = openedAgents,
@@ -1682,17 +1864,38 @@ private fun ChatTranscriptRowItem(
 private fun TranscriptNoticeRow(
     text: String,
     tag: String,
+    onRetry: (() -> Unit)? = null,
 ) {
-    Text(
-        text = text,
-        style = AmuxTheme.typography.detail,
-        color = AmuxTheme.colors.inkMuted,
-        textAlign = TextAlign.Center,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = Space.l)
             .testTag(tag),
-    )
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
+        Text(
+            text = text,
+            style = AmuxTheme.typography.detail,
+            color = AmuxTheme.colors.inkMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (onRetry != null) {
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier
+                    .thumbTarget()
+                    .testTag(ChatScreenTags.PAGING_RETRY),
+            ) {
+                Text(
+                    text = stringResource(R.string.action_retry),
+                    style = AmuxTheme.typography.bodyEmphasis,
+                    color = AmuxTheme.colors.ink,
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -2124,6 +2327,8 @@ private fun ChatDeleteDialog(
 @Composable
 private fun AttachmentPreviewDialog(
     attachment: ChatOpenedAttachmentUi,
+    onOpenExternally: (File) -> Unit,
+    onShare: (File) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = AmuxTheme.colors
@@ -2133,6 +2338,7 @@ private fun AttachmentPreviewDialog(
             runCatching { BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap() }.getOrNull()
         }
     }
+    val localFile = attachment.file
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -2210,6 +2416,25 @@ private fun AttachmentPreviewDialog(
                             color = colors.inkMuted,
                             textAlign = TextAlign.Center,
                         )
+                        if (localFile != null) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(Space.s),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AmuxActionButton(
+                                    label = stringResource(R.string.chat_preview_open),
+                                    kind = ActionButtonKind.Primary,
+                                    onClick = { onOpenExternally(localFile) },
+                                    modifier = Modifier.testTag(ChatScreenTags.PREVIEW_OPEN),
+                                )
+                                AmuxActionButton(
+                                    label = stringResource(R.string.chat_preview_share),
+                                    kind = ActionButtonKind.Outline,
+                                    onClick = { onShare(localFile) },
+                                    modifier = Modifier.testTag(ChatScreenTags.PREVIEW_SHARE),
+                                )
+                            }
+                        }
                     }
                 }
             }

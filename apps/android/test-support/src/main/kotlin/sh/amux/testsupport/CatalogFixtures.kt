@@ -1,0 +1,884 @@
+package sh.amux.testsupport
+
+import sh.amux.features.ChatSubject
+import sh.amux.values.Activity
+import sh.amux.values.ActivityKind
+import sh.amux.values.AgentKey
+import sh.amux.values.AskBody
+import sh.amux.values.AskCard
+import sh.amux.values.AskRow
+import sh.amux.values.Attention
+import sh.amux.values.BackgroundKind
+import sh.amux.values.CallPhase
+import sh.amux.values.CardState
+import sh.amux.values.ChangeTotals
+import sh.amux.values.ChangedFile
+import sh.amux.values.Changeability
+import sh.amux.values.Changeable
+import sh.amux.values.Changes
+import sh.amux.values.ChatFrame
+import sh.amux.values.Choice
+import sh.amux.values.ChoiceOutcome
+import sh.amux.values.Composer
+import sh.amux.values.Decision
+import sh.amux.values.DecisionView
+import sh.amux.values.Directory
+import sh.amux.values.EditLine
+import sh.amux.values.EffortChoice
+import sh.amux.values.ExitCause
+import sh.amux.values.ExploreVerb
+import sh.amux.values.FamilyHeader
+import sh.amux.values.FileChangeView
+import sh.amux.values.FileRow
+import sh.amux.values.FileStatus
+import sh.amux.values.Filing
+import sh.amux.values.FleetCard
+import sh.amux.values.Folder
+import sh.amux.values.FormField
+import sh.amux.values.FormFieldKind
+import sh.amux.values.FormValue
+import sh.amux.values.Git
+import sh.amux.values.GroupState
+import sh.amux.values.HostView
+import sh.amux.values.JobRow
+import sh.amux.values.JobStop
+import sh.amux.values.Kind
+import sh.amux.values.LineKind
+import sh.amux.values.ModelChoice
+import sh.amux.values.Offline
+import sh.amux.values.OpenedAgent
+import sh.amux.values.OptionView
+import sh.amux.values.PatchLine
+import sh.amux.values.PendingPair
+import sh.amux.values.PermissionChoice
+import sh.amux.values.PermissionGrant
+import sh.amux.values.PhaseView
+import sh.amux.values.PlanVerdict
+import sh.amux.values.Platform
+import sh.amux.values.Provider
+import sh.amux.values.ProviderSignIn
+import sh.amux.values.QuestionView
+import sh.amux.values.QueuedRow
+import sh.amux.values.Reach
+import sh.amux.values.Refusal
+import sh.amux.values.RefusalReason
+import sh.amux.values.RouteKind
+import sh.amux.values.Row
+import sh.amux.values.RowKind
+import sh.amux.values.Scope
+import sh.amux.values.Segment
+import sh.amux.values.ServerView
+import sh.amux.values.SettingsView
+import sh.amux.values.SignInState
+import sh.amux.values.SignInView
+import sh.amux.values.UsageLabel
+import sh.amux.values.UsageState
+import sh.amux.values.UsageView
+import sh.amux.values.UsageWindowView
+
+/**
+ * The iOS catalogue's invented content, value for value: the chats, asks
+ * and machines of `CatalogFixtures` in `apps/apple/Amux/Debug/ComponentCatalog.swift`.
+ *
+ * A story here and its namesake in the iOS catalogue are compared side by
+ * side, so they must draw the same names, ages, words and rows; any
+ * difference left in a picture is then the app's, not the data's. A change to
+ * one side belongs in the other.
+ */
+internal object CatalogFixtures {
+    /** The catalogue's clock: every age and reset is read against it. */
+    const val NOW_MS: Long = 1_790_000_000_000L
+
+    private const val MINUTE_MS: Long = 60_000L
+    private const val DAY_MS: Long = 86_400_000L
+
+    // --- Chat ---------------------------------------------------------------
+
+    val subject = ChatSubject(
+        name = "refactor-auth",
+        host = "Studio",
+        directory = "/Users/ada/src/amux",
+        branch = "ada/refactor-auth",
+        reach = Reach.Online(RouteKind.Direct),
+    )
+    val closedSubject = subject.copy(filing = Filing.Closed)
+    val awaySubject = ChatSubject(
+        name = "refactor-auth",
+        host = "Studio",
+        directory = "/Users/ada/src/amux",
+        reach = Reach.Away,
+    )
+
+    val git = Git(
+        baseBranch = "main",
+        branch = "refactor-auth",
+        onBranch = ChangeTotals(files = 6, added = 120, removed = 30),
+        uncommitted = ChangeTotals(files = 5, added = 56, removed = 20),
+    )
+
+    val changes = Changes(
+        totals = ChangeTotals(files = 5, added = 56, removed = 20),
+        folders = listOf(
+            Folder(
+                path = "",
+                files = listOf(
+                    ChangedFile("README.md", "README.md", added = 2, removed = 0, status = FileStatus.Modified, binary = false),
+                ),
+            ),
+            Folder(
+                path = "crates/amux-ui/src/",
+                files = listOf(
+                    ChangedFile("crates/amux-ui/src/errors.rs", "errors.rs", added = 20, removed = 0, status = FileStatus.Added, binary = false),
+                    ChangedFile("crates/amux-ui/src/pairing.rs", "pairing.rs", added = 25, removed = 8, status = FileStatus.Modified, binary = false),
+                    ChangedFile("crates/amux-ui/src/strip.rs", "strip.rs", added = 0, removed = 12, status = FileStatus.Deleted, binary = false),
+                ),
+            ),
+            Folder(
+                path = "docs/",
+                files = listOf(
+                    ChangedFile("docs/PAIRING.md", "PAIRING.md", added = 9, removed = 0, status = FileStatus.Added, binary = false),
+                ),
+            ),
+        ),
+    )
+
+    /**
+     * A busy chat's surroundings: two jobs, five changed files, a tool
+     * server that needs signing in and three usage windows.
+     */
+    val surroundings: ScriptedChat.Surroundings = ScriptedChat.strip(
+        usage = UsageView(
+            blocked = false,
+            windows = listOf(
+                UsageWindowView(UsageLabel.FiveHour, UsageState.NearLimit, resetsAtMs = null, usedPercent = 91.0),
+                UsageWindowView(UsageLabel.Weekly(model = null), UsageState.Ok, resetsAtMs = NOW_MS + 4 * DAY_MS, usedPercent = 40.0),
+                UsageWindowView(UsageLabel.Weekly(model = "Fable"), UsageState.NearLimit, resetsAtMs = NOW_MS + 4 * DAY_MS, usedPercent = 84.0),
+            ),
+            credits = null,
+        ),
+        failedServers = listOf(ServerView(name = "github", error = "The token expired.", needsAuth = true)),
+        git = git,
+        changes = changes,
+    ).let { strip ->
+        strip.copy(
+            overview = strip.overview.copy(
+                jobs = listOf(
+                    JobRow(
+                        command = "npm run dev -- --port 5173",
+                        startedAtMs = NOW_MS - 14 * MINUTE_MS,
+                        kind = BackgroundKind.Shell,
+                        stop = JobStop.Offered("b1"),
+                    ),
+                    JobRow(
+                        command = "cargo watch -x 'test -p amux-ui'",
+                        startedAtMs = NOW_MS - 40_000L,
+                        kind = BackgroundKind.Shell,
+                        stop = JobStop.Stopping,
+                    ),
+                ),
+                changes = changes,
+            ),
+        )
+    }
+
+    /**
+     * Prompts behind a running turn: one that can be withdrawn or sent now,
+     * one steering, one from another agent.
+     */
+    val queue = listOf(
+        QueuedRow(listOf(1), listOf(Segment.Text("Then run the Windows check.")), steered = false, canWithdraw = true, canSendNow = true),
+        QueuedRow(listOf(2), listOf(Segment.Text("Use the new error table instead.")), steered = true, canWithdraw = false, canSendNow = false),
+        QueuedRow(listOf(3), listOf(Segment.Text("worker-2 finished the specs.")), steered = false, canWithdraw = false, canSendNow = true, fromAgent = "worker-2"),
+    )
+
+    val failedSignIn = SignInView(state = SignInState.Failed, account = "ada@example.com", message = "OAuth token has expired.")
+
+    private fun r(
+        id: String,
+        order: Long,
+        kind: RowKind,
+        attention: Boolean = false,
+        decision: Decision? = null,
+    ): Row = ScriptedChat.row(id, order, kind, attention = attention, decision = decision)
+
+    private fun command(
+        command: String,
+        state: CallPhase,
+        exit: Int? = 0,
+        ms: Long? = null,
+        output: List<String> = emptyList(),
+        more: Long = 0L,
+        description: String = "",
+    ): RowKind = RowKind.Command(
+        command = command,
+        description = description,
+        state = state,
+        outputHead = output,
+        moreLines = more,
+        outputTrimmed = false,
+        outputTail = emptyList(),
+        durationMs = ms,
+        exitCode = exit,
+    )
+
+    private fun edit(path: String, added: Int, removed: Int): RowKind = RowKind.FileChange(
+        files = listOf(FileRow(path = path, change = FileChangeView.Edited, added = added, removed = removed)),
+        state = CallPhase.Succeeded,
+    )
+
+    private fun prompt(text: String): RowKind = RowKind.Prompt(text = listOf(Segment.Text(text)), steered = false)
+
+    private fun prose(text: String): RowKind =
+        RowKind.Prose(text = listOf(Segment.Text(text)), streaming = false, workingNote = false)
+
+    private fun explore(verb: ExploreVerb, subject: String, state: CallPhase = CallPhase.Succeeded): RowKind =
+        RowKind.Explore(verb = verb, subject = subject, state = state, result = "")
+
+    /**
+     * A finished turn: the prompt, one run of steps the agent took (a failed
+     * check it fixed, a lint it left failing, a command the person refused)
+     * and its answer.
+     */
+    val conversation: List<Row> = listOf(
+        r("c02", 2, prompt("Collapse the pairing errors onto one string.")),
+    ) + ScriptedChat.run(
+        listOf(
+            r("c03", 3, RowKind.Thinking(text = "", open = false, durationMs = 8_000L)),
+            r("c04", 4, explore(ExploreVerb.Search, "INVALID_PIN")),
+            r("c05", 5, explore(ExploreVerb.Read, "crates/wire/src/codes.rs")),
+            r("c06", 6, explore(ExploreVerb.Read, "crates/amux-ui/src/pairing.rs")),
+            r("c07", 7, edit("crates/amux-ui/src/pairing.rs", 9, 14)),
+            r("c08", 8, command("cargo check -p amux-ui", CallPhase.Failed, exit = 101, ms = 4_200L, output = listOf("error[E0308]: mismatched types"), more = 214L)),
+            r("c09", 9, edit("crates/amux-ui/src/pairing.rs", 2, 1)),
+            r("c10", 10, command("cargo check -p amux-ui", CallPhase.Succeeded, ms = 3_900L)),
+            r(
+                "c11",
+                11,
+                RowKind.FileChange(
+                    files = listOf(
+                        FileRow(
+                            path = "crates/amux-ui/tests/spec/pairing_copy.rs",
+                            change = FileChangeView.Created(lines = 38),
+                            added = 38,
+                            removed = 0,
+                        ),
+                    ),
+                    state = CallPhase.Succeeded,
+                ),
+            ),
+            r(
+                "c12",
+                12,
+                command("cargo test -p amux-ui", CallPhase.Succeeded, ms = 12_000L),
+                decision = Decision(outcome = DecisionView.Allowed, elsewhere = false, granted = PermissionGrant.Session),
+            ),
+            r("c13", 13, command("cargo clippy -p amux-ui", CallPhase.Failed, exit = 1, ms = 6_100L, output = listOf("warning: unused import: `PinError`"), more = 12L)),
+            r(
+                "c14",
+                14,
+                command("rm -rf target", CallPhase.Denied, exit = null),
+                decision = Decision(outcome = DecisionView.Denied, elsewhere = false, note = "Use cargo clean instead"),
+            ),
+        ),
+        failed = setOf("c13"),
+    ) + listOf(
+        r("c15", 15, prose("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")),
+        r("c16", 16, RowKind.TurnEnd(failed = false, durationMs = 102_000L)),
+    )
+
+    /** The finished turn, then a second one the agent is still at: five steps in, its newest running. */
+    val working: List<Row> = conversation + listOf(
+        r("w01", 20, prompt("Drop the unused import and run the whole suite.")),
+    ) + ScriptedChat.run(
+        listOf(
+            r("w02", 21, explore(ExploreVerb.Read, "crates/amux-ui/src/pairing.rs")),
+            r(
+                "w03",
+                22,
+                RowKind.FileChange(
+                    files = listOf(FileRow(path = "crates/amux-ui/src/pairing.rs", change = FileChangeView.Edited, added = 0, removed = 1)),
+                    state = CallPhase.Succeeded,
+                ),
+            ),
+            r("w04", 23, command("cargo clippy -p amux-ui", CallPhase.Succeeded, ms = 5_800L)),
+            r("w05", 24, explore(ExploreVerb.Search, "pairing_copy")),
+            r("w06", 25, command("cargo test --workspace", CallPhase.Running, exit = null, description = "Run the whole suite")),
+        ),
+        live = true,
+    )
+
+    /** The turn's newest step, the command whose ask stands in the composer's place. */
+    val askedCommand: Row = r("x6", 60, command("cargo test -p amux-ui", CallPhase.Asking, exit = null), attention = true)
+
+    /** The working turn's activity: the whole suite running for 33 seconds. */
+    val workingActivity = Activity(kind = ActivityKind.Running("w06"), sinceMs = 0L, elapsedMs = 33_000L, turnElapsedMs = 33_000L)
+
+    const val PLAN_TITLE = "Collapse the pairing failures onto one message"
+    const val PLAN_BODY = "The client maps gRPC statuses onto distinct strings in three places. The protocol refuses " +
+        "to distinguish them, so the client must not either.\n\n" +
+        "1. One arm, one string\n" +
+        "2. Update the three specs"
+
+    /** A prompt, the agent's look around, and the plan it proposed. */
+    val planned: List<Row> = listOf(
+        r("p1", 1, prompt("Plan how to collapse the pairing errors.")),
+        r("e1", 2, explore(ExploreVerb.Search, "INVALID_PIN")),
+        r("e2", 3, explore(ExploreVerb.Read, "wire/src/codes.rs")),
+        r(
+            "l1",
+            4,
+            RowKind.Ask(
+                AskRow.Plan(
+                    body = PLAN_BODY,
+                    verdict = PlanVerdict.Open,
+                    mode = "",
+                    modeName = "",
+                    writing = false,
+                    note = null,
+                    title = PLAN_TITLE,
+                ),
+            ),
+        ),
+    )
+
+    // --- Subagents ----------------------------------------------------------
+
+    /** An agent its parent's provider runs, as the fleet keys it on Studio. */
+    fun subagent(index: Int): AgentKey = AgentKey(host = List(16) { 1 }, agent = List(16) { index })
+
+    private fun opened(index: Int, title: String, phase: PhaseView): OpenedAgent =
+        OpenedAgent(agent = subagent(index), name = title, kind = Kind.ClaudeSdk, phase = phase)
+
+    /** The Agent call that started subagent [agent]. */
+    private fun call(id: String, order: Long, description: String, agent: Int, state: CallPhase): Row = ScriptedChat.row(
+        id,
+        order,
+        RowKind.Subagent(description = description, continued = false, state = state, answer = "", durationMs = null),
+        opens = subagent(agent).agent,
+    )
+
+    /** The four subagents the delegating turn starts, by where each stands. */
+    private val delegated: List<Triple<Int, String, PhaseView>> = listOf(
+        Triple(21, "Survey the relay’s retry path", PhaseView.Working),
+        Triple(22, "Check the Windows build", PhaseView.NeedsYou),
+        Triple(23, "Find every INVALID_PIN reader", PhaseView.Exited(ExitCause.Finished)),
+        Triple(24, "Read the pairing spec", PhaseView.Working),
+    )
+
+    val delegatedAgents: Map<List<Int>, OpenedAgent> =
+        delegated.associate { (index, title, phase) -> subagent(index).agent to opened(index, title, phase) }
+
+    /** The group row's key: its first call. */
+    const val DELEGATED_GROUP = "d04"
+
+    val delegatedState = GroupState(agents = 4, running = 2, needsYou = 1, idle = 0, finished = 1, ended = 0, failed = 0, unknown = 0)
+
+    /** What the activity line says of the subagents still at work. */
+    val delegatedLive = GroupState(agents = 3, running = 2, needsYou = 1, idle = 0, finished = 0, ended = 0, failed = 0, unknown = 0)
+
+    /** A turn that hands its work to four subagents at once, its calls folded into one group. */
+    val delegating: List<Row> = conversation + listOf(
+        r("d01", 30, prompt("Split the pairing audit four ways and report back.")),
+        r("d02", 31, RowKind.Thinking(text = "", open = false, durationMs = 3_000L)),
+        r("d03", 32, prose("Starting four subagents, one per area.")),
+    ) + ScriptedChat.group(
+        delegated.mapIndexed { index, (agent, title, _) ->
+            call("d0${index + 4}", 33L + index, title, agent = agent, state = CallPhase.Running)
+        },
+    )
+
+    val delegatingActivity = Activity(kind = ActivityKind.Subagents(3), sinceMs = 0L, elapsedMs = 41_000L, turnElapsedMs = 41_000L)
+
+    /** Subagent 21's own chat: the task its parent gave it, its thinking, the tools it ran and its answer so far. */
+    val subagentWork: List<Row> = listOf(
+        r("s01", 1, prompt("Survey the relay’s retry path: where a dropped link is retried, and what bounds it.")),
+        r("s02", 2, RowKind.Thinking(text = "The retry lives in the link layer, so start at the dialler.", open = false, durationMs = 2_000L)),
+    ) + ScriptedChat.run(
+        listOf(
+            r("s03", 3, explore(ExploreVerb.Search, "retry_after")),
+            r("s04", 4, explore(ExploreVerb.Read, "crates/relay-core/src/dial.rs")),
+            r("s05", 5, command("cargo test -p relay-core retry", CallPhase.Succeeded, ms = 6_100L)),
+        ),
+    ) + listOf(
+        r("s06", 6, prose("The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.")),
+        r("s07", 7, explore(ExploreVerb.Read, "crates/relay-core/src/link.rs", CallPhase.Running)),
+    )
+
+    fun nativeFrame(stop: JobStop): ChatFrame = ScriptedChat.frame(
+        name = "sub-3f9a01c2",
+        kind = Kind.ClaudeSdk,
+        phase = PhaseView.Working,
+        mode = Composer.Native(stop),
+        activity = Activity(kind = ActivityKind.Running("s07"), sinceMs = 0L, elapsedMs = 19_000L, turnElapsedMs = 19_000L),
+    )
+
+    val nativeSubject = ChatSubject(
+        name = "Survey the relay’s retry path",
+        host = "Studio",
+        directory = "",
+        reach = Reach.Online(RouteKind.Direct),
+        topLevel = false,
+        native = true,
+    )
+
+    /** The parent the subagent's chat leads back to. */
+    val nativeFamily = FamilyHeader(
+        children = emptyList(),
+        attention = Attention.Working,
+        needYou = 0,
+        parent = FleetCard(
+            agent = AgentKey(host = List(16) { 1 }, agent = List(16) { 2 }),
+            name = "pairing-audit",
+            handle = "pairing-audit",
+            kind = Kind.ClaudeSdk,
+            attention = Attention.Working,
+            cwd = "/Users/ada/src/amux",
+            phaseSinceMs = 0L,
+            host = "Studio",
+            hostReach = Reach.Online(RouteKind.Direct),
+            children = 4,
+            familyAttention = Attention.NeedsYou,
+            members = 5,
+            descendants = 4,
+            backgroundJobs = 0,
+            closeHeld = false,
+            filing = Filing.Open,
+            topLevel = true,
+            native = false,
+        ),
+    )
+
+    // --- Settings -----------------------------------------------------------
+
+    private val claudeModeNames = linkedMapOf(
+        "default" to "Default",
+        "acceptEdits" to "Accept edits",
+        "plan" to "Plan",
+        "auto" to "Auto",
+        "bypassPermissions" to "Bypass permissions",
+    )
+
+    fun claudeSdkSettings(mode: String = "plan"): SettingsView {
+        val efforts = listOf("low", "medium", "high", "xhigh", "max")
+        return SettingsView(
+            models = listOf(
+                ModelChoice("default", "Default (recommended)", "Opus 5.5 · Most capable for complex work", efforts, current = true, unlisted = false, defaultEffort = "high"),
+                ModelChoice("sonnet", "Sonnet", "Sonnet 5 · Best for everyday tasks", efforts, current = false, unlisted = false, defaultEffort = "high"),
+                ModelChoice("haiku", "Haiku", "Haiku 4.5 · Fastest for quick answers", emptyList(), current = false, unlisted = false, defaultEffort = null),
+            ),
+            efforts = efforts.map { EffortChoice(it, current = it == "high", default = it == "high", unlisted = false) },
+            permissions = claudeModeNames.map { (value, name) ->
+                PermissionChoice(
+                    value = value,
+                    displayName = name,
+                    custom = false,
+                    current = value == mode,
+                    unlisted = false,
+                    normal = value == "default",
+                    neverAsks = value == "bypassPermissions",
+                    settable = true,
+                )
+            },
+            modes = emptyList(),
+            changeable = Changeability(Changeable.Pick, Changeable.Pick, Changeable.Pick, Changeable.NotOffered),
+            commands = emptyList(),
+        )
+    }
+
+    /** Terminal Claude: its model and effort are changed by typing, its permission by cycling. */
+    val settingsClaudePty = SettingsView(
+        models = listOf(ModelChoice("claude-sonnet-5", "Sonnet 5", "", emptyList(), current = true, unlisted = true, defaultEffort = null)),
+        efforts = listOf(EffortChoice("high", current = true, default = false, unlisted = true)),
+        permissions = listOf(
+            PermissionChoice("acceptEdits", "Accept edits", custom = false, current = true, unlisted = false, normal = false, neverAsks = false, settable = false),
+        ),
+        modes = emptyList(),
+        changeable = Changeability(
+            model = Changeable.ByTyping("/model"),
+            effort = Changeable.ByTyping("/effort"),
+            permission = Changeable.Cycle,
+            mode = Changeable.NotOffered,
+        ),
+        commands = emptyList(),
+    )
+
+    // --- Asks ---------------------------------------------------------------
+
+    fun card(
+        kind: Kind,
+        body: AskBody,
+        choices: List<Choice>,
+        state: CardState = CardState.Open,
+        count: Long = 1L,
+    ): AskCard = AskCard(
+        kind = kind,
+        key = "ask-1",
+        itemKey = "x6",
+        position = 1L,
+        count = count,
+        body = body,
+        choices = choices,
+        questionNote = kind != Kind.ClaudePty,
+        questionSkip = kind != Kind.ClaudePty,
+        questionReply = true,
+        stopsTurn = true,
+        defaultToNo = false,
+        state = state,
+    )
+
+    private fun choice(outcome: ChoiceOutcome, primary: Boolean = false, takesNote: Boolean = false) =
+        Choice(outcome, primary = primary, takesNote = takesNote)
+
+    val sdkPermissionChoices = listOf(
+        choice(ChoiceOutcome.AllowOnce, primary = true),
+        choice(ChoiceOutcome.AllowAlways(listOf("cargo test"), emptyList(), "", "", Scope.Project)),
+        choice(ChoiceOutcome.AllowForSession),
+        choice(ChoiceOutcome.Deny, takesNote = true),
+        choice(ChoiceOutcome.DenyAndStop, takesNote = true),
+    )
+
+    val codexPlanChoices = listOf(
+        choice(ChoiceOutcome.ApprovePlan(mode = "", modeName = ""), primary = true),
+        choice(ChoiceOutcome.SendBack, takesNote = true),
+    )
+
+    val claudePlanChoices = listOf(
+        choice(ChoiceOutcome.ApprovePlan(mode = "auto", modeName = "Auto"), primary = true),
+        choice(ChoiceOutcome.ApprovePlan(mode = "", modeName = "")),
+        choice(ChoiceOutcome.SendBack, takesNote = true),
+    )
+
+    val allowOrDeny = listOf(
+        choice(ChoiceOutcome.AllowOnce, primary = true),
+        choice(ChoiceOutcome.Deny, takesNote = true),
+    )
+
+    val codexCommandChoices = listOf(
+        choice(ChoiceOutcome.AllowOnce, primary = true),
+        choice(ChoiceOutcome.AllowForSession),
+        choice(ChoiceOutcome.AllowSimilar(prefix = listOf("curl", "-s"))),
+        choice(ChoiceOutcome.AllowNetwork(hosts = listOf("localhost"))),
+        choice(ChoiceOutcome.Deny),
+        choice(ChoiceOutcome.DenyAndStop),
+    )
+
+    val codexCommandLargeTextChoices = listOf(
+        choice(ChoiceOutcome.AllowOnce, primary = true),
+        choice(ChoiceOutcome.AllowForSession),
+        choice(ChoiceOutcome.AllowSimilar(prefix = listOf("curl", "-s"))),
+        choice(ChoiceOutcome.Deny),
+    )
+
+    /** The command the chat and the command asks run: the spec suite. */
+    val specSuite = AskBody.Command(
+        command = "cargo test -p amux-ui",
+        cwd = "~/src/amux",
+        reason = "",
+        description = "Run the spec suite",
+    )
+
+    val bareSpecSuite = AskBody.Command(command = "cargo test -p amux-ui", cwd = "", reason = "", description = "")
+
+    val curlHealth = AskBody.Command(
+        command = "curl -s localhost:8080/health",
+        cwd = "~/src/amux",
+        reason = "Check the dev server",
+        description = "",
+    )
+
+    val plan = AskBody.Plan(body = PLAN_BODY, title = PLAN_TITLE)
+
+    /** An edit's patch as the shared view hands it: where its hunk starts, then its lines. */
+    val diff: List<EditLine> = listOf(
+        EditLine.Hunk(oldStart = 12, newStart = 12),
+        EditLine.Line(PatchLine(LineKind.Context, "  match status {", number = 12)),
+        EditLine.Line(PatchLine(LineKind.Removed, "      Code::NotFound => \"no such host\",", number = 13)),
+        EditLine.Line(PatchLine(LineKind.Removed, "      Code::InvalidPin => \"wrong PIN\",", number = 14)),
+        EditLine.Line(PatchLine(LineKind.Added, "      _ => \"could not pair, check the code\",", number = 13)),
+        EditLine.Line(PatchLine(LineKind.Context, "  }", number = 14)),
+    )
+
+    /** A new file's whole body, every line added. */
+    val created: List<EditLine> = listOf(
+        EditLine.Hunk(oldStart = 0, newStart = 1),
+        EditLine.Line(PatchLine(LineKind.Added, "//! Every reason a pairing is refused.", number = 1)),
+        EditLine.Line(PatchLine(LineKind.Added, "pub use super::Code;", number = 2)),
+    )
+
+    /** A schema with a defaulted repository, a choice of labels and a defaulted toggle. */
+    val formFields = listOf(
+        FormField(
+            name = "repository",
+            title = "Repository",
+            description = "",
+            required = true,
+            kind = FormFieldKind.Text(maxLength = null, minLength = null),
+            initial = FormValue.Text("jlw/amux"),
+        ),
+        FormField(
+            name = "labels",
+            title = "Labels",
+            description = "",
+            required = false,
+            kind = FormFieldKind.Choice(listOf("bug", "ios", "docs")),
+            initial = FormValue.Choice(0),
+        ),
+        FormField(
+            name = "assign",
+            title = "Assign to me",
+            description = "",
+            required = false,
+            kind = FormFieldKind.Toggle,
+            initial = FormValue.Toggle(true),
+        ),
+    )
+
+    val redactionQuestion = QuestionView(
+        header = "Owner",
+        question = "Which crate should own the redaction table?",
+        multiSelect = false,
+        options = listOf(
+            OptionView("amux-core", "Every client already depends on it", "", recommended = true),
+            OptionView("amux-ui", "Closest to where the copy is used", "", recommended = false),
+            OptionView("A new crate", "", "", recommended = false),
+        ),
+        allowOther = true,
+        secret = false,
+    )
+
+    /** Codex names files as code, between backticks. */
+    val codeQuestion = QuestionView(
+        header = "Exact target",
+        question = "`q1/README.md` is absent; `../plan1/README.md` has two lines (`UPDATED`, `done`). Which should be used?",
+        multiSelect = false,
+        options = listOf(
+            OptionView("Create `README.md`", "Create the missing file with exactly one line: `UPDATED`.", "", recommended = true),
+            OptionView("Edit the other", "Change `../plan1/README.md` instead.", "", recommended = false),
+        ),
+        allowOther = true,
+        secret = false,
+    )
+
+    val platformQuestion = QuestionView(
+        header = "Platforms",
+        question = "Which platforms should the release build?",
+        multiSelect = true,
+        options = listOf(
+            OptionView("macOS", "", "", recommended = false),
+            OptionView("Linux", "x86_64 and arm64", "", recommended = false),
+            OptionView("Windows", "", "", recommended = false),
+        ),
+        allowOther = true,
+        secret = false,
+    )
+
+    val previewQuestion = QuestionView(
+        header = "Layout",
+        question = "Which layout for the host list?",
+        multiSelect = false,
+        options = listOf(
+            OptionView(
+                "Cards",
+                "One card per host",
+                "┌──────────────────────┐\n" +
+                    "│ Studio        ● live │\n" +
+                    "│ ~/src/amux  3 agents │\n" +
+                    "├──────────────────────┤\n" +
+                    "│ Laptop       ○ away  │\n" +
+                    "└──────────────────────┘",
+                recommended = false,
+            ),
+            OptionView("Grouped list", "", "Studio · live\nLaptop · away", recommended = false),
+        ),
+        allowOther = false,
+        secret = false,
+    )
+
+    val secretQuestion = QuestionView(
+        header = "Token",
+        question = "Paste the deploy token",
+        multiSelect = false,
+        options = emptyList(),
+        allowOther = true,
+        secret = true,
+    )
+
+    val threeQuestions = listOf(
+        platformQuestion,
+        QuestionView(
+            header = "Rollout",
+            question = "How should the migration roll out?",
+            multiSelect = false,
+            options = listOf(
+                OptionView("Behind a flag", "Off by default for one release", "", recommended = false),
+                OptionView("All at once", "", "", recommended = false),
+            ),
+            allowOther = true,
+            secret = false,
+        ),
+        QuestionView(
+            header = "Logging",
+            question = "What should be logged?",
+            multiSelect = false,
+            options = listOf(
+                OptionView("Everything", "", "", recommended = false),
+                OptionView("Nothing", "", "", recommended = false),
+            ),
+            allowOther = true,
+            secret = false,
+        ),
+    )
+
+    val closedAsk = CardState.Rejected(Refusal(reason = RefusalReason.ClosedAsk, detail = null))
+
+    // --- Machines -----------------------------------------------------------
+
+    /** A machine as the hosts tab knows it; a candidate is one nobody paired. */
+    fun machine(
+        index: Int,
+        name: String,
+        platform: Platform?,
+        reach: Reach,
+        trusted: Boolean = true,
+        candidate: Boolean = false,
+        addrs: List<String> = emptyList(),
+        relayOnly: Boolean = false,
+        pairingOpen: Boolean = false,
+        version: String? = "0.8.0",
+        providers: List<ProviderSignIn> = listOf(
+            ProviderSignIn(Provider.Claude, signedIn = true),
+            ProviderSignIn(Provider.Codex, signedIn = false),
+        ),
+    ): HostView = HostView(
+        hostId = List(16) { index },
+        name = name,
+        local = false,
+        trusted = trusted,
+        candidate = candidate,
+        reach = reach,
+        addrs = addrs,
+        relayOnly = relayOnly,
+        pairingOpen = pairingOpen,
+        current = false,
+        providers = providers,
+        platform = platform,
+        version = version,
+    )
+
+    val nearbyLaptop = machine(
+        5, "laptop", Platform.Macos, Reach.Online(RouteKind.Direct),
+        trusted = false, candidate = true, addrs = listOf("192.168.1.24:4433"), version = null, providers = emptyList(),
+    )
+
+    /** The laptop with its pairing window open, which raises the keypad. */
+    val openLaptop = nearbyLaptop.copy(pairingOpen = true)
+
+    /** A laptop only the relay reaches. */
+    val relayLaptop = machine(
+        5, "laptop", Platform.Macos, Reach.Online(RouteKind.Relay),
+        trusted = false, candidate = true, relayOnly = true, version = null, providers = emptyList(),
+    )
+
+    /** A machine on the account nobody paired, which only the relay reaches. */
+    val accountServer = machine(
+        7, "nova-test", Platform.Linux, Reach.Online(RouteKind.Unspecified),
+        trusted = false, candidate = true, relayOnly = true, version = null, providers = emptyList(),
+    )
+
+    val deskHost = machine(
+        1, "desk", Platform.Macos, Reach.Online(RouteKind.Direct),
+        addrs = listOf("192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"),
+    )
+
+    /** A machine that unpaired this phone. */
+    val oldLaptop = machine(6, "old-laptop", Platform.Macos, Reach.Offline(Offline.Revoked))
+
+    /** Every group a machine can be in, and one found nearby and not paired. */
+    val machines: List<HostView> = listOf(
+        deskHost,
+        machine(2, "build-box", Platform.Linux, Reach.Online(RouteKind.Relay)),
+        machine(3, "mini", Platform.Macos, Reach.Away),
+        machine(4, "garage-pi", Platform.Linux, Reach.Offline(Offline.Plain)),
+        oldLaptop,
+        nearbyLaptop,
+    )
+
+    val pendingLaptop = PendingPair(
+        token = listOf(1, 2, 3),
+        hostId = nearbyLaptop.hostId,
+        name = "laptop",
+        fingerprint = fingerprint(5),
+        expiresAtMs = NOW_MS + (4 * 60 + 12) * 1_000L,
+        via = RouteKind.Direct,
+    )
+
+    /** A key's fingerprint as the runtime writes one: 64 hex characters. */
+    fun fingerprint(seed: Int): String =
+        (0 until 32).joinToString("") { "%02x".format((seed * 37 + it * 11) and 0xff) }
+
+    // --- New agent ----------------------------------------------------------
+
+    val newAgentHosts: List<HostView> = listOf(
+        HostView(
+            hostId = List(16) { 7 },
+            name = "desk",
+            local = false,
+            trusted = true,
+            candidate = false,
+            reach = Reach.Online(RouteKind.Direct),
+            addrs = emptyList(),
+            relayOnly = false,
+            pairingOpen = false,
+            current = true,
+            providers = listOf(
+                ProviderSignIn(Provider.Claude, signedIn = true),
+                ProviderSignIn(Provider.Codex, signedIn = true),
+            ),
+            platform = Platform.Macos,
+        ),
+        HostView(
+            hostId = List(16) { 8 },
+            name = "laptop",
+            local = false,
+            trusted = true,
+            candidate = false,
+            reach = Reach.Away,
+            addrs = emptyList(),
+            relayOnly = false,
+            pairingOpen = false,
+            current = false,
+            providers = emptyList(),
+            platform = Platform.Macos,
+        ),
+    )
+
+    val recentDirectories = listOf(
+        Directory(path = "~/src/amux", name = "amux"),
+        Directory(path = "~/src/amuxcloud", name = "amuxcloud"),
+        Directory(path = "~/src/promo", name = "promo"),
+    )
+
+    val repositoryDirectories = listOf(
+        Directory(path = "~/src/amux", name = "amux"),
+        Directory(path = "~/src/dotfiles", name = "dotfiles"),
+        Directory(path = "~/src/skills", name = "skills"),
+    )
+
+    /** Claude's catalogue on the desk, as New Agent offers it. */
+    val claudeCatalogue = SettingsView(
+        models = listOf(
+            ModelChoice("default", "Default (recommended)", "Opus 5.5 · Most capable for complex work", listOf("low", "medium", "high"), current = true, unlisted = false, defaultEffort = "high"),
+            ModelChoice("sonnet", "Sonnet", "Sonnet 5 · Best for everyday tasks", listOf("low", "medium", "high"), current = false, unlisted = false, defaultEffort = "high"),
+        ),
+        efforts = listOf("low", "medium", "high").map { EffortChoice(it, current = it == "high", default = it == "high", unlisted = false) },
+        permissions = listOf(
+            PermissionChoice("default", "Default", custom = false, current = true, unlisted = false, normal = true, neverAsks = false, settable = true),
+            PermissionChoice("acceptEdits", "Accept edits", custom = false, current = false, unlisted = false, normal = false, neverAsks = false, settable = true),
+            PermissionChoice("plan", "Plan", custom = false, current = false, unlisted = false, normal = false, neverAsks = false, settable = true),
+            PermissionChoice("bypassPermissions", "Bypass permissions", custom = false, current = false, unlisted = false, normal = false, neverAsks = true, settable = true),
+        ),
+        modes = emptyList(),
+        changeable = Changeability(Changeable.Pick, Changeable.Pick, Changeable.Pick, Changeable.NotOffered),
+        commands = emptyList(),
+    )
+}

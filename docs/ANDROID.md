@@ -299,7 +299,7 @@ Use the cheapest check that catches the regression:
 | Lints & scripts | Feature purity, no test sleeps, copy/strings inventory, generated Kotlin mirrors and tool script tests | `just android lint`, `just android script-tests` |
 | Graph check | `app-jni` carries no provider, host, schema or test crate on Android | `just android graph-check` |
 | Unit suites | Pure JVM (`:core:values`, `:core:words`, `:push`), real host-JNI bridge (`:core:runtime`), Robolectric Compose (`:design`, `:features`, `:shell`, `:app`) and `:test-support` | `just android unit` |
-| Headless storybook | Robolectric + Roborazzi PNG gallery (light and dark) at `target/android/storybook/index.html` for visual inspection — never a pixel-diff CI gate; also interactive via debug `StorybookActivity` | `just android storybook` |
+| Headless storybook | Robolectric + Roborazzi PNG gallery (light and dark) with a geometry report of alignment near-misses per story at `target/android/storybook/index.html` for visual inspection — never a pixel-diff CI gate; also interactive via debug `StorybookActivity` | `just android storybook` |
 | Accessibility audit | Robolectric Compose semantics sweep verifying TalkBack names, unclipped horizontal bounds, ≥ 48 dp touch targets, headings and static WCAG contrast tokens across every registered story (`AccessibilityAuditTest`) | `just android accessibility` |
 | Release scope audit | Builds `assembleRelease` with shipping `libamux_app.so` and verifies no `DoorServer`, `StorybookActivity`, `:test-support` or `debug-tools` symbols appear, and SQLite is statically linked | `just android scope-audit` |
 | Journeys | Real daemons and relay (`testnet journey android`) driving the debug APK on the pinned AVD (`amux-android-1`) through `DoorServer`, asserting backend state and geometry goldens under `journeys/goldens/android/<story>/` | `just android journey` |
@@ -308,15 +308,36 @@ Use the cheapest check that catches the regression:
 ### Headless storybook
 
 `just android storybook` runs `StorybookCaptureTest` under Robolectric and
-Roborazzi, rendering every story registered in `Stories` (aligned with the
-applicable phone stories in `tests/stories.json`) in Light and Dark appearances
-into `target/android/storybook/png/` and generating a filterable static gallery
-at `target/android/storybook/index.html`. Pass one or more story ids or prefixes
-(for example `just android storybook chat.ask-command`) to render a single slice
-for quick visual checks. The gallery is strictly for human and agent visual
-review and is never compared pixel-for-pixel in CI. Debug builds also expose
-`StorybookActivity` for live scroll, animation and IME checks on an emulator or
-physical phone.
+Roborazzi, rendering every story registered in `Stories` in Light and Dark
+appearances into `target/android/storybook/png/` and generating a filterable
+static gallery at `target/android/storybook/index.html`. Pass one or more story
+ids or prefixes (for example `just android storybook ask.permission-command`)
+to render a single slice for quick visual checks. The gallery is strictly for
+human and agent visual review and is never compared pixel-for-pixel in CI.
+Debug builds also expose `StorybookActivity` for live scroll, animation and IME
+checks on an emulator or physical phone.
+
+The stories are drawn for comparison with iOS's. Every phone story in
+`tests/stories.json` is registered under its name, and the rest are the iOS
+catalogue's examples under the iOS ids (each ask card state is an `ask.*`
+story, docked over a chat). They draw the iOS catalogue's own data, ported
+value for value into `CatalogFixtures` and `StoryFleet` in `:test-support`, so
+a difference between two pictures of one name is the app's, not the data's;
+a change to those fixtures belongs on both sides. Large-text stories draw at
+2.0×, Android's largest text size. Sheets draw over the screen they rise
+from, with the chrome of Material's `ModalBottomSheet`.
+
+Beside each picture the capture writes a geometry report,
+`geometry/<id>.<appearance>.json`: every text, described glyph and control in
+the story's semantics tree with its bounds in dp, and the alignment near-misses
+among them (`StoryGeometry`). It flags two pieces on one row whose vertical
+centres differ by more than 1 dp, an edge 1–12 dp off a column at least two
+other pieces share, a one-label control whose drawn shape (its background or
+border, not its touch target) is taller than 40 dp, and a leading or trailing
+glyph inset 1–12 dp inside the column its neighbours keep. The gallery lists the
+flags under each story and totals them at the top. Like the pictures, the
+report is for reading and never fails a run; rails and other drawn connectors
+have no semantics and are not in it.
 
 ### Journeys and emulator
 

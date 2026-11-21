@@ -26,7 +26,9 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
@@ -49,7 +51,7 @@ import sh.amux.testsupport.Story
 
 /**
  * Automated accessibility audit sweeping every registered Android [Stories] screen
- * in both Light and Dark appearances (including 1.5x large-text stories) at the
+ * in both Light and Dark appearances (including the 2x large-text stories) at the
  * Pixel 9 portrait viewport (412x915dp).
  *
  * Verifies:
@@ -120,6 +122,10 @@ class AccessibilityAuditTest {
             for (appearance in listOf(Appearance.Light, Appearance.Dark)) {
                 activeSlot = AuditSlot(story = story, appearance = appearance)
                 composeRule.waitForIdle()
+                for (tag in story.taps) {
+                    composeRule.onNodeWithTag(tag, useUnmergedTree = true).performClick()
+                    composeRule.waitForIdle()
+                }
 
                 val root = composeRule.onRoot(useUnmergedTree = false).fetchSemanticsNode()
                 val density = composeRule.density.density

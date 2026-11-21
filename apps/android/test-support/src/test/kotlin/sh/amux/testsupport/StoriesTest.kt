@@ -57,9 +57,11 @@ class StoriesTest {
         val largeTextStories = Stories.all.filter { it.id.endsWith("-large-text") || it.id.endsWith(".large-text") }
         assertTrue("Expected large-text stories", largeTextStories.size >= 5)
         for (story in largeTextStories) {
-            assertTrue(
-                "${story.id} must use >= 1.5x font scale",
-                story.fontScale >= 1.5f,
+            assertEquals(
+                "${story.id} must draw at Android's largest text size",
+                Stories.LARGEST_FONT_SCALE,
+                story.fontScale,
+                0f,
             )
         }
     }
@@ -74,7 +76,6 @@ class StoriesTest {
                 "hosts.list",
                 "hosts.empty",
                 "hosts.on-the-account-free",
-                "hosts.nearby-found",
                 "hosts.large-text",
             ),
             Stories.matching("hosts.").map { it.id },

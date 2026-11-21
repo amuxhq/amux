@@ -79,7 +79,7 @@ class AndroidStorybookTest(unittest.TestCase):
             {"id": "pair.confirm", "area": "Pairing"},
             {"id": "review.page", "area": "Review"},
             {"id": "hosts.list", "area": "Hosts"},
-            {"id": "chat.ask-command", "area": "Asks"},
+            {"id": "ask.permission-command", "area": "Asks"},
             {"id": "chat.conversation", "area": "Chat"},
             {"id": "new-agent.claude", "area": "New Agent"},
             {"id": "fleet.busy", "area": "Fleet"},
@@ -88,6 +88,41 @@ class AndroidStorybookTest(unittest.TestCase):
             storybook.ordered_areas(stories),
             ["Fleet", "New Agent", "Chat", "Asks", "Review", "Hosts", "Pairing", "Settings", "Report", "System"],
         )
+
+    def test_gallery_lists_geometry_flags_and_tolerates_missing_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            (out_dir / "png").mkdir()
+            (out_dir / "geometry").mkdir()
+            stories = []
+            for sid in ("fleet.busy", "hosts.list"):
+                for theme in ("light", "dark"):
+                    (out_dir / "png" / f"{sid}.{theme}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+                stories.append({
+                    "id": sid,
+                    "area": "Fleet",
+                    "title": sid,
+                    "description": "",
+                    "fontScale": 1.0,
+                    "lightPng": f"png/{sid}.light.png",
+                    "darkPng": f"png/{sid}.dark.png",
+                })
+            stories[0]["lightGeometry"] = "geometry/fleet.busy.light.json"
+            (out_dir / "geometry" / "fleet.busy.light.json").write_text(json.dumps({
+                "id": "fleet.busy",
+                "flags": [
+                    {"rule": "tall-control", "offDp": 8.0, "detail": "\"Pair\" drawn 48.0dp tall", "elements": [3]},
+                ],
+                "elements": [],
+            }), encoding="utf-8")
+            (out_dir / "manifest.json").write_text(json.dumps({"stories": stories}), encoding="utf-8")
+
+            index_path, _ = storybook.write_gallery(out_dir)
+            html = index_path.read_text(encoding="utf-8")
+            self.assertIn("1 alignment near-miss", html)
+            self.assertIn("Control drawn taller than 40 dp", html)
+            self.assertIn("&quot;Pair&quot; drawn 48.0dp tall", html)
+            self.assertIn('href="#fleet.busy"', html)
 
     def test_load_manifest_fails_on_missing_png(self):
         with tempfile.TemporaryDirectory() as tmp:

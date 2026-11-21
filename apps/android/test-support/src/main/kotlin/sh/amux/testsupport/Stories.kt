@@ -9,26 +9,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import java.io.ByteArrayOutputStream
-import sh.amux.design.AmuxGround
-import sh.amux.design.AmuxPanel
 import sh.amux.design.AmuxScrim
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
-import sh.amux.features.AccountUi
 import sh.amux.features.AgentsHome
 import sh.amux.features.AgentsHomeState
+import sh.amux.features.AskReviewTags
 import sh.amux.features.ChatDeleteDialogContent
 import sh.amux.features.ChatOverviewSheetContent
 import sh.amux.features.ChatOverviewState
@@ -39,7 +37,6 @@ import sh.amux.features.ChatScreenState
 import sh.amux.features.ChatSettingsSheetContent
 import sh.amux.features.ChatSettingsState
 import sh.amux.features.ChatSubject
-import sh.amux.features.ChatSubjectUi
 import sh.amux.features.ChatUnavailableScreen
 import sh.amux.features.DeleteAccountPhaseUi
 import sh.amux.features.DeleteAccountSheetContent
@@ -61,6 +58,7 @@ import sh.amux.features.PaywallPlanPeriod
 import sh.amux.features.PaywallPlanUi
 import sh.amux.features.PaywallScreen
 import sh.amux.features.PaywallScreenState
+import sh.amux.features.QuestionDraft
 import sh.amux.features.ReportDeliveryUi
 import sh.amux.features.ReportMarkUi
 import sh.amux.features.ReportOverlayContent
@@ -77,105 +75,47 @@ import sh.amux.features.SettingsScreen
 import sh.amux.features.SettingsScreenState
 import sh.amux.features.StaticChatRowSource
 import sh.amux.features.StoreFailureScreen
-import sh.amux.push.Said
-import sh.amux.push.Wants
-import sh.amux.values.Activity
 import sh.amux.values.ActivityKind
-import sh.amux.values.ActivityLine
-import sh.amux.values.AgentKey
 import sh.amux.values.AskBody
 import sh.amux.values.AskCard
-import sh.amux.values.Attention
-import sh.amux.values.BackgroundKind
-import sh.amux.values.CallPhase
 import sh.amux.values.CardState
-import sh.amux.values.ChangeTotals
-import sh.amux.values.Changeability
-import sh.amux.values.Changeable
-import sh.amux.values.ChangedFile
-import sh.amux.values.Changes
+import sh.amux.values.ChatFrame
 import sh.amux.values.Choice
 import sh.amux.values.ChoiceOutcome
-import sh.amux.values.CommandView
 import sh.amux.values.Comparison
 import sh.amux.values.Composer
-import sh.amux.values.ComposerView
-import sh.amux.values.Connection
-import sh.amux.values.ContextView
-import sh.amux.values.ControlsSummary
-import sh.amux.values.DeleteWarning
 import sh.amux.values.DiffLine
-import sh.amux.values.Directory
-import sh.amux.values.EditLine
-import sh.amux.values.EffortChoice
 import sh.amux.values.ExitCause
-import sh.amux.values.ExploreVerb
 import sh.amux.values.FamilyHeader
-import sh.amux.values.FileChangeView
-import sh.amux.values.FileRow
 import sh.amux.values.FileStatus
 import sh.amux.values.Filing
-import sh.amux.values.FleetCard
-import sh.amux.values.FleetFilter
-import sh.amux.values.FleetRow
-import sh.amux.values.FleetSection
-import sh.amux.values.Folder
-import sh.amux.values.FormField
-import sh.amux.values.FormFieldKind
-import sh.amux.values.FormValue
-import sh.amux.values.Git
 import sh.amux.values.GroupState
-import sh.amux.values.HostView
 import sh.amux.values.Hunk
-import sh.amux.values.JobRow
 import sh.amux.values.JobStop
 import sh.amux.values.Kind
 import sh.amux.values.LineKind
-import sh.amux.values.ModeChoice
-import sh.amux.values.ModelChoice
-import sh.amux.values.Offline
 import sh.amux.values.OpenedAgent
-import sh.amux.values.OptionView
-import sh.amux.values.Overview
-import sh.amux.values.PatchLine
-import sh.amux.values.PendingPair
-import sh.amux.values.PermissionChoice
 import sh.amux.values.PhaseView
-import sh.amux.values.Platform
 import sh.amux.values.Provider
-import sh.amux.values.ProviderSignIn
-import sh.amux.values.QuestionView
-import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
-import sh.amux.values.Repository
 import sh.amux.values.ReviewComment
 import sh.amux.values.ReviewDoc
 import sh.amux.values.ReviewFile
 import sh.amux.values.RouteKind
 import sh.amux.values.Row
-import sh.amux.values.RowKind
 import sh.amux.values.Scope
-import sh.amux.values.SecondLine
-import sh.amux.values.SectionKind
-import sh.amux.values.Segment
-import sh.amux.values.ServerView
 import sh.amux.values.SettingsView
-import sh.amux.values.SignInState
-import sh.amux.values.SignInView
-import sh.amux.values.SubagentGroup
-import sh.amux.values.TaskLine
-import sh.amux.values.TaskMark
-import sh.amux.values.TasksView
-import sh.amux.values.UsageLabel
-import sh.amux.values.UsageState
-import sh.amux.values.UsageView
-import sh.amux.values.UsageWindowView
 import sh.amux.values.Waiting
-import sh.amux.values.WorkspaceGoes
+import sh.amux.words.ChatWords
+import sh.amux.words.EMPTY_GROUP_STATE
 
 /**
  * One named storybook screen fixture rendered by both headless Roborazzi
  * captures (`just android storybook`) and the debug-only `StorybookActivity`.
+ *
+ * [taps] are test tags tapped in order once the story is drawn and before it
+ * is pictured, for a state only a person's taps reach, such as a denial's
+ * note being written; the interactive storybook leaves them to the person.
  */
 data class Story(
     val id: String,
@@ -183,65 +123,38 @@ data class Story(
     val title: String,
     val description: String,
     val fontScale: Float = 1.0f,
+    val taps: List<String> = emptyList(),
     val content: @Composable () -> Unit,
 )
 
 /**
- * Central registry of Android storybook stories aligned with `tests/stories.json`.
+ * Central registry of Android storybook stories.
+ *
+ * Every phone story in `tests/stories.json` is here under its name. The
+ * others are the iOS catalogue's examples under the iOS ids (an ask card in
+ * each of its states, say), so each Android picture has an iOS picture of the
+ * same name to be compared with. Both draw the iOS catalogue's own data:
+ * [CatalogFixtures] and [StoryFleet].
  */
 object Stories {
-    private const val NOW_MS: Long = 1_750_000_000_000L
+    private const val NOW_MS: Long = CatalogFixtures.NOW_MS
+
+    /**
+     * Android's largest text size. Large-text stories draw at it, as iOS's
+     * draw at an accessibility size.
+     */
+    const val LARGEST_FONT_SCALE: Float = 2.0f
 
     /**
      * Stories listed under `"clients": [..., "phone", ...]` in `tests/stories.json`
-     * that are intentionally excluded on Android, along with why.
+     * that Android does not draw yet, along with why.
      */
     val IOS_ONLY_STORIES: Map<String, String> = mapOf(
-        "fleet.first-run-refused" to "Android has no iOS Local Network permission dialog.",
-        "hosts.network-refused" to "Android has no iOS Local Network permission dialog.",
+        "fleet.first-run-refused" to "Android has no state yet for a phone that cannot look on its network.",
+        "hosts.network-refused" to "Android has no state yet for a phone that cannot look on its network.",
     )
 
-    private val desk = host(1, "desk", Platform.Macos)
-    private val studio = host(2, "studio", Platform.Macos, addrs = listOf("192.168.1.2:4433", "fe80::2:4433"))
-    private val studioAway = host(2, "studio", Platform.Macos, reach = Reach.Away)
-    private val garagePi = host(3, "garage-pi", Platform.Linux, reach = Reach.Online(RouteKind.Relay))
-    private val oldMini = host(7, "old-mini", Platform.Macos, reach = Reach.Offline(Offline.Plain))
-    private val laptopFound = host(4, "laptop", Platform.Macos, trusted = false, candidate = true, pairingOpen = false)
-    private val laptopOpen = host(4, "laptop", Platform.Macos, trusted = false, candidate = true, pairingOpen = true)
-    private val studioFound = host(5, "studio", Platform.Macos, trusted = false, candidate = true, pairingOpen = false)
-    private val studioRelay = host(
-        index = 6,
-        name = "studio",
-        platform = Platform.Macos,
-        trusted = false,
-        candidate = true,
-        reach = Reach.Offline(Offline.Plain),
-        relayOnly = true,
-        pairingOpen = false,
-    )
-
-    private const val SAMPLE_HOST_FINGERPRINT =
-        "9f4b2c81d7e03a5612489bcdf013579a6c8e0241b5d7f93a1e2c4b6d8f0a3c5e"
-    private const val SAMPLE_PHONE_FINGERPRINT =
-        "4c8e19a0d2f5b73168e4a209c7d3f18b5e60a4c2d8f1b309e7a5c1d4f2b8063e"
-
-    private val adaAccount = AccountUi(
-        id = "ada",
-        name = "Ada",
-        email = "ada@example.com",
-        line = "3 hosts",
-        signedIn = true,
-        selected = true,
-    )
-
-    private val workAccount = AccountUi(
-        id = "ada-work",
-        name = "Lovelace Labs",
-        email = "ada@lovelace.dev",
-        line = "2 hosts",
-        signedIn = true,
-        selected = false,
-    )
+    private val F = CatalogFixtures
 
     val all: List<Story> = listOf(
         // --- Fleet ---------------------------------------------------------
@@ -251,15 +164,23 @@ object Stories {
             title = "Busy fleet",
             description = "A day's agents across machines, one away: pinned, needs you, working, idle, a family, and settled.",
         ) {
-            AgentsHome(state = busyFleetState(away = true), onAction = {})
+            AgentsHome(state = StoryFleet.busy(away = true), onAction = {})
+        },
+        Story(
+            id = "fleet.notifications-offer",
+            area = "Fleet",
+            title = "Busy fleet offering notifications",
+            description = "The busy list with the offer to turn on notifications above it.",
+        ) {
+            AgentsHome(state = StoryFleet.busy(nearby = false).copy(offerNotifications = true), onAction = {})
         },
         Story(
             id = "fleet.subagents",
             area = "Fleet",
             title = "Expanded subagent family",
-            description = "A family opened to its Claude subagents listed under their parent, one waiting on you.",
+            description = "A family opened to its Claude subagents, listed under their parent by the titles Claude gave them, one waiting on you.",
         ) {
-            AgentsHome(state = subagentsFleetState(), onAction = {})
+            AgentsHome(state = StoryFleet.busy(subagents = true), onAction = {})
         },
         Story(
             id = "fleet.signed-out",
@@ -267,14 +188,7 @@ object Stories {
             title = "Busy fleet (signed out)",
             description = "Busy agent list on a phone with no account signed in.",
         ) {
-            AgentsHome(
-                state = busyFleetState(
-                    away = false,
-                    accounts = emptyList(),
-                    includeNearby = false,
-                ).copy(accountPro = null),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.busy(accounts = 0), onAction = {})
         },
         Story(
             id = "fleet.settled",
@@ -283,7 +197,7 @@ object Stories {
             description = "Settled archive list with search, restore, and delete actions.",
         ) {
             SettledScreen(
-                state = sampleSettledScreenState(),
+                state = SettledScreenState(rows = StoryFleet.settled(), query = "", nowMs = NOW_MS),
                 onAction = {},
             )
         },
@@ -293,17 +207,7 @@ object Stories {
             title = "No agents yet",
             description = "Paired with a computer that has no agents running yet.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = listOf(desk),
-                    orderedAtMs = NOW_MS,
-                    accounts = listOf(adaAccount),
-                    selectedAccount = adaAccount,
-                    accountPro = true,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.noAgents(), onAction = {})
         },
         Story(
             id = "fleet.first-run",
@@ -311,18 +215,7 @@ object Stories {
             title = "First run (computer found)",
             description = "No computers paired yet, with one nearby computer discovered on the network.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = emptyList(),
-                    discoveredHosts = listOf(laptopFound),
-                    orderedAtMs = NOW_MS,
-                    accounts = listOf(adaAccount),
-                    selectedAccount = adaAccount,
-                    accountPro = true,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.firstRun(), onAction = {})
         },
         Story(
             id = "fleet.first-run-two-found",
@@ -330,18 +223,7 @@ object Stories {
             title = "First run (two found)",
             description = "No computers paired yet, with two computers discovered on this network.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = emptyList(),
-                    discoveredHosts = listOf(laptopFound, studioFound),
-                    orderedAtMs = NOW_MS,
-                    accounts = listOf(adaAccount),
-                    selectedAccount = adaAccount,
-                    accountPro = true,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.firstRun(found = listOf(StoryFleet.laptop, StoryFleet.studioFound)), onAction = {})
         },
         Story(
             id = "fleet.first-run-window-open",
@@ -349,18 +231,7 @@ object Stories {
             title = "First run (pairing window open)",
             description = "Nearby computer advertising an open pairing window ready for one-tap pairing.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = emptyList(),
-                    discoveredHosts = listOf(laptopOpen),
-                    orderedAtMs = NOW_MS,
-                    accounts = listOf(adaAccount),
-                    selectedAccount = adaAccount,
-                    accountPro = true,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.firstRun(found = listOf(StoryFleet.laptopOpen)), onAction = {})
         },
         Story(
             id = "fleet.first-run-looking",
@@ -368,18 +239,7 @@ object Stories {
             title = "First run (looking)",
             description = "Nothing paired and nothing found yet: looking on this network with two setup steps.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = emptyList(),
-                    discoveredHosts = emptyList(),
-                    orderedAtMs = NOW_MS,
-                    accounts = listOf(adaAccount),
-                    selectedAccount = adaAccount,
-                    accountPro = true,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.firstRun(found = emptyList()), onAction = {})
         },
         Story(
             id = "fleet.first-run-signed-out",
@@ -387,17 +247,15 @@ object Stories {
             title = "First run (signed out)",
             description = "Nothing paired on a phone with no account, offering Sign In below pairing steps.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = emptyList(),
-                    discoveredHosts = emptyList(),
-                    orderedAtMs = NOW_MS,
-                    accounts = emptyList(),
-                    selectedAccount = null,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.firstRun(found = emptyList(), accounts = 0), onAction = {})
+        },
+        Story(
+            id = "fleet.first-run-signed-out-found",
+            area = "Fleet",
+            title = "First run (signed out, computer found)",
+            description = "Nothing paired on a phone with no account, with one nearby computer discovered.",
+        ) {
+            AgentsHome(state = StoryFleet.firstRun(accounts = 0), onAction = {})
         },
         Story(
             id = "fleet.first-run-on-the-account-free",
@@ -405,40 +263,15 @@ object Stories {
             title = "First run (relay host on free plan)",
             description = "Nothing paired on the free plan, with a computer on the account reachable only through the relay.",
         ) {
-            AgentsHome(
-                state = AgentsHomeState(
-                    loaded = true,
-                    machines = emptyList(),
-                    discoveredHosts = listOf(studioRelay),
-                    orderedAtMs = NOW_MS,
-                    accounts = listOf(adaAccount),
-                    selectedAccount = adaAccount,
-                    accountPro = false,
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.firstRun(found = listOf(StoryFleet.onTheAccount), pro = false), onAction = {})
         },
         Story(
             id = "fleet.filter",
             area = "Fleet",
             title = "Filtered fleet",
-            description = "Search bar expanded and list narrowed to matching agents.",
+            description = "Search bar expanded and list narrowed to the agents whose step runs the tests.",
         ) {
-            val base = busyFleetState(away = false, includeNearby = false)
-            val matching = setOf("auth-refactor", "flaky-e2e")
-            val filteredSections = base.sections.mapNotNull { section ->
-                val kept = section.rows.filter { it.card.name in matching }
-                if (kept.isEmpty()) null else section.copy(rows = kept, families = kept.size)
-            }
-            AgentsHome(
-                state = base.copy(
-                    rows = filteredSections.flatMap { it.rows },
-                    sections = filteredSections,
-                    filter = FleetFilter(words = "test", only = null),
-                ),
-                searchExpanded = true,
-                onAction = {},
-            )
+            AgentsHome(state = filteredFleet(), searchExpanded = true, onAction = {})
         },
         Story(
             id = "fleet.no-matches",
@@ -446,12 +279,12 @@ object Stories {
             title = "No matching agents",
             description = "Search narrowed to zero matches with Clear action.",
         ) {
-            val base = busyFleetState(away = false, includeNearby = false)
+            val base = StoryFleet.busy()
             AgentsHome(
                 state = base.copy(
                     rows = emptyList(),
                     sections = emptyList(),
-                    filter = FleetFilter(words = "kubernetes", only = null),
+                    filter = sh.amux.values.FleetFilter(words = "kubernetes", only = null),
                 ),
                 searchExpanded = true,
                 onAction = {},
@@ -461,10 +294,10 @@ object Stories {
             id = "fleet.large-text",
             area = "Fleet",
             title = "Busy fleet (large text)",
-            description = "Busy agent list at 1.5x accessibility font scaling.",
-            fontScale = 1.5f,
+            description = "Busy agent list at Android's largest text size.",
+            fontScale = LARGEST_FONT_SCALE,
         ) {
-            AgentsHome(state = busyFleetState(away = false, includeNearby = false), onAction = {})
+            AgentsHome(state = StoryFleet.busy(), onAction = {})
         },
         Story(
             id = "fleet.two-accounts",
@@ -472,13 +305,7 @@ object Stories {
             title = "Two accounts",
             description = "Busy fleet on a phone signed into two accounts.",
         ) {
-            AgentsHome(
-                state = busyFleetState(
-                    away = false,
-                    accounts = listOf(adaAccount, workAccount),
-                ),
-                onAction = {},
-            )
+            AgentsHome(state = StoryFleet.busy(accounts = 2), onAction = {})
         },
 
         // --- New Agent -----------------------------------------------------
@@ -488,38 +315,27 @@ object Stories {
             title = "New Claude agent",
             description = "Starting a Claude agent: host, folder, name, model, effort, and permission.",
         ) {
-            NewAgentScreen(
-                state = sampleNewAgentState(),
-                onAction = {},
-            )
+            NewAgentScreen(state = newAgentState(), onAction = {})
         },
         Story(
             id = "new-agent.browsing",
             area = "New Agent",
             title = "New Agent folder browser",
-            description = "Choosing the folder a new agent starts in: pinned repositories, recent folders, and a typed path.",
+            description = "Choosing the folder a new agent starts in: recent folders and repositories, over the form.",
         ) {
-            SheetStoryFrame {
-                NewAgentDirectoriesContent(
-                    state = sampleNewAgentState().copy(
-                        browsing = true,
-                        typedPath = "~/source/experiments/relay-probe",
-                    ),
-                    onAction = {},
-                )
+            val state = newAgentState()
+            SheetStoryFrame(background = { NewAgentScreen(state = state, onAction = {}) }) {
+                NewAgentDirectoriesContent(state = state.copy(browsing = true), onAction = {})
             }
         },
         Story(
             id = "new-agent.large-text",
             area = "New Agent",
             title = "New Agent (large text)",
-            description = "New Agent form at 1.5x accessibility font scaling with stacked values and sticky Start bar.",
-            fontScale = 1.5f,
+            description = "New Agent form at Android's largest text size with stacked values and sticky Start bar.",
+            fontScale = LARGEST_FONT_SCALE,
         ) {
-            NewAgentScreen(
-                state = sampleNewAgentState(),
-                onAction = {},
-            )
+            NewAgentScreen(state = newAgentState(), onAction = {})
         },
 
         // --- Chat ----------------------------------------------------------
@@ -527,64 +343,84 @@ object Stories {
             id = "chat.conversation",
             area = "Chat",
             title = "Conversation",
-            description = "Mixed markdown prose, collapsed explore run, command output, file change, subagent group, and active composer.",
+            description = "A finished turn: prompt, one run of steps (a failed check fixed, a lint left failing, a refused command) and the answer.",
         ) {
-            val (state, source) = activeChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(conversationChat())
         },
         Story(
             id = "chat.working",
             area = "Chat",
             title = "Working turn",
-            description = "Turn at work with streaming prose, live activity line, and Interrupt button.",
+            description = "The finished turn, then a second one five steps in with its newest step running.",
         ) {
-            val (state, source) = streamingChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(workingChat())
         },
         Story(
             id = "chat.asking",
             area = "Chat",
             title = "Agent asking",
-            description = "A chat whose agent is asking for approval, docked in place of the composer.",
+            description = "The conversation with its newest command asking to run, and the ask docked in the composer's place.",
         ) {
-            val (state, source) = askChatFixture(commandAskCard())
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(
+                chat(
+                    rows = F.conversation + F.askedCommand,
+                    frame = ScriptedChat.frame(phase = PhaseView.NeedsYou),
+                    card = F.card(Kind.ClaudeSdk, F.specSuite, F.sdkPermissionChoices),
+                ),
+            )
         },
         Story(
             id = "chat.subagents",
             area = "Chat",
             title = "Subagents group",
-            description = "Parent chat showing an expanded group of subagent calls: 2 running, 1 waiting on you, 1 done.",
+            description = "A turn that started four subagents at once: one row saying 2 running · 1 waiting on you · 1 done.",
         ) {
-            val (state, source) = subagentsGroupChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(delegatingChat(open = false))
+        },
+        Story(
+            id = "chat.subagents-open",
+            area = "Chat",
+            title = "Subagents group (open)",
+            description = "The subagents group opened to its four calls, side by side at one level.",
+        ) {
+            StoryChatScreen(delegatingChat(open = true))
         },
         Story(
             id = "chat.subagent",
             area = "Chat",
             title = "Provider subagent",
-            description = "Claude subagent conversation with parent chip and read-only native composer with Stop.",
+            description = "A Claude subagent's own chat: its task, its steps and answer so far, and a read-only composer with Stop.",
         ) {
-            val (state, source) = nativeSubagentFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(
+                chat(
+                    rows = F.subagentWork,
+                    frame = F.nativeFrame(JobStop.Offered("toolu_02")),
+                    subject = F.nativeSubject,
+                    family = F.nativeFamily,
+                ),
+            )
         },
         Story(
             id = "chat.plan",
             area = "Chat",
             title = "Plan approval",
-            description = "Proposed plan read whole and waiting for approval in place of the composer.",
+            description = "A Codex plan read whole in the transcript and waiting for approval in place of the composer.",
         ) {
-            val (state, source) = askChatFixture(planAskCard())
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(
+                chat(
+                    rows = F.planned,
+                    frame = ScriptedChat.frame(kind = Kind.Codex, phase = PhaseView.NeedsYou),
+                    card = F.card(Kind.Codex, F.plan, F.codexPlanChoices),
+                ),
+            )
         },
         Story(
             id = "chat.exited",
             area = "Chat",
             title = "Exited agent",
-            description = "Finished conversation ready to resume with the Resume composer.",
+            description = "The first agent's chat after it exited while amux was stopped, ready to resume.",
         ) {
-            val (state, source) = exitedChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(exitedChat())
         },
         Story(
             id = "chat.away",
@@ -592,20 +428,24 @@ object Stories {
             title = "Host away with kept draft",
             description = "Away host showing out-of-reach notice, kept draft text, and disabled Send.",
         ) {
-            val (state, source) = offlineDraftFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(
+                chat(
+                    rows = emptyList(),
+                    frame = ScriptedChat.frame(mode = Composer.Waiting(Waiting.Detached), caughtUp = false),
+                    subject = F.awaySubject,
+                    draft = "Now run the Windows check.",
+                ),
+            )
         },
         Story(
             id = "chat.overview",
             area = "Chat",
             title = "Chat overview sheet",
-            description = "Overview sheet with tasks, background jobs, failed tool server, usage near limit, and changed files.",
+            description = "Overview sheet over the chat: two background jobs, a tool server to sign in to, three usage windows and the changed files.",
         ) {
-            SheetStoryFrame {
-                ChatOverviewSheetContent(
-                    state = sampleOverviewState(),
-                    onAction = {},
-                )
+            val chat = overviewChat()
+            SheetStoryFrame(background = { StoryChatScreen(chat) }) {
+                ChatOverviewSheetContent(state = overviewOf(chat.state), onAction = {})
             }
         },
         Story(
@@ -614,42 +454,36 @@ object Stories {
             title = "Stop background job dialog",
             description = "Confirming stopping a background job from overview while keeping the agent running.",
         ) {
-            val overviewState = sampleOverviewState()
-            val job = requireNotNull(overviewState.overview?.jobs?.firstOrNull())
+            val chat = overviewChat()
+            val job = F.surroundings.overview.jobs.first()
             DialogStoryFrame(
                 background = {
-                    SheetStoryFrame {
-                        ChatOverviewSheetContent(
-                            state = overviewState,
-                            onAction = {},
-                        )
+                    SheetStoryFrame(background = { StoryChatScreen(chat) }) {
+                        ChatOverviewSheetContent(state = overviewOf(chat.state), onAction = {})
                     }
                 },
             ) {
-                ChatOverviewStopDialogContent(
-                    job = job,
-                    onConfirm = {},
-                    onDismiss = {},
-                )
+                ChatOverviewStopDialogContent(job = job, onConfirm = {}, onDismiss = {})
             }
         },
         Story(
             id = "chat.settings",
             area = "Chat",
             title = "Chat settings sheet",
-            description = "Agent settings sheet with model, effort, permission pickers, context meter, and commands.",
+            description = "Terminal Claude's settings over its chat: the model and effort changed by typing, the permission by cycling.",
         ) {
-            SheetStoryFrame {
+            val chat = chat(
+                rows = F.conversation,
+                frame = ScriptedChat.frame(kind = Kind.ClaudePty),
+                strip = ScriptedChat.strip(model = "claude-sonnet-5", effort = "high", mode = "acceptEdits"),
+                settings = F.settingsClaudePty,
+            )
+            SheetStoryFrame(background = { StoryChatScreen(chat) }) {
                 ChatSettingsSheetContent(
                     state = ChatSettingsState(
-                        settings = sampleSettingsView(),
-                        kind = Kind.ClaudeSdk,
-                        context = ContextView(
-                            usedTokens = 112_000L,
-                            nearFull = false,
-                            percent = 56L,
-                            windowTokens = 200_000L,
-                        ),
+                        settings = F.settingsClaudePty,
+                        kind = chat.state.frame?.kind,
+                        context = chat.state.frame?.context,
                     ),
                     onChange = {},
                     onDismiss = {},
@@ -663,8 +497,13 @@ object Stories {
             title = "Loading conversation",
             description = "Opening conversation before initial transcript rows have arrived.",
         ) {
-            val (state, source) = loadingChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(
+                chat(
+                    rows = emptyList(),
+                    frame = ScriptedChat.frame(mode = Composer.Waiting(Waiting.CatchingUp), caughtUp = false),
+                    loadingHint = true,
+                ),
+            )
         },
         Story(
             id = "chat.not-opened",
@@ -672,51 +511,47 @@ object Stories {
             title = "Chat could not be opened",
             description = "Unavailable conversation screen explaining why the chat could not be opened.",
         ) {
-            ChatUnavailableScreen(
-                title = "spike-quic",
-                reason = "This agent is no longer on studio.",
-                onBack = {},
-            )
+            ChatUnavailableScreen(title = F.subject.name, reason = "desk did not answer", onBack = {})
         },
         Story(
             id = "chat.queued",
             area = "Chat",
             title = "Queued prompts",
-            description = "Working turn with steered and queued follow-up prompts waiting above the composer.",
+            description = "Working turn with a withdrawable prompt, a steering one, and one from another agent queued above the composer.",
         ) {
-            val (state, source) = queuedChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(workingChat(queue = true))
         },
         Story(
             id = "chat.signed-out",
             area = "Chat",
             title = "Provider signed out",
-            description = "Conversation showing the provider sign-in notice in the composer footer.",
+            description = "The conversation with the provider's refused sign-in in the composer's place.",
         ) {
-            val (state, source) = signedOutChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(
+                chat(
+                    rows = F.conversation,
+                    frame = ScriptedChat.frame(phase = PhaseView.Idle),
+                    strip = ScriptedChat.strip(signIn = F.failedSignIn),
+                ),
+            )
         },
         Story(
             id = "chat.delete",
             area = "Chat",
             title = "Delete agent confirmation",
-            description = "Confirming deletion of a settled agent and its worktree from its chat.",
+            description = "Confirming deletion of a settled agent from its chat.",
         ) {
-            val (state, source) = exitedChatFixture()
-            val warning = DeleteWarning.Goes(
-                WorkspaceGoes(
-                    branch = "spike-quic",
-                    branchCommits = 2,
-                    uncommitted = ChangeTotals(files = 2, added = 34, removed = 9),
-                ),
+            val chat = chat(
+                rows = F.conversation,
+                frame = ScriptedChat.frame(phase = PhaseView.Exited(ExitCause.Ended), mode = Composer.Resume),
+                subject = F.closedSubject,
+                canResume = true,
             )
-            DialogStoryFrame(
-                background = { ChatScreen(state = state, rowSource = source) },
-            ) {
+            DialogStoryFrame(background = { StoryChatScreen(chat) }) {
                 ChatDeleteDialogContent(
-                    agentName = "spike-quic",
+                    agentName = F.closedSubject.name,
                     descendants = 0,
-                    warning = warning,
+                    warning = null,
                     onDismiss = {},
                     onConfirm = {},
                 )
@@ -728,97 +563,268 @@ object Stories {
             title = "Rename agent dialog",
             description = "Renaming an agent from its chat with live handle editing.",
         ) {
-            val (state, source) = activeChatFixture()
-            DialogStoryFrame(
-                background = { ChatScreen(state = state, rowSource = source) },
-            ) {
-                ChatRenameDialogContent(
-                    currentName = "refactor-auth",
-                    initialDraft = "auth-token-expiry",
-                    onDismiss = {},
-                    onConfirm = {},
-                )
+            val chat = chat(rows = F.conversation, frame = ScriptedChat.frame())
+            DialogStoryFrame(background = { StoryChatScreen(chat) }) {
+                ChatRenameDialogContent(currentName = F.subject.name, onDismiss = {}, onConfirm = {})
             }
         },
         Story(
             id = "chat.large-text",
             area = "Chat",
             title = "Active conversation (large text)",
-            description = "Active conversation rendered at 1.5x accessibility font scaling.",
-            fontScale = 1.5f,
+            description = "The conversation at Android's largest text size.",
+            fontScale = LARGEST_FONT_SCALE,
         ) {
-            val (state, source) = activeChatFixture()
-            ChatScreen(state = state, rowSource = source)
+            StoryChatScreen(conversationChat())
         },
 
         // --- Asks ----------------------------------------------------------
-        Story(
-            id = "chat.ask-command",
-            area = "Asks",
-            title = "Command permission ask",
-            description = "Command permission card docked in place of the composer with scope choices.",
-        ) {
-            val (state, source) = askChatFixture(commandAskCard())
-            ChatScreen(state = state, rowSource = source)
-        },
-        Story(
-            id = "chat.ask-edit",
-            area = "Asks",
-            title = "Edit permission ask",
-            description = "Multi-hunk edit permission ask card showing added and removed diff lines.",
-        ) {
-            val (state, source) = askChatFixture(editAskCard())
-            ChatScreen(state = state, rowSource = source)
-        },
-        Story(
-            id = "chat.ask-question",
-            area = "Asks",
-            title = "Question ask",
-            description = "Structured question ask card with recommended option and Something else.",
-        ) {
-            val (state, source) = askChatFixture(questionAskCard())
-            ChatScreen(state = state, rowSource = source)
-        },
-        Story(
-            id = "ask.question-large-text",
-            area = "Asks",
-            title = "Question ask (large text)",
-            description = "Structured question ask card docked over chat at 1.5x accessibility font scaling.",
-            fontScale = 1.5f,
-        ) {
-            val (state, source) = askChatFixture(questionAskCard())
-            ChatScreen(state = state, rowSource = source)
-        },
-        Story(
-            id = "chat.ask-plan",
-            area = "Asks",
-            title = "Plan approval ask",
-            description = "Plan approval ask card with markdown plan body and mode switch toggle.",
-        ) {
-            val (state, source) = askChatFixture(planAskCard())
-            ChatScreen(state = state, rowSource = source)
-        },
-        Story(
-            id = "chat.ask-form",
-            area = "Asks",
-            title = "Tool-server form ask",
-            description = "Schema-driven tool-server form ask with native controls and validation.",
-        ) {
-            val (state, source) = askChatFixture(formAskCard())
-            ChatScreen(state = state, rowSource = source)
-        },
+        // The iOS catalogue's ask examples, by its ids. iOS draws each card on
+        // its own; here each is docked over a chat, where the app draws it.
+        askStory("permission-command", "Command permission", F.card(Kind.ClaudeSdk, F.specSuite, F.sdkPermissionChoices)),
+        askStory(
+            "permission-deny-note",
+            "Denying with a note",
+            F.card(
+                Kind.ClaudeSdk,
+                AskBody.Command(command = "rm -rf target", cwd = "~/src/amux", reason = "", description = "Clean the build"),
+                F.sdkPermissionChoices,
+            ),
+            taps = listOf(AskReviewTags.ASK_DENY),
+        ),
+        askStory(
+            "permission-edit",
+            "Edit permission",
+            F.card(
+                Kind.ClaudeSdk,
+                AskBody.Edit(
+                    path = "crates/amux-ui/src/pairing.rs",
+                    files = 1,
+                    added = 1,
+                    removed = 2,
+                    lines = F.diff,
+                    reason = "",
+                    created = false,
+                    line = 13,
+                ),
+                listOf(
+                    Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false),
+                    Choice(ChoiceOutcome.AllowAlways(emptyList(), emptyList(), "acceptEdits", "Accept edits", Scope.Session), primary = false, takesNote = false),
+                    Choice(ChoiceOutcome.Deny, primary = false, takesNote = true),
+                ),
+            ),
+        ),
+        askStory(
+            "permission-create",
+            "New file permission",
+            F.card(
+                Kind.ClaudeSdk,
+                AskBody.Edit(
+                    path = "crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs",
+                    files = 1,
+                    added = 2,
+                    removed = 0,
+                    lines = F.created,
+                    reason = "",
+                    created = true,
+                    line = 1,
+                ),
+                F.allowOrDeny,
+            ),
+        ),
+        askStory(
+            "permission-tool",
+            "Tool permission",
+            F.card(
+                Kind.ClaudeSdk,
+                AskBody.Tool(
+                    server = "github",
+                    tool = "create_issue",
+                    arguments = "{\n  \"repo\": \"jlw/amux\",\n  \"title\": \"Pairing copy\"\n}",
+                ),
+                F.allowOrDeny,
+            ),
+        ),
+        askStory(
+            "permission-terminal",
+            "Terminal Claude command permission",
+            F.card(
+                Kind.ClaudePty,
+                F.bareSpecSuite,
+                listOf(
+                    Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false),
+                    Choice(ChoiceOutcome.AllowAlways(listOf("cargo test"), emptyList(), "", "", Scope.Project), primary = false, takesNote = false),
+                    Choice(ChoiceOutcome.Deny, primary = false, takesNote = false),
+                ),
+            ),
+        ),
+        askStory("codex-command", "Codex command permission", F.card(Kind.Codex, F.curlHealth, F.codexCommandChoices, count = 2L)),
+        askStory("question-single", "Question", F.card(Kind.ClaudeSdk, AskBody.Question(listOf(F.redactionQuestion)), emptyList())),
+        askStory(
+            "question-multi",
+            "Multi-select question",
+            F.card(Kind.ClaudeSdk, AskBody.Question(listOf(F.platformQuestion)), emptyList()),
+            draft = questionDraft(1, highlighted = listOf(0)),
+        ),
+        askStory("questions-step", "Stepped questions", F.card(Kind.Codex, AskBody.Question(F.threeQuestions), emptyList())),
+        askStory(
+            "questions-review",
+            "Reviewing answers",
+            F.card(Kind.Codex, AskBody.Question(F.threeQuestions), emptyList()),
+            draft = questionDraft(
+                3,
+                picks = listOf(setOf(0, 1), setOf(1), emptySet()),
+                others = listOf(null, null, "Only failures, with the host id"),
+                reviewing = true,
+            ),
+        ),
+        askStory(
+            "questions-skipped",
+            "Reviewing with a question skipped",
+            F.card(Kind.Codex, AskBody.Question(F.threeQuestions), emptyList()),
+            draft = questionDraft(
+                3,
+                picks = listOf(setOf(0, 1), emptySet(), emptySet()),
+                others = listOf(null, null, "Only failures, with the host id"),
+                skipped = listOf(false, true, false),
+                reviewing = true,
+            ),
+        ),
+        askStory(
+            "question-note",
+            "Question with a note",
+            F.card(Kind.ClaudeSdk, AskBody.Question(listOf(F.redactionQuestion)), emptyList()),
+            draft = questionDraft(1, notes = listOf("Keep the old strings for one release"), noting = listOf(true)),
+        ),
+        askStory(
+            "question-reply",
+            "Replying instead",
+            F.card(Kind.Codex, AskBody.Question(F.threeQuestions), emptyList()),
+            draft = questionDraft(3, replying = true, replyText = "Hold off; I want to read the diff first."),
+        ),
+        askStory("question-terminal", "Terminal Claude question", F.card(Kind.ClaudePty, AskBody.Question(listOf(F.redactionQuestion)), emptyList())),
+        askStory(
+            "question-previews",
+            "Question with previews",
+            F.card(Kind.ClaudeSdk, AskBody.Question(listOf(F.previewQuestion)), emptyList()),
+            draft = questionDraft(1, highlighted = listOf(0)),
+        ),
+        askStory(
+            "question-other",
+            "Something else typed",
+            F.card(Kind.ClaudeSdk, AskBody.Question(listOf(F.redactionQuestion)), emptyList()),
+            draft = questionDraft(1, others = listOf("Put it in amux-wire next to the codes")),
+        ),
+        askStory(
+            "question-secret",
+            "Secret answer",
+            F.card(Kind.Codex, AskBody.Question(listOf(F.secretQuestion)), emptyList()),
+            draft = questionDraft(1, others = listOf("hunter2")),
+        ),
+        askStory("question-code", "Question naming code", F.card(Kind.Codex, AskBody.Question(listOf(F.codeQuestion)), emptyList())),
+        askStory(
+            "plan",
+            "Plan approval",
+            F.card(Kind.ClaudeSdk, F.plan, F.claudePlanChoices),
+            taps = listOf(AskReviewTags.ASK_PLAN_SWITCH),
+        ),
+        askStory("plan-codex", "Codex plan approval", F.card(Kind.Codex, F.plan, F.codexPlanChoices)),
+        askStory(
+            "form",
+            "Tool-server form",
+            F.card(
+                Kind.ClaudeSdk,
+                AskBody.Form(server = "github", message = "Create the issue in which repository?", fields = F.formFields),
+                listOf(
+                    Choice(ChoiceOutcome.Submit, primary = true, takesNote = false),
+                    Choice(ChoiceOutcome.Decline, primary = false, takesNote = false),
+                ),
+            ),
+        ),
+        askStory(
+            "link",
+            "Sign-in link",
+            F.card(
+                Kind.Codex,
+                AskBody.Link(server = "linear", message = "Sign in to Linear to continue.", url = "https://linear.app/login", localPage = false),
+                listOf(
+                    Choice(ChoiceOutcome.OpenLink, primary = true, takesNote = false),
+                    Choice(ChoiceOutcome.Decline, primary = false, takesNote = false),
+                ),
+            ),
+        ),
+        askStory(
+            "access",
+            "Access beyond the sandbox",
+            F.card(
+                Kind.Codex,
+                AskBody.Access(
+                    reason = "To run the integration tests against a local server.",
+                    read = emptyList(),
+                    write = listOf("~/src/amux/target"),
+                    network = true,
+                    hosts = emptyList(),
+                ),
+                listOf(
+                    Choice(ChoiceOutcome.GrantForTurn, primary = true, takesNote = false),
+                    Choice(ChoiceOutcome.GrantForSession, primary = false, takesNote = false),
+                    Choice(ChoiceOutcome.Decline, primary = false, takesNote = false),
+                ),
+            ),
+        ),
+        askStory(
+            "sending",
+            "Answer sending",
+            F.card(Kind.ClaudeSdk, AskBody.Command(command = "cargo test", cwd = "", reason = "", description = ""), emptyList(), state = CardState.Sending),
+        ),
+        askStory(
+            "rejected",
+            "Answer refused",
+            F.card(Kind.ClaudeSdk, F.specSuite.copy(description = ""), F.sdkPermissionChoices, state = F.closedAsk),
+        ),
+        askStory("not-confirmed", "Answer not confirmed", F.card(Kind.ClaudeSdk, F.bareSpecSuite, F.sdkPermissionChoices, state = CardState.NotConfirmed)),
+        askStory("dismissed", "Ask dismissed", F.card(Kind.ClaudeSdk, F.bareSpecSuite, F.sdkPermissionChoices, state = CardState.Dismissed)),
+        askStory("unanswerable", "Unanswerable ask", F.card(Kind.ClaudePty, AskBody.Unanswerable(reason = ""), emptyList())),
+        askStory(
+            "permission-command-large-text",
+            "Command permission (large text)",
+            F.card(Kind.ClaudeSdk, F.specSuite, F.sdkPermissionChoices),
+            fontScale = LARGEST_FONT_SCALE,
+        ),
+        askStory(
+            "codex-command-large-text",
+            "Codex command permission (large text)",
+            F.card(Kind.Codex, F.curlHealth, F.codexCommandLargeTextChoices),
+            fontScale = LARGEST_FONT_SCALE,
+        ),
+        askStory(
+            "question-large-text",
+            "Question (large text)",
+            F.card(Kind.ClaudeSdk, AskBody.Question(listOf(F.redactionQuestion)), emptyList()),
+            fontScale = LARGEST_FONT_SCALE,
+            description = "A question at Android's largest text size: the question, every option and Something else clear of each other.",
+        ),
+        askStory(
+            "plan-large-text",
+            "Plan approval (large text)",
+            F.card(Kind.ClaudeSdk, F.plan, F.claudePlanChoices),
+            fontScale = LARGEST_FONT_SCALE,
+        ),
+        askStory(
+            "not-confirmed-large-text",
+            "Answer not confirmed (large text)",
+            F.card(Kind.ClaudeSdk, F.bareSpecSuite, F.sdkPermissionChoices, state = CardState.NotConfirmed),
+            fontScale = LARGEST_FONT_SCALE,
+        ),
 
         // --- Review --------------------------------------------------------
         Story(
             id = "review.page",
             area = "Review",
             title = "Diff review page",
-            description = "Full-screen working-tree diff review with file chips, hunks, and an inline comment.",
+            description = "Full-screen working-tree diff review over three files, with two comments written.",
         ) {
-            ReviewPage(
-                state = sampleReviewPageState(),
-                onAction = {},
-            )
+            ReviewPage(state = reviewPageState(), onAction = {})
         },
         Story(
             id = "review.no-changes",
@@ -842,19 +848,9 @@ object Stories {
             id = "hosts.list",
             area = "Hosts",
             title = "Paired computers",
-            description = "Paired computers grouped by reach (direct, relay, away, offline) with one nearby computer found.",
+            description = "Every paired computer by how it is reached (direct, relay, away, offline, unpaired this phone) with one found nearby.",
         ) {
-            HostsTab(
-                state = HostsTabState(
-                    hosts = listOf(desk, garagePi, studioAway, oldMini),
-                    discovered = listOf(laptopFound),
-                    accountPro = false,
-                    awayHostName = studioAway.name,
-                    wentOfflineAtMs = mapOf(oldMini.hostId to (NOW_MS - 3 * 3_600_000L)),
-                    nowMs = NOW_MS,
-                ),
-                onAction = {},
-            )
+            HostsTab(state = hostsTabState(F.machines), onAction = {})
         },
         Story(
             id = "hosts.empty",
@@ -862,10 +858,7 @@ object Stories {
             title = "No computers yet",
             description = "Computers tab when nothing is paired or discovered yet.",
         ) {
-            HostsTab(
-                state = HostsTabState(nowMs = NOW_MS),
-                onAction = {},
-            )
+            HostsTab(state = HostsTabState(nowMs = NOW_MS), onAction = {})
         },
         Story(
             id = "hosts.on-the-account-free",
@@ -873,50 +866,16 @@ object Stories {
             title = "Hosts (relay host on free plan)",
             description = "Computers tab on the free plan showing a computer on the account reachable only through the relay.",
         ) {
-            HostsTab(
-                state = HostsTabState(
-                    hosts = listOf(desk),
-                    discovered = listOf(studioRelay),
-                    accountPro = false,
-                    nowMs = NOW_MS,
-                ),
-                onAction = {},
-            )
-        },
-        Story(
-            id = "hosts.nearby-found",
-            area = "Hosts",
-            title = "Nearby computers found",
-            description = "Unpaired computers discovered nearby shown above paired machines.",
-        ) {
-            HostsTab(
-                state = HostsTabState(
-                    hosts = listOf(desk, garagePi),
-                    discovered = listOf(laptopOpen, studioFound),
-                    accountPro = true,
-                    nowMs = NOW_MS,
-                ),
-                onAction = {},
-            )
+            HostsTab(state = hostsTabState(F.machines + F.accountServer, pro = false), onAction = {})
         },
         Story(
             id = "hosts.large-text",
             area = "Hosts",
             title = "Paired computers (large text)",
-            description = "Computers list rendered at 1.5x accessibility font scaling.",
-            fontScale = 1.5f,
+            description = "Computers list at Android's largest text size, on the free plan so the away computer's card offers Subscribe beside its words.",
+            fontScale = LARGEST_FONT_SCALE,
         ) {
-            HostsTab(
-                state = HostsTabState(
-                    hosts = listOf(desk, garagePi, studioAway, oldMini),
-                    discovered = listOf(laptopFound),
-                    accountPro = true,
-                    awayHostName = studioAway.name,
-                    wentOfflineAtMs = mapOf(oldMini.hostId to (NOW_MS - 3 * 3_600_000L)),
-                    nowMs = NOW_MS,
-                ),
-                onAction = {},
-            )
+            HostsTab(state = hostsTabState(F.machines, pro = false), onAction = {})
         },
         Story(
             id = "host.page",
@@ -926,148 +885,73 @@ object Stories {
         ) {
             HostPage(
                 state = HostPageState(
-                    host = studio,
-                    fingerprint = SAMPLE_HOST_FINGERPRINT,
+                    host = F.deskHost,
+                    fingerprint = F.fingerprint(1),
                     nowMs = NOW_MS,
-                    canOfferSignIn = true,
-                    accountPro = true,
                 ),
                 onAction = {},
             )
         },
 
         // --- Pairing -------------------------------------------------------
-        Story(
-            id = "pair.code-empty",
-            area = "Pairing",
-            title = "Pairing PIN entry",
-            description = "Six-digit code entry sheet for a nearby computer with an empty keypad.",
-        ) {
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        digits = "",
-                        phase = PairingPhaseUi.Entering,
-                        machine = laptopOpen,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
-        Story(
-            id = "pair.code-checking",
-            area = "Pairing",
-            title = "Pairing code checking",
-            description = "All six digits typed and the pairing code being checked.",
-        ) {
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        digits = "418920",
-                        phase = PairingPhaseUi.Checking(viaLink = false),
-                        machine = laptopOpen,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
-        Story(
-            id = "pair.code-refused",
-            area = "Pairing",
-            title = "Pairing code refused",
-            description = "Uniform refusal state after an invalid or expired code, ready for another entry.",
-        ) {
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        digits = "",
-                        phase = PairingPhaseUi.Refused(message = null, viaLink = false),
-                        machine = laptopOpen,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
-        Story(
-            id = "pair.code-subscribe",
-            area = "Pairing",
-            title = "Pairing needs Pro subscription",
-            description = "A pairing code that reached a computer only the relay can carry, on the free plan.",
-        ) {
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        digits = "418920",
-                        phase = PairingPhaseUi.NeedsSubscription,
-                        machine = studioRelay,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
-        Story(
-            id = "pair.needs-account",
-            area = "Pairing",
-            title = "Pairing needs sign-in",
-            description = "An invitation naming a computer only the relay can reach on a phone with no account.",
-        ) {
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        phase = PairingPhaseUi.NeedsAccount(signingIn = false),
-                        machine = studioRelay,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
-        Story(
-            id = "pair.confirm",
-            area = "Pairing",
-            title = "Pairing confirmation",
-            description = "Authenticated computer name, route, and full key fingerprint awaiting confirmation.",
-        ) {
-            val pending = PendingPair(
-                token = List(16) { 9 },
-                hostId = laptopOpen.hostId,
-                name = "laptop",
-                fingerprint = SAMPLE_HOST_FINGERPRINT,
-                expiresAtMs = NOW_MS + 240_000L,
-                via = RouteKind.Direct,
-            )
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        phase = PairingPhaseUi.Confirming(pending = pending, platformName = "macOS"),
-                        machine = laptopOpen,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
-        Story(
-            id = "pair.trusted",
-            area = "Pairing",
-            title = "Pairing completed",
-            description = "Confirmation state once the computer has been paired and trusted.",
-        ) {
-            PairingStoryFrame {
-                PairingSheetContent(
-                    state = PairingSheetState(
-                        phase = PairingPhaseUi.Trusted(name = "laptop"),
-                        machine = laptopOpen,
-                        nowMs = NOW_MS,
-                    ),
-                    onAction = {},
-                )
-            }
-        },
+        pairingStory(
+            "pair.code-empty",
+            "Pairing code entry",
+            "Six-digit code entry for a computer found on this network, saying where to get the code.",
+            PairingSheetState(machine = F.nearbyLaptop, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.code-offered",
+            "Pairing code entry (window open)",
+            "Six-digit code entry for a computer whose pairing window is open.",
+            PairingSheetState(machine = F.openLaptop, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.code-typing",
+            "Pairing code typing",
+            "Three of the six digits typed.",
+            PairingSheetState(digits = "418", machine = F.nearbyLaptop, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.code-checking",
+            "Pairing code checking",
+            "All six digits typed and the pairing code being checked.",
+            PairingSheetState(digits = "418207", phase = PairingPhaseUi.Checking(viaLink = false), machine = F.nearbyLaptop, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.code-refused",
+            "Pairing code refused",
+            "Uniform refusal state after an invalid or expired code, ready for another entry.",
+            PairingSheetState(phase = PairingPhaseUi.Refused(message = null, viaLink = false), machine = F.nearbyLaptop, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.code-subscribe",
+            "Pairing needs Pro subscription",
+            "A pairing code that reached a computer only the relay can carry, on the free plan.",
+            PairingSheetState(digits = "418207", phase = PairingPhaseUi.NeedsSubscription, machine = F.relayLaptop, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.needs-account",
+            "Pairing needs sign-in",
+            "An invitation naming a computer only the relay can reach on a phone with no account.",
+            PairingSheetState(phase = PairingPhaseUi.NeedsAccount(signingIn = false), machine = null, nowMs = NOW_MS),
+        ),
+        pairingStory(
+            "pair.confirm",
+            "Pairing confirmation",
+            "Authenticated computer name, route, and full key fingerprint awaiting confirmation.",
+            PairingSheetState(
+                phase = PairingPhaseUi.Confirming(pending = F.pendingLaptop, platformName = "macOS"),
+                machine = F.nearbyLaptop,
+                nowMs = NOW_MS,
+            ),
+        ),
+        pairingStory(
+            "pair.trusted",
+            "Pairing completed",
+            "Confirmation state once the computer has been paired and trusted.",
+            PairingSheetState(phase = PairingPhaseUi.Trusted(name = "laptop"), machine = F.nearbyLaptop, nowMs = NOW_MS),
+        ),
 
         // --- Settings ------------------------------------------------------
         Story(
@@ -1076,10 +960,7 @@ object Stories {
             title = "Settings (signed in)",
             description = "Settings with signed-in account, appearance, notifications, privacy, diagnostics, and phone identity.",
         ) {
-            SettingsScreen(
-                state = sampleSignedInSettingsState(),
-                onAction = {},
-            )
+            SettingsScreen(state = signedInSettings(), onAction = {})
         },
         Story(
             id = "settings.signed-out",
@@ -1088,7 +969,7 @@ object Stories {
             description = "Settings on a phone with no account signed in.",
         ) {
             SettingsScreen(
-                state = sampleSignedInSettingsState().copy(
+                state = signedInSettings().copy(
                     accounts = emptyList(),
                     notificationStatus = SettingsNotificationStatus.NotAsked,
                 ),
@@ -1099,22 +980,27 @@ object Stories {
             id = "settings.paywall",
             area = "Settings",
             title = "Pro subscription",
-            description = "Subscribing to amux Pro: selectable monthly and yearly plans and purchase restoration.",
+            description = "Subscribing as this build offers it: Google Play has no plans to sell yet, so the page points to amux.sh.",
+        ) {
+            PaywallScreen(
+                state = PaywallScreenState(
+                    phase = PaywallPhaseUi.StoreUnavailable(),
+                    accountEmail = "ada@example.com",
+                ),
+                onAction = {},
+            )
+        },
+        Story(
+            id = "settings.paywall-plans",
+            area = "Settings",
+            title = "Pro subscription (plans)",
+            description = "The plans page once Google Play sells them: monthly and yearly plans, the yearly chosen, and restoring a purchase.",
         ) {
             PaywallScreen(
                 state = PaywallScreenState(
                     plans = listOf(
-                        PaywallPlanUi(
-                            id = "pro.monthly",
-                            period = PaywallPlanPeriod.Monthly,
-                            price = "$9 / month",
-                        ),
-                        PaywallPlanUi(
-                            id = "pro.yearly",
-                            period = PaywallPlanPeriod.Yearly,
-                            price = "$84 / year",
-                            saving = "Save 22%",
-                        ),
+                        PaywallPlanUi(id = "pro.monthly", period = PaywallPlanPeriod.Monthly, price = "$4.99"),
+                        PaywallPlanUi(id = "pro.yearly", period = PaywallPlanPeriod.Yearly, price = "$49.99", saving = "Save 17%"),
                     ),
                     chosen = PaywallPlanPeriod.Yearly,
                     phase = PaywallPhaseUi.Ready,
@@ -1127,9 +1013,9 @@ object Stories {
             id = "settings.delete",
             area = "Settings",
             title = "Delete account confirmation",
-            description = "Asking before an account is permanently deleted, with the address typed to confirm.",
+            description = "Asking before an account is permanently deleted, with the address typed to confirm, over Settings.",
         ) {
-            SheetStoryFrame {
+            SheetStoryFrame(background = { SettingsScreen(state = signedInSettings(), onAction = {}) }) {
                 DeleteAccountSheetContent(
                     state = DeleteAccountSheetState(
                         accountId = "ada",
@@ -1146,13 +1032,10 @@ object Stories {
             id = "settings.large-text",
             area = "Settings",
             title = "Settings (large text)",
-            description = "Settings rendered at 1.5x accessibility font scaling.",
-            fontScale = 1.5f,
+            description = "Settings at Android's largest text size.",
+            fontScale = LARGEST_FONT_SCALE,
         ) {
-            SettingsScreen(
-                state = sampleSignedInSettingsState(),
-                onAction = {},
-            )
+            SettingsScreen(state = signedInSettings(), onAction = {})
         },
 
         // --- Report --------------------------------------------------------
@@ -1197,7 +1080,7 @@ object Stories {
                     ),
                     signedIn = true,
                     dumpReady = true,
-                    delivery = ReportDeliveryUi.Sent(referenceId = "RPT-4829-AF"),
+                    delivery = ReportDeliveryUi.Sent(referenceId = "rep_4KX2M9"),
                 ),
                 onAction = {},
             )
@@ -1230,10 +1113,7 @@ object Stories {
         }
     }
 
-    @Composable
-    private fun PairingStoryFrame(content: @Composable () -> Unit) {
-        SheetStoryFrame(content = content)
-    }
+    // --- Frames ---------------------------------------------------------------
 
     @Composable
     private fun DialogStoryFrame(
@@ -1254,710 +1134,289 @@ object Stories {
         }
     }
 
+    /**
+     * A sheet raised over the screen it was raised from, drawn with the chrome
+     * the app's `ModalBottomSheet`s draw: Material's expanded shape, scrim and
+     * drag handle, and the ground container every one of those sheets passes.
+     *
+     * The real sheet is a window of its own, which a single-root capture and
+     * the accessibility sweep cannot see; this draws the same pieces in one.
+     * The screen behind is hidden from semantics, as the sheet's own window
+     * hides it from TalkBack.
+     */
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun SheetStoryFrame(content: @Composable () -> Unit) {
-        val sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        AmuxGround {
-            AmuxScrim()
+    private fun SheetStoryFrame(
+        background: @Composable () -> Unit,
+        content: @Composable () -> Unit,
+    ) {
+        val colors = AmuxTheme.colors
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().clearAndSetSemantics {}) {
+                background()
+            }
             Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.BottomCenter,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BottomSheetDefaults.ScrimColor),
+            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .widthIn(max = BottomSheetDefaults.SheetMaxWidth)
+                    .fillMaxWidth(),
+                shape = BottomSheetDefaults.ExpandedShape,
+                color = colors.ground,
+                contentColor = colors.ink,
+                tonalElevation = 0.dp,
             ) {
-                AmuxPanel(
-                    shape = sheetShape,
-                    color = AmuxTheme.colors.ground,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = Space.m, bottom = Space.xs)
-                                .width(36.dp)
-                                .height(4.dp)
-                                .clip(CircleShape)
-                                .background(AmuxTheme.colors.hairline),
-                        )
-                        content()
-                    }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    BottomSheetDefaults.DragHandle(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    content()
                 }
             }
         }
     }
 
-    private fun sampleChatSubject(
-        name: String = "refactor-auth",
-        hostName: String = "studio",
-        reach: Reach = Reach.Online(RouteKind.Direct),
-        native: Boolean = false,
-        filing: Filing = Filing.Open,
-    ): ChatSubject = ChatSubject(
-        name = name,
-        host = hostName,
-        directory = "/Users/ada/source/amux",
-        branch = "refactor-auth",
-        reach = reach,
-        filing = filing,
-        topLevel = !native,
-        native = native,
-    )
+    private fun pairingStory(id: String, title: String, description: String, state: PairingSheetState): Story =
+        Story(id = id, area = "Pairing", title = title, description = description) {
+            SheetStoryFrame(background = { HostsTab(state = hostsTabState(F.machines), onAction = {}) }) {
+                PairingSheetContent(state = state, onAction = {})
+            }
+        }
 
-    private fun sampleControls(): ControlsSummary = ControlsSummary(
-        effort = "high",
-        mode = null,
-        model = "Opus 4.6",
-        permission = null,
-    )
+    // --- Chats ----------------------------------------------------------------
 
-    private fun activeChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val exploreRun = ScriptedChat.run(
-            listOf(
-                ScriptedChat.row(
-                    id = "r-read-1",
-                    order = 2L,
-                    kind = RowKind.Explore(ExploreVerb.Read, "crates/auth/src/token.rs", CallPhase.Succeeded, ""),
-                ),
-                ScriptedChat.row(
-                    id = "r-search-1",
-                    order = 3L,
-                    kind = RowKind.Explore(ExploreVerb.Search, "verify_signature", CallPhase.Succeeded, ""),
-                ),
-            ),
-        ).map { ScriptedChat.folding(it, emptySet()) }
+    private class StoryChat(val state: ChatScreenState, val source: StaticChatRowSource)
 
-        val subGroup = SubagentGroup(
-            first = "r-sub-1",
-            agents = listOf(listOf(10), listOf(11), listOf(12), listOf(13)),
-            open = false,
-        )
-        val groupState = GroupState(
-            agents = 4,
-            running = 2,
-            needsYou = 1,
-            idle = 0,
-            finished = 1,
-            ended = 0,
-            failed = 0,
-            unknown = 0,
-        )
-
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "r-prompt-1",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Clean up token verification and add tests for expired keys.")),
-                    steered = false,
-                ),
-            ),
-        ) + exploreRun + listOf(
-            ScriptedChat.row(
-                id = "r-cmd-1",
-                order = 4L,
-                kind = RowKind.Command(
-                    command = "cargo test -p amux-auth",
-                    description = "Run auth unit suite",
-                    state = CallPhase.Succeeded,
-                    exitCode = 0,
-                    durationMs = 4_200L,
-                    outputHead = listOf(
-                        "running 14 tests",
-                        "test token::expired_key_rejected ... ok",
-                        "test result: ok. 14 passed; 0 failed",
-                    ),
-                    outputTail = emptyList(),
-                    outputTrimmed = false,
-                    moreLines = 0L,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "r-file-1",
-                order = 5L,
-                kind = RowKind.FileChange(
-                    files = listOf(
-                        FileRow(
-                            path = "crates/auth/src/token.rs",
-                            change = FileChangeView.Edited,
-                            added = 28,
-                            removed = 7,
-                        ),
-                    ),
-                    state = CallPhase.Succeeded,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "r-sub-1",
-                order = 6L,
-                kind = RowKind.Subagent(
-                    description = "Audit token callers across mobile clients",
-                    continued = false,
-                    state = CallPhase.Running,
-                    answer = "",
-                ),
-                opens = listOf(10),
-                group = subGroup,
-            ),
-            ScriptedChat.row(
-                id = "r-prose-1",
-                order = 7L,
-                kind = RowKind.Prose(
-                    text = listOf(
-                        Segment.Text(
-                            "### Token verification updated\n\n" +
-                                "Split expiry parsing out of `verify_signature` so callers get a typed reason:\n\n" +
-                                "- Rejected keys past `expires_at` before signature checks\n" +
-                                "- Added regression coverage in `token::tests`\n\n" +
-                                "```rust\nif now > claims.expires_at {\n    return Err(TokenError::Expired);\n}\n```",
-                        ),
-                    ),
-                    streaming = false,
-                    workingNote = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "r-turn-1",
-                order = 8L,
-                kind = RowKind.TurnEnd(durationMs = 42_000L, failed = false),
-            ),
-        )
-
-        val changes = ChangeTotals(files = 2, added = 42, removed = 7)
-        val frame = ScriptedChat.frame(
-            name = "refactor-auth",
-            phase = PhaseView.Idle,
-            mode = Composer.Send,
-        ).copy(
-            controls = sampleControls(),
-            git = Git(baseBranch = "main", uncommitted = changes, onBranch = changes),
-        )
-        val groupMap = mapOf("r-sub-1" to groupState)
-        val state = ChatScreenState(
-            subject = sampleChatSubject(),
-            keys = rows.map { it.id },
-            frame = frame,
-            overview = Overview(
-                jobs = emptyList(),
-                failedServers = emptyList(),
-                changes = null,
-                tasks = TasksView(
-                    done = 2,
-                    total = 3,
-                    current = "Verify mobile client callers",
-                    entries = listOf(
-                        TaskLine("Split expiry check", TaskMark.Done),
-                        TaskLine("Add expired key tests", TaskMark.Done),
-                        TaskLine("Verify mobile client callers", TaskMark.Current),
-                    ),
-                ),
-                usageNearLimit = null,
-            ),
-            settings = sampleSettingsView(),
-            groupStates = groupMap,
-            changes = changes,
-            comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
-            canSend = false,
-            nowMs = NOW_MS,
-        )
-        val source = StaticChatRowSource(rows = rows, groupStates = groupMap)
-        return state to source
+    @Composable
+    private fun StoryChatScreen(chat: StoryChat) {
+        ChatScreen(state = chat.state, rowSource = chat.source)
     }
 
-    private fun streamingChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "s-1",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Diagnose why the reconnect test flaked on CI.")),
-                    steered = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "s-2",
-                order = 2L,
-                kind = RowKind.Command(
-                    command = "cargo test -p e2e reconnect -- --nocapture",
-                    description = "",
-                    state = CallPhase.Running,
-                    exitCode = null,
-                    durationMs = null,
-                    outputHead = listOf("spawning relay on 127.0.0.1:48211"),
-                    outputTail = emptyList(),
-                    outputTrimmed = false,
-                    moreLines = 0L,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "s-3",
-                order = 3L,
-                kind = RowKind.Prose(
-                    text = listOf(
-                        Segment.Text("Reproducing the timeout now. The second dial races the session ticket refresh when the relay restarts…"),
-                    ),
-                    streaming = true,
-                    workingNote = false,
-                ),
-            ),
-        )
-        val frame = ScriptedChat.frame(
-            name = "flaky-e2e",
-            phase = PhaseView.Working,
-            mode = Composer.Send,
-            activity = Activity(
-                kind = ActivityKind.Running("s-2"),
-                sinceMs = NOW_MS - 18_000L,
-                elapsedMs = 18_000L,
-                turnElapsedMs = 18_000L,
-            ),
-        ).copy(controls = sampleControls())
-
+    /**
+     * A chat as the app's chat state would show [rows] under [frame]: runs
+     * and groups folded as the shared view folds them, the surroundings
+     * applied to the frame, and the comparisons and change totals the chat
+     * model derives from its git facts. Dictation is on, as it is on a phone
+     * that offers it, so the composer draws its microphone.
+     */
+    private fun chat(
+        rows: List<Row>,
+        frame: ChatFrame,
+        strip: ScriptedChat.Surroundings = ScriptedChat.strip(),
+        subject: ChatSubject = F.subject,
+        card: AskCard? = null,
+        family: FamilyHeader? = null,
+        settings: SettingsView? = null,
+        openGroups: Set<String> = emptySet(),
+        groupStates: Map<String, GroupState> = emptyMap(),
+        openedAgents: Map<List<Int>, OpenedAgent> = emptyMap(),
+        liveSubagents: GroupState = EMPTY_GROUP_STATE,
+        draft: String = "",
+        questionDraft: QuestionDraft? = null,
+        canResume: Boolean = false,
+        loadingHint: Boolean = false,
+    ): StoryChat {
+        val folded = rows.map { ScriptedChat.folding(it, open = emptySet(), groups = openGroups) }
+        val shown = strip.appliedTo(frame)
+        val git = shown.git
+        val running = (shown.composer.activity?.kind as? ActivityKind.Running)?.key
         val state = ChatScreenState(
-            subject = sampleChatSubject(name = "flaky-e2e", hostName = "desk"),
-            keys = rows.map { it.id },
-            frame = frame,
-            activitySubject = "cargo test -p e2e reconnect -- --nocapture",
-            settings = sampleSettingsView(),
-            nowMs = NOW_MS,
-        )
-        return state to StaticChatRowSource(rows = rows)
-    }
-
-    private fun nativeSubagentFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val parentCard = fleetRow(
-            index = 20,
-            name = "migration",
-            host = desk,
-            attention = Attention.Working,
-            minutesAgo = 2,
-        ).card
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "n-1",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Scan every call site of `open_store` and list those missing WAL checkpointing.")),
-                    steered = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "n-2",
-                order = 2L,
-                kind = RowKind.Explore(ExploreVerb.Search, "open_store", CallPhase.Succeeded, ""),
-            ),
-            ScriptedChat.row(
-                id = "n-3",
-                order = 3L,
-                kind = RowKind.Prose(
-                    text = listOf(
-                        Segment.Text("Found 3 call sites. Checking `crates/app-embedded/src/lib.rs` next."),
-                    ),
-                    streaming = true,
-                    workingNote = false,
-                ),
-            ),
-        )
-        val frame = ScriptedChat.frame(
-            name = "audit-store-calls",
-            kind = Kind.ClaudeSdk,
-            phase = PhaseView.Working,
-            mode = Composer.Native(JobStop.Offered("job-sub-1")),
-            activity = Activity(
-                kind = ActivityKind.Working,
-                sinceMs = NOW_MS - 14_000L,
-                elapsedMs = 14_000L,
-                turnElapsedMs = 14_000L,
-            ),
-        )
-        val state = ChatScreenState(
-            subject = sampleChatSubject(name = "audit-store-calls", hostName = "desk", native = true),
-            family = FamilyHeader(
-                children = emptyList(),
-                attention = Attention.Working,
-                needYou = 0,
-                parent = parentCard,
-            ),
-            keys = rows.map { it.id },
-            frame = frame,
-            nowMs = NOW_MS,
-        )
-        return state to StaticChatRowSource(rows = rows)
-    }
-
-    private fun exitedChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "e-1",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Check whether QUIC holds up behind symmetric NATs.")),
-                    steered = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "e-2",
-                order = 2L,
-                kind = RowKind.Prose(
-                    text = listOf(
-                        Segment.Text("Verified relay fallback and hole-punching across both NAT profiles. Notes are in `docs/NETWORK.md`."),
-                    ),
-                    streaming = false,
-                    workingNote = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "e-3",
-                order = 3L,
-                kind = RowKind.TurnEnd(durationMs = 95_000L, failed = false),
-            ),
-        )
-        val frame = ScriptedChat.frame(
-            name = "spike-quic",
-            phase = PhaseView.Exited(ExitCause.Finished),
-            mode = Composer.Resume,
-        ).copy(controls = sampleControls())
-        val state = ChatScreenState(
-            subject = sampleChatSubject(name = "spike-quic", hostName = "studio", filing = Filing.Closed),
-            keys = rows.map { it.id },
-            frame = frame,
-            canResume = true,
-            canSend = false,
-            nowMs = NOW_MS,
-        )
-        return state to StaticChatRowSource(rows = rows)
-    }
-
-    private fun offlineDraftFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "o-1",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Trace the reconnect backoff when Wi-Fi drops.")),
-                    steered = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "o-2",
-                order = 2L,
-                kind = RowKind.Prose(
-                    text = listOf(
-                        Segment.Text("Added jittered exponential backoff capped at 30 seconds in `quic_link.rs`."),
-                    ),
-                    streaming = false,
-                    workingNote = false,
-                ),
-            ),
-        )
-        val frame = ScriptedChat.frame(
-            name = "reconnect-backoff",
-            phase = PhaseView.Idle,
-            mode = Composer.Waiting(Waiting.Detached),
-            caughtUp = false,
-        ).copy(
-            connection = Connection.Reconnecting,
-            controls = sampleControls(),
-        )
-        val state = ChatScreenState(
-            subject = sampleChatSubject(
-                name = "reconnect-backoff",
-                hostName = "studio",
-                reach = Reach.Away,
-            ),
-            keys = rows.map { it.id },
-            frame = frame,
-            draft = "Check whether a network change resets the backoff timer immediately.",
-            canSend = false,
-            nowMs = NOW_MS,
-        )
-        return state to StaticChatRowSource(rows = rows)
-    }
-
-    private fun subagentsGroupChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val group = SubagentGroup(
-            first = "sg-1",
-            agents = listOf(listOf(21), listOf(22), listOf(23), listOf(24)),
-            open = true,
-        )
-        val groupState = GroupState(
-            agents = 4,
-            running = 2,
-            needsYou = 1,
-            idle = 0,
-            finished = 1,
-            ended = 0,
-            failed = 0,
-            unknown = 0,
-        )
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "sg-prompt",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Audit every platform client for expired-token handling in parallel.")),
-                    steered = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "sg-1",
-                order = 2L,
-                kind = RowKind.Subagent(
-                    description = "Check Android OAuth refresh retry path",
-                    continued = false,
-                    state = CallPhase.Running,
-                    answer = "",
-                ),
-                opens = listOf(21),
-                group = group,
-            ),
-            ScriptedChat.row(
-                id = "sg-2",
-                order = 3L,
-                kind = RowKind.Subagent(
-                    description = "Check iOS keychain token expiry guard",
-                    continued = false,
-                    state = CallPhase.Running,
-                    answer = "",
-                ),
-                opens = listOf(22),
-                group = group,
-                parent = "sg-1",
-            ),
-            ScriptedChat.row(
-                id = "sg-3",
-                order = 4L,
-                kind = RowKind.Subagent(
-                    description = "Run relay token expiry integration test",
-                    continued = false,
-                    state = CallPhase.Running,
-                    answer = "",
-                ),
-                opens = listOf(23),
-                group = group,
-                parent = "sg-1",
-                attention = true,
-            ),
-            ScriptedChat.row(
-                id = "sg-4",
-                order = 5L,
-                kind = RowKind.Subagent(
-                    description = "Verify CLI credential reload on 401",
-                    continued = false,
-                    state = CallPhase.Succeeded,
-                    answer = "CLI refreshes and retries once when the server returns 401.",
-                    durationMs = 14_000L,
-                ),
-                opens = listOf(24),
-                group = group,
-                parent = "sg-1",
-            ),
-        )
-        val openedAgents = mapOf(
-            listOf(21) to OpenedAgent(
-                agent = AgentKey(host = desk.hostId, agent = List(16) { 21 }),
-                name = "android-oauth",
-                kind = Kind.ClaudeSdk,
-                phase = PhaseView.Working,
-            ),
-            listOf(22) to OpenedAgent(
-                agent = AgentKey(host = desk.hostId, agent = List(16) { 22 }),
-                name = "ios-keychain",
-                kind = Kind.ClaudeSdk,
-                phase = PhaseView.Working,
-            ),
-            listOf(23) to OpenedAgent(
-                agent = AgentKey(host = desk.hostId, agent = List(16) { 23 }),
-                name = "relay-expiry",
-                kind = Kind.ClaudeSdk,
-                phase = PhaseView.NeedsYou,
-            ),
-            listOf(24) to OpenedAgent(
-                agent = AgentKey(host = desk.hostId, agent = List(16) { 24 }),
-                name = "cli-reload",
-                kind = Kind.ClaudeSdk,
-                phase = PhaseView.Idle,
-            ),
-        )
-        val groupMap = mapOf("sg-1" to groupState)
-        val frame = ScriptedChat.frame(
-            name = "migration",
-            phase = PhaseView.Working,
-            mode = Composer.Send,
-            activity = Activity(
-                kind = ActivityKind.Subagents(3),
-                sinceMs = NOW_MS - 48_000L,
-                elapsedMs = 48_000L,
-                turnElapsedMs = 48_000L,
-            ),
-        ).copy(controls = sampleControls())
-        val state = ChatScreenState(
-            subject = sampleChatSubject(name = "migration", hostName = "desk"),
-            keys = rows.map { it.id },
-            frame = frame,
-            groupStates = groupMap,
-            settings = sampleSettingsView(),
+            subject = subject,
+            family = family,
+            keys = folded.map { it.id },
+            frame = shown,
+            ask = card,
+            overview = strip.overview,
+            settings = settings,
+            openedAgents = openedAgents,
+            liveSubagents = liveSubagents,
+            groupStates = groupStates,
+            loadingHint = loadingHint,
+            draft = draft,
+            canResume = canResume,
+            comparisons = if (git?.baseBranch == null) {
+                listOf(Comparison.Uncommitted)
+            } else {
+                listOf(Comparison.Uncommitted, Comparison.OnBranch)
+            },
+            changes = git?.uncommitted?.takeIf { it.files > 0 || it.added + it.removed > 0 },
+            activitySubject = running?.let { key -> folded.firstOrNull { it.id == key } }?.let(ChatWords::subject),
+            keptQuestionDraft = questionDraft,
+            dictationEnabled = true,
             nowMs = NOW_MS,
         )
         val source = StaticChatRowSource(
-            rows = rows,
-            expanded = setOf("sg-1"),
+            rows = folded,
             openedAgents = openedAgents,
-            groupStates = groupMap,
+            groupStates = groupStates,
         )
-        return state to source
+        return StoryChat(state, source)
     }
 
-    private fun subagentsFleetState(): AgentsHomeState {
-        val parent = fleetRow(
-            index = 4,
-            name = "migration",
-            host = desk,
-            attention = Attention.NeedsYou,
-            minutesAgo = 2,
-            children = 2,
-            secondLine = SecondLine.Step(
-                ActivityLine(
-                    activity = Activity(
-                        kind = ActivityKind.Subagents(2),
-                        sinceMs = NOW_MS - 90_000L,
-                        elapsedMs = 90_000L,
-                        turnElapsedMs = 90_000L,
-                    ),
-                    step = null,
-                ),
-            ),
-        ).copy(expanded = true)
-        val childWaiting = fleetRow(
-            index = 41,
-            name = "relay-expiry",
-            host = desk,
-            attention = Attention.NeedsYou,
-            minutesAgo = 1,
-            secondLine = SecondLine.Said(
-                Said.Ask(
-                    key = "",
-                    wants = Wants.Run("cargo test -p relay token_expiry"),
-                    why = "",
-                    more = 0,
-                ),
-            ),
-        ).let { row ->
-            row.copy(
-                card = row.card.copy(topLevel = false, native = true),
-                depth = 1,
-            )
-        }
-        val childWorking = fleetRow(
-            index = 42,
-            name = "android-oauth",
-            host = desk,
-            attention = Attention.Working,
-            minutesAgo = 2,
-            secondLine = SecondLine.Step(
-                ActivityLine(
-                    activity = Activity(
-                        kind = ActivityKind.Running("read-1"),
-                        sinceMs = NOW_MS - 22_000L,
-                        elapsedMs = 22_000L,
-                        turnElapsedMs = 22_000L,
-                    ),
-                    step = "AmuxCloudService.kt",
-                ),
-            ),
-        ).let { row ->
-            row.copy(
-                card = row.card.copy(topLevel = false, native = true),
-                depth = 1,
-            )
-        }
-        val sibling = fleetRow(
-            index = 6,
-            name = "licensing",
-            host = studio,
-            attention = Attention.Idle,
-            minutesAgo = 18,
-            secondLine = SecondLine.LastSaid("Drafted the licensing page, ready for you to read."),
-        )
-        val needsYouRows = listOf(parent, childWaiting, childWorking)
-        val liveRows = listOf(sibling)
-        val sections = listOf(
-            FleetSection(SectionKind.NeedsYou, families = 1, foldedByDefault = false, rows = needsYouRows),
-            FleetSection(SectionKind.Live, families = 1, foldedByDefault = false, rows = liveRows),
-        )
-        return AgentsHomeState(
-            loaded = true,
-            rows = sections.flatMap { it.rows },
-            sections = sections,
-            needYou = 1,
-            working = 1,
-            machines = listOf(desk, studio),
-            orderedAtMs = NOW_MS,
-            accounts = listOf(adaAccount),
-            selectedAccount = adaAccount,
-            accountPro = true,
-        )
-    }
+    private val opus = ScriptedChat.strip(model = "opus 4.6")
 
-    private fun sampleSettledScreenState(): SettledScreenState = SettledScreenState(
-        rows = listOf(
-            fleetRow(
-                index = 8,
-                name = "spike-quic",
-                host = studio,
-                attention = Attention.Exited,
-                minutesAgo = 180,
-                filing = Filing.Closed,
-                exitCause = ExitCause.Finished,
-                secondLine = SecondLine.LastSaid("QUIC holds up behind both NATs."),
-            ),
-            fleetRow(
-                index = 9,
-                name = "bisect-hang",
-                host = desk,
-                attention = Attention.Exited,
-                minutesAgo = 300,
-                filing = Filing.Closed,
-                exitCause = ExitCause.Failed("the provider exited: exit code 1"),
-                secondLine = SecondLine.Exited(ExitCause.Failed("the provider exited: exit code 1")),
-            ),
-            fleetRow(
-                index = 14,
-                name = "release-0-10",
-                host = desk,
-                attention = Attention.Exited,
-                minutesAgo = 1_440,
-                filing = Filing.Closed,
-                exitCause = ExitCause.Finished,
-                secondLine = SecondLine.LastSaid("Published release notes and tag."),
-            ),
+    private fun conversationChat(): StoryChat =
+        chat(rows = F.conversation, frame = ScriptedChat.frame(phase = PhaseView.Idle), strip = opus)
+
+    private fun workingChat(queue: Boolean = false): StoryChat = chat(
+        rows = F.working,
+        frame = ScriptedChat.frame(
+            phase = PhaseView.Working,
+            activity = F.workingActivity,
+            queue = if (queue) F.queue else emptyList(),
         ),
-        query = "",
-        nowMs = NOW_MS,
+        strip = opus,
     )
 
-    private fun sampleNewAgentState(): NewAgentScreenState = NewAgentScreenState(
-        hosts = listOf(desk, studio, garagePi),
-        selectedHostId = desk.hostId,
+    private fun delegatingChat(open: Boolean): StoryChat = chat(
+        rows = F.delegating,
+        frame = ScriptedChat.frame(phase = PhaseView.Working, activity = F.delegatingActivity),
+        strip = opus,
+        openGroups = if (open) setOf(F.DELEGATED_GROUP) else emptySet(),
+        groupStates = mapOf(F.DELEGATED_GROUP to F.delegatedState),
+        openedAgents = F.delegatedAgents,
+        liveSubagents = F.delegatedLive,
+    )
+
+    /**
+     * The whole app's first agent opened after it exited, as iOS's story of
+     * the app draws it: the busy fleet's pinned nightly-triage on desk.
+     */
+    private fun exitedChat(): StoryChat {
+        val first = StoryFleet.busy().sections.first().rows.first().card
+        return chat(
+            rows = F.conversation,
+            frame = ScriptedChat.frame(
+                name = first.name,
+                phase = PhaseView.Exited(ExitCause.Failed("while amux was stopped")),
+                mode = Composer.Resume,
+            ),
+            strip = ScriptedChat.strip(model = "opus 4.6", git = F.git),
+            subject = ChatSubject(
+                name = first.name,
+                host = first.host,
+                directory = first.cwd,
+                reach = first.hostReach,
+                filing = first.filing,
+                key = first.agent,
+            ),
+            canResume = true,
+        )
+    }
+
+    private fun overviewChat(): StoryChat =
+        chat(rows = F.conversation, frame = ScriptedChat.frame(phase = PhaseView.Working), strip = F.surroundings)
+
+    /** The overview state the chat screen builds for its sheet. */
+    private fun overviewOf(state: ChatScreenState): ChatOverviewState = ChatOverviewState(
+        subject = state.subject.toOverviewUi(),
+        overview = state.overview,
+        context = state.frame?.context,
+        comparisons = state.comparisons,
+        comparison = state.comparison,
+        baseBranch = state.frame?.git?.baseBranch,
+        changeTotals = state.changes,
+        nowMs = state.nowMs,
+    )
+
+    /** An ask docked over a chat that has only just been asked something. */
+    private fun askStory(
+        id: String,
+        title: String,
+        card: AskCard,
+        draft: QuestionDraft? = null,
+        taps: List<String> = emptyList(),
+        fontScale: Float = 1.0f,
+        description: String = "The iOS catalogue's ask.$id, docked in place of the composer.",
+    ): Story = Story(
+        id = "ask.$id",
+        area = "Asks",
+        title = title,
+        description = description,
+        fontScale = fontScale,
+        taps = taps,
+    ) {
+        StoryChatScreen(
+            chat(
+                rows = F.conversation.take(1),
+                frame = ScriptedChat.frame(kind = card.kind, phase = PhaseView.NeedsYou),
+                card = card,
+                questionDraft = draft,
+            ),
+        )
+    }
+
+    /** A question ask's progress, as a person who answered this far left it. */
+    private fun questionDraft(
+        count: Int,
+        picks: List<Set<Int>> = List(count) { emptySet() },
+        others: List<String?> = List(count) { null },
+        highlighted: List<Int?> = List(count) { null },
+        skipped: List<Boolean> = List(count) { false },
+        notes: List<String> = List(count) { "" },
+        noting: List<Boolean> = List(count) { false },
+        reviewing: Boolean = false,
+        replying: Boolean = false,
+        replyText: String = "",
+    ): QuestionDraft = QuestionDraft(
+        step = if (reviewing) count - 1 else 0,
+        picks = picks,
+        others = others,
+        highlighted = highlighted,
+        skipped = skipped,
+        notes = notes,
+        noting = noting,
+        reviewing = reviewing,
+        replying = replying,
+        replyText = replyText,
+    )
+
+    // --- Other screens --------------------------------------------------------
+
+    /** The busy list as the runtime filters it: the two whose step runs the tests. */
+    private fun filteredFleet(): AgentsHomeState {
+        val base = StoryFleet.busy()
+        val matching = setOf("auth-refactor", "flaky-e2e")
+        val sections = base.sections.mapNotNull { section ->
+            val kept = section.rows.filter { it.card.name in matching }
+            if (kept.isEmpty()) null else section.copy(rows = kept, families = kept.size)
+        }
+        return base.copy(
+            rows = sections.flatMap { it.rows },
+            sections = sections,
+            filter = sh.amux.values.FleetFilter(words = "test", only = null),
+        )
+    }
+
+    /** The hosts tab over [machines], paired ones listed and the rest offered. */
+    private fun hostsTabState(machines: List<sh.amux.values.HostView>, pro: Boolean? = null): HostsTabState {
+        val (found, paired) = machines.partition { it.candidate }
+        return HostsTabState(
+            hosts = paired,
+            discovered = found,
+            accountPro = pro,
+            awayHostName = paired.firstOrNull { it.reach == Reach.Away }?.name,
+            nowMs = NOW_MS,
+        )
+    }
+
+    private fun newAgentState(): NewAgentScreenState = NewAgentScreenState(
+        hosts = F.newAgentHosts,
+        selectedHostId = F.newAgentHosts.first().hostId,
         provider = Provider.Claude,
         availableProviders = listOf(Provider.Claude, Provider.Codex),
         offer = NewAgentOfferUi.Offered,
-        settings = sampleSettingsView(),
+        settings = F.claudeCatalogue,
         listing = NewAgentListingUi.Ready,
-        repositories = listOf(
-            Directory(path = "/Users/ada/source/amux", name = "amux"),
-            Directory(path = "/Users/ada/source/relay", name = "relay"),
-        ),
-        recent = listOf(
-            Directory(path = "/Users/ada/source/docs", name = "docs"),
-            Directory(path = "/Users/ada/scratch/bench", name = "bench"),
-        ),
-        directory = "/Users/ada/source/amux",
+        repositories = F.repositoryDirectories,
+        recent = F.recentDirectories,
+        directory = F.repositoryDirectories.first().path,
         newWorktree = true,
-        name = "auth-pass",
     )
 
-    private fun sampleSignedInSettingsState(): SettingsScreenState = SettingsScreenState(
+    private fun signedInSettings(): SettingsScreenState = SettingsScreenState(
         accounts = listOf(
             SettingsAccountItem(
                 id = "ada",
@@ -1976,11 +1435,112 @@ object Stories {
         shareUsage = true,
         autoReports = false,
         deviceName = "Pixel 9",
-        deviceFingerprint = SAMPLE_PHONE_FINGERPRINT,
+        deviceFingerprint = F.fingerprint(9),
         fingerprintCopied = false,
         appVersion = "0.11.0",
         showContactSupport = true,
     )
+
+    /**
+     * The iOS catalogue's review: a changed file, a test that gained an
+     * import and a new page, with a comment on a changed line and one on the
+     * new page.
+     */
+    private fun reviewPageState(): ReviewPageState {
+        fun ctx(text: String, old: Int, new: Int) = DiffLine(LineKind.Context, text, emptyList(), newLine = new, oldLine = old)
+        fun del(text: String, old: Int) = DiffLine(LineKind.Removed, text, emptyList(), newLine = null, oldLine = old)
+        fun add(text: String, new: Int) = DiffLine(LineKind.Added, text, emptyList(), newLine = new, oldLine = null)
+        val errors = "crates/amux-ui/src/pairing/errors.rs"
+        val pairingDoc = "docs/PAIRING.md"
+        return ReviewPageState(
+            doc = ReviewDoc(
+                base = "main",
+                head = "4f2a9c1",
+                added = 7,
+                removed = 4,
+                files = listOf(
+                    ReviewFile(
+                        path = errors,
+                        status = FileStatus.Modified,
+                        added = 3,
+                        removed = 4,
+                        binary = false,
+                        comments = emptyList(),
+                        hunks = listOf(
+                            Hunk(
+                                skips = true,
+                                scope = "use crate::codes::Code;",
+                                lines = listOf(
+                                    ctx("/// Why a pairing did not happen.", 8, 8),
+                                    ctx("pub enum PairError {", 9, 9),
+                                    ctx("    Expired,", 10, 10),
+                                    del("    Refused,", 11),
+                                    del("    Unknown,", 12),
+                                    del("    Busy,", 13),
+                                    add("    Refused(String),", 11),
+                                    add("    Busy { retry_after_ms: u64 },", 12),
+                                    ctx("}", 14, 13),
+                                    ctx("", 15, 14),
+                                    ctx("impl PairError {", 16, 15),
+                                    del("    pub fn message(&self) -> &str {", 17),
+                                    add("    pub fn message(&self) -> String {", 16),
+                                    ctx("        match self {", 18, 17),
+                                ),
+                            ),
+                        ),
+                    ),
+                    ReviewFile(
+                        path = "crates/amux-ui/tests/errors.rs",
+                        status = FileStatus.Modified,
+                        added = 1,
+                        removed = 0,
+                        binary = false,
+                        comments = emptyList(),
+                        hunks = listOf(
+                            Hunk(
+                                skips = false,
+                                scope = "",
+                                lines = listOf(
+                                    ctx("use amux_ui::pairing::PairError;", 1, 1),
+                                    add("use amux_ui::pairing::describe;", 2),
+                                    ctx("", 2, 3),
+                                    ctx("#[test]", 3, 4),
+                                    ctx("fn every_error_has_one_string() {", 4, 5),
+                                ),
+                            ),
+                        ),
+                    ),
+                    ReviewFile(
+                        path = pairingDoc,
+                        status = FileStatus.Added,
+                        added = 3,
+                        removed = 0,
+                        binary = false,
+                        comments = emptyList(),
+                        hunks = listOf(
+                            Hunk(
+                                skips = false,
+                                scope = "",
+                                lines = listOf(
+                                    add("# Pairing", 1),
+                                    add("", 2),
+                                    add("A refused pairing now says why.", 3),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            comments = listOf(
+                ReviewComment(path = errors, line = 11, oldLine = 0, text = "Say what refused it, not only that it was refused."),
+                ReviewComment(path = pairingDoc, line = 3, oldLine = 0, text = "Link the error table here."),
+            ),
+            comparison = Comparison.Uncommitted,
+            comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
+            baseBranch = "main",
+            selectedFileIndex = 0,
+        )
+    }
 
     private fun sampleReportPngBytes(): ByteArray? = runCatching {
         val width = 180
@@ -2016,652 +1576,4 @@ object Stories {
         bitmap.recycle()
         out.toByteArray()
     }.getOrNull()
-
-    private fun loadingChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val frame = ScriptedChat.frame(
-            name = "auth-migration",
-            phase = PhaseView.Starting,
-            mode = Composer.Waiting(Waiting.CatchingUp),
-            caughtUp = false,
-        ).copy(
-            connection = Connection.Connecting,
-            controls = sampleControls(),
-        )
-        val state = ChatScreenState(
-            subject = sampleChatSubject(
-                name = "auth-migration",
-                hostName = "desk",
-            ).copy(connecting = true),
-            keys = emptyList(),
-            empty = true,
-            frame = frame,
-            loadingHint = true,
-            canSend = false,
-            nowMs = NOW_MS,
-        )
-        return state to StaticChatRowSource(rows = emptyList())
-    }
-
-    private fun queuedChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val (base, source) = streamingChatFixture()
-        val queued = listOf(
-            QueuedRow(
-                inputId = listOf(11),
-                text = listOf(Segment.Text("Capture the relay trace logs if the second attempt times out.")),
-                steered = true,
-                canWithdraw = true,
-                canSendNow = true,
-            ),
-            QueuedRow(
-                inputId = listOf(12),
-                text = listOf(Segment.Text("Then run the full reconnect suite twice to check for flake.")),
-                steered = false,
-                canWithdraw = true,
-                canSendNow = false,
-            ),
-        )
-        val frame = requireNotNull(base.frame).copy(queue = queued)
-        return base.copy(frame = frame) to source
-    }
-
-    private fun signedOutChatFixture(): Pair<ChatScreenState, StaticChatRowSource> {
-        val (base, source) = activeChatFixture()
-        val frame = requireNotNull(base.frame).copy(
-            signIn = SignInView(
-                state = SignInState.SignedOut,
-                account = "ada@example.com",
-                message = "Claude session expired on studio.",
-            ),
-        )
-        return base.copy(frame = frame) to source
-    }
-
-    private fun askChatFixture(card: AskCard): Pair<ChatScreenState, StaticChatRowSource> {
-        val rows = listOf(
-            ScriptedChat.row(
-                id = "a-1",
-                order = 1L,
-                kind = RowKind.Prompt(
-                    text = listOf(Segment.Text("Update the store schema and verify every test passes.")),
-                    steered = false,
-                ),
-            ),
-            ScriptedChat.row(
-                id = "a-2",
-                order = 2L,
-                kind = RowKind.Prose(
-                    text = listOf(Segment.Text("I’ve prepared the change and need your confirmation before continuing.")),
-                    streaming = false,
-                    workingNote = false,
-                ),
-            ),
-        )
-        val frame = ScriptedChat.frame(
-            name = "refactor-auth",
-            phase = PhaseView.NeedsYou,
-            mode = Composer.Send,
-        ).copy(controls = sampleControls())
-        val state = ChatScreenState(
-            subject = sampleChatSubject(),
-            keys = rows.map { it.id },
-            frame = frame,
-            ask = card,
-            nowMs = NOW_MS,
-        )
-        return state to StaticChatRowSource(rows = rows)
-    }
-
-    private fun makeAskCard(
-        key: String,
-        body: AskBody,
-        choices: List<Choice>,
-        position: Long = 1L,
-        count: Long = 1L,
-    ): AskCard = AskCard(
-        kind = Kind.ClaudeSdk,
-        key = key,
-        itemKey = "item-$key",
-        position = position,
-        count = count,
-        body = body,
-        choices = choices,
-        questionNote = false,
-        questionSkip = false,
-        questionReply = false,
-        stopsTurn = true,
-        defaultToNo = false,
-        state = CardState.Open,
-    )
-
-    private fun commandAskCard(): AskCard = makeAskCard(
-        key = "ask-cmd",
-        body = AskBody.Command(
-            command = "cargo test -p store --locked",
-            cwd = "~/source/amux",
-            reason = "Run migration and WAL recovery tests",
-            description = "",
-        ),
-        choices = listOf(
-            Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false),
-            Choice(
-                ChoiceOutcome.AllowAlways(
-                    subjects = listOf("cargo test"),
-                    directories = emptyList(),
-                    mode = "",
-                    modeName = "",
-                    scope = Scope.Project,
-                ),
-                primary = false,
-                takesNote = false,
-            ),
-            Choice(ChoiceOutcome.Deny, primary = false, takesNote = true),
-        ),
-        position = 1L,
-        count = 2L,
-    )
-
-    private fun editAskCard(): AskCard = makeAskCard(
-        key = "ask-edit",
-        body = AskBody.Edit(
-            path = "crates/auth/src/token.rs",
-            files = 1,
-            added = 4,
-            removed = 2,
-            lines = listOf(
-                EditLine.Hunk(oldStart = 42, newStart = 42),
-                EditLine.Line(PatchLine(LineKind.Context, "pub fn verify(tok: &Token) -> Result<(), Error> {", number = 42)),
-                EditLine.Line(PatchLine(LineKind.Removed, "    if tok.sig.is_empty() { return Ok(()); }", number = 43)),
-                EditLine.Line(PatchLine(LineKind.Added, "    if tok.expires_at < now() {", number = 43)),
-                EditLine.Line(PatchLine(LineKind.Added, "        return Err(Error::Expired);", number = 44)),
-                EditLine.Line(PatchLine(LineKind.Added, "    }", number = 45)),
-                EditLine.Hunk(oldStart = 88, newStart = 90),
-                EditLine.Line(PatchLine(LineKind.Removed, "    check_hmac(tok)", number = 88)),
-                EditLine.Line(PatchLine(LineKind.Added, "    check_ed25519(tok)", number = 90)),
-            ),
-            reason = "Enforce expiration and Ed25519 signature verification",
-        ),
-        choices = listOf(
-            Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false),
-            Choice(ChoiceOutcome.Deny, primary = false, takesNote = true),
-        ),
-    )
-
-    private fun questionAskCard(): AskCard = makeAskCard(
-        key = "ask-question",
-        body = AskBody.Question(
-            listOf(
-                QuestionView(
-                    header = "Retention",
-                    question = "How long should closed chat sessions stay cached in memory?",
-                    multiSelect = false,
-                    options = listOf(
-                        OptionView("5 minutes", "Matches iOS and keeps back-navigation instant", "", recommended = true),
-                        OptionView("1 minute", "Lower memory footprint on busy fleets", "", recommended = false),
-                        OptionView("Do not cache", "Re-open from the store on every visit", "", recommended = false),
-                    ),
-                    allowOther = true,
-                    secret = false,
-                ),
-            ),
-        ),
-        choices = emptyList(),
-    )
-
-    private fun planAskCard(): AskCard = makeAskCard(
-        key = "ask-plan",
-        body = AskBody.Plan(
-            title = "Migrate attachment uploads to streaming chunks",
-            body = "1. Check `OpenableColumns.SIZE` before reading bytes.\n" +
-                "2. Reject files above the 64 MB wire limit immediately.\n" +
-                "3. Stream validated bytes into `sessionPutBlob`.",
-        ),
-        choices = listOf(
-            Choice(ChoiceOutcome.ApprovePlan(mode = "", modeName = ""), primary = true, takesNote = false),
-            Choice(ChoiceOutcome.ApprovePlan(mode = "acceptEdits", modeName = "Accept edits"), primary = false, takesNote = false),
-            Choice(ChoiceOutcome.SendBack, primary = false, takesNote = true),
-        ),
-    )
-
-    private fun formAskCard(): AskCard = makeAskCard(
-        key = "ask-form",
-        body = AskBody.Form(
-            server = "deploy",
-            message = "Confirm rollout settings for the staging relay",
-            fields = listOf(
-                FormField(
-                    name = "region",
-                    title = "Region",
-                    description = "Primary relay region",
-                    required = true,
-                    kind = FormFieldKind.Choice(listOf("us-east", "eu-central", "ap-northeast")),
-                    initial = FormValue.Choice(0),
-                ),
-                FormField(
-                    name = "retries",
-                    title = "Max retries",
-                    description = "Between 1 and 10",
-                    required = true,
-                    kind = FormFieldKind.Number(integer = true, minimum = 1.0, maximum = 10.0),
-                    initial = FormValue.Text("3"),
-                ),
-                FormField(
-                    name = "dry_run",
-                    title = "Dry run",
-                    description = "Validate without shifting traffic",
-                    required = false,
-                    kind = FormFieldKind.Toggle,
-                    initial = FormValue.Toggle(true),
-                ),
-            ),
-        ),
-        choices = listOf(
-            Choice(ChoiceOutcome.Submit, primary = true, takesNote = false),
-            Choice(ChoiceOutcome.Decline, primary = false, takesNote = false),
-        ),
-    )
-
-    private fun sampleOverviewState(): ChatOverviewState = ChatOverviewState(
-        subject = ChatSubjectUi(
-            name = "refactor-auth",
-            host = "studio",
-            directory = "/Users/ada/source/amux",
-            branch = "refactor-auth",
-            address = "refactor-auth/studio",
-        ),
-        overview = Overview(
-            tasks = TasksView(
-                done = 2,
-                total = 4,
-                current = "Add expired key regression tests",
-                entries = listOf(
-                    TaskLine("Audit token callers", TaskMark.Done),
-                    TaskLine("Split expiry validation", TaskMark.Done),
-                    TaskLine("Add expired key regression tests", TaskMark.Current),
-                    TaskLine("Update user guide", TaskMark.Todo),
-                ),
-            ),
-            jobs = listOf(
-                JobRow(
-                    command = "cargo test -p amux-auth --watch",
-                    startedAtMs = NOW_MS - 75_000L,
-                    kind = BackgroundKind.Shell,
-                    stop = JobStop.Offered("job-1"),
-                ),
-            ),
-            failedServers = listOf(
-                ServerView(name = "github", error = "OAuth token expired", needsAuth = true),
-            ),
-            usageNearLimit = UsageView(
-                blocked = false,
-                windows = listOf(
-                    UsageWindowView(
-                        label = UsageLabel.FiveHour,
-                        state = UsageState.NearLimit,
-                        resetsAtMs = NOW_MS + 3_600_000L,
-                        usedPercent = 86.0,
-                    ),
-                ),
-                credits = null,
-            ),
-            changes = Changes(
-                totals = ChangeTotals(files = 2, added = 42, removed = 7),
-                folders = listOf(
-                    Folder(
-                        path = "crates/auth/src/",
-                        files = listOf(
-                            ChangedFile("crates/auth/src/token.rs", "token.rs", added = 28, removed = 7, status = FileStatus.Modified, binary = false),
-                        ),
-                    ),
-                    Folder(
-                        path = "crates/auth/tests/",
-                        files = listOf(
-                            ChangedFile("crates/auth/tests/expiry.rs", "expiry.rs", added = 14, removed = 0, status = FileStatus.Added, binary = false),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-        context = ContextView(
-            usedTokens = 164_000L,
-            nearFull = true,
-            percent = 82L,
-            windowTokens = 200_000L,
-        ),
-        comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
-        comparison = Comparison.Uncommitted,
-        baseBranch = "main",
-        nowMs = NOW_MS,
-    )
-
-    private fun sampleSettingsView(): SettingsView = SettingsView(
-        models = listOf(
-            ModelChoice("opus", "Opus 4.6", "Deepest reasoning for complex tasks", listOf("low", "medium", "high"), current = true, unlisted = false, defaultEffort = "high"),
-            ModelChoice("sonnet", "Sonnet 4.6", "Fast and balanced for everyday work", listOf("low", "medium", "high"), current = false, unlisted = false, defaultEffort = "medium"),
-        ),
-        efforts = listOf(
-            EffortChoice("low", current = false, default = false, unlisted = false),
-            EffortChoice("medium", current = false, default = false, unlisted = false),
-            EffortChoice("high", current = true, default = true, unlisted = false),
-        ),
-        permissions = listOf(
-            PermissionChoice("default", "Ask before editing", custom = false, current = true, unlisted = false, normal = true, neverAsks = false, settable = true),
-            PermissionChoice("acceptEdits", "Accept edits", custom = false, current = false, unlisted = false, normal = false, neverAsks = false, settable = true),
-            PermissionChoice("bypassPermissions", "Bypass permissions", custom = false, current = false, unlisted = false, normal = false, neverAsks = true, settable = true),
-        ),
-        modes = emptyList(),
-        changeable = Changeability(
-            model = Changeable.Pick,
-            effort = Changeable.Pick,
-            permission = Changeable.Pick,
-            mode = Changeable.NotOffered,
-        ),
-        commands = listOf(
-            CommandView("compact", "Compact the conversation context", "", "builtin", "/", anywhere = false),
-            CommandView("review", "Review current changes", "[branch]", "builtin", "/", anywhere = false),
-        ),
-    )
-
-    private fun sampleReviewPageState(): ReviewPageState = ReviewPageState(
-        doc = ReviewDoc(
-            base = "main",
-            head = "4f2a9c1",
-            added = 4,
-            removed = 2,
-            files = listOf(
-                ReviewFile(
-                    path = "crates/auth/src/token.rs",
-                    status = FileStatus.Modified,
-                    added = 3,
-                    removed = 2,
-                    binary = false,
-                    comments = emptyList(),
-                    hunks = listOf(
-                        Hunk(
-                            skips = true,
-                            scope = "pub fn verify(tok: &Token) -> Result<(), Error>",
-                            lines = listOf(
-                                DiffLine(LineKind.Context, "pub fn verify(tok: &Token) -> Result<(), Error> {", emptyList(), newLine = 42, oldLine = 42),
-                                DiffLine(LineKind.Removed, "    if tok.sig.is_empty() { return Ok(()); }", emptyList(), newLine = null, oldLine = 43),
-                                DiffLine(LineKind.Added, "    if tok.expires_at < now() {", emptyList(), newLine = 43, oldLine = null),
-                                DiffLine(LineKind.Added, "        return Err(Error::Expired);", emptyList(), newLine = 44, oldLine = null),
-                                DiffLine(LineKind.Added, "    }", emptyList(), newLine = 45, oldLine = null),
-                                DiffLine(LineKind.Removed, "    check_hmac(tok)", emptyList(), newLine = null, oldLine = 44),
-                                DiffLine(LineKind.Context, "    check_ed25519(tok)", emptyList(), newLine = 46, oldLine = 45),
-                            ),
-                        ),
-                    ),
-                ),
-                ReviewFile(
-                    path = "crates/auth/tests/expiry.rs",
-                    status = FileStatus.Added,
-                    added = 1,
-                    removed = 0,
-                    binary = false,
-                    comments = emptyList(),
-                    hunks = listOf(
-                        Hunk(
-                            skips = false,
-                            scope = "",
-                            lines = listOf(
-                                DiffLine(LineKind.Added, "#[test] fn expired_token_is_rejected() {}", emptyList(), newLine = 1, oldLine = null),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-        comments = listOf(
-            ReviewComment(
-                path = "crates/auth/src/token.rs",
-                line = 44,
-                oldLine = 0,
-                text = "Also check clock skew tolerance of 30s so slightly drifted hosts stay connected.",
-            ),
-        ),
-        comparison = Comparison.Uncommitted,
-        comparisons = listOf(Comparison.Uncommitted, Comparison.OnBranch),
-        baseBranch = "main",
-        selectedFileIndex = 0,
-    )
-
-    private fun busyFleetState(
-        away: Boolean = false,
-        accounts: List<AccountUi> = listOf(adaAccount),
-        includeNearby: Boolean = true,
-    ): AgentsHomeState {
-        val studioHost = if (away) studioAway else studio
-        val pinned = listOf(
-            fleetRow(
-                index = 10,
-                name = "nightly-triage",
-                host = desk,
-                attention = Attention.Idle,
-                minutesAgo = 95,
-                filing = Filing.Pinned,
-                secondLine = SecondLine.LastSaid("Nothing new failed overnight."),
-            ),
-        )
-        val needsYou = listOf(
-            fleetRow(
-                index = 1,
-                name = "release-notes",
-                host = desk,
-                attention = Attention.NeedsYou,
-                minutesAgo = 2,
-                secondLine = SecondLine.Said(
-                    Said.Ask(
-                        key = "",
-                        wants = Wants.Question("Which changes should the release notes keep?"),
-                        why = "",
-                        more = 0,
-                    ),
-                ),
-            ),
-            fleetRow(
-                index = 2,
-                name = "auth-refactor",
-                host = studioHost,
-                attention = Attention.NeedsYou,
-                minutesAgo = 6,
-                branch = "refactor-auth",
-                secondLine = SecondLine.Said(
-                    Said.Ask(
-                        key = "",
-                        wants = Wants.Run("cargo test -p amux-auth"),
-                        why = "",
-                        more = 0,
-                    ),
-                ),
-            ),
-        )
-        val live = listOf(
-            fleetRow(
-                index = 3,
-                name = "flaky-e2e",
-                host = desk,
-                attention = Attention.Working,
-                minutesAgo = 1,
-                kind = Kind.ClaudePty,
-                secondLine = SecondLine.Step(
-                    ActivityLine(
-                        activity = Activity(
-                            kind = ActivityKind.Running("t1"),
-                            sinceMs = NOW_MS - 30_000L,
-                            elapsedMs = 30_000L,
-                            turnElapsedMs = 30_000L,
-                        ),
-                        step = "cargo test -p e2e reconnect",
-                    ),
-                ),
-            ),
-            fleetRow(
-                index = 4,
-                name = "migration",
-                host = desk,
-                attention = Attention.Working,
-                minutesAgo = 3,
-                children = 2,
-                secondLine = SecondLine.Step(
-                    ActivityLine(
-                        activity = Activity(
-                            kind = ActivityKind.Subagents(2),
-                            sinceMs = NOW_MS - 90_000L,
-                            elapsedMs = 90_000L,
-                            turnElapsedMs = 90_000L,
-                        ),
-                        step = null,
-                    ),
-                ),
-            ),
-            fleetRow(
-                index = 5,
-                name = "docs-pass",
-                host = studioHost,
-                attention = Attention.Working,
-                minutesAgo = 4,
-                kind = Kind.Codex,
-                secondLine = SecondLine.Step(
-                    ActivityLine(
-                        activity = Activity(
-                            kind = ActivityKind.Thinking,
-                            sinceMs = NOW_MS - 15_000L,
-                            elapsedMs = 15_000L,
-                            turnElapsedMs = 15_000L,
-                        ),
-                        step = null,
-                    ),
-                ),
-            ),
-            fleetRow(
-                index = 6,
-                name = "licensing",
-                host = desk,
-                attention = Attention.Idle,
-                minutesAgo = 18,
-                secondLine = SecondLine.LastSaid("Drafted the licensing page, ready for you to read."),
-            ),
-            fleetRow(
-                index = 7,
-                name = "sensor-logger",
-                host = garagePi,
-                attention = Attention.Idle,
-                minutesAgo = 52,
-                kind = Kind.Codex,
-                secondLine = SecondLine.LastSaid("Running under systemd now."),
-            ),
-        )
-        val settled = listOf(
-            fleetRow(
-                index = 8,
-                name = "spike-quic",
-                host = studioHost,
-                attention = Attention.Exited,
-                minutesAgo = 180,
-                filing = Filing.Closed,
-                exitCause = ExitCause.Finished,
-                secondLine = SecondLine.LastSaid("QUIC holds up behind both NATs."),
-            ),
-            fleetRow(
-                index = 9,
-                name = "bisect-hang",
-                host = desk,
-                attention = Attention.Exited,
-                minutesAgo = 300,
-                filing = Filing.Closed,
-                exitCause = ExitCause.Failed("the provider exited: exit code 1"),
-                secondLine = SecondLine.Exited(ExitCause.Failed("the provider exited: exit code 1")),
-            ),
-        )
-        val sections = listOf(
-            FleetSection(SectionKind.Pinned, families = pinned.size, foldedByDefault = false, rows = pinned),
-            FleetSection(SectionKind.NeedsYou, families = needsYou.size, foldedByDefault = false, rows = needsYou),
-            FleetSection(SectionKind.Live, families = live.size, foldedByDefault = false, rows = live),
-            FleetSection(SectionKind.Closed, families = settled.size, foldedByDefault = true, rows = settled),
-        )
-        return AgentsHomeState(
-            loaded = true,
-            rows = sections.flatMap { it.rows },
-            sections = sections,
-            needYou = 2,
-            working = 3,
-            machines = listOf(desk, studioHost, garagePi),
-            discoveredHosts = if (includeNearby) listOf(laptopFound) else emptyList(),
-            orderedAtMs = NOW_MS,
-            accounts = accounts,
-            selectedAccount = accounts.firstOrNull { it.selected },
-            accountPro = !away,
-            heldAwayHost = if (away) studioHost.name else null,
-        )
-    }
-
-    private fun host(
-        index: Int,
-        name: String,
-        platform: Platform,
-        trusted: Boolean = true,
-        candidate: Boolean = false,
-        reach: Reach = Reach.Online(RouteKind.Direct),
-        relayOnly: Boolean = false,
-        pairingOpen: Boolean = false,
-        addrs: List<String>? = null,
-        version: String = "0.11.0",
-    ): HostView = HostView(
-        hostId = List(16) { index },
-        name = name,
-        local = false,
-        trusted = trusted,
-        candidate = candidate,
-        reach = reach,
-        addrs = addrs ?: if (candidate && !relayOnly) listOf("192.168.1.$index:4433") else emptyList(),
-        relayOnly = relayOnly,
-        pairingOpen = pairingOpen,
-        current = true,
-        providers = listOf(
-            ProviderSignIn(Provider.Claude, signedIn = true),
-            ProviderSignIn(Provider.Codex, signedIn = true),
-        ),
-        platform = platform,
-        version = version,
-    )
-
-    private fun fleetRow(
-        index: Int,
-        name: String,
-        host: HostView,
-        attention: Attention,
-        minutesAgo: Long,
-        kind: Kind = Kind.ClaudeSdk,
-        filing: Filing = Filing.Open,
-        children: Int = 0,
-        branch: String? = null,
-        exitCause: ExitCause? = null,
-        secondLine: SecondLine = SecondLine.Blank,
-    ): FleetRow = FleetRow(
-        card = FleetCard(
-            agent = AgentKey(host = host.hostId, agent = List(16) { index }),
-            name = name,
-            handle = name,
-            kind = kind,
-            attention = attention,
-            cwd = "/Users/ada/source/amux",
-            phaseSinceMs = NOW_MS - minutesAgo * 60_000L,
-            host = host.name,
-            hostReach = host.reach,
-            children = children,
-            familyAttention = attention,
-            members = 1 + children,
-            descendants = children,
-            backgroundJobs = 0,
-            closeHeld = false,
-            filing = filing,
-            topLevel = true,
-            native = false,
-            branch = branch,
-            exitCause = exitCause,
-            repository = Repository(key = "amux", name = "amux", mark = "ax", tint = 0),
-        ),
-        depth = 0,
-        expanded = false,
-        secondLine = secondLine,
-    )
 }

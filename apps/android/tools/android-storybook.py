@@ -6,6 +6,11 @@ Invoked via `just android storybook [filter] [--no-daemon]`. Runs Robolectric
 and Dark appearances into `target/android/storybook/png/`, validates that every
 expected PNG is non-empty, and writes a self-contained static gallery at
 `target/android/storybook/index.html`.
+
+Each story also has a geometry report in `geometry/<id>.<appearance>.json`:
+where its pieces sit and the alignment near-misses among them. The gallery
+lists the light appearance's near-misses under each story and totals them at
+the top. Like the pictures, the report is for reading and never fails a run.
 """
 
 from __future__ import annotations
@@ -103,8 +108,77 @@ def ordered_areas(stories: list[dict]) -> list[str]:
     return ordered
 
 
-def render_html(stories: list[dict]) -> str:
+GEOMETRY_RULES = {
+    "row-centre": "Row centres differ",
+    "near-column": "Edge just off a shared column",
+    "tall-control": "Control drawn taller than 40 dp",
+    "icon-inset": "Glyph inset from its column",
+}
+
+
+def load_flags(out_dir: Path | None, story: dict) -> list[dict] | None:
+    """The light appearance's geometry flags, or None when there is no report."""
+    path = story.get("lightGeometry")
+    if out_dir is None or not path:
+        return None
+    try:
+        data = json.loads((out_dir / path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    flags = data.get("flags")
+    return flags if isinstance(flags, list) else None
+
+
+def render_flags(flags: list[dict] | None) -> str:
+    if flags is None:
+        return ""
+    if not flags:
+        return '<p class="geometry-none">No alignment near-misses.</p>'
+    items = "".join(
+        f'<li><span class="rule">{escape(GEOMETRY_RULES.get(str(f.get("rule")), str(f.get("rule"))))}</span> '
+        f'{escape(str(f.get("detail", "")))}</li>'
+        for f in sorted(flags, key=lambda f: (str(f.get("rule")), -float(f.get("offDp", 0))))
+    )
+    return (
+        f'<details class="geometry"><summary>{len(flags)} alignment near-miss'
+        f'{"" if len(flags) == 1 else "es"}</summary><ul>{items}</ul></details>'
+    )
+
+
+def render_geometry_summary(flags_by_story: dict[str, list[dict] | None]) -> str:
+    reported = {sid: flags for sid, flags in flags_by_story.items() if flags is not None}
+    if not reported:
+        return ""
+    totals = {rule: 0 for rule in GEOMETRY_RULES}
+    for flags in reported.values():
+        for flag in flags:
+            rule = str(flag.get("rule"))
+            totals[rule] = totals.get(rule, 0) + 1
+    rule_rows = "".join(
+        f"<tr><td>{escape(GEOMETRY_RULES.get(rule, rule))}</td><td>{count}</td></tr>"
+        for rule, count in totals.items()
+    )
+    busiest = sorted(reported.items(), key=lambda kv: -len(kv[1]))[:10]
+    story_rows = "".join(
+        f'<tr><td><a href="#{escape(sid)}">{escape(sid)}</a></td><td>{len(flags)}</td></tr>'
+        for sid, flags in busiest
+        if flags
+    )
+    return f"""
+    <section class="geometry-summary">
+      <h2>Geometry</h2>
+      <p>Alignment near-misses read from each story's semantics bounds (light appearance). A reading aid, never a gate; the full reports, with every piece's bounds, are in <code>geometry/</code>.</p>
+      <div class="tables">
+        <table><thead><tr><th>Rule</th><th>Flags</th></tr></thead><tbody>{rule_rows}</tbody></table>
+        <table><thead><tr><th>Most flagged</th><th>Flags</th></tr></thead><tbody>{story_rows}</tbody></table>
+      </div>
+    </section>
+    """
+
+
+def render_html(stories: list[dict], out_dir: Path | None = None) -> str:
     areas_seen = ordered_areas(stories)
+    flags_by_story = {str(story["id"]): load_flags(out_dir, story) for story in stories}
 
     tab_buttons = ['<button class="tab active" data-area="All">All ({})</button>'.format(len(stories))]
     for area in areas_seen:
@@ -129,7 +203,7 @@ def render_html(stories: list[dict]) -> str:
         dark_src = escape(str(story["darkPng"]))
         cards.append(
             f"""
-            <article class="story" data-area="{area}" data-id="{sid}" data-search="{sid.lower()} {title.lower()} {desc.lower()}">
+            <article class="story" id="{sid}" data-area="{area}" data-id="{sid}" data-search="{sid.lower()} {title.lower()} {desc.lower()}">
               <header class="story-header">
                 <div>
                   <div class="story-meta">
@@ -151,6 +225,7 @@ def render_html(stories: list[dict]) -> str:
                   <img src="{dark_src}" alt="{title} (Dark)" loading="lazy" />
                 </figure>
               </div>
+              {render_flags(flags_by_story[str(story["id"])])}
             </article>
             """
         )
@@ -304,6 +379,26 @@ def render_html(stories: list[dict]) -> str:
       font-weight: 500;
       align-self: flex-start;
     }}
+    .geometry, .geometry-none {{
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }}
+    .geometry summary {{ cursor: pointer; font-weight: 500; }}
+    .geometry ul {{ margin: 8px 0 0 0; padding-left: 18px; }}
+    .geometry li {{ margin: 2px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }}
+    .geometry .rule {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 600; color: var(--ink); }}
+    .geometry-summary {{
+      background: var(--surface);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 20px;
+    }}
+    .geometry-summary h2 {{ margin: 0 0 4px 0; font-size: 17px; font-weight: 600; }}
+    .geometry-summary p {{ margin: 0 0 12px 0; font-size: 13px; color: var(--muted); }}
+    .geometry-summary .tables {{ display: flex; flex-wrap: wrap; gap: 24px; }}
+    .geometry-summary table {{ border-collapse: collapse; font-size: 13px; }}
+    .geometry-summary td, .geometry-summary th {{ text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--hairline); }}
     .shot img {{
       width: 100%;
       max-width: 340px;
@@ -325,6 +420,7 @@ def render_html(stories: list[dict]) -> str:
     </div>
   </header>
   <main>
+    {render_geometry_summary(flags_by_story)}
     {"".join(cards)}
   </main>
   <script>
@@ -359,7 +455,7 @@ def render_html(stories: list[dict]) -> str:
 def write_gallery(out_dir: Path) -> tuple[Path, list[dict]]:
     stories = load_manifest(out_dir)
     index_path = out_dir / "index.html"
-    index_path.write_text(render_html(stories), encoding="utf-8")
+    index_path.write_text(render_html(stories, out_dir), encoding="utf-8")
     return index_path, stories
 
 

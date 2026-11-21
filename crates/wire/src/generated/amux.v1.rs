@@ -5226,6 +5226,13 @@ pub struct AcpSnapshot {
     /// The agent's id for the conversation; absent until it names one.
     #[prost(string, optional, tag = "11")]
     pub session_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// How a later process of the agent's program reopens the conversation,
+    /// as its own `initialize` answer said; unspecified until it answers. A
+    /// daemon suspends, continues or resumes the agent only when this is
+    /// resume or load, so an agent whose answer it never saw ends with its
+    /// process.
+    #[prost(enumeration = "AcpReopen", optional, tag = "12")]
+    pub reopen: ::core::option::Option<i32>,
 }
 impl ::prost::Name for AcpSnapshot {
     const NAME: &'static str = "AcpSnapshot";

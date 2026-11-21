@@ -1,41 +1,41 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
 ## 1 recorded 0: tick 2103
-snapshot STARTING queue=[] working_on=- at=2103 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+snapshot STARTING queue=[] working_on=- at=2103 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
 ## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
-snapshot STARTING queue=[] working_on=- at=2103 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot STARTING queue=[] working_on=- at=2103 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 29 recorded 28: fact Rpc method=session/update
 effect catalogue daef34d7 models=[] commands=63 permissions=[] modes=[]
 snapshot catalogue daef34d7
-snapshot STARTING queue=[] working_on=- at=2544 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot STARTING queue=[] working_on=- at=2544 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 41 recorded 40: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
 effect session "01a1fa61-7751-75c3-b3ab-f00c547ba207"
 effect catalogue 1ee2ee4d models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
 item boundary:1 boundary final at=2586 text="" BOUNDARY_KIND_STARTED
 snapshot catalogue 1ee2ee4d
-snapshot IDLE queue=[] working_on=- at=2586 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=2586 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 44 recorded 43: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fa61-7751-75c3-b3ab-f00c547ba207\",\"value\":\"grok-4.7-build-fast\"}}"
 effect reply p1-1 accepted
 ## 54 recorded 53: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot IDLE queue=[] working_on=- at=2692 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=2692 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 55 recorded 54: input p1-2
 effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fa61-7751-75c3-b3ab-f00c547ba207\",\"value\":\"low\"}}"
 effect reply p1-2 accepted
 ## 56 recorded 55: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot IDLE queue=[] working_on=- at=2692 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=2692 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 59 recorded 58: input p1-3
 effect reply p1-3 accepted
 effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Reply with exactly the word: pong\",\"type\":\"text\"}],\"sessionId\":\"01a1fa61-7751-75c3-b3ab-f00c547ba207\"}}"
 item prompt:70312d33 prompt final input=p1-3 at=2693 text="Reply with exactly the word: pong"
-snapshot WORKING queue=[] working_on="Reply with exactly the word: pong" at=2693 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot WORKING queue=[] working_on="Reply with exactly the word: pong" at=2693 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 85 recorded 84: fact Rpc method=session/update
 item message:1 message open at=4644 text="pong"
 ## 97 recorded 96: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
 item message:1 message final at=4644 text="pong"
 item turn:1 turn final at=4817 text="" #1 TURN_OUTCOME_COMPLETED started=2693
 snapshot said "pong"
-snapshot IDLE queue=[] working_on="Reply with exactly the word: pong" at=4817 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20819/out:28/thought:27/total:20856 cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on="Reply with exactly the word: pong" at=4817 agent=grok session=01a1fa61-7751-75c3-b3ab-f00c547ba207 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:20819/out:28/thought:27/total:20856 cost=? sign_in=SIGNED_IN reopen=RESUME
 turn_end 1 last=message:1
 ## 105 recorded 104: provider_exit Some(0)
 item boundary:2 boundary final at=7285 text="" BOUNDARY_KIND_EXITED cause=QUIT

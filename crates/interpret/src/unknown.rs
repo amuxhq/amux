@@ -124,6 +124,8 @@ pub fn acp() -> AcpSnapshot {
         sign_in: Some(sign_in()),
         plan: Some(task_list()),
         session_id: None,
+        // The agent has not answered `initialize`.
+        reopen: None,
     }
 }
 

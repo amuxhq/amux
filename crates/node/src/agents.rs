@@ -178,7 +178,8 @@ impl Lookup {
         }
     }
 
-    /// The file `command` names. A command holding a path separator is that
+    /// The file `command` names, as an absolute path. A command holding a
+    /// path separator is that
     /// path, a leading `~/` the home; any other is looked up in each PATH
     /// directory in turn. On Windows a name is found with each `PATHEXT`
     /// extension in turn, which is how npm's `.cmd` shims are found; the
@@ -198,7 +199,8 @@ impl Lookup {
             return self
                 .candidates(&path)
                 .into_iter()
-                .find(|path| runnable(path));
+                .find(|path| runnable(path))
+                .and_then(absolute);
         }
         let dirs = self.path.as_deref()?;
         split_paths(dirs, self.windows)
@@ -206,6 +208,7 @@ impl Lookup {
             .filter(|dir| !dir.as_os_str().is_empty())
             .flat_map(|dir| self.candidates(&dir.join(command)))
             .find(|path| runnable(path))
+            .and_then(absolute)
     }
 
     /// The files `path` may be: itself on Unix; on Windows itself when its
@@ -262,6 +265,14 @@ fn split_paths(value: &OsStr, windows: bool) -> Vec<PathBuf> {
     text.split(separator)
         .map(|dir| PathBuf::from(if windows { dir.trim_matches('"') } else { dir }))
         .collect()
+}
+
+/// The file that was checked, as an absolute path. A relative command or
+/// PATH entry was checked against the daemon's working directory, while the
+/// agent's program starts in the agent's folder, where the same relative
+/// path would name another file or none.
+fn absolute(path: PathBuf) -> Option<PathBuf> {
+    std::path::absolute(path).ok()
 }
 
 /// A file that can be started: on Unix one with an execute bit.
@@ -408,6 +419,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn unix(path: &OsStr) -> Lookup {
         Lookup {
             path: Some(path.to_owned()),
@@ -417,6 +429,24 @@ mod tests {
         }
     }
 
+    /// The lookup as this machine runs it, with `path` for its PATH.
+    fn native(path: &OsStr) -> Lookup {
+        Lookup {
+            path: Some(path.to_owned()),
+            pathext: None,
+            home: None,
+            windows: cfg!(windows),
+        }
+    }
+
+    /// A program's file name as this platform starts it.
+    fn exe(name: &str) -> String {
+        format!("{name}{}", std::env::consts::EXE_SUFFIX)
+    }
+
+    // The Unix rules, whose `:`-separated PATH and extensionless programs a
+    // Windows machine does not have.
+    #[cfg(unix)]
     #[test]
     fn a_command_is_found_in_the_first_path_directory_holding_it() {
         let dir = tempfile::tempdir().unwrap();
@@ -443,11 +473,11 @@ mod tests {
     #[test]
     fn a_command_with_a_path_is_that_file_and_a_tilde_is_the_home() {
         let dir = tempfile::tempdir().unwrap();
-        let program = dir.path().join("bin").join("my-agent");
+        let program = dir.path().join("bin").join(exe("my-agent"));
         executable(&program);
         let lookup = Lookup {
             home: Some(dir.path().to_owned()),
-            ..unix(OsStr::new(""))
+            ..native(OsStr::new(""))
         };
         assert_eq!(
             lookup.find(program.to_str().unwrap()),
@@ -512,10 +542,30 @@ mod tests {
 
     /// The program's own PATH is where its command is looked up, as it is
     /// where the program would look.
+    /// A relative command, or a relative PATH entry, was checked against
+    /// the daemon's working directory, so that is the file named, by its
+    /// absolute path: the program starts in the agent's folder, where the
+    /// relative path would name another file.
+    #[test]
+    fn a_relative_command_or_path_entry_is_found_as_an_absolute_path() {
+        let here = std::env::current_dir().unwrap();
+        let dir = tempfile::tempdir_in(&here).unwrap();
+        let folder = dir.path().file_name().unwrap().to_owned();
+        executable(&dir.path().join(exe("my-agent")));
+        let expected = here.join(&folder).join(exe("my-agent"));
+        let relative = format!("./{}/my-agent", folder.to_string_lossy());
+        let found = native(OsStr::new("")).find(&relative).unwrap();
+        assert!(found.is_absolute(), "{found:?}");
+        assert_eq!(found, expected);
+        let found = native(&folder).find("my-agent").unwrap();
+        assert!(found.is_absolute(), "{found:?}");
+        assert_eq!(found, expected);
+    }
+
     #[test]
     fn a_programs_own_path_wins() {
         let dir = tempfile::tempdir().unwrap();
-        executable(&dir.path().join("my-agent"));
+        executable(&dir.path().join(exe("my-agent")));
         let program = AgentProgram {
             id: "mine".into(),
             name: "Mine".into(),
@@ -526,7 +576,7 @@ mod tests {
         };
         assert_eq!(
             program.find(&HashMap::new()),
-            Some(dir.path().join("my-agent"))
+            Some(dir.path().join(exe("my-agent")))
         );
         let offered = offered(std::slice::from_ref(&program), &HashMap::new());
         assert_eq!(offered.len(), 1);

@@ -404,8 +404,10 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
 }
 
 /// An ACP agent's row as a restart of the machine left it: live, idle, in
-/// a conversation of the program `program`, whose `initialize` answer the
-/// host's copy says reopens a session as `reopen`; and its first spec.
+/// a conversation of the program `program`, whose own `initialize` answer
+/// its newest snapshot says offered to reopen a session as `reopen`
+/// (unspecified: the answer was never seen); and its first spec. The host
+/// holds no copy of what the program offers.
 fn acp_agent(
     install: &Install,
     name: &str,
@@ -423,6 +425,7 @@ fn acp_agent(
         body: wire::AcpSnapshot {
             agent: Some(program.to_owned()),
             session_id: Some(format!("{name}-session")),
+            reopen: (reopen != wire::AcpReopen::Unspecified).then_some(reopen as i32),
             ..Default::default()
         }
         .encode_to_vec(),
@@ -439,40 +442,35 @@ fn acp_agent(
         ..Default::default()
     };
     std::fs::write(agent.dir.join("spec.1"), spec.encode_to_vec()).unwrap();
-    let copy = wire::ProviderOffer {
-        acp: Some(wire::AcpOffer {
-            reopen: reopen as i32,
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let providers = install.profile_dir().join("providers");
-    std::fs::create_dir_all(&providers).unwrap();
-    std::fs::write(providers.join(program), copy.encode_to_vec()).unwrap();
     agent
 }
 
-/// An ACP agent whose program can reopen no conversation never suspends:
-/// found gone after the machine restarted, it is exited for good, while one
-/// whose program resumes its sessions is suspended as any other; and a
-/// resume of the one that ended is refused, saying why, rather than started
-/// on a fresh conversation.
+/// An ACP agent whose program can reopen no conversation, or whose answer
+/// about it was never seen, never suspends: found gone after the machine
+/// restarted, it is exited for good, while one whose program resumes its
+/// sessions is suspended as any other; and a resume of one that ended is
+/// refused, saying why, rather than started on a fresh conversation. The
+/// host has never asked any of the programs what it offers.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_acp_agent_that_cannot_reopen_its_conversation_ends_with_the_machine() {
     let install = Install::new();
     let daemon = install.start("boot-1", suspending()).await;
     daemon.shutdown().await.unwrap();
     let lonely = acp_agent(&install, "lonely", "forgetful", wire::AcpReopen::None);
+    let unseen = acp_agent(&install, "unseen", "mindful", wire::AcpReopen::Unspecified);
     let sleeper = acp_agent(&install, "sleeper", "mindful", wire::AcpReopen::Resume);
 
     let daemon = install.start("boot-2", suspending()).await;
     let runtime = runtime(&daemon, &install);
-    let ended = row(&install, &lonely);
-    assert_eq!(
-        (ended.lifecycle, ended.exit_cause),
-        (Lifecycle::Exited as i32, ExitCause::EndedWhileAway as i32),
-        "it cannot be suspended"
-    );
+    for agent in [&lonely, &unseen] {
+        let ended = row(&install, agent);
+        assert_eq!(
+            (ended.lifecycle, ended.exit_cause),
+            (Lifecycle::Exited as i32, ExitCause::EndedWhileAway as i32),
+            "{} cannot be suspended",
+            agent.name
+        );
+    }
     let suspended = row(&install, &sleeper);
     assert_eq!(
         (suspended.lifecycle, suspended.exit_cause),
@@ -480,15 +478,16 @@ async fn an_acp_agent_that_cannot_reopen_its_conversation_ends_with_the_machine(
         "it can"
     );
 
-    let id = lonely.id;
-    let refused = runtime.resume(id, None).await.unwrap_err();
-    assert!(
-        refused
-            .to_string()
-            .contains("cannot reopen its conversation"),
-        "{refused}"
-    );
-    assert_eq!(row(&install, &lonely).lifecycle, Lifecycle::Exited as i32);
+    for agent in [&lonely, &unseen] {
+        let refused = runtime.resume(agent.id, None).await.unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("cannot reopen its conversation"),
+            "{refused}"
+        );
+        assert_eq!(row(&install, agent).lifecycle, Lifecycle::Exited as i32);
+    }
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
@@ -585,6 +584,17 @@ async fn an_acp_agent_that_cannot_reopen_its_conversation_never_suspends() {
     );
     let id = uuid::Uuid::from_slice(&forgetter.agent_id).unwrap();
     assert!(runtime.hello(id).is_some(), "its process still runs");
+    // Each newest snapshot says what its program's own `initialize`
+    // answer offered, which is what a restart of the machine reads.
+    let reopen = |agent: &wire::Agent| {
+        use prost::Message as _;
+        let snapshot = row(agent).snapshot.expect("a snapshot");
+        wire::AcpSnapshot::decode(snapshot.body.as_slice())
+            .unwrap()
+            .reopen()
+    };
+    assert_eq!(reopen(&keeper), wire::AcpReopen::Resume);
+    assert_eq!(reopen(&forgetter), wire::AcpReopen::None);
     support::kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();

@@ -1,34 +1,34 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
 ## 1 recorded 0: tick 337
-snapshot STARTING queue=[] working_on=- at=337 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+snapshot STARTING queue=[] working_on=- at=337 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
 ## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
-snapshot STARTING queue=[] working_on=- at=337 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot STARTING queue=[] working_on=- at=337 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 27 recorded 26: fact Rpc method=session/update
 effect catalogue daef34d7 models=[] commands=63 permissions=[] modes=[]
 snapshot catalogue daef34d7
-snapshot STARTING queue=[] working_on=- at=609 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot STARTING queue=[] working_on=- at=609 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 40 recorded 39: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
 effect session "01a1fa6a-1983-7721-ab0d-e5b085613ec4"
 effect catalogue 1ee2ee4d models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
 item boundary:1 boundary final at=660 text="" BOUNDARY_KIND_STARTED
 snapshot catalogue 1ee2ee4d
-snapshot IDLE queue=[] working_on=- at=660 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=660 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 43 recorded 42: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fa6a-1983-7721-ab0d-e5b085613ec4\",\"value\":\"grok-4.7-build-fast\"}}"
 effect reply p1-1 accepted
 ## 53 recorded 52: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot IDLE queue=[] working_on=- at=740 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=740 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 55 recorded 54: input p1-2
 effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fa6a-1983-7721-ab0d-e5b085613ec4\",\"value\":\"low\"}}"
 effect reply p1-2 accepted
 ## 57 recorded 56: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot IDLE queue=[] working_on=- at=742 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=742 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 60 recorded 59: input p1-3
 effect reply p1-3 accepted
 effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word.\",\"type\":\"text\"}],\"sessionId\":\"01a1fa6a-1983-7721-ab0d-e5b085613ec4\"}}"
 item prompt:70312d33 prompt final input=p1-3 at=743 text="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word."
-snapshot WORKING queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=743 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot WORKING queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=743 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 91 recorded 90: fact Rpc method=session/update
 item tool:call-6eaf41fd-c661-4ca5-a5ea-4cfe52cedd69-0 tool open at=3687 text="" UNSPECIFIED RUNNING "ask_user_question" input="{\"questions\":[{\"options\":[{\"description\":\"You prefer tea.\",\"label\":\"Tea\"},{\"desc…"
 ## 93 recorded 92: fact Rpc method=session/update
@@ -112,7 +112,7 @@ append message:2 "."
 item message:2 message final at=5235 text="The question tool failed before it could show the choices (`method not found: _x.ai/ask_user_question`), so there is no answer to report."
 item turn:1 turn final at=5370 text="" #1 TURN_OUTCOME_COMPLETED started=743
 snapshot said "The question tool failed before it could show the choices (method not found: _x.ai/ask_user_question), so there is no answer to report."
-snapshot IDLE queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=5370 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:21127/out:126/thought:93/total:21262 cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on="Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word." at=5370 agent=grok session=01a1fa6a-1983-7721-ab0d-e5b085613ec4 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:21127/out:126/thought:93/total:21262 cost=? sign_in=SIGNED_IN reopen=RESUME
 turn_end 1 last=message:2
 ## 172 recorded 171: provider_exit Some(0)
 item boundary:2 boundary final at=9980 text="" BOUNDARY_KIND_EXITED cause=QUIT

@@ -764,6 +764,17 @@ impl State {
                 },
             }),
             session_id: self.session_id.clone(),
+            // What the daemon reads to know whether a new process could
+            // carry the conversation on; resume wins, as `opening` picks.
+            reopen: self.reopens.map(|reopens| {
+                (if reopens.resume {
+                    wire::AcpReopen::Resume
+                } else if reopens.load {
+                    wire::AcpReopen::Load
+                } else {
+                    wire::AcpReopen::None
+                }) as i32
+            }),
         }
         .encode_to_vec()
     }
@@ -1865,7 +1876,7 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "agent={} session={} asks=[{}] model={} model_name={} effort={} mode={} context={} plan={} usage=in:{}/out:{}/thought:{}/total:{} cost={} sign_in={}",
+            "agent={} session={} asks=[{}] model={} model_name={} effort={} mode={} context={} plan={} usage=in:{}/out:{}/thought:{}/total:{} cost={} sign_in={} reopen={}",
             opt(&snapshot.agent),
             opt(&snapshot.session_id),
             snapshot
@@ -1897,6 +1908,11 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             wire::SignInState::try_from(sign_in.state)
                 .map_or("?", |state| state.as_str_name())
                 .trim_start_matches("SIGN_IN_STATE_"),
+            snapshot
+                .reopen
+                .and_then(|reopen| wire::AcpReopen::try_from(reopen).ok())
+                .map_or("?", |reopen| reopen.as_str_name())
+                .trim_start_matches("ACP_REOPEN_"),
         ),
     }
 }

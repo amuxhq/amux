@@ -150,6 +150,12 @@ message AcpSnapshot {
   TaskList plan = 10;
   // The agent's id for the conversation; absent until it names one.
   optional string session_id = 11;
+  // How a later process of the agent's program reopens the conversation,
+  // as its own `initialize` answer said; unspecified until it answers. A
+  // daemon suspends, continues or resumes the agent only when this is
+  // resume or load, so an agent whose answer it never saw ends with its
+  // process.
+  optional AcpReopen reopen = 12;
 }
 
 // What the agent says the session has used. Every field is absent until it

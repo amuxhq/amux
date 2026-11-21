@@ -754,13 +754,6 @@ impl ProfileRuntime {
         } = profile;
         let offers = crate::offers::Offers::load(&dir, &launch);
         let suspension = launch.experiments.is_on(&settings::experiments::SUSPENSION);
-        // Only a restart under the experiment suspends or continues an
-        // agent the start finds gone, so only then is it asked which cannot.
-        let unresumable = if suspension && rebooted {
-            crate::offers::unresumable(&dir, &store)
-        } else {
-            Default::default()
-        };
         let options = daemon_core::StartOptions {
             generation,
             agents: dir.join(AGENTS),
@@ -769,7 +762,6 @@ impl ProfileRuntime {
             workspaces: launch.experiments.is_on(&settings::experiments::WORKSPACES),
             suspension,
             rebooted,
-            unresumable,
         };
         let mut core = None;
         let runtime = Arc::new_cyclic(|me| Self {
@@ -1448,9 +1440,7 @@ impl ProfileRuntime {
         let Some(previous) = previous else {
             return Ok(None);
         };
-        if previous.kind() == Kind::Acp
-            && !crate::offers::reopens(self.dir(), &self.offers, &previous.provider, snapshot)
-        {
+        if previous.kind() == Kind::Acp && !acp_reopens(snapshot) {
             return Err(RegistryError::Unresumable(id));
         }
         let latest = last_settings(snapshot, previous.kind());
@@ -2346,6 +2336,23 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
 
 pub(crate) fn ms(ms: i64) -> Duration {
     Duration::from_millis(ms.max(0) as u64)
+}
+
+/// Whether an ACP agent's next process may start, as its newest snapshot
+/// `body` says: one with no conversation yet starts its first, and one with
+/// a conversation only when its program's own `initialize` answer offered
+/// to resume or load it. Not knowing counts as cannot, so a fresh
+/// conversation is never started in place of the old one.
+fn acp_reopens(body: Option<&[u8]>) -> bool {
+    use prost::Message as _;
+    let Some(snapshot) = body.and_then(|body| wire::AcpSnapshot::decode(body).ok()) else {
+        return true;
+    };
+    snapshot.session_id.is_none()
+        || matches!(
+            snapshot.reopen(),
+            wire::AcpReopen::Resume | wire::AcpReopen::Load
+        )
 }
 
 /// The model, permission, mode and effort an agent last ran with, as its

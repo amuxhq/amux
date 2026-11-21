@@ -1758,10 +1758,6 @@ impl Daemon {
         // whose conversation no new process can reopen ended for good with
         // it, as any end of its process does: suspending it would offer a
         // resume that cannot happen.
-        let reopens = |row: &AgentRow| {
-            AgentId::from_slice(&row.agent.agent)
-                .is_none_or(|agent| !self.options.unresumable.contains(&agent))
-        };
         if restarted
             && let Some(row) = live
             && shutdown_like(row)
@@ -2476,6 +2472,32 @@ fn first_spec(
 /// SIGTERM mid-turn, counts whatever the phase. The grace only defers any of these,
 /// and the next start takes them for a shutdown only if the machine
 /// restarted, recording them as they are otherwise.
+/// Whether a new process of the agent's program can carry its conversation
+/// on. Claude and Codex always can. An ACP agent can only when its newest
+/// snapshot says its program's own `initialize` answer offered to resume or
+/// load a session: one that offered neither, or whose answer was never
+/// seen, ends with its process, so it is never suspended, continued or
+/// resumed in a way that would start a fresh conversation as the old one.
+pub fn reopens(row: &AgentRow) -> bool {
+    use prost::Message as _;
+    match wire::Kind::try_from(row.kind) {
+        Ok(wire::Kind::Acp) => row
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok())
+            .is_some_and(|body| {
+                matches!(
+                    body.reopen(),
+                    wire::AcpReopen::Resume | wire::AcpReopen::Load
+                )
+            }),
+        Ok(wire::Kind::ClaudePty | wire::Kind::ClaudeSdk | wire::Kind::Codex) => true,
+        // A row of no kind, or one a newer build wrote, has no program this
+        // build knows to reopen anything.
+        Ok(wire::Kind::Unspecified) | Err(_) => false,
+    }
+}
+
 fn shutdown_like(row: &AgentRow) -> bool {
     match ExitCause::try_from(row.exit_cause) {
         Ok(ExitCause::Unspecified) => true,
@@ -3419,37 +3441,57 @@ mod tests {
         }
     }
 
-    /// An agent whose conversation no new process can reopen ends for good
-    /// with the machine: found gone after the restart, idle or in its turn,
-    /// it is exited as ended while away, neither suspended nor continued,
-    /// while one that can reopen beside it is suspended as ever.
+    /// An ACP agent ends for good with the machine unless its newest
+    /// snapshot says its program offered to reopen the conversation: one
+    /// whose program offered neither, and one whose answer was never seen,
+    /// are exited as ended while away, idle or in a turn, neither suspended
+    /// nor continued; one whose program resumes is suspended as Codex is.
     #[test]
-    fn after_a_reboot_an_agent_that_cannot_reopen_its_conversation_is_exited() {
-        const IDLE: AgentId = AgentId(*b"idle-00000000000");
-        const BUSY: AgentId = AgentId(*b"busy-00000000000");
+    fn after_a_reboot_an_acp_agent_reopens_only_where_its_program_said_it_can() {
+        use prost::Message as _;
+        const NEITHER: AgentId = AgentId(*b"neither-00000000");
+        const UNSEEN: AgentId = AgentId(*b"unseen-000000000");
+        const RESUMES: AgentId = AgentId(*b"resumes-00000000");
         let mut rig = suspension_rig(true);
-        rig.daemon.options.unresumable = [IDLE, BUSY].into();
         rig.left(PARENT, wire::Phase::Idle, ExitCause::Unspecified);
-        rig.left(IDLE, wire::Phase::Idle, ExitCause::Unspecified);
-        rig.left(BUSY, wire::Phase::Working, ExitCause::Unspecified);
-        for agent in [PARENT, IDLE, BUSY] {
+        for (agent, phase, reopen) in [
+            (NEITHER, wire::Phase::Idle, wire::AcpReopen::None),
+            (UNSEEN, wire::Phase::Working, wire::AcpReopen::Unspecified),
+            (RESUMES, wire::Phase::Idle, wire::AcpReopen::Resume),
+        ] {
+            let mut row = AgentRow::new(rig.daemon.own_key(agent), wire::Kind::Acp, "/src");
+            row.incarnation = 1;
+            row.phase = phase as i32;
+            row.snapshot = Some(wire::Snapshot {
+                kind: wire::Kind::Acp as i32,
+                phase: phase as i32,
+                body: wire::AcpSnapshot {
+                    session_id: Some("s".into()),
+                    reopen: (reopen != wire::AcpReopen::Unspecified).then_some(reopen as i32),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+                ..Default::default()
+            });
+            rig.daemon.store.put_agent(&row).unwrap();
+        }
+        for agent in [PARENT, NEITHER, UNSEEN, RESUMES] {
             let out = rig.step(Input::ControlClosed {
                 agent,
                 ended: Ended::Away,
             });
-            assert!(
-                agent == PARENT || job_of(&out).is_none(),
-                "nothing resumes {agent:?}: {out:?}"
-            );
+            assert!(job_of(&out).is_none(), "nothing resumes {agent:?}: {out:?}");
         }
         rig.step(Input::Swept);
-        let row = rig.row(PARENT).unwrap();
-        assert_eq!(
-            (row.lifecycle, row.exit_cause),
-            (Lifecycle::Live as i32, ExitCause::Suspended as i32),
-            "one that reopens is suspended"
-        );
-        for agent in [IDLE, BUSY] {
+        for agent in [PARENT, RESUMES] {
+            let row = rig.row(agent).unwrap();
+            assert_eq!(
+                (row.lifecycle, row.exit_cause),
+                (Lifecycle::Live as i32, ExitCause::Suspended as i32),
+                "{agent:?} reopens, so it is suspended"
+            );
+        }
+        for agent in [NEITHER, UNSEEN] {
             let row = rig.row(agent).unwrap();
             assert_eq!(
                 (row.lifecycle, row.exit_cause),

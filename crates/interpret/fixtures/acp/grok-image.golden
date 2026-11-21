@@ -1,34 +1,34 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
 ## 1 recorded 0: tick 157
-snapshot STARTING queue=[] working_on=- at=157 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED
+snapshot STARTING queue=[] working_on=- at=157 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
 ## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
-snapshot STARTING queue=[] working_on=- at=157 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot STARTING queue=[] working_on=- at=157 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 19 recorded 18: fact Rpc method=session/update
 effect catalogue daef34d7 models=[] commands=63 permissions=[] modes=[]
 snapshot catalogue daef34d7
-snapshot STARTING queue=[] working_on=- at=267 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot STARTING queue=[] working_on=- at=267 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 28 recorded 27: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
 effect session "01a1fa62-fb38-7673-b957-0da68fd663d7"
 effect catalogue 1ee2ee4d models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
 item boundary:1 boundary final at=287 text="" BOUNDARY_KIND_STARTED
 snapshot catalogue 1ee2ee4d
-snapshot IDLE queue=[] working_on=- at=287 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=287 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 31 recorded 30: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fa62-fb38-7673-b957-0da68fd663d7\",\"value\":\"grok-4.7-build-fast\"}}"
 effect reply p1-1 accepted
 ## 40 recorded 39: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot IDLE queue=[] working_on=- at=356 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=356 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 41 recorded 40: input p1-2
 effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fa62-fb38-7673-b957-0da68fd663d7\",\"value\":\"low\"}}"
 effect reply p1-2 accepted
 ## 42 recorded 41: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot IDLE queue=[] working_on=- at=356 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on=- at=356 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 44 recorded 43: input p1-3
 effect reply p1-3 accepted
 effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"What is the main colour of the attached image? Reply with one word.\",\"type\":\"text\"}],\"sessionId\":\"01a1fa62-fb38-7673-b957-0da68fd663d7\"}}" attachments=1
 item prompt:70312d33 prompt final input=p1-3 at=356 text="What is the main colour of the attached image? Reply with one word." attachments=1
-snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=356 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=356 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 73 recorded 72: fact Rpc method=session/update
 item thought:1 thought open at=2197 text="I need to identify the"
 ## 74 recorded 73: fact Rpc method=session/update
@@ -46,7 +46,7 @@ append message:2 "."
 item message:2 message final at=2337 text="Red."
 item turn:1 turn final at=2454 text="" #1 TURN_OUTCOME_COMPLETED started=356
 snapshot said "Red."
-snapshot IDLE queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=2454 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:21030/out:90/thought:88/total:21129 cost=? sign_in=SIGNED_IN
+snapshot IDLE queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=2454 agent=grok session=01a1fa62-fb38-7673-b957-0da68fd663d7 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=? plan=? usage=in:21030/out:90/thought:88/total:21129 cost=? sign_in=SIGNED_IN reopen=RESUME
 turn_end 1 last=message:2
 ## 99 recorded 98: provider_exit Some(0)
 item boundary:2 boundary final at=7028 text="" BOUNDARY_KIND_EXITED cause=QUIT

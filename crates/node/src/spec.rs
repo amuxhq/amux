@@ -651,7 +651,7 @@ mod tests {
     /// A launch that knows one ACP agent, `mine`, whose program is in a
     /// folder of its own.
     fn acp_launch(dir: &Path) -> Launch {
-        let program = dir.join("mine-agent");
+        let program = dir.join(format!("mine-agent{}", std::env::consts::EXE_SUFFIX));
         std::fs::write(&program, "#!/bin/sh\n").unwrap();
         #[cfg(unix)]
         {
@@ -710,7 +710,9 @@ mod tests {
         assert_eq!(spec.provider, "mine");
         assert_eq!(
             spec.provider_command,
-            dir.path().join("mine-agent").to_string_lossy()
+            dir.path()
+                .join(format!("mine-agent{}", std::env::consts::EXE_SUFFIX))
+                .to_string_lossy()
         );
         assert_eq!(spec.provider_args, ["serve", "--stdio"]);
         assert_eq!(

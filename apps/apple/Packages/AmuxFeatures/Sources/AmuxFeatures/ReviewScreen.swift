@@ -266,7 +266,9 @@ public struct ReviewScreen: View {
             }
             .sensoryFeedback(.selection, trigger: started)
             .scrollDismissesKeyboard(.interactively)
-            .refreshable { _ = await session.open()?.value }
+            // Pulling down is Refresh: a new snapshot even with drafts
+            // waiting, which a plain open would leave on theirs.
+            .refreshable { _ = await session.refresh()?.value }
         }
     }
 

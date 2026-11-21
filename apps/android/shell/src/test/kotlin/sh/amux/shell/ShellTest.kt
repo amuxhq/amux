@@ -1,9 +1,13 @@
 package sh.amux.shell
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.AnnotatedString
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -15,16 +19,82 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
+import sh.amux.core.runtime.ChatBridge
 import sh.amux.core.runtime.HostId
+import sh.amux.core.runtime.OpenChat
 import sh.amux.core.runtime.StoreBundle
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
+import sh.amux.features.AskReviewTags
+import sh.amux.features.ChatComposerTags
+import sh.amux.features.ChatScreenTags
 import sh.amux.features.TestTags
+import sh.amux.values.ActOutcome
+import sh.amux.values.AgentKey
+import sh.amux.values.AskBody
+import sh.amux.values.AskCard
+import sh.amux.values.AskMoved
+import sh.amux.values.Attention
+import sh.amux.values.Base
+import sh.amux.values.BlobRef
+import sh.amux.values.ChangeTotals
+import sh.amux.values.Changeability
+import sh.amux.values.Changeable
+import sh.amux.values.ChatAgents
+import sh.amux.values.ChatDelta
+import sh.amux.values.ChatFrame
+import sh.amux.values.Choice
+import sh.amux.values.ChoiceOutcome
+import sh.amux.values.CommandMatch
+import sh.amux.values.CommandView
+import sh.amux.values.Comparison
+import sh.amux.values.Composer
+import sh.amux.values.ComposerView
+import sh.amux.values.Connection
+import sh.amux.values.ControlsSummary
+import sh.amux.values.Diff
+import sh.amux.values.DiffBase
+import sh.amux.values.DiffLine
+import sh.amux.values.Draft
+import sh.amux.values.DraftAttachment
+import sh.amux.values.Empty
+import sh.amux.values.FileStatus
+import sh.amux.values.Filing
+import sh.amux.values.FleetCard
+import sh.amux.values.FleetRow
+import sh.amux.values.FleetSection
 import sh.amux.values.FleetView
+import sh.amux.values.FormField
+import sh.amux.values.FormProblem
+import sh.amux.values.FormValue
+import sh.amux.values.FrozenReview
+import sh.amux.values.Git
 import sh.amux.values.HostView
+import sh.amux.values.Hunk
+import sh.amux.values.InputState
+import sh.amux.values.KeysMoved
+import sh.amux.values.Kind
+import sh.amux.values.LineKind
+import sh.amux.values.ModelChoice
+import sh.amux.values.Overview
+import sh.amux.values.PageOutcome
+import sh.amux.values.PhaseView
 import sh.amux.values.Platform
+import sh.amux.values.QuestionResponse
 import sh.amux.values.Reach
+import sh.amux.values.ReviewComment
+import sh.amux.values.ReviewDoc
+import sh.amux.values.ReviewFile
 import sh.amux.values.RouteKind
+import sh.amux.values.Row
+import sh.amux.values.RowKind
+import sh.amux.values.SecondLine
+import sh.amux.values.SectionKind
+import sh.amux.values.Segment
+import sh.amux.values.SendOutcome
+import sh.amux.values.SettingChange
+import sh.amux.values.SettingsView
+import sh.amux.words.EMPTY_GROUP_STATE
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -227,5 +297,318 @@ class ShellTest {
 
         assertNull(router.snapshot.pairing)
         assertEquals(listOf(pending), abandoned)
+    }
+
+    @Test
+    fun opensConversationSendsPromptAnswersAskOpensSheetsAndReviewsDiff() {
+        val hostId = HostId(UUID.fromString("77777777-7777-7777-7777-777777777777"))
+        val agentKey = AgentKey(host = hostId.bytes, agent = List(16) { 9 })
+        val desk = HostView(
+            hostId = hostId.bytes,
+            name = "desk",
+            local = false,
+            trusted = true,
+            candidate = false,
+            reach = Reach.Online(RouteKind.Direct),
+            addrs = listOf("192.168.1.9:4433"),
+            relayOnly = false,
+            pairingOpen = false,
+            current = true,
+            providers = emptyList(),
+            platform = Platform.Macos,
+        )
+        val agentRow = FleetRow(
+            card = FleetCard(
+                agent = agentKey,
+                name = "desk-work",
+                handle = "desk-work",
+                kind = Kind.ClaudeSdk,
+                attention = Attention.Idle,
+                cwd = "/Users/ada/source/amux",
+                phaseSinceMs = 1_000L,
+                host = "desk",
+                hostReach = Reach.Online(RouteKind.Direct),
+                children = 0,
+                familyAttention = Attention.Idle,
+                members = 1,
+                descendants = 0,
+                backgroundJobs = 0,
+                closeHeld = false,
+                filing = Filing.Open,
+                topLevel = true,
+                native = false,
+            ),
+            depth = 0,
+            expanded = false,
+            secondLine = SecondLine.LastSaid("Ready for the next step."),
+        )
+
+        val fakeChat = FakeShellChat(agent = agentKey)
+        val fakeBridge = FakeShellChatBridge()
+        val router = Router()
+        val accounts = AccountRegistry()
+        val stores = StoreBundle(
+            account = AccountId("signed-out"),
+            chatBridge = fakeBridge,
+            opener = { fakeChat },
+        )
+        stores.hosts.show(listOf(desk))
+        stores.fleet.show(
+            FleetView(
+                sections = listOf(
+                    FleetSection(
+                        kind = SectionKind.Live,
+                        families = 1,
+                        foldedByDefault = false,
+                        rows = listOf(agentRow),
+                    ),
+                ),
+                needYou = 0,
+                working = 0,
+            ),
+            hosts = listOf(desk),
+        )
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                Shell(
+                    router = router,
+                    accounts = accounts,
+                    stores = stores,
+                    deviceName = "Pixel 9",
+                )
+            }
+        }
+
+        // Open conversation from AgentsHome
+        composeRule.onNodeWithTag(TestTags.homeRow("desk-work")).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithText("Ready for the next step.").assertIsDisplayed()
+
+        // Type and send a prompt
+        composeRule.onNodeWithTag(ChatComposerTags.INPUT_FIELD).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("Run the tests"))
+        }
+        composeRule.onNodeWithTag(ChatComposerTags.SEND_BUTTON).performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, fakeChat.sent.size)
+
+        // Open Overview sheet from header title, then close
+        composeRule.onNodeWithTag(ChatScreenTags.TITLE).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.OVERVIEW_CLOSE).performClick()
+        composeRule.waitForIdle()
+
+        // Open Settings sheet from overflow menu, then close
+        composeRule.onNodeWithTag(ChatScreenTags.MORE).performClick()
+        composeRule.onNodeWithTag(ChatScreenTags.MENU_SETTINGS).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.CHAT_SETTINGS_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.CHAT_SETTINGS_CLOSE).performClick()
+        composeRule.waitForIdle()
+
+        // Navigate to ReviewPage via header changes chip, add a comment, and Send Review
+        composeRule.onNodeWithTag(ChatScreenTags.CHANGES).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SCREEN).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.reviewLine(0, 0, 1)).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_INPUT).performSemanticsAction(SemanticsActions.SetText) {
+            it(AnnotatedString("Tighten error handling"))
+        }
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_COMMENT_ADD).performClick()
+        composeRule.onNodeWithTag(AskReviewTags.REVIEW_SEND).assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+
+        // Back on ChatScreen with Review attached in ChatModel draft
+        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        val model = stores.chat(agentKey)
+        assertTrue(model.attachments.any { it is DraftAttachment.Review && it.comments.size == 1 })
+
+        // Deliver an AskCard and answer it
+        val ask = AskCard(
+            kind = Kind.ClaudeSdk,
+            key = "ask-shell-1",
+            itemKey = "item-1",
+            position = 1L,
+            count = 1L,
+            body = AskBody.Command("cargo test", "", "Verify build", ""),
+            choices = listOf(
+                Choice(ChoiceOutcome.AllowOnce, primary = true, takesNote = false),
+                Choice(ChoiceOutcome.Deny, primary = false, takesNote = false),
+            ),
+            questionNote = false,
+            questionSkip = false,
+            questionReply = false,
+            stopsTurn = true,
+            defaultToNo = false,
+            state = sh.amux.values.CardState.Open,
+        )
+        composeRule.runOnIdle {
+            model.apply(
+                ChatDelta(
+                    chat = fakeChat.id,
+                    rows = emptyList(),
+                    ask = AskMoved(card = ask),
+                ),
+            )
+        }
+        composeRule.onNodeWithTag(AskReviewTags.ASK_CARD).assertIsDisplayed()
+        composeRule.onNodeWithTag(AskReviewTags.askChoice(0)).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf("ask-shell-1" to 0), fakeChat.answeredChoices)
+
+        // Back returns cleanly to AgentsHome
+        composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.HOME_SCREEN).assertIsDisplayed()
+    }
+
+    private class FakeShellChatBridge : ChatBridge {
+        override val attachmentLimit: Long = 64L * 1024L * 1024L
+        override fun commandMatches(commands: List<CommandView>, draft: String): List<CommandMatch> = emptyList()
+        override fun pastesAsAttachment(text: String): Boolean = false
+        override fun formProblems(fields: List<FormField>, values: List<FormValue>): List<FormProblem> = emptyList()
+        override fun reviewDoc(review: FrozenReview, comments: List<ReviewComment>): ReviewDoc = ReviewDoc(
+            base = "main",
+            head = review.diff.head,
+            added = 1,
+            removed = 1,
+            files = listOf(
+                ReviewFile(
+                    path = "src/lib.rs",
+                    status = FileStatus.Modified,
+                    added = 1,
+                    removed = 1,
+                    binary = false,
+                    comments = emptyList(),
+                    hunks = listOf(
+                        Hunk(
+                            skips = false,
+                            scope = "",
+                            lines = listOf(
+                                DiffLine(LineKind.Removed, "old()", emptyList(), newLine = null, oldLine = 1),
+                                DiffLine(LineKind.Added, "new()", emptyList(), newLine = 1, oldLine = null),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    private class FakeShellChat(private val agent: AgentKey) : OpenChat {
+        override val id: Long = 42L
+        val sent = mutableListOf<Draft>()
+        val answeredChoices = mutableListOf<Pair<String, Int>>()
+
+        private val initialRows = listOf(
+            Row(
+                id = "m1",
+                order = 1L,
+                atMs = 1_000L,
+                kind = RowKind.Prose(
+                    text = listOf(Segment.Text("Ready for the next step.")),
+                    streaming = false,
+                    workingNote = false,
+                ),
+                collapsed = false,
+                attention = false,
+            ),
+        )
+
+        private val changes = ChangeTotals(files = 1, added = 1, removed = 1)
+        private val initialFrame = ChatFrame(
+            agent = agent,
+            name = "desk-work",
+            kind = Kind.ClaudeSdk,
+            phase = PhaseView.Idle,
+            composer = ComposerView(mode = Composer.Send, switchedAway = false, activity = null),
+            controls = ControlsSummary(effort = null, mode = null, model = "Opus 4.6", permission = null),
+            connection = Connection.Live,
+            caughtUp = true,
+            hasOlder = false,
+            arrivalsHeld = false,
+            queue = emptyList(),
+            underway = emptyList(),
+            refused = emptyList(),
+            askInput = null,
+            context = null,
+            ended = null,
+            git = Git(baseBranch = "main", uncommitted = changes, onBranch = changes),
+            signIn = null,
+        )
+
+        private val initialSettings = SettingsView(
+            models = listOf(
+                ModelChoice("opus", "Opus 4.6", "Deep reasoning", emptyList(), current = true, unlisted = false),
+            ),
+            efforts = emptyList(),
+            permissions = emptyList(),
+            modes = emptyList(),
+            changeable = Changeability(
+                model = Changeable.Pick,
+                effort = Changeable.NotOffered,
+                permission = Changeable.NotOffered,
+                mode = Changeable.NotOffered,
+            ),
+            commands = emptyList(),
+        )
+
+        override fun close() {}
+        override fun opening(): ChatDelta = ChatDelta(
+            chat = id,
+            rows = emptyList(),
+            agents = ChatAgents(emptyList(), emptyList(), EMPTY_GROUP_STATE),
+            ask = AskMoved(card = null),
+            frame = initialFrame,
+            keys = KeysMoved.Reload(initialRows.map { it.id }),
+            overview = Overview(emptyList(), emptyList(), null, null, null),
+            settings = initialSettings,
+        )
+        override fun follow(following: Boolean) {}
+        override fun rowsFor(keys: List<String>): List<Row> = initialRows.filter { it.id in keys }
+        override suspend fun send(draft: Draft): Result<SendOutcome> {
+            sent += draft
+            return Result.success(SendOutcome(listOf(sent.size), InputState.Sent))
+        }
+        override suspend fun answer(ask: String, choice: Int, note: String?): ActOutcome {
+            answeredChoices += ask to choice
+            return ActOutcome.Done
+        }
+        override suspend fun answerQuestions(ask: String, responses: List<QuestionResponse>): ActOutcome = ActOutcome.Done
+        override suspend fun replyInstead(ask: String, text: String, soFar: List<QuestionResponse>): ActOutcome = ActOutcome.Done
+        override suspend fun answerForm(ask: String, values: List<FormValue>): ActOutcome = ActOutcome.Done
+        override fun toggleRun(member: String) {}
+        override fun toggleGroup(member: String) {}
+        override fun foldTurns(on: Boolean) {}
+        override fun toggleTurn(end: String) {}
+        override suspend fun withdraw(inputId: List<Int>): ActOutcome = ActOutcome.Done
+        override fun draftOf(inputId: List<Int>): Draft? = null
+        override suspend fun sendNow(inputId: List<Int>): ActOutcome = ActOutcome.Done
+        override suspend fun resend(inputId: List<Int>): SendOutcome? = null
+        override fun discard(inputId: List<Int>) {}
+        override suspend fun interrupt(): ActOutcome = ActOutcome.Done
+        override suspend fun stopJob(key: String): ActOutcome = ActOutcome.Done
+        override suspend fun changeSetting(setting: SettingChange): ActOutcome = ActOutcome.Done
+        override suspend fun resume(draft: Draft): ActOutcome = ActOutcome.Done
+        override suspend fun pageOlder(rows: Int): PageOutcome = PageOutcome.Arrived(0)
+        override suspend fun putBlob(data: ByteArray, name: String, mime: String): Result<BlobRef> =
+            Result.success(BlobRef(listOf(1), name, mime, data.size.toLong()))
+        override fun blob(hash: List<Int>): ByteArray? = null
+        override suspend fun review(comparison: Comparison): Result<FrozenReview> = Result.success(
+            FrozenReview(
+                diff = Diff(
+                    head = "abc1234",
+                    files = emptyList(),
+                    base = DiffBase(Base.Head(Empty())),
+                    patch = BlobRef(listOf(1, 2, 3), "patch", "text/x-diff", 10L),
+                ),
+                patch = "",
+            ),
+        )
+        override suspend fun openOverview(comparison: Comparison): Result<Overview> =
+            Result.success(Overview(emptyList(), emptyList(), null, null, null))
     }
 }

@@ -108,43 +108,6 @@ private fun DetailScaffold(
 }
 
 @Composable
-fun ConversationPlaceholder(
-    agentName: String,
-    hostName: String?,
-    onBack: () -> Unit,
-) {
-    DetailScaffold(
-        title = agentName,
-        subtitle = hostName,
-        screenTag = TestTags.SCREEN_CONVERSATION,
-        onBack = onBack,
-    ) {
-        AmuxEmptyCard(
-            title = agentName,
-            detail = stringResource(R.string.placeholder_conversation_detail),
-        )
-    }
-}
-
-@Composable
-fun ChangesPlaceholder(
-    agentName: String,
-    onBack: () -> Unit,
-) {
-    DetailScaffold(
-        title = stringResource(R.string.placeholder_changes_title),
-        subtitle = agentName,
-        screenTag = TestTags.SCREEN_CHANGES,
-        onBack = onBack,
-    ) {
-        AmuxEmptyCard(
-            title = agentName,
-            detail = stringResource(R.string.placeholder_changes_detail),
-        )
-    }
-}
-
-@Composable
 fun HostPlaceholder(
     hostName: String,
     reachLabel: String?,

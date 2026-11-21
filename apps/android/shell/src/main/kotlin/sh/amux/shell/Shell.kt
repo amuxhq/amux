@@ -1,6 +1,9 @@
 package sh.amux.shell
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,6 +20,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,22 +30,31 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 import sh.amux.core.runtime.AccountId
 import sh.amux.core.runtime.AccountRegistry
+import sh.amux.core.runtime.Bridge
+import sh.amux.core.runtime.FleetState
 import sh.amux.core.runtime.HostId
+import sh.amux.core.runtime.HostsState
 import sh.amux.core.runtime.PairingStore
+import sh.amux.core.runtime.ReviewModel
 import sh.amux.core.runtime.StoreBundle
+import sh.amux.core.runtime.failureDescription
 import sh.amux.core.runtime.id
 import sh.amux.design.AmuxGround
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxTheme
 import sh.amux.features.AccountSwitcherSheet
 import sh.amux.features.AgentsHome
-import sh.amux.features.ChangesPlaceholder
-import sh.amux.features.ConversationPlaceholder
+import sh.amux.features.AskAction
+import sh.amux.features.AttachChoice
+import sh.amux.features.ChatScreen
+import sh.amux.features.ChatScreenCallbacks
+import sh.amux.features.ChatUnavailableScreen
 import sh.amux.features.HomeAction
 import sh.amux.features.HomeScope
 import sh.amux.features.HostPlaceholder
@@ -51,10 +64,17 @@ import sh.amux.features.NewAgentPlaceholder
 import sh.amux.features.PairingAction
 import sh.amux.features.PairingModalSheet
 import sh.amux.features.PaywallPlaceholder
+import sh.amux.features.ReviewPage
+import sh.amux.features.ReviewPageAction
+import sh.amux.features.ReviewPageState
 import sh.amux.features.SettingsPlaceholder
 import sh.amux.features.TestTags
+import sh.amux.features.defaultValidateAgentName
 import sh.amux.features.reachGroup
+import sh.amux.features.validateFormFields
+import sh.amux.values.AgentKey
 import sh.amux.values.FleetFilter
+import sh.amux.words.OpenableLink
 import sh.amux.words.name
 
 /**
@@ -383,18 +403,20 @@ fun Shell(
                         }
                     }
                     is Route.Conversation -> {
-                        val row = fleetState.row(top.agent)
-                        ConversationPlaceholder(
-                            agentName = row?.name ?: top.agent.toString(),
-                            hostName = row?.card?.host,
-                            onBack = { router.pop() },
+                        ConversationRouteContent(
+                            agent = top.agent,
+                            stores = stores,
+                            fleetState = fleetState,
+                            hostsState = hostsState,
+                            router = router,
                         )
                     }
                     is Route.Changes -> {
-                        val row = fleetState.row(top.agent)
-                        ChangesPlaceholder(
-                            agentName = row?.name ?: top.agent.toString(),
-                            onBack = { router.pop() },
+                        ChangesRouteContent(
+                            agent = top.agent,
+                            initialFile = top.initialFile,
+                            stores = stores,
+                            router = router,
                         )
                     }
                     is Route.Host -> {
@@ -501,4 +523,285 @@ fun Shell(
             },
         )
     }
+}
+
+@Composable
+private fun ConversationRouteContent(
+    agent: AgentKey,
+    stores: StoreBundle,
+    fleetState: FleetState,
+    hostsState: HostsState,
+    router: Router,
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val opened = remember(stores, agent) {
+        runCatching { stores.chat(agent) }
+    }
+
+    DisposableEffect(stores, agent, opened.isSuccess) {
+        onDispose {
+            if (opened.isSuccess) {
+                stores.leave(agent)
+            }
+        }
+    }
+
+    val model = opened.getOrNull()
+    if (model == null) {
+        val fleetRow = fleetState.row(agent)
+        ChatUnavailableScreen(
+            title = fleetRow?.name ?: agent.toString(),
+            reason = opened.exceptionOrNull()?.failureDescription ?: "",
+            onBack = { router.pop() },
+        )
+        return
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            ShellPlatform.attachPickedUri(
+                context = context,
+                uri = uri,
+                isPhoto = true,
+                model = model,
+            )
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            ShellPlatform.attachPickedUri(
+                context = context,
+                uri = uri,
+                isPhoto = false,
+                model = model,
+            )
+        }
+    }
+
+    val chatState by model.state.collectAsState()
+    val fleetRow = fleetState.row(agent)
+    val subject = StateMappers.toChatSubject(
+        agent = agent,
+        fleetRow = fleetRow,
+        frame = chatState.frame,
+        hosts = hostsState,
+    )
+    val family = remember(stores, agent, fleetState.rows) {
+        stores.profile?.family(agent)
+    }
+    val rowSource = remember(model) { ModelChatRowSource(model) }
+    val screenState = StateMappers.toChatScreenState(
+        model = model,
+        chat = chatState,
+        subject = subject,
+        family = family,
+        nowMs = stores.clock(),
+    )
+
+    val callbacks = remember(model, stores, agent, router, context) {
+        ChatScreenCallbacks(
+            onBack = { router.pop() },
+            onReadingChange = { atNewest -> model.reading(atNewest) },
+            onReachedTop = { firstVisible -> model.reachedTop(firstVisible) },
+            onJumpToNewest = { model.jumpToNewest() },
+            onToggleExpand = { rowId -> model.toggle(rowId) },
+            onToggleRun = { rowId -> model.toggleRun(rowId) },
+            onToggleGroup = { rowId -> model.toggleGroup(rowId) },
+            onOpenAgent = { target -> router.push(Route.Conversation(target)) },
+            onOpenReview = { filePath -> router.push(Route.Changes(agent = agent, initialFile = filePath)) },
+            onOpenAttachment = { blob -> model.openAttachment(blob) },
+            onClearOpenedAttachment = { model.clearOpenedAttachment() },
+            onOpenLink = { link -> ShellPlatform.openExternalLink(context, link) },
+            onCopyCode = { code -> ShellPlatform.copyToClipboard(context, code) },
+            onCopyAddress = { address -> ShellPlatform.copyToClipboard(context, address) },
+            onDraftChange = { text -> model.type(text) },
+            onSend = { model.send() },
+            onResume = { model.resume() },
+            onInterrupt = { model.interrupt() },
+            onAttach = { choice ->
+                when (choice) {
+                    AttachChoice.Photo -> {
+                        photoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    }
+                    AttachChoice.File -> {
+                        filePicker.launch(arrayOf("*/*"))
+                    }
+                }
+            },
+            onRemoveAttachment = { index -> model.removeAttachment(index) },
+            onPickCommand = { match -> model.pick(match) },
+            onSendNow = { queued -> model.sendNow(queued) },
+            onWithdraw = { queued -> model.withdraw(queued) },
+            onResend = { inputId -> model.resend(inputId) },
+            onDiscard = { inputId -> model.discard(inputId) },
+            onDismissRefused = { inputId -> model.discard(inputId) },
+            onSwitchBack = { model.switchBack() },
+            onStopJob = { key -> model.stopJob(key) },
+            onToggleDictation = { },
+            onAskAction = { action ->
+                when (action) {
+                    is AskAction.Choose -> model.answer(action.index, action.note)
+                    is AskAction.Respond -> model.answerQuestions(action.responses)
+                    is AskAction.Reply -> model.replyInstead(action.text, action.soFar)
+                    is AskAction.Submit -> model.submitForm(action.values)
+                    is AskAction.OpenUrl -> {
+                        OpenableLink.parse(action.url)?.let { link ->
+                            ShellPlatform.openExternalLink(context, link)
+                        }
+                    }
+                    AskAction.Interrupt -> model.interrupt()
+                    AskAction.Resend -> model.resendAnswer()
+                    AskAction.Discard -> model.discardAnswer()
+                }
+            },
+            onQuestionDraftChange = { askKey, uiDraft ->
+                model.keepQuestionDraft(askKey, StateMappers.toRuntimeQuestionDraft(uiDraft))
+            },
+            onFormValuesChange = { askKey, values ->
+                model.keepFormDraft(askKey, values)
+            },
+            validateForm = { fields, values ->
+                runCatching { model.formProblems(fields, values) }
+                    .getOrElse { validateFormFields(fields, values) }
+            },
+            onSelectComparison = { comparison -> model.compare(comparison) },
+            onChangeSetting = { setting -> model.change(setting) },
+            onOverviewOpenChange = { shown -> model.showOverview(shown) },
+            onClearRequestedOverlay = { model.clearAsk() },
+            onPin = { coroutineScope.launch { stores.pin(agent) } },
+            onUnpin = { coroutineScope.launch { stores.unfile(agent) } },
+            onRename = { newName -> coroutineScope.launch { stores.rename(newName, agent) } },
+            onSettle = { coroutineScope.launch { stores.close(agent) } },
+            onUnsettle = { coroutineScope.launch { stores.unfile(agent) } },
+            onCancelSettle = { coroutineScope.launch { stores.cancelClose(agent) } },
+            onDelete = { discardingChanges ->
+                coroutineScope.launch {
+                    val outcome = stores.delete(agent, discardingChanges)
+                    if (outcome.isSuccess) {
+                        router.pop()
+                    }
+                }
+            },
+            onPreviewDelete = { stores.deleteWarning(agent) },
+            validateAgentName = { candidate ->
+                runCatching { Bridge.agentNameProblem(candidate) }
+                    .getOrElse { defaultValidateAgentName(candidate) }
+            },
+        )
+    }
+
+    ChatScreen(
+        state = screenState,
+        rowSource = rowSource,
+        callbacks = callbacks,
+    )
+}
+
+@Composable
+private fun ChangesRouteContent(
+    agent: AgentKey,
+    initialFile: String?,
+    stores: StoreBundle,
+    router: Router,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val opened = remember(stores, agent) {
+        runCatching { stores.chat(agent) }
+    }
+
+    DisposableEffect(stores, agent, opened.isSuccess) {
+        onDispose {
+            if (opened.isSuccess) {
+                stores.leave(agent)
+            }
+        }
+    }
+
+    val model = opened.getOrNull()
+    if (model == null) {
+        ReviewPage(
+            state = ReviewPageState(doc = null),
+            onAction = { action ->
+                if (action is ReviewPageAction.Back) router.pop()
+            },
+        )
+        return
+    }
+
+    val chatState by model.state.collectAsState()
+    var reviewModel by remember(model) { mutableStateOf<ReviewModel?>(model.reviewing) }
+
+    LaunchedEffect(model) {
+        val loaded = model.loadReview().getOrNull()
+        reviewModel = loaded
+        if (loaded != null && !initialFile.isNullOrEmpty()) {
+            val matchIndex = loaded.doc.files.indexOfFirst { it.path == initialFile }
+            if (matchIndex >= 0) {
+                loaded.selectFile(matchIndex)
+            }
+        }
+    }
+
+    val activeReview = reviewModel
+    val reviewState = activeReview?.state?.collectAsState()?.value
+
+    ReviewPage(
+        state = ReviewPageState(
+            doc = reviewState?.doc,
+            comments = reviewState?.comments.orEmpty(),
+            comparison = reviewState?.comparison ?: chatState.comparison,
+            comparisons = chatState.comparisons,
+            baseBranch = chatState.base,
+            selectedFileIndex = reviewState?.activeFile ?: 0,
+        ),
+        onAction = { action ->
+            when (action) {
+                ReviewPageAction.Back -> router.pop()
+                is ReviewPageAction.SelectComparison -> {
+                    model.compare(action.comparison)
+                    coroutineScope.launch {
+                        val current = reviewModel
+                        if (current != null) {
+                            current.switchComparison(action.comparison, model.source)
+                        } else {
+                            reviewModel = model.loadReview().getOrNull()
+                        }
+                    }
+                }
+                is ReviewPageAction.SelectFile -> {
+                    reviewModel?.selectFile(action.fileIndex)
+                }
+                is ReviewPageAction.AddComment -> {
+                    reviewModel?.addComment(
+                        path = action.path,
+                        line = action.line,
+                        oldLine = action.oldLine,
+                        text = action.text,
+                    )
+                }
+                is ReviewPageAction.EditComment -> {
+                    reviewModel?.rewrite(action.index, action.text)
+                }
+                is ReviewPageAction.DeleteComment -> {
+                    reviewModel?.remove(action.index)
+                }
+                ReviewPageAction.SendReview -> {
+                    val current = reviewModel
+                    if (current != null && current.comments.isNotEmpty()) {
+                        model.attach(current)
+                    }
+                    router.pop()
+                }
+            }
+        },
+    )
 }

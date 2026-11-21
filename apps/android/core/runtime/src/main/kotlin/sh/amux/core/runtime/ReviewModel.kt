@@ -249,6 +249,23 @@ class ReviewModel(
         return true
     }
 
+    /**
+     * Adds a comment on the specified [path] and line coordinates (`line = 0`
+     * and `oldLine = 0` for a file-level comment). Blank text adds nothing.
+     */
+    fun addComment(path: String, line: Int, oldLine: Int, text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || _state.value.doc.files.none { it.path == path }) return false
+        val updated = _state.value.comments + ReviewComment(
+            path = path,
+            line = line,
+            oldLine = oldLine,
+            text = trimmed,
+        )
+        relayout(updated, clearSelection = true)
+        return true
+    }
+
     /** Rewrites a comment in place. Blank text or an invalid index changes nothing. */
     fun rewrite(index: Int, text: String): Boolean {
         val trimmed = text.trim()

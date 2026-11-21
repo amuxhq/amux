@@ -17,7 +17,7 @@ enum class Tab(val wireName: String) {
  */
 sealed interface Route {
     data class Conversation(val agent: AgentKey) : Route
-    data class Changes(val agent: AgentKey) : Route
+    data class Changes(val agent: AgentKey, val initialFile: String? = null) : Route
     data class Host(val host: HostId) : Route
     data object Settled : Route
     data object Settings : Route

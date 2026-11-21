@@ -171,9 +171,6 @@
     <string name="store_failure_relaunch">Relaunch</string>
 
     <!-- Placeholders for upcoming full screens -->
-    <string name="placeholder_conversation_detail">Conversation view is coming next.</string>
-    <string name="placeholder_changes_title">Changes</string>
-    <string name="placeholder_changes_detail">Diff review is coming next.</string>
     <string name="placeholder_host_pair_again">Pair Again</string>
     <string name="placeholder_host_revoke">Revoke</string>
     <string name="placeholder_host_revoke_title">Revoke %1$s?</string>

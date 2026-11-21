@@ -971,12 +971,14 @@ async fn an_agent_the_host_offers_by_id_starts_and_is_named_as_the_host_names_it
     // naming the file and the agent, as is anything over the hosts' limit.
     assert!(!frame.capabilities.images, "{:?}", frame.capabilities);
     assert_eq!(
-        chat.attachment_refusal("shot.png", "image/png", 16).as_deref(),
+        chat.attachment_refusal("shot.png", "image/png", 16)
+            .as_deref(),
         Some("shot.png is not attached: Fake ACP Agent can’t take images.")
     );
     let over = wire::ATTACHMENT_SIZE_LIMIT as u64 + 1;
     assert_eq!(
-        chat.attachment_refusal("huge.log", "text/plain", over).as_deref(),
+        chat.attachment_refusal("huge.log", "text/plain", over)
+            .as_deref(),
         Some("huge.log is not attached because it is over the 64 MB limit for attachments.")
     );
     assert!(frame.capabilities.files, "{:?}", frame.capabilities);

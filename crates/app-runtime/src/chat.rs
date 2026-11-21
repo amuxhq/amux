@@ -386,7 +386,9 @@ impl Chat {
             .input_state(&sent.id)
             .unwrap_or_else(|| outcome_state(&sent.outcome))
         {
-            InputState::Rejected(refusal) => InputState::Rejected(worded(&session, &sent.id, refusal)),
+            InputState::Rejected(refusal) => {
+                InputState::Rejected(worded(&session, &sent.id, refusal))
+            }
             state => state,
         };
         SendOutcome {
@@ -752,7 +754,10 @@ fn attachment_refusal(state: &SessionState, name: &str, mime: &str, size: u64) -
         ));
     }
     let what = ui_view::untaken_file(state, mime)?;
-    Some(format!("{name} is not attached: {}.", cannot_take(state, what)))
+    Some(format!(
+        "{name} is not attached: {}.",
+        cannot_take(state, what)
+    ))
 }
 
 /// The agent's program as its host names it; by its id while the host has

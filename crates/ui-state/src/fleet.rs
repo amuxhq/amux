@@ -236,7 +236,7 @@ pub fn offered_capabilities(host: Option<&HostEntry>, agent: &Agent) -> wire::Ag
 pub fn provider_name(host: Option<&HostEntry>, agent: &Agent) -> String {
     let id = agent.provider_id();
     host.and_then(|host| host.provider(id))
-        .map_or(id, wire::ProviderOnHost::name)
+        .map_or_else(|| wire::agents::name_or_id(id), wire::ProviderOnHost::name)
         .to_owned()
 }
 

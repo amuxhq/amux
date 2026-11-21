@@ -3,7 +3,7 @@
 == chat
      1 boundary:1 Hidden collapsed
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
-== context None sign-in Some(SignInView { state: SignedOut, account: "", message: "", provider_name: "grok", hint: "" })
+== context None sign-in Some(SignInView { state: SignedOut, account: "", message: "", provider_name: "Grok", hint: "" })
 == settings
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
   command /rename source="" hint="<name>" "Rename the agent"

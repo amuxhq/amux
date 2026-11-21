@@ -490,14 +490,14 @@ fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
     }
     .unwrap_or_else(|error| panic!("{dir}/{fixture}: {error}"));
     // An ACP agent is the program its fixture's spec names, offered by the
-    // host under the name its built-in entry gives.
+    // host under the name amux knows it by.
     let mut row = agent(kind);
     let mut providers = offered_providers();
     if kind == Kind::Acp {
         let text = std::fs::read_to_string(&path).expect("read above");
         let spec: serde_json::Value = serde_json::from_str(&text).expect("parsed above");
         let provider = spec["spec"]["provider"].as_str().unwrap_or_default();
-        let name = wire::agents::built_in(provider).map_or(provider, |agent| agent.name);
+        let name = wire::agents::name_or_id(provider);
         providers.push(offered(provider, name, Kind::Acp));
         row.provider = provider.to_owned();
     }

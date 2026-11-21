@@ -1456,12 +1456,16 @@ fn amux_call(
         name
     };
     // The agent it starts, by its provider's name as the caller's host
-    // gives it, else as the call names it; empty when it names none.
+    // gives it, else the name amux knows it by, else as the call names
+    // it; empty when it names none.
     let kind = field(input, "kind");
     let kind = session
         .host()
         .and_then(|host| host.provider(&kind))
-        .map_or(kind.clone(), |offered| offered.name().to_owned());
+        .map_or_else(
+            || wire::agents::name_or_id(&kind).to_owned(),
+            |offered| offered.name().to_owned(),
+        );
     Some(RowKind::Child {
         action,
         name,

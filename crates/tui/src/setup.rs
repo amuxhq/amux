@@ -45,12 +45,15 @@ pub fn offered<'a>(fleet: &'a FleetState, host: &[u8]) -> Vec<&'a wire::Provider
 }
 
 /// What people call `provider` on `host`: the host's name for it, else
-/// its id.
+/// the name amux knows it by, else its id.
 fn agent_name(fleet: &FleetState, host: &[u8], provider: &str) -> String {
     fleet
         .host(host)
         .and_then(|entry| entry.provider(provider))
-        .map_or(provider, wire::ProviderOnHost::name)
+        .map_or_else(
+            || wire::agents::name_or_id(provider),
+            wire::ProviderOnHost::name,
+        )
         .to_owned()
 }
 

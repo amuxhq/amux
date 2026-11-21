@@ -7,7 +7,7 @@
 ## 31 recorded 30: fact Rpc method=elicitation/create
   ask ask-1 -> "ask:ask-1" 1/1 Open
     choices Submit*, Decline+note
-    body Form { server: "antigravity", message: "The agent has a question.", fields: [FormField { name: "q1", title: "Do you prefer tea or coffee?", description: "", required: false, kind: Text { min_length: None, max_length: None }, initial: Text("") }, FormField { name: "q1_other", title: "Other", description: "Optional free-form answer to: Do you prefer tea or coffee?", required: false, kind: Text { min…
+    body Form { server: "Antigravity", message: "The agent has a question.", fields: [FormField { name: "q1", title: "Do you prefer tea or coffee?", description: "", required: false, kind: Text { min_length: None, max_length: None }, initial: Text("") }, FormField { name: "q1_other", title: "Other", description: "Optional free-form answer to: Do you prefer tea or coffee?", required: false, kind: Text { min…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 33 recorded 32: input p1-4
   ask none
@@ -20,7 +20,7 @@
      1 boundary:1 Hidden collapsed
      2 prompt:70312d33 Prompt { text: [Text("Use your built-in tool for asking the user a question (not plain chat) to ask me whether I prefer tea or coffee, offering those two choices. Then reply with my answer in one word.")], steered: false }
      3 tool:call_4107950908435498325 ToolCall { server: "", tool: "Run ask_question", fact: "", state: Succeeded, result: "" } run[tool:call_4107950908435498325..tool:call_4107950908435498325 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1 }]
-     4 ask:ask-1 Ask(Form { server: "antigravity", message: "The agent has a question.", fields: ["q1", "q1_other"], resolution: Answered })
+     4 ask:ask-1 Ask(Form { server: "Antigravity", message: "The agent has a question.", fields: ["q1", "q1_other"], resolution: Answered })
      5 message:1 Prose { text: [Text("kiwi")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(3980), failed: false }
      7 boundary:2 Hidden collapsed

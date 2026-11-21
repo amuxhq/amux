@@ -74,6 +74,28 @@ pub const CLAUDE: &str = "claude";
 /// Codex's provider id.
 pub const CODEX: &str = "codex";
 
+/// What people call amux's own agents, Claude and Codex, by id.
+const OWN_NAMES: [(&str, &str); 2] = [(CLAUDE, "Claude"), (CODEX, "Codex")];
+
+/// The name people see for an agent amux knows by its id (Claude, Codex or
+/// a built-in ACP agent), for when no host's entry names it: a client
+/// relaunched with the agent's host gone, or one whose host has not listed
+/// its agents yet. None for an id amux does not know, such as one a
+/// person's config added.
+pub fn display_name(id: &str) -> Option<&'static str> {
+    OWN_NAMES
+        .into_iter()
+        .chain(BUILT_INS.iter().map(|agent| (agent.id, agent.name)))
+        .find(|(known, _)| *known == id)
+        .map(|(_, name)| name)
+}
+
+/// What people call `id` where no host's entry names it: its known name,
+/// else the id itself.
+pub fn name_or_id(id: &str) -> &str {
+    display_name(id).unwrap_or(id)
+}
+
 /// The provider id a kind implies where nothing names one: what a spec or
 /// row an earlier build wrote, before every agent named its provider, runs.
 /// Empty for an ACP agent, whose kind names no program, and for a kind this
@@ -114,6 +136,19 @@ impl crate::Agent {
 #[cfg(test)]
 mod tests {
     use prost::Message as _;
+
+    /// amux's own agents and every built-in have a name people see; an id a
+    /// person's config added is its own name.
+    #[test]
+    fn known_ids_have_display_names() {
+        assert_eq!(super::name_or_id(super::CLAUDE), "Claude");
+        assert_eq!(super::name_or_id(super::CODEX), "Codex");
+        for agent in super::BUILT_INS {
+            assert_eq!(super::display_name(agent.id), Some(agent.name));
+        }
+        assert_eq!(super::display_name("my-own-agent"), None);
+        assert_eq!(super::name_or_id("my-own-agent"), "my-own-agent");
+    }
 
     /// A released build named Claude and Codex by an enum, at the tags the
     /// provider ids do not reuse: its host entry and its catalogue request

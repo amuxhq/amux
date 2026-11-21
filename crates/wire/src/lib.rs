@@ -469,7 +469,7 @@ impl ProviderOnHost {
             .as_ref()
             .map(|descriptor| descriptor.name.as_str())
             .filter(|name| !name.is_empty())
-            .unwrap_or(&self.provider_id)
+            .unwrap_or_else(|| agents::name_or_id(&self.provider_id))
     }
 
     /// Whether it is signed in, once the host has asked it.

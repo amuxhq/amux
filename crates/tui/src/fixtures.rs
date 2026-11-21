@@ -41,14 +41,14 @@ pub fn frames(kind: Kind, name: &str) -> Vec<(String, SessionState, i64)> {
     }
     .unwrap_or_else(|error| panic!("{dir}/{name}: {error}"));
     // An ACP agent is the program its fixture's spec names, which the host
-    // offers under the name its built-in entry gives.
+    // offers under the name amux knows it by.
     let mut row = agent(kind);
     let mut providers = offered_providers();
     if kind == Kind::Acp {
         let text = std::fs::read_to_string(&path).expect("read above");
         let spec: serde_json::Value = serde_json::from_str(&text).expect("parsed above");
         let provider = spec["spec"]["provider"].as_str().unwrap_or_default();
-        let name = wire::agents::built_in(provider).map_or(provider, |agent| agent.name);
+        let name = wire::agents::name_or_id(provider);
         providers.push(crate::sessions::offered(provider, name, Kind::Acp));
         row.provider = provider.to_owned();
     }

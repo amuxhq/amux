@@ -38,8 +38,8 @@ use crate::verbs::CliAgent;
 #[command(
     name = "amux",
     version = node::version(),
-    about = "Every Claude Code and Codex agent on your machines, in one place",
-    long_about = "Every Claude Code and Codex agent on your machines, in one place.\n\n\
+    about = "Every coding agent on your machines, in one place",
+    long_about = "Every coding agent on your machines, in one place.\n\n\
                   With no command, the terminal app opens."
 )]
 struct Cli {

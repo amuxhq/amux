@@ -3,11 +3,15 @@ package sh.amux.core.runtime
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import sh.amux.values.AccountView
 import sh.amux.values.AgentAct
 import sh.amux.values.AgentKey
@@ -32,6 +36,8 @@ class StoreBundle(
     val account: AccountId,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     val clock: () -> Long = System::currentTimeMillis,
+    val sessionRetentionMs: Long = DEFAULT_SESSION_RETENTION_MS,
+    private val chatBridge: ChatBridge = NativeChatBridge,
     private val opener: ((AgentKey) -> OpenChat)? = null,
     private val acting: (suspend (AgentAct, AgentKey) -> Result<Unit>)? = null,
     private val warning: (suspend (AgentKey) -> Result<DeleteWarning?>)? = null,
@@ -55,10 +61,20 @@ class StoreBundle(
     var saw: ((hosts: Int, attention: Int) -> Unit)? = null
     var trusts: (() -> Unit)? = null
 
+    private data class CachedChat(
+        val chat: OpenChat,
+        val model: ChatModel,
+    )
+
     private var listedView: FleetView? = null
     private var listedHosts: List<HostView>? = null
     private var hostsShown = false
     private val chats = mutableMapOf<Long, Pair<OpenChat, (ChatDelta) -> Unit>>()
+    private val models = mutableMapOf<AgentKey, CachedChat>()
+    private val shown = mutableSetOf<AgentKey>()
+    private val warming = mutableSetOf<AgentKey>()
+    private val viewedAtMs = mutableMapOf<AgentKey, Long>()
+    private val expiryJobs = mutableMapOf<AgentKey, Job>()
 
     init {
         fleet.actions = object : FleetActions {
@@ -115,8 +131,8 @@ class StoreBundle(
         _profileReady.value = profile != null
         if (profile == null) {
             hostsShown = false
-        }
-        if (profile != null) {
+            closeChats()
+        } else {
             apply(profile.fleetOpening())
         }
     }
@@ -154,6 +170,7 @@ class StoreBundle(
         }
         saw?.invoke(fleet.snapshot.machines.count { it.trusted }, fleet.snapshot.needYou)
         _applied.value += 1
+        keepSessions()
         if (shouldShowHosts && hosts.snapshot.rosterBehind) {
             scope.launch { refreshRoster() }
         }
@@ -197,7 +214,123 @@ class StoreBundle(
         chat.close()
     }
 
+    /**
+     * Returns the cached [ChatModel] for [agent], opening it once and keeping
+     * it open while shown on screen (plus [sessionRetentionMs] after leaving).
+     */
+    @Throws(RuntimeFailure::class)
+    fun chat(agent: AgentKey): ChatModel {
+        shown.add(agent)
+        expiryJobs.remove(agent)?.cancel()
+        return cachedModel(agent)
+    }
+
+    @Throws(RuntimeFailure::class)
+    private fun cachedModel(agent: AgentKey): ChatModel {
+        models[agent]?.let { return it.model }
+        val opened = openChat(agent) { delta ->
+            models[agent]?.model?.apply(delta)
+        }
+        val model = ChatModel(
+            source = opened,
+            scope = scope,
+            bridge = chatBridge,
+        )
+        models[agent] = CachedChat(chat = opened, model = model)
+        return model
+    }
+
+    /** Whether an open chat session is cached for [agent], shown or retained. */
+    fun holds(agent: AgentKey): Boolean = agent in models
+
+    /**
+     * Marks [agent]'s chat screen as no longer shown. The session stays cached
+     * for [sessionRetentionMs] so returning is instant, then closes cleanly.
+     */
+    fun leave(agent: AgentKey) {
+        shown.remove(agent)
+        viewedAtMs[agent] = clock()
+        expiryJobs.remove(agent)?.cancel()
+        if (sessionRetentionMs <= 0L) {
+            keepSessions()
+        } else {
+            expiryJobs[agent] = scope.launch {
+                delay(sessionRetentionMs)
+                expiryJobs.remove(agent)
+                keepSessions()
+            }
+        }
+    }
+
+    /**
+     * Reconciles cached chat sessions: keeps every chat currently shown, every
+     * chat viewed within [sessionRetentionMs], and every chat currently being
+     * warmed for a push notification; closes all others cleanly.
+     */
+    fun keepSessions() {
+        val now = clock()
+        val toClose = mutableListOf<AgentKey>()
+        for (agent in models.keys) {
+            if (agent in shown || agent in warming) continue
+            val lastViewed = viewedAtMs[agent]
+            if (lastViewed != null && now - lastViewed < sessionRetentionMs) continue
+            toClose.add(agent)
+        }
+        for (agent in toClose) {
+            evictCachedChat(agent)
+        }
+    }
+
+    /**
+     * Brings [agent]'s chat current for a push wakeup, keeping its session open
+     * across fleet updates until caught up or [timeoutMs] elapses.
+     */
+    suspend fun warm(
+        agent: AgentKey,
+        timeoutMs: Long = DEFAULT_WARM_TIMEOUT_MS,
+    ): Boolean {
+        val model = try {
+            cachedModel(agent)
+        } catch (_: RuntimeFailure) {
+            return false
+        }
+        warming.add(agent)
+        val caughtUp = try {
+            withTimeoutOrNull(timeoutMs) {
+                model.state.first { it.frame?.caughtUp == true }
+                true
+            } ?: (model.currentFrame?.caughtUp == true)
+        } finally {
+            warming.remove(agent)
+            keepSessions()
+        }
+        return caughtUp
+    }
+
+    private fun evictCachedChat(agent: AgentKey) {
+        expiryJobs.remove(agent)?.cancel()
+        shown.remove(agent)
+        warming.remove(agent)
+        viewedAtMs.remove(agent)
+        val cached = models.remove(agent) ?: return
+        cached.model.close()
+        closeChat(cached.chat)
+    }
+
     fun closeChats() {
+        val pendingJobs = expiryJobs.values.toList()
+        expiryJobs.clear()
+        for (job in pendingJobs) {
+            job.cancel()
+        }
+        val openModels = models.values.map { it.model }
+        models.clear()
+        shown.clear()
+        warming.clear()
+        viewedAtMs.clear()
+        for (model in openModels) {
+            model.close()
+        }
         val openChats = chats.values.map { it.first }
         chats.clear()
         for (chat in openChats) {
@@ -335,11 +468,17 @@ class StoreBundle(
 
     suspend fun unfile(agent: AgentKey): Result<Unit> = agentAct(AgentAct.Unfile, agent)
 
-    suspend fun delete(agent: AgentKey, discardingChanges: Boolean = false): Result<Unit> =
-        agentAct(
+    suspend fun delete(agent: AgentKey, discardingChanges: Boolean = false): Result<Unit> {
+        val outcome = agentAct(
             if (discardingChanges) AgentAct.DeleteDiscardingChanges else AgentAct.Delete,
             agent,
         )
+        if (outcome.isSuccess) {
+            models[agent]?.model?.stopKeepingDraft()
+            evictCachedChat(agent)
+        }
+        return outcome
+    }
 
     suspend fun deleteWarning(agent: AgentKey): Result<DeleteWarning?> {
         warning?.let { return it(agent) }
@@ -358,5 +497,13 @@ class StoreBundle(
     suspend fun dump(reason: String): Result<File> {
         val activeProfile = profile ?: return Result.failure(RuntimeFailure("nothing is running"))
         return activeProfile.dump(reason).map { File(it) }
+    }
+
+    companion object {
+        /** Retained open-chat duration after leaving a chat screen (5 minutes). */
+        const val DEFAULT_SESSION_RETENTION_MS: Long = 300_000L
+
+        /** Maximum time [warm] waits for a push-opened chat to catch up. */
+        const val DEFAULT_WARM_TIMEOUT_MS: Long = 25_000L
     }
 }

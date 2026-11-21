@@ -2348,7 +2348,7 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("a", "attach to the agent's own terminal (this computer)"),
         (
             "x",
-            "settle the agent (a message resumes it); asks before cutting work short",
+            "settle the agent; asks before cutting work short or ending it for good",
         ),
         ("k / j", "focus an older or newer row"),
         ("o", "open the focused row, run or group of subagents"),

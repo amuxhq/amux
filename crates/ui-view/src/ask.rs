@@ -255,10 +255,13 @@ pub enum Answer {
 pub fn ask_card(state: &SessionState) -> Option<AskCard> {
     let asks = state.open_asks();
     let head = asks.first()?;
-    let (mut body, choices) = match head {
-        OpenAsk::Claude(ask) => claude(state, ask, &state.agent_state().permissions),
-        OpenAsk::Codex(ask) => codex(state, ask),
-        OpenAsk::Acp(ask) => acp(state, ask),
+    let ((mut body, choices), rules) = match head {
+        OpenAsk::Claude(ask) => (
+            claude(state, ask, &state.agent_state().permissions),
+            Rules::claude(ask),
+        ),
+        OpenAsk::Codex(ask) => (codex(state, ask), Rules::codex(ask)),
+        OpenAsk::Acp(ask) => (acp(state, ask), Rules::acp(ask)),
     };
     if let AskBody::Edit { path, .. } = &mut body {
         *path = within(&state.agent().cwd, path);
@@ -281,43 +284,65 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         count: asks.len(),
         body,
         choices,
-        question_note: !provider_dialog(head),
-        question_skip: !provider_dialog(head),
-        question_reply: !provider_dialog(head),
-        reply_instead: matches!(head, OpenAsk::Acp(_)),
-        stops_turn: !matches!(
-            head,
-            OpenAsk::Codex(wire::CodexAsk {
-                body: Some(codex_ask::Body::Plan(_)),
-                ..
-            })
-        ),
-        default_to_no: matches!(
-            head,
-            OpenAsk::Claude(wire::Ask {
-                body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
-                    default_to_no: true,
-                    ..
-                })),
-                ..
-            })
-        ),
+        question_note: !rules.provider_dialog,
+        question_skip: !rules.provider_dialog,
+        question_reply: !rules.provider_dialog,
+        reply_instead: rules.reply_instead,
+        stops_turn: rules.stops_turn,
+        default_to_no: rules.default_to_no,
         state: card_state,
     })
 }
 
-/// Whether the ask is a question the provider asks itself, outside a turn.
-fn provider_dialog(ask: &OpenAsk) -> bool {
-    match ask {
-        OpenAsk::Claude(wire::Ask {
-            body: Some(ask::Body::Question(question)),
-            ..
-        })
-        | OpenAsk::Codex(wire::CodexAsk {
-            body: Some(codex_ask::Body::Question(question)),
-            ..
-        }) => question.provider_dialog,
-        _ => false,
+/// How the card may be answered, as each kind's ask says it, read where
+/// that ask is decoded: what the ask carries where it says (a question the
+/// provider asks itself, a permission that must be refused by default),
+/// and what holds of every ask of its protocol where it does not.
+struct Rules {
+    /// A question the provider asks itself, outside a turn, answered on
+    /// its own screen: no note, skip or reply goes with it.
+    provider_dialog: bool,
+    reply_instead: bool,
+    stops_turn: bool,
+    default_to_no: bool,
+}
+
+impl Rules {
+    fn claude(ask: &wire::Ask) -> Self {
+        Self {
+            provider_dialog: matches!(&ask.body,
+                Some(ask::Body::Question(question)) if question.provider_dialog),
+            // Claude takes words instead only of a question, in its
+            // answer's own reply.
+            reply_instead: false,
+            stops_turn: true,
+            default_to_no: matches!(&ask.body,
+                Some(ask::Body::Permission(permission)) if permission.default_to_no),
+        }
+    }
+
+    fn codex(ask: &wire::CodexAsk) -> Self {
+        Self {
+            provider_dialog: matches!(&ask.body,
+                Some(codex_ask::Body::Question(question)) if question.provider_dialog),
+            reply_instead: false,
+            // Codex proposes its plan as its turn ends, so with the plan
+            // open there is no turn to stop.
+            stops_turn: !matches!(&ask.body, Some(codex_ask::Body::Plan(_))),
+            default_to_no: false,
+        }
+    }
+
+    fn acp(ask: &wire::AcpAsk) -> Self {
+        Self {
+            provider_dialog: matches!(&ask.body,
+                Some(wire::acp_ask::Body::Question(question)) if question.provider_dialog),
+            // ACP answers every ask the agent makes, so cancelling the turn
+            // closes any of them: words instead go as the next prompt.
+            reply_instead: true,
+            stops_turn: true,
+            default_to_no: false,
+        }
     }
 }
 

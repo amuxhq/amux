@@ -481,3 +481,83 @@ fn a_question_tools_call_is_drawn_by_its_ask_alone() {
     assert_eq!(read.steps, 1);
     assert!(at(3).run.is_none());
 }
+
+/// Settling asks first when it cuts work short, or when nothing can resume
+/// the agent after: what the host says its program can do decides that.
+/// An idle agent a message resumes settles at once.
+#[test]
+fn settling_asks_when_it_cuts_work_or_ends_the_conversation_for_good() {
+    let warning = |resumable: bool, phase: Phase| {
+        let mut fleet = FleetState::new();
+        let mut agent = row(wire::Lifecycle::Live);
+        agent.phase = phase as i32;
+        for of in [
+            wire::inventory_event::Of::Host(host(wire::AgentCapabilities::acp(
+                resumable, false, false,
+            ))),
+            wire::inventory_event::Of::Agent(agent),
+            wire::inventory_event::Of::CaughtUp(wire::CaughtUp { revision: 0 }),
+        ] {
+            fleet.update(FleetMsg::Event(Box::new(wire::InventoryEvent {
+                of: Some(of),
+            })));
+        }
+        let key = ui_state::AgentKey {
+            host: b"host".to_vec(),
+            agent: b"agent".to_vec(),
+        };
+        settle_warning(&fleet, &key).expect("a warning")
+    };
+    let idle = warning(true, Phase::Idle);
+    assert!(!idle.cuts() && !idle.asks() && !idle.ends_for_good());
+    let working = warning(true, Phase::Working);
+    assert_eq!(working.turn, Some(SettleTurn::Working));
+    assert!(working.asks() && !working.ends_for_good());
+    let unresumable = warning(false, Phase::Idle);
+    assert!(!unresumable.cuts() && unresumable.asks() && unresumable.ends_for_good());
+    // A provider subagent goes with its parent and takes no messages: it
+    // loses nothing of its own.
+    let subagent = SettleWarning {
+        provider_subagent: true,
+        ..unresumable
+    };
+    assert!(!subagent.asks());
+}
+
+/// How a card may be answered is what its ask says, read where the ask is
+/// decoded: an ACP question takes a note, a skip and words instead unless
+/// it says it is the agent's own dialog; any ACP ask takes words instead,
+/// stops the turn, and approves by no default.
+#[test]
+fn a_cards_rules_come_from_what_its_ask_says() {
+    let question = |provider_dialog: bool| wire::AcpSnapshot {
+        asks: vec![wire::AcpAsk {
+            key: "ask-1".into(),
+            item_key: "ask:ask-1".into(),
+            body: Some(wire::acp_ask::Body::Question(wire::QuestionAsk {
+                questions: vec![wire::Question {
+                    question: "Tea or coffee?".into(),
+                    ..Default::default()
+                }],
+                provider_dialog,
+            })),
+        }],
+        ..Default::default()
+    };
+    let card = |body| {
+        let state = session(
+            wire::Lifecycle::Live,
+            wire::AgentCapabilities::acp(true, true, false),
+            body,
+            Vec::new(),
+        );
+        ask_card(&state).expect("a card")
+    };
+    let asked = card(question(false));
+    assert!(asked.question_note && asked.question_skip && asked.question_reply);
+    assert!(asked.reply_instead && asked.stops_turn && !asked.default_to_no);
+    let dialog = card(question(true));
+    assert!(!dialog.question_note && !dialog.question_skip && !dialog.question_reply);
+    let permission = card(permission_ask());
+    assert!(permission.reply_instead && permission.stops_turn && !permission.default_to_no);
+}

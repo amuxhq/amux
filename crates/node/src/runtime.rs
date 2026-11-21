@@ -2356,10 +2356,11 @@ pub(crate) fn ms(ms: i64) -> Duration {
 }
 
 /// Whether an ACP agent's next process may start, as its newest snapshot
-/// `body` says: one with no conversation yet starts its first, and one with
-/// a conversation only when its program's own `initialize` answer offered
-/// to resume or load it. Not knowing counts as cannot, so a fresh
-/// conversation is never started in place of the old one.
+/// `body` says. One with no snapshot or no conversation yet has nothing to
+/// lose and starts its first. One with a conversation starts only when its
+/// program's own `initialize` answer offered to resume or load it: a
+/// snapshot that does not say counts as cannot, so a fresh conversation is
+/// never started in place of the old one.
 fn acp_reopens(body: Option<&[u8]>) -> bool {
     use prost::Message as _;
     let Some(snapshot) = body.and_then(|body| wire::AcpSnapshot::decode(body).ok()) else {

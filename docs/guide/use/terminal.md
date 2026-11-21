@@ -50,7 +50,7 @@ On home:
 | `n` | Start a new agent |
 | `/` | Filter by name, branch, folder or computer |
 | `r` | Rename the agent. Its new name replaces any title. |
-| `x` | Settle the agent, asking first if that would cut work short; on a settled agent, delete it, asking first |
+| `x` | Settle the agent, asking first if that would cut work short or end a conversation that can't be resumed; on a settled agent, delete it, asking first |
 | `p` | Pin or unpin the agent |
 | `h` | Your computers, and how each one is reached |
 | `,` | Settings |
@@ -187,7 +187,7 @@ and pause, and the keys it offers appear above the key line.
 | Ctrl+A, then `n` | A new agent in the same folder, on the same computer |
 | Ctrl+A, then `r` | Review the agent's changes |
 | Ctrl+A, then `a` | Switch to the agent's own interface, for an agent on this computer |
-| Ctrl+A, then `x` | Settle the agent and go home, asking first if that would cut work short |
+| Ctrl+A, then `x` | Settle the agent and go home, asking first if that would cut work short or end a conversation that can't be resumed |
 | Ctrl+A, then `o` | Open or close the focused line: a step, a run of steps, or a group of subagents |
 | Ctrl+A, then Enter | Open the chat of the subagent the focused line started |
 | Ctrl+A, then `d` | Leave for the shell |

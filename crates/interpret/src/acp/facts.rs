@@ -1010,6 +1010,8 @@ impl State {
                 id: session.clone(),
             });
             self.session_id = Some(session);
+            // Now it has a conversation to lose.
+            self.say_capabilities();
         }
         self.choices = choices(
             setup.config_options.flatten().as_deref(),

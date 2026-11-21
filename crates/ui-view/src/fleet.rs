@@ -711,6 +711,89 @@ pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
     }
 }
 
+/// What settling an agent costs, for the confirm a client shows first:
+/// the work it cuts short, and whether a message resumes the agent after.
+/// Every client words it; [`SettleWarning::asks`] is when to ask at all.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SettleWarning {
+    /// The turn under way, which settling ends: working, or holding an
+    /// ask open, which settling leaves unanswered.
+    pub turn: Option<SettleTurn>,
+    pub background_jobs: u32,
+    /// Its live descendants: those its host counts, or those this fleet
+    /// sees when it sees more.
+    pub subagents: u32,
+    /// A message resumes it once settled: its program reopens the
+    /// conversation in a later process. When not, settling ends the
+    /// conversation for good. A provider subagent takes no messages and
+    /// goes with its parent, so it is never said to lose anything.
+    pub resumable: bool,
+    /// A subagent its parent's provider runs.
+    pub provider_subagent: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum SettleTurn {
+    Working,
+    NeedsYou,
+}
+
+impl SettleWarning {
+    /// Whether settling cuts work short.
+    pub fn cuts(&self) -> bool {
+        self.turn.is_some() || self.background_jobs > 0 || self.subagents > 0
+    }
+
+    /// Whether to ask before settling: when it cuts work short, or ends a
+    /// conversation nothing can resume. Otherwise settling is undone by a
+    /// message, so it goes at once.
+    pub fn asks(&self) -> bool {
+        self.cuts() || self.ends_for_good()
+    }
+
+    /// Settling ends the conversation for good: nothing resumes it.
+    pub fn ends_for_good(&self) -> bool {
+        !self.resumable && !self.provider_subagent
+    }
+}
+
+/// What settling `agent` would cost, or None for an agent this fleet does
+/// not hold. Whether it resumes is what its host says its program can do.
+pub fn settle_warning(fleet: &FleetState, agent: &AgentKey) -> Option<SettleWarning> {
+    let entry = fleet.agent(agent)?;
+    let turn = match entry.phase() {
+        wire::Phase::Working => Some(SettleTurn::Working),
+        wire::Phase::NeedsYou => Some(SettleTurn::NeedsYou),
+        _ => None,
+    };
+    let seen = live_descendants(fleet, agent);
+    Some(SettleWarning {
+        turn,
+        background_jobs: entry.background_jobs,
+        subagents: entry.descendants.max(seen),
+        resumable: ui_state::offered_capabilities(fleet.host(&entry.host_id), entry).resumable,
+        provider_subagent: entry.native.is_some(),
+    })
+}
+
+/// The live agents under `agent` in this fleet, at any depth.
+fn live_descendants(fleet: &FleetState, agent: &AgentKey) -> u32 {
+    let mut count = 0;
+    let mut under: Vec<&AgentKey> = fleet.families().children(agent).collect();
+    while let Some(child) = under.pop() {
+        if fleet
+            .agent(child)
+            .is_some_and(|child| child.lifecycle() == Lifecycle::Live)
+        {
+            count += 1;
+        }
+        under.extend(fleet.families().children(child));
+    }
+    count
+}
+
 pub fn fleet_card(fleet: &FleetState, local_host: &[u8], agent_id: &[u8]) -> Option<FleetCard> {
     fleet
         .find(agent_id)

@@ -91,4 +91,5 @@ question with set answers, you pick one, or several where the agent allows.
 Some agents can't reopen a conversation in a new process. Such an agent
 never suspends. When its process ends, for example because the computer
 restarts, the agent has ended for good, and amux won't resume it. Start a
-new one instead.
+new one instead. Settling one ends its conversation for good too, so amux
+asks first.

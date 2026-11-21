@@ -128,9 +128,17 @@ pub fn opening(init: &InitializeResponse, saved: Option<&str>) -> Opening {
 
 /// What an ACP agent can do, from what its process said at `initialize`
 /// (None before it has answered, which reads as cannot) and its quirks.
-fn capabilities(agent: &str, reopens: Option<Reopens>, takes: Option<Takes>) -> AgentCapabilities {
+/// It is resumable until it has a conversation to lose: with none yet, a
+/// later process starts its first, as the daemon does for it, and with
+/// one, only where the process said it reopens one.
+fn capabilities(
+    agent: &str,
+    session: bool,
+    reopens: Option<Reopens>,
+    takes: Option<Takes>,
+) -> AgentCapabilities {
     AgentCapabilities::acp(
-        reopens.is_some_and(|reopens| reopens.resume || reopens.load),
+        !session || reopens.is_some_and(|reopens| reopens.resume || reopens.load),
         takes.is_some_and(|takes| takes.images),
         quirks(agent).steers,
     )
@@ -666,7 +674,7 @@ impl State {
         .filter_map(|(category, value)| Some((category, value?)))
         .collect();
         let mut shared = Shared::new(spec, KIND);
-        shared.set_capabilities(capabilities(&spec.provider, None, None));
+        shared.set_capabilities(capabilities(&spec.provider, false, None, None));
         Self {
             shared,
             agent: spec.provider.clone(),
@@ -710,7 +718,12 @@ impl State {
 
     /// Says on the snapshot what the agent can do, as its process last said.
     fn say_capabilities(&mut self) {
-        let capabilities = capabilities(&self.agent, self.reopens, self.takes);
+        let capabilities = capabilities(
+            &self.agent,
+            self.session_id.is_some(),
+            self.reopens,
+            self.takes,
+        );
         self.shared.set_capabilities(capabilities);
     }
 

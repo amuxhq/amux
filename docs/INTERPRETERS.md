@@ -1361,9 +1361,11 @@ request, `opencode-allow`); `attach` asks, as it does in Claude, since it
 copies a file the agent names to where the agent reads unasked.
 `elicitation/create` opens a form or link ask row. A field whose choices
 are a `oneOf` of constants with titles (as Antigravity's questions are,
-`agy-question`) is offered as a choice of the titles, and the answer sends
-the agent the constant of the title picked, so no client reads such a field
-as typed text. Grok's `_x.ai/ask_user_question` opens a question ask on
+`agy-question`), or an array whose `items` are an `anyOf` of them (ACP's
+titled multi-select), is offered as a choice of the titles, one or several,
+and the answer sends the agent the constant of each title picked, so no
+client reads such a field as typed text. Each option's constant is its
+identity: two titled alike read apart, and a default starts on its titles. Grok's `_x.ai/ask_user_question` opens a question ask on
 the tool's row, one question per question it sends, each taking one answer
 or several as it says, with typed words allowed. The answer is Grok's own
 shape, `{"outcome": "accepted", "answers": {<question>: <label> | [<labels>]}}`,

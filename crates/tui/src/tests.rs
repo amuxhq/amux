@@ -2631,6 +2631,72 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     assert!(matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"w2"));
 }
 
+/// Settling an agent whose program cannot reopen its conversation ends it
+/// for good, so it is asked first even with nothing under way, and says
+/// so; one whose program reopens it settles at once, as a message resumes
+/// it.
+#[test]
+fn settling_an_agent_nothing_can_resume_asks_and_says_it_ends_for_good() {
+    let now = now();
+    let mut fleet = FleetState::new();
+    let mut providers = crate::sessions::offered_providers();
+    for (id, name, resumable) in [("oneshot", "One Shot", false), ("again", "Again", true)] {
+        let mut offer = crate::sessions::offered(id, name, Kind::Acp);
+        offer.capabilities = Some(wire::AgentCapabilities::acp(resumable, false, false));
+        providers.push(offer);
+    }
+    inventory(
+        &mut fleet,
+        wire::inventory_event::Of::Host(wire::HostEntry {
+            providers,
+            ..wire::HostEntry::trusted_host(
+                b"a",
+                "studio",
+                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            )
+        }),
+    );
+    for (id, name, provider) in [(&b"o1"[..], "once", "oneshot"), (b"r1", "twice", "again")] {
+        let mut row = home_agent(id, name, Phase::Idle, None, now - 1_000);
+        if let wire::inventory_event::Of::Agent(agent) = &mut row {
+            agent.kind = Kind::Acp as i32;
+            agent.provider = provider.into();
+        }
+        inventory(&mut fleet, row);
+    }
+    inventory(
+        &mut fleet,
+        wire::inventory_event::Of::CaughtUp(wire::CaughtUp { revision: 0 }),
+    );
+    let key_of = |id: &[u8]| AgentKey {
+        host: b"a".to_vec(),
+        agent: id.to_vec(),
+    };
+    let mut home = new_home();
+    home_screen(&mut home, &fleet, theme());
+    let effects = home.settle_from_chat(&fleet, key_of(b"r1"));
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"r1"),
+        "{effects:?}"
+    );
+    let effects = home.settle_from_chat(&fleet, key_of(b"o1"));
+    assert!(effects.is_empty(), "{effects:?}");
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(
+        screen.contains("Settle once? It can't be resumed, so settling"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("ends its conversation for good."),
+        "{screen}"
+    );
+    let effects = home.key(&fleet, key(KeyCode::Enter));
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"o1"),
+        "{effects:?}"
+    );
+}
+
 /// `<leader> x` settles the chat's agent from home, and the highlight
 /// lands on the top of the list, not on the row that took the settled
 /// one's place as `x` on home leaves it.

@@ -25,7 +25,7 @@ use ui_view::{
     ActivityLine, ExitCause, FleetRow, FleetSection, FleetView, Offline, Reach, SecondLine,
     SectionKind, SessionLine,
 };
-use wire::{Attachment, Lifecycle, Said, Wants, attachment};
+use wire::{Attachment, Said, Wants, attachment};
 
 use crate::chat::composer::editor_lines;
 use crate::clipboard::{Clip, ClipboardContent};
@@ -683,8 +683,9 @@ impl Home {
         vec![]
     }
 
-    /// Settles an agent, asking first only when that cuts work short, or
-    /// asks before deleting a settled one: an agent not settled is never
+    /// Settles an agent, asking first only when that cuts work short or
+    /// ends a conversation nothing can resume, or asks before deleting a
+    /// settled one: an agent not settled is never
     /// offered deletion.
     fn close(&mut self, fleet: &FleetState, agent: AgentKey) -> Vec<FleetEffect> {
         let Some(entry) = fleet.agent(&agent) else {
@@ -696,7 +697,7 @@ impl Home {
         if delete && entry.native.is_some() {
             return vec![];
         }
-        if !delete && close_cuts(fleet, &agent).is_none() {
+        if !delete && !ui_view::settle_warning(fleet, &agent).is_some_and(|w| w.asks()) {
             return vec![FleetEffect::Close(agent)];
         }
         let warning = delete.then(|| fleet.delete_warning(&agent)).flatten();
@@ -2188,28 +2189,22 @@ impl Home {
     }
 }
 
-/// What a settle of `agent` would cut short, when anything: its turn under
-/// way, its background jobs and its subagents ("working and has 2
-/// background jobs and 1 subagent"). Subagents are the live descendants the
-/// agent's host counts, or those this fleet sees when it sees more.
-fn close_cuts(fleet: &FleetState, agent: &AgentKey) -> Option<String> {
-    let entry = fleet.agent(agent)?;
+/// What a settle cuts short, when anything: its turn under way, its
+/// background jobs and its subagents ("is working and has 2 background
+/// jobs and 1 subagent").
+fn close_cuts(warning: &ui_view::SettleWarning) -> Option<String> {
     // An ask open is a turn under way too: settling ends it unanswered.
-    let turn = match entry.phase() {
-        wire::Phase::Working => Some("is working"),
-        wire::Phase::NeedsYou => Some("needs you mid-turn"),
-        _ => None,
-    };
-    let jobs = entry.background_jobs as usize;
-    let seen = live_descendants(fleet, agent);
-    let subs = (entry.descendants as usize).max(seen);
-    let count = |n: usize, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
+    let turn = warning.turn.map(|turn| match turn {
+        ui_view::SettleTurn::Working => "is working",
+        ui_view::SettleTurn::NeedsYou => "needs you mid-turn",
+    });
+    let count = |n: u32, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
     let mut has = Vec::new();
-    if jobs > 0 {
-        has.push(count(jobs, "background job"));
+    if warning.background_jobs > 0 {
+        has.push(count(warning.background_jobs, "background job"));
     }
-    if subs > 0 {
-        has.push(count(subs, "subagent"));
+    if warning.subagents > 0 {
+        has.push(count(warning.subagents, "subagent"));
     }
     let has = has.join(" and ");
     match (turn, has.is_empty()) {
@@ -2280,19 +2275,19 @@ fn discards(shown: Option<&DeleteWarning>) -> bool {
 }
 
 /// What the settle window asks: what settling cuts short ("desk-1 is
-/// working and has 2 background jobs and 1 subagent. Settling stops them."),
-/// else the plain question.
+/// working and has 2 background jobs and 1 subagent. Settling stops it
+/// now."), else the plain question; then whether a message resumes it, or
+/// that settling ends its conversation for good when nothing can.
 fn close_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
-    match close_cuts(fleet, agent) {
-        Some(cuts) => format!("{name} {cuts}. Settling stops it now."),
+    let warning = ui_view::settle_warning(fleet, agent).unwrap_or_default();
+    let ends = "It can't be resumed, so settling ends its conversation for good.";
+    match (close_cuts(&warning), warning.ends_for_good()) {
+        (Some(cuts), false) => format!("{name} {cuts}. Settling stops it now."),
+        (Some(cuts), true) => format!("{name} {cuts}. Settling stops it now. {ends}"),
+        (None, true) => format!("Settle {name}? {ends}"),
         // A provider subagent takes no messages, so nothing resumes it.
-        None if fleet
-            .agent(agent)
-            .is_some_and(|entry| entry.native.is_some()) =>
-        {
-            format!("Settle {name}?")
-        }
-        None => format!("Settle {name}? A message resumes it."),
+        (None, false) if warning.provider_subagent => format!("Settle {name}?"),
+        (None, false) => format!("Settle {name}? A message resumes it."),
     }
 }
 
@@ -2314,22 +2309,6 @@ fn is_native(fleet: &FleetState, agent: &AgentKey) -> bool {
     fleet
         .agent(agent)
         .is_some_and(|entry| entry.native.is_some())
-}
-
-/// The live agents under `agent` in this fleet, at any depth.
-fn live_descendants(fleet: &FleetState, agent: &AgentKey) -> usize {
-    let mut count = 0;
-    let mut under: Vec<&AgentKey> = fleet.families().children(agent).collect();
-    while let Some(child) = under.pop() {
-        if fleet
-            .agent(child)
-            .is_some_and(|child| child.lifecycle() == Lifecycle::Live)
-        {
-            count += 1;
-        }
-        under.extend(fleet.families().children(child));
-    }
-    count
 }
 
 /// Home's part of the key help.

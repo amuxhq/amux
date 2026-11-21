@@ -120,7 +120,9 @@ pub fn host_offer(agent: &str, init: &InitializeResponse) -> HostOffer {
     HostOffer {
         catalogue,
         version,
-        capabilities: super::capabilities(agent, Some(reopens), Some(super::Takes::of(init))),
+        // What the program does with a conversation it has, which is what
+        // an agent of it settled or exited has to lose.
+        capabilities: super::capabilities(agent, true, Some(reopens), Some(super::Takes::of(init))),
         acp: AcpOffer {
             name: agent_info.map(|info| info.name).unwrap_or_default(),
             reopen: reopen as i32,

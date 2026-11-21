@@ -267,7 +267,8 @@ agent says each one is:
 - **A form or a link the agent asks itself** is `Form` or `Link` named for the agent, with `Submit` or `OpenLink`
   and a `Decline` that takes words instead. The tool call it names as its own (Antigravity's and Grok's question
   tools) is `Hidden`: the ask's row is its only trace, as Claude's question is, and it is no step of a run. A field whose answers are titled constants (`oneOf` of `const` and
-  `title`) arrives as a choice of the titles, and the agent is sent the constant of the one picked.
+  `title`, or for several an array whose `items` are `anyOf` of them) arrives as a choice of the titles, one or
+  several, and the agent is sent the constant of each one picked.
 - **Grok's question tool** is an `AskBody::Question` card, as Claude's and Codex's are, and settles as a
   `Questions` row: each question with its options, one answer or several as Grok says, and your own words allowed
   for each. Skipping every question declines them, and Grok goes on with its own judgment. Its call is `Hidden`,

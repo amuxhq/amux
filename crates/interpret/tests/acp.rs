@@ -221,29 +221,45 @@ fn said_capabilities(stepped: &interpret::Stepped) -> Option<wire::AgentCapabili
 
 /// An ACP agent's snapshot says what its process can do: nothing it has
 /// not said before `initialize` answers, and what that answer offered
-/// after, with send-now for an agent known to steer.
+/// after, with send-now for an agent known to steer. It is resumable until
+/// it has a conversation to lose, as the daemon starts a later process for
+/// one with none: then only where its process said it reopens one.
 #[test]
 fn an_acp_agents_snapshot_says_what_its_process_can_do() {
     for (provider, steers) in [("antigravity", true), ("my-own-agent", false)] {
-        let (mut state, first) = Acp::initial(&spec(provider));
-        assert_eq!(
-            first.snapshot.unwrap().capabilities,
-            Some(wire::AgentCapabilities::acp(false, false, steers)),
-            "{provider} before it answered"
-        );
-        let answered = Acp::step(
-            &mut state,
-            rpc(
-                serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
-                "result": {"protocolVersion": 1, "agentCapabilities": {
-                    "loadSession": true, "promptCapabilities": {"image": true}}}}),
-            ),
-        );
-        assert_eq!(
-            said_capabilities(&answered),
-            Some(wire::AgentCapabilities::acp(true, true, steers)),
-            "{provider} once it answered"
-        );
+        for reopens in [true, false] {
+            let (mut state, first) = Acp::initial(&spec(provider));
+            assert_eq!(
+                first.snapshot.unwrap().capabilities,
+                Some(wire::AgentCapabilities::acp(true, false, steers)),
+                "{provider} before it answered"
+            );
+            let answered = Acp::step(
+                &mut state,
+                rpc(
+                    serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
+                    "result": {"protocolVersion": 1, "agentCapabilities": {
+                        "loadSession": reopens, "promptCapabilities": {"image": true}}}}),
+                ),
+            );
+            assert_eq!(
+                said_capabilities(&answered),
+                Some(wire::AgentCapabilities::acp(true, true, steers)),
+                "{provider} once it answered, with no conversation yet"
+            );
+            let opened = Acp::step(
+                &mut state,
+                rpc(
+                    serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+                    "result": {"sessionId": "s1"}}),
+                ),
+            );
+            assert_eq!(
+                said_capabilities(&opened),
+                Some(wire::AgentCapabilities::acp(reopens, true, steers)),
+                "{provider} with a conversation, reopening it: {reopens}"
+            );
+        }
     }
 }
 

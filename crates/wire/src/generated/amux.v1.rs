@@ -585,9 +585,10 @@ pub struct AgentCapabilities {
     #[prost(bool, tag = "3")]
     pub attachable: bool,
     /// A later process of its program reopens its conversation, so the agent
-    /// can be suspended and resumed once it has exited. An agent whose program
-    /// cannot, or has not yet said it can, is false: it never suspends, and
-    /// its exit is final.
+    /// can be suspended and resumed once it has exited. An agent with no
+    /// conversation yet is true, since a later process starts its first. One
+    /// with a conversation whose program cannot reopen it, or has not said it
+    /// can, is false: it never suspends, and its exit is final.
     #[prost(bool, tag = "4")]
     pub resumable: bool,
     /// A queued prompt can be sent into the running turn (SendQueuedNow).

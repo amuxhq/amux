@@ -469,7 +469,7 @@ async fn a_hosts_acp_agent_is_offered_with_its_descriptor_and_capabilities_to_an
         Some(wire::AgentCapabilities::acp(true, true, false)),
         "resumable (it offers session/resume), takes images, and folds no prompt into a turn"
     );
-    let capabilities = offered.capabilities.clone().unwrap();
+    let capabilities = offered.capabilities.unwrap();
     assert!(!capabilities.stops_job && !capabilities.switches_back && !capabilities.attachable);
     // Claude and Codex are listed beside it, each by its own descriptor.
     let ids: Vec<&str> = entry

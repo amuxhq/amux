@@ -24,12 +24,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
+from types import ModuleType
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 CRATE = "app-jni"
 LIB_STEM = "amux_app"
 ANDROID_PLATFORM = "34"
@@ -48,9 +51,8 @@ HOST_JNI_DIR = OUTPUT / "host-jni"
 RELEASE_JNI_LIBS = OUTPUT / "release-jniLibs"
 DEV_JNI_LIBS = OUTPUT / "debug-jniLibs"
 
-SOURCE_ROOTS = ("crates", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo")
+ROOT_SOURCE_PATHS = ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo")
 SOURCE_ENVIRONMENT = (
-    "AMUX_GIT_SHA",
     "RUSTFLAGS",
     "CARGO_ENCODED_RUSTFLAGS",
     "CARGO_BUILD_RUSTFLAGS",
@@ -59,6 +61,39 @@ SOURCE_ENVIRONMENT = (
     "ANDROID_NDK_HOME",
     "ANDROID_NDK_ROOT",
 )
+
+_CI_AFFECTED: ModuleType | None = None
+
+
+def _ci_affected() -> ModuleType:
+    global _CI_AFFECTED
+    if _CI_AFFECTED is None:
+        script = REPO_ROOT / "scripts" / "ci-affected.py"
+        spec = importlib.util.spec_from_file_location("amux_ci_affected", script)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _CI_AFFECTED = module
+    return _CI_AFFECTED
+
+
+def crate_closure(crate: str = CRATE, root: Path = Path(".")) -> list[str]:
+    """Sorted folder names under `crates/` in `crate`'s transitive build graph.
+
+    Follows normal `dependencies` and `build-dependencies` (not
+    `dev-dependencies`), matching what `cargo build -p <crate> --lib` compiles.
+    """
+    crates = _ci_affected().workspace(root)
+    if crate not in crates:
+        raise RuntimeError(f"workspace crate {crate!r} was not found under {root / 'crates'}")
+    seen = {crate}
+    queue = list(crates[crate]["built"])
+    while queue:
+        dep = queue.pop()
+        if dep in crates and dep not in seen:
+            seen.add(dep)
+            queue.extend(crates[dep]["built"])
+    return sorted(crates[name]["folder"] for name in seen)
 
 
 def host_library_name() -> str:
@@ -124,23 +159,37 @@ def source_fingerprint(root: Path = Path(".")) -> str:
     summary = hashlib.sha256()
     for name in SOURCE_ENVIRONMENT:
         summary.update(f"{name}={os.environ.get(name, '')}\n".encode())
-    for top in SOURCE_ROOTS:
-        path = root / top
+    roots = [
+        *(Path("crates") / folder for folder in crate_closure(CRATE, root)),
+        *(Path(top) for top in ROOT_SOURCE_PATHS),
+    ]
+    for rel_top in roots:
+        path = root / rel_top
+        if not path.exists():
+            continue
         entries = sorted(path.rglob("*")) if path.is_dir() else [path]
         for entry in entries:
-            if not entry.is_file() or "target" in entry.relative_to(root).parts[:2]:
+            if not entry.is_file():
                 continue
-            summary.update(f"{entry.relative_to(root)}\0".encode())
+            rel = entry.relative_to(root)
+            if "target" in rel.parts:
+                continue
+            summary.update(f"{rel.as_posix()}\0".encode())
             summary.update(hashlib.sha256(entry.read_bytes()).digest())
     return summary.hexdigest()
 
 
-def build_fingerprint(mode: str, abis: list[str], *, ndk: str | None = None) -> str:
-    git_sha = os.environ.get("AMUX_GIT_SHA", "")
+def build_fingerprint(
+    mode: str,
+    abis: list[str],
+    *,
+    ndk: str | None = None,
+    root: Path = Path("."),
+) -> str:
     if mode == "host":
         spec = (
             f"host:{platform.system()}:{platform.machine()}:"
-            f"{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}:sha={git_sha}"
+            f"{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}"
         )
     else:
         resolved_ndk = ndk if ndk is not None else find_android_ndk()
@@ -148,14 +197,14 @@ def build_fingerprint(mode: str, abis: list[str], *, ndk: str | None = None) -> 
         if mode == "release":
             spec = (
                 f"release:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:"
-                f"{SHIPPING_PROFILE}::ndk={ndk_id}:sha={git_sha}"
+                f"{SHIPPING_PROFILE}::ndk={ndk_id}"
             )
         else:
             spec = (
                 f"dev:{','.join(sorted(abis))}:api{ANDROID_PLATFORM}:"
-                f"{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}:ndk={ndk_id}:sha={git_sha}"
+                f"{DRIVING_PROFILE}:{','.join(DRIVING_FEATURES)}:ndk={ndk_id}"
             )
-    return f"{source_fingerprint()}:{spec}"
+    return f"{source_fingerprint(root)}:{spec}"
 
 
 def copy_if_changed(src: Path, dst: Path) -> bool:

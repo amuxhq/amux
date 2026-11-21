@@ -301,7 +301,7 @@ private struct Footer: View {
                 } else if chat.frame?.composer.mode == .ended {
                     // Its program cannot reopen the conversation: there is
                     // nowhere to type, only what says so.
-                    Text(ChatWords.endedForGood).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
+                    Text(ChatWords.endedForGood(provider: chat.frame?.provider.name ?? "")).font(.ui(.meta)).foregroundStyle(Palette.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 8)
                 } else {

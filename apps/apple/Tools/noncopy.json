@@ -487,7 +487,7 @@
       {"literal": "\"\\(section.families)\"", "context": ".identified(\"home.settled\", label: title, value: \"\\(section.families)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"pin.fill\"", "context": "Image(systemName: \"pin.fill\")", "reason": "SF Symbol name, not a displayed label.", "count": 1},
       {"literal": "\"home.scope.\\(scope.id)\"", "context": ".identified(\"home.scope.\\(scope.id)\", label: scope.title)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"settle.\\(row.id)\"", "context": "case .close(let row, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settle.\\(row.id)\"", "context": "case .close(let row, _, _): \"settle.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"delete.\\(row.id)\"", "context": "case .delete(let row, _): \"delete.\\(row.id)\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"archivebox\"", "context": "Image(systemName: \"archivebox\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"pair.\\(host.name)\"", "context": "id: \"pair.\\(host.name)\", glyph: offer.waiting ? \"laptopcomputer\" : \"plus.circle\",", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
@@ -1464,9 +1464,9 @@
       {"literal": "\"chat.settle.cuts\"", "context": ".identified(\"chat.settle.cuts\", label: cuts)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.settle.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"chat.settle.cancel\", action: cancel)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.settle.confirm\"", "context": "choiceButton(String(localized: \"Settle\"), kind: .destructive, id: \"chat.settle.confirm\", action: confirm)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.settle.card\"", "context": ".identified(\"chat.settle.card\", label: cuts)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.settle.card\"", "context": ".identified(\"chat.settle.card\", label: said)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"sign-in\"", "context": "kind: \"sign-in\", title: ChatWords.needsSignIn(signIn.providerName),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.ended\"", "context": ".identified(\"chat.ended\", label: ChatWords.endedForGood)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"chat.ended\"", "context": ".identified(\"chat.ended\", label: ended)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift": [
       {"literal": "\"\\(verb) \\(count)\\(plus) \\(noun)\"", "context": "return \"\\(verb) \\(count)\\(plus) \\(noun)\"", "reason": "Joins a catalogued verb, a count and a catalogued noun; it has no words of its own.", "count": 1},

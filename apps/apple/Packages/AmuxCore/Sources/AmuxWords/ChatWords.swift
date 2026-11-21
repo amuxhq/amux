@@ -373,8 +373,25 @@ public enum ChatWords {
     }
 
     /// Where an agent that cannot be resumed has its composer: its program
-    /// cannot reopen the conversation, so nothing more goes to it.
-    public static let endedForGood = String(localized: "Ended · this agent can’t be resumed")
+    /// cannot reopen the conversation, so nothing more goes to it. Named by
+    /// its provider, as the terminal names it.
+    public static func endedForGood(provider: String) -> String {
+        String(localized: "Ended · \(provider) can’t reopen this conversation")
+    }
+
+    /// What settling an agent that cannot be resumed does, said before it
+    /// is done: its program cannot reopen the conversation, so settling
+    /// ends it for good rather than putting it aside.
+    public static func settleEndsForGood(provider: String) -> String {
+        String(localized: "\(provider) can’t reopen this conversation, so settling ends it for good.")
+    }
+
+    /// Whether an agent can be resumed once settled, by what its host says
+    /// its provider can do. A provider the host does not list reads as not
+    /// resumable, the safe reading: settling it is asked about first.
+    public static func resumable(provider: String, offered: [HostProvider]) -> Bool {
+        offered.first { $0.provider == provider }?.capabilities.resumable ?? false
+    }
 
     public static func text(of segments: [Segment]) -> String {
         segments.map { segment in

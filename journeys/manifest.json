@@ -294,7 +294,7 @@
         "phone"
       ],
       "topology": "journeys/topologies/phone-acp.json",
-      "claim": "An Agent Client Protocol agent that cannot reopen a conversation answers a prompt; settled from its chat's menu it exits on the host, and its chat on the Settled page keeps the conversation but offers no composer and no Resume, only words saying it has ended for good."
+      "claim": "An Agent Client Protocol agent that cannot reopen a conversation answers a prompt; asked to settle from its chat's menu, the chat asks first, saying the agent can't reopen the conversation so settling ends it for good, though nothing is under way; confirmed, it exits on the host, and its chat on the Settled page keeps the conversation but offers no composer and no Resume, only \"Ended · Fake ACP Agent can't reopen this conversation\"."
     },
     {
       "id": "acp-signed-out",

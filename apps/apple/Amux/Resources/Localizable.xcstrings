@@ -1321,14 +1321,14 @@
         }
       }
     },
-    "Ended · this agent can’t be resumed" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+    "Ended · %@ can’t reopen this conversation" : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended · this agent can’t be resumed"
+            "value" : "Ended · %@ can’t reopen this conversation"
           }
         }
       }
@@ -10105,6 +10105,18 @@
         }
       }
     },
+    "%@ can’t reopen this conversation, so settling ends it for good." : {
+      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can’t reopen this conversation, so settling ends it for good."
+          }
+        }
+      }
+    },
     "A computer running amux on this network appears here, ready to pair." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState" : "manual",
@@ -10833,6 +10845,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cancel Settle"
+          }
+        }
+      }
+    },
+    "Its chat and edits stay." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its chat and edits stay."
           }
         }
       }

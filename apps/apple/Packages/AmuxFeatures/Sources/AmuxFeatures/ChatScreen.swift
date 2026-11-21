@@ -421,9 +421,19 @@ public struct ChatScreen: View {
             subAgents: descendants)
     }
 
-    /// Closes at once, or asks first when that would cut work short.
+    /// What settling this agent ends for good, when its program cannot
+    /// reopen the conversation; nil when a message resumes it.
+    static func endsForGood(model: ChatModel) -> String? {
+        guard let frame = model.frame, !frame.capabilities.resumable else { return nil }
+        return ChatWords.settleEndsForGood(provider: frame.provider.name)
+    }
+
+    /// Closes at once, or asks first when that would cut work short or end
+    /// a conversation that cannot be reopened.
     private func close() {
-        if Self.closeCuts(model: model, subject: subject, descendants: descendants) == nil {
+        if Self.closeCuts(model: model, subject: subject, descendants: descendants) == nil,
+            Self.endsForGood(model: model) == nil
+        {
             actions(.close)
         } else {
             showing = .close
@@ -714,8 +724,8 @@ public struct ChatStanding: View {
                 }
             case .close?:
                 CloseCard(
-                    name: subject.name, cuts: ChatScreen.closeCuts(model: model, subject: subject, descendants: descendants) ?? "",
-                    cancel: { showing = nil }
+                    name: subject.name, cuts: ChatScreen.closeCuts(model: model, subject: subject, descendants: descendants),
+                    endsForGood: ChatScreen.endsForGood(model: model), cancel: { showing = nil }
                 ) {
                     showing = nil
                     actions(.close)
@@ -835,13 +845,14 @@ public struct ChatStanding: View {
         } else if model.frame?.composer.mode == .ended {
             // Its program cannot reopen the conversation: there is nowhere
             // to type, only what says so.
-            Text(ChatWords.endedForGood)
+            let ended = ChatWords.endedForGood(provider: model.frame?.provider.name ?? "")
+            Text(ended)
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
-                .identified("chat.ended", label: ChatWords.endedForGood)
+                .identified("chat.ended", label: ended)
         } else {
             ComposerBox(
                 model: model, placeholder: placeholder, activity: model.frame?.composer.activity,
@@ -1016,10 +1027,15 @@ private struct RenameCard: View {
 private struct CloseCard: View {
     @Environment(\.design) private var design
     let name: String
-    /// What the close cuts short.
-    let cuts: String
+    /// What the close cuts short, when anything.
+    let cuts: String?
+    /// That settling ends the conversation for good, for an agent that
+    /// cannot be resumed.
+    let endsForGood: String?
     let cancel: () -> Void
     let confirm: () -> Void
+
+    private var said: String { [cuts, endsForGood].compactMap { $0 }.joined(separator: " ") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1027,13 +1043,20 @@ private struct CloseCard: View {
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(cuts)
-                .designFont(.detail, design)
-                .foregroundStyle(design.ink.color)
-                .fixedSize(horizontal: false, vertical: true)
-                .identified("chat.settle.cuts", label: cuts)
+            if let cuts {
+                Text(cuts)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.ink.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("chat.settle.cuts", label: cuts)
+            }
             Consequence("xmark", kept: false, String(localized: "Settling stops it now."))
-            Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. A message resumes it."))
+            if let endsForGood {
+                Consequence("xmark", kept: false, endsForGood)
+                Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay."))
+            } else {
+                Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. A message resumes it."))
+            }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.settle.cancel", action: cancel)
                 choiceButton(String(localized: "Settle"), kind: .destructive, id: "chat.settle.confirm", action: confirm)
@@ -1041,7 +1064,7 @@ private struct CloseCard: View {
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.settle.card", label: cuts)
+        .identified("chat.settle.card", label: said)
     }
 }
 

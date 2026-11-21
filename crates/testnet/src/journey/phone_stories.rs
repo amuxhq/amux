@@ -1405,7 +1405,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
 
 /// Settles the open chat's agent from its menu. An idle agent is settled at
 /// once, with nothing to confirm, and the chat closes.
-pub(super) fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
+fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
     journey.tap("chat.more")?;
     journey.choose("Settle")?;
     journey.wait(|drawn| !drawn.has("chat"), "the chat closed")?;

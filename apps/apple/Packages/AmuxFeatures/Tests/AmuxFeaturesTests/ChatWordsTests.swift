@@ -59,6 +59,28 @@ final class ChatWordsTests: XCTestCase {
             ChatWords.Subject("src/lib.rs", code: true))
     }
 
+    func testAnAgentThatCannotReopenItsConversationSaysSoByName() {
+        XCTAssertEqual(
+            ChatWords.endedForGood(provider: "OpenCode"), "Ended · OpenCode can’t reopen this conversation")
+        XCTAssertEqual(
+            ChatWords.settleEndsForGood(provider: "OpenCode"),
+            "OpenCode can’t reopen this conversation, so settling ends it for good.")
+    }
+
+    func testWhetherASettledAgentResumesIsWhatItsHostSays() {
+        let offered = { (resumable: Bool) in
+            [HostProvider(
+                provider: "opencode", name: "OpenCode", signInHint: "", version: "",
+                capabilities: Capabilities(
+                    stopsJob: false, switchesBack: false, attachable: false, resumable: resumable,
+                    sendsNow: false, images: false, files: false, passesUnknownCommands: false),
+                signedIn: true)]
+        }
+        XCTAssertFalse(ChatWords.resumable(provider: "opencode", offered: offered(false)))
+        XCTAssertTrue(ChatWords.resumable(provider: "opencode", offered: offered(true)))
+        XCTAssertFalse(ChatWords.resumable(provider: "opencode", offered: []), "unlisted: asked about first")
+    }
+
     func testARefusedStepFoldsAsDeniedNotAsWhatItWouldHaveDone() {
         let counts = { (commands: UInt32, denied: UInt32) in
             RunCounts(

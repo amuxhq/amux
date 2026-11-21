@@ -401,6 +401,30 @@ final class AppModel {
         if place.host == host { place.host = nil }
     }
 
+    /// An agent the person asked to settle whose program cannot reopen its
+    /// conversation, so settling it waits for them to say yes.
+    var endingForGood: AgentKey?
+
+    /// What settling `agent` ends for good, when its program cannot reopen
+    /// the conversation; nil when a message resumes it.
+    func settleEndsForGood(_ agent: AgentKey) -> String? {
+        guard let row = row(agent) else { return nil }
+        let offered = HostId(bytes: agent.host).flatMap { stores?.hosts.host($0) }?.providers ?? []
+        if ChatWords.resumable(provider: row.card.provider, offered: offered) { return nil }
+        return ChatWords.settleEndsForGood(provider: row.card.providerName)
+    }
+
+    /// Acts as the person asked, except that settling an agent that cannot
+    /// be resumed is asked about first: settled, its conversation ends for
+    /// good.
+    func request(_ act: AgentAct, on agent: AgentKey) async {
+        if act == .close, settleEndsForGood(agent) != nil {
+            endingForGood = agent
+            return
+        }
+        await self.act(act, on: agent)
+    }
+
     /// Pins, settles, renames or deletes an agent; a refusal is said on the
     /// window.
     func act(_ act: AgentAct, on agent: AgentKey) async {

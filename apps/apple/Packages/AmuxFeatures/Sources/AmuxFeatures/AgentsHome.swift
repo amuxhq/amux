@@ -587,13 +587,17 @@ public struct AgentsHome: View {
         }
     }
 
-    /// Closes at once, or asks first when that would cut work short.
+    /// Closes at once, or asks first when that would cut work short or end
+    /// a conversation its program cannot reopen.
     private func close(_ row: FleetRow) {
         let cuts = ChatWords.closeCuts(
             name: row.name, attention: row.attention, jobs: Int(row.card.backgroundJobs),
             subAgents: Int(row.card.descendants))
-        if let cuts {
-            confirming = .close(row, cuts: cuts)
+        let offered = HostId(bytes: row.id.host).flatMap { hosts.host($0) }?.providers ?? []
+        let endsForGood = ChatWords.resumable(provider: row.card.provider, offered: offered)
+            ? nil : ChatWords.settleEndsForGood(provider: row.card.providerName)
+        if cuts != nil || endsForGood != nil {
+            confirming = .close(row, cuts: cuts, endsForGood: endsForGood)
         } else {
             actions(.close(row.id))
         }
@@ -1731,8 +1735,9 @@ struct DeleteAsking {
 }
 
 enum Confirming: Identifiable {
-    /// A close that would cut work short, with what it cuts.
-    case close(FleetRow, cuts: String)
+    /// A close that would cut work short, with what it cuts, or end for
+    /// good a conversation its program cannot reopen.
+    case close(FleetRow, cuts: String?, endsForGood: String?)
     /// A delete, with what it says goes with the workspace. A dialog is put
     /// up on one value and keeps it, so what confirming agrees to is what
     /// the dialog drew, never what the fleet says since.
@@ -1745,7 +1750,7 @@ enum Confirming: Identifiable {
 
     var id: String {
         switch self {
-        case .close(let row, _): "settle.\(row.id)"
+        case .close(let row, _, _): "settle.\(row.id)"
         case .delete(let row, _): "delete.\(row.id)"
         }
     }
@@ -1764,15 +1769,18 @@ enum Confirming: Identifiable {
 
     var title: String {
         switch self {
-        case .close(let row, _): String(localized: "Settle \(row.name)?")
+        case .close(let row, _, _): String(localized: "Settle \(row.name)?")
         case .delete(let row, _): String(localized: "Delete \(row.name)?")
         }
     }
 
     var message: String {
         switch self {
-        case .close(_, let cuts):
-            String(localized: "\(cuts) Settling stops it now. Its chat and edits stay, and a message resumes it.")
+        case .close(_, let cuts, let endsForGood?):
+            ([cuts].compactMap { $0 } + [String(localized: "Settling stops it now."), endsForGood,
+                String(localized: "Its chat and edits stay.")]).joined(separator: " ")
+        case .close(_, let cuts, nil):
+            String(localized: "\(cuts ?? "") Settling stops it now. Its chat and edits stay, and a message resumes it.")
         case .delete(let row, let warning):
             DeleteWords.message(descendants: row.card.descendants, warning: warning)
         }
@@ -1782,7 +1790,7 @@ enum Confirming: Identifiable {
     /// when this message named them.
     var confirmed: HomeAction {
         switch self {
-        case .close(let row, _): .close(row.id)
+        case .close(let row, _, _): .close(row.id)
         case .delete(let row, let warning):
             DeleteWords.discards(warning) ? .deleteDiscardingChanges(row.id) : .delete(row.id)
         }

@@ -24,6 +24,12 @@ listed so the list can only shrink. Each entry names the file, the function,
 the code it allows and why. An entry that matches nothing fails the check
 too, so the list cannot outlive the code it describes. Test modules, items and
 files are not searched.
+
+The Apple apps' Swift is searched the same way: a `Kind` case written as
+`.claudePty`, `.claudeSdk`, `.codex` or `.acp`, and a provider id written out
+as a string. Their generated values
+(`Values.swift`), tests, stories and debug catalogue are not searched: the
+first is the Rust's own definitions, and the rest build fixtures of every kind.
 """
 
 from __future__ import annotations
@@ -44,6 +50,17 @@ CRATES = [
     "crates/app-runtime",
     "crates/browser-core",
 ]
+
+# The Apple apps, whose Swift is searched too.
+SWIFT = "apps/apple"
+# What of the apps' Swift is not searched: the values generated from the
+# Rust, and what builds fixtures of every kind for tests, stories and the
+# debug catalogue.
+SWIFT_SKIPPED_FILES = {"Values.swift"}
+SWIFT_SKIPPED_DIRS = {
+    "Tests", "AmuxAppTests", "AmuxUITests", "AmuxTestSupport", "AmuxMacStories",
+    "Storybook", "Debug", ".build",
+}
 
 # Where the built-in ACP agents are listed, each by `id: "<id>"`.
 BUILT_INS = "crates/wire/src/agents.rs"
@@ -71,6 +88,17 @@ def patterns(root: Path):
     ]
 
 FN = re.compile(r"^\s*(pub(\([^)]*\))?\s+)?(const\s+)?(async\s+)?(unsafe\s+)?fn\s+(\w+)")
+SWIFT_FN = re.compile(r"\bfunc\s+(\w+)")
+
+
+def swift_patterns(root: Path):
+    ids = "|".join(re.escape(id) for id in ["claude", "codex", *built_in_ids(root)])
+    return [
+        # A case written bare (`.codex`), not a member of a type
+        # (`Palette.codex`).
+        ("a kind matched", re.compile(r"(?<![\w)\]])\.(claudePty|claudeSdk|codex|acp)\b")),
+        ("a provider named", re.compile(rf'"({ids})"')),
+    ]
 TESTS = re.compile(r"^#\[cfg\(test\)\]")
 
 # Why a decode-boundary site may know the kind.
@@ -161,6 +189,35 @@ def sources(root: Path) -> list[Path]:
     return found
 
 
+def swift_sources(root: Path) -> list[Path]:
+    """The apps' Swift sources that draw and drive an agent."""
+    apps = root / SWIFT
+    if not apps.is_dir():
+        raise SystemExit(f"client-kind-check: {SWIFT} does not exist")
+    return [
+        path
+        for path in sorted(apps.rglob("*.swift"))
+        if path.name not in SWIFT_SKIPPED_FILES
+        and not any(part in SWIFT_SKIPPED_DIRS for part in path.relative_to(apps).parts)
+    ]
+
+
+def swift_hits(path: Path, patterns):
+    """Every line of Swift that names a kind or a provider, with its
+    function."""
+    function = ""
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        if match := SWIFT_FN.search(line):
+            function = match.group(1)
+        for what, pattern in patterns:
+            if pattern.search(line):
+                yield number, function, what, stripped
+                break
+
+
 def hits(path: Path, relative: str, patterns):
     """Every line outside a test item that names a kind or a provider, with
     its function."""
@@ -195,9 +252,14 @@ def check(root: Path = ROOT) -> int:
     used = set()
     failures = []
     searched = patterns(root)
-    for path in sources(root):
+    swift = swift_patterns(root)
+    found = [
+        *((path, hits(path, path.relative_to(root).as_posix(), searched)) for path in sources(root)),
+        *((path, swift_hits(path, swift)) for path in swift_sources(root)),
+    ]
+    for path, lines in found:
         relative = path.relative_to(root).as_posix()
-        for number, function, what, code in hits(path, relative, searched):
+        for number, function, what, code in lines:
             allowed = next(
                 (
                     entry
@@ -226,7 +288,10 @@ def check(root: Path = ROOT) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"client-kind-check: ok ({len(sources(root))} files, {len(ALLOWED)} listed places)")
+    print(
+        f"client-kind-check: ok ({len(sources(root))} Rust and {len(swift_sources(root))} Swift "
+        f"files, {len(ALLOWED)} listed places)"
+    )
     return 0
 
 

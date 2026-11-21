@@ -14,7 +14,6 @@ use super::common::*;
 use super::phone::{Drawn, Launch, PhoneJourney, labelled};
 use super::phone_stories::{
     choice, open_settled, pair_by_code, photograph_running, queued, reopen, replies, send,
-    settle_from_menu,
 };
 use super::{Proved, negative_control, never_sent, phase, quoted, reflected_once};
 use crate::FAKE_ACP_AGENT;
@@ -356,6 +355,12 @@ pub(super) fn interrupt_and_queue(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
+/// What the chat says of settling an agent that cannot reopen its
+/// conversation, and where its composer stood once it has.
+const ENDS_FOR_GOOD: &str =
+    "Fake ACP Agent can’t reopen this conversation, so settling ends it for good.";
+const ENDED: &str = "Ended · Fake ACP Agent can’t reopen this conversation";
+
 pub(super) fn unresumable(journey: &mut PhoneJourney) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "shed")?;
@@ -366,7 +371,20 @@ pub(super) fn unresumable(journey: &mut PhoneJourney) -> Proved {
         |drawn| replies(drawn, DONE_HERE) == 1 && drawn.has("chat.row.turn-end"),
         "the reply",
     )?;
-    settle_from_menu(journey)?;
+    // Settling it ends the conversation for good, so the chat asks first,
+    // in those words, even with nothing under way to cut short.
+    journey.tap("chat.more")?;
+    journey.choose("Settle")?;
+    let card = journey.wait_for(&["chat.settle.card"])?;
+    let asked = card.label("chat.settle.card").to_owned();
+    if !asked.contains(ENDS_FOR_GOOD) {
+        return Err(format!(
+            "the settle card said {asked:?}, not that it ends for good"
+        ));
+    }
+    journey.screen("settle-asked", &[])?;
+    journey.tap("chat.settle.confirm")?;
+    journey.wait(|drawn| !drawn.has("chat"), "the chat closed")?;
     let settled = journey.wait_inventory(
         "shed",
         |agents| {
@@ -383,6 +401,12 @@ pub(super) fn unresumable(journey: &mut PhoneJourney) -> Proved {
         |drawn| drawn.has("chat.ended") && replies(drawn, DONE_HERE) == 1,
         "the ended chat",
     )?;
+    if drawn.label("chat.ended") != ENDED {
+        return Err(format!(
+            "the ended chat said {:?}",
+            drawn.label("chat.ended")
+        ));
+    }
     if drawn.has("chat.field") || drawn.has("chat.resume") {
         return Err("the ended chat still offers a composer or Resume".to_owned());
     }
@@ -392,9 +416,9 @@ pub(super) fn unresumable(journey: &mut PhoneJourney) -> Proved {
     leave_chat_from_settled(journey)?;
     Ok(vec![
         format!("an agent that cannot reopen a conversation answered {}", quoted(ONE_THING)),
-        "settled from its menu, the host lists it exited and settled".to_owned(),
+        "settled from its menu after the chat asked first, saying it can't reopen the conversation and settling ends it for good, the host lists it exited and settled".to_owned(),
         control,
-        "its chat on the Settled page keeps the conversation and offers no composer and no Resume, only that it has ended for good".to_owned(),
+        format!("its chat on the Settled page keeps the conversation and offers no composer and no Resume, only {}", quoted(ENDED)),
     ])
 }
 

@@ -26,8 +26,28 @@ struct AppWindow: View {
                 .onChange(of: model.stores?.newAgent.created) { _, created in
                     if let created, model.starting != nil { model.started(created) }
                 }
+                .alert(
+                    endingTitle, isPresented: endingForGood, presenting: model.endingForGood
+                ) { agent in
+                    Button("Cancel", role: .cancel) { model.endingForGood = nil }
+                    Button("Settle", role: .destructive) {
+                        model.endingForGood = nil
+                        Task { await model.act(.close, on: agent) }
+                    }
+                } message: { agent in
+                    Text(model.settleEndsForGood(agent) ?? "")
+                }
             }
         }
+    }
+
+    /// Settling an agent that cannot be resumed, asked about first.
+    private var endingForGood: Binding<Bool> {
+        Binding(get: { model.endingForGood != nil }, set: { if !$0 { model.endingForGood = nil } })
+    }
+
+    private var endingTitle: String {
+        model.endingForGood.flatMap { model.row($0)?.name }.map { "Settle \($0)?" } ?? "Settle?"
     }
 
     /// The centre: the open agent's chat, the new-agent page, or a host.
@@ -133,7 +153,7 @@ struct AppWindow: View {
             restartToUpdate: model.restartToUpdate,
             newAgent: { model.newAgent() },
             search: { model.stores?.filterFleet(FleetFilter(words: $0, only: nil)) },
-            act: { act, agent in Task { await model.act(act, on: agent) } },
+            act: { act, agent in Task { await model.request(act, on: agent) } },
             deleteWarning: { agent in
                 guard let stores = model.stores else { return .failure(RuntimeFailure("amux isn’t running")) }
                 return await stores.deleteWarning(agent).mapError { $0 }

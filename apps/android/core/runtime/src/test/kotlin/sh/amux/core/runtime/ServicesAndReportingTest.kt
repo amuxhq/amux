@@ -267,6 +267,56 @@ class ServicesAndReportingTest {
     }
 
     @Test
+    fun reportStoreRefusesCrossAccountUploadAndAppliesRedactor() = runTest {
+        val originalPng = byteArrayOf(10, 20, 30, 40)
+        val redactedPng = byteArrayOf(99, 98, 97)
+        val capture = ReportCapture(
+            frame = FrozenFrame(png = originalPng, widthDp = 400.0, heightDp = 800.0, scale = 2.0),
+            dump = CompletableDeferred(Result.success(File("/tmp/amux-dump-a"))),
+            route = "chat",
+            account = AccountId("account-a"),
+            profileId = "profile-a",
+        )
+        val store = ReportStore()
+        assertTrue(store.offer { capture })
+        store.accept()
+        store.mark(ReportMark(10.0, 20.0, 80.0, 40.0, note = "secret", redact = true))
+
+        val uploads = mutableListOf<ReportUpload>()
+        val submitter = ReportSubmitting { upload ->
+            uploads.add(upload)
+            Result.success(ReportSent(reportPath = "/saved/r1", id = "rep-1", receivedAtMs = 100L, notSent = ""))
+        }
+
+        // Switching to account-b must refuse uploading account-a's capture.
+        store.send(
+            submitter = submitter,
+            account = AccountId("account-b"),
+            build = "0.10.0",
+            redactor = { _, _ -> redactedPng },
+        )
+        assertTrue(store.state.value.sending is ReportSending.Failed)
+        assertTrue(uploads.isEmpty())
+
+        // Submitting under the original account applies redaction and uploads redacted bytes.
+        var redactedMarksSeen: List<ReportMark> = emptyList()
+        store.send(
+            submitter = submitter,
+            account = AccountId("account-a"),
+            build = "0.10.0",
+            redactor = { _, marks ->
+                redactedMarksSeen = marks
+                redactedPng
+            },
+        )
+        assertTrue(store.state.value.sending is ReportSending.Sent)
+        assertEquals(1, uploads.size)
+        assertEquals(1, redactedMarksSeen.size)
+        assertTrue(redactedMarksSeen.single().redact)
+        assertTrue(uploads.single().frame.contentEquals(redactedPng))
+    }
+
+    @Test
     fun stubBillingAndPushAccountWantedDefaults() = runTest {
         val paywall = PaywallStore()
         paywall.load(StubBillingStoreFront())

@@ -87,9 +87,10 @@ class PaywallStore(
         try {
             val loaded = store.plans()
             _state.update { current ->
+                val keepEntitled = current.phase is Phase.Entitled || current.entitled
                 current.copy(
                     plans = loaded,
-                    phase = if (loaded.isEmpty()) {
+                    phase = if (loaded.isEmpty() && !keepEntitled) {
                         Phase.Failed("No subscription plans are available right now.")
                     } else {
                         current.phase
@@ -97,7 +98,13 @@ class PaywallStore(
                 )
             }
         } catch (e: StoreException) {
-            _state.update { it.copy(phase = phaseAfter(e.error)) }
+            _state.update { current ->
+                if (current.phase is Phase.Entitled || current.entitled) {
+                    current
+                } else {
+                    current.copy(phase = phaseAfter(e.error))
+                }
+            }
         }
     }
 
@@ -203,6 +210,7 @@ class PaywallStore(
                     if (current.phase != Phase.Buying) Phase.Entitled(entitlement.grant) else current.phase
                 }
                 current.phase == Phase.Confirming -> Phase.Unconfirmed(Unconfirmed.SwitchingOn)
+                current.phase is Phase.Entitled -> Phase.Ready
                 else -> current.phase
             }
             current.copy(entitlement = entitlement, phase = nextPhase)

@@ -35,6 +35,7 @@ object ReportAssembly {
         gitSha: String = "",
         createdAtMs: Long = System.currentTimeMillis(),
         dump: Result<File>,
+        framePng: ByteArray = capture.frame.png,
     ): ReportUpload {
         val path: String
         val dumpAbsent: String?
@@ -56,8 +57,9 @@ object ReportAssembly {
                 gitSha = gitSha,
                 createdAtMs = createdAtMs,
                 dumpAbsent = dumpAbsent,
+                framePresent = framePng.isNotEmpty(),
             ),
-            frame = capture.frame.png,
+            frame = framePng,
             path = path,
         )
     }
@@ -80,6 +82,7 @@ object ReportAssembly {
         gitSha: String,
         createdAtMs: Long,
         dumpAbsent: String?,
+        framePresent: Boolean = capture.frame.png.isNotEmpty(),
     ): ByteArray {
         val detailLines = listOfNotNull(capture.route, capture.runtimeFailure)
         val detailElement: JsonElement = if (detailLines.isEmpty()) {
@@ -88,7 +91,7 @@ object ReportAssembly {
             JsonPrimitive(detailLines.joinToString("\n"))
         }
 
-        val framePart: JsonElement = if (capture.frame.png.isNotEmpty()) {
+        val framePart: JsonElement = if (framePresent) {
             JsonPrimitive("present")
         } else {
             absentPart("the screen frame could not be captured")

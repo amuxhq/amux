@@ -1,5 +1,6 @@
 package sh.amux.core.runtime
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -260,12 +261,23 @@ class NewAgentStore(
     val snapshot: NewAgentState
         get() = _state.value
 
+    private data class UnfilteredListing(
+        val repositories: List<Directory>,
+        val recent: List<Directory>,
+        val history: List<Directory>,
+        val capped: Boolean,
+    )
+
     private var worked: Map<HostId, List<Directory>> = emptyMap()
+    private var unfilteredListing: UnfilteredListing? = null
     private var directoryGeneration: Int = 0
     private var offerGeneration: Int = 0
     private val offerAsked: MutableMap<NewAgentProvider, Int> = mutableMapOf()
+    private val pinGenerations: MutableMap<String, Int> = mutableMapOf()
+    private var pinGenerationCounter: Int = 0
     private var machineOnline: Boolean? = null
     private var providerPicked: Boolean = false
+    private var providerSeeded: Boolean = false
     private var directoryJob: Job? = null
     private var searchJob: Job? = null
     private val offerJobs: MutableMap<NewAgentProvider, Job> = mutableMapOf()
@@ -286,9 +298,9 @@ class NewAgentStore(
         val hostView = chosenHost?.let { id -> hosts.firstOrNull { it.id == id } }
         machineOnline = hostView?.online
         providerPicked = false
-        directoryGeneration += 1
-        offerGeneration += 1
-        offerAsked.clear()
+        providerSeeded = false
+        unfilteredListing = null
+        pinGenerations.clear()
 
         _state.value = NewAgentState(
             hosts = hosts,
@@ -310,7 +322,8 @@ class NewAgentStore(
     /**
      * Updates the known host list while the screen is open: refreshes the
      * selected host's `claudeKind`, clears transient unreachable errors when
-     * the host comes back online, and auto-selects a ready host if none is
+     * the host comes back online, reloads missing or failed directories and
+     * catalogues on reconnect, and auto-selects a ready host if none is
      * chosen yet.
      */
     fun syncHosts(hosts: List<HostView>) {
@@ -340,12 +353,32 @@ class NewAgentStore(
         }
     }
 
-    /** Records whether the selected host is reachable now, clearing stale offline failures on recovery. */
+    /**
+     * Records whether the selected host is reachable now, clearing stale
+     * offline failures and retrying missing or failed directory/catalogue
+     * fetches when the host transitions back online.
+     */
     fun machineReached(online: Boolean) {
         val wasOffline = machineOnline == false
         machineOnline = online
-        if (online && wasOffline && _state.value.failure != null) {
+        if (!online || !wasOffline) return
+
+        val current = _state.value
+        if (current.failure != null) {
             _state.update { it.copy(failure = null) }
+        }
+        val host = current.machine ?: return
+        if (source == null) return
+
+        if (current.listing != ListingState.Ready) {
+            val query = if (current.searchesTheMachine) current.query.trim() else ""
+            fetchDirectories(host, query = query, quiet = false)
+        }
+        for (provider in current.availableProviders) {
+            val offer = current.offers[provider]
+            if (offer !is OfferState.Offered) {
+                fetchOffer(host, provider)
+            }
         }
     }
 
@@ -355,24 +388,30 @@ class NewAgentStore(
     }
 
     /**
-     * Remembers recent directories per host and the most recently active
-     * provider from the fleet until the person picks a provider explicitly.
+     * Remembers recent directories per host and seeds the initial provider
+     * from fleet activity once, before the person picks a provider or edits
+     * any provider-specific setting.
      */
     fun remember(rows: List<FleetRow>) {
         val sorted = rows.sortedByDescending { it.lastActivityMs }
-        if (!providerPicked) {
+        if (!providerPicked && !providerSeeded) {
             val latest = sorted
                 .firstOrNull { NewAgentProvider.fromKind(it.card.kind) != null }
                 ?.let { NewAgentProvider.fromKind(it.card.kind) }
             if (latest != null) {
+                providerSeeded = true
                 val allowed = _state.value.availableProviders
                 if (latest in allowed) {
                     _state.update { state ->
-                        val cat = (state.offers[latest] as? OfferState.Offered)?.catalogue
-                        state.copy(
-                            provider = latest,
-                            settings = cat?.let { bridge.newAgentSettings(it, state.chosen) },
-                        )
+                        if (state.chosen != NewAgentChoices()) {
+                            state
+                        } else {
+                            val cat = (state.offers[latest] as? OfferState.Offered)?.catalogue
+                            state.copy(
+                                provider = latest,
+                                settings = cat?.let { bridge.newAgentSettings(it, state.chosen) },
+                            )
+                        }
                     }
                 }
             }
@@ -397,9 +436,8 @@ class NewAgentStore(
         cancelInFlight()
         val hostView = _state.value.hosts.firstOrNull { it.id == host }
         machineOnline = hostView?.online
-        directoryGeneration += 1
-        offerGeneration += 1
-        offerAsked.clear()
+        unfilteredListing = null
+        pinGenerations.clear()
 
         _state.update { state ->
             state.copy(
@@ -467,7 +505,8 @@ class NewAgentStore(
 
     /**
      * Updates the folder search query immediately for local filtering and
-     * triggers a debounced host search when the host's listing was capped.
+     * triggers a debounced host search when the host's unfiltered listing was
+     * capped. Clearing the query restores the cached unfiltered listing.
      */
     fun updateQuery(query: String) {
         val wasSearchingMachine = _state.value.searchesTheMachine
@@ -476,6 +515,7 @@ class NewAgentStore(
         if (source == null) return
 
         searchJob?.cancel()
+        searchJob = null
         val trimmed = query.trim()
         if (_state.value.searchesTheMachine) {
             searchJob = scope.launch {
@@ -485,8 +525,24 @@ class NewAgentStore(
                 fetchDirectories(host, query = trimmed, quiet = true)
             }
         } else if (wasSearchingMachine && trimmed.isEmpty()) {
-            searchJob = scope.launch {
-                fetchDirectories(host, query = "", quiet = true)
+            directoryJob?.cancel()
+            directoryJob = null
+            directoryGeneration += 1
+            val cached = unfilteredListing
+            if (cached != null) {
+                _state.update { state ->
+                    state.copy(
+                        repositories = cached.repositories,
+                        recent = cached.recent,
+                        history = cached.history,
+                        capped = cached.capped,
+                        listing = ListingState.Ready,
+                    )
+                }
+            } else {
+                searchJob = scope.launch {
+                    fetchDirectories(host, query = "", quiet = true)
+                }
             }
         }
     }
@@ -494,21 +550,39 @@ class NewAgentStore(
     /** Optimistically pins or unpins [directory] and sends the change to the chosen host. */
     fun pinFolder(directory: Directory, pinned: Boolean) {
         val host = _state.value.machine ?: return
+        val path = directory.path
         val before = _state.value
+        val wasInRepos = before.repositories.any { it.path == path }
+        val wasInRecent = before.recent.any { it.path == path }
+        val wasInHistory = before.history.any { it.path == path }
+        val priorEntry = before.repositories.firstOrNull { it.path == path }
+            ?: before.recent.firstOrNull { it.path == path }
+            ?: before.history.firstOrNull { it.path == path }
+            ?: directory
+        pinGenerationCounter += 1
+        val pinGen = pinGenerationCounter
+        pinGenerations[path] = pinGen
+
         applyPinOptimistically(directory, pinned)
         val runtimeSource = source ?: return
         scope.launch {
-            val result = runtimeSource.pinFolder(host, directory.path, pinned)
+            val result = try {
+                runtimeSource.pinFolder(host, path, pinned)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Result.failure(RuntimeFailure(t.failureDescription))
+            }
             result.onFailure { error ->
-                if (_state.value.machine == host) {
-                    _state.update { current ->
-                        current.copy(
-                            repositories = before.repositories,
-                            recent = before.recent,
-                            history = before.history,
-                            failure = error.failureDescription,
-                        )
-                    }
+                if (_state.value.machine == host && pinGenerations[path] == pinGen) {
+                    rollbackPinForPath(
+                        entry = priorEntry,
+                        attemptedPinned = pinned,
+                        wasInRepos = wasInRepos,
+                        wasInRecent = wasInRecent,
+                        wasInHistory = wasInHistory,
+                        failure = error.failureDescription,
+                    )
                 }
             }
         }
@@ -516,6 +590,7 @@ class NewAgentStore(
 
     /** Applies a model, effort, permission, or mode pick through the shared Rust rules. */
     fun pick(pick: NewAgentPick) {
+        providerPicked = true
         val current = _state.value
         val offered = current.catalogue ?: EMPTY_CATALOGUE
         val next = bridge.newAgentPick(offered, current.chosen, pick) ?: return
@@ -551,6 +626,9 @@ class NewAgentStore(
         _state.update { it.copy(starting = true, failure = null) }
         val result = try {
             runtimeSource.createAgent(req)
+        } catch (e: CancellationException) {
+            _state.update { it.copy(starting = false) }
+            throw e
         } catch (t: Throwable) {
             Result.failure(RuntimeFailure(t.failureDescription))
         }
@@ -608,15 +686,18 @@ class NewAgentStore(
         directoryJob = scope.launch {
             val result = try {
                 runtimeSource.directories(host, query, DIRECTORY_LIMIT)
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 Result.failure(RuntimeFailure(t.failureDescription))
             }
-            applyDirectories(host, result, generation = gen)
+            applyDirectories(host, query = query, result = result, generation = gen)
         }
     }
 
     private fun applyDirectories(
         host: HostId,
+        query: String,
         result: Result<Directories>,
         generation: Int,
     ) {
@@ -634,7 +715,18 @@ class NewAgentStore(
                 val shownPaths = repoPaths + filteredRecent.map { it.path }
                 val filteredHistory = dirs.history.orEmpty().filter { it.path !in shownPaths }
                 val totalCount = dirs.recent.size + dirs.repositories.size + dirs.history.orEmpty().size
-                val isCapped = totalCount >= DIRECTORY_LIMIT
+                val nextCapped = if (query.isEmpty()) {
+                    val isCapped = totalCount >= DIRECTORY_LIMIT
+                    unfilteredListing = UnfilteredListing(
+                        repositories = repos,
+                        recent = filteredRecent,
+                        history = filteredHistory,
+                        capped = isCapped,
+                    )
+                    isCapped
+                } else {
+                    unfilteredListing?.capped ?: _state.value.capped
+                }
 
                 _state.update { state ->
                     val nextDir = if (state.directory.isEmpty()) {
@@ -646,13 +738,17 @@ class NewAgentStore(
                         repositories = repos,
                         recent = filteredRecent,
                         history = filteredHistory,
-                        capped = isCapped,
+                        capped = nextCapped,
                         listing = ListingState.Ready,
                         directory = nextDir,
                     )
                 }
             },
             onFailure = {
+                if (query.isEmpty()) {
+                    unfilteredListing = null
+                }
+                val preservedCapped = if (query.isEmpty()) false else (unfilteredListing?.capped ?: _state.value.capped)
                 _state.update { state ->
                     val nextDir = if (state.directory.isEmpty()) {
                         prefillCandidate?.path.orEmpty()
@@ -663,7 +759,7 @@ class NewAgentStore(
                         repositories = emptyList(),
                         recent = fallback,
                         history = emptyList(),
-                        capped = false,
+                        capped = preservedCapped,
                         listing = ListingState.Unavailable,
                         directory = nextDir,
                     )
@@ -690,6 +786,8 @@ class NewAgentStore(
         offerJobs[provider] = scope.launch {
             val result = try {
                 runtimeSource.hostCatalogue(host, provider.wire)
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 Result.failure(RuntimeFailure(t.failureDescription))
             }
@@ -727,34 +825,123 @@ class NewAgentStore(
     private fun applyPinOptimistically(directory: Directory, pinned: Boolean) {
         val path = directory.path
         _state.update { state ->
-            if (pinned) {
-                val nextRepos = if (state.isPinned(path)) {
-                    state.repositories
-                } else {
-                    state.repositories + directory
-                }
-                state.copy(
-                    repositories = nextRepos,
-                    recent = state.recent.filterNot { it.path == path },
-                    history = state.history.filterNot { it.path == path },
-                    failure = null,
-                )
-            } else {
-                val nextRecent = if (state.recent.any { it.path == path }) {
-                    state.recent
-                } else {
-                    listOf(directory) + state.recent
-                }
-                state.copy(
-                    repositories = state.repositories.filterNot { it.path == path },
-                    recent = nextRecent,
-                    failure = null,
-                )
+            val (nextRepos, nextRecent, nextHistory) = mutatePinLists(
+                repositories = state.repositories,
+                recent = state.recent,
+                history = state.history,
+                directory = directory,
+                pinned = pinned,
+            )
+            state.copy(
+                repositories = nextRepos,
+                recent = nextRecent,
+                history = nextHistory,
+                failure = null,
+            )
+        }
+        unfilteredListing?.let { cached ->
+            val (nextRepos, nextRecent, nextHistory) = mutatePinLists(
+                repositories = cached.repositories,
+                recent = cached.recent,
+                history = cached.history,
+                directory = directory,
+                pinned = pinned,
+            )
+            unfilteredListing = cached.copy(
+                repositories = nextRepos,
+                recent = nextRecent,
+                history = nextHistory,
+            )
+        }
+    }
+
+    private fun rollbackPinForPath(
+        entry: Directory,
+        attemptedPinned: Boolean,
+        wasInRepos: Boolean,
+        wasInRecent: Boolean,
+        wasInHistory: Boolean,
+        failure: String,
+    ) {
+        fun restoreLists(
+            repositories: List<Directory>,
+            recent: List<Directory>,
+            history: List<Directory>,
+        ): Triple<List<Directory>, List<Directory>, List<Directory>> {
+            val path = entry.path
+            val nextRepos = when {
+                wasInRepos && repositories.none { it.path == path } -> repositories + entry
+                !wasInRepos && attemptedPinned -> repositories.filterNot { it.path == path }
+                else -> repositories
             }
+            val nextRecent = when {
+                wasInRecent && recent.none { it.path == path } -> listOf(entry) + recent
+                !wasInRecent && !attemptedPinned -> recent.filterNot { it.path == path }
+                else -> recent
+            }
+            val nextHistory = when {
+                wasInHistory && history.none { it.path == path } -> listOf(entry) + history
+                else -> history
+            }
+            return Triple(nextRepos, nextRecent, nextHistory)
+        }
+
+        _state.update { current ->
+            val (nextRepos, nextRecent, nextHistory) = restoreLists(
+                current.repositories,
+                current.recent,
+                current.history,
+            )
+            current.copy(
+                repositories = nextRepos,
+                recent = nextRecent,
+                history = nextHistory,
+                failure = failure,
+            )
+        }
+        unfilteredListing?.let { cached ->
+            val (nextRepos, nextRecent, nextHistory) = restoreLists(
+                cached.repositories,
+                cached.recent,
+                cached.history,
+            )
+            unfilteredListing = cached.copy(
+                repositories = nextRepos,
+                recent = nextRecent,
+                history = nextHistory,
+            )
+        }
+    }
+
+    private fun mutatePinLists(
+        repositories: List<Directory>,
+        recent: List<Directory>,
+        history: List<Directory>,
+        directory: Directory,
+        pinned: Boolean,
+    ): Triple<List<Directory>, List<Directory>, List<Directory>> {
+        val path = directory.path
+        return if (pinned) {
+            val nextRepos = if (repositories.any { it.path == path }) repositories else repositories + directory
+            Triple(
+                nextRepos,
+                recent.filterNot { it.path == path },
+                history.filterNot { it.path == path },
+            )
+        } else {
+            val nextRecent = if (recent.any { it.path == path }) recent else listOf(directory) + recent
+            Triple(
+                repositories.filterNot { it.path == path },
+                nextRecent,
+                history,
+            )
         }
     }
 
     private fun cancelInFlight() {
+        directoryGeneration += 1
+        offerGeneration += 1
+        offerAsked.clear()
         directoryJob?.cancel()
         directoryJob = null
         searchJob?.cancel()

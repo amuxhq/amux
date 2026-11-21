@@ -566,4 +566,175 @@ class NewAgentStoreTest {
         assertNotNull(store.snapshot.created)
         store.close()
     }
+
+    @Test
+    fun cappedHostContinuesRemoteSearchAcrossShortResultsAndRestoresUnfilteredOnClear() = runTest {
+        val cappedRepos = List(NewAgentStore.DIRECTORY_LIMIT) { i ->
+            Directory(path = "/src/repo-$i", name = "repo-$i")
+        }
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, query, _ ->
+                if (query.isEmpty()) {
+                    Result.success(Directories(recent = emptyList(), repositories = cappedRepos))
+                } else {
+                    Result.success(
+                        Directories(
+                            recent = emptyList(),
+                            repositories = listOf(Directory(path = "/src/match-$query", name = "match-$query")),
+                        ),
+                    )
+                }
+            }
+            catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
+        }
+        val store = NewAgentStore(source = source, scope = this, searchDebounceMs = 100L)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        advanceUntilIdle()
+        assertTrue(store.snapshot.capped)
+        assertEquals(NewAgentStore.DIRECTORY_LIMIT, store.snapshot.repositories.size)
+
+        // First search returns < 200 matches; capped must remain true.
+        store.updateQuery("amux")
+        advanceTimeBy(101L)
+        advanceUntilIdle()
+        assertEquals(listOf("match-amux"), store.snapshot.repositories.map { it.name })
+        assertTrue(store.snapshot.capped)
+        assertTrue(store.snapshot.searchesTheMachine)
+
+        // Second search must still query the host remotely.
+        store.updateQuery("other")
+        advanceTimeBy(101L)
+        advanceUntilIdle()
+        assertEquals(listOf("match-other"), store.snapshot.repositories.map { it.name })
+        assertEquals(listOf("", "amux", "other"), source.directoryQueries.map { it.second })
+
+        // Clearing query restores the full cached unfiltered listing.
+        store.updateQuery("")
+        advanceUntilIdle()
+        assertEquals(NewAgentStore.DIRECTORY_LIMIT, store.snapshot.repositories.size)
+        assertEquals("repo-0", store.snapshot.repositories.first().name)
+        assertTrue(store.snapshot.capped)
+        store.close()
+    }
+
+    @Test
+    fun offlineToOnlineTransitionReloadsMissingDirectoriesAndCatalogues() = runTest {
+        var online = false
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, _, _ ->
+                if (online) Result.success(sampleDirectories) else Result.failure(RuntimeFailure("offline"))
+            }
+            catalogueHandler = { _, provider ->
+                if (!online) {
+                    Result.failure(RuntimeFailure("offline"))
+                } else if (provider == Provider.Codex) {
+                    Result.success(codexCatalogue)
+                } else {
+                    Result.success(claudeCatalogue)
+                }
+            }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+
+        // Open explicitly targeting an offline host: no initial fetches succeed.
+        store.open(
+            hosts = listOf(hostView(deskId, "desk", reach = Reach.Offline(Offline.Plain))),
+            initialHost = deskId,
+        )
+        advanceUntilIdle()
+        assertEquals(ListingState.None, store.snapshot.listing)
+        assertTrue(store.snapshot.offers.isEmpty())
+
+        // Host comes online -> store automatically fetches directories and catalogues.
+        online = true
+        store.syncHosts(listOf(hostView(deskId, "desk", reach = Reach.Online(RouteKind.Direct))))
+        advanceUntilIdle()
+        assertEquals(ListingState.Ready, store.snapshot.listing)
+        assertEquals("/src/relay", store.snapshot.directory)
+        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers[NewAgentProvider.Claude])
+        assertEquals(OfferState.Offered(codexCatalogue), store.snapshot.offers[NewAgentProvider.Codex])
+        store.close()
+    }
+
+    @Test
+    fun editingProviderSettingsLocksProviderAgainstSubsequentFleetUpdates() = runTest {
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
+            catalogueHandler = { _, provider ->
+                if (provider == Provider.Codex) Result.success(codexCatalogue) else Result.success(claudeCatalogue)
+            }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        advanceUntilIdle()
+        assertEquals(NewAgentProvider.Claude, store.snapshot.provider)
+
+        // Edit a Claude setting without tapping the provider picker.
+        store.pick(NewAgentPick.Model("claude-sonnet"))
+        assertEquals("claude-sonnet", store.snapshot.model)
+
+        // A newer Codex fleet row must not hijack the draft mid-edit.
+        store.remember(
+            listOf(fleetRow(deskId, "codex-1", "/src/codex", kind = Kind.Codex, phaseSinceMs = 99_999L)),
+        )
+        assertEquals(NewAgentProvider.Claude, store.snapshot.provider)
+        assertEquals("claude-sonnet", store.snapshot.model)
+        store.close()
+    }
+
+    @Test
+    fun concurrentPinFailureRollsBackOnlyTheFailedPath() = runTest {
+        val firstGate = CompletableDeferred<Result<Unit>>()
+        val secondGate = CompletableDeferred<Result<Unit>>()
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
+            catalogueHandler = { _, _ -> Result.success(claudeCatalogue) }
+            pinHandler = { _, path, _ ->
+                if (path == "/src/notes") firstGate.await() else secondGate.await()
+            }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        advanceUntilIdle()
+
+        val notes = Directory(path = "/src/notes", name = "notes")
+        val scratch = Directory(path = "/src/scratch", name = "scratch")
+
+        store.pinFolder(notes, pinned = true)
+        store.pinFolder(scratch, pinned = true)
+        runCurrent()
+        assertTrue(store.snapshot.isPinned("/src/notes"))
+        assertTrue(store.snapshot.isPinned("/src/scratch"))
+
+        // Second pin succeeds, then first pin fails.
+        secondGate.complete(Result.success(Unit))
+        runCurrent()
+        firstGate.complete(Result.failure(RuntimeFailure("notes read-only")))
+        advanceUntilIdle()
+
+        assertFalse(store.snapshot.isPinned("/src/notes"))
+        assertTrue(store.snapshot.isPinned("/src/scratch"))
+        assertTrue(store.snapshot.history.any { it.path == "/src/notes" })
+        assertEquals("notes read-only", store.snapshot.failure)
+        store.close()
+    }
+
+    @Test
+    fun closeCancelsInFlightRequestsWithoutWritingUnavailableState() = runTest {
+        val dirsGate = CompletableDeferred<Result<Directories>>()
+        val catGate = CompletableDeferred<Result<Catalogue>>()
+        val source = FakeNewAgentSource().apply {
+            directoriesHandler = { _, _, _ -> dirsGate.await() }
+            catalogueHandler = { _, _ -> catGate.await() }
+        }
+        val store = NewAgentStore(source = source, scope = this)
+        store.open(hosts = listOf(hostView(deskId, "desk")))
+        runCurrent()
+        assertEquals(ListingState.Asking, store.snapshot.listing)
+
+        store.close()
+        advanceUntilIdle()
+        assertEquals(ListingState.Asking, store.snapshot.listing)
+        assertEquals(OfferState.Asking, store.snapshot.offers[NewAgentProvider.Claude])
+    }
 }

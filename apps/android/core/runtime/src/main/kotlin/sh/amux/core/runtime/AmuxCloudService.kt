@@ -52,6 +52,7 @@ data class CloudEndpoint(
         }
 
     val supportUrl: String get() = "$normalizedBase/support"
+    val privacyUrl: String get() = "$normalizedBase/privacy"
     val accountPageUrl: String get() = "$normalizedBase/account"
     val authorizeUrl: String get() = "$normalizedBase/connect/authorize"
     val tokenUrl: String get() = "$normalizedBase/connect/token"
@@ -145,7 +146,7 @@ class OkHttpCloudTransport(
  * OAuth PKCE contract (`docs/CLOUD.md`).
  */
 class AmuxCloudService(
-    val endpoint: CloudEndpoint = CloudEndpoint.Production,
+    override val endpoint: CloudEndpoint = CloudEndpoint.Production,
     private val transport: CloudTransport = OkHttpCloudTransport(),
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) : CloudService {

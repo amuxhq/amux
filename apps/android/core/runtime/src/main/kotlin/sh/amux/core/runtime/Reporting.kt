@@ -1,12 +1,21 @@
 package sh.amux.core.runtime
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import sh.amux.values.ReportSent
 
@@ -49,9 +58,12 @@ data class ReportCapture(
     val dump: Deferred<Result<File>>? = null,
     val route: String? = null,
     val runtimeFailure: String? = null,
+    val account: AccountId? = null,
+    val profileId: String? = null,
+    val framePng: Deferred<ByteArray>? = null,
 )
 
-/** One rectangle drawn on the frozen frame with an optional note. */
+/** One rectangle drawn on the frozen frame with an optional note and redaction flag. */
 @Serializable
 data class ReportMark(
     val x: Double,
@@ -59,7 +71,66 @@ data class ReportMark(
     val width: Double,
     val height: Double,
     val note: String = "",
+    val redact: Boolean = false,
 )
+
+/**
+ * Produces the uploaded PNG bytes with any redacted [ReportMark] rectangles
+ * obscured by opaque fills.
+ */
+fun interface ReportImageRedactor {
+    suspend fun redact(frame: FrozenFrame, marks: List<ReportMark>): ByteArray
+}
+
+/**
+ * Default Android [ReportImageRedactor] that burns solid black rectangles over
+ * every redacted [ReportMark] on a background dispatcher.
+ */
+object BitmapReportImageRedactor : ReportImageRedactor {
+    override suspend fun redact(frame: FrozenFrame, marks: List<ReportMark>): ByteArray {
+        val redactedMarks = marks.filter { it.redact }
+        if (redactedMarks.isEmpty() || frame.png.isEmpty()) return frame.png
+        return withContext(Dispatchers.Default) {
+            val decoded = BitmapFactory.decodeByteArray(frame.png, 0, frame.png.size)
+                ?: throw IllegalStateException("Could not decode screenshot to apply redactions.")
+            val mutable = try {
+                decoded.copy(Bitmap.Config.ARGB_8888, true)
+                    ?: throw IllegalStateException("Could not allocate bitmap to apply redactions.")
+            } finally {
+                decoded.recycle()
+            }
+            try {
+                val canvas = Canvas(mutable)
+                val paint = Paint().apply {
+                    style = Paint.Style.FILL
+                    color = Color.BLACK
+                    isAntiAlias = false
+                }
+                val scaleX = if (frame.widthDp > 0.0) mutable.width / frame.widthDp else frame.scale
+                val scaleY = if (frame.heightDp > 0.0) mutable.height / frame.heightDp else frame.scale
+                val maxW = mutable.width.toFloat()
+                val maxH = mutable.height.toFloat()
+                for (mark in redactedMarks) {
+                    val left = (mark.x * scaleX).toFloat().coerceIn(0f, maxW)
+                    val top = (mark.y * scaleY).toFloat().coerceIn(0f, maxH)
+                    val right = ((mark.x + mark.width) * scaleX).toFloat().coerceIn(0f, maxW)
+                    val bottom = ((mark.y + mark.height) * scaleY).toFloat().coerceIn(0f, maxH)
+                    if (right > left && bottom > top) {
+                        canvas.drawRect(left, top, right, bottom, paint)
+                    }
+                }
+                ByteArrayOutputStream().use { out ->
+                    if (!mutable.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                        throw IllegalStateException("Could not encode redacted screenshot.")
+                    }
+                    out.toByteArray()
+                }
+            } finally {
+                mutable.recycle()
+            }
+        }
+    }
+}
 
 /** What the person has written about the frozen frame so far. */
 data class ReportDraft(
@@ -162,6 +233,18 @@ class ReportStore(
         _state.value = ReportState()
     }
 
+    fun updateFramePng(target: ReportCapture, png: ByteArray) {
+        if (png.isEmpty()) return
+        _state.update { current ->
+            val active = current.capture ?: return@update current
+            if (active !== target && active.framePng !== target.framePng) return@update current
+            if (active.frame.png.isNotEmpty()) return@update current
+            current.copy(
+                capture = active.copy(frame = active.frame.copy(png = png)),
+            )
+        }
+    }
+
     fun setNote(note: String) {
         _state.update { it.copy(draft = it.draft.copy(note = note)) }
     }
@@ -175,6 +258,24 @@ class ReportStore(
             if (index !in current.draft.marks.indices) return@update current
             val updated = current.draft.marks.toMutableList()
             updated[index] = updated[index].copy(note = text)
+            current.copy(draft = current.draft.copy(marks = updated))
+        }
+    }
+
+    fun setMarkRedacted(index: Int, redacted: Boolean) {
+        _state.update { current ->
+            if (index !in current.draft.marks.indices) return@update current
+            val updated = current.draft.marks.toMutableList()
+            updated[index] = updated[index].copy(redact = redacted)
+            current.copy(draft = current.draft.copy(marks = updated))
+        }
+    }
+
+    fun toggleMarkRedacted(index: Int) {
+        _state.update { current ->
+            if (index !in current.draft.marks.indices) return@update current
+            val updated = current.draft.marks.toMutableList()
+            updated[index] = updated[index].copy(redact = !updated[index].redact)
             current.copy(draft = current.draft.copy(marks = updated))
         }
     }
@@ -194,9 +295,10 @@ class ReportStore(
         build: String,
         gitSha: String = "",
         nowMs: Long = System.currentTimeMillis(),
+        redactor: ReportImageRedactor = BitmapReportImageRedactor,
     ) {
         val current = _state.value
-        if (current.capture == null) return
+        val capture = current.capture ?: return
         if (current.sending is ReportSending.Sending || current.sending is ReportSending.Sent) {
             return
         }
@@ -205,6 +307,16 @@ class ReportStore(
                 it.copy(
                     sending = ReportSending.Failed(
                         "Sign in to the account this report is about, then send it again.",
+                    ),
+                )
+            }
+            return
+        }
+        if (capture.account != null && capture.account != account) {
+            _state.update {
+                it.copy(
+                    sending = ReportSending.Failed(
+                        "This report was captured under a different account. Switch back or dismiss it to start a new one.",
                     ),
                 )
             }
@@ -220,7 +332,14 @@ class ReportStore(
             }
             return
         }
-        val upload = assembled(build = build, gitSha = gitSha, nowMs = nowMs) ?: return
+        val upload = try {
+            assembled(build = build, gitSha = gitSha, nowMs = nowMs, redactor = redactor)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            _state.update { it.copy(sending = ReportSending.Failed(t.failureDescription)) }
+            return
+        } ?: return
         val identity = captureId
         _state.update { it.copy(sealed = upload, sending = ReportSending.Sending) }
 
@@ -254,18 +373,36 @@ class ReportStore(
         build: String,
         gitSha: String = "",
         nowMs: Long = System.currentTimeMillis(),
+        redactor: ReportImageRedactor = BitmapReportImageRedactor,
     ): ReportUpload? {
         val current = _state.value
         current.sealed?.let { return it }
         val capture = current.capture ?: return null
+        val rawPng = if (capture.frame.png.isNotEmpty()) {
+            capture.frame.png
+        } else {
+            capture.framePng?.await() ?: ByteArray(0)
+        }
+        val resolvedFrame = if (rawPng !== capture.frame.png) {
+            capture.frame.copy(png = rawPng)
+        } else {
+            capture.frame
+        }
+        val redactedMarks = current.draft.marks.filter { it.redact }
+        val finalPng = if (redactedMarks.isNotEmpty() && resolvedFrame.png.isNotEmpty()) {
+            redactor.redact(resolvedFrame, redactedMarks)
+        } else {
+            resolvedFrame.png
+        }
         val dump = ReportAssembly.dumped(capture.dump)
         return ReportAssembly.upload(
-            capture = capture,
+            capture = capture.copy(frame = resolvedFrame),
             draft = current.draft,
             build = build,
             gitSha = gitSha,
             createdAtMs = nowMs,
             dump = dump,
+            framePng = finalPng,
         )
     }
 }

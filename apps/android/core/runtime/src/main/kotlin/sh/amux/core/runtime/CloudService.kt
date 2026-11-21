@@ -10,6 +10,10 @@ import kotlinx.serialization.Serializable
  * implementation cleanly.
  */
 interface CloudService {
+    /** The service endpoint this client talks to (used to derive support/privacy/account links). */
+    val endpoint: CloudEndpoint
+        get() = CloudEndpoint.Production
+
     @Throws(CloudException::class)
     suspend fun signIn(intent: SignInIntent, presenter: WebAuthPresenter): SignedInAccount
 

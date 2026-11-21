@@ -1341,9 +1341,7 @@ impl State {
         } else {
             output
         };
-        for write in tool.take_result(content, result) {
-            emit.effect(write);
-        }
+        tool.take_result(result);
         // A question nothing here closed: Claude's own record says how.
         if tool.question && tool.asked.is_none() {
             tool.asked = Some(match result.map(AnsweredResult::deserialize) {

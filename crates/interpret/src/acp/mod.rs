@@ -199,20 +199,24 @@ pub enum ToolNaming {
 }
 
 impl ToolNaming {
-    /// The tool of amux's own server that a call by this name runs, if it
-    /// runs one.
+    /// The tool of amux's own server that a call by this name runs without
+    /// asking, if it runs one.
     fn amux_tool(self, name: &str) -> Option<&'static str> {
-        let server = AMUX_TOOL_SERVER;
+        AMUX_TOOLS_UNASKED
+            .iter()
+            .copied()
+            .find(|tool| self.runs_amux(name, tool))
+    }
+
+    /// Whether a call by this name runs `tool` of amux's own server.
+    fn runs_amux(self, name: &str, tool: &str) -> bool {
         let forms: &[fn(&str, &str, &str) -> bool] = match self {
             Self::Any => &[run_mcp, underscore, double_underscore],
             Self::RunMcp => &[run_mcp],
             Self::Underscore => &[underscore],
             Self::DoubleUnderscore => &[double_underscore],
         };
-        AMUX_TOOLS_UNASKED
-            .iter()
-            .copied()
-            .find(|tool| forms.iter().any(|form| form(name, server, tool)))
+        forms.iter().any(|form| form(name, AMUX_TOOL_SERVER, tool))
     }
 }
 
@@ -328,6 +332,62 @@ pub fn stderr_fact(line: &str) -> Vec<u8> {
         stderr: line.to_owned(),
     })
     .expect("a string serializes")
+}
+
+/// What became of a local file an ACP agent linked in its reply, which the
+/// agent process was asked to store ([`crate::Effect::StoreFile`]): the
+/// attachment it stored, encoded and in base64, or why it did not.
+#[derive(Serialize, Deserialize)]
+struct Stored {
+    stored_file: StoredFile,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredFile {
+    uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attachment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    refused: Option<String>,
+}
+
+/// The fact the agent process gives the interpreter once it has stored
+/// the file linked as `uri`, or found it could not.
+pub fn stored_file_fact(uri: &str, stored: Result<&wire::Attachment, String>) -> Vec<u8> {
+    use base64::Engine as _;
+    let (attachment, refused) = match stored {
+        Ok(attachment) => (
+            Some(base64::engine::general_purpose::STANDARD.encode(attachment.encode_to_vec())),
+            None,
+        ),
+        Err(why) => (None, Some(why)),
+    };
+    serde_json::to_vec(&Stored {
+        stored_file: StoredFile {
+            uri: uri.to_owned(),
+            attachment,
+            refused,
+        },
+    })
+    .expect("strings serialize")
+}
+
+/// A local file the agent linked in a reply, waiting for the agent
+/// process to store it. Its link's words stand in the reply meanwhile, and
+/// stay if it cannot be stored.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct Linking {
+    uri: String,
+    /// The reply's item.
+    key: String,
+    /// The words that stand for the link, and where in the reply's text
+    /// they were put.
+    words: String,
+    at: usize,
+    /// The reply as it was when it finished, if it finished first.
+    finished: Option<String>,
+    #[serde(default, with = "serde_pb::msgs")]
+    finished_attachments: Vec<wire::Attachment>,
 }
 
 /// The settings amux can change, by the category ACP gives their option.
@@ -542,6 +602,13 @@ pub struct State {
     /// it is drawn naming the ask, which stands for it.
     #[serde(default)]
     folded: BTreeMap<String, String>,
+    /// How many images, sounds and files the agent presented in its
+    /// replies, which names each one that comes without a name.
+    #[serde(default)]
+    presented: u64,
+    /// The local files linked in replies that the agent process is storing.
+    #[serde(default)]
+    linking: Vec<Linking>,
     context: Option<(u64, u64)>,
     #[serde(with = "serde_pb::opt_msg")]
     usage: Option<wire::AcpUsage>,
@@ -701,6 +768,8 @@ impl State {
             tools: BTreeMap::new(),
             outputs: BTreeMap::new(),
             folded: BTreeMap::new(),
+            presented: 0,
+            linking: Vec::new(),
             context: None,
             usage: None,
             sign_in: None,
@@ -1055,6 +1124,150 @@ impl State {
         self.stream = Some((kind, key));
     }
 
+    /// What the agent presented in its reply, in its place among the words:
+    /// a placeholder at the end of the reply so far, and its attachment
+    /// after the others. The blob is written before the step that names it.
+    fn present(&mut self, emit: &mut Emit, (attachment, write): (wire::Attachment, Effect)) {
+        emit.effect(write);
+        let open = match &self.stream {
+            Some((Streamed::Message, key)) => self
+                .shared
+                .open_item(key)
+                .map(|item| (key.clone(), item.text.clone(), item.attachments.clone())),
+            _ => None,
+        };
+        let (key, mut text, mut attachments) = open.unwrap_or_else(|| {
+            self.close_stream(emit);
+            let key = self.local_key("message");
+            self.stream = Some((Streamed::Message, key.clone()));
+            (key, String::new(), Vec::new())
+        });
+        text.push(attachments::PLACEHOLDER);
+        attachments.push(attachment);
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key,
+                text,
+                attachments,
+                body: text_body(Streamed::Message, false),
+                ..Default::default()
+            },
+        );
+    }
+
+    /// The next number for something the agent presented with no name.
+    fn next_presented(&mut self) -> u64 {
+        self.presented += 1;
+        self.presented
+    }
+
+    /// A local file the agent linked: its words go in the reply now, and
+    /// the agent process is asked to store the file, which then takes
+    /// their place ([`Self::stored_file`]).
+    fn link_file(&mut self, emit: &mut Emit, uri: &str, path: String, name: String, words: String) {
+        self.stream(emit, Streamed::Message, &words);
+        let Some((Streamed::Message, key)) = self.stream.clone() else {
+            return;
+        };
+        let at = self
+            .shared
+            .open_item(&key)
+            .map_or(0, |item| item.text.len().saturating_sub(words.len()));
+        self.linking.push(Linking {
+            uri: uri.to_owned(),
+            key,
+            words,
+            at,
+            finished: None,
+            finished_attachments: Vec::new(),
+        });
+        emit.effect(Effect::StoreFile {
+            uri: uri.to_owned(),
+            path,
+            name,
+        });
+    }
+
+    /// The agent process stored a linked file, or could not: stored, it
+    /// takes the place of its link's words in the reply, finished or not;
+    /// not, the words stay.
+    fn stored_file(&mut self, emit: &mut Emit, stored: StoredFile) {
+        use base64::Engine as _;
+        let Some(at) = self
+            .linking
+            .iter()
+            .position(|linking| linking.uri == stored.uri)
+        else {
+            return;
+        };
+        let linking = self.linking.remove(at);
+        let attachment = stored
+            .attachment
+            .and_then(|encoded| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .ok()
+            })
+            .and_then(|bytes| wire::Attachment::decode(bytes.as_slice()).ok());
+        let Some(attachment) = attachment else {
+            return self.log(
+                emit,
+                format!(
+                    "{} linked {}, which is not attached: {}",
+                    self.agent,
+                    stored.uri,
+                    stored.refused.unwrap_or_default()
+                ),
+            );
+        };
+        let (text, mut attachments, complete) = match &linking.finished {
+            Some(text) => (text.clone(), linking.finished_attachments.clone(), true),
+            None => match self.shared.open_item(&linking.key) {
+                Some(item) => (item.text.clone(), item.attachments.clone(), false),
+                None => return,
+            },
+        };
+        // The words nearest where they were put: the reply's own words may
+        // repeat them, and placeholders before them change their offset.
+        let Some(pos) = text
+            .match_indices(&linking.words)
+            .map(|(pos, _)| pos)
+            .min_by_key(|pos| pos.abs_diff(linking.at))
+        else {
+            return;
+        };
+        let index = text[..pos].matches(attachments::PLACEHOLDER).count();
+        let text = format!(
+            "{}{}{}",
+            &text[..pos],
+            attachments::PLACEHOLDER,
+            &text[pos + linking.words.len()..]
+        );
+        attachments.insert(index.min(attachments.len()), attachment);
+        if complete {
+            for other in self
+                .linking
+                .iter_mut()
+                .filter(|other| other.key == linking.key)
+            {
+                other.finished = Some(text.clone());
+                other.finished_attachments = attachments.clone();
+            }
+        }
+        self.emit_item(
+            emit,
+            ItemDraft {
+                key: linking.key,
+                text,
+                attachments,
+                body: text_body(Streamed::Message, complete),
+                complete,
+                ..Default::default()
+            },
+        );
+    }
+
     fn close_stream(&mut self, emit: &mut Emit) {
         let Some((kind, key)) = self.stream.take() else {
             return;
@@ -1062,12 +1275,22 @@ impl State {
         let Some(item) = self.shared.open_item(&key).cloned() else {
             return;
         };
+        // A finished reply's elements become what they name, around what the
+        // agent presented beside its words, as for every kind.
+        let (text, attachments) = match kind {
+            Streamed::Message => crate::shared::parse_reply_between(&item.text, &item.attachments),
+            Streamed::Thought => (item.text, item.attachments),
+        };
+        for linking in self.linking.iter_mut().filter(|linking| linking.key == key) {
+            linking.finished = Some(text.clone());
+            linking.finished_attachments = attachments.clone();
+        }
         self.emit_item(
             emit,
             ItemDraft {
                 key: key.clone(),
-                text: item.text,
-                attachments: item.attachments,
+                text,
+                attachments,
                 body: text_body(kind, true),
                 complete: true,
                 ..Default::default()
@@ -1087,16 +1310,41 @@ impl State {
             tool.ask_item_key = ask.clone();
         }
         let complete = finished(tool.state);
+        let output = self.outputs.get(id).cloned().unwrap_or_default();
+        // amux's attach tool answers the element of what it stored, which
+        // names the blob by this host's path: its step carries the
+        // attachment instead, as Claude's does. No other call's output is
+        // ever an attachment: what a tool saw is not presented.
+        let (text, attachments) = if self.attaches(&tool) {
+            crate::shared::parse_reply(output)
+        } else {
+            (output, Vec::new())
+        };
         self.emit_item(
             emit,
             ItemDraft {
                 key: tool_key(id),
-                text: self.outputs.get(id).cloned().unwrap_or_default(),
+                text,
+                attachments,
                 body: item_body(acp_item::Kind::Tool(tool)),
                 complete,
                 ..Default::default()
             },
         );
+    }
+
+    /// Whether a call is to amux's attach tool, by the agent's way of
+    /// naming a tool server's tool: in its title, or as the tool Grok's
+    /// `use_tool` runs.
+    fn attaches(&self, tool: &AcpTool) -> bool {
+        let naming = self.quirks().tool_naming;
+        let used = serde_json::from_slice::<facts::UseTool>(&tool.input_json)
+            .ok()
+            .map(|used| used.tool_name);
+        [Some(tool.title.as_str()), used.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|name| naming.runs_amux(name, wire::ATTACH_TOOL))
     }
 
     /// Whether the call's row was drawn finished, after which nothing more
@@ -1648,6 +1896,9 @@ impl State {
         self.cancelled = false;
         self.stream = None;
         self.ask_requests.clear();
+        // A file a process linked is stored by the agent process that ran
+        // it; what was not stored by now never will be, and keeps its words.
+        self.linking.clear();
     }
 }
 
@@ -1850,9 +2101,15 @@ impl Interpreter for Acp {
 
     fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
         match fact.channel {
-            // A stderr line is the agent's own words: none of it is kept.
+            // A stderr line is the agent's own words, and a stored file is
+            // the agent's own file: none of either is kept.
             crate::Channel::Agent => crate::shape::FactShape {
-                variant: "stderr".into(),
+                variant: if serde_json::from_slice::<Stored>(&fact.payload).is_ok() {
+                    "stored_file"
+                } else {
+                    "stderr"
+                }
+                .into(),
                 ..Default::default()
             },
             _ => crate::shape::acp_fact(fact),

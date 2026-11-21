@@ -1836,9 +1836,12 @@ impl Skeleton {
     /// aliased apart from the whitespace around it, so a message's body
     /// aliases as the message it carries. None for any other text.
     fn framed(&self, text: &str) -> Option<Value> {
+        // A local file's link keeps its scheme too, which is how an ACP
+        // agent's linked file is told to the agent process to store.
         if let Some(rest) = text
             .strip_prefix("https://")
             .or_else(|| text.strip_prefix("http://"))
+            .or_else(|| text.strip_prefix("file://"))
         {
             return Some(self.link(&text[..text.len() - rest.len()], rest));
         }

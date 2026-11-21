@@ -541,8 +541,6 @@ impl Server {
     /// Stores the file in this agent's directory under its hash and answers
     /// the element that refers to it.
     fn attach(&self, arguments: &Value) -> Answer {
-        use sha2::Digest as _;
-
         let path = PathBuf::from(required(arguments, "path")?);
         let path = if path.is_absolute() {
             path
@@ -554,31 +552,11 @@ impl Server {
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
-        let size = std::fs::metadata(&path)
-            .map_err(|error| format!("reading {}: {error}", path.display()))?
-            .len();
-        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
-            return Err(too_large_words(&name).into());
-        }
-        let bytes =
-            std::fs::read(&path).map_err(|error| format!("reading {}: {error}", path.display()))?;
-        let hash = sha2::Sha256::digest(&bytes).to_vec();
-        dir::write_blob(&self.dir, &hash, &bytes)
-            .map_err(|error| format!("storing {}: {error}", path.display()))?;
-        let image = attachments::native_image(&bytes);
-        let blob = BlobRef {
-            hash: hash.clone(),
-            name,
-            mime: image.unwrap_or_else(|| mime_type(&path)).to_owned(),
-            size: bytes.len() as u64,
-        };
-        let attachment = Attachment {
-            of: Some(if image.is_some() {
-                attachment::Of::Image(blob)
-            } else {
-                attachment::Of::File(blob)
-            }),
-        };
+        let attachment = store_file(&self.dir, &path, name)?;
+        let hash = attachments::blobs(&attachment)
+            .first()
+            .map(|blob| blob.hash.clone())
+            .unwrap_or_default();
         let stored = self.dir.join(dir::BLOBS).join(interpret::to_hex(&hash));
         Ok(attachments::element(&attachment, Some(&stored)))
     }
@@ -604,6 +582,40 @@ impl Server {
         }
         Ok(())
     }
+}
+
+/// Stores the file at `path` in the blob directory of the agent in `dir`
+/// under its hash, as the attachment named `name` that refers to it: an
+/// image where the bytes are one a provider reads natively, else a file.
+/// A file over [`wire::ATTACHMENT_SIZE_LIMIT`] is refused unread.
+pub(crate) fn store_file(dir: &Path, path: &Path, name: String) -> Result<Attachment, String> {
+    use sha2::Digest as _;
+
+    let size = std::fs::metadata(path)
+        .map_err(|error| format!("reading {}: {error}", path.display()))?
+        .len();
+    if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+        return Err(too_large_words(&name));
+    }
+    let bytes =
+        std::fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+    let hash = sha2::Sha256::digest(&bytes).to_vec();
+    dir::write_blob(dir, &hash, &bytes)
+        .map_err(|error| format!("storing {}: {error}", path.display()))?;
+    let image = attachments::native_image(&bytes);
+    let blob = BlobRef {
+        hash,
+        name,
+        mime: image.unwrap_or_else(|| mime_type(path)).to_owned(),
+        size: bytes.len() as u64,
+    };
+    Ok(Attachment {
+        of: Some(if image.is_some() {
+            attachment::Of::Image(blob)
+        } else {
+            attachment::Of::File(blob)
+        }),
+    })
 }
 
 /// Why a file is not attached: it is over the limit, in the unit a person

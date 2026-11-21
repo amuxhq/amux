@@ -4,6 +4,7 @@ use acp_protocol::agent::{
     AuthState, InitializeResponse, NewSessionResponse, PermissionOptionKind, PromptResponse,
     RequestPermissionRequest, SessionSetup, SetSessionConfigOptionResponse, StopReason,
 };
+use acp_protocol::content::EmbeddedResourceResource;
 use acp_protocol::elicitation::CreateElicitationRequest;
 use acp_protocol::session::SessionConfigOption;
 use acp_protocol::update::{
@@ -46,8 +47,8 @@ struct XaiUpdate {
 /// The input of Grok's `use_tool` call, which runs a tool server's tool
 /// by its name (`grok-elicitation`).
 #[derive(Deserialize)]
-struct UseTool {
-    tool_name: String,
+pub(super) struct UseTool {
+    pub(super) tool_name: String,
 }
 
 /// Grok's turn tokens, in its prompt answer's `_meta` (`grok-prompt`).
@@ -75,6 +76,76 @@ fn tool_state(status: Option<&ToolCallStatus>) -> wire::ToolState {
         Some(ToolCallStatus::InProgress | ToolCallStatus::Other(_)) | None => {
             wire::ToolState::Running
         }
+    }
+}
+
+/// How a link the agent wrote reads in its reply: its name, linked to
+/// where it points, or the address alone when it has no other name.
+fn link_words(name: &str, uri: &str) -> String {
+    if name.is_empty() || name == uri {
+        uri.to_owned()
+    } else {
+        format!("[{name}]({uri})")
+    }
+}
+
+/// The local path a `file://` URI names, its escapes decoded; None for any
+/// other URI, or a file on another host.
+fn file_path(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("file://")?;
+    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    if !path.starts_with('/') {
+        return None;
+    }
+    let bytes = path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = |at: usize| {
+            bytes
+                .get(at..at + 2)
+                .and_then(|pair| std::str::from_utf8(pair).ok())
+                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+        };
+        match (bytes[at], hex(at + 1)) {
+            (b'%', Some(byte)) => {
+                decoded.push(byte);
+                at += 3;
+            }
+            (byte, _) => {
+                decoded.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+/// The last segment of a URI's path, its query and fragment left off: the
+/// name of what it points at. None where the path ends in a slash.
+fn last_segment(uri: &str) -> Option<&str> {
+    let path = uri.split(['?', '#']).next().unwrap_or(uri);
+    path.rsplit('/').next().filter(|name| !name.is_empty())
+}
+
+/// The file extension a MIME type's files take: its subtype, as
+/// `image/png` is `png`, with a few written otherwise; `bin` for one with
+/// no subtype.
+fn extension(mime: &str) -> &str {
+    let subtype = mime
+        .split(';')
+        .next()
+        .and_then(|mime| mime.split_once('/'))
+        .map(|(_, subtype)| subtype.trim())
+        .unwrap_or_default();
+    let subtype = subtype.strip_prefix("x-").unwrap_or(subtype);
+    match subtype {
+        "" => "bin",
+        "jpeg" => "jpg",
+        "svg+xml" => "svg",
+        "mpeg" => "mp3",
+        "wave" => "wav",
+        subtype => subtype,
     }
 }
 
@@ -134,6 +205,11 @@ impl State {
         {
             return self.log(emit, format!("{} on stderr: {stderr}", self.agent));
         }
+        if fact.channel == Channel::Agent
+            && let Ok(super::Stored { stored_file }) = serde_json::from_slice(&fact.payload)
+        {
+            return self.stored_file(emit, stored_file);
+        }
         if fact.channel != Channel::Rpc {
             return self.unrecognized(
                 emit,
@@ -157,7 +233,7 @@ impl State {
         }
     }
 
-    fn log(&self, emit: &mut Emit, line: String) {
+    pub(super) fn log(&self, emit: &mut Emit, line: String) {
         emit.effect(Effect::Log { line });
     }
 
@@ -376,12 +452,91 @@ impl State {
         self.offers_changed = true;
     }
 
+    /// A piece of the agent's reply or thinking. What the agent presents in
+    /// its reply beside its words (an image, a sound, a file it embedded or
+    /// a local file it linked) becomes an attachment in its place: every
+    /// device draws it, as a person's own attachments are drawn. A link to
+    /// anything else, or a local file that cannot be stored, stays as the
+    /// link's words. Its thinking is words alone.
     fn chunk(&mut self, emit: &mut Emit, kind: Streamed, chunk: &ContentChunk) {
-        match block_text(&chunk.content) {
-            Some(text) => self.stream(emit, kind, text),
+        let presented = match (&chunk.content, kind) {
+            (ContentBlock::Text(text), _) => {
+                // A placeholder stands only for an attachment.
+                let text = text.text.replace(attachments::PLACEHOLDER, "\u{FFFD}");
+                return self.stream(emit, kind, &text);
+            }
+            (ContentBlock::ResourceLink(link), Streamed::Message) => {
+                let words = link_words(&link.name, &link.uri);
+                return match file_path(&link.uri) {
+                    Some(path) => {
+                        let name = if link.name.is_empty() {
+                            last_segment(&link.uri).unwrap_or("file").to_owned()
+                        } else {
+                            link.name.clone()
+                        };
+                        self.link_file(emit, &link.uri, path, name, words)
+                    }
+                    None => self.stream(emit, kind, &words),
+                };
+            }
+            (ContentBlock::ResourceLink(link), Streamed::Thought) => {
+                return self.stream(emit, kind, &link_words(&link.name, &link.uri));
+            }
+            (ContentBlock::Image(image), Streamed::Message) => {
+                crate::shared::base64_bytes(&image.data).map(|bytes| {
+                    let n = self.next_presented();
+                    let name = format!("image-{n}.{}", extension(&image.mime_type));
+                    crate::shared::presented(true, &name, &image.mime_type, bytes)
+                })
+            }
+            (ContentBlock::Audio(audio), Streamed::Message) => {
+                crate::shared::base64_bytes(&audio.data).map(|bytes| {
+                    let n = self.next_presented();
+                    let name = format!("audio-{n}.{}", extension(&audio.mime_type));
+                    crate::shared::presented(false, &name, &audio.mime_type, bytes)
+                })
+            }
+            (ContentBlock::Resource(resource), Streamed::Message) => {
+                let (uri, mime, bytes) = match &resource.resource {
+                    EmbeddedResourceResource::Text(text) => (
+                        &text.uri,
+                        text.mime_type
+                            .clone()
+                            .flatten()
+                            .unwrap_or_else(|| "text/plain".into()),
+                        Some(text.text.clone().into_bytes()),
+                    ),
+                    EmbeddedResourceResource::Blob(blob) => (
+                        &blob.uri,
+                        blob.mime_type
+                            .clone()
+                            .flatten()
+                            .unwrap_or_else(|| "application/octet-stream".into()),
+                        crate::shared::base64_bytes(&blob.blob),
+                    ),
+                };
+                bytes.map(|bytes| {
+                    let name = match last_segment(uri) {
+                        Some(name) => name.to_owned(),
+                        None => format!("file-{}", self.next_presented()),
+                    };
+                    crate::shared::presented(false, &name, &mime, bytes)
+                })
+            }
+            _ => None,
+        };
+        match presented {
+            Some(presented) => self.present(emit, presented),
             None => self.log(
                 emit,
-                format!("a {} block in the agent's text", chunk.content.kind()),
+                format!(
+                    "a {} block in the agent's {} that amux cannot read",
+                    chunk.content.kind(),
+                    match kind {
+                        Streamed::Message => "reply",
+                        Streamed::Thought => "thinking",
+                    }
+                ),
             ),
         }
     }

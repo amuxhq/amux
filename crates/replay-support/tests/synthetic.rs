@@ -258,6 +258,12 @@ const TITLED_FROM_WORDS: &[&str] = &[
     "codex/thread_title.json",
 ];
 
+/// The fixtures where the agent process stored a file the agent linked.
+/// The attachment it reports names the file's blob, which a record keeps
+/// only as an alias, so its replay has no attachment to put in the link's
+/// place.
+const STORED_BY_THE_AGENT: &[&str] = &["acp/authored-presented.json"];
+
 struct Outcome {
     fixtures: usize,
     exact: usize,
@@ -311,7 +317,9 @@ fn round_trip<I: Interpreter>(kind: &str) -> Outcome {
                 !derived(line) && !streamed_opening(line, &recorded) && !counted(line, &recorded)
             })
             .collect();
-        if TITLED_FROM_WORDS.contains(&name.as_str()) {
+        if TITLED_FROM_WORDS.contains(&name.as_str())
+            || STORED_BY_THE_AGENT.contains(&name.as_str())
+        {
             outcome.derived.push(name);
         } else if found.is_empty() {
             outcome.exact += 1;

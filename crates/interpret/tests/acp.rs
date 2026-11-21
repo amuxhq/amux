@@ -31,6 +31,7 @@ macro_rules! goldens {
 
 goldens! {
     an_added_agent_with_no_quirks => "authored-added_agent",
+    what_an_agent_presents_becomes_attachments => "authored-presented",
     recorded_agy_allow => "agy-allow",
     recorded_agy_allow_always => "agy-allow_always",
     recorded_agy_cancel => "agy-cancel",
@@ -1388,4 +1389,320 @@ fn a_call_named_by_groks_question_is_drawn_by_it_even_when_it_comes_later() {
         ),
     );
     assert_eq!(call_asks(&other, "c2").as_deref(), Some(""));
+}
+
+/// A piece of the agent's reply, as `agent_message_chunk` sends one.
+fn said_block(block: serde_json::Value) -> Event {
+    update(serde_json::json!({"sessionUpdate": "agent_message_chunk", "content": block}))
+}
+
+fn said_text(text: &str) -> Event {
+    said_block(serde_json::json!({"type": "text", "text": text}))
+}
+
+/// A blob written: its hash and its bytes.
+type Blob = (Vec<u8>, Vec<u8>);
+
+/// Steps `events` in turn, then ends the reply (a thought ends a stream of
+/// words): every item the steps emitted, newest last, and every blob
+/// written.
+fn reply_of(state: &mut interpret::acp::State, events: Vec<Event>) -> (Vec<wire::Item>, Vec<Blob>) {
+    let mut items = Vec::new();
+    let mut blobs = Vec::new();
+    let end = update(serde_json::json!({"sessionUpdate": "agent_thought_chunk",
+        "content": {"type": "text", "text": "next"}}));
+    for event in events.into_iter().chain([end]) {
+        let stepped = Acp::step(state, event);
+        items.extend(stepped.step.items);
+        blobs.extend(
+            stepped
+                .effects
+                .into_iter()
+                .filter_map(|effect| match effect {
+                    Effect::WriteBlob { hash, bytes } => Some((hash, bytes)),
+                    _ => None,
+                }),
+        );
+    }
+    (items, blobs)
+}
+
+/// The newest emission of the reply's message item.
+fn final_message(items: &[wire::Item]) -> wire::Item {
+    items
+        .iter()
+        .rev()
+        .find(|item| item.key.starts_with("message"))
+        .cloned()
+        .expect("a reply")
+}
+
+fn blob_of(attachment: &wire::Attachment) -> (&'static str, wire::BlobRef) {
+    match attachment.of.clone() {
+        Some(wire::attachment::Of::Image(blob)) => ("image", blob),
+        Some(wire::attachment::Of::File(blob)) => ("file", blob),
+        other => panic!("not a blob: {other:?}"),
+    }
+}
+
+fn base64(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+fn sha256(bytes: &[u8]) -> Vec<u8> {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes).to_vec()
+}
+
+/// What an agent presents in its reply (an image, a sound, an embedded
+/// file) is an attachment in its place among the words: a placeholder in
+/// the text, the attachment in order, and its blob written by its hash.
+/// The agent's own words cannot fake a placeholder.
+#[test]
+fn what_an_agent_presents_in_its_reply_is_attached_in_its_place() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "show me"));
+    let png = b"\x89PNG\r\n\x1a\nfake";
+    let wav = b"RIFFfake";
+    let (items, blobs) = reply_of(
+        &mut state,
+        vec![
+            said_text("Here \u{FFFC}is the chart: "),
+            said_block(
+                serde_json::json!({"type": "image", "mimeType": "image/png", "data": base64(png)}),
+            ),
+            said_text(" and the sound "),
+            said_block(
+                serde_json::json!({"type": "audio", "mimeType": "audio/wav", "data": base64(wav)}),
+            ),
+            said_text(" and the notes "),
+            said_block(serde_json::json!({"type": "resource", "resource": {
+                "uri": "file:///work/notes.md?v=2", "mimeType": "text/markdown", "text": "# Notes"}})),
+            said_text("."),
+        ],
+    );
+    let reply = final_message(&items);
+    assert_eq!(
+        reply.text,
+        "Here \u{FFFD}is the chart: \u{FFFC} and the sound \u{FFFC} and the notes \u{FFFC}."
+    );
+    let attached: Vec<_> = reply.attachments.iter().map(blob_of).collect();
+    let summary: Vec<_> = attached
+        .iter()
+        .map(|(kind, blob)| (*kind, blob.name.as_str(), blob.mime.as_str(), blob.size))
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("image", "image-1.png", "image/png", png.len() as u64),
+            ("file", "audio-2.wav", "audio/wav", wav.len() as u64),
+            ("file", "notes.md", "text/markdown", 7),
+        ]
+    );
+    for (_, blob) in &attached {
+        assert!(blobs.iter().any(|(hash, _)| *hash == blob.hash), "{blob:?}");
+    }
+    assert_eq!(attached[0].1.hash, sha256(png));
+    assert!(blobs.contains(&(sha256(b"# Notes"), b"# Notes".to_vec())));
+}
+
+/// A local file the agent links is stored by the agent process and takes
+/// the link's place once stored, even after the reply finished; a link the
+/// agent process cannot store, or to anything but a local file, stays as
+/// the link's words.
+#[test]
+fn a_local_file_the_agent_links_is_attached_once_stored() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "show me"));
+    let link = |name: &str, uri: &str| {
+        said_block(serde_json::json!({"type": "resource_link", "name": name, "uri": uri}))
+    };
+    let mut asked = Vec::new();
+    let mut items = Vec::new();
+    for event in [
+        said_text("See "),
+        link("chart.png", "file:///work/my%20chart.png"),
+        said_text(", "),
+        link("gone.txt", "file:///work/gone.txt"),
+        said_text(" and "),
+        link("site", "https://example.com/"),
+        update(serde_json::json!({"sessionUpdate": "agent_thought_chunk",
+            "content": {"type": "text", "text": "done"}})),
+    ] {
+        let stepped = Acp::step(&mut state, event);
+        items.extend(stepped.step.items);
+        asked.extend(
+            stepped
+                .effects
+                .into_iter()
+                .filter_map(|effect| match effect {
+                    Effect::StoreFile { uri, path, name } => Some((uri, path, name)),
+                    _ => None,
+                }),
+        );
+    }
+    assert_eq!(
+        asked,
+        vec![
+            (
+                "file:///work/my%20chart.png".to_owned(),
+                "/work/my chart.png".to_owned(),
+                "chart.png".to_owned()
+            ),
+            (
+                "file:///work/gone.txt".to_owned(),
+                "/work/gone.txt".to_owned(),
+                "gone.txt".to_owned()
+            ),
+        ]
+    );
+    let words = "See [chart.png](file:///work/my%20chart.png), [gone.txt](file:///work/gone.txt) and [site](https://example.com/)";
+    assert_eq!(final_message(&items).text, words);
+    let chart = wire::Attachment {
+        of: Some(wire::attachment::Of::Image(wire::BlobRef {
+            hash: sha256(b"png"),
+            name: "chart.png".into(),
+            mime: "image/png".into(),
+            size: 3,
+        })),
+    };
+    let agent_fact = |payload: Vec<u8>| {
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload,
+        })
+    };
+    let stored = Acp::step(
+        &mut state,
+        agent_fact(interpret::acp::stored_file_fact(
+            "file:///work/my%20chart.png",
+            Ok(&chart),
+        )),
+    );
+    let reply = final_message(&stored.step.items);
+    assert_eq!(
+        reply.text,
+        "See \u{FFFC}, [gone.txt](file:///work/gone.txt) and [site](https://example.com/)"
+    );
+    assert_eq!(reply.attachments, vec![chart]);
+    let refused = Acp::step(
+        &mut state,
+        agent_fact(interpret::acp::stored_file_fact(
+            "file:///work/gone.txt",
+            Err("reading /work/gone.txt: no such file".into()),
+        )),
+    );
+    assert!(refused.step.items.is_empty());
+}
+
+/// A model that writes an element in its reply gets what it names, as on
+/// every kind: the element becomes a placeholder and an attachment, beside
+/// what the agent presented.
+#[test]
+fn an_element_in_an_acp_reply_becomes_its_attachment() {
+    let mut state = opened("opencode", serde_json::json!({}));
+    Acp::step(&mut state, prompt("a", "attach it"));
+    let hash = "ab".repeat(32);
+    let element = format!(
+        r#"<amux-attachment kind="file" hash="sha256:{hash}" name="trace.json" mime="application/json" size="12" path="/x/blobs/{hash}"/>"#
+    );
+    let (items, _) = reply_of(
+        &mut state,
+        vec![
+            said_block(
+                serde_json::json!({"type": "image", "mimeType": "image/png", "data": base64(b"png")}),
+            ),
+            said_text(&format!("Here is the trace: {element} done.")),
+        ],
+    );
+    let reply = final_message(&items);
+    assert_eq!(reply.text, "\u{FFFC}Here is the trace: \u{FFFC} done.");
+    let names: Vec<_> = reply
+        .attachments
+        .iter()
+        .map(|attachment| blob_of(attachment).1.name)
+        .collect();
+    assert_eq!(names, ["image-1.png", "trace.json"]);
+}
+
+/// amux's attach tool's step carries the attachment from the element it
+/// answered, by each agent's way of naming the tool; any other call's
+/// output (an image a tool read, or a file it returned) is what the tool
+/// saw, never attached, and writes no blob.
+#[test]
+fn only_the_attach_tools_step_carries_an_attachment() {
+    let hash = "cd".repeat(32);
+    let element = format!(
+        r#"<amux-attachment kind="image" hash="sha256:{hash}" name="dot.png" mime="image/png" size="68" path="/x/blobs/{hash}"/>"#
+    );
+    for (provider, title, input) in [
+        (
+            "opencode",
+            "amux_attach",
+            serde_json::json!({"path": "dot.png"}),
+        ),
+        (
+            "antigravity",
+            "Run mcp_amux_attach",
+            serde_json::json!({"path": "dot.png"}),
+        ),
+        (
+            "grok",
+            "use_tool",
+            serde_json::json!({"tool_name": "amux__attach"}),
+        ),
+    ] {
+        let mut state = opened(provider, serde_json::json!({}));
+        Acp::step(&mut state, prompt("a", "attach it"));
+        let mut items = Vec::new();
+        let mut writes = 0;
+        for event in [
+            update(
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
+                "title": title, "kind": "other", "status": "in_progress", "rawInput": input}),
+            ),
+            update(
+                serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "c1",
+                "status": "completed", "content": [{"type": "content",
+                    "content": {"type": "text", "text": element}}]}),
+            ),
+            update(
+                serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c2",
+                "title": "read_file", "kind": "read", "status": "completed", "content": [
+                    {"type": "content", "content": {"type": "image", "mimeType": "image/png",
+                        "data": base64(b"seen")}},
+                    {"type": "content", "content": {"type": "resource", "resource": {
+                        "uri": "file:///work/seen.txt", "text": "seen"}}},
+                    {"type": "content", "content": {"type": "text", "text": element}}]}),
+            ),
+        ] {
+            let stepped = Acp::step(&mut state, event);
+            items.extend(stepped.step.items);
+            writes += stepped
+                .effects
+                .iter()
+                .filter(|effect| matches!(effect, Effect::WriteBlob { .. }))
+                .count();
+        }
+        let newest = |key: &str| {
+            items
+                .iter()
+                .rev()
+                .find(|item| item.key == key)
+                .cloned()
+                .unwrap_or_else(|| panic!("{provider}: no {key}"))
+        };
+        let attached = newest("tool:c1");
+        assert_eq!(attached.text, "\u{FFFC}", "{provider}");
+        assert_eq!(
+            blob_of(&attached.attachments[0]).1.name,
+            "dot.png",
+            "{provider}"
+        );
+        let read = newest("tool:c2");
+        assert!(read.attachments.is_empty(), "{provider}: {read:?}");
+        assert!(!read.text.contains('\u{FFFC}'), "{provider}");
+        assert_eq!(writes, 0, "{provider}");
+    }
 }

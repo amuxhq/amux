@@ -684,8 +684,9 @@ transcript row, in transcript order:
   reply Claude already drew keeps the key it streamed under.
 - A `tool_use` block opens a call, running, keyed by its tool-use id. The
   `tool_result` in a later user row lands it: succeeded, failed, denied or
-  cancelled, with its output, any images it read (written as blobs), and its
-  end time. Claude writes the call's row as it starts and its result as it
+  cancelled, with its output and its end time. An image the tool read stays
+  in its result and is never an attachment; a step journaled before that
+  rule may carry such images, and they still draw. Claude writes the call's row as it starts and its result as it
   ends, so a running call is live in the chat and the text that introduced
   it sits above it.
 - A queued-command attachment row is a prompt Claude took into the running
@@ -1293,6 +1294,20 @@ at once for an agent that said it takes none (Grok before 1.0.89,
 with the agent's version. A line the agent writes on stderr reaches the
 interpreter as an `Agent`-channel fact, which is logged and never drawn:
 agents write there freely.
+
+**What a reply presents.** A non-text block in an agent's message is
+something the agent shows: an image or audio block is decoded and written
+as a blob with the step, and an embedded resource is stored the same way as
+a file, each an attachment at its place in the message's text. A
+`resource_link` to a local file goes in as its name and URI, with a
+`StoreFile` effect: the agent process reads and stores the file, under the
+attachment limit, and answers with an `Agent`-channel fact naming the
+attachment or why it could not, which upgrades the link's words in place,
+even after the message finished. When a message completes, the words
+between its attachments go through the element reader, so an element the
+model wrote is an attachment too. A call to amux's `attach` tool carries the
+attachment its element names. What a tool call holds is never an
+attachment ([Attachments](ATTACHMENTS.md#bytes-and-metadata)).
 
 **Replay.** `session/load` replays the whole conversation before it
 answers, with no marker (`agy-load`, `opencode-load`, `grok-load`). Until

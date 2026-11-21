@@ -2214,6 +2214,7 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
     match effect {
         Effect::ProviderWrite(bytes) => format!("write {}", display_bytes(bytes)),
         Effect::AcpReopen => "reopen the session".to_owned(),
+        Effect::StoreFile { uri, name, .. } => format!("store {uri} as {name}"),
         Effect::Reply { input_id, verdict } => {
             format!("reply {} {}", display_id(input_id), verdict_name(verdict))
         }

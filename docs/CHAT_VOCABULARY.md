@@ -73,7 +73,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `spawn` and `stop` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `agents` and `hosts` listings are the agent looking around, and hidden. | full | full | full |
 | Subagent | `Subagent { description, continued, state, answer, duration_ms }` | The call that started a subagent its provider runs, or continued it: Claude's Agent call and a SendMessage to it, Codex's spawn and follow-up of a child thread. It opens the subagent's own chat (`Row.opens`); how the subagent stands (running, waiting on you, done, stopped) is its fleet row's, never the call's; its answer once the call returned it. The calls of one turn that opened more than one agent fold into one "N subagents" row with their combined state, opening to each. A call from history names no agent and reads its own `state`, its steps collapsed under it (`parent`). | full | full | full: a Codex child's description is its fleet title |
 | Background process | `Background { command, description, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
-| Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. | partial | partial | full |
+| Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. An image a Claude tool read is what the tool saw, not something presented, so it is no row. | none | none | full |
 | Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
 
 A call's `state` is a `CallPhase`, decided once in the view for both clients: `Asking` while an open ask points
@@ -247,7 +247,8 @@ An ACP agent reports far less shape than Claude or Codex, so its items map onto 
 agent says each one is:
 
 - **Messages and thinking** are `Prose` and `Thinking`; your prompt is `Prompt`, with withdraw on a queued one
-  and send-now only where the agent's capabilities say `sends_now`.
+  and send-now only where the agent's capabilities say `sends_now`. An image, audio or file the agent presents in
+  a message is an attachment at its place in the `Prose`; one inside a tool call is not drawn.
 - **A tool call** goes by its kind: a read, search or fetch is `Explore` (a search names its title, a read or
   fetch the first place the call names, else its title; a title that only repeats the tool's name, as agents
   title a call just begun, is left off); an execute is `Command`, its command read from the call's input, else its

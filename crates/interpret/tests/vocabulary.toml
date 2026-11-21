@@ -118,8 +118,8 @@ acp = { mark = "none" }
 [[row]]
 id = "C12"
 item = "Image"
-claude_pty = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", " image=image/"] }
-claude_sdk = { mark = "partial", carriers = ["item:tool"], golden = [" tool final ", " image=image/"] }
+claude_pty = { mark = "none" }
+claude_sdk = { mark = "none" }
 codex = { mark = "full", carriers = ["item:work.image"], golden = [" work ", " image "] }
 acp = { mark = "none" }
 

@@ -1058,6 +1058,30 @@ impl Provider {
                 self.adopt_session(&id).await;
                 Ok(())
             }
+            Effect::StoreFile { uri, path, name } => {
+                // Off the provider's own thread: a file may be large. What
+                // was stored, or why not, is the interpreter's next fact.
+                let dir = self.dir.clone();
+                let events = self.events.clone();
+                tokio::spawn(async move {
+                    let stored = tokio::task::spawn_blocking(move || {
+                        crate::tools::store_file(&dir, std::path::Path::new(&path), name)
+                    })
+                    .await
+                    .unwrap_or_else(|error| Err(error.to_string()));
+                    let payload = interpret::acp::stored_file_fact(
+                        &uri,
+                        stored.as_ref().map_err(Clone::clone),
+                    );
+                    let _ = events
+                        .send(ProviderEvent::Fact(Fact {
+                            channel: Channel::Agent,
+                            payload,
+                        }))
+                        .await;
+                });
+                Ok(())
+            }
             Effect::AcpReopen => {
                 let request = self
                     .acp_opening

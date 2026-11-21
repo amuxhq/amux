@@ -1,0 +1,44 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 fact {"channel":"rpc","json":{"id":"agent-initialize","jsonrpc":"2.0","result":{"agentCapabilities":{"loadSession":true},"protocolVersion":1}}}
+snapshot STARTING queue=[] working_on=- at=1800000000000 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=LOAD
+## 2 fact {"channel":"rpc","json":{"id":"agent-session","jsonrpc":"2.0","result":{"sessionId":"s1"}}}
+effect session "s1"
+effect catalogue e3b0c442 models=[] commands=0 permissions=[] modes=[]
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue e3b0c442
+snapshot IDLE queue=[] working_on=- at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+## 3 input {"id":"p1","prompt":{"text":"Show me the chart and the notes."}}
+effect reply p1 accepted
+effect write "{\"id\":\"amux-prompt-7031\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Show me the chart and the notes.\",\"type\":\"text\"}],\"sessionId\":\"s1\"}}"
+item prompt:7031 prompt final input=p1 at=1800000000000 text="Show me the chart and the notes."
+snapshot WORKING queue=[] working_on="Show me the chart and the notes." at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+## 4 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":"Here is the chart ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+item message:1 message open at=1800000000000 text="Here is the chart "
+## 5 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png","type":"image"},"sessionUpdate":"agent_message_chunk"}}}}
+effect blob c414cd0e 70 bytes
+item message:1 message open at=1800000000000 text="Here is the chart ￼" attachments=1
+## 6 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":", the notes ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+append message:1 ", the notes "
+## 7 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"resource":{"mimeType":"text/markdown","text":"# Notes\n\nTwo lines.\n","uri":"file:///work/notes.md"},"type":"resource"},"sessionUpdate":"agent_message_chunk"}}}}
+effect blob 816672fa 20 bytes
+item message:1 message open at=1800000000000 text="Here is the chart ￼, the notes ￼" attachments=2
+## 8 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":" and the plot ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+append message:1 " and the plot "
+## 9 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"name":"plot.png","type":"resource_link","uri":"file:///work/plot.png"},"sessionUpdate":"agent_message_chunk"}}}}
+effect store file:///work/plot.png as plot.png
+append message:1 "[plot.png](file:///work/plot.png)"
+## 10 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":". Also see [the site](https://example.com/).","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+append message:1 ". Also see [the site](https://example.com/)."
+## 11 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":[{"content":{"text":"<amux-attachment kind=\"image\" hash=\"sha256:f070f042bc0752d0bfe6e3d7b992289574d90b78fe62b21fa1dd472a9c4fa5e7\" name=\"dot.png\" mime=\"image/png\" size=\"7\" path=\"/agent/blobs/f070f042bc0752d0bfe6e3d7b992289574d90b78fe62b21fa1dd472a9c4fa5e7\"/>","type":"text"},"type":"content"}],"kind":"other","rawInput":{"path":"dot.png"},"sessionUpdate":"tool_call","status":"completed","title":"amux_attach","toolCallId":"c1"}}}}
+item message:1 message final at=1800000000000 text="Here is the chart ￼, the notes ￼ and the plot [plot.png](file:///work/plot.png). Also see [the site](https://example.com/)." attachments=2
+item tool:c1 tool final at=1800000000000 text="￼" attachments=1 OTHER SUCCEEDED "amux_attach" input="{\"path\":\"dot.png\"}"
+## 12 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":[{"content":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png","type":"image"},"type":"content"}],"kind":"read","locations":[{"path":"/work/shot.png"}],"sessionUpdate":"tool_call","status":"completed","title":"read_file","toolCallId":"c2"}}}}
+item tool:c2 tool final at=1800000000000 text="" READ SUCCEEDED "read_file" at=/work/shot.png
+## 13 fact {"channel":"agent","json":{"stored_file":{"attachment":"EjkKIMEflFa5t27Sgih4tWy+QnsDoj2/4hZVZCfgI9mxfzNiEghwbG90LnBuZxoJaW1hZ2UvcG5nIAo=","uri":"file:///work/plot.png"}}}
+item message:1 message final at=1800000000000 text="Here is the chart ￼, the notes ￼ and the plot ￼. Also see [the site](https://example.com/)." attachments=3
+## 14 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"end_turn"}}}
+item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot said "Here is the chart , the notes  and the plot plot.png. Also see the site."
+snapshot IDLE queue=[] working_on="Show me the chart and the notes." at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+turn_end 1 last=message:1

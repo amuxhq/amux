@@ -267,6 +267,62 @@ pub struct ItemDraft {
     pub complete: bool,
 }
 
+/// Bytes an agent presented as an attachment of its reply: an image or a
+/// file named `name`, referenced by the blob its write stores.
+pub(crate) fn presented(
+    image: bool,
+    name: &str,
+    mime: &str,
+    bytes: Vec<u8>,
+) -> (Attachment, Effect) {
+    use sha2::Digest as _;
+
+    let hash = sha2::Sha256::digest(&bytes).to_vec();
+    let blob = wire::BlobRef {
+        hash: hash.clone(),
+        name: name.to_owned(),
+        mime: mime.to_owned(),
+        size: bytes.len() as u64,
+    };
+    let attachment = Attachment {
+        of: Some(if image {
+            wire::attachment::Of::Image(blob)
+        } else {
+            wire::attachment::Of::File(blob)
+        }),
+    };
+    (attachment, Effect::WriteBlob { hash, bytes })
+}
+
+/// Base64 as a provider writes it in a content block, decoded.
+pub(crate) fn base64_bytes(data: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+
+/// A finished reply that may already hold placeholders for what the agent
+/// presented beside its words, each with its attachment in order: the
+/// elements in the words between them become placeholders and attachments
+/// too ([`parse_reply`]), each kept in its place among the others.
+pub fn parse_reply_between(text: &str, attachments: &[Attachment]) -> (String, Vec<Attachment>) {
+    let mut out = String::with_capacity(text.len());
+    let mut all = Vec::new();
+    let mut presented = attachments.iter();
+    for (at, words) in text.split(attachments::PLACEHOLDER).enumerate() {
+        if at > 0 {
+            out.push(attachments::PLACEHOLDER);
+            all.extend(presented.next().cloned());
+        }
+        let (words, found) = parse_reply(words.to_owned());
+        out.push_str(&words);
+        all.extend(found);
+    }
+    // Attachments with no placeholder left, which a well-formed item never
+    // has, stay listed rather than lost.
+    all.extend(presented.cloned());
+    (out, all)
+}
+
 /// A finished reply's text and attachments. The attach tool answers a model
 /// with an attachment element to put in its reply; each element that
 /// parses becomes the placeholder and an attachment, so clients draw the

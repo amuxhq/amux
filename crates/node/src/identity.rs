@@ -635,7 +635,7 @@ fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
-    const RENAME_NOREPLACE: libc::c_uint = 1;
+    const RENAME_NOREPLACE: libc::c_long = 1;
 
     let from = CString::new(tmp.as_os_str().as_bytes()).map_err(|_| {
         std::io::Error::new(
@@ -652,9 +652,9 @@ fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
     let rc = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
-            libc::AT_FDCWD,
+            libc::AT_FDCWD as libc::c_long,
             from.as_ptr(),
-            libc::AT_FDCWD,
+            libc::AT_FDCWD as libc::c_long,
             to.as_ptr(),
             RENAME_NOREPLACE,
         )
@@ -663,16 +663,76 @@ fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
         return Ok(());
     }
     let error = std::io::Error::last_os_error();
-    if matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
-        if path.try_exists()? {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "target file already exists",
-            ));
-        }
-        return fs::rename(tmp, path);
+    if matches!(
+        error.raw_os_error(),
+        Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)
+    ) {
+        return publish_new_file_locked(tmp, path);
     }
     Err(error)
+}
+
+/// Serializes the existence check and rename under an exclusive sibling
+/// lockfile when `renameat2(RENAME_NOREPLACE)` is unavailable on the kernel
+/// or filesystem, so concurrent first-run initializers never overwrite an
+/// already-published `device.key`.
+#[cfg(any(target_os = "android", test))]
+fn publish_new_file_locked(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    struct LockGuard(PathBuf);
+
+    impl Drop for LockGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    const MAX_ATTEMPTS: usize = 100;
+    const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("amux-data");
+    let lock_path = path.with_file_name(format!(".{file_name}.lock"));
+
+    let _guard = {
+        let mut acquired = None;
+        for attempt in 0..MAX_ATTEMPTS {
+            let mut options = private_write_options();
+            options.create_new(true);
+            match options.open(&lock_path) {
+                Ok(_lock_file) => {
+                    acquired = Some(LockGuard(lock_path.clone()));
+                    break;
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if path.try_exists()? {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            "target file already exists",
+                        ));
+                    }
+                    if attempt + 1 == MAX_ATTEMPTS {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::WouldBlock,
+                            "timed out waiting for device key publish lock",
+                        ));
+                    }
+                    std::thread::sleep(RETRY_DELAY);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        acquired.expect("loop either returns or acquires lock")
+    };
+
+    if path.try_exists()? {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "target file already exists",
+        ));
+    }
+    fs::rename(tmp, path)
 }
 
 pub(crate) fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {
@@ -1011,5 +1071,45 @@ mod tests {
             fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
             0o700
         );
+    }
+
+    #[test]
+    fn locked_publish_fallback_preserves_first_writer_under_contention() {
+        let dir = temp_data_dir();
+        let target = Arc::new(dir.path().join(DEVICE_KEY_FILE));
+        let barrier = Arc::new(Barrier::new(8));
+        let handles = (0..8_u8)
+            .map(|idx| {
+                let target = target.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let tmp = temp_path_for(&target);
+                    fs::write(&tmp, [idx; 32]).unwrap();
+                    barrier.wait();
+                    let result = publish_new_file_locked(&tmp, &target);
+                    if result.is_err() {
+                        let _ = fs::remove_file(&tmp);
+                    }
+                    (idx, result)
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let outcomes = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>();
+        let winners: Vec<u8> = outcomes
+            .iter()
+            .filter_map(|(idx, res)| res.is_ok().then_some(*idx))
+            .collect();
+        assert_eq!(winners.len(), 1, "exactly one writer must publish");
+        for (_, res) in &outcomes {
+            if let Err(err) = res {
+                assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+            }
+        }
+        assert_eq!(fs::read(&*target).unwrap(), vec![winners[0]; 32]);
+        assert!(!dir.path().join(".device.key.lock").exists());
     }
 }

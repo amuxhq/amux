@@ -9,3 +9,6 @@ publish = false
 [dependencies]
 highlight = { workspace = true }
 ui-view = { workspace = true }
+
+[lints]
+workspace = true

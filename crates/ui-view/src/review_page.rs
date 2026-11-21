@@ -12,6 +12,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use wire::experimental::{
@@ -37,7 +38,8 @@ pub const MOST_CONTEXT: u32 = 2_000;
 pub const HUNK_CONTEXT: u32 = 3;
 
 /// Which comparison the page shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewView {
     /// Everything on the branch: from the base commit to the snapshot.
     All,
@@ -49,7 +51,8 @@ pub enum ReviewView {
 /// The person's own choices on a page, which the client keeps and hands
 /// back each time the page is composed. Everything else comes from the
 /// agent's host.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewPageState {
     /// The view switched to; none for the one a look opens on: since your
     /// last review once a round has been sent, all changes before.
@@ -94,7 +97,8 @@ impl ReviewPageState {
 
 /// Something the client learned about the review that its summary does not
 /// carry: from the agent's row, or from a call that failed.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewNotice {
     /// The working tree changed after the summary was read: the agent's
     /// row says so, or a newer summary was held back so the page does not
@@ -118,7 +122,8 @@ pub enum ReviewNotice {
 }
 
 /// The review page, in reading order.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewPage {
     /// None until the review has opened, and where there is none.
     pub header: Option<ReviewHeader>,
@@ -138,7 +143,8 @@ pub struct ReviewPage {
 }
 
 /// What the page is of, and what can be done to it as a whole.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewHeader {
     /// The branch the change is counted against; empty when none was found
     /// and the change is the uncommitted work alone.
@@ -176,7 +182,8 @@ pub struct ReviewHeader {
 }
 
 /// One of the views, as the switch between them shows it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewViewTab {
     pub view: ReviewView,
     /// The changed files it lists.
@@ -184,7 +191,8 @@ pub struct ReviewViewTab {
 }
 
 /// Something said above the files.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewBanner {
     /// Drafts hold the page on the snapshot they were written on, and the
     /// tree has changed since: refreshing moves them onto a new snapshot.
@@ -211,7 +219,8 @@ pub enum ReviewBanner {
 }
 
 /// Why the view shown has nothing in it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewEmpty {
     /// Nothing is left to review: no change and no comment.
     Nothing,
@@ -221,13 +230,15 @@ pub enum ReviewEmpty {
 }
 
 /// One row of the page, with a key that names it across compositions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewRow {
     pub key: String,
     pub of: ReviewRowOf,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewRowOf {
     /// A file's head; its rows follow until the next head.
     File(ReviewFileHead),
@@ -248,14 +259,16 @@ pub enum ReviewRowOf {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewNoLines {
     Binary,
     /// Over the size the host shows without asking.
     TooLarge,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewFileHead {
     /// From the repository's top.
     pub path: String,
@@ -285,7 +298,8 @@ pub struct ReviewFileHead {
 }
 
 /// What a reader may want to pass over; a flagged file starts folded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewFileFlag {
     Generated,
     Lockfile,
@@ -294,7 +308,8 @@ pub enum ReviewFileFlag {
 }
 
 /// One definition of a file's outline.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewOutlineEntry {
     pub kind: DefinitionKind,
     /// "impl Display for Store", "fn open".
@@ -314,7 +329,8 @@ pub struct ReviewOutlineEntry {
 }
 
 /// What a definition is, across languages, for a client to mark it by.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DefinitionKind {
     Module,
     /// A class, and its relatives: Swift's actor, Java's record.
@@ -338,7 +354,8 @@ pub enum DefinitionKind {
     Other,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewHunkHead {
     pub path: String,
     /// The commit its removed lines belong to.
@@ -351,7 +368,8 @@ pub struct ReviewHunkHead {
 }
 
 /// One line of code.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewCodeLine {
     pub path: String,
     pub kind: LineKind,
@@ -371,7 +389,8 @@ pub struct ReviewCodeLine {
     pub extra: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewRun {
     pub text: String,
     pub kind: TokenKind,
@@ -379,7 +398,8 @@ pub struct ReviewRun {
 }
 
 /// Lines of the snapshot between what is shown, folded away.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewGap {
     pub path: String,
     /// How many lines it holds; none after the file's last hunk, where the
@@ -399,7 +419,8 @@ pub struct ReviewGap {
 
 /// Lines to read for more context: a client asks the review for them and
 /// keeps the ask in [`ReviewPageState::asked`].
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewContextAsk {
     pub path: String,
     /// The commit to read: the snapshot.
@@ -413,7 +434,8 @@ pub struct ReviewContextAsk {
 }
 
 /// A comment, where the page places it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewCommentRow {
     pub id: Vec<u8>,
     /// The file it is on in the snapshot.
@@ -435,7 +457,8 @@ pub struct ReviewCommentRow {
     pub folded: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewCommentState {
     Draft,
     /// Sent in the round numbered, from 1.
@@ -444,7 +467,8 @@ pub enum ReviewCommentState {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewCommentAt {
     /// On these lines: the snapshot's numbers, or the compared commit's for
     /// a comment on removed lines.
@@ -457,7 +481,8 @@ pub enum ReviewCommentAt {
 
 /// Where a new comment goes: the commit holding its lines, the file and
 /// the lines, both ends included; zero to zero for the whole file.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewAnchor {
     pub commit: String,
     pub path: String,
@@ -481,7 +506,8 @@ impl ReviewAnchor {
 
 /// The review chip an agent's composer shows while its review holds
 /// drafts: "Review · 3 comments".
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReviewChip {
     /// Drafts it would send.
     pub comments: u32,

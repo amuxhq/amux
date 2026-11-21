@@ -819,9 +819,10 @@ impl Cloud {
     fn access(&self, account: &str) -> serde_json::Value {
         let known = self.state.lock().unwrap().accounts[account].clone();
         let at = |ms: i64| {
-            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+            jiff::Timestamp::from_millisecond(ms)
                 .expect("a time in range")
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+                .to_string()
         };
         match (known.tier, known.lapsed_ms) {
             (Tier::Pro, _) => serde_json::json!({
@@ -850,13 +851,13 @@ impl Cloud {
                 tier: known.tier,
             },
         );
-        let expires_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(expires_ms)
-            .expect("a credential expiry in range");
+        let expires_at =
+            jiff::Timestamp::from_millisecond(expires_ms).expect("a credential expiry in range");
         serde_json::json!({
             "host": RELAY_HOST,
             "port": self.quic_port,
             "token": token,
-            "expires_at": expires_at.to_rfc3339(),
+            "expires_at": expires_at.to_string(),
             "tier": match known.tier {
                 Tier::Pro => "pro",
                 Tier::Free => "free",

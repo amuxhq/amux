@@ -1,6 +1,7 @@
 //! Around the composer: context use, a sign-in problem, the composer's mode
 //! and tokens, the queued prompts and this client's unconfirmed inputs.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Activity, Composer, InputState, InputWhat, Refusal, SessionState, Waiting};
@@ -12,7 +13,8 @@ use crate::settings::CommandView;
 /// Context use from here on is near full, which a client may set apart.
 pub const CONTEXT_NEAR_FULL_PERCENT: u64 = 80;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ContextView {
     pub used_tokens: u64,
     pub window_tokens: Option<u64>,
@@ -39,7 +41,8 @@ pub fn context(state: &SessionState) -> Option<ContextView> {
     })
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SignInView {
     pub state: SignInState,
     pub account: String,
@@ -65,7 +68,8 @@ pub fn sign_in(state: &SessionState) -> Option<SignInView> {
 /// The composer as the chat draws it: Send, Resume for an exited agent,
 /// waiting while drafting continues, or no text box at all for a subagent
 /// its parent's provider runs; with the activity line inside it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ComposerView {
     pub mode: Composer,
     pub activity: Option<Activity>,
@@ -89,7 +93,8 @@ pub fn composer(state: &SessionState, now_ms: i64) -> ComposerView {
 }
 
 /// A queued prompt under the composer.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct QueuedRow {
     pub input_id: Vec<u8>,
     pub text: Vec<Segment>,
@@ -134,14 +139,16 @@ pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
 /// Where a prompt on its way is drawn: where it was sent to (see
 /// `SentInput::in_feed`), so a prompt does not jump as the agent starts
 /// work.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Lands {
     Feed,
     Queue,
 }
 
 /// How a prompt of this client's is on its way.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Underway {
     /// Sent; `waiting` while the link to the agent's host is down, which
     /// is what the prompt waits for.
@@ -153,7 +160,8 @@ pub enum Underway {
 }
 
 /// A prompt of this client's on its way to the agent.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SentPrompt {
     pub input_id: Vec<u8>,
     pub text: Vec<Segment>,
@@ -163,7 +171,8 @@ pub struct SentPrompt {
 
 /// A prompt the agent refused. Its words go back to the composer, with
 /// why, and it is forgotten.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RefusedPrompt {
     pub input_id: Vec<u8>,
     pub reason: Refusal,
@@ -256,7 +265,8 @@ pub fn pastes_as_attachment(text: &str) -> bool {
 }
 
 /// One of the agent's commands matching the word a draft ends in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CommandMatch {
     pub command: CommandView,
     /// The draft once the command is picked: a "/" command is the whole

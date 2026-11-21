@@ -26,3 +26,6 @@ release = { workspace = true, features = ["test-key"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+
+[lints]
+workspace = true

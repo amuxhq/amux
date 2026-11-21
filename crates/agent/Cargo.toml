@@ -13,7 +13,7 @@ agent-core = { workspace = true }
 agent-dir = { workspace = true }
 anyhow = { workspace = true }
 attachments = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 claude-protocol = { workspace = true }
 codex-protocol = { workspace = true }
 core-ring = { workspace = true }
@@ -50,7 +50,11 @@ futures-util = { workspace = true }
 patience = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

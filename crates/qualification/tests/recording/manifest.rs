@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use chrono::DateTime;
+use jiff::Timestamp;
 use qualification::recording::{Manifest, Recorded, RecordingError, load_recording};
 use redaction::RedactionSummary;
 use semver::Version;
@@ -17,7 +17,7 @@ fn recorded() -> Recorded {
         provider: "claude".to_string(),
         version: Version::parse("2.1.312").unwrap(),
         model: "claude-haiku-4-5".to_string(),
-        at: DateTime::UNIX_EPOCH,
+        at: Timestamp::UNIX_EPOCH,
     }
 }
 

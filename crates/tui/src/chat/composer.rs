@@ -176,9 +176,9 @@ pub(crate) fn resets(at_ms: i64, now_ms: i64) -> String {
         return String::new();
     };
     if at_ms - now_ms < 20 * 3_600_000 {
-        at.format("%H:%M").to_string()
+        at.strftime("%H:%M").to_string()
     } else {
-        at.format("%a").to_string()
+        at.strftime("%a").to_string()
     }
 }
 

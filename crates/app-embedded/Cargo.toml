@@ -42,3 +42,6 @@ path = "tests/integration.rs"
 [[test]]
 name = "runtime_log"
 path = "tests/runtime_log.rs"
+
+[lints]
+workspace = true

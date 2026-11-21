@@ -1,6 +1,7 @@
 //! Text with attachments at their positions, for rows and the composer.
 
 use attachments::{PLACEHOLDER, sent_review};
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use wire::{Attachment, BlobRef};
@@ -9,7 +10,8 @@ use crate::text::without_direction_controls;
 
 /// A run of text or one attachment, in reading order. Each placeholder in
 /// the text is the next attachment, so attachments keep their positions.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Segment {
     Text(String),
     Attachment(AttachmentView),
@@ -17,7 +19,8 @@ pub enum Segment {
 
 /// What a chip or placeholder shows before any bytes arrive: the
 /// reference's name, type and size.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AttachmentView {
     Image(BlobRef),
     File(BlobRef),
@@ -102,7 +105,8 @@ impl AttachmentView {
 }
 
 /// The review a sent review's attachment names, for opening its round.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SentReviewRef {
     pub review_id: Vec<u8>,
     /// The round the sending client expected it to be; the agent's host
@@ -118,7 +122,8 @@ pub struct SentReviewRef {
 
 /// A comment a sent review carries, at the revision its text was written
 /// from.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SentCommentRef {
     pub id: Vec<u8>,
     pub revision: u64,

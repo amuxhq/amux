@@ -180,6 +180,7 @@ pub use google::rpc;
 
 mod authority;
 mod caller_header;
+pub mod codex;
 mod continued;
 mod entry;
 mod error;
@@ -551,7 +552,8 @@ pub const AGENTS_TOOL: &str = "agents";
 pub const HOSTS_TOOL: &str = "hosts";
 
 /// Why a name cannot name an agent. Each client words it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum AgentNameProblem {
     Empty,
     /// Longer than [`AGENT_NAME_MOST`].

@@ -5,11 +5,13 @@
 //! crate's, which holds the highlighter and its grammars; these values, and
 //! the review page that carries runs a host coloured, need neither.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Which side of a change a line of a diff is on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum LineKind {
     Context,
     Added,
@@ -17,7 +19,8 @@ pub enum LineKind {
 }
 
 /// What a run of code is, as far as colouring it goes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum TokenKind {
     /// Names, operators and punctuation: the reading ink.
     Plain,
@@ -34,7 +37,8 @@ pub enum TokenKind {
 }
 
 /// A stretch of one line's text that is all one kind.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CodeRun {
     pub text: String,
     pub kind: TokenKind,
@@ -42,7 +46,8 @@ pub struct CodeRun {
 
 /// Code as lines of runs, without their line endings. Neighbouring runs on
 /// a line differ in kind; an empty line has none.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct HighlightedCode {
     pub lines: Vec<Vec<CodeRun>>,
     /// False while work under way would colour more of it: a grammar being

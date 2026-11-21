@@ -21,6 +21,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Fold, Held, ItemClass, Key, SessionState};
@@ -33,7 +34,8 @@ use crate::rows::{CallPhase, ExploreVerb, RowKind, kind_of, subject_of};
 const RECENT_STEPS: u32 = 2;
 
 /// A row's place in its run.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Run {
     /// The run's oldest held step, where an opened run draws its header.
     /// It moves as the window's low edge does, so it names no run: hold
@@ -75,7 +77,8 @@ impl Run {
 }
 
 /// What a run's steps did.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RunCounts {
     pub commands: u32,
     /// Files changed, each counted once however often it changed.

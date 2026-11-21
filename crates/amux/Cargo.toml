@@ -17,7 +17,7 @@ agent = { workspace = true }
 agent-dir = { workspace = true }
 analytics = { workspace = true }
 anyhow = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 bytes = { workspace = true }
 client = { workspace = true }
 clap = { workspace = true }
@@ -68,3 +68,6 @@ wire = { workspace = true, features = ["grpc"] }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

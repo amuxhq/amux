@@ -199,7 +199,7 @@ impl ProfileRuntime {
             "created_at_ms": self.clock_now(),
             "core": core_of_check(&request.check).name(),
             "check": request.check,
-            "reason": interpret::redact_text(&request.reason),
+            "reason": redaction::redact_for_this_machine(&request.reason),
             "parts": {
                 "frame": absent("an automatic report has no screen"),
                 "trace": absent("an automatic report has no screen"),
@@ -492,8 +492,8 @@ fn receipt(text: &str) -> Receipt {
     let value: Value = serde_json::from_str(text).unwrap_or_default();
     let received_at_ms = value["received_at"]
         .as_str()
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-        .map_or(0, |at| at.timestamp_millis());
+        .and_then(|at| at.parse::<jiff::Timestamp>().ok())
+        .map_or(0, jiff::Timestamp::as_millisecond);
     Receipt {
         id: value["id"].as_str().unwrap_or_default().to_owned(),
         received_at_ms,

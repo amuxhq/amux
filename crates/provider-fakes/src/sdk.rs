@@ -2195,8 +2195,9 @@ fn property_order(schema: &crate::script::Schema) -> Vec<String> {
 /// When the session's sign-in lapses, which 2.1.325 says on each successful
 /// result: two days from now.
 fn credential_expires_at() -> String {
-    (chrono::Utc::now() + chrono::Duration::days(2))
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    (jiff::Timestamp::now() + jiff::SignedDuration::from_hours(48))
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// A running subagent's tally, as its task frames carry it.

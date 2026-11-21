@@ -690,18 +690,30 @@ async fn lfs_paths<'p>(
 async fn pointer(path: &Path) -> std::io::Result<Vec<u8>> {
     let path = path.to_owned();
     tokio::task::spawn_blocking(move || {
+        use std::fmt::Write as _;
+        use std::io::Read as _;
+
         use sha2::Digest as _;
         let mut file = std::fs::File::open(&path)?;
         let mut hasher = sha2::Sha256::new();
-        let size = std::io::copy(&mut file, &mut hasher)?;
+        let mut buffer = vec![0; 64 * 1024];
+        let mut size = 0u64;
+        loop {
+            let read = file.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            size += read as u64;
+        }
         if size == 0 {
             return Ok(Vec::new());
         }
-        Ok(format!(
-            "{LFS_VERSION}\noid sha256:{:x}\nsize {size}\n",
-            hasher.finalize()
-        )
-        .into_bytes())
+        let mut oid = String::with_capacity(64);
+        for byte in hasher.finalize() {
+            let _ = write!(oid, "{byte:02x}");
+        }
+        Ok(format!("{LFS_VERSION}\noid sha256:{oid}\nsize {size}\n").into_bytes())
     })
     .await
     .map_err(std::io::Error::other)?

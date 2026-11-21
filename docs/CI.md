@@ -47,7 +47,7 @@ every other job but the policy job runs only if the change can reach it:
 | Change | Runs |
 | --- | --- |
 | Documentation only (`docs/`, `images/`, `marketing/`, a top-level `*.md`) | The policy job, which holds the documentation check: about a minute |
-| The phone app only (`apps/apple/`) | Clippy, formatting and the tests, some of which read the app's files; the iOS gate judges the rest |
+| The phone app only (`apps/apple/`) | Only `ios-tools` tests (Swift mirrors and verification CLI) unless a fixture read by another Rust test changed; the iOS gate judges the rest |
 | The browser extension only (`js/`) | The browser extension's job |
 | A crate | Those, the build, the journeys and the simulated stories; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
 | Anything else: a manifest, a script, a workflow, a journey, a schema | Every job |

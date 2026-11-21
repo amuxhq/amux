@@ -8,3 +8,6 @@ publish = false
 
 [dependencies]
 serde = { workspace = true }
+
+[lints]
+workspace = true

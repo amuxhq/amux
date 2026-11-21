@@ -1,13 +1,14 @@
-//! The structural redactor for what is not a per-kind body: free text and
-//! JSON in reports, logs, specs and provider captures. It knows key names
-//! and text shapes (secrets, machine paths, emails, the local user and
-//! host) and nothing about any record's schema; bodies are redacted per
-//! kind in `interpret`, the only code that can decode them.
+//! The structural redactor for what is not a per-kind body: free text,
+//! JSON and wire protocol messages in reports, logs, specs and provider
+//! captures. It knows key names, text shapes (secrets, machine paths,
+//! emails, the local user and host) and the wire descriptor set.
 
+pub mod message;
 pub mod structure;
 
 use std::path::PathBuf;
 
+pub use message::{REPORT_LIMIT, redact_for_this_machine, structure_message};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use unicode_width::UnicodeWidthStr;

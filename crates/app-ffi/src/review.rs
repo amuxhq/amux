@@ -19,7 +19,8 @@ use app_runtime::values::{ReviewChange, ReviewChoice, ReviewOutcome};
 use serde::Deserialize;
 use ui_view::ReviewContextAsk;
 
-use crate::{AmuxChat, Chat, act, guard, held_chat, owned, parse, text};
+use crate::helpers::{act, guard, held_chat, owned, parse, text};
+use crate::{AmuxChat, Chat};
 
 /// What an act on the review page answers while none is open.
 fn not_open() -> ReviewOutcome {

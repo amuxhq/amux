@@ -9,3 +9,6 @@ publish = false
 [dependencies]
 daemon-core = { workspace = true }
 serde = { workspace = true }
+
+[lints]
+workspace = true

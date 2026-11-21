@@ -8,7 +8,13 @@ use std::sync::OnceLock;
 use prost::Message;
 use prost_types::field_descriptor_proto::Type;
 use prost_types::{DescriptorProto, FileDescriptorSet};
-use redaction::{Redaction, RedactionSummary};
+
+use crate::{Redaction, RedactionSummary};
+
+/// The most a whole report takes once compressed (zstd, level 3): its
+/// logs and every record together. A record is cut to what is left of it
+/// when the report asks, and one that does not fit is left out.
+pub const REPORT_LIMIT: usize = 8 << 20;
 
 /// The rules free text is redacted under: this machine's home, user and
 /// host names on top of the shared ones, read once.
@@ -19,27 +25,27 @@ fn rules() -> &'static Redaction {
 
 /// Redacts free text no kind can decode, such as the daemon's log: the
 /// shared capture rules, credential prefixes and secret assignments.
-pub fn redact_text(text: &str) -> String {
+pub fn redact_for_this_machine(text: &str) -> String {
     let mut summary = RedactionSummary::default();
-    redaction::redact_text(text, rules(), &mut summary)
+    crate::redact_text(text, rules(), &mut summary)
 }
 
 /// An encoded protocol message of the named type (`amux.v1.Step`) as its
 /// structure alone, for a stage that never reads content: walked by
 /// descriptor, each string and bytes field treated by its name as
-/// [`redaction::structure`] says, with aliases drawn from `aliases`. A
+/// [`crate::structure`] says, with aliases drawn from `aliases`. A
 /// per-kind body, which no kind is there to decode, is bytes like any
 /// other, and so zero bytes of its length.
 pub fn structure_message(
     name: &str,
     bytes: &[u8],
-    aliases: &mut redaction::structure::Aliases,
+    aliases: &mut crate::structure::Aliases,
 ) -> Vec<u8> {
     structure(&format!(".{name}"), bytes, aliases)
 }
 
-fn structure(name: &str, bytes: &[u8], aliases: &mut redaction::structure::Aliases) -> Vec<u8> {
-    use redaction::structure::Bytes;
+fn structure(name: &str, bytes: &[u8], aliases: &mut crate::structure::Aliases) -> Vec<u8> {
+    use crate::structure::Bytes;
 
     let Some(fields) = schema().get(name) else {
         return Vec::new();
@@ -77,7 +83,7 @@ fn structure(name: &str, bytes: &[u8], aliases: &mut redaction::structure::Alias
                         .text(holder, &field.name, &String::from_utf8_lossy(payload))
                         .into_bytes(),
                     Type::Message => structure(&field.type_name, payload, aliases),
-                    Type::Bytes => match redaction::structure::bytes(&field.name) {
+                    Type::Bytes => match crate::structure::bytes(&field.name) {
                         Bytes::Kept => payload.to_vec(),
                         Bytes::Alias => aliases.hash(payload),
                         Bytes::Blank => vec![0; payload.len()],

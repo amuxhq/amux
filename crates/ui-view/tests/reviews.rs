@@ -1238,12 +1238,15 @@ fn the_page_and_its_state_cross_as_json() {
     let value = serde_json::to_value(&page).unwrap();
     assert_eq!(value["header"]["view"], "SinceLast");
     assert!(value["rows"][0]["of"]["File"]["path"].is_string());
-    let schema = schemars::schema_for!(ReviewPage);
-    assert!(
-        serde_json::to_string(&schema)
-            .unwrap()
-            .contains("ReviewGap")
-    );
+    #[cfg(feature = "schema")]
+    {
+        let schema = schemars::schema_for!(ReviewPage);
+        assert!(
+            serde_json::to_string(&schema)
+                .unwrap()
+                .contains("ReviewGap")
+        );
+    }
 }
 
 #[test]

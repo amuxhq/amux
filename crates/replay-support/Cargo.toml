@@ -13,7 +13,7 @@ test = false
 doctest = false
 
 [dependencies]
-chrono.workspace = true
+jiff.workspace = true
 core-ring.workspace = true
 daemon-core.workspace = true
 interpret.workspace = true
@@ -42,3 +42,6 @@ tokio.workspace = true
 postcard.workspace = true
 testnet.workspace = true
 uuid.workspace = true
+
+[lints]
+workspace = true

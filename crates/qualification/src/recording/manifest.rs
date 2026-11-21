@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use redaction::RedactionSummary;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,7 @@ pub struct Recorded {
     pub provider: String,
     pub version: Version,
     pub model: String,
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

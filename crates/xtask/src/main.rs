@@ -128,11 +128,12 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // model's way.
     config.type_name_domain(["."], "type.googleapis.com");
     // The wire values the chat views carry to the phone serialize, with
-    // schemas, so the Swift mirrors are generated from these definitions.
+    // schemas behind the `schema` feature, so the Swift mirrors are generated
+    // from these definitions without compiling schemars for every wire user.
     for path in VIEW_VALUES {
         config.type_attribute(
             path,
-            "#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]",
+            "#[derive(serde::Serialize, serde::Deserialize)]\n#[cfg_attr(feature = \"schema\", derive(schemars::JsonSchema))]",
         );
     }
     // A notice is rare and a snapshot is moved through every step, so the
@@ -143,7 +144,10 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     config.boxed(".amux.v1.Git.checkout");
     // The chat model's Refusal holds the wire's reason; the mirrors name
     // the reason apart from it.
-    config.type_attribute("amux.v1.Refusal", "#[schemars(rename = \"RefusalReason\")]");
+    config.type_attribute(
+        "amux.v1.Refusal",
+        "#[cfg_attr(feature = \"schema\", schemars(rename = \"RefusalReason\"))]",
+    );
     // An experimental map encodes in key order, so a row, a spec or an
     // attachment encodes to the same bytes every time.
     config.btree_map([

@@ -1,6 +1,7 @@
 //! The ask card: one anatomy for every kind. The head ask with its count,
 //! the subject verbatim, the body variant, and choices stated as outcomes.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,7 +14,8 @@ use crate::rows::{
 };
 use crate::text::within;
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AskCard {
     pub kind: wire::Kind,
     /// What an answer names.
@@ -48,7 +50,8 @@ pub struct AskCard {
 
 /// Where the card is after the person acts. Stop is in the menu while a
 /// turn runs: it is the interrupt, and the agent stays.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CardState {
     Open,
     /// Shrunk to one line until the agent confirms.
@@ -61,7 +64,8 @@ pub enum CardState {
     Dismissed,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AskBody {
     Command {
         command: String,
@@ -132,7 +136,8 @@ pub enum AskBody {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct QuestionView {
     pub header: String,
     pub question: String,
@@ -144,7 +149,8 @@ pub struct QuestionView {
     pub secret: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct OptionView {
     /// "(Recommended)" lifted out into `recommended`.
     pub label: String,
@@ -154,7 +160,8 @@ pub struct OptionView {
 }
 
 /// One choice, stated as what happens, with the answer it sends.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Choice {
     pub outcome: ChoiceOutcome,
     pub primary: bool,
@@ -164,7 +171,8 @@ pub struct Choice {
     pub answer: Answer,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ChoiceOutcome {
     AllowOnce,
     /// "Always allow cargo test in this project": what, and for how long.
@@ -203,7 +211,8 @@ pub enum ChoiceOutcome {
     GrantForSession,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Scope {
     Session,
     /// This project, for this person.
@@ -886,7 +895,8 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
 /// words typed as "Something else", and a note. A multi-select carries
 /// picks and typed words together; nothing picked and nothing typed skips
 /// the question.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct QuestionResponse {
     #[serde(default)]
     pub picked: Vec<u32>,

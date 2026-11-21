@@ -42,7 +42,8 @@ impl ErrorReason {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Empty {}
 impl ::prost::Name for Empty {
@@ -785,7 +786,8 @@ impl ::prost::Name for DiedNotice {
     }
 }
 /// What a row says about the git repository an agent works in.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Git {
     /// Absent on a detached head.
@@ -819,7 +821,8 @@ impl ::prost::Name for Git {
 /// A working tree of a Git repository on one host. Two checkouts are of the
 /// same repository when their remotes match, or, on one host without a
 /// remote, when their main clones do.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Checkout {
     /// The working tree's top directory.
@@ -845,7 +848,8 @@ impl ::prost::Name for Checkout {
         "type.googleapis.com/amux.v1.Checkout".into()
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ChangeTotals {
     #[prost(uint32, tag = "1")]
@@ -964,7 +968,8 @@ impl ::prost::Name for Attachment {
 }
 /// Content-addressed bytes in the owning agent's directory. The name belongs
 /// to the reference, not the bytes.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlobRef {
     /// SHA-256 of the bytes.
@@ -1007,7 +1012,8 @@ impl ::prost::Name for InlineText {
 /// Comments a person made on a web page: an app the agent builds, a page it
 /// changed, a document it wrote. It says nothing of intent; the words sent
 /// with it say whether the comments mean "fix" or "revise".
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PageReview {
@@ -1032,7 +1038,8 @@ impl ::prost::Name for PageReview {
 /// gesture lands on a block: a click comments on the whole block, a text
 /// selection on a phrase within it, and a dragged box on a region, which the
 /// block is the smallest element containing.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PageComment {
     #[prost(string, tag = "1")]
@@ -1058,7 +1065,8 @@ impl ::prost::Name for PageComment {
     }
 }
 /// A block of a page, as the agent can search for it.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PageElement {
     /// A CSS selector for the block when the comment was made.
@@ -1114,7 +1122,8 @@ impl ::prost::Name for Lagged {
     }
 }
 /// The kind is the interpreter.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Kind {
@@ -1746,7 +1755,8 @@ impl LinkCloseReason {
     }
 }
 /// The operating system a machine runs, as its build knows it.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Platform {
@@ -2414,7 +2424,8 @@ impl ::prost::Name for Unrecognized {
 /// snapshot. An agent writes it as a blob of its directory and names the
 /// blob's hash in its snapshot; identical catalogues share one. Fetched by
 /// GetBlob, so a catalogue passes through a daemon of any version intact.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Catalogue {
     #[prost(message, repeated, tag = "1")]
@@ -2449,7 +2460,8 @@ impl ::prost::Name for Catalogue {
 /// A new agent's starting settings, by catalogue values: the host's remembered
 /// pick, else what the provider itself would use. An absent value is one
 /// neither can name, and the provider decides it when the agent starts.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct NewAgentDefaults {
     #[prost(string, optional, tag = "1")]
@@ -2470,7 +2482,8 @@ impl ::prost::Name for NewAgentDefaults {
     }
 }
 /// A skill Codex offers this session.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OfferedSkill {
     #[prost(string, tag = "1")]
@@ -2491,7 +2504,8 @@ impl ::prost::Name for OfferedSkill {
         "type.googleapis.com/amux.v1.OfferedSkill".into()
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OfferedPermission {
     /// What SetPermission names and the snapshot reports.
@@ -2523,7 +2537,8 @@ impl ::prost::Name for OfferedPermission {
         "type.googleapis.com/amux.v1.OfferedPermission".into()
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OfferedMode {
     #[prost(string, tag = "1")]
@@ -2546,7 +2561,8 @@ impl ::prost::Name for OfferedMode {
     }
 }
 /// A model the provider offers this session, as the provider lists it.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OfferedModel {
     /// What a model input names.
@@ -2581,7 +2597,8 @@ impl ::prost::Name for OfferedModel {
 }
 /// A command or skill the provider offers this session, typed as a prompt
 /// that starts with a slash.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OfferedCommand {
     #[prost(string, tag = "1")]
@@ -3648,7 +3665,8 @@ impl DecisionOutcome {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum BoundaryKind {
@@ -3699,7 +3717,8 @@ impl BoundaryKind {
 /// What a received agent message was, from its envelope's body: a message,
 /// a child's report that its turn ended, or a child's report that its
 /// incarnation exited.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum EnvelopeKind {
@@ -3735,7 +3754,8 @@ impl EnvelopeKind {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SendState {
@@ -3882,7 +3902,8 @@ impl TaskListStatus {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum UsageState {
@@ -3980,7 +4001,8 @@ impl ToolServerStatus {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SignInState {
@@ -4013,7 +4035,8 @@ impl SignInState {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum BackgroundKind {
@@ -4182,7 +4205,8 @@ impl ::prost::Name for HostEntry {
     }
 }
 /// A folder a host offers to start an agent in.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Folder {
     /// Absolute and canonical, on the host that offers it.
@@ -4524,7 +4548,8 @@ impl ::prost::Name for HostRef {
     }
 }
 /// Why a host offers a folder. UNSPECIFIED is never sent.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum FolderKind {
@@ -4589,7 +4614,8 @@ impl PushSuite {
 }
 /// How this machine reaches a host, or how a pairing peer was reached. No
 /// value for "no route": the host reads offline.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum RouteKind {
@@ -4622,7 +4648,8 @@ impl RouteKind {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Filing {
@@ -4691,7 +4718,8 @@ impl Lifecycle {
 /// Which provider's program a host runs: the vocabulary amux uses to ask a
 /// host what it offers with no agent running. Distinct from Kind, which is
 /// the interpreter.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Provider {
@@ -5085,8 +5113,9 @@ impl ::prost::Name for Rejected {
         "type.googleapis.com/amux.v1.Rejected".into()
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[schemars(rename = "RefusalReason")]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "RefusalReason"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Refusal {
@@ -8105,7 +8134,8 @@ impl WebAction {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReviewStatus {

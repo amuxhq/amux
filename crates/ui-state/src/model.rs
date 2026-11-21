@@ -7,6 +7,7 @@
 //! each. Nothing here is protobuf, does I/O or knows an agent's kind; the
 //! constructors that read wire records live beside the session model.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -19,9 +20,8 @@ pub type HostId = Vec<u8>;
 pub type InputId = Vec<u8>;
 
 /// An agent is named by its host and its id: a parent may live elsewhere.
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AgentKey {
     pub host: HostId,
     pub agent: Vec<u8>,
@@ -29,9 +29,8 @@ pub struct AgentKey {
 
 /// How loudly an agent asks for the person, quietest first. A family is as
 /// loud as its loudest member.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Attention {
     Exited,
     Idle,
@@ -41,7 +40,8 @@ pub enum Attention {
 }
 
 /// The client's connection to its local runtime, as the driver reports it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Connection {
     #[default]
     Connecting,
@@ -52,7 +52,8 @@ pub enum Connection {
 
 /// An attachment's bytes in the driver's cache; rows hold a placeholder from
 /// the reference's name, type and size until they are ready.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum BlobStatus {
     #[default]
     Missing,
@@ -62,7 +63,8 @@ pub enum BlobStatus {
 }
 
 /// What the composer offers.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Composer {
     Send,
     /// The agent has exited: the draft goes through ResumeAgent as the new
@@ -85,7 +87,8 @@ pub enum Composer {
 /// Stopping one background job, which leaves the agent running. Only a kind
 /// whose provider stops one job on request offers it: terminal Claude
 /// cannot.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum JobStop {
     /// This job cannot be stopped on its own.
     Unavailable,
@@ -109,7 +112,8 @@ impl JobStop {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Waiting {
     /// Rows are painted but the origin has not been reached yet.
     CatchingUp,
@@ -120,7 +124,8 @@ pub enum Waiting {
 }
 
 /// The header's phase: lifecycle from the entry, the rest from the snapshot.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PhaseView {
     Starting,
     Idle,
@@ -133,7 +138,8 @@ pub enum PhaseView {
 /// one-shot agent whose turn ended), it was stopped or exited cleanly, or
 /// it ended some other way, with the host's own account of why, to show as
 /// it is.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ExitCause {
     Finished,
     Ended,
@@ -142,7 +148,8 @@ pub enum ExitCause {
 
 /// The line above the composer while the agent works. Not a row; timed
 /// against item timestamps with the caller's clock.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Activity {
     pub kind: ActivityKind,
     pub since_ms: i64,
@@ -152,7 +159,8 @@ pub struct Activity {
     pub turn_elapsed_ms: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ActivityKind {
     /// Busy and nothing more specific applies.
     Working,
@@ -177,7 +185,8 @@ pub enum ActivityKind {
 }
 
 /// An input as the client that sent it observes it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum InputState {
     /// In flight, or accepted and waiting for its reflection. The optimistic
     /// row exists.
@@ -196,7 +205,8 @@ pub enum InputState {
 }
 
 /// Why the agent or its host refused an input, as every client tells it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Refusal {
     pub reason: wire::Refusal,
     /// The agent's or its provider's own words, when it has any; a client
@@ -218,6 +228,7 @@ impl Refusal {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "schema")]
     #[test]
     fn every_shared_value_has_a_schema_for_the_swift_mirrors() {
         let schema = schemars::schema_for!((

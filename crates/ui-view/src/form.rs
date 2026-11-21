@@ -5,6 +5,7 @@
 //! and the JSON object that goes are decided here, so two clients given the
 //! same entries send the same thing or refuse for the same reason.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
@@ -13,7 +14,8 @@ use wire::{ClaudeAnswer, CodexAnswer, claude_answer};
 use crate::ask::{Answer, AskBody, AskCard, ChoiceOutcome};
 
 /// One field of a tool server's form, read from its JSON schema.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FormField {
     /// The property's name, which the answer's content is keyed by.
     pub name: String,
@@ -28,7 +30,8 @@ pub struct FormField {
 }
 
 /// What a field takes, with the limits its schema sets.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FormFieldKind {
     /// Typed text, its length in characters.
     Text {
@@ -54,7 +57,8 @@ pub enum FormFieldKind {
 }
 
 /// What a field holds as the person left it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FormValue {
     /// A text or number field's characters as typed. A number is held as
     /// typed so a half-typed one ("3.", "-") survives, and is read only when
@@ -69,7 +73,8 @@ pub enum FormValue {
 }
 
 /// Why a field's value cannot go as it is.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FieldProblem {
     /// Required, and nothing was entered or chosen.
     Required,
@@ -100,7 +105,8 @@ pub enum FieldProblem {
 }
 
 /// A field's problem, the field by its position in the form.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FormProblem {
     pub field: u32,
     pub problem: FieldProblem,

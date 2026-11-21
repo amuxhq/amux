@@ -3,6 +3,7 @@
 //! usage limits it is near, and the changed files by folder. The
 //! composer's edge reads it folded; the overview reads it whole.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 pub use ui_state::JobStop;
@@ -14,7 +15,8 @@ use wire::{
 
 /// Everything the overview lists; each part is empty or None when there is
 /// nothing to show.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Overview {
     pub tasks: Option<TasksView>,
     /// Running background jobs, in the agent's order.
@@ -27,7 +29,8 @@ pub struct Overview {
     pub changes: Option<Changes>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TasksView {
     pub done: u32,
     pub total: u32,
@@ -38,13 +41,15 @@ pub struct TasksView {
 }
 
 /// One task of the list, by its subject.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TaskLine {
     pub subject: String,
     pub mark: TaskMark,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum TaskMark {
     Done,
     Current,
@@ -52,7 +57,8 @@ pub enum TaskMark {
 }
 
 /// A background job the agent started that is still running.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct JobRow {
     /// The step that started it, when the provider said which.
     pub step: Option<Key>,
@@ -65,14 +71,16 @@ pub struct JobRow {
     pub stop: JobStop,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ServerView {
     pub name: String,
     pub error: String,
     pub needs_auth: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct UsageView {
     pub blocked: bool,
     pub windows: Vec<UsageWindowView>,
@@ -81,7 +89,8 @@ pub struct UsageView {
 
 /// One rate-limit window: which limit it is, how much of it is used (none
 /// when the provider has not said), when it resets, and its own state.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct UsageWindowView {
     pub label: UsageLabel,
     pub used_percent: Option<f64>,
@@ -90,7 +99,8 @@ pub struct UsageWindowView {
 }
 
 /// Which limit a usage window is, for a client to word.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum UsageLabel {
     FiveHour,
     /// The weekly limit, or one model's weekly limit.
@@ -104,7 +114,8 @@ pub enum UsageLabel {
 }
 
 /// The changed files of one comparison, by folder.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Changes {
     /// The branch the agent's host compared against, as it reported it:
     /// none for the uncommitted work alone, or when it found no base
@@ -122,14 +133,16 @@ pub use wire::ChangeTotals;
 
 /// One folder's changed files, sorted by name. Shortening a long path is
 /// the client's.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Folder {
     /// With its trailing slash; empty for the root.
     pub path: String,
     pub files: Vec<ChangedFile>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ChangedFile {
     /// From the repository's root.
     pub path: String,
@@ -147,7 +160,8 @@ pub struct ChangedFile {
     pub language: String,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum FileStatus {
     #[default]
     Modified,
@@ -158,7 +172,8 @@ pub enum FileStatus {
 }
 
 /// What the changed files are counted against.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Comparison {
     /// The working tree against its last commit.
     #[default]

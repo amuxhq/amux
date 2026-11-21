@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 async-trait = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde_json = { workspace = true }
@@ -18,3 +18,9 @@ uuid = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

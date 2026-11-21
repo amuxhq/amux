@@ -3,14 +3,14 @@
 //! the daemon serves. Each client draws the steps in its own words; the
 //! order and what counts as left are decided here once.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use wire::{OnboardingStepId, StepState};
 
 /// One step of onboarding, in the order clients show them.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SetupStep {
     /// Connect a phone: the pairing window.
@@ -55,7 +55,8 @@ impl SetupStep {
 }
 
 /// What a desktop client does with onboarding as it stands.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct OnboardingView {
     /// Onboarding opens full-screen before home, at this step: the first
     /// one still needed. None once every step is done or skipped.

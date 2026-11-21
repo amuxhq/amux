@@ -5,6 +5,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_state::{AgentKey, Connection, InputState, Key, PhaseView, Refusal};
@@ -17,7 +18,8 @@ use ui_view::{
 use wire::{BlobRef, Kind, Platform, RouteKind};
 
 /// What an embedded runtime starts from.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct StartConfig {
     /// The installation's directory: identity, trust, the store and reports.
     pub data_dir: PathBuf,
@@ -64,7 +66,8 @@ pub struct StartConfig {
 
 /// How a desktop app attaches to amux on this machine, which it does not
 /// host: the daemon's profiles and agents, reached over its sockets.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AttachConfig {
     /// The installation's config file; none is the default one, which is
     /// what every app uses outside tests.
@@ -76,7 +79,8 @@ pub struct AttachConfig {
 }
 
 /// What a desktop app asks of the installer before it attaches.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct InstallOptions {
     /// The installation's config file; none is the default one.
     #[serde(default)]
@@ -84,7 +88,8 @@ pub struct InstallOptions {
 }
 
 /// What the installer found or did.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum Installed {
     /// amux was already answering; nothing was touched.
     Running,
@@ -95,7 +100,8 @@ pub enum Installed {
 }
 
 /// What a desktop app asks when it looks for a newer version of itself.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct UpdateCheck {
     /// The installation config whose `releases_url` and `channel` name the
     /// app's feed; none is the default one.
@@ -109,7 +115,8 @@ pub struct UpdateCheck {
 
 /// A newer version of the app, unpacked and ready to replace the running
 /// one when it quits.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AppUpdate {
     pub version: String,
     /// The staged app bundle.
@@ -118,7 +125,8 @@ pub struct AppUpdate {
 
 /// Where a person's report went: written on the device, and sent to their
 /// account when the profile is signed in to one.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReportSent {
     /// The report's directory on the device.
     pub report_path: String,
@@ -139,7 +147,8 @@ fn default_tail() -> u32 {
 
 /// What moved in an open chat since the host last heard: each field only
 /// when it moved.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ChatDelta {
     /// The chat's id within its fleet.
     pub chat: u64,
@@ -163,7 +172,8 @@ pub struct ChatDelta {
 
 /// How the window's keys moved. Row ids are item keys and never move, so
 /// the window's sequence changes only at its two edges until a reload.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum KeysMoved {
     /// Every key may be new: the whole window, oldest first.
     Reload(Vec<Key>),
@@ -179,13 +189,15 @@ pub enum KeysMoved {
 }
 
 /// The head ask moved: the card waiting now, if any.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AskMoved {
     pub card: Option<AskCard>,
 }
 
 /// Everything around a chat's rows that a screen draws at once.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ChatFrame {
     pub agent: AgentKey,
     pub name: String,
@@ -234,19 +246,22 @@ pub struct ChatFrame {
 /// draft holds its attachments in place among its words instead, so it
 /// cannot be built with the two out of step; the placeholders are written
 /// only when it is sent.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Draft {
     pub parts: Vec<DraftPart>,
 }
 
 /// One run of a draft's words, or one attachment.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DraftPart {
     Text(String),
     Attachment(DraftAttachment),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DraftAttachment {
     /// Stored with put_blob first.
     Image(BlobRef),
@@ -366,7 +381,8 @@ impl Draft {
 }
 
 /// What became of a prompt: its id, and its state as the chat shows it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SendOutcome {
     pub input_id: Vec<u8>,
     pub state: InputState,
@@ -374,7 +390,8 @@ pub struct SendOutcome {
 
 /// What the client did with a draft that names a command it runs itself
 /// (`/model`, `/effort`, `/rename`), or one the agent does not run.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CommandOutcome {
     /// Not a command the client runs: send the draft as typed.
     Send,
@@ -404,7 +421,8 @@ pub enum CommandOutcome {
 }
 
 /// What an act on a chat came to.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ActOutcome {
     Done,
     /// The agent or its host refused it.
@@ -416,7 +434,8 @@ pub enum ActOutcome {
 }
 
 /// What asking for older rows came to.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PageOutcome {
     Arrived(u32),
     /// Older history is held only by the agent's host, which cannot be
@@ -426,7 +445,8 @@ pub enum PageOutcome {
 }
 
 /// A host in the fleet as a screen lists it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct HostView {
     pub host_id: Vec<u8>,
     pub name: String,
@@ -473,7 +493,8 @@ pub struct HostView {
     pub providers: Vec<ProviderSignIn>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ProviderSignIn {
     pub provider: wire::Provider,
     pub signed_in: bool,
@@ -481,7 +502,8 @@ pub struct ProviderSignIn {
 
 /// What moved in a profile's fleet since the host last heard: each field
 /// only when it moved.
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FleetDelta {
     /// Home's sections.
     pub view: Option<FleetView>,
@@ -492,7 +514,8 @@ pub struct FleetDelta {
 
 /// Pairing with a machine: the PIN its person reads out, or the link its
 /// QR code carries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PairRequest {
     Pin {
         /// Empty when pairing by address alone.
@@ -506,7 +529,8 @@ pub enum PairRequest {
 }
 
 /// An agent to start on a host.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NewAgent {
     pub host_id: Vec<u8>,
     pub kind: Kind,
@@ -529,7 +553,8 @@ pub struct NewAgent {
 }
 
 /// A directory a host offers to start an agent in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Directory {
     pub path: String,
     pub name: String,
@@ -541,7 +566,8 @@ pub struct Directory {
 
 /// What a host offers to start an agent in: where agents ran lately and the
 /// repositories its person chose.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Directories {
     pub recent: Vec<Directory>,
     pub repositories: Vec<Directory>,
@@ -555,7 +581,8 @@ pub struct Directories {
 /// `Command`, a `SendOutcome`
 /// or null for `Resend`, a `PageOutcome` for `PageOlder`, and an
 /// `ActOutcome` for every other.
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ChatAct {
     Send(Draft),
     /// Sends the draft with the review's drafts after its words, as the
@@ -621,7 +648,8 @@ pub enum ChatAct {
 
 /// A change to the review open on a chat, made at the agent's host, all of
 /// a call's changes or none.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewChange {
     /// A new draft on the lines `anchor` names, as `amux_review_anchor`
     /// gives them for a selection of the page's rows.
@@ -641,7 +669,8 @@ pub enum ReviewChange {
 
 /// A choice the person makes on the review page, kept by the chat and
 /// drawn at once.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewChoice {
     /// Switches to a view the page's header offers.
     View(ReviewView),
@@ -653,7 +682,8 @@ pub enum ReviewChoice {
 
 /// What a call on the review came to. The page says what it learned too:
 /// a host it could not reach, or why there is no review.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReviewOutcome {
     Done,
     /// The agent's host could not be reached: nothing changed there.
@@ -668,7 +698,8 @@ pub enum ReviewOutcome {
 }
 
 /// A change to one agent from outside its chat.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AgentAct {
     Rename(String),
     /// Files it as done with, stopping it now when live. One whose host
@@ -692,7 +723,8 @@ pub enum AgentAct {
 
 /// What only the app sees, which the runtime records for product
 /// analytics on a profile's behalf.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum UsageEvent {
     /// The subscription page opened, from one of the app's tabs.
     PaywallViewed { from: PaywallFrom },
@@ -705,7 +737,8 @@ pub enum UsageEvent {
 }
 
 /// Which side of a one-tap sign-in this device is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum OfferRole {
     /// Signed in, offering a paired device its account.
@@ -716,7 +749,8 @@ pub enum OfferRole {
 
 /// A paired machine's offer of its account to this device's profile: shown
 /// with the account's email, so the person knows whose account it is.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SignInOfferView {
     /// The machine that offered.
     pub host_id: Vec<u8>,
@@ -737,7 +771,8 @@ impl From<&wire::SignInOffer> for SignInOfferView {
 }
 
 /// The person's answer to a paired machine's offer of its account.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SignInAnswer {
     /// The machine that offered.
     pub host_id: Vec<u8>,
@@ -747,7 +782,8 @@ pub struct SignInAnswer {
 }
 
 /// What answering a paired machine's offer of its account came to.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum SignInOfferOutcome {
     /// Accepted: this device's profile is signed in to the account now.
     SignedIn(ProfileView),
@@ -764,7 +800,8 @@ pub enum SignInOfferOutcome {
 /// The installation's everyday settings, as a desktop client shows them.
 /// Which interface the terminal chats in, and which Claude new agents run,
 /// are the terminal's to show and are left out.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct MachineSettings {
     /// What paired devices call this machine; never empty.
     pub host_name: String,
@@ -788,7 +825,8 @@ pub struct MachineSettings {
 
 /// An experiment a machine's build implements: a feature still taking
 /// shape, which a person switches on for the whole machine.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ExperimentView {
     /// What it is switched by, e.g. "workspaces".
     pub name: String,
@@ -829,7 +867,8 @@ impl From<&wire::Settings> for MachineSettings {
 
 /// A change to the installation's settings: what is None is left as it
 /// is.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SettingsChange {
     /// Empty returns to the machine's own name.
     #[serde(default)]
@@ -872,7 +911,8 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
 
 /// A folder worth offering as a repository: where Claude Code or Codex ran
 /// lately.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RepositorySuggestion {
     pub path: String,
     pub name: String,
@@ -881,7 +921,8 @@ pub struct RepositorySuggestion {
 }
 
 /// Where one step of setting up stands, as the daemon keeps it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StepState {
     Needed,
@@ -890,7 +931,8 @@ pub enum StepState {
     NotNeeded,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct OnboardingStepState {
     pub step: SetupStep,
     pub state: StepState,
@@ -899,7 +941,8 @@ pub struct OnboardingStepState {
 /// A profile's setting up as the daemon serves it, with what the shared
 /// rules make of it: where onboarding opens and how many steps "Finish
 /// setting up" offers.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct OnboardingState {
     /// In the order they are shown; steps this build has no name for are
     /// left out.
@@ -968,7 +1011,8 @@ impl From<&OnboardingState> for wire::Onboarding {
 }
 
 /// What a client tells the daemon of setting up.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum OnboardingAnswer {
     /// The step is on screen: counted, nothing kept.
     Shown(SetupStep),
@@ -1002,7 +1046,8 @@ impl From<OnboardingAnswer> for wire::answer_onboarding_request::Answer {
 
 /// A pairing window open on this machine: one that takes the PIN typed on
 /// a phone or the secret its QR code carries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PairingWindowView {
     /// Six digits; empty when the window takes none.
     pub pin: String,
@@ -1024,7 +1069,8 @@ impl From<&wire::PairingWindow> for PairingWindowView {
 }
 
 /// Where this machine's pairing window stands.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PairingStatusView {
     /// A window is open.
     pub active: bool,
@@ -1036,7 +1082,8 @@ pub struct PairingStatusView {
     pub paired: Option<PairedDevice>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PairedDevice {
     pub host_id: Vec<u8>,
     pub name: String,
@@ -1057,7 +1104,8 @@ impl From<&wire::PairingStatus> for PairingStatusView {
 }
 
 /// The tab the subscription page was opened from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PaywallFrom {
     Agents,
@@ -1066,7 +1114,8 @@ pub enum PaywallFrom {
 }
 
 /// How often a subscription bills.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BillingInterval {
     Monthly,
@@ -1075,7 +1124,8 @@ pub enum BillingInterval {
 
 /// A machine a pairing has reached and authenticated, before this device
 /// trusts it: what the person compares and then accepts or turns away.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PendingPair {
     /// Names this attempt to confirm or abandon it.
     pub token: Vec<u8>,
@@ -1089,7 +1139,8 @@ pub struct PendingPair {
 }
 
 /// This device as the machines it pairs with know it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Identity {
     pub host_id: Vec<u8>,
     pub name: String,
@@ -1097,7 +1148,8 @@ pub struct Identity {
 }
 
 /// A machine this device trusts.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PairedPeer {
     pub host_id: Vec<u8>,
     pub name: String,
@@ -1105,14 +1157,16 @@ pub struct PairedPeer {
 }
 
 /// This device and the machines it trusts, by name.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Roster {
     pub identity: Identity,
     pub peers: Vec<PairedPeer>,
 }
 
 /// A machine the phone's own browser found on the local network.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Found {
     pub host_id: Vec<u8>,
     pub name: String,
@@ -1126,7 +1180,8 @@ pub struct Found {
 
 /// One of this device's profiles, one per account it signed in to, and the
 /// one nobody has signed in on.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ProfileView {
     pub id: String,
     pub label: String,
@@ -1209,7 +1264,8 @@ fn uuid_text(id: &[u8]) -> String {
 
 /// The account this device's profile is bound to, as the account screens
 /// show it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AccountView {
     pub binding: AccountBinding,
     pub email: String,
@@ -1221,7 +1277,8 @@ pub struct AccountView {
     pub relay: RelayLink,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AccountBinding {
     /// Never signed in: this device works on its own network.
     Unbound,
@@ -1230,7 +1287,8 @@ pub enum AccountBinding {
 }
 
 /// The relay link, as far as a person needs to know it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum RelayLink {
     Off,
     Connecting,
@@ -1244,7 +1302,8 @@ pub enum RelayLink {
 
 /// A bearer for the account service, borrowed from the profile, which alone
 /// spends the refresh token.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Bearer {
     pub bearer: String,
     pub expires_at_ms: Option<i64>,

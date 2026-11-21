@@ -7,10 +7,15 @@ description = "The phone's chats and fleet over the local runtime: session and f
 publish = false
 autotests = false
 
+[features]
+default = []
+# JSON Schema derives for generating the Swift mirrors (`ios-tools`).
+schema = ["dep:schemars", "ui-state/schema", "ui-view/schema", "wire/schema"]
+
 [dependencies]
 client = { workspace = true }
 prost = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 ui-runtime = { workspace = true }
@@ -28,3 +33,6 @@ tonic = { workspace = true }
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[lints]
+workspace = true

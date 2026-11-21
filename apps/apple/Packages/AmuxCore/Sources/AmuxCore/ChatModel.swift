@@ -142,9 +142,8 @@ public struct SentRound: Identifiable, Equatable, Sendable {
     /// good: the host records the round with the input whose taking closed
     /// it.
     public var id: String {
-        [sent.reviewId, sent.inputId]
-            .map { $0.map { String(format: "%02x", $0) }.joined() }
-            .joined(separator: "/")
+        let named = [sent.reviewId, sent.inputId]
+        return named.map { $0.map { String(format: "%02x", $0) }.joined() }.joined(separator: "/")
     }
 }
 

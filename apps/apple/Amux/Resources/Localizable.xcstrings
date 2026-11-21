@@ -11401,14 +11401,14 @@
         }
       }
     },
-    "This agent’s computer can’t be reached. What was loaded still reads; comments can’t be saved until it’s back." : {
+    "This agent’s computer can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxWords/ChatWords.swift.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This agent’s computer can’t be reached. What was loaded still reads; comments can’t be saved until it’s back."
+            "value" : "This agent’s computer can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back."
           }
         }
       }
